@@ -13,7 +13,7 @@ import type { AvailableCommand } from '../types/commands.js';
 import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
 import { Settings } from '../constants/settings.js';
-import { readStringSetting } from '../utils/cli-settings.js';
+import { readStringSetting, readCliSettings, writeCliSettings } from '../utils/cli-settings.js';
 
 export interface SettingsSubcommand {
   /** Machine value passed as `/settings <value>` */
@@ -134,6 +134,9 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     label: 'session',
     description: 'Each session has its own prompt history',
     handle: async ({ ctx }) => {
+      const settings = readCliSettings();
+      settings[Settings.CHAT_HISTORY_MODE] = 'session';
+      writeCliSettings(settings);
       await ctx.kiro
         .setSetting(Settings.CHAT_HISTORY_MODE, 'session')
         .catch(() => {});
@@ -149,6 +152,9 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     label: 'global',
     description: 'All sessions share one prompt history',
     handle: async ({ ctx }) => {
+      const settings = readCliSettings();
+      settings[Settings.CHAT_HISTORY_MODE] = 'global';
+      writeCliSettings(settings);
       await ctx.kiro
         .setSetting(Settings.CHAT_HISTORY_MODE, 'global')
         .catch(() => {});

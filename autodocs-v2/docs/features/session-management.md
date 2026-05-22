@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-30
-  commit: be2c1347
+  validated: 2026-05-22
+  commit: 773c796e6
   status: validated
   testable_headless: false
   category: feature
@@ -202,7 +202,7 @@ Use `/settings` → `history` to switch between:
 | **session** (default) | Each session has its own prompt history |
 | **global** | All sessions share one history file (`~/.kiro/.cli_bash_history`) |
 
-**Backward compatibility**: If a global history file exists from a previous version, new sessions inherit it as a starting point.
+**Note**: Switching between history modes or starting a new session does not carry over history from the previous context. Each session starts with its own history (empty if new, or restored from its history file if resuming).
 
 ## Related
 

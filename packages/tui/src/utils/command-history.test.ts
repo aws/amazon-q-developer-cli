@@ -99,7 +99,7 @@ describe('CommandHistory', () => {
     h.switchToFile(fileB);
     h.add('from-b');
 
-    expect(h.getAll()).toEqual(['from-a', 'from-b']);
+    expect(h.getAll()).toEqual(['from-b']);
 
     // Switch back to A — should reload A's history
     h.switchToFile(fileA);
@@ -136,5 +136,22 @@ describe('CommandHistory', () => {
     } catch {
       /* ignore */
     }
+  });
+
+  test('switchToFile to empty session does not inherit previous history', () => {
+    const fileA = join(tmpdir(), `kiro-test-inherit-a-${process.pid}`);
+    const fileB = join(tmpdir(), `kiro-test-inherit-b-${process.pid}`);
+    const h = CommandHistory.createWithFile(fileA);
+
+    h.add('global-cmd-1');
+    h.add('global-cmd-2');
+
+    // Switch to a new empty session — should NOT carry over previous history
+    h.switchToFile(fileB);
+    expect(h.getAll()).toEqual([]);
+    expect(h.navigate('up')).toBeNull();
+
+    try { rmSync(fileA); } catch { /* ignore */ }
+    try { rmSync(fileB); } catch { /* ignore */ }
   });
 });

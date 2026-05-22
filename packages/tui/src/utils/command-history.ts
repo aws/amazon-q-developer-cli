@@ -54,10 +54,7 @@ export class CommandHistory {
   switchToFile(filePath: string): void {
     if (this.historyFile === filePath) return;
     this.historyFile = filePath;
-    const sessionHistory = this.load();
-    if (sessionHistory.length > 0) {
-      this.history = sessionHistory;
-    }
+    this.history = this.load();
     this.currentIndex = -1;
     this.savedInput = null;
   }
