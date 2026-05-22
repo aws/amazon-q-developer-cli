@@ -111,13 +111,22 @@ jobs:
           cargo zigbuild --release --target ${{ env.TARGET }} \
             -p kiro-bot \
             -p chat_cli \
-            -p kiro-knowledge-mcp
+            -p kiro-knowledge-mcp \
+            -p kiro-github-mcp
       - name: Stage artifacts
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts artifacts/agents
           cp target/${{ env.TARGET }}/release/kiro-bot           artifacts/
           cp target/${{ env.TARGET }}/release/chat_cli           artifacts/kiro-cli
           cp target/${{ env.TARGET }}/release/kiro-knowledge-mcp artifacts/
+          cp target/${{ env.TARGET }}/release/kiro-github-mcp    artifacts/
+          # Bot-only agent definition. Not in the public chat_cli binary —
+          # the runtime container drops these into ~/.kiro/agents/ so v2's
+          # disk-loader picks them up when `kiro-cli acp --agent kiro-help`
+          # runs.
+          cp crates/kiro-bot/agents/kiro-help.json       artifacts/agents/
+          cp crates/kiro-bot/agents/kiro_help_prompt.md  artifacts/agents/
+          cp crates/kiro-bot/agents/SKILL.md             artifacts/agents/
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ env.TARGET }}
@@ -154,12 +163,17 @@ jobs:
       - name: Build & push binary-carrier image
         id: push
         run: |
-          chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp
+          chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp artifacts/kiro-github-mcp
           cat > Dockerfile.carrier <<'EOF'
           FROM scratch
           COPY artifacts/kiro-bot              /usr/local/bin/kiro-bot
           COPY artifacts/kiro-cli              /usr/local/bin/kiro-cli
           COPY artifacts/kiro-knowledge-mcp    /usr/local/bin/kiro-knowledge-mcp
+          COPY artifacts/kiro-github-mcp       /usr/local/bin/kiro-github-mcp
+          # Agent files for kiro-help. The runtime Dockerfile copies them
+          # into /root/.kiro/agents/ so chat-cli-v2's disk-loader resolves
+          # `--agent kiro-help` when the bot launches the ACP worker.
+          COPY artifacts/agents/               /etc/kiro-help-agents/
           EOF
           IMAGE=${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.BINARIES_REPO }}
           docker buildx build --platform linux/arm64 \

@@ -1,6 +1,6 @@
 {
   "name": "kiro-help",
-  "description": "Help agent for the kiro-help Slack bot. Distinct from the in-CLI kiro_help built-in: tools list and prompt are tuned for Slack DMs and channel mentions, not terminal sessions.",
+  "description": "Help agent for the kiro-help Slack bot. Distinct from the in-CLI kiro_guide built-in: tools list and prompt are tuned for Slack DMs and channel mentions, not terminal sessions.",
   "mcpServers": {
     "kiro-knowledge": {
       "command": "kiro-knowledge-mcp",
@@ -20,8 +20,7 @@
   },
   "tools": [
     "introspect",
-    "fs_read",
-    "kiro_cli_help",
+    "read",
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
     "@kiro-github-write/create_github_issue",
@@ -30,8 +29,7 @@
   "allowedTools": [
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
-    "introspect",
-    "kiro_cli_help"
+    "introspect"
   ],
   "includeMcpJson": false,
   "welcomeMessage": "Ask me anything about Kiro CLI."

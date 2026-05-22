@@ -1233,24 +1233,13 @@ impl Agents {
             agent
         });
 
-        // Add Slack-bot help agent (kiro-help mode used by the kiro-help bot
-        // only; distinct from the in-CLI kiro_help built-in above).
-        //
-        // The system prompt and the per-turn workflow live in two files: the
-        // prompt sets identity + retrieval rules; the SKILL.md is a numbered
-        // procedure the model reruns each turn. Concatenating them here means
-        // both ride into the prompt every turn (Inclusion::Always) — `skill://`
-        // resources are Inclusion::Auto, which is wrong for a workflow we want
-        // applied unconditionally.
-        all_agents.push({
-            let mut agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
-                .expect("Invalid kiro-help.json");
-            let prompt = include_str!("../../agents/kiro_help_prompt.md");
-            let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
-            agent.prompt = Some(format!("{prompt}\n\n---\n\n{skill}"));
-            configure_builtin_agent_resources(&mut agent, &resolver).await;
-            agent
-        });
+        // The Slack-bot kiro-help agent is intentionally NOT registered as a
+        // built-in here. It's bot-only — its tool list grants ECR/Bedrock
+        // access that has no business in the public kiro-cli binary, and its
+        // prompt is tuned for Slack DMs. The bot's container ships
+        // crates/kiro-bot/agents/kiro-help.json into ~/.kiro/agents/ at
+        // image-build time so v2's load_agents() picks it up by disk scan.
+        // Public kiro-cli binaries don't see kiro-help and never should.
 
         let all_agents = validator::validate_agents(all_agents, output);
 
@@ -2700,185 +2689,11 @@ mod tests {
         assert!(active.allowed_tools.contains("fs_write"), "fs_write should remain");
     }
 
-    /// Phase 6 Task 2 + reaction-approval: write-capable GitHub tools must
-    /// be exposed to the agent (so the LLM knows they exist) but kept OUT of
-    /// the allowedTools list so every invocation routes through the bot's
-    /// reaction-approval gate. Read-only tools (search_*, introspect,
-    /// kiro_cli_help) auto-approve.
-    #[test]
-    fn kiro_help_bot_agent_gates_writes_via_approval_flow() {
-        let agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
-            .expect("Invalid agents/kiro-help.json");
-
-        // The two write tools the bot currently exposes (Phase 6 Task 2b).
-        let write_tools = [
-            "@kiro-github-write/create_github_issue",
-            "@kiro-github-write/comment_on_existing",
-        ];
-        for w in write_tools {
-            assert!(
-                agent.tools.iter().any(|t| t == w),
-                "agent must list {w} so the LLM can pick it"
-            );
-            assert!(
-                !agent.allowed_tools.contains(w),
-                "{w} must NOT be auto-approved — every invocation has to pass through the Slack reaction gate"
-            );
-        }
-
-        // Counterpart: read tools SHOULD be auto-approved.
-        let auto_approve = [
-            "@kiro-knowledge/search_kiro_knowledge",
-            "@kiro-github-read/search_github_issues",
-            "introspect",
-            "kiro_cli_help",
-        ];
-        for r in auto_approve {
-            assert!(
-                agent.allowed_tools.contains(r),
-                "{r} must be in allowedTools so users don't see a 🔐 prompt for every search"
-            );
-        }
-    }
-
-    /// Phase 6 Task 1: a separate `kiro-help` (note: hyphen) agent ships
-    /// alongside the in-CLI `kiro_help` (underscore) built-in, because the
-    /// terminal-mode and Slack-mode prompts and tool sets diverge.
-    #[test]
-    fn kiro_help_bot_agent_is_loadable_from_embedded_json() {
-        let agent: Agent = serde_json::from_str(include_str!("../../agents/kiro-help.json"))
-            .expect("Invalid agents/kiro-help.json");
-        assert_eq!(agent.name, "kiro-help");
-        assert_ne!(
-            agent.name, "kiro_help",
-            "bot agent name must NOT collide with the in-CLI kiro_help built-in"
-        );
-        assert!(
-            agent.mcp_servers.mcp_servers.contains_key("kiro-knowledge"),
-            "bot agent must launch kiro-knowledge-mcp"
-        );
-        assert!(
-            agent.tools.iter().any(|t| t == "@kiro-knowledge/search_kiro_knowledge"),
-            "bot agent must list search_kiro_knowledge in tools"
-        );
-        assert!(
-            agent.allowed_tools.contains("@kiro-knowledge/search_kiro_knowledge"),
-            "bot agent must auto-approve search_kiro_knowledge so users don't see prompts"
-        );
-        // Slack bot is read-only; assert no fs_write / execute_bash / etc. on the
-        // tools list. fs_read is allowed (used for runtime config inspection).
-        for forbidden in ["fs_write", "execute_bash", "shell"] {
-            assert!(
-                !agent.tools.iter().any(|t| t == forbidden),
-                "bot agent must not expose write tool {forbidden}"
-            );
-        }
-    }
-
-    /// The skill file is a separate, versionable per-turn procedure that the
-    /// model reruns every reply. We assert it ships with the binary, parses
-    /// frontmatter, and contains the load-bearing steps. If the skill drifts
-    /// out of sync with the prompt's MUST-language, this catches it.
-    #[test]
-    fn kiro_help_skill_defines_per_turn_workflow() {
-        let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
-        // Frontmatter contract — kiro-cli's skill loader expects a name+desc.
-        assert!(
-            skill.starts_with("---\nname: kiro-help-workflow"),
-            "skill must start with frontmatter declaring name = kiro-help-workflow"
-        );
-        // The workflow's three load-bearing steps must remain in the file —
-        // weakening or removing them re-introduces the no-retrieval failure
-        // mode this skill exists to prevent.
-        for clause in [
-            "search_kiro_knowledge",
-            "search_github_issues",
-            "Sources:",
-        ] {
-            assert!(
-                skill.contains(clause),
-                "skill must keep the '{clause}' clause that defines the workflow"
-            );
-        }
-    }
-
-    /// At registration time the bot agent's prompt should carry both the
-    /// system prompt AND the skill file content — the skill is the per-turn
-    /// recipe and must always be in context, so we concatenate rather than
-    /// rely on `skill://` (which is Auto-inclusion).
-    #[tokio::test]
-    async fn kiro_help_bot_agent_prompt_includes_skill_workflow() {
-        // Mirror the registration logic: parse the JSON, attach the prompt
-        // concatenated with the skill, and assert the resulting prompt
-        // contains the load-bearing skill clauses verbatim. This catches
-        // a future regression where someone forgets to concatenate or
-        // swaps the skill for a `skill://` resource.
-        let mut agent: Agent =
-            serde_json::from_str(include_str!("../../agents/kiro-help.json")).expect("Invalid kiro-help.json");
-        let prompt = include_str!("../../agents/kiro_help_prompt.md");
-        let skill = include_str!("../../agents/skills/kiro-help/SKILL.md");
-        agent.prompt = Some(format!("{prompt}\n\n---\n\n{skill}"));
-        let combined = agent.prompt.as_deref().unwrap();
-        assert!(combined.contains("# kiro-help workflow"));
-        assert!(combined.contains("Self-check before sending"));
-        assert!(combined.contains("MUST be `search_kiro_knowledge`"));
-    }
-
-    /// The worked example is the strongest lever we have for actually
-    /// changing model behavior — terse MUST clauses are easy to ignore but
-    /// a concrete "here's the shape, copy it" example pulls the model
-    /// toward calling search_kiro_knowledge first. If someone strips the
-    /// example out, retrieval reliability craters; pin it.
-    #[test]
-    fn kiro_help_prompt_carries_a_worked_example_with_sources_line() {
-        let prompt = include_str!("../../agents/kiro_help_prompt.md");
-        assert!(
-            prompt.contains("Worked example"),
-            "prompt must include a worked example showing the expected output shape"
-        );
-        // The example must show a Sources: line — this is the artifact end
-        // users (and the agent-side validator) check for.
-        assert!(
-            prompt.contains("Sources: `autodocs/docs/slash-commands/model.md`"),
-            "worked example must show a concrete Sources: line so the model has a copy-this-shape target"
-        );
-        // The closing reminder ("if you skip retrieval, STOP and rewrite")
-        // is the only after-the-fact enforcement we have inside the prompt
-        // itself; do not let it drift away from the example block.
-        assert!(
-            prompt.contains("STOP, call `search_kiro_knowledge`, and rewrite"),
-            "prompt must keep the violation-recovery clause that tells the model what to do when it caught itself skipping"
-        );
-    }
-
-    /// Phase 6 follow-up: the system prompt must hard-require retrieval before
-    /// answering any kiro-related question. We assert on prompt content rather
-    /// than runtime behavior because the prompt is the only contract we own —
-    /// the model's tool-call decisions are downstream of these MUST clauses.
-    #[test]
-    fn kiro_help_prompt_mandates_retrieval_before_answering() {
-        let prompt = include_str!("../../agents/kiro_help_prompt.md");
-        // Hard "MUST"-style clause that orders retrieval before answer drafting.
-        assert!(
-            prompt.contains("MUST be `search_kiro_knowledge`")
-                || prompt.contains("MUST call `search_kiro_knowledge`"),
-            "prompt must hard-require search_kiro_knowledge as the first action"
-        );
-        // The prompt must steer GitHub-issue search for bug-shaped questions —
-        // reporting bugs without first checking the issue tracker is a known
-        // failure mode we want to design out.
-        assert!(
-            prompt.contains("search_github_issues"),
-            "prompt must instruct the agent to also call search_github_issues for issue/bug queries"
-        );
-        // Citations are how end-users (and the eval suite) catch a missed
-        // retrieval. The prompt must say a missing citation is a failure
-        // signal, not an acceptable shortcut.
-        assert!(
-            prompt.contains("citation") || prompt.contains("Sources:") || prompt.contains("Cite "),
-            "prompt must require citations on retrieved answers"
-        );
-    }
+    // The Slack bot's kiro-help agent (with hyphen) is no longer registered
+    // as a built-in in this binary — its files live under
+    // `crates/kiro-bot/agents/` and ship into the bot container's
+    // `~/.kiro/agents/` at image-build time. Tests that pin the bot agent's
+    // wiring now live next to the canonical files in the kiro-bot crate.
 
     /// Phase 2 wireup: kiro_help.json must declare the kiro-knowledge MCP server, list
     /// `@kiro-knowledge/search_kiro_knowledge` in its tools, and auto-approve it via
