@@ -1,0 +1,37 @@
+// kiro-help RAG eval cases. One JSON object per line; // and blank lines tolerated.
+// Categories: auth, mcp, agents, slash-commands, tools, errors, release-notes, config, hooks, ui.
+// Match is suffix-based — `autodocs/docs/commands/login.md` matches both
+// `s3://<bucket>/root/autodocs/docs/commands/login.md` and the legacy plain
+// `autodocs/docs/commands/login.md` form.
+{"id":"auth-001","query":"how do I log in to kiro-cli","must_retrieve_any_of":["autodocs/docs/commands/login.md","autodocs-v2/docs/commands/login.md"],"category":"auth"}
+{"id":"auth-002","query":"the kiro-cli login browser flow hangs forever","must_retrieve_any_of":["autodocs/docs/commands/login.md","autodocs-v2/docs/commands/login.md"],"category":"auth"}
+{"id":"auth-003","query":"how do I sign out of kiro-cli","must_retrieve_any_of":["autodocs/docs/commands/logout.md","autodocs-v2/docs/commands/logout.md"],"category":"auth"}
+{"id":"auth-004","query":"can I authenticate with an API key or token","must_retrieve_any_of":["autodocs/docs/commands/login.md","docs/oncall/ci_cd_documentation.md"],"category":"auth"}
+{"id":"mcp-001","query":"how do I add a new MCP server","must_retrieve_any_of":["autodocs/docs/commands/mcp.md","autodocs-v2/docs/commands/mcp.md","docs/mcp.md"],"category":"mcp"}
+{"id":"mcp-002","query":"what is the format of the MCP server config file","must_retrieve_any_of":["autodocs/docs/commands/mcp.md","autodocs-v2/docs/commands/mcp.md","autodocs/docs/features/mcp-registry.md"],"category":"mcp"}
+{"id":"mcp-003","query":"my MCP server fails to start at launch","must_retrieve_any_of":["autodocs/docs/commands/mcp.md","autodocs/docs/features/mcp-registry.md"],"category":"mcp"}
+{"id":"mcp-004","query":"how do I disable an MCP server temporarily","must_retrieve_any_of":["autodocs/docs/commands/mcp.md","autodocs-v2/docs/commands/mcp.md"],"category":"mcp"}
+{"id":"agents-001","query":"how do I create a custom agent","must_retrieve_any_of":["autodocs/docs/commands/agent.md","autodocs/docs/features/agent-configuration.md","docs/agent-format.md"],"category":"agents"}
+{"id":"agents-002","query":"what does the planner agent do","must_retrieve_any_of":["autodocs/docs/features/help-agent.md","docs/agent-format.md","crates/chat-cli/src/kiro_planner.json"],"category":"agents"}
+{"id":"agents-003","query":"how do I switch agents during a chat","must_retrieve_any_of":["autodocs/docs/commands/agent.md","autodocs-v2/docs/commands/agent.md"],"category":"agents"}
+{"id":"agents-004","query":"how do I configure tool permissions for an agent","must_retrieve_any_of":["autodocs/docs/features/agent-configuration.md","docs/agent-format.md"],"category":"agents"}
+{"id":"slash-001","query":"what slash commands are available","must_retrieve_any_of":["autodocs/docs/slash-commands/","autodocs-v2/docs/slash-commands/"],"category":"slash-commands"}
+{"id":"slash-002","query":"how do I save a chat","must_retrieve_any_of":["autodocs/docs/slash-commands/chat.md","autodocs-v2/docs/slash-commands/chat.md"],"category":"slash-commands"}
+{"id":"slash-003","query":"how do I use the context slash command","must_retrieve_any_of":["autodocs/docs/slash-commands/context.md","autodocs-v2/docs/slash-commands/context.md"],"category":"slash-commands"}
+{"id":"slash-004","query":"how do I clear my session","must_retrieve_any_of":["autodocs/docs/slash-commands/clear.md","autodocs-v2/docs/slash-commands/clear.md","autodocs/docs/slash-commands/new.md"],"category":"slash-commands"}
+{"id":"tools-001","query":"how does the read tool work","must_retrieve_any_of":["autodocs/docs/tools/read.md","autodocs-v2/docs/tools/read.md","docs/built-in-tools.md"],"category":"tools"}
+{"id":"tools-002","query":"how do I run a shell command from kiro","must_retrieve_any_of":["docs/built-in-tools.md","autodocs/docs/tools/execute_bash.md"],"category":"tools"}
+{"id":"tools-003","query":"how does the introspect tool work","must_retrieve_any_of":["docs/introspect-tool.md","autodocs/docs/tools/introspect.md"],"category":"tools"}
+{"id":"tools-004","query":"how do I disable a built-in tool","must_retrieve_any_of":["autodocs/docs/slash-commands/tools.md","autodocs-v2/docs/slash-commands/tools.md","docs/built-in-tools.md"],"category":"tools"}
+{"id":"errors-001","query":"why am I getting permission denied for write","must_retrieve_any_of":["docs/built-in-tools.md","autodocs/docs/tools/write.md"],"category":"errors"}
+{"id":"errors-002","query":"the agent says rate limited","must_retrieve_any_of":["autodocs/docs/tools/read.md","autodocs-v2/docs/tools/web-fetch.md","docs/RFC-001-multi-agent-tui.md"],"category":"errors"}
+{"id":"errors-003","query":"my prompt got cut off mid-response","must_retrieve_any_of":["docs/coe/TODO_ID/coe-draft.md"],"category":"errors"}
+{"id":"release-001","query":"what changed in the most recent kiro-cli release","must_retrieve_any_of":["DEVELOPMENT.md","docs/oncall/releases/TEMPLATE.md"],"category":"release-notes"}
+{"id":"release-002","query":"when was the bot subcommand added to kiro-cli","must_retrieve_any_of":["crates/kiro-bot/README.md","docs/superpowers/plans/2026-05-19-kiro-bot-cli-integration.md"],"category":"release-notes"}
+{"id":"config-001","query":"where is my kiro-cli config stored","must_retrieve_any_of":["autodocs/docs/commands/chat.md","autodocs-v2/docs/commands/settings.md"],"category":"config"}
+{"id":"config-002","query":"how do I set the default model","must_retrieve_any_of":["autodocs/docs/settings/default-model.md","autodocs-v2/docs/slash-commands/model.md"],"category":"config"}
+{"id":"hooks-001","query":"what are kiro hooks and how do I add one","must_retrieve_any_of":["autodocs/docs/features/hooks.md","autodocs-v2/docs/features/hooks.md"],"category":"hooks"}
+{"id":"hooks-002","query":"can I run a script after a tool call finishes","must_retrieve_any_of":["autodocs/docs/features/hooks.md","autodocs-v2/docs/features/hooks.md","docs/design/classic-tui-mode-lld.md"],"category":"hooks"}
+{"id":"ui-001","query":"what is tangent mode","must_retrieve_any_of":["docs/tangent-mode.md","autodocs/docs/settings/enable-tangent-mode.md"],"category":"ui"}
+{"id":"ui-002","query":"how do I customize the chat interface","must_retrieve_any_of":["autodocs/docs/settings/chat-interface-settings.md","autodocs-v2/docs/slash-commands/theme.md"],"category":"ui"}
+{"id":"ui-003","query":"keyboard shortcuts for kiro-cli","must_retrieve_any_of":["autodocs/docs/settings/key-bindings-settings.md","autodocs-v2/docs/commands/settings.md"],"category":"ui"}

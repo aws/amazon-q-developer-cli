@@ -1,0 +1,194 @@
+name: kiro-bot-release
+
+# Phase 5 of the kiro-help bot roadmap. Builds, evals, and publishes the three
+# kiro-bot binaries (kiro-bot, kiro-cli, kiro-knowledge-mcp) into a single
+# binary-carrier image in ECR, then writes the digest to SSM so CodeBuild can
+# rebuild the runtime image and ECS can roll the service.
+#
+# Triggers:
+#   - push to feature/kiro-bot or main, restricted to paths that affect the
+#     bot binaries or the eval suite — avoids rebuilding the world on
+#     unrelated kiro-cli changes.
+#   - tag push matching kiro-bot-v* — promotes the digest to /prod/.
+
+on:
+  push:
+    branches:
+      - main
+      - feature/kiro-bot
+    tags:
+      - 'kiro-bot-v*'
+    paths:
+      - 'crates/kiro-bot/**'
+      - 'crates/kiro-knowledge-mcp/**'
+      - 'crates/kiro-help-corpus-ingest/**'
+      - 'crates/kiro-bot-eval/**'
+      - 'crates/chat-cli/src/agents/kiro-help.json'
+      - 'crates/chat-cli/src/agents/kiro_help_prompt.md'
+      - 'crates/chat-cli/src/cli/agent/mod.rs'
+      - '.github/workflows/kiro-bot-release.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT: '551670267384'
+  BINARIES_REPO: kiro-bot-binaries
+  PUBLISHER_ROLE_ARN: arn:aws:iam::551670267384:role/GitHubActionsKiroBotPublisher
+  TARGET: aarch64-unknown-linux-gnu
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Honor the workspace's rust-toolchain.toml so the build runs on
+          # the same compiler everyone else uses (1.92.0 at time of writing).
+          # Without `with: toolchain:` set, this action reads the file.
+          toolchain: 1.92.0
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo test \
+            -p kiro-bot \
+            -p kiro-knowledge-mcp \
+            -p kiro-help-corpus-ingest \
+            -p kiro-bot-eval
+
+  eval:
+    name: Eval (RAG recall@5)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Honor the workspace's rust-toolchain.toml so the build runs on
+          # the same compiler everyone else uses (1.92.0 at time of writing).
+          # Without `with: toolchain:` set, this action reads the file.
+          toolchain: 1.92.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: |
+          KB_ID=$(aws ssm get-parameter \
+            --name /kiro-help-bot/alpha/kb-id \
+            --query Parameter.Value --output text)
+          cargo run --release -p kiro-bot-eval -- \
+            --kb-id "$KB_ID" \
+            --top-n 5 \
+            --threshold 0.7
+
+  build-binaries:
+    name: Cross-compile ARM64 binaries
+    runs-on: ubuntu-latest
+    needs: eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+          targets: ${{ env.TARGET }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install zig (cross-toolchain)
+        uses: mlugg/setup-zig@v1
+        # Pin to a Zig release that's still on the official mirror network.
+        # 0.16.0 was de-listed; the cargo-zigbuild docs recommend tracking a
+        # recent stable, so we follow latest of the 0.13 line which is what
+        # cargo-zigbuild's own CI uses.
+        with:
+          version: 0.13.0
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild
+      - name: Build
+        run: |
+          cargo zigbuild --release --target ${{ env.TARGET }} \
+            -p kiro-bot \
+            -p chat_cli \
+            -p kiro-knowledge-mcp \
+            -p kiro-github-mcp
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts artifacts/agents
+          cp target/${{ env.TARGET }}/release/kiro-bot           artifacts/
+          cp target/${{ env.TARGET }}/release/chat_cli           artifacts/kiro-cli
+          cp target/${{ env.TARGET }}/release/kiro-knowledge-mcp artifacts/
+          cp target/${{ env.TARGET }}/release/kiro-github-mcp    artifacts/
+          # Bot-only agent definition. Not in the public chat_cli binary —
+          # the runtime container drops these into ~/.kiro/agents/ so v2's
+          # disk-loader picks them up when `kiro-cli acp --agent kiro-help`
+          # runs.
+          cp crates/kiro-bot/agents/kiro-help.json       artifacts/agents/
+          cp crates/kiro-bot/agents/kiro_help_prompt.md  artifacts/agents/
+          cp crates/kiro-bot/agents/SKILL.md             artifacts/agents/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ env.TARGET }}
+          path: artifacts/
+
+  publish-image:
+    name: Publish binary-carrier image
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ env.TARGET }}
+          path: ./artifacts
+      - name: Resolve target stage
+        id: stage
+        run: |
+          STAGE=alpha
+          if [[ "${GITHUB_REF}" == refs/tags/kiro-bot-v* ]]; then STAGE=prod; fi
+          echo "stage=$STAGE" >> $GITHUB_OUTPUT
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin \
+              ${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+      - name: Build & push binary-carrier image
+        id: push
+        run: |
+          chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp artifacts/kiro-github-mcp
+          cat > Dockerfile.carrier <<'EOF'
+          FROM scratch
+          COPY artifacts/kiro-bot              /usr/local/bin/kiro-bot
+          COPY artifacts/kiro-cli              /usr/local/bin/kiro-cli
+          COPY artifacts/kiro-knowledge-mcp    /usr/local/bin/kiro-knowledge-mcp
+          COPY artifacts/kiro-github-mcp       /usr/local/bin/kiro-github-mcp
+          # Agent files for kiro-help. The runtime Dockerfile copies them
+          # into /root/.kiro/agents/ so chat-cli-v2's disk-loader resolves
+          # `--agent kiro-help` when the bot launches the ACP worker.
+          COPY artifacts/agents/               /etc/kiro-help-agents/
+          EOF
+          IMAGE=${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.BINARIES_REPO }}
+          docker buildx build --platform linux/arm64 \
+            --provenance=false \
+            --push \
+            -t "$IMAGE:${GITHUB_SHA}" \
+            -f Dockerfile.carrier .
+          DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.BINARIES_REPO }} \
+            --image-ids imageTag=${GITHUB_SHA} \
+            --query 'imageDetails[0].imageDigest' --output text)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+      - name: Write SSM digest
+        run: |
+          aws ssm put-parameter \
+            --name /kiro-help-bot/${{ steps.stage.outputs.stage }}/binary-image-digest \
+            --value '${{ steps.push.outputs.digest }}' \
+            --type String --overwrite

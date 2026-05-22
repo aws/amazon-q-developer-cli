@@ -45,6 +45,55 @@ kiro-bot start my-bot
 kiro-bot status
 ```
 
+## Using via kiro-cli (Unified Binary)
+
+kiro-bot is also available as a subcommand of `kiro-cli`. This is the recommended approach for server deployments (ECS, Docker) since it provides a single binary with built-in self-update.
+
+The subcommand is hidden from `--help` and gated behind the `KIRO_ENABLE_BOT` environment variable:
+
+```bash
+# Enable the bot subcommand
+export KIRO_ENABLE_BOT=1
+
+# All kiro-bot commands are available under `kiro-cli bot`:
+kiro-cli bot install ./my-bot
+kiro-cli bot start my-bot
+kiro-cli bot status
+kiro-cli bot stop my-bot
+```
+
+### Auto-Update for Server Deployments
+
+The `kiro-cli bot update` command supports staleness-based updates for headless environments:
+
+```bash
+# Update binary if last update was more than 7 days ago
+KIRO_ENABLE_BOT=1 kiro-cli bot update --if-stale 7d
+
+# Force update regardless of staleness
+KIRO_ENABLE_BOT=1 kiro-cli bot update --force
+```
+
+**ECS/Docker entrypoint pattern:**
+```bash
+#!/bin/bash
+set -euo pipefail
+export KIRO_ENABLE_BOT=1
+kiro-cli bot update --if-stale 7d || true
+exec kiro-cli bot start my-bot --foreground
+```
+
+Duration format: `7d` (days), `24h` (hours), `90m` (minutes), `1h30m` (combined).
+
+### Build
+
+No special build flags needed — bot support is always compiled into `kiro-cli`:
+
+```bash
+cargo build -p chat_cli       # includes bot support
+cargo build -p kiro-bot       # standalone binary (for development)
+```
+
 ## Commands
 
 | Command | Description |

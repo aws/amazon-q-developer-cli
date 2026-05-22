@@ -3,3 +3,4 @@
 pub mod install;
 pub mod run;
 pub mod service;
+pub mod update;

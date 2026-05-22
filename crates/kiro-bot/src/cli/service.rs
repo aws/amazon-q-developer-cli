@@ -10,7 +10,8 @@ use anyhow::{
     Context,
     Result,
 };
-use kiro_bot::config;
+
+use crate::config;
 
 fn pid_path(name: &str) -> Result<PathBuf> {
     let dir = config::state_dir(name)?;

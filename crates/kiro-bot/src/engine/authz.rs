@@ -129,13 +129,11 @@ impl Authorizer {
 
     /// Check if a user can interact with the bot in a given conversation.
     pub fn can_use_bot(&self, user: &str, conversation: &Conversation) -> Result<bool> {
-        self.check(
-            user,
-            "use_bot",
-            "Conversation",
-            &conversation.authz_id(),
-            Context::empty(),
-        )
+        // Surface the conversation kind via context so policies can use
+        // `context.is_dm` without needing a full Entities table loaded.
+        let is_dm = matches!(conversation, Conversation::Dm { .. });
+        let ctx = Context::from_pairs([("is_dm".into(), RestrictedExpression::new_bool(is_dm))])?;
+        self.check(user, "use_bot", "Conversation", &conversation.authz_id(), ctx)
     }
 
     /// Check if a user can switch to a specific agent.
@@ -147,5 +145,83 @@ impl Authorizer {
     /// Check if a user can switch to a specific model.
     pub fn can_use_model(&self, user: &str, model: &str) -> Result<bool> {
         self.check(user, "use_model", "Model", model, Context::empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::core::Conversation;
+
+    /// Phase 6 Task 4: the kiro-help bot's Cedar policy, as committed under
+    /// crates/kiro-bot/kiro-help/policies/agents.cedar. We embed the same
+    /// text and parse it directly rather than going through the file-loading
+    /// constructor — that keeps the test self-contained without taking on a
+    /// `tempfile` dev-dep just for one file write.
+    const KIRO_HELP_POLICY: &str = include_str!("../../kiro-help/policies/agents.cedar");
+
+    fn load(policy_text: &str) -> Authorizer {
+        let policies = PolicySet::from_str(policy_text).expect("parse cedar policy");
+        // Construct directly so the test doesn't need a writable filesystem
+        // for tempfiles (sandboxes may block /var/folders).
+        Authorizer {
+            authorizer: cedar_policy::Authorizer::new(),
+            policies,
+            entities: Entities::empty(),
+        }
+    }
+
+    #[test]
+    fn kiro_help_policy_parses() {
+        let _ = load(KIRO_HELP_POLICY);
+    }
+
+    #[test]
+    fn kiro_help_policy_allows_dms() {
+        let authz = load(KIRO_HELP_POLICY);
+        let convo = Conversation::Dm {
+            channel: "D123".to_string(),
+            user: "U_USER".to_string(),
+        };
+        assert!(
+            authz.can_use_bot("U_USER", &convo).unwrap(),
+            "DM conversations must be allowed"
+        );
+    }
+
+    #[test]
+    fn kiro_help_policy_allows_explicit_channels() {
+        let authz = load(KIRO_HELP_POLICY);
+        let beta = Conversation::Channel("C0KIROHELPBETA".to_string());
+        let prod = Conversation::Channel("C0KIROHELPPROD".to_string());
+        assert!(authz.can_use_bot("U_USER", &beta).unwrap());
+        assert!(authz.can_use_bot("U_USER", &prod).unwrap());
+    }
+
+    #[test]
+    fn kiro_help_policy_denies_unlisted_channels() {
+        let authz = load(KIRO_HELP_POLICY);
+        let other = Conversation::Channel("C_RANDOM".to_string());
+        assert!(
+            !authz.can_use_bot("U_USER", &other).unwrap(),
+            "Unlisted channels must be denied"
+        );
+    }
+
+    #[test]
+    fn kiro_help_policy_inherits_channel_access_for_threads() {
+        let authz = load(KIRO_HELP_POLICY);
+        // Threads share their parent channel's access (authz_id projects to
+        // 'channel:<id>'). Beta-channel thread is allowed; random thread is not.
+        let beta_thread = Conversation::Thread {
+            channel: "C0KIROHELPBETA".to_string(),
+            thread_ts: "1700000000.000".to_string(),
+        };
+        let random_thread = Conversation::Thread {
+            channel: "C_RANDOM".to_string(),
+            thread_ts: "1700000000.000".to_string(),
+        };
+        assert!(authz.can_use_bot("U_USER", &beta_thread).unwrap());
+        assert!(!authz.can_use_bot("U_USER", &random_thread).unwrap());
     }
 }

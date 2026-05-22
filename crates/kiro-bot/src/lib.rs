@@ -10,6 +10,8 @@
 //! - [`engine`] — Bot runtime core (ACP pool, dispatch, authz, policies)
 //! - [`frontend`] — I/O adapters (Slack, CLI, cron)
 
+pub mod agents;
+pub mod cli;
 pub mod config;
 pub mod engine;
 pub mod frontend;

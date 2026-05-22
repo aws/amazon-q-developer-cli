@@ -126,6 +126,11 @@ pub struct BotCore {
     pub authz: Option<Arc<Authorizer>>,
     pub response_policy: Arc<ResponsePolicyConfig>,
     pub acp_info: Arc<std::sync::Mutex<AcpInfo>>,
+    /// Cross-task coordinator (Phase 4). Defaults to a per-process in-memory
+    /// `NoopCoordinator`, which preserves the legacy single-task behaviour.
+    /// `DynamoCoordinator` plugs in via this field when the runtime config
+    /// asks for it.
+    pub coordinator: Arc<dyn crate::engine::coordinator::Coordinator>,
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +281,10 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 }
             }
 
+            // Capture a copy of the user prompt before move so we can run
+            // the post-reply retrieval check without re-fetching it.
+            let prompt_for_check = text.clone();
+
             tokio::spawn(async move {
                 let ack_id = match frontend
                     .send(Reply::Send {
@@ -331,6 +340,82 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 }
 
                 let reply_text = reply_rx.await.unwrap_or("Error".into());
+
+                // Post-reply retrieval check. If the model answered a
+                // kiro-shaped question without citing, log a structured
+                // warning AND inject a coercive retry through the same ACP
+                // session asking it to redo the answer with retrieval. The
+                // retry takes the place of the original reply so the user
+                // never sees the un-cited draft.
+                use crate::engine::retrieval_check::{
+                    RetrievalCheck,
+                    check,
+                };
+                let final_reply_text = match check(&prompt_for_check, &reply_text) {
+                    RetrievalCheck::MissingCitation => {
+                        tracing::warn!(
+                            target: "retrieval_check",
+                            conversation = %session_key,
+                            user = %msg.user,
+                            prompt_preview = %prompt_for_check.chars().take(120).collect::<String>(),
+                            "model answered a kiro-related question without citing — issuing retry"
+                        );
+                        // Coercive retry. Don't repeat the user's question —
+                        // the ACP session retains its own history. Just give
+                        // the model a one-line procedural correction.
+                        let retry_prompt = "[system retry] You answered the previous question \
+                            without calling search_kiro_knowledge. That violates the workflow. \
+                            Call search_kiro_knowledge now with a focused query, then re-answer \
+                            the original question and end with a `Sources:` line citing the \
+                            retrieved chunk paths. Do not apologize or explain — just produce \
+                            the corrected answer.";
+                        let (retry_tx, retry_rx) = oneshot::channel();
+                        let (retry_progress_tx, _retry_progress_rx) = mpsc::unbounded_channel::<String>();
+                        let _ = core.work_sender.send(Work::Prompt {
+                            text: retry_prompt.to_string(),
+                            context: Vec::new(),
+                            conversation: session_key.clone(),
+                            channel: match &conversation {
+                                Conversation::Dm { channel, .. } => channel.clone(),
+                                Conversation::Channel(id) => id.clone(),
+                                Conversation::Thread { channel, .. } => channel.clone(),
+                            },
+                            thread_ts: match &conversation {
+                                Conversation::Thread { thread_ts, .. } => Some(thread_ts.clone()),
+                                _ => reply_to.clone(),
+                            },
+                            user: msg.user.clone(),
+                            slack_user_id: msg.slack_user_id.clone(),
+                            reply_tx: retry_tx,
+                            progress_tx: retry_progress_tx,
+                        });
+                        // If the retry also fails, fall back to the original
+                        // answer with a tag so the user knows to ask for
+                        // sources explicitly.
+                        match retry_rx.await {
+                            Ok(retried) => {
+                                if matches!(check(&prompt_for_check, &retried), RetrievalCheck::Cited) {
+                                    retried
+                                } else {
+                                    tracing::warn!(
+                                        target: "retrieval_check",
+                                        conversation = %session_key,
+                                        "retry also lacked a citation — sending original answer with a soft note"
+                                    );
+                                    format!(
+                                        "{reply_text}\n\n_(I answered from training; if this should be grounded in our docs, ask me to cite a source.)_"
+                                    )
+                                }
+                            },
+                            Err(_) => {
+                                tracing::error!(target: "retrieval_check", "retry channel closed");
+                                reply_text
+                            },
+                        }
+                    },
+                    _ => reply_text,
+                };
+
                 let _ = frontend
                     .send(Reply::Delete {
                         conversation: platform_id.clone(),
@@ -341,7 +426,7 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                     .send(Reply::Send {
                         conversation: platform_id,
                         reply_to,
-                        text: reply_text,
+                        text: final_reply_text,
                     })
                     .await;
                 core.inflight.lock().unwrap().remove(&session_key);

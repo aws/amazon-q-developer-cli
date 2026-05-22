@@ -5,8 +5,7 @@ use clap::{
     Parser,
     Subcommand,
 };
-
-mod cli;
+use kiro_bot::cli;
 
 #[derive(Parser)]
 #[command(name = "kiro-bot", about = "Manage ACP-backed Slack bot instances")]

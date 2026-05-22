@@ -6,7 +6,14 @@ use anyhow::{
     Context,
     Result,
 };
-use kiro_bot::config::{
+use slack_morphism::prelude::*;
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
+use tracing::info;
+
+use crate::config::{
     self,
     Config,
     FrontendConfig,
@@ -14,22 +21,22 @@ use kiro_bot::config::{
     TomlReply,
     TomlTrigger,
 };
-use kiro_bot::engine::acp::{
+use crate::engine::acp::{
     self,
     AcpConfig,
     ApprovalPolicy,
 };
-use kiro_bot::engine::authz::Authorizer;
-use kiro_bot::engine::core::BotCore;
-use kiro_bot::engine::response_policy::{
+use crate::engine::authz::Authorizer;
+use crate::engine::core::BotCore;
+use crate::engine::response_policy::{
     Location,
     ResponsePolicy,
     ResponsePolicyConfig,
     Trigger,
 };
-use kiro_bot::engine::user_map::UserMap;
-use kiro_bot::frontend::cli::CliFrontend;
-use kiro_bot::frontend::slack::{
+use crate::engine::user_map::UserMap;
+use crate::frontend::cli::CliFrontend;
+use crate::frontend::slack::{
     PendingApprovals,
     SlackFrontend,
     SlackState,
@@ -37,12 +44,6 @@ use kiro_bot::frontend::slack::{
     on_push,
     spawn_approval_listener,
 };
-use slack_morphism::prelude::*;
-use tokio::sync::{
-    mpsc,
-    oneshot,
-};
-use tracing::info;
 
 /// Run a bot instance in the foreground (called by `start --foreground`).
 pub async fn cmd_run(name: &str) -> Result<()> {
@@ -117,6 +118,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         authz,
         response_policy,
         acp_info,
+        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
     };
 
     let pending_approvals: PendingApprovals = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -134,6 +136,8 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     };
     info!(bot_user_id, "Bot authenticated");
 
+    let feedback_writer = build_feedback_writer().await;
+
     let state = SlackState {
         core,
         frontend,
@@ -142,6 +146,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         bot_user_id,
         user_map,
         pending_approvals,
+        feedback_writer,
     };
 
     let env = Arc::new(
@@ -198,10 +203,11 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
         authz: None,
         response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
         acp_info,
+        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
     };
 
     eprintln!("Ready. Type messages (prefix #name for multi-conversation). Ctrl-C to quit.");
-    kiro_bot::frontend::cli::run_cli(&core, frontend).await;
+    crate::frontend::cli::run_cli(&core, frontend).await;
     Ok(())
 }
 
@@ -269,10 +275,26 @@ fn set_working_directory(wd: &Option<String>) -> Result<()> {
 
 /// Run a cron/headless instance — single prompt, output, exit.
 pub async fn cmd_cron(name: &str) -> Result<()> {
-    kiro_bot::frontend::cron::run_once(name).await
+    crate::frontend::cron::run_once(name).await
 }
 
 /// Run a cron instance as a scheduled daemon loop.
 pub async fn cmd_cron_daemon(name: &str) -> Result<()> {
-    kiro_bot::frontend::cron::run_scheduled(name).await
+    crate::frontend::cron::run_scheduled(name).await
+}
+
+/// Build a [`crate::engine::feedback::DynamoFeedbackWriter`] when the runtime
+/// is configured for it (env var `KIRO_BOT_FEEDBACK_TABLE` set). Returns
+/// `None` when feedback persistence is disabled — typical for the local CLI
+/// frontends, the cron daemon, or any non-Slack invocation.
+async fn build_feedback_writer() -> Option<std::sync::Arc<dyn crate::engine::feedback::FeedbackWriter>> {
+    let table = match std::env::var("KIRO_BOT_FEEDBACK_TABLE") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return None,
+    };
+    let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest()).load().await;
+    let client = aws_sdk_dynamodb::Client::new(&cfg);
+    Some(std::sync::Arc::new(crate::engine::feedback::DynamoFeedbackWriter::new(
+        client, table,
+    )))
 }
