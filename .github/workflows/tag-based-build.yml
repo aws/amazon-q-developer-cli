@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build from"
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       tag:

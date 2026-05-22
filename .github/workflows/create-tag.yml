@@ -86,6 +86,7 @@ jobs:
               # Find last nightly or stable tag (exclude rc tags which sort unpredictably)
               LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -v '\-rc\.' | head -1)
               CURRENT_VERSION="${LAST_TAG#v}"
+              CURRENT_VERSION="${CURRENT_VERSION#v}" # then strip v
               [[ -z "$CURRENT_VERSION" ]] && CURRENT_VERSION="0.0.0"
               NEW_VERSION=$(python3 .github/scripts/bump_version.py "$CURRENT_VERSION" "patch" "nightly")
               ;;
@@ -150,3 +151,12 @@ jobs:
               echo "| Commit | \`$(git rev-parse HEAD)\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Trigger Build
+    needs: tag
+    if: needs.tag.outputs.skipped != 'true' && needs.tag.outputs.version != ''
+    uses: ./.github/workflows/tag-based-build.yml
+    secrets: inherit
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
