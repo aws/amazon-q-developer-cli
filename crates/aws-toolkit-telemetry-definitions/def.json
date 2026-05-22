@@ -204,6 +204,96 @@
       "name": "codewhispererterminal_customToolLatency",
       "type": "int",
       "description": "Custom tool call latency in seconds"
+    },
+    {
+      "name": "codewhispererterminal_rssMb",
+      "type": "double",
+      "description": "Process RSS memory in megabytes"
+    },
+    {
+      "name": "codewhispererterminal_heapUsedMb",
+      "type": "double",
+      "description": "JS heap used in megabytes"
+    },
+    {
+      "name": "codewhispererterminal_peakRssMb",
+      "type": "double",
+      "description": "Peak RSS memory in megabytes"
+    },
+    {
+      "name": "codewhispererterminal_cpuUserPct",
+      "type": "double",
+      "description": "User-mode CPU percentage over 60s window"
+    },
+    {
+      "name": "codewhispererterminal_cpuSystemPct",
+      "type": "double",
+      "description": "System-mode CPU percentage over 60s window"
+    },
+    {
+      "name": "codewhispererterminal_lastRenderMs",
+      "type": "double",
+      "description": "Duration of most recent render pass in milliseconds"
+    },
+    {
+      "name": "codewhispererterminal_maxRenderMs",
+      "type": "double",
+      "description": "Worst single render duration in the 60s window"
+    },
+    {
+      "name": "codewhispererterminal_rendersPerMin",
+      "type": "int",
+      "description": "Number of renders in the 60s window"
+    },
+    {
+      "name": "codewhispererterminal_fullRedrawsPerMin",
+      "type": "int",
+      "description": "Number of expensive full redraws in the 60s window"
+    },
+    {
+      "name": "codewhispererterminal_yogaNodeCount",
+      "type": "int",
+      "description": "Number of yoga layout nodes (complexity indicator)"
+    },
+    {
+      "name": "codewhispererterminal_eventLoopP99Ms",
+      "type": "double",
+      "description": "Event loop delay p99 in milliseconds"
+    },
+    {
+      "name": "codewhispererterminal_inputLatencyP95Ms",
+      "type": "double",
+      "description": "Keypress-to-render latency p95 in milliseconds"
+    },
+    {
+      "name": "codewhispererterminal_tuiVersion",
+      "type": "string",
+      "description": "TUI package version"
+    },
+    {
+      "name": "codewhispererterminal_platform",
+      "type": "string",
+      "description": "OS platform (darwin, linux, win32)"
+    },
+    {
+      "name": "codewhispererterminal_sessionDurationSec",
+      "type": "int",
+      "description": "Session duration in seconds since TUI initialization"
+    },
+    {
+      "name": "codewhispererterminal_cpuCores",
+      "type": "int",
+      "description": "Number of CPU cores on the machine"
+    },
+    {
+      "name": "codewhispererterminal_totalMemoryMb",
+      "type": "int",
+      "description": "Total system RAM in megabytes"
+    },
+    {
+      "name": "codewhispererterminal_terminalName",
+      "type": "string",
+      "description": "Terminal emulator name (e.g. iTerm.app, vscode)"
     }
   ],
   "metrics": [
@@ -421,6 +511,33 @@
           { "type": "credentialStartUrl", "required": false }
       ],
       "passive": true
+  },
+  {
+      "name": "codewhispererterminal_processHealthSnapshot",
+      "description": "Periodic process health metrics emitted every 60s from the TUI",
+      "passive": true,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "codewhispererterminal_tuiVersion" },
+        { "type": "codewhispererterminal_platform" },
+        { "type": "codewhispererterminal_rssMb" },
+        { "type": "codewhispererterminal_heapUsedMb" },
+        { "type": "codewhispererterminal_peakRssMb" },
+        { "type": "codewhispererterminal_cpuUserPct" },
+        { "type": "codewhispererterminal_cpuSystemPct" },
+        { "type": "codewhispererterminal_lastRenderMs" },
+        { "type": "codewhispererterminal_maxRenderMs" },
+        { "type": "codewhispererterminal_rendersPerMin" },
+        { "type": "codewhispererterminal_fullRedrawsPerMin" },
+        { "type": "codewhispererterminal_yogaNodeCount" },
+        { "type": "codewhispererterminal_eventLoopP99Ms", "required": false },
+        { "type": "codewhispererterminal_inputLatencyP95Ms", "required": false },
+        { "type": "codewhispererterminal_sessionDurationSec" },
+        { "type": "codewhispererterminal_cpuCores" },
+        { "type": "codewhispererterminal_totalMemoryMb" },
+        { "type": "codewhispererterminal_terminalName" },
+        { "type": "amazonqConversationId", "required": false }
+      ]
   }
   ]
 }

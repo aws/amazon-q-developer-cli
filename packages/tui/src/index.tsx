@@ -39,6 +39,7 @@ import {
 } from './utils/terminal-sequences';
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 import { isTrustGateAccepted } from './utils/trust-gate-state';
+import { startProcessHealthCollector } from './utils/process-health-collector';
 
 // Circuit breaker: if stdout dies (e.g. PTY closed), exit immediately.
 // stdout.write() on a dead fd doesn't throw — it emits an async 'error' event.
@@ -556,6 +557,14 @@ const startInitialization = (
       // Mark initialization complete and drain any messages queued while initializing
       appStore.setState({ isInitialized: true });
       await appStore.getState().processQueue();
+
+      // Start process health telemetry collector (60s interval)
+      startProcessHealthCollector(
+        (payload) => {
+          kiro.sendProcessHealthMetrics(payload);
+        },
+        () => kiro.sessionId ?? null
+      );
     })
     .catch((error) => {
       logger.error('Failed to initialize Kiro:', error);

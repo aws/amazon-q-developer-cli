@@ -9,6 +9,7 @@ import {
   matchSpecArtifactPath,
   type SpecArtifactPathMatch,
 } from './utils/spec-artifact-path';
+import type { ProcessHealthSnapshot } from './utils/process-health-collector';
 import type {
   SessionClient,
   ListSessionsResponse,
@@ -244,6 +245,11 @@ export class Kiro {
   }
 
   onSessionMessageSent?: (sessionId: string) => void;
+
+  sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendProcessHealthMetrics?.(payload);
+  }
 
   async terminateSession(sessionId: string): Promise<void> {
     if (!this.sessionClient) return;

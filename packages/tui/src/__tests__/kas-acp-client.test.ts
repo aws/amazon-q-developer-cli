@@ -1949,8 +1949,17 @@ describe('mcp command (push model)', () => {
     (client as any).handleMcpStatusNotification({
       sessionId: 'kas-session-1',
       servers: [
-        { name: 'test-server', status: 'connected', tools: [{ name: 't1', disabled: false }] },
-        { name: 'failed-server', status: 'failed', failedAuthorization: false, errorMessage: 'err' },
+        {
+          name: 'test-server',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+        {
+          name: 'failed-server',
+          status: 'failed',
+          failedAuthorization: false,
+          errorMessage: 'err',
+        },
       ],
     });
 
@@ -2008,7 +2017,14 @@ describe('mcp command (push model)', () => {
     await client.newSession();
 
     (client as any).handleMcpStatusNotification({
-      servers: [{ name: 's', status: 'failed', failedAuthorization: true, errorMessage: 'auth' }],
+      servers: [
+        {
+          name: 's',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'auth',
+        },
+      ],
     });
 
     const result = await client.executeCommand({ command: 'mcp' } as any);
@@ -2036,7 +2052,12 @@ describe('mcp command (push model)', () => {
     (client as any).handleMcpStatusNotification({
       servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
       registryServers: [
-        { name: 'registry-server-1', version: '1.0.0', description: 'A registry server', enabled: true },
+        {
+          name: 'registry-server-1',
+          version: '1.0.0',
+          description: 'A registry server',
+          enabled: true,
+        },
         { name: 'registry-server-2', version: '2.0.0', enabled: false },
       ],
     });
@@ -2069,9 +2090,7 @@ describe('mcp command (push model)', () => {
 
     (client as any).handleMcpStatusNotification({
       servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
-      registryServers: [
-        { name: 'registry-server', version: '1.0.0' },
-      ],
+      registryServers: [{ name: 'registry-server', version: '1.0.0' }],
     });
 
     const result = await client.executeCommand({ command: 'mcp' } as any);

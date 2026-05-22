@@ -19,6 +19,7 @@ import { buildKasSettings } from './utils/kas-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
+import type { ProcessHealthSnapshot } from './utils/process-health-collector';
 import {
   AgentEventType,
   ContentType,
@@ -409,6 +410,7 @@ abstract class BaseAcpClient implements SessionClient {
     name?: string
   ): Promise<{ sessionId: string; name: string }>;
   abstract sendMessage(sessionId: string, content: string): Promise<void>;
+  abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
 
   // ── Shared methods ──
 
@@ -1224,6 +1226,15 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       sessionId,
       content,
     });
+  }
+
+  sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/processHealth'),
+        payload as unknown as Record<string, unknown>
+      )
+      .catch(() => {});
   }
 
   // ── acp.Client interface ──
@@ -2282,14 +2293,20 @@ export class KasAcpClient extends BaseAcpClient {
    * Transforms the notification data into McpServerInfo[] and caches it.
    */
   private handleMcpStatusNotification(params: Record<string, unknown>): void {
-    const servers = params.servers as Array<{
-      name: string;
-      status: 'connecting' | 'connected' | 'failed' | 'disabled';
-      authType?: 'oauth';
-      tools?: Array<{ name: string; description?: string; disabled: boolean }>;
-      failedAuthorization?: boolean;
-      errorMessage?: string;
-    }> | undefined;
+    const servers = params.servers as
+      | Array<{
+          name: string;
+          status: 'connecting' | 'connected' | 'failed' | 'disabled';
+          authType?: 'oauth';
+          tools?: Array<{
+            name: string;
+            description?: string;
+            disabled: boolean;
+          }>;
+          failedAuthorization?: boolean;
+          errorMessage?: string;
+        }>
+      | undefined;
 
     if (!servers) {
       this.mcpServerCache = [];
@@ -2322,12 +2339,13 @@ export class KasAcpClient extends BaseAcpClient {
     }
 
     // Cache registry servers separately
-    const registryServers = (params.registryServers as Array<{
-      name: string;
-      version?: string;
-      description?: string;
-      enabled?: boolean;
-    }>) ?? [];
+    const registryServers =
+      (params.registryServers as Array<{
+        name: string;
+        version?: string;
+        description?: string;
+        enabled?: boolean;
+      }>) ?? [];
     this.mcpRegistryCache = registryServers.map((s) => ({
       name: s.name,
       status: 'disabled' as const,
@@ -2568,6 +2586,10 @@ export class KasAcpClient extends BaseAcpClient {
       prompt: [{ type: 'text', text: content }],
       sessionId,
     });
+  }
+
+  sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
   }
 }
 

@@ -3580,6 +3580,7 @@ pub async fn execute(
         .on_receive_dispatch(
             {
                 let session_tx = session_manager_handle.clone();
+                let telemetry_thread = Some(os.telemetry.clone());
                 async move |message: Dispatch, _cx: ConnectionTo<sacp::Client>| {
                     let method = message.method().to_string();
 
@@ -3666,6 +3667,40 @@ pub async fn execute(
                                     }
                                     return Ok(sacp::Handled::Yes);
                                 }
+                            },
+                            "_kiro.dev/telemetry/processHealth" => {
+                                use super::schema::ProcessHealthPayload;
+                                match serde_json::from_value::<ProcessHealthPayload>(notif.params().clone()) {
+                                    Ok(p) => {
+                                        if let Some(ref telemetry) = telemetry_thread {
+                                            let _ = telemetry.send_process_health_snapshot(
+                                                p.rss_mb.unwrap_or(0.0),
+                                                p.heap_used_mb.unwrap_or(0.0),
+                                                p.peak_rss_mb.unwrap_or(0.0),
+                                                p.cpu_user_pct.unwrap_or(0.0),
+                                                p.cpu_system_pct.unwrap_or(0.0),
+                                                p.last_render_ms.unwrap_or(0.0),
+                                                p.max_render_ms.unwrap_or(0.0),
+                                                p.renders_per_min.unwrap_or(0),
+                                                p.full_redraws_per_min.unwrap_or(0),
+                                                p.yoga_node_count.unwrap_or(0),
+                                                p.event_loop_p99_ms,
+                                                p.input_latency_p95_ms,
+                                                p.session_duration_sec.unwrap_or(0),
+                                                p.cpu_cores.unwrap_or(0),
+                                                p.total_memory_mb.unwrap_or(0),
+                                                p.terminal.unwrap_or_default(),
+                                                p.session_id,
+                                                p.version,
+                                                p.platform,
+                                            );
+                                        }
+                                    },
+                                    Err(e) => {
+                                        debug!("Failed to deserialize processHealth payload: {e}");
+                                    },
+                                }
+                                return Ok(sacp::Handled::Yes);
                             },
                             _ => {},
                         }

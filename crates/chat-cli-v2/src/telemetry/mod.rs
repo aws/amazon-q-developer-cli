@@ -585,6 +585,53 @@ impl TelemetryThread {
 
         Ok(self.tx.send(telemetry_event)?)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_process_health_snapshot(
+        &self,
+        rss_mb: f64,
+        heap_used_mb: f64,
+        peak_rss_mb: f64,
+        cpu_user_pct: f64,
+        cpu_system_pct: f64,
+        last_render_ms: f64,
+        max_render_ms: f64,
+        renders_per_min: i64,
+        full_redraws_per_min: i64,
+        yoga_node_count: i64,
+        event_loop_p99_ms: Option<f64>,
+        input_latency_p95_ms: Option<f64>,
+        session_duration_sec: i64,
+        cpu_cores: i64,
+        total_memory_mb: i64,
+        terminal: String,
+        session_id: Option<String>,
+        version: String,
+        platform: String,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::ProcessHealthMetric {
+            rss_mb,
+            heap_used_mb,
+            peak_rss_mb,
+            cpu_user_pct,
+            cpu_system_pct,
+            last_render_ms,
+            max_render_ms,
+            renders_per_min,
+            full_redraws_per_min,
+            yoga_node_count,
+            event_loop_p99_ms,
+            input_latency_p95_ms,
+            session_duration_sec,
+            cpu_cores,
+            total_memory_mb,
+            terminal,
+            session_id,
+            version,
+            platform,
+        });
+        Ok(self.tx.send(event)?)
+    }
 }
 
 pub(crate) async fn set_event_metadata(database: &Database, event: &mut Event) {
@@ -971,5 +1018,105 @@ mod test {
             )
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn test_process_health_metric_into_datum() {
+        use crate::telemetry::core::{
+            Event,
+            EventType,
+        };
+
+        let event = Event::new(EventType::ProcessHealthMetric {
+            rss_mb: 142.0,
+            heap_used_mb: 87.0,
+            peak_rss_mb: 205.0,
+            cpu_user_pct: 3.2,
+            cpu_system_pct: 1.1,
+            last_render_ms: 4.5,
+            max_render_ms: 12.3,
+            renders_per_min: 45,
+            full_redraws_per_min: 2,
+            yoga_node_count: 128,
+            event_loop_p99_ms: Some(8.7),
+            input_latency_p95_ms: Some(15.2),
+            session_duration_sec: 300,
+            cpu_cores: 10,
+            total_memory_mb: 32768,
+            terminal: "iTerm.app".to_string(),
+            session_id: Some("test-session-123".to_string()),
+            version: "2.4.0".to_string(),
+            platform: "darwin".to_string(),
+        });
+
+        let datum = event.into_metric_datum();
+        assert!(datum.is_some());
+
+        let datum = datum.unwrap();
+        assert_eq!(datum.metric_name(), "codewhispererterminal_processHealthSnapshot");
+        assert!(datum.passive());
+        assert_eq!(datum.value(), 1.0);
+
+        let metadata = datum.metadata();
+        assert!(!metadata.is_empty());
+
+        // Check key fields are present
+        let keys: Vec<&str> = metadata.iter().filter_map(|m| m.key()).collect();
+        assert!(keys.contains(&"codewhispererterminal_tuiVersion"));
+        assert!(keys.contains(&"codewhispererterminal_platform"));
+        assert!(keys.contains(&"codewhispererterminal_rssMb"));
+        assert!(keys.contains(&"codewhispererterminal_heapUsedMb"));
+        assert!(keys.contains(&"codewhispererterminal_cpuUserPct"));
+        assert!(keys.contains(&"codewhispererterminal_eventLoopP99Ms"));
+        assert!(keys.contains(&"codewhispererterminal_inputLatencyP95Ms"));
+
+        // Check values
+        let find_value =
+            |key: &str| -> Option<&str> { metadata.iter().find(|m| m.key() == Some(key)).and_then(|m| m.value()) };
+        assert_eq!(find_value("codewhispererterminal_tuiVersion"), Some("2.4.0"));
+        assert_eq!(find_value("codewhispererterminal_platform"), Some("darwin"));
+        assert_eq!(find_value("codewhispererterminal_rssMb"), Some("142"));
+        assert_eq!(find_value("codewhispererterminal_rendersPerMin"), Some("45"));
+    }
+
+    #[test]
+    fn test_process_health_metric_optional_fields_none() {
+        use crate::telemetry::core::{
+            Event,
+            EventType,
+        };
+
+        let event = Event::new(EventType::ProcessHealthMetric {
+            rss_mb: 100.0,
+            heap_used_mb: 50.0,
+            peak_rss_mb: 150.0,
+            cpu_user_pct: 0.0,
+            cpu_system_pct: 0.0,
+            last_render_ms: 0.0,
+            max_render_ms: 0.0,
+            renders_per_min: 0,
+            full_redraws_per_min: 0,
+            yoga_node_count: 0,
+            event_loop_p99_ms: None,
+            input_latency_p95_ms: None,
+            session_duration_sec: 60,
+            cpu_cores: 4,
+            total_memory_mb: 16384,
+            terminal: "unknown".to_string(),
+            session_id: None,
+            version: "1.0.0".to_string(),
+            platform: "linux".to_string(),
+        });
+
+        let datum = event.into_metric_datum();
+        assert!(datum.is_some());
+
+        let datum = datum.unwrap();
+        let metadata = datum.metadata();
+        let find_value =
+            |key: &str| -> Option<&str> { metadata.iter().find(|m| m.key() == Some(key)).and_then(|m| m.value()) };
+        // Optional fields should be empty string when None
+        assert_eq!(find_value("codewhispererterminal_eventLoopP99Ms"), Some(""));
+        assert_eq!(find_value("codewhispererterminal_inputLatencyP95Ms"), Some(""));
     }
 }

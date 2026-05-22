@@ -1,4 +1,3 @@
-import { logger } from '../../utils/logger';
 import type { HookInfo } from '../../stores/app-store';
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
