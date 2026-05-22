@@ -33,6 +33,9 @@ import {
 } from '../../../stores/selectors.js';
 import {
   type Segment,
+  type FileSegment,
+  type PasteSegment,
+  type ImageSegment,
   segmentWidth,
   totalWidth,
   getVisibleText,
@@ -68,6 +71,7 @@ import {
   exitSearch,
   abortSearch,
 } from '../../../utils/reverse-search.js';
+import { scoreCommands } from '../../../utils/commandScoring.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
 // editing logic. For now we import just the KillRing utility.
@@ -105,28 +109,6 @@ export interface PromptInputProps {
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
 }
-
-// FileSegment type for local use
-type FileSegment = {
-  type: 'file';
-  filePath: string;
-  content: string;
-  lineCount: number;
-};
-type PasteSegment = {
-  type: 'paste';
-  content: string;
-  lineCount: number;
-  charCount: number;
-};
-type ImageSegment = {
-  type: 'image';
-  base64: string;
-  mimeType: string;
-  width: number;
-  height: number;
-  sizeBytes: number;
-};
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
 // can import it directly. Keep the implementation tiny: join the segments
@@ -816,14 +798,10 @@ export const PromptInput = React.memo(function PromptInput({
       // Check if slash command menu is visible (has matching commands)
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
-          ? slashCommands.some(
-              (cmd) =>
-                !cmd.meta?.hidden &&
-                cmd.name
-                  .slice(1)
-                  .toLowerCase()
-                  .startsWith(commandInputValue.slice(1).toLowerCase())
-            )
+          ? scoreCommands(
+              slashCommands.filter((cmd) => !cmd.meta?.hidden),
+              commandInputValue.slice(1)
+            ).length > 0
           : false;
       const slashMenuVisible = hasMatchingSlashCommands;
       // Check if file picker menu is visible

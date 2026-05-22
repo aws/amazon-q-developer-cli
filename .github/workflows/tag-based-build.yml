@@ -1,0 +1,342 @@
+name: "1.0 Tag-Based Build"
+
+on:
+  schedule:
+    - cron: "21 6 * * *"  # nightly on main
+  push:
+    tags:
+      - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build from"
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: "Tag type (for creating a new tag)"
+        type: choice
+        required: true
+        default: "rc"
+        options:
+          - rc
+          - stable
+          - nightly
+      ref:
+        description: "Branch to tag (for rc/stable: release/X.Y.Z)"
+        type: string
+        required: false
+      dry_run:
+        description: "Dry run (compute version but don't build)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: write
+  actions: write
+
+concurrency:
+  group: tag-based-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: "us-east-1"
+
+jobs:
+  tag:
+    name: Create Tag
+    runs-on: ubuntu-latest
+    # Skip tag creation when triggered by a tag push (tag already exists)
+    if: github.event_name != 'push' && (github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli')
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+      skipped: ${{ steps.skip_check.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine mode
+        id: mode
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "mode=nightly" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=${{ inputs.increment }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if main advanced since last nightly tag
+        id: skip_check
+        if: steps.mode.outputs.mode == 'nightly'
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git tag --list 'v*-nightly.*' --sort=-version:refname | head -1)
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$(git rev-parse "$LAST_TAG")" == "$(git rev-parse HEAD)" ]]; then
+            echo "No new commits since $LAST_TAG — skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute tag
+        id: compute
+        if: steps.skip_check.outputs.skipped != 'true'
+        run: |
+          set -euo pipefail
+          MODE="${{ steps.mode.outputs.mode }}"
+          BRANCH="${{ github.ref_name }}"
+
+          case "$MODE" in
+            nightly)
+              # Find last nightly or stable tag (exclude rc tags which sort unpredictably)
+              LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -v '\-rc\.' | head -1)
+              CURRENT_VERSION="${LAST_TAG#v}"
+              [[ -z "$CURRENT_VERSION" ]] && CURRENT_VERSION="0.0.0"
+              NEW_VERSION=$(python3 .github/scripts/bump_version.py "$CURRENT_VERSION" "patch" "nightly")
+              ;;
+            rc)
+              # Derive version from branch name: release/2.5.0 → 2.5.0
+              BASE_VERSION="${BRANCH#release/}"
+              # Count existing RC tags for this version
+              LAST_RC=$(git tag --list "v${BASE_VERSION}-rc.*" --sort=-version:refname | head -1)
+              if [[ -z "$LAST_RC" ]]; then
+                RC_NUM=1
+              else
+                RC_NUM=$(echo "$LAST_RC" | grep -oE 'rc.[0-9]+' | sed 's/rc.//')
+                RC_NUM=$((RC_NUM + 1))
+              fi
+              NEW_VERSION="${BASE_VERSION}-rc.${RC_NUM}"
+              ;;
+            stable)
+              # Derive version from branch name: release/2.5.0 → 2.5.0
+              BASE_VERSION="${BRANCH#release/}"
+              NEW_VERSION="$BASE_VERSION"
+              ;;
+          esac
+
+          TAG="v${NEW_VERSION}"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed: mode=$MODE branch=$BRANCH → $TAG"
+
+      - name: Push tag
+        if: steps.skip_check.outputs.skipped != 'true' && inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.compute.outputs.tag }}"
+
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete existing tag only for stable retags (nightly/rc should never collide)
+          if [[ "${{ steps.mode.outputs.mode }}" == "stable" ]]; then git push origin ":refs/tags/$TAG" 2>/dev/null || true; fi
+
+          git tag -f "$TAG"
+          git push origin "$TAG"
+          echo "Tagged $(git rev-parse HEAD) as $TAG"
+
+  prepare:
+    name: Derive Release Metadata
+    needs: [tag]
+    # Run if: tag push with created=true (skip deletions) OR tag job succeeded
+    if: |
+      always() &&
+      ((github.event_name == 'push' && github.event.created) || (needs.tag.result == 'success' && needs.tag.outputs.skipped != 'true'))
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      channel: ${{ steps.meta.outputs.channel }}
+      release_type: ${{ steps.meta.outputs.release_type }}
+      environment: ${{ steps.meta.outputs.environment }}
+      build_timestamp: ${{ steps.meta.outputs.build_timestamp }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      branch_name: ${{ steps.meta.outputs.branch_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive metadata from tag
+        id: meta
+        run: |
+          set -euo pipefail
+
+          # Resolve tag: from tag job output, or from the push event ref
+          if [[ -n "${{ needs.tag.outputs.tag }}" ]]; then
+            TAG="${{ needs.tag.outputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+
+          # Determine channel (downstream builds use this for KAS bundling and autocomplete routing)
+          if [[ "$VERSION" == *"-nightly."* ]]; then
+            CHANNEL="nightly"
+          else
+            CHANNEL="stable"
+          fi
+
+          RELEASE_TYPE="${CHANNEL}-tag-driven"
+
+          # Environment: always gamma + prod (autocomplete repo handles beta/prod routing)
+          ENVIRONMENT='["gamma", "prod"]'
+
+          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          # Derive branch from tag
+          if [[ "$VERSION" == *"-nightly."* ]]; then
+            BRANCH_NAME="main"
+          else
+            BASE_VERSION=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+            if git ls-remote --heads origin "release/$BASE_VERSION" | grep -q .; then
+              BRANCH_NAME="release/$BASE_VERSION"
+            else
+              BRANCH_NAME="main"
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "release_type=$RELEASE_TYPE" >> "$GITHUB_OUTPUT"
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "build_timestamp=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Tag=$TAG Version=$VERSION Channel=$CHANNEL"
+
+  generate_embeddings:
+    name: Generate Autodocs Embeddings
+    needs: prepare
+    uses: ./.github/workflows/generate-embeddings.yml
+    secrets: inherit
+    with:
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_darwin:
+    name: Darwin Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-darwin.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_linux:
+    name: Linux Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_windows:
+    name: Windows Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  dispatch_autocomplete:
+    name: Trigger Autocomplete Build
+    needs: [prepare, build_darwin, build_linux, build_windows]
+    runs-on: ubuntu-latest
+    environment: gamma
+    if: |
+      needs.build_darwin.result == 'success' &&
+      needs.build_linux.result == 'success' &&
+      needs.build_windows.result == 'success'
+    steps:
+      - name: Dispatch to autocomplete
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
+          script: |
+            const isNightly = '${{ needs.prepare.outputs.channel }}' === 'nightly';
+            const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
+
+            const inputs = {
+              release_quality: '${{ needs.prepare.outputs.channel }}',
+              chat_binary_commit: '${{ needs.prepare.outputs.commit_sha }}',
+              chat_version: '${{ needs.prepare.outputs.version }}',
+              chat_build_timestamp: '${{ needs.prepare.outputs.build_timestamp }}',
+              trigger_source: 'chat-build'
+            };
+
+            core.info(`Dispatching ${workflowId} with ${JSON.stringify(inputs)}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              workflow_id: workflowId,
+              ref: '${{ needs.prepare.outputs.branch_name }}',
+              inputs: inputs
+            });
+
+  summary:
+    name: Build Summary
+    needs: [tag, prepare, build_darwin, build_linux, build_windows, dispatch_autocomplete]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Summary
+        run: |
+          {
+            echo "## Tag-Based Build"
+            echo
+            if [[ "${{ needs.tag.outputs.skipped }}" == "true" ]]; then
+              echo "⏭️ **Skipped** — no new commits since last nightly tag."
+            else
+              echo "| Property | Value |"
+              echo "|----------|-------|"
+              echo "| **Version** | ${{ needs.prepare.outputs.version }} |"
+              echo "| **Channel** | ${{ needs.prepare.outputs.channel }} |"
+              echo "| **Commit** | \`${{ needs.prepare.outputs.commit_sha }}\` |"
+              echo "| **Timestamp** | ${{ needs.prepare.outputs.build_timestamp }} |"
+              echo
+              echo "### Build Results"
+              echo "| Platform | Status |"
+              echo "|----------|--------|"
+              echo "| Darwin | ${{ needs.build_darwin.result == 'success' && '✅' || '❌' }} |"
+              echo "| Linux | ${{ needs.build_linux.result == 'success' && '✅' || '❌' }} |"
+              echo "| Windows | ${{ needs.build_windows.result == 'success' && '✅' || '❌' }} |"
+              echo "| Autocomplete | ${{ needs.dispatch_autocomplete.result == 'success' && '✅' || needs.dispatch_autocomplete.result == 'skipped' && '⏭️' || '❌' }} |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

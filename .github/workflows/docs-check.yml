@@ -13,7 +13,9 @@ concurrency:
 jobs:
   pr-assist:
     if: |
-      (github.event_name == 'pull_request' && github.actor != 'github-actions[bot]') ||
+      (github.event_name == 'pull_request' &&
+       github.actor != 'github-actions[bot]' &&
+       !contains(github.event.pull_request.labels.*.name, 'no-changelog')) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        (startsWith(github.event.comment.body, '/docs') || startsWith(github.event.comment.body, '/changelog')) &&
@@ -109,27 +111,11 @@ jobs:
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
         run: |
-          PROMPT="Review the code changes in this branch (git diff origin/main...HEAD) and determine if a changelog entry is needed.
+          PROMPT="Read .changes/VISIBILITY.md FIRST — if the STOP CHECK applies, say 'Skipping' and STOP.
 
-          Rules:
-          - User-facing changes (new features, behavior changes, bug fixes users would notice, UX improvements visible to users) need a changelog entry.
-          - Internal changes (refactoring, tests, CI, KAS/Kiro Agent Server features) do NOT need a changelog entry.
-          - KAS is behind a feature gate and not customer-facing — skip it.
+          Otherwise, review the code changes (git diff origin/main...HEAD) and determine if a changelog entry is needed.
 
-          If a changelog entry is needed, create a JSON file in .changes/unreleased/ with this format:
-          {
-            \"type\": \"added|changed|fixed|removed|deprecated|security\",
-            \"description\": \"Concise, customer-facing description\"
-          }
-
-          Style guidelines for the description:
-          - Keep it short — one sentence, under 100 characters when possible
-          - Start with a verb (Add, Fix, Update, Remove)
-          - Focus on what users will notice, not internal details
-          - Mention the specific feature or command affected
-          - No trailing period
-
-          Filename format: YYYYMMDD-HHMM-type-short-description.json
+          Read .changes/GUIDELINES.md for format rules. Use ./scripts/new-change.sh <type> \"<description>\" to create entries.
 
           If no changelog is needed, say so and stop."
 
@@ -145,6 +131,22 @@ jobs:
           echo "=== Changelog agent output ==="
           cat /tmp/changelog-agent-output.txt
 
+      - name: Lint generated changelog
+        if: |
+          steps.check.outputs.skip != 'true' &&
+          (steps.check.outputs.has_changelog == 'false' || steps.check.outputs.trigger == 'changelog')
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          NEW_FILES=$(git ls-files --others --exclude-standard .changes/unreleased/*.json)
+          if [ -n "$NEW_FILES" ]; then
+            if ! ./scripts/lint-changelog.sh $NEW_FILES; then
+              echo "Lint failed — asking agent to fix..."
+              kiro-cli chat --no-interactive --trust-all-tools --model auto \
+                "The changelog entry in $NEW_FILES failed lint. Read .changes/GUIDELINES.md for the rules, then fix the file in place." 2>&1
+            fi
+          fi
+
       - name: Generate docs
         if: |
           steps.check.outputs.skip != 'true' &&
@@ -152,7 +154,9 @@ jobs:
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
         run: |
-          PROMPT="Review the code changes in this branch against origin/main and update documentation in autodocs-v2/docs/ if needed. IMPORTANT: Use 'git diff origin/main...HEAD' (three-dot) to see only this branch's changes."
+          PROMPT="Read .changes/VISIBILITY.md FIRST — if the STOP CHECK applies, say 'Skipping' and STOP.
+
+          Otherwise, review the code changes in this branch against origin/main and update documentation in autodocs-v2/docs/ if needed. Use 'git diff origin/main...HEAD' (three-dot) to see only this branch's changes."
 
           if [ -f /tmp/user_comment.txt ] && grep -q "^/docs" /tmp/user_comment.txt; then
             EXTRA=$(sed 's|^/docs||' /tmp/user_comment.txt)
@@ -171,19 +175,19 @@ jobs:
         id: generated
         run: |
           echo "=== Files modified by agents ==="
-          git add -N autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
-          git diff --name-only || true
+          git add autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
+          git diff --cached --name-only || true
           echo ""
           CHANGES=""
-          if git diff --name-only | grep -q "autodocs-v2/"; then
+          if git diff --cached --name-only | grep -q "autodocs-v2/"; then
             CHANGES="docs"
             echo "Docs changes detected:"
-            git diff --name-only -- autodocs-v2/
+            git diff --cached --name-only -- autodocs-v2/
           fi
-          if git diff --name-only | grep -q ".changes/unreleased/"; then
+          if git diff --cached --name-only | grep -q ".changes/unreleased/"; then
             CHANGES="${CHANGES:+$CHANGES }changelog"
             echo "Changelog changes detected:"
-            git diff --name-only -- .changes/unreleased/
+            git diff --cached --name-only -- .changes/unreleased/
           fi
           if [ -n "$CHANGES" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -206,29 +210,11 @@ jobs:
         if: steps.generated.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WHAT: ${{ steps.generated.outputs.what }}
         run: |
-          BODY="🤖 **Auto-generated PR artifacts**"
+          FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ .changes/unreleased/ 2>/dev/null || true)
+          BODY="🤖 Updated docs/changelog artifacts:
+          $(echo "$FILES" | sed 's/^/- /')
 
-          DOC_FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ 2>/dev/null || true)
-          if [ -n "$DOC_FILES" ]; then
-            BODY="$BODY
-
-          📝 **Documentation:**
-          $(echo "$DOC_FILES" | sed 's/^/- /')"
-          fi
-
-          CL_FILES=$(git diff --name-only HEAD~1 -- .changes/unreleased/ 2>/dev/null || true)
-          if [ -n "$CL_FILES" ]; then
-            BODY="$BODY
-
-          📋 **Changelog:**
-          $(echo "$CL_FILES" | sed 's/^/- /')
-          $(cat .changes/unreleased/$(echo "$CL_FILES" | head -1 | xargs basename) 2>/dev/null | python3 -c "import json,sys; e=json.load(sys.stdin); print(f'> [{e[\"type\"]}] {e[\"description\"]}')" 2>/dev/null || true)"
-          fi
-
-          BODY="$BODY
-
-          Please review the generated changes. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
+          Please review. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
 
           gh pr comment "${{ steps.pr.outputs.number }}" --body "$BODY"

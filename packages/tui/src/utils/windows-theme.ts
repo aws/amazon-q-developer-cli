@@ -1,12 +1,7 @@
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-
-interface DetectionResult {
-  theme: 'dark' | 'light';
-  method: string;
-  confidence: 'high' | 'medium' | 'low';
-}
+import type { DetectionResult } from './terminal-theme.js';
 
 interface WTColorScheme {
   name: string;

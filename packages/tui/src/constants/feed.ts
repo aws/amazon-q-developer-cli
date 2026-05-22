@@ -21,7 +21,6 @@ export interface BaseFeedEntry {
 
 export interface AnnouncementEntry extends BaseFeedEntry {
   type: FeedEntryType.Announcement;
-  content: string;
   maxShowCount: number;
   priority: number;
   maxLines: number;
@@ -34,7 +33,7 @@ export type FeedEntry = AnnouncementEntry;
 export interface ReleaseNotes {
   version: string;
   date: string;
-  /** Markdown body: `## What's new in X.Y.Z` + bullet list of changes. */
+  /** Full markdown body with all change types grouped. */
   content: string;
 }
 
@@ -65,28 +64,90 @@ const TYPE_LABELS: Record<string, string> = {
   changed: 'Changed',
   security: 'Security',
   deprecated: 'Deprecated',
+  removed: 'Removed',
 };
 
+/** Stable display order for change types. */
+const TYPE_ORDER = ['added', 'changed', 'fixed', 'security', 'deprecated', 'removed'];
+
+/** Default Unicode icons for each change type. */
+export const UNICODE_ICONS: Record<string, string> = {
+  added: '✦',
+  changed: '~',
+  fixed: '✓',
+  security: '⛨',
+  deprecated: '▽',
+  removed: '✗',
+};
+
+/** ASCII-safe fallback icons. */
+export const ASCII_ICONS: Record<string, string> = {
+  added: '-',
+  changed: '-',
+  fixed: '-',
+  security: '-',
+  deprecated: '-',
+  removed: '-',
+};
+
+/** Verb patterns to strip from descriptions (hoisted for performance). */
+const VERB_PATTERNS: Record<string, RegExp> = {
+  added: /^add(?:ed)?\b[:\s]*/i,
+  fixed: /^fix(?:ed)?\b[:\s]*/i,
+  changed: /^change(?:d)?\b[:\s]*/i,
+  deprecated: /^deprecate(?:d)?\b[:\s]*/i,
+  removed: /^remove(?:d)?\b[:\s]*/i,
+};
+
+export interface RenderOptions {
+  /** Icon map for bullet prefixes. Defaults to UNICODE_ICONS. */
+  icons?: Record<string, string>;
+  /** If provided, only these change types are included. */
+  onlyTypes?: string[];
+}
+
 /**
- * Convert a Rust feed release entry into a markdown-formatted announcement.
+ * Convert a Rust feed release entry into grouped markdown.
  */
-function releaseToContent(entry: RustFeedRelease): string {
-  const lines: string[] = [`## What's new in ${entry.version}`];
+export function releaseToContent(
+  entry: RustFeedRelease,
+  options?: RenderOptions
+): string {
+  const icons = options?.icons ?? UNICODE_ICONS;
+  const lines: string[] = [`**✨ What's new in ${entry.version}**`];
   const changes = entry.changes ?? [];
-  const sorted = [...changes].sort((a, b) => a.type.localeCompare(b.type));
-  for (const change of sorted) {
-    const label = TYPE_LABELS[change.type] ?? change.type;
-    // Strip PR links like " - [#123](url)"
-    const desc = change.description.replace(/ - \[#\d+\]\([^)]+\)/, '');
-    lines.push(`- **${label}**: ${desc}`);
+
+  // Group by type
+  const groups = new Map<string, string[]>();
+  for (const change of changes) {
+    if (options?.onlyTypes && !options.onlyTypes.includes(change.type))
+      continue;
+    let desc = change.description.replace(/ - \[#\d+\]\([^)]+\)/, '');
+    const pattern = VERB_PATTERNS[change.type];
+    if (pattern && pattern.test(desc)) {
+      desc = desc.replace(pattern, '');
+    }
+    const list = groups.get(change.type) ?? [];
+    list.push(desc);
+    groups.set(change.type, list);
   }
+
+  for (const type of TYPE_ORDER) {
+    const items = groups.get(type);
+    if (!items) continue;
+    const label = TYPE_LABELS[type] ?? type;
+    const icon = icons[type] ?? '-';
+    lines.push('', `**${label}**`);
+    for (const item of items) {
+      lines.push(`${icon} ${item}`);
+    }
+  }
+
   return lines.join('\n');
 }
 
 /**
  * Read raw feed JSON from file path (KIRO_FEED_FILE).
- * In production the Rust launcher writes feed.json to the data directory.
- * In dev/test mode, Knight Rider sets KIRO_FEED_FILE to the repo's feed.json.
  */
 function readFeedRaw(): string | undefined {
   const filePath = process.env.KIRO_FEED_FILE;
@@ -101,7 +162,6 @@ function readFeedRaw(): string | undefined {
 
 /**
  * Parse feed data and return non-hidden releases with changes.
- * Returns [] on missing/invalid data. Shared by announcement + /changelog.
  */
 function parseReleases(): RustFeedRelease[] {
   const raw = readFeedRaw();
@@ -120,27 +180,38 @@ function parseReleases(): RustFeedRelease[] {
 
 /**
  * Return the most recent N releases as markdown-rendered notes (newest first).
- * No limit = all. Matches V1 `/changelog` when called with limit=2.
+ * Pass `options.icons` to control bullet icons (e.g. ASCII_ICONS for accessibility).
  */
-export function getRecentReleases(limit?: number): ReleaseNotes[] {
+export function getRecentReleases(
+  limit?: number,
+  options?: RenderOptions
+): ReleaseNotes[] {
   const releases = parseReleases();
   const sliced = limit != null ? releases.slice(0, limit) : releases;
   return sliced.map((r) => ({
     version: r.version,
     date: r.date,
-    content: releaseToContent(r),
+    content: releaseToContent(r, options),
   }));
 }
 
 /**
- * Parse KIRO_FEED_JSON and convert the latest visible releases into
- * announcement entries. Returns at most 1 entry (the latest release).
+ * Get the content for the announcement (latest release).
+ * Called at render time with current icon set.
+ */
+export function getAnnouncementContent(options?: RenderOptions): string | null {
+  const releases = parseReleases();
+  if (releases.length === 0) return null;
+  return releaseToContent(releases[0]!, options);
+}
+
+/**
+ * Parse feed and return announcement metadata (without pre-rendered content).
  */
 function parseFeedFromEnv(): FeedEntry[] {
   const releases = parseReleases();
   if (releases.length === 0) return [];
 
-  // Take the latest release (first non-hidden with changes)
   const latest = releases[0]!;
   return [
     {
@@ -148,7 +219,6 @@ function parseFeedFromEnv(): FeedEntry[] {
       id: `release-${latest.version}`,
       date: latest.date,
       version: latest.version,
-      content: releaseToContent(latest),
       maxShowCount: 3,
       priority: 1,
       maxLines: 8,

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Ctrl+C failing to clear history-recalled text"
+}

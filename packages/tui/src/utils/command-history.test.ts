@@ -151,7 +151,15 @@ describe('CommandHistory', () => {
     expect(h.getAll()).toEqual([]);
     expect(h.navigate('up')).toBeNull();
 
-    try { rmSync(fileA); } catch { /* ignore */ }
-    try { rmSync(fileB); } catch { /* ignore */ }
+    try {
+      rmSync(fileA);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(fileB);
+    } catch {
+      /* ignore */
+    }
   });
 });

@@ -13,7 +13,11 @@ import type { AvailableCommand } from '../types/commands.js';
 import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
 import { Settings } from '../constants/settings.js';
-import { readStringSetting, readCliSettings, writeCliSettings } from '../utils/cli-settings.js';
+import {
+  readStringSetting,
+  readCliSettings,
+  writeCliSettings,
+} from '../utils/cli-settings.js';
 
 export interface SettingsSubcommand {
   /** Machine value passed as `/settings <value>` */

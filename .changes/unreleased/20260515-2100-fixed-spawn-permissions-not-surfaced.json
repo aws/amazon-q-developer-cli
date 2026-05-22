@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed /spawn background sessions getting stuck when they need tool permissions — permission request dialog now surfaces correctly"
+  "description": "/spawn background sessions getting stuck when they need tool permissions — permission request dialog now surfaces correctly"
 }

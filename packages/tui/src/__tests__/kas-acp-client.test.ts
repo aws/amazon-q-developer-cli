@@ -143,11 +143,9 @@ const MockKiroClient = class {
     capturedPermissionHandler = handler;
     return { dispose: mockPermissionRequestDispose };
   });
-  onExtNotification = mock(
-    (_method: string, _handler: (params: Record<string, unknown>) => void) => {
-      return { dispose: () => {} };
-    }
-  );
+  onExtNotification = mock((_method: string, _handler: any) => {
+    return { dispose: mock(() => {}) };
+  });
   constructor(config: any) {
     capturedKiroClientConfig = config;
   }
@@ -1936,5 +1934,171 @@ describe('KasAcpClient — session event handling', () => {
     // (even if findModelConfigOption doesn't match the exact shape,
     // the code path is exercised)
     expect((client as any).modelOptions.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── /mcp command (push model) ──
+
+describe('mcp command (push model)', () => {
+  it('executeCommand mcp returns cached servers from notification', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    // Simulate receiving _kiro/mcp/status notification
+    (client as any).handleMcpStatusNotification({
+      sessionId: 'kas-session-1',
+      servers: [
+        {
+          name: 'test-server',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+        {
+          name: 'failed-server',
+          status: 'failed',
+          failedAuthorization: false,
+          errorMessage: 'err',
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('2 configured servers');
+    const servers = (result.data as any).servers;
+    expect(servers).toHaveLength(2);
+    expect(servers[0].name).toBe('test-server');
+    expect(servers[0].status).toBe('running');
+    expect(servers[0].toolCount).toBe(1);
+    expect(servers[1].status).toBe('failed');
+  });
+
+  it('executeCommand mcp returns empty when no notification received', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('0 configured servers');
+    expect((result.data as any).servers).toHaveLength(0);
+  });
+
+  it('maps connected status to running', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 's', status: 'connected', tools: [] }],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect((result.data as any).servers[0].status).toBe('running');
+  });
+
+  it('maps connecting status to loading', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 's', status: 'connecting' }],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect((result.data as any).servers[0].status).toBe('loading');
+  });
+
+  it('maps failed with failedAuthorization to auth-required', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 's',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'auth',
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect((result.data as any).servers[0].status).toBe('auth-required');
+  });
+
+  it('singular message for 1 server', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 's', status: 'disabled' }],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect(result.message).toBe('1 configured server');
+  });
+
+  it('/mcp list returns registry servers from notification', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
+      registryServers: [
+        {
+          name: 'registry-server-1',
+          version: '1.0.0',
+          description: 'A registry server',
+          enabled: true,
+        },
+        { name: 'registry-server-2', version: '2.0.0', enabled: false },
+      ],
+    });
+
+    const result = await client.executeCommand({
+      command: 'mcp',
+      args: { value: 'list' },
+    } as any);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('1 configured, 2 registry servers');
+    expect((result.data as any).mode).toBe('list');
+    expect((result.data as any).servers).toHaveLength(1);
+    expect((result.data as any).registryServers).toHaveLength(2);
+    expect((result.data as any).registryServers[0]).toEqual({
+      name: 'registry-server-1',
+      status: 'disabled',
+      toolCount: 0,
+      version: '1.0.0',
+      description: 'A registry server',
+      enabled: true,
+    });
+    expect((result.data as any).registryServers[1].enabled).toBe(false);
+  });
+
+  it('/mcp does NOT return registry servers', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
+      registryServers: [{ name: 'registry-server', version: '1.0.0' }],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toBe('1 configured server');
+    expect((result.data as any).servers).toHaveLength(1);
+    expect((result.data as any).registryServers).toBeUndefined();
+    expect((result.data as any).mode).toBeUndefined();
   });
 });

@@ -242,3 +242,28 @@ pub struct TerminateSessionRequest {
 /// Response for session terminate
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 pub struct TerminateSessionResponse {}
+
+/// Process health telemetry payload sent from TUI every 60s.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessHealthPayload {
+    pub rss_mb: Option<f64>,
+    pub heap_used_mb: Option<f64>,
+    pub peak_rss_mb: Option<f64>,
+    pub cpu_user_pct: Option<f64>,
+    pub cpu_system_pct: Option<f64>,
+    pub last_render_ms: Option<f64>,
+    pub max_render_ms: Option<f64>,
+    pub renders_per_min: Option<i64>,
+    pub full_redraws_per_min: Option<i64>,
+    pub yoga_node_count: Option<i64>,
+    pub event_loop_p99_ms: Option<f64>,
+    pub input_latency_p95_ms: Option<f64>,
+    pub session_duration_sec: Option<i64>,
+    pub cpu_cores: Option<i64>,
+    pub total_memory_mb: Option<i64>,
+    pub terminal: Option<String>,
+    pub session_id: Option<String>,
+    pub version: String,
+    pub platform: String,
+}

@@ -788,7 +788,12 @@ impl RealApiClient {
                 },
             };
             ProfileResolver::for_social(profile)
-        } else if !is_custom_endpoint(database) {
+        } else {
+            // Always populate the profile ARN, including for custom (non-prod) endpoints.
+            // KRS now requires `profileArn` on every GenerateAssistantResponse call, so the
+            // legacy RTS-only behavior of suppressing it on alpha/gamma endpoints would
+            // cause ValidationException. Pre-prod testing accounts must have a profile
+            // available either in the local DB or via list_available_profiles().
             let profile = match database.get_auth_profile() {
                 Ok(profile) => profile,
                 Err(err) => {
@@ -797,9 +802,6 @@ impl RealApiClient {
                 },
             };
             ProfileResolver::new(profile)
-        } else {
-            debug!("Custom endpoint detected, skipping profile ARN");
-            ProfileResolver::new(None)
         };
 
         Ok(Self {
@@ -1261,28 +1263,25 @@ impl RealApiClient {
         fs: &Fs,
         database: &mut Database,
     ) -> Result<(), ApiClientError> {
-        let use_profile = !is_custom_endpoint(database);
-        if use_profile {
-            match database.get_auth_profile() {
-                Ok(profile) => {
-                    tracing::debug!("Refreshed auth profile: {:?}", profile);
+        // Always refresh the profile, including for custom (non-prod) endpoints — KRS
+        // requires profileArn on every GenerateAssistantResponse call regardless of stage.
+        match database.get_auth_profile() {
+            Ok(profile) => {
+                tracing::debug!("Refreshed auth profile: {:?}", profile);
 
-                    if let Some(profile) = profile {
-                        let endpoint = Endpoint::configured_value(database);
-                        tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
+                if let Some(profile) = profile {
+                    let endpoint = Endpoint::configured_value(database);
+                    tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
 
-                        let new_client = Self::new(env, fs, database, Some(endpoint)).await?;
-                        // Explicitly set profile in case Self::new() skipped the DB read (e.g., test mode)
-                        new_client.resolve_profile.set(profile);
-                        *self = new_client;
-                    }
-                },
-                Err(err) => {
-                    error!("Failed to refresh auth profile: {err}");
-                },
-            }
-        } else {
-            debug!("Custom endpoint detected, skipping profile refresh");
+                    let new_client = Self::new(env, fs, database, Some(endpoint)).await?;
+                    // Explicitly set profile in case Self::new() skipped the DB read (e.g., test mode)
+                    new_client.resolve_profile.set(profile);
+                    *self = new_client;
+                }
+            },
+            Err(err) => {
+                error!("Failed to refresh auth profile: {err}");
+            },
         }
         Ok(())
     }
@@ -1305,10 +1304,6 @@ impl RealApiClient {
     pub fn get_profile(&self) -> Option<AuthProfile> {
         self.resolve_profile.profile_if_known()
     }
-}
-
-fn is_custom_endpoint(database: &Database) -> bool {
-    database.settings.get(Setting::ApiCodeWhispererService).is_some()
 }
 
 fn json_to_document(value: &serde_json::Value) -> aws_smithy_types::Document {

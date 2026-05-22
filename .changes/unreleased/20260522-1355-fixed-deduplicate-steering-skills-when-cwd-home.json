@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Steering files and skills no longer injected twice into context when working directory equals home directory"
+}

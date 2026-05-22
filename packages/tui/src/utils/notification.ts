@@ -3,6 +3,7 @@
  * crates/chat-cli/src/cli/chat/util/mod.rs to TypeScript.
  */
 
+import { isTerminalFocused } from './focus-tracker.js';
 import { isGhostty } from './terminal-detection.js';
 
 export type NotificationMethod = 'bel' | 'osc9';
@@ -58,6 +59,8 @@ export function playNotification(
   method: NotificationMethod,
   message?: string
 ): void {
+  if (isTerminalFocused()) return;
+
   if (method === 'bel') {
     process.stdout.write('\x07');
   } else {

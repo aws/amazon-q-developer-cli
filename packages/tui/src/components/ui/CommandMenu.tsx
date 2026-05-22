@@ -32,6 +32,7 @@ import {
   buildAtMenuItems,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
+import { scoreCommands } from '../../utils/commandScoring.js';
 
 export const CommandMenu: React.FC = () => {
   const { getColor, colors: themeColors } = useTheme();
@@ -164,19 +165,20 @@ export const CommandMenu: React.FC = () => {
   const filteredCommands = useMemo(() => {
     if (activeTrigger?.key !== '/' || commandInputValue.includes(' '))
       return [];
-    const partial = commandInputValue.slice(1).toLowerCase();
-    const matches = slashCommands.filter((cmd) =>
-      cmd.name.slice(1).toLowerCase().startsWith(partial)
+    const partial = commandInputValue.slice(1);
+    const scored = scoreCommands(slashCommands, partial);
+    // Preserve existing behavior: regular commands first, then prompts/skills; hide hidden commands
+    const cmds = scored.filter(
+      (s) =>
+        s.command.meta?.type !== 'prompt' &&
+        s.command.meta?.type !== 'skill' &&
+        !s.command.meta?.hidden
     );
-    const cmds = matches.filter(
-      (c) =>
-        c.meta?.type !== 'prompt' && c.meta?.type !== 'skill' && !c.meta?.hidden
+    const promptCmds = scored.filter(
+      (s) =>
+        s.command.meta?.type === 'prompt' || s.command.meta?.type === 'skill'
     );
-    const promptCmds = matches.filter(
-      (c) => c.meta?.type === 'prompt' || c.meta?.type === 'skill'
-    );
-    cmds.sort((a, b) => a.name.localeCompare(b.name));
-    return [...cmds, ...promptCmds];
+    return [...cmds.map((s) => s.command), ...promptCmds.map((s) => s.command)];
   }, [commandInputValue, slashCommands, activeTrigger]);
 
   // No shadow text for top-level command menu — the dropdown handles that.

@@ -23,4 +23,13 @@ mkdir -p .changes/unreleased
 
 jq -n --arg type "$TYPE" --arg desc "$DESC" '{type: $type, description: $desc}' > "$FILE"
 
+# Validate the new entry
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$SCRIPT_DIR/lint-changelog.sh" ]; then
+  if ! "$SCRIPT_DIR/lint-changelog.sh" "$FILE"; then
+    rm -f "$FILE"
+    exit 1
+  fi
+fi
+
 echo "Created: $FILE"

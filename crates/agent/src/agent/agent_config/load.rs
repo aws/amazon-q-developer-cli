@@ -144,8 +144,24 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     // Add the global skills glob rooted at the user's Kiro home directory
     // (honors `KIRO_HOME` when set, falling back to `~/.kiro`). We compute
     // this at load time rather than as a static `~/.kiro/...` entry so the
-    // override takes effect.
-    if let Some(home) = system.home() {
+    // override takes effect. Skip if it would duplicate the workspace-relative
+    // skill path already in DEFAULT_AGENT_RESOURCES.
+    let global_kiro_home_canonical = system
+        .home()
+        .map(|h| crate::agent::util::directories::kiro_home_dir_in(&h))
+        .and_then(|p| p.canonicalize().ok());
+    let workspace_kiro_dir_canonical = system
+        .cwd()
+        .ok()
+        .map(|c| c.join(".kiro"))
+        .and_then(|p| p.canonicalize().ok());
+
+    let skills_is_duplicate = global_kiro_home_canonical
+        .as_ref()
+        .zip(workspace_kiro_dir_canonical.as_ref())
+        .is_some_and(|(g, w)| g == w);
+
+    if !skills_is_duplicate && let Some(home) = system.home() {
         let kiro_home = crate::agent::util::directories::kiro_home_dir_in(&home);
         let skills_pattern = format!("skill://{}/skills/*/SKILL.md", kiro_home.display());
         if let Ok(resource) = skills_pattern.parse() {
@@ -154,7 +170,7 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
     }
 
     // Add global steering if exists
-    if let Some(home) = system.home() {
+    let global_steering_canonical = system.home().and_then(|home| {
         let global_steering = crate::agent::util::directories::kiro_home_dir_in(&home).join("steering");
         if global_steering.exists() {
             resources.push(
@@ -162,18 +178,28 @@ pub fn build_default_agent(system: &dyn SystemProvider) -> LoadedAgentConfig {
                     .parse()
                     .expect("valid resource"),
             );
+            global_steering.canonicalize().ok()
+        } else {
+            None
         }
-    }
+    });
 
-    // Add workspace steering if exists
+    // Add workspace steering if exists, deduplicating against global steering
     if let Ok(cwd) = system.cwd() {
         let workspace_steering = cwd.join(".kiro").join("steering");
         if workspace_steering.exists() {
-            resources.push(
-                format!("file://{}/**/*.md", workspace_steering.display())
-                    .parse()
-                    .expect("valid resource"),
-            );
+            let is_duplicate = workspace_steering
+                .canonicalize()
+                .ok()
+                .zip(global_steering_canonical.as_ref())
+                .is_some_and(|(w, g)| w == *g);
+            if !is_duplicate {
+                resources.push(
+                    format!("file://{}/**/*.md", workspace_steering.display())
+                        .parse()
+                        .expect("valid resource"),
+                );
+            }
         }
 
         if cwd.join("AmazonQ.md").exists() {
@@ -801,6 +827,60 @@ mod tests {
             my_agents[0].tools(),
             vec!["*"],
             "first file alphabetically should take precedence"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_no_duplicate_steering_when_cwd_equals_home() {
+        // Set up a TestBase where cwd == home so global and workspace steering
+        // resolve to the same directory.
+        let test_dir = super::super::super::util::test::TestDir::new();
+        let base_path = test_dir.path().to_owned();
+        let provider = super::super::super::util::test::TestProvider::new_with_base(&base_path);
+        // cwd defaults to base_path in new_with_base, same as home
+
+        // Create .kiro/steering with a test file
+        let steering_dir = base_path.join(".kiro").join("steering");
+        tokio::fs::create_dir_all(&steering_dir).await.unwrap();
+        tokio::fs::write(steering_dir.join("test.md"), "# Test steering")
+            .await
+            .unwrap();
+
+        let config = build_default_agent(&provider);
+        let resources: Vec<&str> = config.resources().into_iter().map(|r| r.as_ref()).collect();
+        let steering: Vec<&&str> = resources.iter().filter(|r| r.contains("steering")).collect();
+
+        assert_eq!(
+            steering.len(),
+            1,
+            "when cwd == home, steering should appear only once, got: {steering:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_no_duplicate_skills_when_cwd_equals_home() {
+        // Set up a TestBase where cwd == home so global and workspace skills
+        // resolve to the same directory.
+        let test_dir = super::super::super::util::test::TestDir::new();
+        let base_path = test_dir.path().to_owned();
+        let provider = super::super::super::util::test::TestProvider::new_with_base(&base_path);
+
+        // Create .kiro/skills/my-skill/SKILL.md
+        let skill_dir = base_path.join(".kiro").join("skills").join("my-skill");
+        tokio::fs::create_dir_all(&skill_dir).await.unwrap();
+        tokio::fs::write(skill_dir.join("SKILL.md"), "# Skill").await.unwrap();
+
+        let config = build_default_agent(&provider);
+        let resources: Vec<&str> = config.resources().into_iter().map(|r| r.as_ref()).collect();
+        let skills: Vec<&&str> = resources
+            .iter()
+            .filter(|r| r.contains("skills") && r.contains("SKILL.md"))
+            .collect();
+
+        assert_eq!(
+            skills.len(),
+            1,
+            "when cwd == home, skills should appear only once, got: {skills:?}"
         );
     }
 }

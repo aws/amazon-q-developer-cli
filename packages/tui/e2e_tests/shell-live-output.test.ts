@@ -73,15 +73,18 @@ describe('Shell live output streaming', () => {
 
     // Poll the store until >5 lines have streamed so tailing behavior is observable.
     let sawLiveOutput = false;
-    let capturedLines: string[] = [];
+    let capturedChunks: string[][] = [];
     const pollStart = Date.now();
     while (Date.now() - pollStart < 30000) {
       const store = await testCase.getStore();
-      const lo = (store.liveOutputs as any)?.['tool-live-1'] as string[] | undefined;
-      if (lo && lo.length > 5) {
-        sawLiveOutput = true;
-        capturedLines = lo;
-        break;
+      const lo = (store.liveOutputs as any)?.['tool-live-1'] as string[][] | undefined;
+      if (lo && lo.length > 0) {
+        const totalLines = lo.reduce((n: number, c: string[]) => n + c.length, 0);
+        if (totalLines > 5) {
+          sawLiveOutput = true;
+          capturedChunks = lo;
+          break;
+        }
       }
       const toolMsg = store.messages.find(
         (m) => m.role === 'tool_use' && m.id === 'tool-live-1'
@@ -94,7 +97,7 @@ describe('Shell live output streaming', () => {
 
     // Core assertion: liveOutput was actually populated during execution
     expect(sawLiveOutput).toBe(true);
-    expect(capturedLines.join('\n')).toContain('stream-line-');
+    expect(capturedChunks.flat().join('\n')).toContain('stream-line-');
 
     // During execution: wait for the tailing hint to appear on screen,
     // then verify stream-line-1 has scrolled off (proving tail, not head).

@@ -42,12 +42,7 @@ class InputMetrics {
   private currentRenderStart: number | null = null;
 
   constructor() {
-    this.enabled =
-      process.env.KIRO_INPUT_METRICS === 'true' ||
-      process.env.KIRO_TEST_MODE === '1';
-    if (this.enabled) {
-      logger.info('[InputMetrics] Input latency metrics enabled');
-    }
+    this.enabled = false;
   }
 
   isEnabled(): boolean {

@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed internal cursor marker text leaking into terminal input in tmux environments"
+  "description": "Internal cursor marker text leaking into terminal input in tmux environments"
 }

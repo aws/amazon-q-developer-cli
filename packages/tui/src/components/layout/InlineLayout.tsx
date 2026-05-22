@@ -321,9 +321,7 @@ export const InlineLayout: React.FC = () => {
   const toggleAnnouncementExpanded = useAppStore(
     (s) => s.toggleAnnouncementExpanded
   );
-  const announcementTruncated =
-    !!announcement &&
-    announcement.content.split('\n').length > announcement.maxLines;
+  const announcementTruncated = !!announcement;
 
   useKeypress(
     (input, key) => {

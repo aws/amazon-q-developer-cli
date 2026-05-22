@@ -3,6 +3,7 @@ import { Box } from '../../renderer.js';
 import {
   MessageRole,
   type MessageType as StoreMessageType,
+  type ConversationTurn,
 } from '../../stores/app-store';
 import { Card } from '../ui/card/Card';
 import { Message, MessageType } from '../chat/message/Message';
@@ -24,12 +25,6 @@ export interface SessionOutputProps {
   events?: AgentStreamEvent[];
   width?: number;
   height?: number;
-}
-
-interface ConversationTurn {
-  userMessage: StoreMessageType;
-  aiMessages: StoreMessageType[];
-  isActive: boolean;
 }
 
 const NudgeMessage = React.memo(function NudgeMessage({

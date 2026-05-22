@@ -153,6 +153,12 @@ pub enum RootSubcommand {
         #[arg(long)]
         token_path: Option<PathBuf>,
     },
+    /// Start a persistent KAS agent server over WebSocket
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value = "8082")]
+        port: u16,
+    },
     /// ACP test client
     #[command(hide = true)]
     AcpClient {
@@ -366,6 +372,7 @@ impl RootSubcommand {
                     };
                     chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
+                Self::Serve { port } => execute_kas_serve(os, port).await,
                 Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
                 #[cfg(feature = "voice")]
                 Self::Voice { ptt } => {
@@ -537,6 +544,7 @@ impl RootSubcommand {
                 };
                 chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },
+            Self::Serve { port } => execute_kas_serve(os, port).await,
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
             #[cfg(feature = "voice")]
             Self::Voice { ptt } => {
@@ -699,6 +707,51 @@ pub(crate) async fn spawn_kas_process(
     Ok(child)
 }
 
+/// Spawn KAS as a persistent WebSocket server on the given port.
+async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
+    let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
+        (PathBuf::from("node"), PathBuf::from(kas_server_path))
+    } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
+        paths
+    } else {
+        bail!("KAS assets not available. Install nightly or set KIRO_KAS_SERVER_PATH.");
+    };
+
+    let token_path = crate::util::paths::kas_token_path(os)?;
+
+    debug!(
+        "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws (port {})",
+        node_bin.display(),
+        server_js.display(),
+        port,
+    );
+
+    eprintln!("Kiro agent server running on port {}", port);
+    eprintln!("Connect with: kiro-cli --remote ws://<this-host>:{}", port);
+
+    let mut child = tokio::process::Command::new(&node_bin)
+        .arg("--experimental-wasm-modules")
+        .arg(&server_js)
+        .arg("--transport=ws")
+        .arg(format!("--token-path={}", token_path.display()))
+        .env("ACP_WS_PORT", port.to_string())
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(false)
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to spawn KAS serve: {} {}",
+                node_bin.display(),
+                server_js.display()
+            )
+        })?;
+
+    let status = child.wait().await?;
+    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+}
+
 /// Handle `--list-sessions` and `--delete-session` before TUI launch.
 ///
 /// Returns `Some(Result)` if a flag was handled, `None` to continue normal dispatch.
@@ -745,6 +798,7 @@ impl Display for RootSubcommand {
             Self::Mcp(_) => "mcp",
             Self::Update(_) => "update",
             Self::Acp { .. } => "acp",
+            Self::Serve { .. } => "serve",
             Self::AcpClient { .. } => "acp-client",
             #[cfg(feature = "voice")]
             Self::Voice { .. } => "voice",

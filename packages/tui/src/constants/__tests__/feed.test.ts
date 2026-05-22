@@ -75,7 +75,8 @@ describe('feed', () => {
   });
 
   it('parses latest release into an announcement entry', async () => {
-    const { FEED_ENTRIES, getAnnouncements } = await loadFeed(SAMPLE_FEED);
+    const { FEED_ENTRIES, getAnnouncements, getAnnouncementContent } =
+      await loadFeed(SAMPLE_FEED);
     expect(FEED_ENTRIES).toHaveLength(1);
 
     const entry = FEED_ENTRIES[0] as AnnouncementEntry;
@@ -85,9 +86,11 @@ describe('feed', () => {
     expect(entry.date).toBe('2026-04-27');
     expect(entry.maxShowCount).toBe(3);
     expect(entry.priority).toBe(1);
-    expect(entry.content).toContain("What's new in 2.2.0");
-    expect(entry.content).toContain('Support adaptive thinking');
-    expect(entry.content).toContain('Fix API key auth');
+
+    const content = getAnnouncementContent();
+    expect(content).toContain("What's new in 2.2.0");
+    expect(content).toContain('Support adaptive thinking');
+    expect(content).toContain('API key auth');
 
     expect(getAnnouncements()).toHaveLength(1);
   });
@@ -149,9 +152,10 @@ describe('feed', () => {
         },
       ],
     });
-    const { FEED_ENTRIES } = await loadFeed(feed);
-    expect(FEED_ENTRIES[0]!.content).toContain('A feature');
-    expect(FEED_ENTRIES[0]!.content).not.toContain('#123');
+    const { FEED_ENTRIES, getAnnouncementContent } = await loadFeed(feed);
+    const content = getAnnouncementContent();
+    expect(content).toContain('A feature');
+    expect(content).not.toContain('#123');
   });
 
   it('all entries have valid FeedEntryType enum values', async () => {
@@ -177,10 +181,10 @@ describe('feed', () => {
   });
 
   it('announcement entries have non-empty content', async () => {
-    const { getAnnouncements } = await loadFeed(SAMPLE_FEED);
-    for (const a of getAnnouncements()) {
-      expect(a.content.length).toBeGreaterThan(0);
-    }
+    const { getAnnouncementContent } = await loadFeed(SAMPLE_FEED);
+    const content = getAnnouncementContent();
+    expect(content).not.toBeNull();
+    expect(content!.length).toBeGreaterThan(0);
   });
 });
 
@@ -241,10 +245,10 @@ describe('getRecentReleases', () => {
     const [latest] = getRecentReleases(1);
     expect(latest.version).toBe('2.2.0');
     expect(latest.date).toBe('2026-04-27');
-    expect(latest.content).toContain("## What's new in 2.2.0");
-    expect(latest.content).toContain('**Added**: Support adaptive thinking');
-    expect(latest.content).toContain('**Fixed**: Fix API key auth');
-    // Change bullets are alphabetically sorted by type — Added before Fixed
+    expect(latest.content).toContain("**✨ What's new in 2.2.0**");
+    expect(latest.content).toContain('✦ Support adaptive thinking');
+    expect(latest.content).toContain('✓ API key auth');
+    // Change groups are ordered: Added before Fixed
     const addedIdx = latest.content.indexOf('**Added**');
     const fixedIdx = latest.content.indexOf('**Fixed**');
     expect(addedIdx).toBeGreaterThan(0);
@@ -313,5 +317,110 @@ describe('file read errors', () => {
       `../../constants/feed.js${cacheBuster}`
     );
     expect(FEED_ENTRIES).toEqual([]);
+  });
+});
+
+describe('type-specific icons', () => {
+  it('uses ✦ for added, ~ for changed, ✓ for fixed', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-01-01',
+          version: '1.0.0',
+          changes: [
+            { type: 'added', description: 'New feature' },
+            { type: 'changed', description: 'Updated behavior' },
+            { type: 'fixed', description: 'Bug squashed' },
+          ],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const [entry] = getRecentReleases();
+    expect(entry.content).toContain('✦ New feature');
+    expect(entry.content).toContain('~ Updated behavior');
+    expect(entry.content).toContain('✓ Bug squashed');
+  });
+
+  it('uses ⛨ for security, ▽ for deprecated, ✗ for removed', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-01-01',
+          version: '1.0.0',
+          changes: [
+            { type: 'security', description: 'Hardened auth' },
+            { type: 'deprecated', description: 'Old API' },
+            { type: 'removed', description: 'Legacy endpoint' },
+          ],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const [entry] = getRecentReleases();
+    expect(entry.content).toContain('⛨ Hardened auth');
+    expect(entry.content).toContain('▽ Old API');
+    expect(entry.content).toContain('✗ Legacy endpoint');
+  });
+
+  it('icons are not markdown list markers', async () => {
+    const { parseMarkdown } = await import('../../utils/markdown.js');
+    const icons = ['✦', '~', '✓', '⛨', '▽', '✗'];
+    for (const icon of icons) {
+      const segments = parseMarkdown(`${icon} Some text`);
+      const isListItem = segments.some(
+        (s: { listItem?: unknown }) => s.listItem
+      );
+      expect(isListItem).toBe(false);
+    }
+  });
+});
+
+describe('verb stripping', () => {
+  it('strips leading type verb from descriptions', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-01-01',
+          version: '1.0.0',
+          changes: [
+            { type: 'fixed', description: 'Fixed a crash on startup' },
+            { type: 'added', description: 'Added new /command' },
+            { type: 'added', description: 'Add support for X' },
+          ],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const [entry] = getRecentReleases();
+    expect(entry.content).toContain('✓ a crash on startup');
+    expect(entry.content).not.toContain('✓ Fixed');
+    expect(entry.content).toContain('✦ new /command');
+    expect(entry.content).not.toContain('✦ Added');
+    expect(entry.content).toContain('✦ support for X');
+    expect(entry.content).not.toContain('✦ Add ');
+  });
+
+  it('does not strip when description does not start with verb', async () => {
+    const feed = JSON.stringify({
+      entries: [
+        {
+          type: 'release',
+          date: '2026-01-01',
+          version: '1.0.0',
+          changes: [
+            { type: 'fixed', description: 'Hardened parser against panics' },
+            { type: 'added', description: 'Support for new protocol' },
+          ],
+        },
+      ],
+    });
+    const { getRecentReleases } = await loadFeed(feed);
+    const [entry] = getRecentReleases();
+    expect(entry.content).toContain('✓ Hardened parser against panics');
+    expect(entry.content).toContain('✦ Support for new protocol');
   });
 });

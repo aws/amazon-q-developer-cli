@@ -384,6 +384,17 @@ export type MessageType =
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
+/**
+ * A conversation "turn" groups a user message with all of the AI-side messages
+ * (model responses, tool uses, system notes) that followed it before the next
+ * user message. Shared between `ConversationView` and `SessionOutput`.
+ */
+export interface ConversationTurn {
+  userMessage: MessageType;
+  aiMessages: MessageType[];
+  isActive: boolean;
+}
+
 export interface SlashCommand extends AvailableCommand {
   source: 'local' | 'backend';
 }
@@ -511,6 +522,9 @@ const initialInputBufferState = (): InputBufferState => ({
 interface AppStoreProps {
   kiro: Kiro;
   agentEngine?: AgentEngine;
+  noInteractive?: boolean;
+  initialInput?: string;
+  trustAllTools?: boolean;
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -795,7 +809,7 @@ interface BaseAppActions {
 
   // Announcement actions
   setAnnouncement: (
-    msg: { id: string; content: string; maxLines: number } | null
+    msg: { id: string; maxLines: number } | null
   ) => void;
   toggleAnnouncementExpanded: () => void;
 
@@ -829,7 +843,7 @@ export type AppStoreApi = ReturnType<typeof createAppStore>;
 export interface AppState {
   // Chat state
   messages: MessageType[];
-  liveOutputs: Map<string, string[]>;
+  liveOutputs: Map<string, string[][]>;
   queuedMessages: string[];
   editingQueueIndex: number | null;
   /**
@@ -1022,7 +1036,7 @@ export interface AppState {
   pendingVoiceText: string | null;
 
   // Announcement state
-  announcement: { id: string; content: string; maxLines: number } | null;
+  announcement: { id: string; maxLines: number } | null;
   announcementExpanded: boolean;
 
   // Abort controller for current stream
@@ -1060,14 +1074,6 @@ export interface AppState {
     startBuffering: (() => void) | null;
     stopBuffering: (() => void) | null;
   };
-}
-
-interface AppStoreProps {
-  kiro: Kiro;
-  agentEngine?: AgentEngine;
-  noInteractive?: boolean;
-  initialInput?: string;
-  trustAllTools?: boolean;
 }
 
 export const useAppStore = <T>(
@@ -1727,7 +1733,7 @@ export const createAppStore = (props: AppStoreProps) => {
               newLines.pop();
             if (newLines.length === 0) continue;
             const prev = newLiveOutputs.get(id) ?? [];
-            newLiveOutputs.set(id, prev.concat(newLines));
+            newLiveOutputs.set(id, [...prev, newLines]);
           }
           return { liveOutputs: newLiveOutputs };
         });

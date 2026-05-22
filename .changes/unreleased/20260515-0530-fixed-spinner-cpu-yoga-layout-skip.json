@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed high CPU usage (98%) during long-running shell tool execution caused by spinner animation triggering full yoga layout recalculation on every frame"
+  "description": "High CPU usage (98%) during long-running shell tool execution caused by spinner animation triggering full yoga layout recalculation on every frame"
 }

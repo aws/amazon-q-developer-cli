@@ -4,38 +4,12 @@ import { Text } from './text/Text.js';
 import { Panel } from './panel/Panel.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import type { UsageData } from '../../stores/app-store.js';
 
 interface UsagePanelProps {
   data: UsageData | null;
   onClose: () => void;
   onTabSwitch?: () => void;
-}
-
-interface UsageBreakdownItem {
-  displayName: string;
-  used: number;
-  limit: number;
-  percentage: number;
-  currentOverages: number;
-  overageRate: number;
-  overageCharges: number;
-  currency: string;
-}
-
-interface BonusCredit {
-  name: string;
-  used: number;
-  total: number;
-  daysUntilExpiry: number;
-}
-
-interface UsageData {
-  planName: string;
-  billingCycleReset: string;
-  overagesEnabled: boolean;
-  isEnterprise: boolean;
-  usageBreakdowns: UsageBreakdownItem[];
-  bonusCredits: BonusCredit[];
 }
 
 function UsageProgressBar({
@@ -139,7 +113,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
             <>
               {primary('Enabled')}{' '}
               {secondary(
-                `billed at $${data.usageBreakdowns[0]?.overageRate.toFixed(2)} per request`
+                `billed at $${data.usageBreakdowns[0]?.overageRate.toFixed(2)} per credit`
               )}
             </>
           ) : (

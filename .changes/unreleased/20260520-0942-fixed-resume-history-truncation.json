@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed typing lag in TUI mode during resumed sessions by truncating history replay to last 10 turns (same as /chat load)"
+  "description": "Typing lag in TUI mode during resumed sessions by truncating history replay to last 10 turns (same as /chat load)"
 }

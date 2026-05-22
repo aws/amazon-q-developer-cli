@@ -23,7 +23,7 @@ describe('Announcement store state', () => {
 
   it('setAnnouncement sets the message', () => {
     const store = createAppStore({ kiro: new Kiro() });
-    const msg = { id: 'test-1', content: 'Hello world', maxLines: 1 };
+    const msg = { id: 'test-1', maxLines: 1 };
 
     store.getState().setAnnouncement(msg);
 
@@ -32,7 +32,7 @@ describe('Announcement store state', () => {
 
   it('setAnnouncement(null) clears it', () => {
     const store = createAppStore({ kiro: new Kiro() });
-    store.getState().setAnnouncement({ id: 'x', content: 'y', maxLines: 1 });
+    store.getState().setAnnouncement({ id: 'x', maxLines: 1 });
     store.getState().setAnnouncement(null);
 
     expect(store.getState().announcement).toBeNull();

@@ -81,6 +81,8 @@ fn write_plist() {
 }
 
 fn main() {
+    inject_kiro_version();
+
     // Download feed.json if FETCH_FEED environment variable is set
     if std::env::var("FETCH_FEED").is_ok() {
         download_feed_json();
@@ -455,4 +457,15 @@ fn sha256_hex(path: &std::path::Path) -> String {
         hasher.update(&buf[..n]);
     }
     format!("{:x}", hasher.finalize())
+}
+
+/// When `KIRO_VERSION` env var is set, override `CARGO_PKG_VERSION` so all
+/// `env!("CARGO_PKG_VERSION")` callsites report the release version.
+fn inject_kiro_version() {
+    println!("cargo:rerun-if-env-changed=KIRO_VERSION");
+    if let Ok(version) = std::env::var("KIRO_VERSION")
+        && !version.is_empty()
+    {
+        println!("cargo:rustc-env=CARGO_PKG_VERSION={version}");
+    }
 }

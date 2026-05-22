@@ -5,6 +5,7 @@ import type {
   SpecResolveSessionRequest,
   SpecResolveSessionResponse,
 } from '@kiro/acp-type-covenant';
+import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type { AgentStreamEvent } from './agent-events';
 import type {
   CommandOptionsResponse,
@@ -206,6 +207,12 @@ export interface SessionClient {
    * See {@link resolveSpecSession} for caller responsibilities.
    */
   invokeSpec?(request: SpecInvokeRequest): Promise<SpecInvokeResponse>;
+
+  /**
+   * Sends process health metrics to the telemetry pipeline.
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendProcessHealthMetrics?(payload: ProcessHealthSnapshot): void;
 }
 
 /**
