@@ -188,7 +188,7 @@ async fn render_available_billing(
                 style::Print("  "),
                 StyledText::secondary_fg(),
                 style::Print(format!(
-                    "billed at {} per request",
+                    "billed at {} per credit",
                     format_billing_rate(breakdown.overage_rate)
                 )),
                 StyledText::reset(),

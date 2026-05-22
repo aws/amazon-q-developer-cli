@@ -139,7 +139,7 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
             <>
               {primary('Enabled')}{' '}
               {secondary(
-                `billed at $${data.usageBreakdowns[0]?.overageRate.toFixed(2)} per request`
+                `billed at $${data.usageBreakdowns[0]?.overageRate.toFixed(2)} per credit`
               )}
             </>
           ) : (
