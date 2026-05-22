@@ -37,6 +37,10 @@ import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
 } from './utils/terminal-sequences';
+import {
+  enableFocusTracking,
+  disableFocusTracking,
+} from './utils/focus-tracker';
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 import { isTrustGateAccepted } from './utils/trust-gate-state';
 import { startProcessHealthCollector } from './utils/process-health-collector';
@@ -56,6 +60,7 @@ process.on('exit', (code) => {
 
 const cleanup = () => {
   try {
+    disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
@@ -720,10 +725,12 @@ const startApp = async () => {
   function App() {
     const appStoreRef = useRef<AppStoreApi>(appStore);
 
-    // Enable bracketed paste mode on mount
+    // Enable bracketed paste mode and focus tracking on mount
     useEffect(() => {
       process.stdout.write(ENABLE_BRACKETED_PASTE);
+      enableFocusTracking();
       return () => {
+        disableFocusTracking();
         process.stdout.write(DISABLE_BRACKETED_PASTE);
       };
     }, []);
