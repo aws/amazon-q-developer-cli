@@ -19,6 +19,7 @@ extend-ignore-re = [
 
 [default.extend-identifiers]
 PNGf = "PNGf" # AppleScript clipboard class name «class PNGf»
+TKE = "TKE" # fictional ticket-ID prefix used in kiro-help-bot examples
 
 [default.extend-words]
 mmaped = "mmaped"

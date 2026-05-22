@@ -23,6 +23,7 @@
     "@opentelemetry/exporter-prometheus": "0.217.0",
     "@opentelemetry/sdk-node": "0.217.0",
     "protobufjs": "8.2.0",
+    "uuid": "^14.0.0",
     "ws": "8.20.1"
   }
 }
