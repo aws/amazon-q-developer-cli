@@ -439,6 +439,55 @@ async fn test_log_entry_appended_events() {
     }
 }
 
+/// Tests that `UserTurnMetadata::message_ids` matches the IDs of the messages
+/// persisted in the conversation log 1-to-1.
+///
+/// For a turn with 2 requests (initial prompt → tool use → tool result → end turn),
+/// the conversation log should contain 4 messages [prompt, assistant, tool_results,
+/// assistant] and `message_ids` should reference those exact IDs in order.
+#[tokio::test]
+async fn test_user_turn_metadata_message_ids_match_conversation_log() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("user turn metadata message ids match conversation log")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_file(("test.txt", "hello"))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/fs_read_only.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("read test.txt".to_string()).await;
+    let end_turn_evt = test
+        .wait_until_agent_event(Duration::from_secs(5), |evt| matches!(evt, AgentEvent::EndTurn(_)))
+        .await
+        .unwrap();
+
+    let metadata = match end_turn_evt {
+        AgentEvent::EndTurn(md) => md,
+        _ => unreachable!("predicate matched EndTurn"),
+    };
+
+    let mut snapshot = test.create_snapshot().await;
+    let messages = snapshot.conversation_state.messages();
+
+    let log_ids: Vec<Option<String>> = messages.iter().map(|m| m.id.clone()).collect();
+
+    assert_eq!(
+        metadata.message_ids, log_ids,
+        "message_ids in user turn metadata should match the IDs of messages in the conversation log,\n\
+         metadata.message_ids = {:?},\n\
+         conversation_log_ids = {:?}",
+        metadata.message_ids, log_ids
+    );
+}
+
 #[tokio::test]
 async fn test_auto_compaction_on_context_overflow() {
     let _ = tracing_subscriber::fmt::try_init();

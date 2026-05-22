@@ -51,6 +51,7 @@ use types::{
     StreamEvent,
     ToolUseBlock,
 };
+use uuid::Uuid;
 
 use super::tools::BuiltInToolName;
 use crate::agent::AgentId;
@@ -790,7 +791,7 @@ impl StreamParseState {
             for tool_use in &self.tool_uses {
                 content.push(ContentBlock::ToolUse(tool_use.clone()));
             }
-            let message = Message::new(Role::Assistant, content, Some(Utc::now()));
+            let message = Message::new(Uuid::new_v4().to_string(), Role::Assistant, content, Some(Utc::now()));
             Ok(message)
         }
     }
@@ -878,7 +879,12 @@ mod tests {
     use crate::agent::agent_loop::types::*;
 
     fn user_message() -> Message {
-        Message::new(Role::User, vec![ContentBlock::Text("test".into())], None)
+        Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("test".into())],
+            None,
+        )
     }
 
     fn message_start() -> StreamResult {

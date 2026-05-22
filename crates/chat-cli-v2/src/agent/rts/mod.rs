@@ -1221,6 +1221,7 @@ mod tests {
         tokio::spawn(async move {
             let mut stream = rts.stream(
                 vec![Message::new(
+                    Uuid::new_v4().to_string(),
                     Role::User,
                     vec![ContentBlock::Text(
                         "Hello, can you explain how to write hello world in c, python, and rust?".to_string(),
@@ -1288,7 +1289,12 @@ mod tests {
 
     #[test]
     fn test_format_user_content_no_meta() {
-        let m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        let m = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hello".into())],
+            None,
+        );
         assert_eq!(format_user_content(&m), "hello");
     }
 
@@ -1297,7 +1303,12 @@ mod tests {
         let ts = chrono::DateTime::parse_from_rfc3339("2026-03-31T12:30:00.000-07:00")
             .unwrap()
             .with_timezone(&Utc);
-        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        let mut m = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hello".into())],
+            None,
+        );
         m.meta = Some(MessageMetadata {
             timestamp: Some(ts),
             additional_context: String::new(),
@@ -1318,7 +1329,12 @@ mod tests {
 
     #[test]
     fn test_format_user_content_with_additional_context() {
-        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        let mut m = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hello".into())],
+            None,
+        );
         m.meta = Some(MessageMetadata {
             timestamp: None,
             additional_context: "hook output here".into(),
@@ -1331,7 +1347,12 @@ mod tests {
 
     #[test]
     fn test_format_user_content_with_empty_meta() {
-        let mut m = Message::new(Role::User, vec![ContentBlock::Text("hello".into())], None);
+        let mut m = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hello".into())],
+            None,
+        );
         m.meta = Some(MessageMetadata {
             timestamp: None,
             additional_context: String::new(),

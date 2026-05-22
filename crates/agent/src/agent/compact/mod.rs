@@ -13,6 +13,7 @@ use serde::{
     Serialize,
 };
 use tracing::debug;
+use uuid::Uuid;
 
 use super::agent_loop::protocol::SendRequestArgs;
 use super::agent_loop::types::{
@@ -164,7 +165,12 @@ pub fn create_compaction_request(
     }
 
     let summary_prompt = create_summary_prompt(custom_prompt, latest_summary);
-    history.push(Message::new(Role::User, vec![ContentBlock::Text(summary_prompt)], None));
+    history.push(Message::new(
+        Uuid::new_v4().to_string(),
+        Role::User,
+        vec![ContentBlock::Text(summary_prompt)],
+        None,
+    ));
 
     let mut messages = VecDeque::from(history);
     let mut tools = Vec::new();
@@ -309,8 +315,14 @@ mod tests {
     /// Creates a (User, Assistant) message pair with specific content sizes (in chars).
     fn create_message_pair(user_chars: usize, assistant_chars: usize) -> [Message; 2] {
         [
-            Message::new(Role::User, vec![ContentBlock::Text("x".repeat(user_chars))], None),
             Message::new(
+                Uuid::new_v4().to_string(),
+                Role::User,
+                vec![ContentBlock::Text("x".repeat(user_chars))],
+                None,
+            ),
+            Message::new(
+                Uuid::new_v4().to_string(),
                 Role::Assistant,
                 vec![ContentBlock::Text("y".repeat(assistant_chars))],
                 None,
@@ -367,9 +379,24 @@ mod tests {
     fn test_effective_messages_to_exclude_small_history_leaves_no_messages_to_summarize() {
         // 3 messages: User, Assistant, User (trailing)
         let messages = vec![
-            Message::new(Role::User, vec![ContentBlock::Text("x".repeat(100000))], None),
-            Message::new(Role::Assistant, vec![ContentBlock::Text("y".repeat(100))], None),
-            Message::new(Role::User, vec![ContentBlock::Text("z".repeat(100))], None),
+            Message::new(
+                Uuid::new_v4().to_string(),
+                Role::User,
+                vec![ContentBlock::Text("x".repeat(100000))],
+                None,
+            ),
+            Message::new(
+                Uuid::new_v4().to_string(),
+                Role::Assistant,
+                vec![ContentBlock::Text("y".repeat(100))],
+                None,
+            ),
+            Message::new(
+                Uuid::new_v4().to_string(),
+                Role::User,
+                vec![ContentBlock::Text("z".repeat(100))],
+                None,
+            ),
         ];
 
         let strategy = CompactStrategy {
@@ -417,7 +444,12 @@ mod tests {
         let request = create_compaction_request(conv.messages(), &strategy, Some(100_000), None::<String>, None);
         assert_valid_conversation(&request.messages);
 
-        let model_response = Message::new(Role::Assistant, vec![ContentBlock::Text("Summary".into())], None);
+        let model_response = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::Text("Summary".into())],
+            None,
+        );
 
         let (_entry, _index) = finalize_compaction(&mut conv, model_response, &strategy, Some(100_000));
         let messages = conv.messages();
@@ -470,7 +502,12 @@ mod tests {
         // So all 6 messages are excluded, leaving just the compaction prompt.
         assert_eq!(request.messages.len(), 1);
 
-        let model_response = Message::new(Role::Assistant, vec![ContentBlock::Text("Summary".into())], None);
+        let model_response = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::Text("Summary".into())],
+            None,
+        );
         let (entry, index) = finalize_compaction(&mut conv, model_response, &strategy, Some(100_000));
 
         // After compaction: all 6 messages excluded, none remain

@@ -913,6 +913,7 @@ mod tests {
         tokio::spawn(async move {
             let mut stream = rts.stream(
                 vec![Message::new(
+                    Uuid::new_v4().to_string(),
                     Role::User,
                     vec![ContentBlock::Text(
                         "Hello, can you explain how to write hello world in c, python, and rust?".to_string(),
