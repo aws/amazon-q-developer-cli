@@ -545,8 +545,8 @@ impl ApiClient {
         Ok(res)
     }
 
-    pub async fn is_mcp_enabled(&self, database: &Database) -> Result<bool, ApiClientError> {
-        let (enabled, _) = self.get_mcp_config(database).await?;
+    pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
+        let (enabled, _) = self.get_mcp_config().await?;
         Ok(enabled)
     }
 
@@ -562,12 +562,11 @@ impl ApiClient {
     }
 
     /// Get MCP configuration including enabled status and registry URL
-    pub async fn get_mcp_config(&self, database: &Database) -> Result<(bool, Option<String>), ApiClientError> {
-        // Skip MCP governance check for custom endpoints (e.g., dev desktop)
-        if Self::is_custom_endpoint(database) {
-            return Ok((true, None));
-        }
-
+    pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
+        // The legacy custom-endpoint skip was removed: KRS now requires the GetProfile
+        // governance check to run on all endpoints (including alpha/gamma) so that
+        // pre-prod environments exercise the same code path as prod, and so service-team
+        // owners can validate the MCP governance toggle before promotion.
         let request = self
             .client
             .get_profile()
@@ -753,11 +752,6 @@ impl ApiClient {
         }
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
-    }
-
-    // Add a helper method to check if using non-default endpoint
-    fn is_custom_endpoint(database: &Database) -> bool {
-        database.settings.get(Setting::ApiCodeWhispererService).is_some()
     }
 
     /// Method to be used to reconstruct the client in the Os struct after auth changes.
