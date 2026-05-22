@@ -86,6 +86,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -- '*.rs' '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.css' '*.md'
+          git diff --name-only -z | xargs -0 git add --
           git commit -m "style: auto-format for PR #${{ github.event.pull_request.number }}"
           git push origin HEAD:${{ steps.pr.outputs.ref }}
