@@ -33,7 +33,7 @@ import type {
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
-import type { HookInfo } from './stores/app-store';
+import type { HookInfo, McpServerInfo } from './stores/app-store';
 
 import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
@@ -1295,6 +1295,8 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
+  private mcpServerCache: McpServerInfo[] = [];
+  private mcpRegistryCache: McpServerInfo[] = [];
 
   /**
    * Construct a KAS ACP client.
@@ -1543,6 +1545,9 @@ export class KasAcpClient extends BaseAcpClient {
     );
 
     // Register ext notification handlers
+    this.kiroClient.onExtNotification('_kiro/mcp/status', (params) => {
+      this.handleMcpStatusNotification(params);
+    });
 
     const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,
@@ -1840,6 +1845,30 @@ export class KasAcpClient extends BaseAcpClient {
           | undefined;
         const value = args?.value ?? 'status';
         return this.executeCode(value);
+      }
+      case 'mcp': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value?.trim() ?? '';
+
+        if (value === 'list') {
+          return {
+            success: true,
+            message: `${this.mcpServerCache.length} configured, ${this.mcpRegistryCache.length} registry servers`,
+            data: {
+              servers: this.mcpServerCache,
+              registryServers: this.mcpRegistryCache,
+              mode: 'list',
+            },
+          };
+        }
+
+        return {
+          success: true,
+          message: `${this.mcpServerCache.length} configured server${this.mcpServerCache.length === 1 ? '' : 's'}`,
+          data: { servers: this.mcpServerCache },
+        };
       }
       default:
         return {
@@ -2246,6 +2275,75 @@ export class KasAcpClient extends BaseAcpClient {
     );
     this.modelOptions = modelOpt.options;
     this.currentModelId = modelOpt.currentValue;
+  }
+
+  /**
+   * Handle `_kiro/mcp/status` notification from KAS.
+   * Transforms the notification data into McpServerInfo[] and caches it.
+   */
+  private handleMcpStatusNotification(params: Record<string, unknown>): void {
+    const servers = params.servers as Array<{
+      name: string;
+      status: 'connecting' | 'connected' | 'failed' | 'disabled';
+      authType?: 'oauth';
+      tools?: Array<{ name: string; description?: string; disabled: boolean }>;
+      failedAuthorization?: boolean;
+      errorMessage?: string;
+    }> | undefined;
+
+    if (!servers) {
+      this.mcpServerCache = [];
+    } else {
+      this.mcpServerCache = servers.map((server) => {
+        let status: McpServerInfo['status'];
+        switch (server.status) {
+          case 'connected':
+            status = 'running';
+            break;
+          case 'connecting':
+            status = 'loading';
+            break;
+          case 'failed':
+            status = server.failedAuthorization ? 'auth-required' : 'failed';
+            break;
+          case 'disabled':
+            status = 'disabled';
+            break;
+          default:
+            status = 'failed';
+        }
+
+        return {
+          name: server.name,
+          status,
+          toolCount: server.tools?.length ?? 0,
+        };
+      });
+    }
+
+    // Cache registry servers separately
+    const registryServers = (params.registryServers as Array<{
+      name: string;
+      version?: string;
+      description?: string;
+      enabled?: boolean;
+    }>) ?? [];
+    this.mcpRegistryCache = registryServers.map((s) => ({
+      name: s.name,
+      status: 'disabled' as const,
+      toolCount: 0,
+      version: s.version,
+      description: s.description,
+      enabled: s.enabled,
+    }));
+
+    logger.debug(
+      '[kas] handleMcpStatusNotification: cached',
+      this.mcpServerCache.length,
+      'configured,',
+      this.mcpRegistryCache.length,
+      'registry servers'
+    );
   }
 
   /**

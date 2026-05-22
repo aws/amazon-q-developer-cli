@@ -22,6 +22,7 @@ export enum KasCommandName {
   Context = '/context',
   Code = '/code',
   Hooks = '/hooks',
+  Mcp = '/mcp',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -155,6 +156,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Hooks,
     description: 'View configured hooks',
+    meta: { inputType: 'panel' },
+  },
+  {
+    name: KasCommandName.Mcp,
+    description: 'Show MCP server status',
     meta: { inputType: 'panel' },
   },
 ];
