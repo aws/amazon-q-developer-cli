@@ -1,0 +1,91 @@
+name: "PR: Auto-format"
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+concurrency:
+  group: auto-format-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+  id-token: write
+
+jobs:
+  auto-format:
+    # Skip bot pushes to avoid infinite loops
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "ref=${{ github.event.pull_request.head.ref }}" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect changed paths
+        id: paths
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          RUST=$(git diff --name-only "$BASE"...HEAD -- '**.rs' '**/Cargo.toml' | head -1)
+          TUI=$(git diff --name-only "$BASE"...HEAD -- 'packages/tui/**' 'packages/twinki/**' | head -1)
+          [ -n "$RUST" ] && echo "rust=true" >> "$GITHUB_OUTPUT" || echo "rust=false" >> "$GITHUB_OUTPUT"
+          [ -n "$TUI" ] && echo "tui=true" >> "$GITHUB_OUTPUT" || echo "tui=false" >> "$GITHUB_OUTPUT"
+
+      - name: Rust fmt
+        if: steps.paths.outputs.rust == 'true'
+        run: |
+          rustup toolchain install nightly --component rustfmt --profile minimal
+          cargo +nightly fmt
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.paths.outputs.tui == 'true'
+
+      - uses: ./.github/actions/codeartifact-login
+        if: steps.paths.outputs.tui == 'true'
+
+      - name: Install dependencies
+        if: steps.paths.outputs.tui == 'true'
+        run: bun install
+
+      - name: Build twinki
+        if: steps.paths.outputs.tui == 'true'
+        run: cd packages/twinki/packages/twinki && bun run build
+
+      - name: Prettier + ESLint fix
+        if: steps.paths.outputs.tui == 'true'
+        run: cd packages/tui && bun run lint:fix || true
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Changed files:"
+            git diff --name-only
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No formatting changes needed."
+          fi
+
+      # Note: GITHUB_TOKEN pushes do not re-trigger PR workflows (by design).
+      # The format commit won't get CI validation, but squash-merge makes this moot.
+      - name: Commit and push
+        if: steps.diff.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -- '*.rs' '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.css' '*.md'
+          git commit -m "style: auto-format for PR #${{ github.event.pull_request.number }}"
+          git push origin HEAD:${{ steps.pr.outputs.ref }}
