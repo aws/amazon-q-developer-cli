@@ -173,19 +173,19 @@ jobs:
         id: generated
         run: |
           echo "=== Files modified by agents ==="
-          git add -N autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
-          git diff --name-only || true
+          git add autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
+          git diff --cached --name-only || true
           echo ""
           CHANGES=""
-          if git diff --name-only | grep -q "autodocs-v2/"; then
+          if git diff --cached --name-only | grep -q "autodocs-v2/"; then
             CHANGES="docs"
             echo "Docs changes detected:"
-            git diff --name-only -- autodocs-v2/
+            git diff --cached --name-only -- autodocs-v2/
           fi
-          if git diff --name-only | grep -q ".changes/unreleased/"; then
+          if git diff --cached --name-only | grep -q ".changes/unreleased/"; then
             CHANGES="${CHANGES:+$CHANGES }changelog"
             echo "Changelog changes detected:"
-            git diff --name-only -- .changes/unreleased/
+            git diff --cached --name-only -- .changes/unreleased/
           fi
           if [ -n "$CHANGES" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
