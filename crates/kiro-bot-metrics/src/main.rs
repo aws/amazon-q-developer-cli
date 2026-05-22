@@ -76,7 +76,9 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     let tally = compute_negative_feedback_rate(&rows, now);
     info!(?tally, "tally");
 
-    publish(&cw, &stage, now, &tally).await.context("CloudWatch PutMetricData")?;
+    publish(&cw, &stage, now, &tally)
+        .await
+        .context("CloudWatch PutMetricData")?;
     Ok(serde_json::json!({
         "stage": stage,
         "up": tally.up,
@@ -113,7 +115,11 @@ async fn scan_feedback(client: &DdbClient, table: &str) -> Result<Vec<FeedbackRo
                 Ok(t) => t.with_timezone(&Utc),
                 Err(_) => continue,
             };
-            rows.push(FeedbackRow { slack_msg_id, reaction, ts });
+            rows.push(FeedbackRow {
+                slack_msg_id,
+                reaction,
+                ts,
+            });
         }
         match resp.last_evaluated_key {
             Some(k) if !k.is_empty() => last_key = Some(k),
@@ -129,10 +135,7 @@ async fn publish(
     now: DateTime<Utc>,
     tally: &kiro_bot_metrics::FeedbackTally,
 ) -> Result<()> {
-    let dim = Dimension::builder()
-        .name("Stage")
-        .value(stage)
-        .build();
+    let dim = Dimension::builder().name("Stage").value(stage).build();
     let timestamp = aws_sdk_cloudwatch::primitives::DateTime::from_secs(now.timestamp());
     let datums = vec![
         MetricDatum::builder()

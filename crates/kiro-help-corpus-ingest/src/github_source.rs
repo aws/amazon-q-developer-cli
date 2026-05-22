@@ -89,8 +89,7 @@ pub fn parse_issues(repo: &str, json: &str) -> anyhow::Result<Vec<RawChunk>> {
 
 /// Parse a JSON list of releases into chunks.
 pub fn parse_releases(repo: &str, json: &str) -> anyhow::Result<Vec<RawChunk>> {
-    let releases: Vec<GithubRelease> =
-        serde_json::from_str(json).context("parsing GitHub releases JSON")?;
+    let releases: Vec<GithubRelease> = serde_json::from_str(json).context("parsing GitHub releases JSON")?;
     Ok(releases.iter().map(|r| release_to_chunk(repo, r)).collect())
 }
 

@@ -130,23 +130,18 @@ fn build_item(record: &FeedbackRecord) -> HashMap<String, AttributeValue> {
     );
     m.insert("ts".to_string(), AttributeValue::S(record.ts.to_rfc3339()));
     let expires = (record.ts + Duration::days(FEEDBACK_RETENTION_DAYS)).timestamp();
-    m.insert(
-        "expires_at".to_string(),
-        AttributeValue::N(expires.to_string()),
-    );
+    m.insert("expires_at".to_string(), AttributeValue::N(expires.to_string()));
     if !record.chunk_ids.is_empty() {
-        m.insert(
-            "chunk_ids".to_string(),
-            AttributeValue::Ss(record.chunk_ids.clone()),
-        );
+        m.insert("chunk_ids".to_string(), AttributeValue::Ss(record.chunk_ids.clone()));
     }
     m
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     #[test]
     fn reaction_from_slack_recognizes_canonical_names() {
@@ -174,15 +169,9 @@ mod tests {
                 .with_timezone(&Utc),
         };
         let item = build_item(&rec);
-        assert_eq!(
-            item.get("slack_msg_id").unwrap().as_s().unwrap(),
-            "C123:1700000000.0"
-        );
+        assert_eq!(item.get("slack_msg_id").unwrap().as_s().unwrap(), "C123:1700000000.0");
         assert_eq!(item.get("reaction").unwrap().as_s().unwrap(), "-1");
-        assert_eq!(
-            item.get("ts").unwrap().as_s().unwrap(),
-            "2026-05-19T17:00:00+00:00"
-        );
+        assert_eq!(item.get("ts").unwrap().as_s().unwrap(), "2026-05-19T17:00:00+00:00");
         let chunks = item.get("chunk_ids").unwrap().as_ss().unwrap();
         assert!(chunks.contains(&"docs/auth.md".to_string()));
         assert!(chunks.contains(&"docs/login.md".to_string()));
@@ -208,7 +197,10 @@ mod tests {
         );
     }
 
-    use crate::engine::coordinator::{Turn, TurnRole};
+    use crate::engine::coordinator::{
+        Turn,
+        TurnRole,
+    };
 
     fn turn(role: TurnRole, text: &str, chunks: &[&str], secs: i64) -> Turn {
         Turn {

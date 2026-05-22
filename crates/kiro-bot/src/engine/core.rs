@@ -347,7 +347,10 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                 // session asking it to redo the answer with retrieval. The
                 // retry takes the place of the original reply so the user
                 // never sees the un-cited draft.
-                use crate::engine::retrieval_check::{check, RetrievalCheck};
+                use crate::engine::retrieval_check::{
+                    RetrievalCheck,
+                    check,
+                };
                 let final_reply_text = match check(&prompt_for_check, &reply_text) {
                     RetrievalCheck::MissingCitation => {
                         tracing::warn!(

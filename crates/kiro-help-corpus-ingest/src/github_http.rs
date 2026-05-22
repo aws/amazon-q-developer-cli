@@ -70,10 +70,7 @@ impl Source for GithubIssuesSource {
 
     async fn fetch(&self) -> anyhow::Result<Vec<RawChunk>> {
         let mut out = Vec::new();
-        let mut url = format!(
-            "{}/repos/{}/issues?state=all&per_page=100",
-            self.base_url, self.repo
-        );
+        let mut url = format!("{}/repos/{}/issues?state=all&per_page=100", self.base_url, self.repo);
         loop {
             let resp = self
                 .client
@@ -84,8 +81,8 @@ impl Source for GithubIssuesSource {
                 .with_context(|| format!("GET {url}"))?;
             let next = next_page_from_link(resp.headers().get(reqwest::header::LINK));
             let body = resp.text().await.context("read response body")?;
-            let mut chunks = parse_issues(&self.repo, &body)
-                .with_context(|| format!("parsing GitHub issues page from {url}"))?;
+            let mut chunks =
+                parse_issues(&self.repo, &body).with_context(|| format!("parsing GitHub issues page from {url}"))?;
             out.append(&mut chunks);
             match next {
                 Some(n) => url = n,
@@ -149,8 +146,7 @@ impl Source for GithubReleasesSource {
             .await
             .with_context(|| format!("GET {url}"))?;
         let body = resp.text().await.context("read response body")?;
-        parse_releases(&self.repo, &body)
-            .with_context(|| format!("parsing GitHub releases from {url}"))
+        parse_releases(&self.repo, &body).with_context(|| format!("parsing GitHub releases from {url}"))
     }
 }
 

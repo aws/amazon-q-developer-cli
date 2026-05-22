@@ -23,7 +23,10 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(raw).expect("kiro-help.json must be valid JSON");
         assert_eq!(v["name"], "kiro-help");
         let mcp = &v["mcpServers"]["kiro-knowledge"];
-        assert!(!mcp.is_null(), "kiro-help.json must declare the kiro-knowledge MCP server");
+        assert!(
+            !mcp.is_null(),
+            "kiro-help.json must declare the kiro-knowledge MCP server"
+        );
         assert_eq!(mcp["command"], "kiro-knowledge-mcp");
 
         let tools = v["tools"].as_array().expect("tools must be an array");
@@ -163,11 +166,7 @@ mod tests {
             skill.starts_with("---\nname: kiro-help-workflow"),
             "skill must start with frontmatter declaring name = kiro-help-workflow"
         );
-        for clause in [
-            "search_kiro_knowledge",
-            "search_github_issues",
-            "Sources:",
-        ] {
+        for clause in ["search_kiro_knowledge", "search_github_issues", "Sources:"] {
             assert!(
                 skill.contains(clause),
                 "skill must keep the '{clause}' clause that defines the workflow"

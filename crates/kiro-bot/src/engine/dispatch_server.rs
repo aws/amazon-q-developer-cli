@@ -45,10 +45,7 @@ pub fn router(state: DispatchState) -> Router {
         .with_state(state)
 }
 
-async fn handle_dispatch(
-    State(state): State<DispatchState>,
-    Json(event): Json<Value>,
-) -> StatusCode {
+async fn handle_dispatch(State(state): State<DispatchState>, Json(event): Json<Value>) -> StatusCode {
     state.dispatcher.process_as_if_from_slack(event).await;
     StatusCode::OK
 }
@@ -88,7 +85,9 @@ mod tests {
     #[tokio::test]
     async fn dispatch_endpoint_records_payloads() {
         let rec = Recorder::default();
-        let state = DispatchState { dispatcher: Arc::new(rec.clone()) };
+        let state = DispatchState {
+            dispatcher: Arc::new(rec.clone()),
+        };
         let app = router(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -116,7 +115,9 @@ mod tests {
     #[tokio::test]
     async fn healthz_returns_200() {
         let rec = Recorder::default();
-        let state = DispatchState { dispatcher: Arc::new(rec) };
+        let state = DispatchState {
+            dispatcher: Arc::new(rec),
+        };
         let app = router(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

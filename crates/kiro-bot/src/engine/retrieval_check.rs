@@ -5,13 +5,12 @@
 //! that surfaces it instead of silently sending.
 //!
 //! Strategy:
-//! - Look at the user prompt for kiro-keyword markers ("kiro", "kiro-cli",
-//!   "/<slash-command>", error-message phrasing). If none, skip — the
-//!   question wasn't supposed to retrieve.
-//! - Look at the model reply for citation markers (`Sources:`, `docs/`,
-//!   `github_issue:`). If found, retrieval likely happened — pass.
-//! - If the prompt was kiro-related but the reply has no citation, log a
-//!   structured warning so we can grep CloudWatch for it and add a metric.
+//! - Look at the user prompt for kiro-keyword markers ("kiro", "kiro-cli", "/<slash-command>",
+//!   error-message phrasing). If none, skip — the question wasn't supposed to retrieve.
+//! - Look at the model reply for citation markers (`Sources:`, `docs/`, `github_issue:`). If found,
+//!   retrieval likely happened — pass.
+//! - If the prompt was kiro-related but the reply has no citation, log a structured warning so we
+//!   can grep CloudWatch for it and add a metric.
 //!
 //! This is intentionally cheap text matching, not LLM-based. False positives
 //! (logging a warning on a benign reply) are fine; false negatives (missing
@@ -50,10 +49,7 @@ fn prompt_is_kiro_related(prompt: &str) -> bool {
         return true;
     }
     // A leading slash command is almost always a kiro-cli question.
-    if lower
-        .split_whitespace()
-        .any(|w| w.starts_with('/') && w.len() > 1)
-    {
+    if lower.split_whitespace().any(|w| w.starts_with('/') && w.len() > 1) {
         return true;
     }
     false
@@ -102,10 +98,7 @@ mod tests {
     #[test]
     fn kiro_question_with_sources_line_is_cited() {
         let reply = "Run `kiro-cli login`.\n\nSources: `docs/auth.md`";
-        assert_eq!(
-            check("how do I log in to kiro-cli", reply),
-            RetrievalCheck::Cited,
-        );
+        assert_eq!(check("how do I log in to kiro-cli", reply), RetrievalCheck::Cited,);
     }
 
     #[test]
@@ -113,10 +106,7 @@ mod tests {
         // Some replies skip the trailing Sources: line and just inline the
         // path. Don't punish those.
         let reply = "Per `docs/commands/login.md`, run `kiro-cli login`.";
-        assert_eq!(
-            check("how do I log in to kiro-cli", reply),
-            RetrievalCheck::Cited,
-        );
+        assert_eq!(check("how do I log in to kiro-cli", reply), RetrievalCheck::Cited,);
     }
 
     #[test]
@@ -142,9 +132,6 @@ mod tests {
     #[test]
     fn github_issue_link_counts_as_citation() {
         let reply = "Known issue — see github_issue:42";
-        assert_eq!(
-            check("is this a known kiro-cli bug?", reply),
-            RetrievalCheck::Cited,
-        );
+        assert_eq!(check("is this a known kiro-cli bug?", reply), RetrievalCheck::Cited,);
     }
 }

@@ -2700,8 +2700,7 @@ mod tests {
     /// allowedTools so the kiro-help bot can answer Q&A without an interactive prompt.
     #[test]
     fn kiro_help_agent_has_search_kiro_knowledge_wired_up() {
-        let agent: Agent =
-            serde_json::from_str(include_str!("../../kiro_help.json")).expect("Invalid kiro_help.json");
+        let agent: Agent = serde_json::from_str(include_str!("../../kiro_help.json")).expect("Invalid kiro_help.json");
 
         assert_eq!(agent.name, "kiro_help");
 
@@ -2718,9 +2717,7 @@ mod tests {
             agent.tools
         );
         assert!(
-            agent
-                .allowed_tools
-                .contains("@kiro-knowledge/search_kiro_knowledge"),
+            agent.allowed_tools.contains("@kiro-knowledge/search_kiro_knowledge"),
             "allowedTools must auto-approve @kiro-knowledge/search_kiro_knowledge"
         );
     }

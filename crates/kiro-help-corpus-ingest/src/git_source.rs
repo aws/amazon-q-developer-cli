@@ -187,7 +187,9 @@ mod tests {
         let src = GitSource::new("/this/does/not/exist");
         let err = src.fetch().await.unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("No such file") || msg.contains("not found") || msg.contains("os error"),
-            "unexpected error: {msg}");
+        assert!(
+            msg.contains("No such file") || msg.contains("not found") || msg.contains("os error"),
+            "unexpected error: {msg}"
+        );
     }
 }

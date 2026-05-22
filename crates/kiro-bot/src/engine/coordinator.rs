@@ -4,8 +4,8 @@
 //! deduplication, per-conversation lease arbitration, peer forwarding, and
 //! durable transcript storage. Two impls:
 //!
-//! - [`NoopCoordinator`]: in-memory, single-task. Used by the CLI/cron
-//!   frontends, local development, and unit tests.
+//! - [`NoopCoordinator`]: in-memory, single-task. Used by the CLI/cron frontends, local
+//!   development, and unit tests.
 //! - `DynamoCoordinator` (Phase 4 follow-up): production multi-task.
 //!
 //! The trait surface here is the only piece `engine::core` interacts with;
@@ -95,11 +95,7 @@ pub trait Coordinator: Send + Sync {
     async fn append_turn(&self, conversation_id: &str, turn: Turn) -> anyhow::Result<()>;
 
     /// Load up to `limit` most-recent turns for the conversation, oldest first.
-    async fn load_history(
-        &self,
-        conversation_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<Turn>>;
+    async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>>;
 }
 
 /// In-memory implementation. Single-task only (state isn't shared across
@@ -175,13 +171,10 @@ impl Coordinator for InMemoryClusterCoordinator {
                 LeaseOutcome::Held { peer: existing.owner }
             },
             _ => {
-                s.leases.insert(
-                    conversation_id.to_string(),
-                    Lease {
-                        owner: self.own_task_id.clone(),
-                        expires_at,
-                    },
-                );
+                s.leases.insert(conversation_id.to_string(), Lease {
+                    owner: self.own_task_id.clone(),
+                    expires_at,
+                });
                 LeaseOutcome::Acquired
             },
         }
@@ -217,11 +210,7 @@ impl Coordinator for InMemoryClusterCoordinator {
         Ok(())
     }
 
-    async fn load_history(
-        &self,
-        conversation_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<Turn>> {
+    async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>> {
         let s = self.cluster.lock().expect("cluster state poisoned");
         let all = s.transcripts.get(conversation_id).cloned().unwrap_or_default();
         if all.len() <= limit {
@@ -283,11 +272,7 @@ impl Coordinator for NoopCoordinator {
         Ok(())
     }
 
-    async fn load_history(
-        &self,
-        conversation_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<Turn>> {
+    async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>> {
         let state = self.state.lock().expect("noop state poisoned");
         let all = state.transcripts.get(conversation_id).cloned().unwrap_or_default();
         if all.len() <= limit {
@@ -301,8 +286,9 @@ impl Coordinator for NoopCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     fn turn(role: TurnRole, text: &str, secs: i64) -> Turn {
         Turn {
@@ -341,17 +327,25 @@ mod tests {
     #[tokio::test]
     async fn forward_is_a_no_op() {
         let c = NoopCoordinator::new();
-        c.forward("peer-1", ForwardEvent { slack_event_json: serde_json::json!({"id":"x"}) })
-            .await
-            .unwrap();
+        c.forward("peer-1", ForwardEvent {
+            slack_event_json: serde_json::json!({"id":"x"}),
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
     async fn append_and_load_round_trips_in_order() {
         let c = NoopCoordinator::new();
-        c.append_turn("convo-A", turn(TurnRole::User, "hi", 1000)).await.unwrap();
-        c.append_turn("convo-A", turn(TurnRole::Assistant, "hello", 1001)).await.unwrap();
-        c.append_turn("convo-A", turn(TurnRole::User, "thanks", 1002)).await.unwrap();
+        c.append_turn("convo-A", turn(TurnRole::User, "hi", 1000))
+            .await
+            .unwrap();
+        c.append_turn("convo-A", turn(TurnRole::Assistant, "hello", 1001))
+            .await
+            .unwrap();
+        c.append_turn("convo-A", turn(TurnRole::User, "thanks", 1002))
+            .await
+            .unwrap();
 
         let hist = c.load_history("convo-A", 100).await.unwrap();
         assert_eq!(hist.len(), 3);
@@ -430,14 +424,20 @@ mod tests {
         let task_b = task_a.sibling("task-B");
 
         assert!(task_a.dedupe_event("evt-1").await, "first sighting on A → true");
-        assert!(!task_b.dedupe_event("evt-1").await, "second sighting on B → false (cluster-wide)");
+        assert!(
+            !task_b.dedupe_event("evt-1").await,
+            "second sighting on B → false (cluster-wide)"
+        );
     }
 
     #[tokio::test]
     async fn cluster_coordinator_transcripts_are_visible_to_siblings() {
         let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
         let task_b = task_a.sibling("task-B");
-        task_a.append_turn("convo-1", turn(TurnRole::User, "hi", 100)).await.unwrap();
+        task_a
+            .append_turn("convo-1", turn(TurnRole::User, "hi", 100))
+            .await
+            .unwrap();
         let hist = task_b.load_history("convo-1", 10).await.unwrap();
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].text, "hi");

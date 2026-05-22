@@ -48,11 +48,7 @@ impl FeedbackTally {
 /// Tally rows whose timestamp is within `[since, now]`. Bad reactions are
 /// silently skipped — the bot writer only writes "+1" / "-1" but the metric
 /// shouldn't crash on garbage left from manual edits.
-pub fn tally_in_window(
-    rows: &[FeedbackRow],
-    since: DateTime<Utc>,
-    now: DateTime<Utc>,
-) -> FeedbackTally {
+pub fn tally_in_window(rows: &[FeedbackRow], since: DateTime<Utc>, now: DateTime<Utc>) -> FeedbackTally {
     let mut up = 0u64;
     let mut down = 0u64;
     for row in rows {
@@ -69,18 +65,16 @@ pub fn tally_in_window(
 }
 
 /// Compute negative-feedback rate for the spec's 7-day rolling window.
-pub fn compute_negative_feedback_rate(
-    rows: &[FeedbackRow],
-    now: DateTime<Utc>,
-) -> FeedbackTally {
+pub fn compute_negative_feedback_rate(rows: &[FeedbackRow], now: DateTime<Utc>) -> FeedbackTally {
     let since = now - chrono::Duration::days(7);
     tally_in_window(rows, since, now)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     fn ts(secs: i64) -> DateTime<Utc> {
         Utc.timestamp_opt(secs, 0).single().unwrap()

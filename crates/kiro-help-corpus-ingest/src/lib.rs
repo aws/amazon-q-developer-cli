@@ -82,8 +82,9 @@ impl Source for StubSource {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     #[test]
     fn partition_round_trips_serde() {

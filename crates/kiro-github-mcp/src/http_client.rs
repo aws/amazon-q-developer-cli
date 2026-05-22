@@ -60,12 +60,7 @@ impl HttpGithubClient {
 
 #[async_trait::async_trait]
 impl GithubClient for HttpGithubClient {
-    async fn search_issues(
-        &self,
-        repo: &RepoRef,
-        query: &str,
-        limit: u32,
-    ) -> anyhow::Result<Vec<IssueSummary>> {
+    async fn search_issues(&self, repo: &RepoRef, query: &str, limit: u32) -> anyhow::Result<Vec<IssueSummary>> {
         // GitHub's /search/issues uses a `q=` parameter that supports
         // `repo:<owner>/<repo>` qualifiers. Per_page caps results.
         let q_raw = format!("repo:{}/{} {}", repo.owner, repo.repo, query);
@@ -118,12 +113,7 @@ impl GithubClient for HttpGithubClient {
         parse_issue_created(&body)
     }
 
-    async fn create_comment(
-        &self,
-        repo: &RepoRef,
-        issue_number: u64,
-        body: &str,
-    ) -> anyhow::Result<CommentCreated> {
+    async fn create_comment(&self, repo: &RepoRef, issue_number: u64, body: &str) -> anyhow::Result<CommentCreated> {
         let url = format!(
             "{}/repos/{}/{}/issues/{}/comments",
             self.base_url, repo.owner, repo.repo, issue_number
@@ -163,8 +153,7 @@ struct SearchItem {
 }
 
 pub fn parse_search_response(json: &str) -> anyhow::Result<Vec<IssueSummary>> {
-    let payload: SearchPayload =
-        serde_json::from_str(json).context("parsing GitHub /search/issues JSON")?;
+    let payload: SearchPayload = serde_json::from_str(json).context("parsing GitHub /search/issues JSON")?;
     Ok(payload
         .items
         .into_iter()
@@ -185,8 +174,7 @@ struct IssueCreatedPayload {
 }
 
 pub fn parse_issue_created(json: &str) -> anyhow::Result<IssueCreated> {
-    let p: IssueCreatedPayload =
-        serde_json::from_str(json).context("parsing GitHub create-issue response")?;
+    let p: IssueCreatedPayload = serde_json::from_str(json).context("parsing GitHub create-issue response")?;
     Ok(IssueCreated {
         number: p.number,
         html_url: p.html_url,
@@ -214,8 +202,7 @@ fn urlencode(s: &str) -> String {
 }
 
 pub fn parse_comment_created(json: &str) -> anyhow::Result<CommentCreated> {
-    let p: CommentCreatedPayload =
-        serde_json::from_str(json).context("parsing GitHub create-comment response")?;
+    let p: CommentCreatedPayload = serde_json::from_str(json).context("parsing GitHub create-comment response")?;
     Ok(CommentCreated { html_url: p.html_url })
 }
 

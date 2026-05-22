@@ -1,10 +1,9 @@
 //! Core types for the kiro-github MCP server. Three tools:
 //!
 //! - `search_github_issues` — read-only: keyword search across issues + PRs.
-//! - `create_github_issue`  — write: opens a new issue with the given title
-//!   and body. Optional labels.
-//! - `comment_on_existing`  — write: posts a comment on an existing issue or
-//!   PR.
+//! - `create_github_issue`  — write: opens a new issue with the given title and body. Optional
+//!   labels.
+//! - `comment_on_existing`  — write: posts a comment on an existing issue or PR.
 //!
 //! The `GithubClient` trait lets tests stub out HTTP — the production impl
 //! (`HttpGithubClient`) lives in [`crate::http_client`] and wraps `reqwest`.
@@ -69,12 +68,7 @@ pub struct CommentCreated {
 /// HTTP layer abstracted out of the MCP server so tests don't need a wiremock.
 #[async_trait::async_trait]
 pub trait GithubClient: Send + Sync {
-    async fn search_issues(
-        &self,
-        repo: &RepoRef,
-        query: &str,
-        limit: u32,
-    ) -> anyhow::Result<Vec<IssueSummary>>;
+    async fn search_issues(&self, repo: &RepoRef, query: &str, limit: u32) -> anyhow::Result<Vec<IssueSummary>>;
     async fn create_issue(
         &self,
         repo: &RepoRef,
@@ -82,12 +76,7 @@ pub trait GithubClient: Send + Sync {
         body: &str,
         labels: &[String],
     ) -> anyhow::Result<IssueCreated>;
-    async fn create_comment(
-        &self,
-        repo: &RepoRef,
-        issue_number: u64,
-        body: &str,
-    ) -> anyhow::Result<CommentCreated>;
+    async fn create_comment(&self, repo: &RepoRef, issue_number: u64, body: &str) -> anyhow::Result<CommentCreated>;
 }
 
 /// Truncate `s` to at most `max_chars` Unicode chars, appending '…' if cut.

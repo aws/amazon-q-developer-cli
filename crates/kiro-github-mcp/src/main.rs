@@ -12,14 +12,16 @@ use kiro_github_mcp::{
     GithubClient,
     RepoRef,
 };
-use rmcp::ServiceExt;
-use rmcp::ServerHandler;
 use rmcp::model::*;
 use rmcp::service::{
     RequestContext,
     RoleServer,
 };
 use rmcp::transport::stdio;
+use rmcp::{
+    ServerHandler,
+    ServiceExt,
+};
 use serde::Deserialize;
 
 #[derive(Parser, Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,7 @@ enum Scope {
 
 impl std::str::FromStr for Scope {
     type Err = String;
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "read" => Ok(Scope::Read),
@@ -125,8 +128,7 @@ impl ServerHandler for GithubServer {
                     .search_issues(&repo, &input.query, limit)
                     .await
                     .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-                let body = serde_json::to_value(&issues)
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                let body = serde_json::to_value(&issues).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
                 Ok(json_result(body))
             },
             "create_github_issue" if self.scope == Scope::Write => {
@@ -139,8 +141,8 @@ impl ServerHandler for GithubServer {
                     .create_issue(&repo, &input.title, &input.body, &labels)
                     .await
                     .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-                let body = serde_json::to_value(&created)
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                let body =
+                    serde_json::to_value(&created).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
                 Ok(json_result(body))
             },
             "comment_on_existing" if self.scope == Scope::Write => {
@@ -152,8 +154,8 @@ impl ServerHandler for GithubServer {
                     .create_comment(&repo, input.number, &input.body)
                     .await
                     .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-                let body = serde_json::to_value(&created)
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                let body =
+                    serde_json::to_value(&created).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
                 Ok(json_result(body))
             },
             other => Err(ErrorData::invalid_params(
@@ -170,8 +172,7 @@ impl ServerHandler for GithubServer {
 impl GithubServer {
     fn resolve_repo(&self, repo: Option<&str>) -> Result<RepoRef, ErrorData> {
         match repo {
-            Some(slug) => RepoRef::parse(slug)
-                .map_err(|e| ErrorData::invalid_params(e.to_string(), None)),
+            Some(slug) => RepoRef::parse(slug).map_err(|e| ErrorData::invalid_params(e.to_string(), None)),
             None => Ok(self.default_repo.clone()),
         }
     }

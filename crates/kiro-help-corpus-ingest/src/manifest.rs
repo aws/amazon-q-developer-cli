@@ -48,8 +48,9 @@ impl Manifest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     #[test]
     fn manifest_round_trips_through_json() {
@@ -57,11 +58,7 @@ mod tests {
         counts.insert(Partition::Docs, 12);
         counts.insert(Partition::Issues, 7);
         counts.insert(Partition::Releases, 0);
-        let m = Manifest::new(
-            Utc.with_ymd_and_hms(2026, 5, 19, 17, 0, 0).unwrap(),
-            "JOB-1",
-            &counts,
-        );
+        let m = Manifest::new(Utc.with_ymd_and_hms(2026, 5, 19, 17, 0, 0).unwrap(), "JOB-1", &counts);
         let bytes = m.to_json();
         let back: Manifest = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(m, back);

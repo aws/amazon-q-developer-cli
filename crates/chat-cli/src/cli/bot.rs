@@ -6,8 +6,8 @@
 //!   1. the clap subcommand surface,
 //!   2. the `KIRO_ENABLE_BOT` env-var feature gate,
 //!   3. the dispatch match into `kiro-bot`,
-//!   4. the one bridge into chat-cli's own `update::UpdateArgs` (since the
-//!      binary updating itself is a chat-cli concern, not a kiro-bot one).
+//!   4. the one bridge into chat-cli's own `update::UpdateArgs` (since the binary updating itself
+//!      is a chat-cli concern, not a kiro-bot one).
 
 use std::process::ExitCode;
 

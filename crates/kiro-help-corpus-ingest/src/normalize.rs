@@ -37,11 +37,7 @@ pub struct Batch {
 }
 
 /// Convert raw chunks for a single partition into one or more JSONL batches.
-pub fn build_batches(
-    partition: Partition,
-    chunks: &[RawChunk],
-    run_at: DateTime<Utc>,
-) -> Vec<Batch> {
+pub fn build_batches(partition: Partition, chunks: &[RawChunk], run_at: DateTime<Utc>) -> Vec<Batch> {
     let prefix = format!(
         "{}/{}",
         partition.as_str(),
@@ -53,15 +49,14 @@ pub fn build_batches(
     let mut current_count = 0usize;
     let mut batch_index = 0usize;
 
-    let push_batch =
-        |batches: &mut Vec<Batch>, prefix: &str, body: Vec<u8>, count: usize, idx: usize| {
-            batches.push(Batch {
-                key: format!("{prefix}/batch-{idx}.jsonl"),
-                partition,
-                body,
-                record_count: count,
-            });
-        };
+    let push_batch = |batches: &mut Vec<Batch>, prefix: &str, body: Vec<u8>, count: usize, idx: usize| {
+        batches.push(Batch {
+            key: format!("{prefix}/batch-{idx}.jsonl"),
+            partition,
+            body,
+            record_count: count,
+        });
+    };
 
     for chunk in chunks {
         if chunk.partition != partition {
@@ -100,8 +95,9 @@ pub fn build_batches(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     fn ts() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 19, 17, 30, 0).unwrap()
@@ -144,15 +140,12 @@ mod tests {
 
     #[test]
     fn ignores_chunks_from_other_partitions() {
-        let chunks = vec![
-            doc("docs/a.md", "a"),
-            RawChunk {
-                source_path: "github_issue:owner/repo#1".to_string(),
-                content: "i".to_string(),
-                last_modified: ts(),
-                partition: Partition::Issues,
-            },
-        ];
+        let chunks = vec![doc("docs/a.md", "a"), RawChunk {
+            source_path: "github_issue:owner/repo#1".to_string(),
+            content: "i".to_string(),
+            last_modified: ts(),
+            partition: Partition::Issues,
+        }];
         let batches = build_batches(Partition::Docs, &chunks, ts());
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].record_count, 1);
@@ -168,18 +161,29 @@ mod tests {
             .collect();
         let batches = build_batches(Partition::Docs, &chunks, ts());
 
-        assert!(batches.len() >= 2, "expected to roll over to multiple batches, got {}", batches.len());
+        assert!(
+            batches.len() >= 2,
+            "expected to roll over to multiple batches, got {}",
+            batches.len()
+        );
         let total_records: usize = batches.iter().map(|b| b.record_count).sum();
         assert_eq!(total_records, 6, "every record must end up in some batch");
         for b in &batches {
-            assert!(b.body.len() <= MAX_BATCH_BYTES + chunk_payload.len(),
+            assert!(
+                b.body.len() <= MAX_BATCH_BYTES + chunk_payload.len(),
                 "batch body {} exceeds {} (with one in-flight chunk slack)",
-                b.body.len(), MAX_BATCH_BYTES);
+                b.body.len(),
+                MAX_BATCH_BYTES
+            );
             assert!(b.record_count >= 1, "no batch should be empty");
         }
         // First batch is index 0, then 1, etc.
         for (i, b) in batches.iter().enumerate() {
-            assert!(b.key.ends_with(&format!("batch-{i}.jsonl")), "batch {i} key was {}", b.key);
+            assert!(
+                b.key.ends_with(&format!("batch-{i}.jsonl")),
+                "batch {i} key was {}",
+                b.key
+            );
         }
     }
 }

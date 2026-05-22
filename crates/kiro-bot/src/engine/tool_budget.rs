@@ -63,9 +63,8 @@ impl ToolBudget {
     ///
     /// - `Within { used, max }` for any call up to `max - 1`.
     /// - `Exhausted { used, max }` for the call that brings used to `max`.
-    /// - `Over { used, max }` for any call after `max`. The counter is NOT
-    ///   incremented past `max`, so repeated rejected calls all surface the
-    ///   same `used = max` value.
+    /// - `Over { used, max }` for any call after `max`. The counter is NOT incremented past `max`,
+    ///   so repeated rejected calls all surface the same `used = max` value.
     pub fn charge(&self) -> BudgetState {
         let prev = self.used.fetch_add(1, Ordering::SeqCst);
         let used = prev + 1;
@@ -76,7 +75,10 @@ impl ToolBudget {
         } else {
             // Roll back the increment — Over should not move `used` further.
             self.used.fetch_sub(1, Ordering::SeqCst);
-            BudgetState::Over { used: self.max, max: self.max }
+            BudgetState::Over {
+                used: self.max,
+                max: self.max,
+            }
         }
     }
 

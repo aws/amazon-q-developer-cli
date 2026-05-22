@@ -510,10 +510,7 @@ async fn handle_reaction(
             // - `dm:<reactor>` for DMs (handler ignored bot reactions earlier)
             // - `channel:<id>` for channel reactions
             // The first hit wins; loading both is cheap (DDB Query+Limit).
-            let candidates = [
-                format!("dm:{reactor}"),
-                format!("channel:{channel_str}"),
-            ];
+            let candidates = [format!("dm:{reactor}"), format!("channel:{channel_str}")];
             let mut chunk_ids = Vec::new();
             for convo in &candidates {
                 let turns = state.core.coordinator.load_history(convo, 5).await.unwrap_or_default();

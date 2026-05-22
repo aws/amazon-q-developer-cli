@@ -7,20 +7,17 @@
 //! Semantics:
 //!
 //! - `dedupe_event` — conditional `PutItem` on the dedup table with
-//!   `attribute_not_exists(slack_event_id)`. Returns `true` on success,
-//!   `false` on `ConditionalCheckFailedException`.
-//! - `try_acquire` — conditional `PutItem` on the leases table allowing the
-//!   write iff `attribute_not_exists(owner_task_arn)` OR the existing lease
-//!   is past `lease_expires_at`. On conflict we `GetItem` to return
-//!   `LeaseOutcome::Held { peer }`. Any other error → `Unavailable` (and
-//!   log).
+//!   `attribute_not_exists(slack_event_id)`. Returns `true` on success, `false` on
+//!   `ConditionalCheckFailedException`.
+//! - `try_acquire` — conditional `PutItem` on the leases table allowing the write iff
+//!   `attribute_not_exists(owner_task_arn)` OR the existing lease is past `lease_expires_at`. On
+//!   conflict we `GetItem` to return `LeaseOutcome::Held { peer }`. Any other error → `Unavailable`
+//!   (and log).
 //! - `renew` — conditional `UpdateItem` requiring `owner_task_arn = :me`.
 //! - `release` — conditional `DeleteItem` with the same condition.
-//! - `append_turn` — atomic `UpdateItem ADD` on a `<conv_id>:counter` row to
-//!   mint the next `turn_seq`, then `PutItem` of the transcript row at that
-//!   key. Sets `expires_at` 30 days out.
-//! - `load_history` — `Query` with `ScanIndexForward = false, Limit = N`,
-//!   reverse on the client.
+//! - `append_turn` — atomic `UpdateItem ADD` on a `<conv_id>:counter` row to mint the next
+//!   `turn_seq`, then `PutItem` of the transcript row at that key. Sets `expires_at` 30 days out.
+//! - `load_history` — `Query` with `ScanIndexForward = false, Limit = N`, reverse on the client.
 //! - `forward` — POST `/dispatch` to the peer over plain HTTP.
 //!
 //! Tests use `aws-smithy-mocks` to assert request/response shape without a
@@ -31,9 +28,9 @@ use std::collections::HashMap;
 use anyhow::Context;
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::SdkError;
+use aws_sdk_dynamodb::operation::delete_item::DeleteItemError;
 use aws_sdk_dynamodb::operation::put_item::PutItemError;
 use aws_sdk_dynamodb::operation::update_item::UpdateItemError;
-use aws_sdk_dynamodb::operation::delete_item::DeleteItemError;
 use aws_sdk_dynamodb::types::AttributeValue;
 use chrono::{
     DateTime,
@@ -124,6 +121,7 @@ impl DynamoCoordinator {
     fn n(value: i64) -> AttributeValue {
         AttributeValue::N(value.to_string())
     }
+
     fn s(value: impl Into<String>) -> AttributeValue {
         AttributeValue::S(value.into())
     }
@@ -155,7 +153,10 @@ impl Coordinator for DynamoCoordinator {
             Ok(_) => true,
             Err(e) if is_conditional_check_failed_put(&e) => false,
             Err(e) => {
-                warn!(?e, "dedupe_event PutItem failed; treating as duplicate (safer than double-process)");
+                warn!(
+                    ?e,
+                    "dedupe_event PutItem failed; treating as duplicate (safer than double-process)"
+                );
                 false
             },
         }
@@ -303,20 +304,13 @@ impl Coordinator for DynamoCoordinator {
             .item(col::TS, Self::s(turn.ts.to_rfc3339()))
             .item(col::EXPIRES_AT, Self::n(expires));
         if !turn.chunk_ids.is_empty() {
-            req = req.item(
-                col::CHUNK_IDS,
-                AttributeValue::Ss(turn.chunk_ids.clone()),
-            );
+            req = req.item(col::CHUNK_IDS, AttributeValue::Ss(turn.chunk_ids.clone()));
         }
         req.send().await.context("transcript PutItem")?;
         Ok(())
     }
 
-    async fn load_history(
-        &self,
-        conversation_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<Turn>> {
+    async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>> {
         let resp = self
             .client
             .query()
@@ -373,7 +367,12 @@ fn item_to_turn(item: &HashMap<String, AttributeValue>) -> Option<Turn> {
         .and_then(|v| v.as_ss().ok())
         .map(|ss| ss.to_vec())
         .unwrap_or_default();
-    Some(Turn { role, text, ts, chunk_ids })
+    Some(Turn {
+        role,
+        text,
+        ts,
+        chunk_ids,
+    })
 }
 
 fn is_conditional_check_failed_put(err: &SdkError<PutItemError>) -> bool {
@@ -399,8 +398,9 @@ fn is_conditional_check_failed_delete(err: &SdkError<DeleteItemError>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::TimeZone;
+
+    use super::*;
 
     /// Smoke test: the table-name plumbing accepts owned strings + slices and
     /// the resulting `DynamoCoordinator` is `Clone + Send + Sync`. Live AWS
@@ -452,15 +452,9 @@ mod tests {
     #[test]
     fn item_to_turn_preserves_chunk_ids() {
         let mut item = HashMap::new();
-        item.insert(
-            col::ROLE.to_string(),
-            AttributeValue::S("assistant".to_string()),
-        );
+        item.insert(col::ROLE.to_string(), AttributeValue::S("assistant".to_string()));
         item.insert(col::TEXT.to_string(), AttributeValue::S("...".to_string()));
-        item.insert(
-            col::TS.to_string(),
-            AttributeValue::S(Utc::now().to_rfc3339()),
-        );
+        item.insert(col::TS.to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         item.insert(
             col::CHUNK_IDS.to_string(),
             AttributeValue::Ss(vec!["docs/a.md".into(), "docs/b.md".into()]),
@@ -472,15 +466,9 @@ mod tests {
     #[test]
     fn item_to_turn_rejects_unknown_role() {
         let mut item = HashMap::new();
-        item.insert(
-            col::ROLE.to_string(),
-            AttributeValue::S("not-a-role".to_string()),
-        );
+        item.insert(col::ROLE.to_string(), AttributeValue::S("not-a-role".to_string()));
         item.insert(col::TEXT.to_string(), AttributeValue::S("x".to_string()));
-        item.insert(
-            col::TS.to_string(),
-            AttributeValue::S(Utc::now().to_rfc3339()),
-        );
+        item.insert(col::TS.to_string(), AttributeValue::S(Utc::now().to_rfc3339()));
         assert!(item_to_turn(&item).is_none());
     }
 
@@ -490,14 +478,8 @@ mod tests {
             .region(aws_config::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        let coord = DynamoCoordinator::new(
-            Client::new(&cfg),
-            "l",
-            "t",
-            "d",
-            "self",
-        )
-        .with_peer_base_url("http://127.0.0.1:9999");
+        let coord = DynamoCoordinator::new(Client::new(&cfg), "l", "t", "d", "self")
+            .with_peer_base_url("http://127.0.0.1:9999");
         assert_eq!(coord.peer_url("ignored"), "http://127.0.0.1:9999/dispatch");
     }
 
@@ -508,9 +490,6 @@ mod tests {
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
         let coord = DynamoCoordinator::new(Client::new(&cfg), "l", "t", "d", "self");
-        assert_eq!(
-            coord.peer_url("10.0.0.1:8080"),
-            "http://10.0.0.1:8080/dispatch"
-        );
+        assert_eq!(coord.peer_url("10.0.0.1:8080"), "http://10.0.0.1:8080/dispatch");
     }
 }

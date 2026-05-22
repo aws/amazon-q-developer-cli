@@ -74,9 +74,7 @@ pub async fn run_once(
         let chunk_count = chunks.len();
         info!(
             partition = partition.as_str(),
-            chunk_count,
-            batch_count,
-            "fetched + normalized"
+            chunk_count, batch_count, "fetched + normalized"
         );
         for batch in &batches {
             writer
@@ -117,13 +115,15 @@ pub async fn run_once(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    use chrono::TimeZone;
+
     use super::*;
     use crate::{
         RawChunk,
         StubSource,
     };
-    use chrono::TimeZone;
-    use std::sync::Mutex;
 
     #[derive(Default)]
     struct FakeWriter {
@@ -137,6 +137,7 @@ mod tests {
         fn new() -> Self {
             Self::default()
         }
+
         fn fail_ingest() -> Self {
             Self {
                 fail_ingest: true,
@@ -151,10 +152,12 @@ mod tests {
             self.batches.lock().unwrap().push(batch.clone());
             Ok(())
         }
+
         async fn put_manifest(&self, manifest: &Manifest) -> anyhow::Result<()> {
             *self.manifest.lock().unwrap() = Some(manifest.clone());
             Ok(())
         }
+
         async fn start_ingestion(&self) -> anyhow::Result<String> {
             *self.ingest_calls.lock().unwrap() += 1;
             if self.fail_ingest {
@@ -181,10 +184,10 @@ mod tests {
     async fn run_once_writes_batches_and_kicks_ingestion() {
         let writer = FakeWriter::new();
         let sources: Vec<Box<dyn Source>> = vec![
-            Box::new(StubSource::new(
-                Partition::Docs,
-                vec![doc("docs/a.md"), doc("docs/b.md")],
-            )),
+            Box::new(StubSource::new(Partition::Docs, vec![
+                doc("docs/a.md"),
+                doc("docs/b.md"),
+            ])),
             Box::new(StubSource::new(Partition::Issues, vec![])),
         ];
 
@@ -225,8 +228,7 @@ mod tests {
     #[tokio::test]
     async fn run_once_propagates_ingest_failure() {
         let writer = FakeWriter::fail_ingest();
-        let sources: Vec<Box<dyn Source>> =
-            vec![Box::new(StubSource::new(Partition::Docs, vec![doc("docs/a.md")]))];
+        let sources: Vec<Box<dyn Source>> = vec![Box::new(StubSource::new(Partition::Docs, vec![doc("docs/a.md")]))];
 
         let err = run_once(&sources, &writer, ts()).await.unwrap_err();
         assert!(err.to_string().contains("start_ingestion"));

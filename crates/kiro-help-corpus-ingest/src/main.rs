@@ -9,33 +9,30 @@
 //! - `KB_ID`                    — Bedrock Knowledge Base ID
 //! - `AWS_REGION`               — region for both clients
 //! - `KIRO_CLI_REPO`            — `owner/repo`, defaults to `kiro-team/kiro-cli`
-//! - `KIRO_CLI_LOCAL_CHECKOUT`  — optional; if set, walked for the docs
-//!                                partition. Lambda runs typically don't have
-//!                                a checkout — Phase 3 v1 sets this only when
-//!                                the Lambda is run with a layer carrying the
-//!                                docs tarball. See INGEST.md.
-//! - `GH_PAT`                   — GitHub personal access token. The runtime
-//!                                stack populates this from
-//!                                `kiro-bot/github-pat` Secrets Manager.
+//! - `KIRO_CLI_LOCAL_CHECKOUT`  — optional; if set, walked for the docs partition. Lambda runs
+//!   typically don't have a checkout — Phase 3 v1 sets this only when the Lambda is run with a
+//!   layer carrying the docs tarball. See INGEST.md.
+//! - `GH_PAT`                   — GitHub personal access token. The runtime stack populates this
+//!   from `kiro-bot/github-pat` Secrets Manager.
 
 use std::env;
 
 use anyhow::Context;
 use aws_sdk_bedrockagent::Client as BedrockAgentClient;
 use aws_sdk_secretsmanager::Client as SecretsManagerClient;
+use kiro_help_corpus_ingest::aws_writer::{
+    AwsCorpusWriter,
+    resolve_data_source_id,
+};
+use kiro_help_corpus_ingest::git_source::GitSource;
+use kiro_help_corpus_ingest::github_http::{
+    GithubIssuesSource,
+    GithubReleasesSource,
+};
+use kiro_help_corpus_ingest::runner::run_once;
 use kiro_help_corpus_ingest::{
     Partition,
     Source,
-    aws_writer::{
-        AwsCorpusWriter,
-        resolve_data_source_id,
-    },
-    git_source::GitSource,
-    github_http::{
-        GithubIssuesSource,
-        GithubReleasesSource,
-    },
-    runner::run_once,
 };
 use lambda_runtime::{
     Error,
@@ -84,7 +81,9 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     let pat = match env::var("GH_PAT").ok() {
         Some(p) if !p.is_empty() => Some(p),
         _ => match env::var("GH_PAT_SECRET_ARN").ok() {
-            Some(arn) => fetch_pat_from_secret(&cfg, &arn, &env::var("GH_PAT_SECRET_JSON_KEY").unwrap_or_default()).await?,
+            Some(arn) => {
+                fetch_pat_from_secret(&cfg, &arn, &env::var("GH_PAT_SECRET_JSON_KEY").unwrap_or_default()).await?
+            },
             None => None,
         },
     };
@@ -94,17 +93,13 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     let data_source_id = resolve_data_source_id(&bedrock_agent, &kb_id).await?;
     info!(%data_source_id, "resolved KB data source");
 
-    let writer =
-        AwsCorpusWriter::from_env(bucket.clone(), kb_id.clone(), data_source_id, region.clone())
-            .await?;
+    let writer = AwsCorpusWriter::from_env(bucket.clone(), kb_id.clone(), data_source_id, region.clone()).await?;
 
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
     if let Some(checkout) = local_checkout.as_deref() {
         sources.push(Box::new(GitSource::new(checkout)));
     } else {
-        info!(
-            "KIRO_CLI_LOCAL_CHECKOUT not set; docs partition will be empty this run"
-        );
+        info!("KIRO_CLI_LOCAL_CHECKOUT not set; docs partition will be empty this run");
         // Push a stub so the run records 0 docs without skipping the partition.
         sources.push(Box::new(kiro_help_corpus_ingest::StubSource::new(
             Partition::Docs,
@@ -117,21 +112,18 @@ async fn handler(event: LambdaEvent<serde_json::Value>) -> Result<serde_json::Va
     let run_at = chrono::Utc::now();
     match run_once(sources.as_slice(), &writer, run_at).await {
         Ok(summary) => {
-            info!(
-                ?summary,
-                "ingest run complete"
-            );
+            info!(?summary, "ingest run complete");
             Ok(serde_json::json!({
                 "status": "ok",
                 "ingestion_job_id": summary.ingestion_job_id,
                 "batches_written": summary.batches_written,
                 "counts": summary.counts.iter().map(|(p, n)| (p.as_str().to_string(), *n)).collect::<std::collections::BTreeMap<_,_>>(),
             }))
-        }
+        },
         Err(e) => {
             error!(?e, "ingest run failed");
             Err(Error::from(format!("ingest failed: {e:#}")))
-        }
+        },
     }
 }
 
@@ -159,8 +151,8 @@ async fn fetch_pat_from_secret(
         // Treat the entire SecretString as the PAT.
         return Ok(Some(secret_str));
     }
-    let v: serde_json::Value = serde_json::from_str(&secret_str)
-        .with_context(|| format!("parsing secret JSON from {arn}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&secret_str).with_context(|| format!("parsing secret JSON from {arn}"))?;
     let pat = v.get(json_key).and_then(|x| x.as_str()).map(String::from);
     if pat.is_none() {
         warn!(arn, json_key, "secret JSON missing the requested key; skipping PAT");

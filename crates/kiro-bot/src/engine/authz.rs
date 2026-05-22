@@ -132,10 +132,7 @@ impl Authorizer {
         // Surface the conversation kind via context so policies can use
         // `context.is_dm` without needing a full Entities table loaded.
         let is_dm = matches!(conversation, Conversation::Dm { .. });
-        let ctx = Context::from_pairs([(
-            "is_dm".into(),
-            RestrictedExpression::new_bool(is_dm),
-        )])?;
+        let ctx = Context::from_pairs([("is_dm".into(), RestrictedExpression::new_bool(is_dm))])?;
         self.check(user, "use_bot", "Conversation", &conversation.authz_id(), ctx)
     }
 
@@ -154,7 +151,6 @@ impl Authorizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::engine::core::Conversation;
 
     /// Phase 6 Task 4: the kiro-help bot's Cedar policy, as committed under

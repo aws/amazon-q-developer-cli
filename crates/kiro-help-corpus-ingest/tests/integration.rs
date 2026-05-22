@@ -2,11 +2,11 @@
 //! that speaks just enough HTTP/1.1 to satisfy reqwest, and points
 //! `GithubIssuesSource::with_base_url` at it.
 
+use std::sync::Arc;
 use std::sync::atomic::{
     AtomicUsize,
     Ordering,
 };
-use std::sync::Arc;
 
 use kiro_help_corpus_ingest::Source;
 use kiro_help_corpus_ingest::github_http::GithubIssuesSource;

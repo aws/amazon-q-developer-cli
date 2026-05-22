@@ -62,8 +62,8 @@ pub fn parse_cases(jsonl: &str) -> anyhow::Result<Vec<EvalCase>> {
         if line.is_empty() || line.starts_with("//") {
             continue;
         }
-        let case: EvalCase = serde_json::from_str(line)
-            .map_err(|e| anyhow::anyhow!("line {} not valid JSON: {}", idx + 1, e))?;
+        let case: EvalCase =
+            serde_json::from_str(line).map_err(|e| anyhow::anyhow!("line {} not valid JSON: {}", idx + 1, e))?;
         out.push(case);
     }
     Ok(out)
@@ -74,11 +74,7 @@ pub fn parse_cases(jsonl: &str) -> anyhow::Result<Vec<EvalCase>> {
 pub const EMBEDDED_CASES_JSONL: &str = include_str!("../data/kiro-help.jsonl");
 
 /// Run all cases through the supplied retriever and produce a report.
-pub async fn run_eval(
-    retriever: &dyn Retriever,
-    cases: &[EvalCase],
-    top_n: u32,
-) -> anyhow::Result<EvalReport> {
+pub async fn run_eval(retriever: &dyn Retriever, cases: &[EvalCase], top_n: u32) -> anyhow::Result<EvalReport> {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         let chunks = retriever
@@ -97,9 +93,7 @@ pub async fn run_eval(
         // bucket name changes. Match by suffix so both formats work.
         let passed = case.must_retrieve_any_of.iter().any(|expected| {
             retrieved_paths.iter().any(|got| {
-                got == expected
-                    || got.ends_with(&format!("/{expected}"))
-                    || got.ends_with(expected.as_str())
+                got == expected || got.ends_with(&format!("/{expected}")) || got.ends_with(expected.as_str())
             })
         });
         results.push(CaseResult {
@@ -116,11 +110,7 @@ pub async fn run_eval(
 fn summarize(results: Vec<CaseResult>) -> EvalReport {
     let total = results.len();
     let passed = results.iter().filter(|r| r.passed).count();
-    let recall = if total == 0 {
-        1.0
-    } else {
-        passed as f64 / total as f64
-    };
+    let recall = if total == 0 { 1.0 } else { passed as f64 / total as f64 };
     let mut counts: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
     for r in &results {
         let entry = counts.entry(r.category.clone()).or_insert((0, 0));
@@ -133,7 +123,13 @@ fn summarize(results: Vec<CaseResult>) -> EvalReport {
         .into_iter()
         .map(|(cat, (n, ok))| (cat, if n == 0 { 1.0 } else { ok as f64 / n as f64 }))
         .collect();
-    EvalReport { total, passed, recall, by_category, results }
+    EvalReport {
+        total,
+        passed,
+        recall,
+        by_category,
+        results,
+    }
 }
 
 /// Format a human-readable summary suitable for stdout / CI logs.
@@ -167,11 +163,12 @@ pub fn format_report(report: &EvalReport, threshold: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use kiro_knowledge_mcp::{
         RetrievedChunk,
         StubRetriever,
     };
+
+    use super::*;
 
     fn case(id: &str, query: &str, expected: &[&str], category: &str) -> EvalCase {
         EvalCase {
@@ -228,10 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_eval_passes_when_any_expected_path_returned() {
-        let retriever = StubRetriever::new(vec![
-            chunk("docs/auth.md", 0.91),
-            chunk("docs/other.md", 0.50),
-        ]);
+        let retriever = StubRetriever::new(vec![chunk("docs/auth.md", 0.91), chunk("docs/other.md", 0.50)]);
         let cases = vec![case("auth-001", "login", &["docs/auth.md"], "auth")];
         let report = run_eval(&retriever, &cases, 5).await.unwrap();
         assert_eq!(report.passed, 1);
@@ -256,8 +250,8 @@ mod tests {
         // category.
         let retriever = StubRetriever::new(vec![chunk("docs/auth.md", 0.9)]);
         let cases = vec![
-            case("auth-1", "q", &["docs/auth.md"], "auth"),    // pass
-            case("mcp-1", "q", &["docs/mcp.md"], "mcp"),       // miss
+            case("auth-1", "q", &["docs/auth.md"], "auth"), // pass
+            case("mcp-1", "q", &["docs/mcp.md"], "mcp"),    // miss
         ];
         let report = run_eval(&retriever, &cases, 5).await.unwrap();
         let by_cat: std::collections::BTreeMap<&str, f64> =
