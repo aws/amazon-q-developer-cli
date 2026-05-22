@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed screen reader support in menus — cursor now tracks the selected item, and `/model` marks the current model with `[active]`."
+  "description": "Screen reader support in menus — cursor now tracks the selected item, and `/model` marks the current model with `[active]`."
 }

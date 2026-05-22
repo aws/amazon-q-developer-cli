@@ -1,4 +1,4 @@
 {
   "type": "added",
-  "description": "Added a structured /spec artifact viewer to the TUI with summary/detail navigation, R/D/T quick-switch between requirements/design/tasks, and a live generation card while the agent writes (KAS only)"
+  "description": "A structured /spec artifact viewer to the TUI with summary/detail navigation, R/D/T quick-switch between requirements/design/tasks, and a live generation card while the agent writes (KAS only)"
 }

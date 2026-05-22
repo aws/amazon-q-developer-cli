@@ -1,4 +1,4 @@
 {
   "type": "fixed",
-  "description": "Fixed web_fetch tool hanging permanently when html2text panics on certain HTML content"
+  "description": "Web_fetch tool hanging permanently when html2text panics on certain HTML content"
 }
