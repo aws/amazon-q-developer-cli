@@ -1149,6 +1149,27 @@
       "status": "validated"
     },
     {
+      "path": "settings/model-defaults.md",
+      "file": "model-defaults.md",
+      "title": "chat.modelDefaults",
+      "description": "Per-model additional field defaults like effort level",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "model",
+        "defaults",
+        "effort",
+        "output_config",
+        "per-model"
+      ],
+      "related": [
+        "default-model",
+        "slash-model"
+      ],
+      "validated": "2026-05-21",
+      "status": "validated"
+    },
+    {
       "path": "settings/show-thinking.md",
       "file": "show-thinking.md",
       "title": "chat.showThinking",
