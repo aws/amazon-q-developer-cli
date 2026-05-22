@@ -477,7 +477,6 @@ const startInitialization = (
           incrementShowCount(active.id);
           appStore.getState().setAnnouncement({
             id: active.id,
-            content: active.content,
             maxLines: active.maxLines,
           });
         }

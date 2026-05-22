@@ -5,6 +5,12 @@ import { Divider } from './divider/Divider.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useAppStore } from '../../stores/app-store.js';
+import { useAllowAsciiArt } from '../../hooks/useGlyphs.js';
+import {
+  getAnnouncementContent,
+  UNICODE_ICONS,
+  ASCII_ICONS,
+} from '../../constants/feed.js';
 
 /** Extract the header + only the "Added" section from grouped markdown content. */
 function extractAddedSection(content: string): string {
@@ -13,12 +19,10 @@ function extractAddedSection(content: string): string {
   let inAdded = false;
 
   for (const line of lines) {
-    // Always include the main header (bold "What's new" line)
     if (line.startsWith('**✨')) {
       result.push(line);
       continue;
     }
-    // Section headers like **Added**, **Fixed**, etc.
     if (/^\*\*\w+\*\*$/.test(line.trim())) {
       inAdded = line.trim() === '**Added**';
       if (inAdded) result.push(line);
@@ -41,13 +45,18 @@ export const WelcomeMessageBar = React.memo(function WelcomeMessageBar({
   const announcement = useAppStore((s) => s.announcement);
   const expanded = useAppStore((s) => s.announcementExpanded);
   const { getColor, getUserResponseColor } = useTheme();
+  const { allowAsciiArt } = useAllowAsciiArt();
 
   if (!announcement) return null;
 
+  const icons = allowAsciiArt ? UNICODE_ICONS : ASCII_ICONS;
+  const content = getAnnouncementContent({ icons });
+  if (!content) return null;
+
   const showAll = forceExpanded || expanded;
-  const addedOnly = extractAddedSection(announcement.content);
-  const hasMore = addedOnly.length < announcement.content.length;
-  const visibleContent = showAll ? announcement.content : addedOnly;
+  const addedOnly = extractAddedSection(content);
+  const hasMore = addedOnly.length < content.length;
+  const visibleContent = showAll ? content : addedOnly;
 
   return (
     <Box flexDirection="column" marginTop={1}>

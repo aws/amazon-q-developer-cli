@@ -5,7 +5,12 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import { getRecentReleases } from '../../constants/feed.js';
+import { useAllowAsciiArt } from '../../hooks/useGlyphs.js';
+import {
+  getRecentReleases,
+  UNICODE_ICONS,
+  ASCII_ICONS,
+} from '../../constants/feed.js';
 
 interface ChangelogPanelProps {
   onClose: () => void;
@@ -17,10 +22,12 @@ const CHANGELOG_RELEASE_LIMIT = 2;
 export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const { getColor, getUserResponseColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const { allowAsciiArt } = useAllowAsciiArt();
 
+  const icons = allowAsciiArt ? UNICODE_ICONS : ASCII_ICONS;
   const releases = useMemo(
-    () => getRecentReleases(CHANGELOG_RELEASE_LIMIT),
-    []
+    () => getRecentReleases(CHANGELOG_RELEASE_LIMIT, { icons }),
+    [icons]
   );
 
   // Markdown: `## ✨ What's new in X.Y.Z (date)` per release, joined by `---`.

@@ -795,7 +795,7 @@ interface BaseAppActions {
 
   // Announcement actions
   setAnnouncement: (
-    msg: { id: string; content: string; maxLines: number } | null
+    msg: { id: string; maxLines: number } | null
   ) => void;
   toggleAnnouncementExpanded: () => void;
 
@@ -1022,7 +1022,7 @@ export interface AppState {
   pendingVoiceText: string | null;
 
   // Announcement state
-  announcement: { id: string; content: string; maxLines: number } | null;
+  announcement: { id: string; maxLines: number } | null;
   announcementExpanded: boolean;
 
   // Abort controller for current stream
