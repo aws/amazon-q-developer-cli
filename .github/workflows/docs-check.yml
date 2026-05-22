@@ -210,29 +210,11 @@ jobs:
         if: steps.generated.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WHAT: ${{ steps.generated.outputs.what }}
         run: |
-          BODY="🤖 **Auto-generated PR artifacts**"
+          FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ .changes/unreleased/ 2>/dev/null || true)
+          BODY="🤖 Updated docs/changelog artifacts:
+          $(echo "$FILES" | sed 's/^/- /')
 
-          DOC_FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ 2>/dev/null || true)
-          if [ -n "$DOC_FILES" ]; then
-            BODY="$BODY
-
-          📝 **Documentation:**
-          $(echo "$DOC_FILES" | sed 's/^/- /')"
-          fi
-
-          CL_FILES=$(git diff --name-only HEAD~1 -- .changes/unreleased/ 2>/dev/null || true)
-          if [ -n "$CL_FILES" ]; then
-            BODY="$BODY
-
-          📋 **Changelog:**
-          $(echo "$CL_FILES" | sed 's/^/- /')
-          $(cat .changes/unreleased/$(echo "$CL_FILES" | head -1 | xargs basename) 2>/dev/null | python3 -c "import json,sys; e=json.load(sys.stdin); print(f'> [{e[\"type\"]}] {e[\"description\"]}')" 2>/dev/null || true)"
-          fi
-
-          BODY="$BODY
-
-          Please review the generated changes. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
+          Please review. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
 
           gh pr comment "${{ steps.pr.outputs.number }}" --body "$BODY"
