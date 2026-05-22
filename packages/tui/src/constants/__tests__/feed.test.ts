@@ -241,10 +241,10 @@ describe('getRecentReleases', () => {
     const [latest] = getRecentReleases(1);
     expect(latest.version).toBe('2.2.0');
     expect(latest.date).toBe('2026-04-27');
-    expect(latest.content).toContain("## What's new in 2.2.0");
-    expect(latest.content).toContain('**Added**: Support adaptive thinking');
-    expect(latest.content).toContain('**Fixed**: Fix API key auth');
-    // Change bullets are alphabetically sorted by type — Added before Fixed
+    expect(latest.content).toContain("**✨ What's new in 2.2.0**");
+    expect(latest.content).toContain('- Support adaptive thinking');
+    expect(latest.content).toContain('- Fix API key auth');
+    // Change groups are ordered: Added before Fixed
     const addedIdx = latest.content.indexOf('**Added**');
     const fixedIdx = latest.content.indexOf('**Fixed**');
     expect(addedIdx).toBeGreaterThan(0);

@@ -6,6 +6,30 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useAppStore } from '../../stores/app-store.js';
 
+/** Extract the header + only the "Added" section from grouped markdown content. */
+function extractAddedSection(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let inAdded = false;
+
+  for (const line of lines) {
+    // Always include the main header (bold "What's new" line)
+    if (line.startsWith('**✨')) {
+      result.push(line);
+      continue;
+    }
+    // Section headers like **Added**, **Fixed**, etc.
+    if (/^\*\*\w+\*\*$/.test(line.trim())) {
+      inAdded = line.trim() === '**Added**';
+      if (inAdded) result.push(line);
+      continue;
+    }
+    if (inAdded) result.push(line);
+  }
+
+  return result.join('\n');
+}
+
 export interface WelcomeMessageBarProps {
   /** When true, show all lines regardless of store expanded state (for Static rendering) */
   forceExpanded?: boolean;
@@ -20,12 +44,10 @@ export const WelcomeMessageBar = React.memo(function WelcomeMessageBar({
 
   if (!announcement) return null;
 
-  const lines = announcement.content.split('\n');
   const showAll = forceExpanded || expanded;
-  const isTruncated = lines.length > announcement.maxLines;
-  const visibleContent = showAll
-    ? announcement.content
-    : lines.slice(0, announcement.maxLines).join('\n');
+  const addedOnly = extractAddedSection(announcement.content);
+  const hasMore = addedOnly.length < announcement.content.length;
+  const visibleContent = showAll ? announcement.content : addedOnly;
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -35,7 +57,7 @@ export const WelcomeMessageBar = React.memo(function WelcomeMessageBar({
           content={visibleContent}
           color={getUserResponseColor()}
         />
-        {isTruncated && !showAll && (
+        {hasMore && !showAll && (
           <Text>{getColor('muted')('ctrl+o to expand')}</Text>
         )}
       </Box>

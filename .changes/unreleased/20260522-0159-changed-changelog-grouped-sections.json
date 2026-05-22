@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Improve changelog display with grouped sections and show only new features by default"
+}

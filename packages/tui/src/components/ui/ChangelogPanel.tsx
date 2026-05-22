@@ -16,7 +16,7 @@ const CHANGELOG_RELEASE_LIMIT = 2;
 
 export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const { getColor, getUserResponseColor } = useTheme();
-  const { width: termWidth, height: termHeight } = useTerminalSize();
+  const { height: termHeight } = useTerminalSize();
 
   const releases = useMemo(
     () => getRecentReleases(CHANGELOG_RELEASE_LIMIT),
@@ -27,19 +27,19 @@ export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const body = useMemo(
     () =>
       releases
-        .map((r) => r.content.replace(/^## (.*)$/m, `## ✨ $1 (${r.date})`))
+        .map((r) =>
+          r.content.replace(
+            /^\*\*✨ What's new in (.*)\*\*$/m,
+            `**✨ What's new in $1 (${r.date})**`
+          )
+        )
         .join('\n\n---\n\n'),
     [releases]
   );
 
-  // Scroll window sized to fit the panel inline in the flow. Markdown source
-  // lines expand to ~2 terminal rows after header padding / bullet wrapping;
-  // wider terminals wrap less, so scale by termWidth/80.
-  const widthFactor = Math.max(1, termWidth / 80);
-  const maxVisible = Math.max(
-    Math.floor(((termHeight - 16) / 2) * widthFactor),
-    4
-  );
+  // Show enough source lines to fill roughly half the terminal.
+  // Markdown rendering adds some expansion but half-height is a safe balance.
+  const maxVisible = Math.max(Math.floor(termHeight / 2), 8);
 
   const lines = useMemo(() => body.split('\n'), [body]);
   const [scrollOffset, setScrollOffset] = useState(0);

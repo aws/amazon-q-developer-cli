@@ -34,7 +34,7 @@ export type FeedEntry = AnnouncementEntry;
 export interface ReleaseNotes {
   version: string;
   date: string;
-  /** Markdown body: `## What's new in X.Y.Z` + bullet list of changes. */
+  /** Full markdown body with all change types grouped. */
   content: string;
 }
 
@@ -67,19 +67,41 @@ const TYPE_LABELS: Record<string, string> = {
   deprecated: 'Deprecated',
 };
 
+/** Stable display order for change types. */
+const TYPE_ORDER = ['added', 'changed', 'fixed', 'security', 'deprecated'];
+
 /**
- * Convert a Rust feed release entry into a markdown-formatted announcement.
+ * Convert a Rust feed release entry into grouped markdown.
+ * If `onlyTypes` is provided, only those groups are included.
  */
-function releaseToContent(entry: RustFeedRelease): string {
-  const lines: string[] = [`## What's new in ${entry.version}`];
+function releaseToContent(
+  entry: RustFeedRelease,
+  options?: { onlyTypes?: string[] }
+): string {
+  const lines: string[] = [`**✨ What's new in ${entry.version}**`];
   const changes = entry.changes ?? [];
-  const sorted = [...changes].sort((a, b) => a.type.localeCompare(b.type));
-  for (const change of sorted) {
-    const label = TYPE_LABELS[change.type] ?? change.type;
-    // Strip PR links like " - [#123](url)"
+
+  // Group by type
+  const groups = new Map<string, string[]>();
+  for (const change of changes) {
+    if (options?.onlyTypes && !options.onlyTypes.includes(change.type))
+      continue;
     const desc = change.description.replace(/ - \[#\d+\]\([^)]+\)/, '');
-    lines.push(`- **${label}**: ${desc}`);
+    const list = groups.get(change.type) ?? [];
+    list.push(desc);
+    groups.set(change.type, list);
   }
+
+  for (const type of TYPE_ORDER) {
+    const items = groups.get(type);
+    if (!items) continue;
+    const label = TYPE_LABELS[type] ?? type;
+    lines.push('', `**${label}**`);
+    for (const item of items) {
+      lines.push(`- ${item}`);
+    }
+  }
+
   return lines.join('\n');
 }
 
