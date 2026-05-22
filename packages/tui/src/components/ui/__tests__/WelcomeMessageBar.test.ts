@@ -20,63 +20,46 @@ describe('WelcomeMessageBar store integration', () => {
     expect(store.getState().announcement).toBeNull();
   });
 
-  it('single-line content needs no expansion', () => {
+  it('setAnnouncement stores id and maxLines', () => {
     const store = createAppStore({ kiro: new Kiro() });
     store.getState().setAnnouncement({
       id: 'test',
-      content: 'Single line message',
       maxLines: 1,
     });
 
     const { announcement } = store.getState();
-    const lines = announcement!.content.split('\n');
-    expect(lines.length).toBeLessThanOrEqual(announcement!.maxLines);
+    expect(announcement).toEqual({ id: 'test', maxLines: 1 });
   });
 
-  it('multi-line content is truncated when not expanded', () => {
+  it('announcementExpanded defaults to false', () => {
     const store = createAppStore({ kiro: new Kiro() });
     store.getState().setAnnouncement({
       id: 'test',
-      content: 'Line 1\nLine 2\nLine 3',
       maxLines: 1,
     });
 
-    const { announcement, announcementExpanded } = store.getState();
-    const lines = announcement!.content.split('\n');
-    const isTruncated = lines.length > announcement!.maxLines;
-    expect(isTruncated).toBe(true);
-    expect(announcementExpanded).toBe(false);
-
-    // Visible lines in collapsed mode
-    const visibleLines = lines.slice(0, announcement!.maxLines);
-    expect(visibleLines).toEqual(['Line 1']);
+    expect(store.getState().announcementExpanded).toBe(false);
   });
 
-  it('shows all lines when expanded', () => {
+  it('toggleAnnouncementExpanded flips the state', () => {
     const store = createAppStore({ kiro: new Kiro() });
     store.getState().setAnnouncement({
       id: 'test',
-      content: 'Line 1\nLine 2\nLine 3',
       maxLines: 1,
     });
     store.getState().toggleAnnouncementExpanded();
 
-    const { announcement, announcementExpanded } = store.getState();
-    expect(announcementExpanded).toBe(true);
-    const lines = announcement!.content.split('\n');
-    expect(lines).toEqual(['Line 1', 'Line 2', 'Line 3']);
+    expect(store.getState().announcementExpanded).toBe(true);
+
+    store.getState().toggleAnnouncementExpanded();
+    expect(store.getState().announcementExpanded).toBe(false);
   });
 
-  it('no expand hint when content fits within maxLines', () => {
+  it('setAnnouncement(null) clears announcement', () => {
     const store = createAppStore({ kiro: new Kiro() });
-    store.getState().setAnnouncement({
-      id: 'test',
-      content: 'Just one line',
-      maxLines: 3,
-    });
+    store.getState().setAnnouncement({ id: 'test', maxLines: 3 });
+    store.getState().setAnnouncement(null);
 
-    const { announcement } = store.getState();
-    const lines = announcement!.content.split('\n');
-    expect(lines.length <= announcement!.maxLines).toBe(true);
+    expect(store.getState().announcement).toBeNull();
   });
 });

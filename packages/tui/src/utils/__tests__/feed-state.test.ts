@@ -11,6 +11,7 @@ import {
 
 let testDir: string;
 let originalHome: string | undefined;
+let originalVersionOverride: string | undefined;
 
 function stateFilePath(): string {
   return join(testDir, '.kiro', 'settings', 'feed_state.json');
@@ -29,7 +30,6 @@ function makeAnnouncement(
     type: FeedEntryType.Announcement,
     date: '2026-04-09',
     version: '1.29.6',
-    content: 'Test message',
     maxShowCount: 3,
     priority: 1,
     maxLines: 1,
@@ -45,10 +45,17 @@ beforeEach(() => {
   mkdirSync(testDir, { recursive: true });
   originalHome = process.env.HOME;
   process.env.HOME = testDir;
+  originalVersionOverride = process.env.KIRO_VERSION_OVERRIDE;
+  process.env.KIRO_VERSION_OVERRIDE = '1.29.6';
 });
 
 afterEach(() => {
   process.env.HOME = originalHome;
+  if (originalVersionOverride !== undefined) {
+    process.env.KIRO_VERSION_OVERRIDE = originalVersionOverride;
+  } else {
+    delete process.env.KIRO_VERSION_OVERRIDE;
+  }
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {

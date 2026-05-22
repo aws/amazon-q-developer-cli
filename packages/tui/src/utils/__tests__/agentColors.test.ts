@@ -25,7 +25,8 @@ describe('agentColors', () => {
     it('returns a color with .hex for custom name', () => {
       const result = getAgentColor('my-agent', mockGetColor);
       expect(typeof result.hex).toBe('string');
-      expect(result.hex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      // .hex can be a hex color (#XXXXXX), ansi256(N), or 'inherit'
+      expect(result.hex).toMatch(/^(#[0-9a-fA-F]{6}|ansi256\(\d+\)|inherit)$/);
     });
 
     it('returns a callable function for custom name', () => {

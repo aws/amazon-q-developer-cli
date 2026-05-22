@@ -49,8 +49,14 @@ jobs:
           rustup toolchain install nightly --component rustfmt --profile minimal
           cargo +nightly fmt
 
+      - name: Read pinned Bun version
+        if: steps.paths.outputs.tui == 'true'
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
       - uses: oven-sh/setup-bun@v2
         if: steps.paths.outputs.tui == 'true'
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - uses: ./.github/actions/codeartifact-login
         if: steps.paths.outputs.tui == 'true'

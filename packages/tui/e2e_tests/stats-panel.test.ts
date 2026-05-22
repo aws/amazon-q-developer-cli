@@ -31,7 +31,9 @@ describe('Stats Panel', () => {
       await testCase.sendKeys(char);
       await testCase.sleepMs(30);
     }
-    await testCase.sleepMs(300);
+    await testCase.sleepMs(500);
+    // Ensure autocomplete shows /stats before pressing Enter
+    await testCase.waitForText('/stats', 5000);
     await testCase.sendKeys('\r');
 
     // Wait for panel to appear by checking store state
@@ -64,7 +66,9 @@ describe('Stats Panel', () => {
       await testCase.sendKeys(char);
       await testCase.sleepMs(30);
     }
-    await testCase.sleepMs(300);
+    await testCase.sleepMs(500);
+    // Ensure autocomplete shows /stats before pressing Enter
+    await testCase.waitForText('/stats', 5000);
     await testCase.sendKeys('\r');
 
     // Wait for panel to appear
