@@ -1,59 +1,249 @@
-# Contributing Guidelines
+# Contributing to Kiro CLI
 
-Thank you for your interest in contributing to KIRO CLI. Whether it's a bug report, new feature, correction, or additional
-documentation, we greatly value feedback and contributions from our community.
+Thank you for your interest in contributing to Kiro CLI. We firmly believe we are stronger together — 2,000 builders pushing this forward will always build something better than a team could alone. This document explains how to contribute effectively.
 
-Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
-information to effectively respond to your bug report or contribution.
+## Table of Contents
 
-## Reporting Bugs/Feature Requests
+- [What's Accepted Today](#whats-accepted-today)
+- [Before You Start](#before-you-start)
+- [Contribution Workflow](#contribution-workflow)
+- [Finding Work](#finding-work)
+- [Pull Request Guidelines](#pull-request-guidelines)
+- [Changelog Fragments](#changelog-fragments)
+- [Test Coverage](#test-coverage)
+- [Review Process](#review-process)
+- [Proposals (Non-Trivial Changes)](#proposals-non-trivial-changes)
+- [Community Reviewers](#community-reviewers)
+- [Development Setup](#development-setup)
+- [Style Guides](#style-guides)
+- [Reporting Bugs](#reporting-bugs)
+- [Security Issues](#security-issues)
+- [Getting Help](#getting-help)
+- [Code of Conduct](#code-of-conduct)
 
-We welcome you to use the GitHub issue tracker to report bugs or suggest features.
+## What's Accepted Today
 
-When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already
-reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
+| Area | Status | Notes |
+|------|--------|-------|
+| **TUI / TypeScript** (`packages/tui/`) | ✅ Open | Actively reviewed |
+| **Server internals / Rust** | ⏸️ Paused | V3 migration in progress — see [announcement](https://github.com/kiro-team/kiro-cli/discussions/XXX) |
+| **Documentation** | ✅ Open | Always welcome |
+| **Bug reports** | ✅ Open | Use the issue template |
 
-- A reproducible test case or series of steps
-- The version of our code being used
-- Any modifications you've made relevant to the bug
-- Anything unusual about your environment or deployment
+Rust/server PRs will not be merged while the V3 migration is underway. We will announce in [#kiro-cli-contributors](https://amzn-aws.slack.com/archives/C0911UTU5LJ) when server contributions reopen.
 
-## Contributing via Pull Requests
+## Before You Start
 
-Before making changes around new features, please first make a feature request and get a statement from the team. This codebase moves quickly, and you work is likely to be lost if not first coordinated with us.
+**File an issue before opening a PR.** Every PR should link to a Taskei issue so we can confirm alignment before you write code. This prevents wasted effort on both sides.
 
-Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
+### Use the Contribution Agent
 
-1. You are working against the latest source on the _main_ branch.
-2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
-3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
+The fastest way to get started is the **contribute agent** built into this repo. If you have Kiro CLI installed, run:
 
-To send us a pull request, please:
+```bash
+kiro --agent contribute
+```
 
-1. Fork the repository.
-2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages.
-5. Send us a pull request, answering any default questions in the pull request interface.
-6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+The agent will:
+- Help you classify your issue (bug, feature, or contribution)
+- Check for duplicates against existing tickets and PRs
+- Create the right ticket in the right place
+- Tell you whether you can PR directly or need team sign-off first
 
-GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
-[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
+### Manual workflow
 
-## Finding contributions to work on
+If you prefer not to use the agent:
 
-Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
+1. Check [existing issues](https://github.com/kiro-team/kiro-cli/issues) for duplicates
+2. Create a [Taskei issue](https://taskei.amazon.dev/rooms/0205a00e-4757-425d-bde0-e06884dce83e) describing the problem or feature
+3. Wait for acknowledgment on non-trivial changes (see [Proposals](#proposals-non-trivial-changes))
+4. Then open your PR
+
+For small fixes (typos, one-line bugs, doc corrections), you may skip the issue and go straight to a PR.
+
+## Contribution Workflow
+
+```
+1. File issue on Taskei (or find an existing one)
+2. Fork the repository
+3. Create a feature branch from `main`
+4. Make your changes (focused, single-purpose commits)
+5. Ensure tests pass locally
+6. Open a PR linking to the issue
+7. Respond to automated checks and reviewer feedback
+```
+
+## Finding Work
+
+- **Slack**: Join [#kiro-cli-contributors](https://amzn-aws.slack.com/archives/C0911UTU5LJ) for updates, issue discovery, and support
+- **Labels**: Look for issues tagged `help-wanted` or `good-first-issue`
+- **Office Hours**: Weekly sessions starting 6/1 — check the Slack channel for schedule
+
+## Pull Request Guidelines
+
+- **One concern per PR.** Don't mix refactors with features.
+- **Link your issue.** Include `Resolves #123` or a Taskei link in the PR description.
+- **Keep it focused.** If you also reformat surrounding code, it's harder to review.
+- **Write tests.** New features need tests. Bug fixes need a regression test.
+- **Update docs.** If your change affects user-facing behavior, update relevant documentation.
+- **Follow commit conventions.** Use clear, descriptive commit messages. See [Style Guides](#style-guides).
+
+## Review Process
+
+We use a delegated review model:
+
+| Step | What happens | SLA |
+|------|-------------|-----|
+| **Automated checks** | CI runs smoke tests, format checks, commit conventions, secrets scan | Minutes |
+| **Auto-labeling** | PR is classified by complexity (`size/small`, `size/medium`, `size/large`) and review gates (`needs-ux-review`, `needs-pm-review`) | Minutes |
+| **Human review** | Community Reviewers or core team reviews your code | 48 hours |
+| **Merge** | Core team merges approved PRs | After approval |
+
+If your PR has not received review within 48 hours, it automatically escalates to the core team.
+
+Every rejection includes a written rationale explaining why and what would need to change.
+
+## Proposals (Non-Trivial Changes)
+
+Non-trivial changes require a lightweight proposal before code. This includes:
+
+- New commands or subcommands
+- Behavior changes to existing commands
+- New dependencies
+- Architectural changes
+
+<!-- TODO: Link proposal template once available -->
+
+The proposal process ensures alignment before significant effort is invested. Small bug fixes and documentation improvements do not need a proposal.
+
+## Community Reviewers
+
+Trusted contributors can earn review permissions (no merge access). Community Reviewers:
+
+- Provide first-pass code review
+- Help maintain the 48-hour SLA
+- Escalate to core team when needed
+
+Interested? Post in [#kiro-cli-contributors](https://amzn-aws.slack.com/archives/C0911UTU5LJ) or reply to the contribution model announcement.
+
+## Development Setup
+
+### TypeScript / TUI
+
+```bash
+cd packages/tui
+bun install
+bun test
+```
+
+### Rust (paused — V3 migration)
+
+```bash
+cargo +nightly fmt
+cargo clippy -p chat_cli_v2
+cargo test -p chat_cli_v2
+```
+
+> **Note:** Rust/server contributions are currently paused. See [What's Accepted Today](#whats-accepted-today).
+
+### Running locally
+
+Refer to the [README](./README.md) for full build and run instructions.
+
+## Changelog Fragments
+
+Every PR with user-facing changes **must** include a changelog fragment. CI will block your PR if one is missing.
+
+Create a JSON file in `.changes/unreleased/` with this naming convention:
+
+```
+.changes/unreleased/YYYYMMDD-HHMM-<type>-<short-slug>.json
+```
+
+**Use the helper script** to automate this:
+
+```bash
+./scripts/new-change.sh <type> "Your concise, customer-facing description"
+```
+
+It generates the filename, slug, and validates the entry for you.
+
+**Example (manual):**
+
+```json
+{
+  "type": "fixed",
+  "description": "Prevent fs_write strReplace from silently growing files when oldStr is a substring of newStr"
+}
+```
+
+**Valid types:** `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`
+
+**Guidelines:**
+- Write from the user's perspective — what changed for them, not what you did in the code
+- Keep it to one sentence
+- No PR with user-facing changes will be merged without a fragment
+
+**No user-facing changes?** Add the `no-changelog` label to your PR to skip this check.
+
+## Test Coverage
+
+We enforce minimum coverage thresholds in CI. Your PR will fail if coverage regresses.
+
+**Current thresholds (TUI):**
+- Function coverage: ≥ 90%
+- Line coverage: ≥ 90%
+
+**What this means for your PR:**
+- New features must include unit tests
+- Bug fixes must include a regression test
+- If your change touches existing code, ensure existing tests still pass
+- Run `bun test` in `packages/tui/` locally before pushing — the output includes a coverage summary
+
+Integration tests run on Linux, macOS, and Windows. E2E tests build the full binary and exercise real user flows. If your change affects cross-platform behavior, CI will catch regressions across all three.
+
+## Style Guides
+
+### TypeScript
+
+- Follow the existing patterns in `packages/tui/`
+- Run `bun run lint` before submitting
+
+### Rust
+
+- Run `cargo +nightly fmt` for formatting
+- Run `cargo clippy -p chat_cli_v2` for lints
+- No warnings allowed
+
+### Commit Messages
+
+We use [conventional commits](https://www.conventionalcommits.org/). CI will enforce this on PR titles.
+
+- Format: `type: description` (e.g., `feat: add voice mode`, `fix: prevent crash on NFS mounts`)
+- Valid types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `perf`, `ci`
+- Keep the subject line under 72 characters
+- Use present tense ("Add feature" not "Added feature")
+- Reference the issue number in the body
+
+## Reporting Bugs
+
+Use the [bug report template](https://github.com/kiro-team/kiro-cli/issues/new?template=1_bug_report_template.yml) and include:
+
+- Steps to reproduce
+- Expected vs actual behavior
+- OS and Kiro CLI version (`kiro --version`)
+- Output of `kiro doctor` if applicable
+
+## Security Issues
+
+If you discover a potential security issue, **do not** create a public issue. Report it via the [AWS vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/).
+
+## Getting Help
+
+- **Slack**: [#kiro-cli-contributors](https://amzn-aws.slack.com/archives/C0911UTU5LJ)
+- **Office Hours**: Weekly starting 6/1 (schedule posted in Slack)
+- **Existing issues**: Search before asking — your question may already be answered
 
 ## Code of Conduct
 
-This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
-For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
-opensource-codeofconduct@amazon.com with any additional questions or comments.
-
-## Security issue notifications
-
-If you discover a potential security issue in this project we ask that you notify AWS/Amazon Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/). Please do **not** create a public github issue.
-
-## Licensing
-
-This repo is dual licensed under MIT and Apache 2.0 licenses. We will ask you to confirm the licensing of your contribution.
+This project follows the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct). See the [FAQ](https://aws.github.io/code-of-conduct-faq) or contact opensource-codeofconduct@amazon.com.
