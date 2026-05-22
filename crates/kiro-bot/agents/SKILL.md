@@ -34,13 +34,21 @@ Run this on EVERY user message that touches kiro, kiro-cli, kiro-bot, a kiro com
 
 ## Tool reference
 
-| Intent                   | Primary tool              | Plus                  |
-|--------------------------|---------------------------|-----------------------|
-| `question` / `setup`     | `search_kiro_knowledge`   | —                     |
-| `bug-report` / `error`   | `search_kiro_knowledge`   | `search_github_issues`|
-| `feature-request`        | `search_kiro_knowledge`   | `search_github_issues`|
-| Exact flag/config lookup | `search_kiro_knowledge`   | `introspect` if needed|
-| Meta (about this bot)    | none — answer from prompt | —                     |
+The kiro-help agent has access to six tools (see the prompt for full
+descriptions). This table maps intent → which to call:
+
+| Intent                          | Primary tool              | Plus                       |
+|---------------------------------|---------------------------|----------------------------|
+| `question` / `setup`            | `search_kiro_knowledge`   | —                          |
+| `bug-report` / `error`          | `search_kiro_knowledge`   | `search_github_issues`     |
+| `feature-request`               | `search_kiro_knowledge`   | `search_github_issues`     |
+| Exact tool/setting/command name | `search_kiro_knowledge`   | `introspect` if needed     |
+| File a new issue (post-approval)| `create_github_issue`     | gated on Slack reaction    |
+| Comment on existing (post-approval) | `comment_on_existing` | gated on Slack reaction    |
+| Meta (about this bot)           | none — answer from prompt | —                          |
+
+`read` is available for runtime-config debugging only and should not be
+used to answer end-user questions.
 
 ## Format
 

@@ -16,7 +16,6 @@ use super::gh_issue::GhIssue;
 use super::glob::Glob;
 use super::grep::Grep;
 use super::introspect::Introspect;
-use super::kiro_cli_help::KiroCliHelp;
 use super::knowledge::Knowledge;
 use super::session::Session;
 use super::switch_to_execution::SwitchToExecution;
@@ -53,7 +52,6 @@ impl ToolMetadata {
         Self::USE_AWS,
         Self::GH_ISSUE,
         Self::INTROSPECT,
-        Self::KIRO_CLI_HELP,
         Self::KNOWLEDGE,
         Self::CODE,
         Self::THINKING,
@@ -76,7 +74,6 @@ impl ToolMetadata {
     pub const GLOB: &ToolInfo = &Glob::INFO;
     pub const GREP: &ToolInfo = &Grep::INFO;
     pub const INTROSPECT: &ToolInfo = &Introspect::INFO;
-    pub const KIRO_CLI_HELP: &ToolInfo = &KiroCliHelp::INFO;
     pub const KNOWLEDGE: &ToolInfo = &Knowledge::INFO;
     pub const SESSION: &ToolInfo = &Session::INFO;
     pub const SWITCH_TO_EXECUTION: &ToolInfo = &SwitchToExecution::INFO;
@@ -114,7 +111,6 @@ pub enum Tool {
     Custom(CustomTool),
     GhIssue(GhIssue),
     Introspect(Introspect),
-    KiroCliHelp(KiroCliHelp),
     Knowledge(Knowledge),
     Code(code::Code),
     Thinking(Thinking),
@@ -140,7 +136,6 @@ impl Tool {
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => GhIssue::INFO.preferred_alias,
             Tool::Introspect(_) => Introspect::INFO.preferred_alias,
-            Tool::KiroCliHelp(_) => KiroCliHelp::INFO.preferred_alias,
             Tool::Knowledge(_) => Knowledge::INFO.preferred_alias,
             Tool::Code(_) => code::Code::INFO.preferred_alias,
             Tool::Thinking(_) => Thinking::INFO.preferred_alias,
@@ -166,7 +161,6 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.eval_perm(os, agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
             Tool::Introspect(_) => PermissionEvalResult::Allow,
-            Tool::KiroCliHelp(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
@@ -204,7 +198,6 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
-            Tool::KiroCliHelp(kch) => kch.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
             Tool::Code(code) => code.invoke(os, stdout, code_intelligence_client).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
@@ -257,7 +250,6 @@ impl Tool {
                 Tool::Custom(custom_tool) => custom_tool.queue_description(self, &mut buf),
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, &mut buf),
                 Tool::Introspect(introspect) => introspect.queue_description(self, &mut buf),
-                Tool::KiroCliHelp(kch) => kch.queue_description(self, &mut buf),
                 Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, &mut buf).await,
                 Tool::Code(code) => code.queue_description(self, &mut buf),
                 Tool::Thinking(thinking) => thinking.queue_description(self, &mut buf),
@@ -293,7 +285,6 @@ impl Tool {
                 Tool::Custom(custom_tool) => custom_tool.queue_description(self, output),
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, output),
                 Tool::Introspect(introspect) => introspect.queue_description(self, output),
-                Tool::KiroCliHelp(kch) => kch.queue_description(self, output),
                 Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, output).await,
                 Tool::Code(code) => code.queue_description(self, output),
                 Tool::Thinking(thinking) => thinking.queue_description(self, output),
@@ -322,7 +313,6 @@ impl Tool {
             Tool::Custom(custom_tool) => custom_tool.validate(os).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Introspect(introspect) => introspect.validate(os).await,
-            Tool::KiroCliHelp(kch) => kch.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Code(code) => code.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,

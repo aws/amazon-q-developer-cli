@@ -26,24 +26,6 @@
       "required": []
     }
   },
-  "kiro_cli_help": {
-    "name": "kiro_cli_help",
-    "description": "Run `kiro-cli --help`, `kiro-cli <subcommand> --help`, or `kiro-cli --version` and return the output. Use this to fetch the authoritative usage / flag listing for kiro-cli or one of its subcommands. NOT a generic shell — only the three forms above are accepted; arbitrary commands and shell metacharacters are rejected. Subcommand must be in the allowlist (agent, chat, completion, config, context, experiment, help, hooks, issue, login, logout, mcp, prompts, settings, telemetry, tools, user, version).",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "subcommand": {
-          "type": "string",
-          "description": "Subcommand to fetch help for (e.g., 'chat', 'mcp'). Omit (or pass an empty string) for top-level `kiro-cli --help`. Must be one of the allowed subcommands."
-        },
-        "version": {
-          "type": "boolean",
-          "description": "When true, runs `kiro-cli --version` (subcommand must be omitted)."
-        }
-      },
-      "required": []
-    }
-  },
   "glob": {
     "name": "glob",
     "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",

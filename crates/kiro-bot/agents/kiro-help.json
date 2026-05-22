@@ -31,6 +31,9 @@
     "@kiro-github-read/search_github_issues",
     "introspect"
   ],
+  "resources": [
+    "skill://~/.kiro/agents/SKILL.md"
+  ],
   "includeMcpJson": false,
   "welcomeMessage": "Ask me anything about Kiro CLI."
 }
