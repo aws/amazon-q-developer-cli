@@ -38,42 +38,14 @@ jobs:
             echo "$NEW_FRAGMENTS"
           fi
 
-      - name: Post or update comment
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'false' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Lint changelog fragments
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'true' }}
         run: |
-          MARKER="<!-- changelog-check -->"
-          BODY="${MARKER}
-          > [!WARNING]
-          > **Changelog fragment missing**
-          >
-          > This PR doesn't include a changelog entry in \`.changes/unreleased/\`. If this PR has user-facing changes, please add one.
-          >
-          > **Example fragment** — create a JSON file in \`.changes/unreleased/\`:
-          > \`\`\`json
-          > {
-          >   \"type\": \"fixed\",
-          >   \"description\": \"Your concise, customer-facing description here\"
-          > }
-          > \`\`\`
-          >
-          > Valid types: \`added\`, \`changed\`, \`deprecated\`, \`removed\`, \`fixed\`, \`security\`
-          >
-          > **No user-facing changes?** Add the \`no-changelog\` label to skip this check."
+          BASE_SHA=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
+          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/unreleased/*.json')
+          ./scripts/lint-changelog.sh $NEW_FRAGMENTS
 
-          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            --jq ".[] | select(.body | startswith(\"${MARKER}\")) | .id" | head -1)
-
-          if [ -n "$COMMENT_ID" ]; then
-            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
-              --method PATCH --field body="$BODY"
-          else
-            gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"
-          fi
-
-      - name: Fail if no fragment
+      - name: Note missing changelog
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'false' }}
         run: |
-          echo "::error::No changelog fragment found. Add one to .changes/unreleased/ or apply the 'no-changelog' label."
-          exit 1
+          echo "::notice::No changelog fragment found. Comment \`/changelog <optional instructions>\` to generate one, or add \`no-changelog\` label to skip."

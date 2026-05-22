@@ -25,7 +25,12 @@ Create changelog entries by analyzing recent changes and proposing commands to a
 
 ## Guidelines
 
-- **Be concise**: Descriptions should be clear and brief
+Follow the rules in `.changes/GUIDELINES.md`. Key points:
+
+- **No verb prefix**: Don't start with "Added", "Fixed", etc. — the type is shown as a section header
+- **Capitalize**: Start with a capital letter (unless it begins with a code reference like `/command`)
+- **One per entry**: Don't join multiple changes with "and" — create separate entries
+- **Be concise**: One sentence, under 100 characters when possible
 - **User-facing**: Focus on what users will notice, not internal changes
-- **Action-oriented**: Start with a verb (e.g., "Add", "Fix", "Update")
-- **Specific**: Mention the feature/component affected
+
+The script (`new-change.sh`) validates format automatically and will reject non-compliant entries.

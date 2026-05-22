@@ -27,7 +27,7 @@ lint_file() {
   # Check valid JSON
   if ! jq empty "$file" 2>/dev/null; then
     echo "❌ $basename: invalid JSON"
-    ((errors++))
+    errors=$((errors + 1))
     return
   fi
 
@@ -39,19 +39,19 @@ lint_file() {
 
   if [ -z "$type" ]; then
     echo "❌ $basename: missing 'type' field"
-    ((errors++))
+    errors=$((errors + 1))
     return
   fi
 
   if [ -z "$desc" ]; then
     echo "❌ $basename: missing 'description' field"
-    ((errors++))
+    errors=$((errors + 1))
     return
   fi
 
   if [ -n "$extra_keys" ]; then
     echo "❌ $basename: unexpected fields: $extra_keys"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check type is valid
@@ -61,7 +61,7 @@ lint_file() {
   done
   if [ "$valid" = false ]; then
     echo "❌ $basename: invalid type '$type'. Must be one of: $VALID_TYPES"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check description doesn't start with the type verb
@@ -94,13 +94,13 @@ lint_file() {
         ;;
     esac
     echo ""
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check minimum length
   if [ ${#desc} -lt 10 ]; then
     echo "❌ $basename: description too short (${#desc} chars, min 10)"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check first letter is capitalized (skip if starts with backtick, /, $, --, or ")
@@ -109,7 +109,7 @@ lint_file() {
     echo "❌ $basename: description should start with a capital letter."
     echo "   Got: \"$desc\""
     echo ""
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check for 'and' joining multiple distinct changes — should be separate entries.
@@ -119,7 +119,7 @@ lint_file() {
     echo "   Consider splitting into separate changelog entries — one change per file."
     echo "   Got: \"$desc\""
     echo ""
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Check that code references are wrapped in backticks
@@ -128,13 +128,13 @@ lint_file() {
     echo "⚠️  $basename: slash commands should be wrapped in backticks (e.g. \`/settings\`)"
     echo "   Got: \"$desc\""
     echo ""
-    ((errors++))
+    errors=$((errors + 1))
   fi
   if echo "$desc" | grep -qE '(^|[^`])--[a-z]' && ! echo "$desc" | grep -qE '`--[a-z]'; then
     echo "⚠️  $basename: flags should be wrapped in backticks (e.g. \`--resume\`)"
     echo "   Got: \"$desc\""
     echo ""
-    ((errors++))
+    errors=$((errors + 1))
   fi
 }
 
