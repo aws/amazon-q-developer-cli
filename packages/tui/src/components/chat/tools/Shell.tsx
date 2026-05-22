@@ -12,6 +12,35 @@ import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const PREVIEW_LINES = 5;
+const MAX_EXPANDED_LINES = 1000;
+
+/** Collect the first `n` lines from a chunked output buffer. Walks chunks in
+ *  order, stopping as soon as we have enough. O(n) in the output count. */
+function firstLines(chunks: string[][], n: number): string[] {
+  if (n <= 0) return [];
+  const out: string[] = [];
+  for (const c of chunks) {
+    for (const line of c) {
+      if (out.length >= n) return out;
+      out.push(line);
+    }
+  }
+  return out;
+}
+
+/** Collect the last `n` lines from a chunked output buffer. Walks chunks in
+ *  reverse, stopping as soon as we have enough. O(n) in the output count. */
+function lastLines(chunks: string[][], n: number): string[] {
+  if (n <= 0) return [];
+  const out: string[] = [];
+  for (let ci = chunks.length - 1; ci >= 0 && out.length < n; ci--) {
+    const c = chunks[ci]!;
+    for (let li = c.length - 1; li >= 0 && out.length < n; li--) {
+      out.push(c[li]!);
+    }
+  }
+  return out.reverse();
+}
 
 export interface ShellProps {
   /** The tool name/action */
@@ -89,19 +118,25 @@ export const Shell = React.memo(function Shell({
     return null;
   }, [result, isTimeoutError]);
 
-  // Unify output: result lines when finished, live output during execution.
-  const { outputLines, exitCode } = useMemo(() => {
+  // Unify output source: use result when available, otherwise liveOutput during execution.
+  // Output is represented as `string[][]` (chunks of lines) so that per-flush append is
+  // O(chunks) rather than O(total_lines) — the outer array holds chunk references, which
+  // we can spread cheaply even when total line count is in the tens of thousands.
+  const { outputChunks, exitCode } = useMemo((): {
+    outputChunks: string[][];
+    exitCode: number | null;
+  } => {
     if (result) {
       const { obj, text } = unwrapResultOutput(result);
 
       if (text) {
+        const lines = normalizeLineEndings(text).split('\n');
         return {
-          outputLines: normalizeLineEndings(text).split('\n'),
-          exitCode: null as number | null,
+          outputChunks: lines.length > 0 ? [lines] : [],
+          exitCode: null,
         };
       }
-      if (!obj)
-        return { outputLines: [] as string[], exitCode: null as number | null };
+      if (!obj) return { outputChunks: [], exitCode: null };
 
       let code: number | null = null;
       if ('exit_status' in obj) {
@@ -131,25 +166,33 @@ export const Shell = React.memo(function Shell({
         outputStr = obj.stderr;
       }
 
+      if (!outputStr) return { outputChunks: [], exitCode: code };
+      const lines = normalizeLineEndings(outputStr).split('\n');
       return {
-        outputLines: outputStr
-          ? normalizeLineEndings(outputStr).split('\n')
-          : [],
+        outputChunks: lines.length > 0 ? [lines] : [],
         exitCode: code,
       };
     }
 
     if (liveOutput && liveOutput.length > 0) {
-      return { outputLines: liveOutput, exitCode: null as number | null };
+      return { outputChunks: liveOutput, exitCode: null };
     }
 
-    return { outputLines: [] as string[], exitCode: null as number | null };
+    return { outputChunks: [], exitCode: null };
   }, [result, liveOutput]);
 
-  const hasOutput = outputLines.length > 0;
+  // Total line count across all chunks — O(num_chunks), cheap regardless of
+  // how many lines total.
+  const totalLines = useMemo(() => {
+    let n = 0;
+    for (const c of outputChunks) n += c.length;
+    return n;
+  }, [outputChunks]);
+
+  const hasOutput = totalLines > 0;
 
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: outputLines.length,
+    totalItems: totalLines,
     previewCount: PREVIEW_LINES,
     isStatic,
     unit: 'lines',
@@ -210,8 +253,12 @@ export const Shell = React.memo(function Shell({
     );
   }
 
-  // Expanded: single <Text> with all output lines.
+  // Expanded view: show output, capped at MAX_EXPANDED_LINES. For very verbose
+  // commands this keeps Ink from trying to lay out tens of thousands of <Text>
+  // nodes on every render.
   if (expanded) {
+    const expandedLines = firstLines(outputChunks, MAX_EXPANDED_LINES);
+    const truncated = totalLines > MAX_EXPANDED_LINES;
     return (
       <Box flexDirection="column">
         <StatusInfo
@@ -221,16 +268,25 @@ export const Shell = React.memo(function Shell({
         />
         <ToolMeta params={params} />
         <Box marginLeft={2} flexDirection="column">
-          <Text>{getColor('primary')(outputLines.join('\n'))}</Text>
+          {expandedLines.map((line, i) => (
+            <Text key={i}>{getColor('primary')(line)}</Text>
+          ))}
+          {truncated && (
+            <Text>
+              {getColor('secondary')(
+                `[truncated, showing ${MAX_EXPANDED_LINES} of ${totalLines} lines]`
+              )}
+            </Text>
+          )}
         </Box>
       </Box>
     );
   }
 
-  // Collapsed: single <Text>, tail during execution, head after completion.
+  // Collapsed: tail during execution, head after completion.
   const previewLines = isFinished
-    ? outputLines.slice(0, PREVIEW_LINES)
-    : outputLines.slice(-PREVIEW_LINES);
+    ? firstLines(outputChunks, PREVIEW_LINES)
+    : lastLines(outputChunks, PREVIEW_LINES);
 
   return (
     <Box flexDirection="column">
@@ -244,7 +300,9 @@ export const Shell = React.memo(function Shell({
             )}
           </Text>
         )}
-        <Text>{getColor('primary')(previewLines.join('\n'))}</Text>
+        {previewLines.map((line, i) => (
+          <Text key={i}>{getColor('primary')(line)}</Text>
+        ))}
         {isFinished && expandHint && (
           <Text>{getColor('secondary')(expandHint)}</Text>
         )}

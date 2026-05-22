@@ -829,7 +829,7 @@ export type AppStoreApi = ReturnType<typeof createAppStore>;
 export interface AppState {
   // Chat state
   messages: MessageType[];
-  liveOutputs: Map<string, string[]>;
+  liveOutputs: Map<string, string[][]>;
   queuedMessages: string[];
   editingQueueIndex: number | null;
   /**
@@ -1727,7 +1727,7 @@ export const createAppStore = (props: AppStoreProps) => {
               newLines.pop();
             if (newLines.length === 0) continue;
             const prev = newLiveOutputs.get(id) ?? [];
-            newLiveOutputs.set(id, prev.concat(newLines));
+            newLiveOutputs.set(id, [...prev, newLines]);
           }
           return { liveOutputs: newLiveOutputs };
         });
