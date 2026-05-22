@@ -808,9 +808,7 @@ interface BaseAppActions {
   toggleActivityTray: () => void;
 
   // Announcement actions
-  setAnnouncement: (
-    msg: { id: string; maxLines: number } | null
-  ) => void;
+  setAnnouncement: (msg: { id: string; maxLines: number } | null) => void;
   toggleAnnouncementExpanded: () => void;
 
   // Main orchestrator

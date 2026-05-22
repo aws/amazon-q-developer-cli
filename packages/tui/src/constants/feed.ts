@@ -68,7 +68,14 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 /** Stable display order for change types. */
-const TYPE_ORDER = ['added', 'changed', 'fixed', 'security', 'deprecated', 'removed'];
+const TYPE_ORDER = [
+  'added',
+  'changed',
+  'fixed',
+  'security',
+  'deprecated',
+  'removed',
+];
 
 /** Default Unicode icons for each change type. */
 export const UNICODE_ICONS: Record<string, string> = {

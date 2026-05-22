@@ -15,8 +15,12 @@ function findCommand<T extends AvailableCommand>(
   name: string
 ): T | undefined {
   const lower = name.toLowerCase();
+
+  // Exact match first
   const exact = commands.find((c) => c.name.toLowerCase() === `/${lower}`);
   if (exact) return exact;
+
+  // Prefix match - sort alphabetically so /clear < /compact < /context
   const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
   return sorted.find((c) => c.name.toLowerCase().startsWith(`/${lower}`));
 }

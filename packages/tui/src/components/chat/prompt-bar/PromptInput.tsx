@@ -71,7 +71,6 @@ import {
   exitSearch,
   abortSearch,
 } from '../../../utils/reverse-search.js';
-import { scoreCommands } from '../../../utils/commandScoring.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
 // editing logic. For now we import just the KillRing utility.
@@ -798,10 +797,14 @@ export const PromptInput = React.memo(function PromptInput({
       // Check if slash command menu is visible (has matching commands)
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
-          ? scoreCommands(
-              slashCommands.filter((cmd) => !cmd.meta?.hidden),
-              commandInputValue.slice(1)
-            ).length > 0
+          ? slashCommands.some(
+              (cmd) =>
+                !cmd.meta?.hidden &&
+                cmd.name
+                  .slice(1)
+                  .toLowerCase()
+                  .startsWith(commandInputValue.slice(1).toLowerCase())
+            )
           : false;
       const slashMenuVisible = hasMatchingSlashCommands;
       // Check if file picker menu is visible
