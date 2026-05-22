@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Require double Ctrl+Z to suspend, preventing accidental suspension during LLM streaming"
+}

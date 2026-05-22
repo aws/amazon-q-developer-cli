@@ -266,6 +266,7 @@ export const InlineLayout: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const exitSequence = useAppStore((state) => state.exitSequence);
+  const suspendArmed = useAppStore((state) => state.suspendArmed);
 
   // Research-survey state — kept as a simple trio of selectors since it's
   // only consumed here.
@@ -1091,7 +1092,8 @@ export const InlineLayout: React.FC = () => {
                 !artifactViewOpen &&
                 !showSurveyPanel &&
                 commandInputValue.length === 0 &&
-                exitSequence === 0
+                exitSequence === 0 &&
+                !suspendArmed
               }
             />
             <ExitHint />

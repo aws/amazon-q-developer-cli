@@ -618,6 +618,8 @@ interface BaseAppActions {
   addMessage: (sessionId: string, message: InboxMessage) => void;
   incrementExitSequence: () => void;
   resetExitSequence: () => void;
+  armSuspend: () => void;
+  disarmSuspend: () => void;
   showTransientAlert: (alert: TransientAlert) => void;
   dismissTransientAlert: () => void;
   setRetryStatus: (status: RetryStatus | null) => void;
@@ -909,6 +911,8 @@ export interface AppState {
   sessionEventBuffer: Record<string, AgentStreamEvent[]>;
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
+  suspendArmed: boolean;
+  suspendTimer: NodeJS.Timeout | null;
   transientAlert: TransientAlert | null;
   /**
    * Active HTTP-retry banner, shown inline with the thinking spinner. `null` when no
@@ -1421,6 +1425,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
     exitSequence: 0,
     exitTimer: null,
+    suspendArmed: false,
+    suspendTimer: null,
     transientAlert: null,
     retryStatus: null,
     loadingMessage: null as string | null,
@@ -3297,6 +3303,9 @@ export const createAppStore = (props: AppStoreProps) => {
         if (state.exitTimer) {
           clearTimeout(state.exitTimer);
         }
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
 
         const newSequence = state.exitSequence + 1;
 
@@ -3311,7 +3320,12 @@ export const createAppStore = (props: AppStoreProps) => {
           set({ exitSequence: 0, exitTimer: null });
         }, 2000);
 
-        return { exitSequence: newSequence, exitTimer: timer };
+        return {
+          exitSequence: newSequence,
+          exitTimer: timer,
+          suspendArmed: false,
+          suspendTimer: null,
+        };
       });
     },
 
@@ -3321,6 +3335,37 @@ export const createAppStore = (props: AppStoreProps) => {
           clearTimeout(state.exitTimer);
         }
         return { exitSequence: 0, exitTimer: null };
+      });
+    },
+
+    armSuspend: () => {
+      set((state) => {
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
+        if (state.exitTimer) {
+          clearTimeout(state.exitTimer);
+        }
+
+        const timer = setTimeout(() => {
+          set({ suspendArmed: false, suspendTimer: null });
+        }, 2000);
+
+        return {
+          suspendArmed: true,
+          suspendTimer: timer,
+          exitSequence: 0,
+          exitTimer: null,
+        };
+      });
+    },
+
+    disarmSuspend: () => {
+      set((state) => {
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
+        return { suspendArmed: false, suspendTimer: null };
       });
     },
 

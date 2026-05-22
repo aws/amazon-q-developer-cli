@@ -144,6 +144,7 @@ export const useUIState = () =>
     useShallow((state) => ({
       mode: state.mode,
       exitSequence: state.exitSequence,
+      suspendArmed: state.suspendArmed,
       toolOutputsExpanded: state.toolOutputsExpanded,
       hasExpandableToolOutputs: state.hasExpandableToolOutputs,
       showContextBreakdown: state.showContextBreakdown,
@@ -186,6 +187,8 @@ export const useUIActions = () =>
       setMode: state.setMode,
       incrementExitSequence: state.incrementExitSequence,
       resetExitSequence: state.resetExitSequence,
+      armSuspend: state.armSuspend,
+      disarmSuspend: state.disarmSuspend,
       toggleToolOutputsExpanded: state.toggleToolOutputsExpanded,
       setHasExpandableToolOutputs: state.setHasExpandableToolOutputs,
       setShowContextBreakdown: state.setShowContextBreakdown,

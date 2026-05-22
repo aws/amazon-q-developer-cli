@@ -33,6 +33,8 @@ export interface UIActions {
   setMode: (mode: 'inline' | 'expanded') => void;
   incrementExitSequence: () => void;
   resetExitSequence: () => void;
+  armSuspend: () => void;
+  disarmSuspend: () => void;
 }
 
 export const UIActionsContext = createContext<UIActions | null>(null);

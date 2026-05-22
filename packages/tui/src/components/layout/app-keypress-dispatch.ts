@@ -24,6 +24,7 @@ export interface AppKeypressState {
   transientAlertHasAction: boolean;
   pendingOAuthUrl: string | null;
   surveyPromptVisible: boolean;
+  suspendArmed: boolean;
 }
 
 export interface AppKeypressActions {
@@ -31,6 +32,8 @@ export interface AppKeypressActions {
   clearCommandInput: () => void;
   resetExitSequence: () => void;
   incrementExitSequence: () => void;
+  armSuspend: () => void;
+  disarmSuspend: () => void;
   setMode: (mode: AppMode) => void;
   enterCrewMonitor: () => void;
   fireTransientAlertAction: () => void;
@@ -79,7 +82,14 @@ export function dispatchAppKeypress(
   }
 
   if (key.ctrl && input === 'z') {
-    actions.suspendProcess();
+    if (process.platform === 'win32') return true;
+
+    if (state.suspendArmed) {
+      actions.disarmSuspend();
+      actions.suspendProcess();
+    } else {
+      actions.armSuspend();
+    }
     return true;
   }
 
@@ -163,9 +173,10 @@ export function dispatchAppKeypress(
     return true;
   }
 
-  // Reset exit sequence on any non-modifier keypress that we didn't handle.
+  // Reset exit sequence and disarm suspend on any non-modifier keypress that we didn't handle.
   if (!key.ctrl && !key.meta) {
     actions.resetExitSequence();
+    actions.disarmSuspend();
   }
   return false;
 }

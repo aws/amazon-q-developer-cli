@@ -62,6 +62,9 @@ export const AppContainer: React.FC = () => {
     (state) => state.incrementExitSequence
   );
   const resetExitSequence = useAppStore((state) => state.resetExitSequence);
+  const armSuspend = useAppStore((state) => state.armSuspend);
+  const disarmSuspend = useAppStore((state) => state.disarmSuspend);
+  const suspendArmed = useAppStore((state) => state.suspendArmed);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const hasCommandInput = useAppStore((state) => !!state.commandInputValue);
   const isProcessing = useAppStore((state) => state.isProcessing);
@@ -92,6 +95,7 @@ export const AppContainer: React.FC = () => {
       } catch {
         // stdin/stdout may not be available
       }
+      disarmSuspend();
       // Write a clear sequence so twinki's stdout interceptor detects it
       // and triggers handleExternalClear() — a full redraw including static
       // scrollback content. SIGWINCH alone only redraws live content.
@@ -101,7 +105,7 @@ export const AppContainer: React.FC = () => {
     return () => {
       process.removeListener('SIGCONT', handleCont);
     };
-  }, []);
+  }, [disarmSuspend]);
 
   const shellEscapeWriter = useAppStore((state) => state._shellEscapeWriter);
 
@@ -135,6 +139,7 @@ export const AppContainer: React.FC = () => {
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
       surveyPromptVisible: !!surveyPrompt,
+      suspendArmed,
     };
 
     const actions: AppKeypressActions = {
@@ -142,6 +147,8 @@ export const AppContainer: React.FC = () => {
       clearCommandInput,
       resetExitSequence,
       incrementExitSequence,
+      armSuspend,
+      disarmSuspend,
       setMode,
       enterCrewMonitor: () => {
         // Enter alt screen immediately (before React re-renders) to prevent
