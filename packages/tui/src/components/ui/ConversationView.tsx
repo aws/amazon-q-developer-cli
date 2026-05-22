@@ -569,10 +569,64 @@ export const ConversationView = React.memo(function ConversationView() {
     return { systemMessages: sys, conversationMessages: conv };
   }, [messages]);
 
+  // Incremental turn reconstruction: during streaming, only the active
+  // turn grows (new AI messages appended). Completed turns are stable.
+  // Cache them and only rebuild the active turn's tail on each flush.
+  const turnCacheRef = React.useRef<{
+    completedTurns: ConversationTurn[];
+    activeTurn: ConversationTurn | undefined;
+    // Index into conversationMessages where the active turn starts
+    activeTurnStart: number;
+    // Last known User message id that started the active turn
+    activeTurnUserId: string | undefined;
+    // Total message count at last full rebuild
+    lastFullRebuildLength: number;
+  }>({
+    completedTurns: [],
+    activeTurn: undefined,
+    activeTurnStart: 0,
+    activeTurnUserId: undefined,
+    lastFullRebuildLength: 0,
+  });
+
   const { completedTurns, activeTurn } = useMemo(() => {
+    const cache = turnCacheRef.current;
+    const msgs = conversationMessages;
+
+    // Find the last User message to detect if a new turn started
+    let lastUserIdx = -1;
+    let lastUserMsgId: string | undefined;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]?.role === MessageRole.User) {
+        lastUserIdx = i;
+        lastUserMsgId = msgs[i]?.id;
+        break;
+      }
+    }
+
+    // Fast path: same active turn, just more AI messages appended.
+    // Reuse cached completed turns and rebuild only the active turn.
+    const sameTurn =
+      msgs.length >= cache.lastFullRebuildLength &&
+      lastUserMsgId !== undefined &&
+      lastUserMsgId === cache.activeTurnUserId;
+
+    if (sameTurn && cache.completedTurns.length > 0) {
+      const userMsg = msgs[cache.activeTurnStart]!;
+      const aiMessages = msgs.slice(cache.activeTurnStart + 1);
+      const activeTurn: ConversationTurn = {
+        userMessage: userMsg,
+        aiMessages,
+        isActive: true,
+      };
+      cache.activeTurn = activeTurn;
+      return { completedTurns: cache.completedTurns, activeTurn };
+    }
+
+    // Full rebuild: new turn started, messages were cleared, or first render
     const t: ConversationTurn[] = [];
     let currentTurn: ConversationTurn | null = null;
-    conversationMessages.forEach((msg) => {
+    msgs.forEach((msg) => {
       if (msg.role === MessageRole.User) {
         if (currentTurn) {
           currentTurn.isActive = false;
@@ -593,11 +647,18 @@ export const ConversationView = React.memo(function ConversationView() {
       }
     });
     if (currentTurn) t.push(currentTurn);
-    return {
-      turns: t,
-      completedTurns: t.filter((turn) => !turn.isActive),
-      activeTurn: t.find((turn) => turn.isActive),
-    };
+
+    const completed = t.filter((turn) => !turn.isActive);
+    const active = t.find((turn) => turn.isActive);
+
+    // Update cache
+    cache.completedTurns = completed;
+    cache.activeTurn = active;
+    cache.activeTurnStart = lastUserIdx >= 0 ? lastUserIdx : 0;
+    cache.activeTurnUserId = lastUserMsgId;
+    cache.lastFullRebuildLength = msgs.length;
+
+    return { completedTurns: completed, activeTurn: active };
   }, [conversationMessages]);
 
   // Reset tailOverride when active turn changes (new user message)
