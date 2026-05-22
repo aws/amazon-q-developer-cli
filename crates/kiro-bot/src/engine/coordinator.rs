@@ -15,11 +15,20 @@
 //! production impl will, so the engine integration is identical regardless of
 //! deployment shape.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::sync::Mutex;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// User vs assistant turn in a conversation transcript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,13 +171,10 @@ impl Coordinator for InMemoryClusterCoordinator {
                 LeaseOutcome::Held { peer: existing.owner }
             },
             _ => {
-                s.leases.insert(
-                    conversation_id.to_string(),
-                    Lease {
-                        owner: self.own_task_id.clone(),
-                        expires_at,
-                    },
-                );
+                s.leases.insert(conversation_id.to_string(), Lease {
+                    owner: self.own_task_id.clone(),
+                    expires_at,
+                });
                 LeaseOutcome::Acquired
             },
         }
@@ -321,12 +327,9 @@ mod tests {
     #[tokio::test]
     async fn forward_is_a_no_op() {
         let c = NoopCoordinator::new();
-        c.forward(
-            "peer-1",
-            ForwardEvent {
-                slack_event_json: serde_json::json!({"id":"x"}),
-            },
-        )
+        c.forward("peer-1", ForwardEvent {
+            slack_event_json: serde_json::json!({"id":"x"}),
+        })
         .await
         .unwrap();
     }

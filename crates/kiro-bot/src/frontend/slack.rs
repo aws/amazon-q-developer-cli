@@ -8,17 +8,35 @@
 //! - Markdown → Slack mrkdwn conversion
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{
+    Arc,
+    LazyLock,
+    Mutex,
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use regex::Regex;
 use slack_morphism::prelude::*;
 use tokio::sync::oneshot;
-use tracing::{error, info, warn};
+use tracing::{
+    error,
+    info,
+    warn,
+};
 
-use crate::engine::acp::{ApprovalRequest, ApprovalResponse};
-use crate::engine::core::{BotCore, Conversation, Frontend, IncomingMessage, Reply, determine_reply_location};
+use crate::engine::acp::{
+    ApprovalRequest,
+    ApprovalResponse,
+};
+use crate::engine::core::{
+    BotCore,
+    Conversation,
+    Frontend,
+    IncomingMessage,
+    Reply,
+    determine_reply_location,
+};
 use crate::engine::user_map::UserMap;
 
 // ---------------------------------------------------------------------------
@@ -634,14 +652,11 @@ pub fn spawn_approval_listener(
                     .await;
             }
 
-            pending.lock().unwrap().insert(
-                msg_ts.clone(),
-                PendingApproval {
-                    tool_name: req.tool_name,
-                    options: req.options,
-                    reply_tx: Some(req.reply_tx),
-                },
-            );
+            pending.lock().unwrap().insert(msg_ts.clone(), PendingApproval {
+                tool_name: req.tool_name,
+                options: req.options,
+                reply_tx: Some(req.reply_tx),
+            });
             tracing::info!(
                 msg_ts,
                 pending_count = pending.lock().unwrap().len(),
