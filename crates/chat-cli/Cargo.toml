@@ -16,7 +16,7 @@ path = "src/bin/subagent_widget_standalone.rs"
 workspace = true
 
 [features]
-default = ["voice"]
+default = []
 voice = ["dep:voice", "chat_cli_v2/voice"]
 wayland = ["arboard/wayland-data-control"]
 
