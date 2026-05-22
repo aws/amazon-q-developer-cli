@@ -1,25 +1,11 @@
 //! `reqwest`-based [`GithubClient`]. Lives separately so unit tests can stub
 //! the trait without dragging the HTTP layer in.
 
-use anyhow::{
-    Context,
-    bail,
-};
-use reqwest::header::{
-    ACCEPT,
-    AUTHORIZATION,
-    USER_AGENT,
-};
+use anyhow::{Context, bail};
+use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::Deserialize;
 
-use crate::{
-    CommentCreated,
-    GithubClient,
-    IssueCreated,
-    IssueSummary,
-    RepoRef,
-    truncate_excerpt,
-};
+use crate::{CommentCreated, GithubClient, IssueCreated, IssueSummary, RepoRef, truncate_excerpt};
 
 const DEFAULT_BASE_URL: &str = "https://api.github.com";
 const USER_AGENT_VAL: &str = "kiro-github-mcp/1.0";
@@ -49,10 +35,10 @@ impl HttpGithubClient {
         let mut h = reqwest::header::HeaderMap::new();
         h.insert(USER_AGENT, USER_AGENT_VAL.parse().unwrap());
         h.insert(ACCEPT, "application/vnd.github+json".parse().unwrap());
-        if let Some(t) = &self.token {
-            if let Ok(v) = format!("Bearer {t}").parse() {
-                h.insert(AUTHORIZATION, v);
-            }
+        if let Some(t) = &self.token
+            && let Ok(v) = format!("Bearer {t}").parse()
+        {
+            h.insert(AUTHORIZATION, v);
         }
         h
     }

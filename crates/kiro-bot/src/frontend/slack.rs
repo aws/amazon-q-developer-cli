@@ -8,35 +8,17 @@
 //! - Markdown → Slack mrkdwn conversion
 
 use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    LazyLock,
-    Mutex,
-};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use regex::Regex;
 use slack_morphism::prelude::*;
 use tokio::sync::oneshot;
-use tracing::{
-    error,
-    info,
-    warn,
-};
+use tracing::{error, info, warn};
 
-use crate::engine::acp::{
-    ApprovalRequest,
-    ApprovalResponse,
-};
-use crate::engine::core::{
-    BotCore,
-    Conversation,
-    Frontend,
-    IncomingMessage,
-    Reply,
-    determine_reply_location,
-};
+use crate::engine::acp::{ApprovalRequest, ApprovalResponse};
+use crate::engine::core::{BotCore, Conversation, Frontend, IncomingMessage, Reply, determine_reply_location};
 use crate::engine::user_map::UserMap;
 
 // ---------------------------------------------------------------------------
@@ -502,33 +484,33 @@ async fn handle_reaction(
     // Phase 6: 👍/👎 on a bot-authored message → persist as feedback. Runs
     // alongside the approval flow below — a 👍 on an approval prompt is
     // both an "allow_once" and (incidentally) a positive-feedback signal.
-    if let Some(writer) = state.feedback_writer.as_ref() {
-        if let Some(reaction_kind) = crate::engine::feedback::Reaction::from_slack(emoji) {
-            let channel_str = channel.as_ref().map(|c| c.to_string()).unwrap_or_default();
-            // Pull chunk_ids from the most recent grounded assistant turn for
-            // this conversation. We try the obvious convo ids in order:
-            // - `dm:<reactor>` for DMs (handler ignored bot reactions earlier)
-            // - `channel:<id>` for channel reactions
-            // The first hit wins; loading both is cheap (DDB Query+Limit).
-            let candidates = [format!("dm:{reactor}"), format!("channel:{channel_str}")];
-            let mut chunk_ids = Vec::new();
-            for convo in &candidates {
-                let turns = state.core.coordinator.load_history(convo, 5).await.unwrap_or_default();
-                let from_window = crate::engine::feedback::chunk_ids_for_recent_assistant_turn(&turns);
-                if !from_window.is_empty() {
-                    chunk_ids = from_window;
-                    break;
-                }
+    if let Some(writer) = state.feedback_writer.as_ref()
+        && let Some(reaction_kind) = crate::engine::feedback::Reaction::from_slack(emoji)
+    {
+        let channel_str = channel.as_ref().map(|c| c.to_string()).unwrap_or_default();
+        // Pull chunk_ids from the most recent grounded assistant turn for
+        // this conversation. We try the obvious convo ids in order:
+        // - `dm:<reactor>` for DMs (handler ignored bot reactions earlier)
+        // - `channel:<id>` for channel reactions
+        // The first hit wins; loading both is cheap (DDB Query+Limit).
+        let candidates = [format!("dm:{reactor}"), format!("channel:{channel_str}")];
+        let mut chunk_ids = Vec::new();
+        for convo in &candidates {
+            let turns = state.core.coordinator.load_history(convo, 5).await.unwrap_or_default();
+            let from_window = crate::engine::feedback::chunk_ids_for_recent_assistant_turn(&turns);
+            if !from_window.is_empty() {
+                chunk_ids = from_window;
+                break;
             }
-            let record = crate::engine::feedback::FeedbackRecord {
-                slack_msg_id: format!("{channel_str}:{ts}"),
-                reaction: reaction_kind,
-                chunk_ids,
-                ts: chrono::Utc::now(),
-            };
-            if let Err(e) = writer.record(record).await {
-                tracing::warn!(error = %e, "feedback PutItem failed; not blocking approval flow");
-            }
+        }
+        let record = crate::engine::feedback::FeedbackRecord {
+            slack_msg_id: format!("{channel_str}:{ts}"),
+            reaction: reaction_kind,
+            chunk_ids,
+            ts: chrono::Utc::now(),
+        };
+        if let Err(e) = writer.record(record).await {
+            tracing::warn!(error = %e, "feedback PutItem failed; not blocking approval flow");
         }
     }
 
@@ -652,11 +634,14 @@ pub fn spawn_approval_listener(
                     .await;
             }
 
-            pending.lock().unwrap().insert(msg_ts.clone(), PendingApproval {
-                tool_name: req.tool_name,
-                options: req.options,
-                reply_tx: Some(req.reply_tx),
-            });
+            pending.lock().unwrap().insert(
+                msg_ts.clone(),
+                PendingApproval {
+                    tool_name: req.tool_name,
+                    options: req.options,
+                    reply_tx: Some(req.reply_tx),
+                },
+            );
             tracing::info!(
                 msg_ts,
                 pending_count = pending.lock().unwrap().len(),

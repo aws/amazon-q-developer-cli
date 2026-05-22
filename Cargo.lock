@@ -5578,7 +5578,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-bot-eval"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5594,7 +5594,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-bot-metrics"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5612,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-github-mcp"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5629,7 +5629,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-help-corpus-ingest"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
