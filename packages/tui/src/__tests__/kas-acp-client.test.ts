@@ -2251,3 +2251,445 @@ describe('mcp command (push model)', () => {
     expect((result.data as any).mode).toBeUndefined();
   });
 });
+
+// ── MCP OAuth flow ──
+//
+// KAS surfaces MCP-server OAuth URLs via the existing
+// `_kiro/openExternalUrl` capability + ext method, gated on the client
+// advertising `_meta.kiro.openExternalUrl: true` at initialize time.
+// `KasAcpClient` advertises the capability and registers a handler that
+// correlates the URL back to the MCP server it was just kicked off for
+// (via `pendingOauthQueue`), then broadcasts the existing
+// `McpOauthRequest` stream event so the notification bar / `/mcp` panel
+// pick it up.
+
+describe('MCP OAuth flow', () => {
+  function getOpenExternalUrlHandler(
+    client: any
+  ): (params: Record<string, unknown>) => Promise<Record<string, unknown>> {
+    const cap = (capturedKiroClientConfig?.capabilities ?? []).find(
+      (c: any) => c.method === '_kiro/openExternalUrl'
+    );
+    expect(cap).toBeDefined();
+    // Bind through the handler so `this` resolves to the client instance.
+    return cap.handler.bind(client);
+  }
+
+  it('advertises openExternalUrl capability + clientMeta flag', () => {
+    const _client = new KasAcpClient();
+    expect(capturedKiroClientConfig?.clientMeta?.openExternalUrl).toBe(true);
+    const cap = (capturedKiroClientConfig?.capabilities ?? []).find(
+      (c: any) => c.method === '_kiro/openExternalUrl'
+    );
+    expect(cap).toMatchObject({
+      type: 'other',
+      key: 'openExternalUrl',
+      value: true,
+      method: '_kiro/openExternalUrl',
+    });
+    expect(typeof cap.handler).toBe('function');
+  });
+
+  it('triggers _kiro/mcp/resetServer for failedAuthorization servers', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    (client as any).handleMcpStatusNotification({
+      sessionId: 'kas-session-1',
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+
+    // Allow the fire-and-forget reset to schedule
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const resetCalls = mockKiroSendExtMethod.mock.calls.filter(
+      (c: any[]) => c[0] === '_kiro/mcp/resetServer'
+    );
+    expect(resetCalls).toHaveLength(1);
+    expect(resetCalls[0][1]).toMatchObject({
+      serverName: 'github-mcp',
+      startOAuth: true,
+    });
+  });
+
+  it('does NOT trigger reset for plain failed (non-auth) servers', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'broken-mcp',
+          status: 'failed',
+          failedAuthorization: false,
+          errorMessage: 'spawn ENOENT',
+        },
+      ],
+    });
+
+    await Promise.resolve();
+
+    const resetCalls = mockKiroSendExtMethod.mock.calls.filter(
+      (c: any[]) => c[0] === '_kiro/mcp/resetServer'
+    );
+    expect(resetCalls).toHaveLength(0);
+  });
+
+  it('only triggers reset once per failure window', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    const failedStatus = {
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed' as const,
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    };
+
+    (client as any).handleMcpStatusNotification(failedStatus);
+    (client as any).handleMcpStatusNotification(failedStatus);
+    (client as any).handleMcpStatusNotification(failedStatus);
+
+    await Promise.resolve();
+
+    const resetCalls = mockKiroSendExtMethod.mock.calls.filter(
+      (c: any[]) => c[0] === '_kiro/mcp/resetServer'
+    );
+    expect(resetCalls).toHaveLength(1);
+  });
+
+  it('re-arms reset after server transitions out of auth-failed', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 'github-mcp', status: 'connected', tools: [] }],
+    });
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+
+    await Promise.resolve();
+
+    const resetCalls = mockKiroSendExtMethod.mock.calls.filter(
+      (c: any[]) => c[0] === '_kiro/mcp/resetServer'
+    );
+    expect(resetCalls).toHaveLength(2);
+  });
+
+  it('broadcasts McpOauthRequest with correlated serverName when openExternalUrl handler runs', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    // Reset triggered via failedAuthorization status — pushes serverName onto the queue
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    await Promise.resolve();
+
+    // KAS calls `_kiro/openExternalUrl` mid-flight; invoke the registered handler
+    const handler = getOpenExternalUrlHandler(client);
+    const result = await handler({
+      url: 'https://example.com/oauth/authorize?state=xyz',
+    });
+    expect(result).toEqual({ success: true });
+
+    const oauthEvents = events.filter(
+      (e) => e.type === AgentEventType.McpOauthRequest
+    );
+    expect(oauthEvents).toHaveLength(1);
+    expect(oauthEvents[0].serverName).toBe('github-mcp');
+    expect(oauthEvents[0].oauthUrl).toBe(
+      'https://example.com/oauth/authorize?state=xyz'
+    );
+  });
+
+  it('correlates URLs to servers in FIFO order when multiple servers need OAuth', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    // Two servers fail simultaneously — both pushed onto the queue in order
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'first-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+        {
+          name: 'second-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    await Promise.resolve();
+
+    const handler = getOpenExternalUrlHandler(client);
+    await handler({ url: 'https://example.com/first' });
+    await handler({ url: 'https://example.com/second' });
+
+    const oauthEvents = events.filter(
+      (e) => e.type === AgentEventType.McpOauthRequest
+    );
+    expect(oauthEvents).toHaveLength(2);
+    expect(oauthEvents[0]).toMatchObject({
+      serverName: 'first-mcp',
+      oauthUrl: 'https://example.com/first',
+    });
+    expect(oauthEvents[1]).toMatchObject({
+      serverName: 'second-mcp',
+      oauthUrl: 'https://example.com/second',
+    });
+  });
+
+  it('returns empty {} response when openExternalUrl arrives with no pending server', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    const handler = getOpenExternalUrlHandler(client);
+    const result = await handler({ url: 'https://example.com/orphan' });
+    expect(result).toEqual({ success: false });
+
+    // Without a queue entry, no broadcast — defensive but safe
+    const oauthEvents = events.filter(
+      (e) => e.type === AgentEventType.McpOauthRequest
+    );
+    expect(oauthEvents).toHaveLength(0);
+  });
+
+  it('returns empty {} response when openExternalUrl payload has no url', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    const handler = getOpenExternalUrlHandler(client);
+    const result = await handler({});
+    expect(result).toEqual({ success: false });
+    expect(
+      events.filter((e) => e.type === AgentEventType.McpOauthRequest)
+    ).toHaveLength(0);
+  });
+
+  it('cleans up pendingOauthQueue when _kiro/mcp/resetServer rejects', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+    mockKiroSendExtMethod.mockImplementationOnce((method: string) => {
+      if (method === '_kiro/mcp/resetServer') {
+        return Promise.reject(new Error('connection lost'));
+      }
+      return Promise.resolve({});
+    });
+
+    expect(() =>
+      (client as any).handleMcpStatusNotification({
+        servers: [
+          {
+            name: 'github-mcp',
+            status: 'failed',
+            failedAuthorization: true,
+            errorMessage: 'Unauthorized',
+          },
+        ],
+      })
+    ).not.toThrow();
+
+    // Let the rejected promise settle and the cleanup branch run
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Queue should be empty so a stray late URL doesn't get mis-correlated
+    expect((client as any).pendingOauthQueue).toEqual([]);
+  });
+
+  it('keeps servers in auth-required while OAuth reset is in-flight (connecting state)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    // First: server fails with auth → triggers reset
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    // KAS transitions server to connecting during reset
+    (client as any).handleMcpStatusNotification({
+      servers: [{ name: 'github-mcp', status: 'connecting' }],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    // Should still show auth-required, not loading
+    expect((result.data as any).servers[0].status).toBe('auth-required');
+  });
+
+  it('keeps servers in auth-required when reset times out (non-auth failure)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    // Server fails with auth → triggers reset
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    // Reset times out → KAS reports plain failed (no failedAuthorization)
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: false,
+          errorMessage: 'connection timed out after 60000ms',
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    // Should still show auth-required, not failed
+    expect((result.data as any).servers[0].status).toBe('auth-required');
+  });
+
+  it('clears auth-required override when server successfully connects', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+    // User completes OAuth → server connects
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect((result.data as any).servers[0].status).toBe('running');
+  });
+
+  it('shows all failedAuthorization servers as auth-required simultaneously', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'server-a',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+        {
+          name: 'server-b',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+        {
+          name: 'server-c',
+          status: 'connected',
+          tools: [],
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    const servers = (result.data as any).servers;
+    expect(servers[0]).toMatchObject({
+      name: 'server-a',
+      status: 'auth-required',
+    });
+    expect(servers[1]).toMatchObject({
+      name: 'server-b',
+      status: 'auth-required',
+    });
+    expect(servers[2]).toMatchObject({ name: 'server-c', status: 'running' });
+  });
+});
