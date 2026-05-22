@@ -1,6 +1,6 @@
 {
   "name": "@kiro/tui",
-  "version": "2.4.0",
+  "version": "0.0.0-dev",
   "type": "module",
   "overrides": {
     "react": "19.2.3",

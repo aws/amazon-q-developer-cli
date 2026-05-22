@@ -137,6 +137,7 @@ jobs:
         env:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
           INCLUDE_KAS_BUNDLE: ${{ inputs.channel == 'nightly' || inputs.branch_name == 'feature/kas-migration-v2' }}
+          KIRO_VERSION: ${{ inputs.version }}
         run: |
           python3 ./scripts/main.py build \
             --skip-lints --skip-tests --skip-autodocs-embeddings \

@@ -31,8 +31,10 @@ on:
         type: boolean
         required: false
         default: true
-  schedule:
-    - cron: "21 6 * * *"
+  # Schedule removed — nightly releases are now handled by tag-release.yml + release.yml.
+  # This workflow remains available for manual workflow_dispatch during the transition period.
+  # schedule:
+  #   - cron: "21 6 * * *"
   push:
     branches:
       - prod

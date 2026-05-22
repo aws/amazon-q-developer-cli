@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "agent"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -1940,7 +1940,7 @@ dependencies = [
 
 [[package]]
 name = "chat-cli-ui"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "arboard",
  "chrono",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "agent",
  "agent-client-protocol 0.10.4",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli_v2"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "agent",
  "agent-client-protocol 0.10.4",
@@ -2417,7 +2417,7 @@ checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
 
 [[package]]
 name = "code-agent-sdk"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "ast-grep-core",
@@ -5165,7 +5165,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-bot"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "agent-client-protocol 0.7.0",
  "anyhow",
@@ -5196,7 +5196,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-knowledge-mcp"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8531,7 +8531,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "bm25",
@@ -10698,7 +10698,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voice"
-version = "2.4.0"
+version = "0.0.0-dev"
 dependencies = [
  "async-trait",
  "cpal",

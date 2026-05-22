@@ -1,0 +1,152 @@
+name: "0.0 Create Tag"
+
+on:
+  schedule:
+    - cron: "21 6 * * *"  # nightly on main
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: "Tag type"
+        type: choice
+        required: true
+        default: "rc"
+        options:
+          - rc
+          - stable
+          - nightly
+      ref:
+        description: "Branch to tag (for rc/stable: release/X.Y.Z)"
+        type: string
+        required: false
+      dry_run:
+        description: "Dry run (compute version but don't push tag)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: create-tag-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create Tag
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli'
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+      skipped: ${{ steps.skip_check.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine mode
+        id: mode
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "mode=nightly" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=${{ inputs.increment }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if main advanced since last nightly tag
+        id: skip_check
+        if: steps.mode.outputs.mode == 'nightly'
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git tag --list 'v*-nightly.*' --sort=-version:refname | head -1)
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$(git rev-parse "$LAST_TAG")" == "$(git rev-parse HEAD)" ]]; then
+            echo "No new commits since $LAST_TAG — skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute tag
+        id: compute
+        if: steps.skip_check.outputs.skipped != 'true'
+        run: |
+          set -euo pipefail
+          MODE="${{ steps.mode.outputs.mode }}"
+          BRANCH="${{ github.ref_name }}"
+
+          case "$MODE" in
+            nightly)
+              # Find last nightly or stable tag (exclude rc tags which sort unpredictably)
+              LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -v '\-rc\.' | head -1)
+              CURRENT_VERSION="${LAST_TAG#v}"
+              [[ -z "$CURRENT_VERSION" ]] && CURRENT_VERSION="0.0.0"
+              NEW_VERSION=$(python3 .github/scripts/bump_version.py "$CURRENT_VERSION" "patch" "nightly")
+              ;;
+            rc)
+              # Derive version from branch name: release/2.5.0 → 2.5.0
+              BASE_VERSION="${BRANCH#release/}"
+              # Count existing RC tags for this version
+              LAST_RC=$(git tag --list "v${BASE_VERSION}-rc.*" --sort=-version:refname | head -1)
+              if [[ -z "$LAST_RC" ]]; then
+                RC_NUM=1
+              else
+                RC_NUM=$(echo "$LAST_RC" | grep -oE 'rc.[0-9]+' | sed 's/rc.//')
+                RC_NUM=$((RC_NUM + 1))
+              fi
+              NEW_VERSION="${BASE_VERSION}-rc.${RC_NUM}"
+              ;;
+            stable)
+              # Derive version from branch name: release/2.5.0 → 2.5.0
+              BASE_VERSION="${BRANCH#release/}"
+              NEW_VERSION="$BASE_VERSION"
+              ;;
+          esac
+
+          TAG="v${NEW_VERSION}"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed: mode=$MODE branch=$BRANCH → $TAG"
+
+      - name: Push tag
+        if: steps.skip_check.outputs.skipped != 'true' && inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.compute.outputs.tag }}"
+
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Delete existing tag only for stable retags (nightly/rc should never collide)
+          if [[ "${{ steps.mode.outputs.mode }}" == "stable" ]]; then git push origin ":refs/tags/$TAG" 2>/dev/null || true; fi
+
+          git tag -f "$TAG"
+          git push origin "$TAG"
+          echo "Tagged $(git rev-parse HEAD) as $TAG"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Create Tag"
+            echo
+            if [[ "${{ steps.skip_check.outputs.skipped }}" == "true" ]]; then
+              echo "⏭️ **Skipped** — no new commits since last nightly tag."
+            elif [[ "${{ inputs.dry_run }}" == "true" ]]; then
+              echo "🏷️ **Dry run** — would have pushed \`${{ steps.compute.outputs.tag }}\`"
+            else
+              echo "🏷️ **Tagged** \`${{ steps.compute.outputs.tag }}\` on \`$(git rev-parse --short HEAD)\`"
+              echo
+              echo "| Property | Value |"
+              echo "|----------|-------|"
+              echo "| Mode | ${{ steps.mode.outputs.mode }} |"
+              echo "| Branch | ${{ github.ref_name }} |"
+              echo "| Commit | \`$(git rev-parse HEAD)\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

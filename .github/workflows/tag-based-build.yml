@@ -1,0 +1,217 @@
+name: "1.0 Tag-Based Build"
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v2.5.0-nightly.1)"
+        type: string
+        required: true
+      trigger_autocomplete_build:
+        description: "Trigger autocomplete build after success"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: write
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: "us-east-1"
+
+jobs:
+  prepare:
+    name: Derive Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      channel: ${{ steps.meta.outputs.channel }}
+      release_type: ${{ steps.meta.outputs.release_type }}
+      environment: ${{ steps.meta.outputs.environment }}
+      build_timestamp: ${{ steps.meta.outputs.build_timestamp }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      branch_name: ${{ steps.meta.outputs.branch_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive metadata from tag
+        id: meta
+        run: |
+          set -euo pipefail
+
+          # Resolve tag from event or input
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+
+          # Determine channel (downstream builds use this for KAS bundling and autocomplete routing)
+          if [[ "$VERSION" == *"-nightly."* ]]; then
+            CHANNEL="nightly"
+          else
+            CHANNEL="stable"
+          fi
+
+          RELEASE_TYPE="${CHANNEL}-tag-driven"
+
+          # Environment: always gamma + prod (autocomplete repo handles beta/prod routing)
+          ENVIRONMENT='["gamma", "prod"]'
+
+          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          # Derive branch from tag: v2.5.0-* likely came from release/2.5.0, otherwise main
+          if [[ "$VERSION" == *"-nightly."* ]]; then
+            BRANCH_NAME="main"
+          else
+            # For stable/rc tags, infer from version: 2.5.0 → release/2.5.0
+            BASE_VERSION=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+            if git ls-remote --heads origin "release/$BASE_VERSION" | grep -q .; then
+              BRANCH_NAME="release/$BASE_VERSION"
+            else
+              BRANCH_NAME="main"
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "release_type=$RELEASE_TYPE" >> "$GITHUB_OUTPUT"
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "build_timestamp=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Tag=$TAG Version=$VERSION Channel=$CHANNEL"
+
+  generate_embeddings:
+    name: Generate Autodocs Embeddings
+    needs: prepare
+    uses: ./.github/workflows/generate-embeddings.yml
+    secrets: inherit
+    with:
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_darwin:
+    name: Darwin Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-darwin.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_linux:
+    name: Linux Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  build_windows:
+    name: Windows Build (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
+  dispatch_autocomplete:
+    name: Trigger Autocomplete Build
+    needs: [prepare, build_darwin, build_linux, build_windows]
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name != 'workflow_dispatch' || inputs.trigger_autocomplete_build != false) &&
+      needs.build_darwin.result == 'success' &&
+      needs.build_linux.result == 'success' &&
+      needs.build_windows.result == 'success'
+    steps:
+      - name: Dispatch to autocomplete
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
+          script: |
+            const isNightly = '${{ needs.prepare.outputs.channel }}' === 'nightly';
+            const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
+
+            const inputs = {
+              release_quality: '${{ needs.prepare.outputs.channel }}',
+              chat_binary_commit: '${{ needs.prepare.outputs.commit_sha }}',
+              chat_version: '${{ needs.prepare.outputs.version }}',
+              chat_build_timestamp: '${{ needs.prepare.outputs.build_timestamp }}',
+              trigger_source: 'chat-build'
+            };
+
+            core.info(`Dispatching ${workflowId} with ${JSON.stringify(inputs)}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              workflow_id: workflowId,
+              ref: '${{ needs.prepare.outputs.branch_name }}',
+              inputs: inputs
+            });
+
+  summary:
+    name: Release Summary
+    needs: [prepare, build_darwin, build_linux, build_windows, dispatch_autocomplete]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Summary
+        run: |
+          {
+            echo "## Release Summary"
+            echo
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Version** | ${{ needs.prepare.outputs.version }} |"
+            echo "| **Channel** | ${{ needs.prepare.outputs.channel }} |"
+            echo "| **Commit** | \`${{ needs.prepare.outputs.commit_sha }}\` |"
+            echo "| **Timestamp** | ${{ needs.prepare.outputs.build_timestamp }} |"
+            echo
+            echo "### Build Results"
+            echo "| Platform | Status |"
+            echo "|----------|--------|"
+            echo "| Darwin | ${{ needs.build_darwin.result == 'success' && '✅' || '❌' }} |"
+            echo "| Linux | ${{ needs.build_linux.result == 'success' && '✅' || '❌' }} |"
+            echo "| Windows | ${{ needs.build_windows.result == 'success' && '✅' || '❌' }} |"
+            echo "| Autocomplete | ${{ needs.dispatch_autocomplete.result == 'success' && '✅' || needs.dispatch_autocomplete.result == 'skipped' && '⏭️' || '❌' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,63 @@
+name: "PR: Lockfile Discipline"
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "bun.lock"
+      - "packages/tui/package.json"
+  push:
+    branches: [main, "release/*"]
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "bun.lock"
+      - "packages/tui/package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Enforce 0.0.0-dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cargo.toml workspace version must be 0.0.0-dev
+        run: |
+          set -euo pipefail
+          ver=$(awk '/^\[workspace\.package\]/ {f=1} f && /^version = / {gsub(/[" ]/,""); split($0,a,"="); print a[2]; exit}' Cargo.toml)
+          if [[ "$ver" != "0.0.0-dev" ]]; then
+            echo "::error::Cargo.toml workspace version is '$ver' (expected '0.0.0-dev')"
+            exit 1
+          fi
+
+      - name: Cargo.lock internal crates must be 0.0.0-dev
+        run: |
+          set -euo pipefail
+          INTERNAL='agent|chat-cli-ui|chat_cli|chat_cli_v2|code-agent-sdk|kiro-bot|kiro-knowledge-mcp|semantic_search_client|voice'
+          drift=$(awk -v internal="^($INTERNAL)\$" '
+            /^name = / { name=$3; gsub(/"/, "", name) }
+            /^version = / {
+              ver=$3; gsub(/"/, "", ver)
+              if (name ~ internal && ver != "0.0.0-dev") {
+                print name " is at " ver " (expected 0.0.0-dev)"
+              }
+            }
+          ' Cargo.lock)
+          if [[ -n "$drift" ]]; then
+            echo "::error::Cargo.lock has internal crates not at 0.0.0-dev:"
+            echo "$drift"
+            exit 1
+          fi
+
+      - name: packages/tui/package.json version must be 0.0.0-dev
+        run: |
+          set -euo pipefail
+          ver=$(jq -r '.version' packages/tui/package.json)
+          if [[ "$ver" != "0.0.0-dev" ]]; then
+            echo "::error::packages/tui/package.json version is '$ver' (expected '0.0.0-dev')"
+            exit 1
+          fi
