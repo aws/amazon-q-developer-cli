@@ -140,7 +140,7 @@ jobs:
           Additional instructions: $EXTRA"
           fi
 
-          kiro-cli chat --no-interactive --trust-all-tools "$PROMPT" 2>&1 | tee /tmp/changelog-agent-output.txt
+          kiro-cli chat --no-interactive --trust-all-tools --model auto "$PROMPT" 2>&1 | tee /tmp/changelog-agent-output.txt
           echo ""
           echo "=== Changelog agent output ==="
           cat /tmp/changelog-agent-output.txt
@@ -161,7 +161,7 @@ jobs:
           Additional instructions: $EXTRA"
           fi
 
-          kiro-cli chat --no-interactive --trust-all-tools --agent docs-v2 "$PROMPT" 2>&1 | tee /tmp/docs-agent-output.txt
+          kiro-cli chat --no-interactive --trust-all-tools --model auto --agent docs-v2 "$PROMPT" 2>&1 | tee /tmp/docs-agent-output.txt
           echo ""
           echo "=== Docs agent output ==="
           cat /tmp/docs-agent-output.txt
