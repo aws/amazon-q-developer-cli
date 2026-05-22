@@ -744,6 +744,7 @@ impl ResponseParser {
             text: std::mem::take(&mut self.thinking_text),
             signature: self.thinking_signature.take(),
             redacted_content: self.thinking_redacted_content.take().unwrap_or_default(),
+            model_id: self.model_id.clone(),
         })
     }
 

@@ -1,6 +1,15 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { KiroClient } from '@kiro/client';
 import type { Stream } from '@kiro/client';
+// Spec workflow types are sourced from the shared ACP type covenant so the
+// TUI, KAS, and any other ACP client speak the same contract for the
+// `_kiro/spec/*` extension methods.
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 import { logger } from './utils/logger';
 import {
   getTelemetryIdentity,
@@ -24,9 +33,11 @@ import type {
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
+import type { HookInfo } from './stores/app-store';
 
 import packageJson from '../package.json';
-import { SLASH_COMMANDS } from './slash-commands';
+import { KAS_COMMANDS } from './kas-commands';
+import { resolveAgentEngine } from './agent-engine';
 import { readClipboardImage } from './utils/clipboard-image';
 
 const TUI_VERSION: string = packageJson.version;
@@ -366,6 +377,7 @@ abstract class BaseAcpClient implements SessionClient {
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
   protected promptsCache: PromptCacheEntry[] = [];
+  protected cachedBreakdown: unknown = null;
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -726,6 +738,17 @@ abstract class BaseAcpClient implements SessionClient {
             return null;
         }
 
+      case 'agent_thought_chunk': {
+        if (update.content.type === 'text') {
+          return {
+            type: AgentEventType.Thought,
+            id: crypto.randomUUID(),
+            content: { type: ContentType.Text, text: update.content.text },
+          };
+        }
+        return null;
+      }
+
       case 'tool_call': {
         const toolContent = ((update as any).content || [])
           .filter((c: any) => c.type === 'diff')
@@ -858,12 +881,72 @@ abstract class BaseAcpClient implements SessionClient {
         };
       }
 
-      // KAS-specific update types — log and skip for now
-      case 'session_info_update':
+      // KAS-specific update types.  `current_mode_update` and
+      // `config_option_update` are intercepted in KasAcpClient.wireSessionListeners
+      // (they update local caches before this switch runs).  The rest are
+      // not yet mapped to TUI events.
+      // (`agent_thought_chunk` is handled above — see ThinkingDisplay pipeline.)
+      case 'session_info_update': {
+        const meta = (
+          update as {
+            _meta?: {
+              kiro?: {
+                kind?: string;
+                conversationSummary?: string;
+                summarization?: {
+                  status: string;
+                  summary?: { conversationSummary?: string };
+                };
+                contextUsage?: { usagePercentage?: number };
+                usagePercentage?: number;
+                breakdown?: unknown;
+              };
+            };
+          }
+        )._meta?.kiro;
+        if (meta?.kind === 'summarization_completed') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'completed' as const,
+            summary:
+              meta.conversationSummary ??
+              meta.summarization?.summary?.conversationSummary,
+          };
+        }
+        if (meta?.kind === 'summarization_started') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'started' as const,
+          };
+        }
+        if (meta?.kind === 'summarization_failed') {
+          return {
+            type: AgentEventType.CompactionStatus,
+            status: 'failed' as const,
+          };
+        }
+        if (meta?.kind === 'context_usage' || meta?.contextUsage) {
+          const percent =
+            meta?.usagePercentage ?? meta?.contextUsage?.usagePercentage;
+          if (typeof percent === 'number') {
+            this.broadcastStreamEvent({
+              type: AgentEventType.ContextUsage,
+              percent,
+            });
+          }
+          if (meta?.breakdown) {
+            this.cachedBreakdown = meta.breakdown;
+          }
+        }
+        logger.debug(
+          'KAS session update (not yet mapped):',
+          update.sessionUpdate
+        );
+        return null;
+      }
       case 'config_option_update':
       case 'plan':
       case 'usage_update':
-      case 'agent_thought_chunk':
         logger.debug(
           'KAS session update (not yet mapped):',
           update.sessionUpdate
@@ -871,13 +954,7 @@ abstract class BaseAcpClient implements SessionClient {
         return null;
 
       case 'current_mode_update': {
-        const modeId = (update as { currentModeId?: string }).currentModeId;
-        if (modeId) {
-          return {
-            type: AgentEventType.AgentSwitched,
-            agentName: modeId,
-          };
-        }
+        // Handled by KasAcpClient.wireSessionListeners with dedup logic.
         return null;
       }
 
@@ -907,7 +984,11 @@ abstract class BaseAcpClient implements SessionClient {
             optionId: opt.optionId,
           })),
           trustOptions: (params._meta as any)?.trustOptions,
-          resolve: (userResponse) => {
+          resolve: (userResponse: {
+            outcome: string;
+            optionId?: string;
+            _meta?: unknown;
+          }) => {
             resolve(
               userResponse.outcome === 'selected'
                 ? {
@@ -1296,6 +1377,8 @@ export class KasAcpClient extends BaseAcpClient {
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),
+        knowledge: true,
+        hooks: { enabled: true, v2: true },
         ...(kasSettings && { settings: kasSettings }),
       },
     });
@@ -1345,6 +1428,10 @@ export class KasAcpClient extends BaseAcpClient {
   private modelOptions: ModelOption[] = [];
   /** ID of the currently selected model, or undefined if no model config. */
   private currentModelId?: string;
+  /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
+  private cachedHooks: HookInfo[] = [];
+  /** Disposable for the hooks notification subscription. */
+  private hooksNotificationDisposable: { dispose: () => void } | null = null;
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
@@ -1354,11 +1441,33 @@ export class KasAcpClient extends BaseAcpClient {
         // Keep the cached current mode in sync for /agent and agent-display
         // purposes.  ACP doesn't (yet) ship an available_modes_update, so
         // availableModes is refreshed only on session/new and session/load.
+        //
+        // We also broadcast an AgentSwitched stream event so the app store
+        // updates its currentAgent / previousAgentName / welcomeMessage.
+        // Without this broadcast, agent-initiated mode changes (e.g. a
+        // spec-mode workflow handoff) silently update the cache but leave
+        // the header chip and welcome banner stale.
         if (update.sessionUpdate === 'current_mode_update') {
-          this.modesState = {
-            ...this.modesState,
-            currentModeId: (update as { currentModeId: string }).currentModeId,
-          };
+          const newModeId = (update as { currentModeId: string }).currentModeId;
+          const previousModeId = this.modesState.currentModeId;
+          this.modesState = { ...this.modesState, currentModeId: newModeId };
+          // Broadcast only on an actual change so we don't emit a
+          // spurious "switched to X" welcome message when the agent
+          // re-asserts its current mode at session start.
+          if (newModeId && newModeId !== previousModeId) {
+            const mode = this.modesState.availableModes.find(
+              (m) => m.id === newModeId
+            );
+            const welcomeMessage = mode?._meta?.welcomeMessage as
+              | string
+              | undefined;
+            this.broadcastStreamEvent({
+              type: AgentEventType.AgentSwitched,
+              agentName: newModeId,
+              previousAgentName: previousModeId,
+              welcomeMessage,
+            });
+          }
         }
         // Intercept config_option_update (KAS-specific) to keep the
         // local model cache fresh without a round-trip. The agent may
@@ -1414,40 +1523,47 @@ export class KasAcpClient extends BaseAcpClient {
     return { promise, unsubscribe };
   }
 
-  private extensionMethods: Set<string> = new Set();
-
   async initialize(): Promise<void> {
-    const response = await this.kiroClient.initialize();
-    const kiroMeta = response.agentCapabilities?._meta?.kiro as
-      | Record<string, unknown>
-      | undefined;
-    const methods = kiroMeta?.extensionMethods;
-    if (Array.isArray(methods)) {
-      this.extensionMethods = new Set(
-        methods.map((m: string | { method: string }) =>
-          typeof m === 'string' ? m : m.method
-        )
-      );
-    }
+    await this.kiroClient.initialize();
 
-    const commands = SLASH_COMMANDS.filter((cmd) =>
-      cmd.requiredMethods.every((m) => this.extensionMethods.has(m))
-    ).map((cmd) => ({
+    // Subscribe to hooks registry changes. The agent pushes this
+    // notification whenever hooks are loaded, reloaded, or the file
+    // watcher detects a change. We cache the list and broadcast a
+    // HooksUpdate event so the TUI can refresh the panel if open.
+    this.hooksNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/hooks/didChange',
+      (params: Record<string, unknown>) => {
+        const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
+        this.cachedHooks = this.projectHooks(rawHooks);
+        this.broadcastStreamEvent({
+          type: AgentEventType.HooksUpdate,
+          hooks: this.cachedHooks,
+        });
+      }
+    );
+
+    // Register ext notification handlers
+
+    const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
-      meta: (cmd.meta ?? {}) as Record<string, unknown>,
+      meta: cmd.meta,
     }));
 
-    if (commands.length > 0) {
-      this.broadcastStreamEvent({
-        type: AgentEventType.ExtensionMethodsDiscovered,
-        commands,
-      });
-    }
+    this.broadcastStreamEvent({
+      type: AgentEventType.KasCommandsDiscovered,
+      commands,
+    });
 
-    logger.debug('[acp-client] KAS ACP handshake done, extensionMethods:', [
-      ...this.extensionMethods,
-    ]);
+    logger.debug('[acp-client] KAS ACP handshake done');
+  }
+
+  override close(): void {
+    this.hooksNotificationDisposable?.dispose();
+    this.hooksNotificationDisposable = null;
+    this.sessionDisposables.forEach((d) => d.dispose());
+    this.sessionDisposables = [];
+    super.close();
   }
 
   async newSession(): Promise<SessionResult> {
@@ -1623,25 +1739,6 @@ export class KasAcpClient extends BaseAcpClient {
           }
         }
       }
-      case 'chat': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const value = args?.value ?? '';
-        if (/^delete\b/.test(value)) {
-          const sessionId = value.slice(7).trim();
-          if (!sessionId)
-            return {
-              success: false,
-              message: 'Usage: /chat delete <sessionId>',
-            };
-          return this.callExtMethod('_kiro/session/delete', { sessionId });
-        }
-        return {
-          success: false,
-          message: `/chat ${value || 'save/load'} is not yet supported in KAS mode`,
-        };
-      }
       case 'model': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -1665,6 +1762,18 @@ export class KasAcpClient extends BaseAcpClient {
       }
       case 'reply':
         return { success: true, message: '' };
+      case 'usage': {
+        const result = await this.callExtMethod('_kiro/account/getUsage');
+        if (!result.success) return result;
+        const response = result.data as
+          | { success: boolean; message: string; data?: unknown }
+          | undefined;
+        return {
+          success: response?.success ?? true,
+          message: response?.message ?? '',
+          data: response?.data,
+        };
+      }
       case 'prompts': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -1681,6 +1790,56 @@ export class KasAcpClient extends BaseAcpClient {
           message: '',
           data: { executePrompt: `/${promptName}` },
         };
+      }
+      case 'knowledge': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value ?? 'show';
+        return this.executeKnowledge(value);
+      }
+      case 'hooks':
+        return this.executeHooks();
+      case 'compact': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        this.broadcastStreamEvent({
+          type: AgentEventType.CompactionStatus,
+          status: 'started',
+        });
+        this.callExtMethod('_kiro/session/compact', {
+          ...(args?.value && { value: args.value }),
+        }).then((result) => {
+          if (!result.success) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.CompactionStatus,
+              status: 'failed',
+              error: result.message,
+            });
+          }
+        });
+        return { success: true, message: 'Compacting conversation...' };
+      }
+      case 'context': {
+        if (this.cachedBreakdown) {
+          return {
+            success: true,
+            message: '',
+            data: { breakdown: this.cachedBreakdown, initialExpanded: true },
+          };
+        }
+        return {
+          success: true,
+          message: 'Context breakdown not yet available. Try again shortly.',
+        };
+      }
+      case 'code': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const value = args?.value ?? 'status';
+        return this.executeCode(value);
       }
       default:
         return {
@@ -1799,6 +1958,256 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /**
+   * /hooks — lists configured hooks from the agent's registry.
+   *
+   * Uses the cached hook list (populated by _kiro/hooks/didChange
+   * notifications) when available. Otherwise calls the agent's
+   * _kiro/hooks/list extension method.
+   */
+  private async executeHooks(): Promise<CommandResult> {
+    // Use cached hooks if we have them (populated by didChange notification)
+    if (this.cachedHooks.length > 0) {
+      const message = `${this.cachedHooks.length} hook${this.cachedHooks.length === 1 ? '' : 's'} configured`;
+      return {
+        success: true,
+        message,
+        data: { hooks: this.cachedHooks, message },
+      };
+    }
+
+    // Fetch from agent
+    let result: CommandResult;
+    try {
+      result = await this.callExtMethod('_kiro/hooks/list', {
+        trigger: 'all',
+      });
+    } catch (e) {
+      logger.debug('[kas/hooks] failed to fetch hooks list:', e);
+      return {
+        success: false,
+        message: 'Unable to fetch hooks — agent may be unavailable',
+        data: { hooks: [], message: 'Unable to fetch hooks' },
+      };
+    }
+
+    if (result.success && result.data) {
+      const data = result.data as {
+        hooks?: Array<{
+          name?: string;
+          trigger?: string;
+          matcher?: string;
+          action?: { type?: string; command?: string; prompt?: string };
+        }>;
+      };
+
+      if (Array.isArray(data?.hooks)) {
+        const hooks = this.projectHooks(data.hooks);
+        this.cachedHooks = hooks;
+        return this.formatHooksResult(hooks);
+      }
+    }
+
+    if (!result.success) {
+      logger.debug('[kas/hooks] ext method returned failure:', result.message);
+      return {
+        success: false,
+        message: result.message || 'Unable to fetch hooks',
+        data: { hooks: [], message: 'Unable to fetch hooks' },
+      };
+    }
+
+    return {
+      success: true,
+      message: 'No hooks configured',
+      data: { hooks: [], message: 'No hooks configured' },
+    };
+  }
+
+  /** Project raw hook data from the agent into the HookInfo shape. */
+  private projectHooks(
+    rawHooks: Array<{
+      name?: string;
+      trigger?: string;
+      matcher?: string;
+      action?: { type?: string; command?: string; prompt?: string };
+      _meta?: {
+        trigger?: string;
+        matcher?: string;
+        source?: string;
+        filePath?: string;
+        enabled?: boolean;
+      };
+    }>
+  ): HookInfo[] {
+    return rawHooks.map((h) => {
+      const trigger = h._meta?.trigger ?? h.trigger ?? 'unknown';
+      const matcher = h._meta?.matcher ?? h.matcher;
+      const actionType = h.action?.type;
+      const command =
+        actionType === 'runCommand' || actionType === 'command'
+          ? (h.action?.command ?? '')
+          : actionType === 'askAgent' || actionType === 'agent'
+            ? `[agent] ${(h.action?.prompt ?? '').slice(0, 60)}`
+            : (h.name ?? 'unknown');
+      return {
+        ...(h.name ? { name: h.name } : {}),
+        trigger,
+        command,
+        ...(matcher ? { matcher } : {}),
+      };
+    });
+  }
+
+  /** Format a hooks array into a CommandResult for the panel. */
+  private formatHooksResult(hooks: HookInfo[]): CommandResult {
+    if (hooks.length === 0) {
+      return {
+        success: true,
+        message: 'No hooks configured',
+        data: { hooks: [], message: 'No hooks configured' },
+      };
+    }
+    const message = `${hooks.length} hook${hooks.length === 1 ? '' : 's'} configured`;
+    return { success: true, message, data: { hooks, message } };
+  }
+
+  private async executeKnowledge(value: string): Promise<CommandResult> {
+    const parts = value.trim().split(/\s+/);
+    const subcommand = parts[0] || 'show';
+
+    const params: Record<string, unknown> = { subcommand };
+
+    if (subcommand === 'add' && parts.length >= 3) {
+      params.name = parts[1];
+      params.path = parts.slice(2).join(' ');
+    } else if (subcommand === 'remove' && parts.length >= 2) {
+      params.target = parts.slice(1).join(' ');
+    } else if (subcommand === 'update' && parts.length >= 2) {
+      params.path = parts.slice(1).join(' ');
+    } else if (subcommand === 'cancel' && parts.length >= 2) {
+      params.operationId = parts[1];
+    }
+
+    const result = await this.callExtMethod('_kiro/knowledge', params);
+    if (!result.success) return result;
+
+    const data = result.data as
+      | { entries?: unknown[]; message?: string }
+      | undefined;
+    // 'show' returns entries (triggers panel). Mutations return message (triggers alert).
+    if (subcommand === 'show') {
+      return {
+        success: true,
+        message: '',
+        data: { entries: data?.entries ?? [] },
+      };
+    }
+    return {
+      success: true,
+      message: data?.message ?? '',
+    };
+  }
+
+  private async executeCode(subcommand: string): Promise<CommandResult> {
+    const validSubcommands = ['status', 'init', 'overview'];
+    const cmd = subcommand.trim().split(/\s+/)[0] || 'status';
+    if (!validSubcommands.includes(cmd)) {
+      return {
+        success: false,
+        message: `Unknown subcommand '${cmd}'. Use: ${validSubcommands.join(', ')}`,
+      };
+    }
+    // TODO: 'logs' is not yet supported by kiro-agent (returns empty array)
+    const result = await this.callExtMethod('_kiro/codeIntelligence', {
+      subcommand: cmd,
+    });
+    if (!result.success) return result;
+
+    // After init, fetch status to show the panel
+    if (cmd === 'init') {
+      const statusResult = await this.callExtMethod('_kiro/codeIntelligence', {
+        subcommand: 'status',
+      });
+      if (statusResult.success) return this.formatCodeResponse(statusResult);
+      return statusResult;
+    }
+
+    return this.formatCodeResponse(result);
+  }
+
+  // TODO: Import CodeIntelligenceResponse from @kiro/acp-type-covenant once released (post v0.3.33)
+  private formatCodeResponse(result: CommandResult): CommandResult {
+    const response = result.data as
+      | {
+          success?: boolean;
+          message?: string;
+          overview?: string;
+          status?: {
+            initialized: boolean;
+            languages: string[];
+            lspServers: Array<{
+              name: string;
+              languages: string[];
+              status: string;
+              isAvailable: boolean;
+            }>;
+          };
+        }
+      | undefined;
+
+    if (!response?.success) {
+      return { success: false, message: response?.message ?? 'Command failed' };
+    }
+
+    // overview/summary → inject as prompt
+    if (response.overview) {
+      return {
+        success: true,
+        message: '',
+        data: {
+          executePrompt: `Here is the codebase overview:\n\n${response.overview}\n\nAnalyze this codebase structure and provide a summary of the project architecture.`,
+          label: '/code overview',
+        },
+      };
+    }
+
+    // status → transform to CodePanelData shape
+    if (response.status) {
+      const { status } = response;
+      const statusStr = status.initialized ? 'initialized' : 'not_initialized';
+      const message = status.initialized
+        ? 'Workspace initialized'
+        : 'Workspace not initialized. Run /code init to initialize.';
+      return {
+        success: true,
+        message: '',
+        data: {
+          status: statusStr,
+          message,
+          // TODO: The following fields are static placeholders. They will be populated
+          // by kiro-agent once upstream changes land there (subsequent PRs).
+          rootPath: process.cwd(),
+          detectedLanguages: status.languages,
+          projectMarkers: [],
+          lsps: (status.lspServers ?? []).map((s) => ({
+            name: s.name,
+            languages: s.languages,
+            status: s.status,
+            isAvailable: s.isAvailable,
+            initDurationMs: null,
+            workspaceFolders: [process.cwd()],
+          })),
+          configPath: '.kiro/settings/lsp.json',
+          docUrl: 'https://kiro.dev/docs/cli/code-intelligence/',
+        },
+      };
+    }
+
+    // logs — just show the message
+    return { success: true, message: response.message ?? '' };
+  }
+
+  /**
    * Refresh the cached model options + current model id from a KAS
    * configOptions array (returned by session/new, session/load, and
    * session/set_config_option).
@@ -1883,8 +2292,6 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<CommandResult> {
     if (!this.sessionId)
       return { success: false, message: 'No active session' };
-    if (!this.extensionMethods.has(method))
-      return { success: false, message: `${method} not supported by agent` };
     try {
       const result = await this.kiroClient.sendExtMethod(method, {
         sessionId: this.sessionId,
@@ -1897,6 +2304,35 @@ export class KasAcpClient extends BaseAcpClient {
         message: e instanceof Error ? e.message : 'Command failed',
       };
     }
+  }
+
+  /**
+   * Resolve (or create) the ACP session the agent uses to work on a spec
+   * feature.  See `_kiro/spec/resolveSession` in `@kiro/acp-type-covenant`.
+   *
+   * Strategy `'reuse'` returns the session previously associated with the
+   * feature (via `SpecSessionTracker`), or creates a new one.  Strategy
+   * `'fresh'` always creates a new session.
+   *
+   * Note: the returned session ID is owned by the agent.  The client does
+   * not switch its active `sessionId` here — `_kiro/spec/invoke` routes
+   * updates to whichever session it started execution on, and the client
+   * re-subscribes separately when it wants to render them.
+   */
+  async resolveSpecSession(
+    request: SpecResolveSessionRequest
+  ): Promise<SpecResolveSessionResponse> {
+    return this.kiroClient.sendExtMethod('_kiro/spec/resolveSession', request);
+  }
+
+  /**
+   * Invoke a spec operation (`executeTask`, `runAllTasks`, or
+   * `generateDocument`) on the agent.  The agent drives execution
+   * autonomously from here — the client observes progress via the usual
+   * session-update and `_kiro/spec/taskStatusChanged` notifications.
+   */
+  async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
+    return this.kiroClient.sendExtMethod('_kiro/spec/invoke', request);
   }
 
   async getCommandOptions(
@@ -2182,7 +2618,7 @@ export function createAcpClient(
   agentPath: string,
   extraAcpArgs: string[] = []
 ): SessionClient {
-  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+  if (resolveAgentEngine() === 'kas') {
     // Test-only: inject an in-process mock transport when the harness set
     // the socket path env var. Production boots skip this branch entirely.
     // The require() path stays in this one call site so the rest of

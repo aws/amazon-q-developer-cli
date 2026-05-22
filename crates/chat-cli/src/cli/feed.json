@@ -30,7 +30,7 @@
         },
         {
           "type": "fixed",
-          "description": "Reset context manager on /clear so loaded skills revert to frontmatter-only"
+          "description": "Reset context manager on `/clear` so loaded skills revert to frontmatter-only"
         },
         {
           "type": "added",
@@ -54,15 +54,15 @@
         },
         {
           "type": "fixed",
-          "description": "Fixed @ file picker ignoring nested .gitignore files, causing slow scans in large directories"
+          "description": "Fixed `@` file picker ignoring nested .gitignore files, causing slow scans in large directories"
         },
         {
           "type": "fixed",
-          "description": "Show --classic flag in --help output"
+          "description": "Show `--classic` flag in `--help` output"
         },
         {
           "type": "changed",
-          "description": "Shell escape (`!`) commands now use the user's default shell from $SHELL instead of hardcoded bash"
+          "description": "Shell escape (`!`) commands now use the user's default shell from `$SHELL` instead of hardcoded bash"
         },
         {
           "type": "changed",
@@ -74,7 +74,7 @@
         },
         {
           "type": "added",
-          "description": "Add /changelog slash command to show recent release notes"
+          "description": "Add `/changelog` slash command to show recent release notes"
         },
         {
           "type": "fixed",
@@ -90,7 +90,7 @@
         },
         {
           "type": "added",
-          "description": "Add /effort command to set model reasoning effort level (low/medium/high/xhigh/max)"
+          "description": "Add `/effort` command to set model reasoning effort level (low/medium/high/xhigh/max)"
         },
         {
           "type": "fixed",
@@ -106,11 +106,15 @@
         },
         {
           "type": "added",
-          "description": "/rewind to jump back to an earlier prompt in a conversation and continue in a new session."
+          "description": "`/rewind` to jump back to an earlier prompt in a conversation and continue in a new session."
         },
         {
           "type": "added",
-          "description": "Add KIRO_ACP_RECORD_PATH env var to record TUI ACP wire traffic to a JSONL trace file for debugging"
+          "description": "Add `KIRO_ACP_RECORD_PATH` env var to record TUI ACP wire traffic to a JSONL trace file for debugging"
+        },
+        {
+          "type": "added",
+          "description": "Support per-model default settings in cli.json that apply across all new sessions (e.g., set default effort level per model)"
         }
       ]
     },

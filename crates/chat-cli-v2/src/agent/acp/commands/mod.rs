@@ -23,6 +23,8 @@ pub mod rewind;
 pub mod stats;
 pub mod tools;
 pub mod usage;
+#[cfg(feature = "voice")]
+pub mod voice;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -179,6 +181,16 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         TuiCommand::Rewind(ref args) => rewind::execute(args, ctx).await,
         TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
         TuiCommand::Effort(ref args) => effort::execute(args, ctx),
+        #[cfg(feature = "voice")]
+        TuiCommand::Voice(ref args) => {
+            if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice) {
+                voice::execute(args, ctx).await
+            } else {
+                CommandResult::error("Voice mode is not available in this build")
+            }
+        },
+        #[cfg(not(feature = "voice"))]
+        TuiCommand::Voice(_) => CommandResult::error("Voice mode is not supported on this platform"),
     }
 }
 

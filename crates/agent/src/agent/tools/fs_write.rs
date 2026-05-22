@@ -158,13 +158,23 @@ impl FsWrite {
                 v.start_line = Some(1);
             },
             FsWrite::StrReplace(v) => {
+                let old_str_normalized = normalize_line_endings(&v.old_str);
+                let new_str_normalized = normalize_line_endings(&v.new_str);
+                // Reject when old_str is a verbatim substring of new_str. Repeated calls with
+                // this pattern silently re-match the just-written content and grow the file
+                // (linearly when replace_all=false, exponentially when replace_all=true and
+                // old_str appears in new_str more than once). Trim trailing newlines from
+                // old_str before the check to tolerate common LLM artifacts.
+                let old_str_trimmed = old_str_normalized.trim_end_matches('\n');
+                if !old_str_trimmed.is_empty() && new_str_normalized.contains(old_str_trimmed) {
+                    errors.push("Cannot edit file: old_str is a substring of new_str".to_string());
+                }
                 if !path.exists() {
                     errors.push(
                         "The provided path must exist in order to replace or insert contents into it".to_string(),
                     );
                 } else if let Ok(content) = tokio::fs::read_to_string(&path).await {
                     let normalized = normalize_line_endings(&content);
-                    let old_str_normalized = normalize_line_endings(&v.old_str);
                     let matches: Vec<_> = normalized.match_indices(&old_str_normalized).collect();
                     if matches.is_empty() {
                         errors.push("The provided old_str was not found in the file".to_string());
@@ -760,5 +770,217 @@ mod tests {
         assert!(tool.execute(None, &test_base).await.is_ok());
         let content = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(content, "baz\r\nbar\r\nbaz\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_old_str_substring_of_new_str() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "L5 → L6 promotion")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "L5 → L6 promotion".to_string(),
+            new_str: "L5 → L6 promotion readiness evaluation — not a promotion".to_string(),
+            ..Default::default()
+        });
+
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "expected substring-containment error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_old_str_substring_with_replace_all() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "foo bar foo")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "foo".to_string(),
+            new_str: "wrap foo wrap".to_string(),
+            replace_all: true,
+            ..Default::default()
+        });
+
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "replace_all=true with substring containment must also be rejected, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_old_str_equals_new_str() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "hello")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "hello".to_string(),
+            new_str: "hello".to_string(),
+            ..Default::default()
+        });
+
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "no-op replace (old_str == new_str) must be rejected, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_substring_after_crlf_normalization() {
+        // old_str uses LF, new_str uses CRLF — after normalization, old_str is contained.
+        let test_base = TestBase::new().await.with_file(("test.txt", "foo\nbar")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "foo\nbar".to_string(),
+            new_str: "foo\r\nbar\r\nbaz".to_string(),
+            ..Default::default()
+        });
+
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "CRLF-normalized substring containment must be rejected, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_substring_with_trailing_newline_in_old_str() {
+        // old_str has a trailing newline that is stripped before the substring check.
+        let test_base = TestBase::new().await.with_file(("test.txt", "section\n")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "section\n".to_string(),
+            new_str: "section header\n".to_string(),
+            ..Default::default()
+        });
+
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "trailing-newline old_str must still be detected as substring, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_allows_disjoint_old_and_new_str() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "fn old_name() {}")).await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "fn old_name()".to_string(),
+            new_str: "fn new_name()".to_string(),
+            ..Default::default()
+        });
+
+        assert!(
+            tool.validate(&test_base).await.is_ok(),
+            "disjoint old_str and new_str must be allowed"
+        );
+    }
+
+    /// "Wrap" patterns are a legitimate use case (e.g., wrapping a return value
+    /// in `Ok(...)`, wrapping a function call with retry logic). They are
+    /// supported when `old_str` includes enough surrounding context that the
+    /// substring relationship breaks. This test documents that the canonical
+    /// well-formed wrap pattern passes validation.
+    #[tokio::test]
+    async fn test_validate_allows_wrap_with_context() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("lib.rs", "fn handler() {\n    return Some(value);\n}\n"))
+            .await;
+
+        // Wrap `Some(value)` in `Ok(...)`. Including the leading whitespace and
+        // `return ` prefix makes `old_str` not appear in `new_str` (the bytes
+        // after `return ` differ), so the substring guard passes.
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("lib.rs").to_string_lossy().to_string(),
+            old_str: "    return Some(value);".to_string(),
+            new_str: "    return Ok(Some(value));".to_string(),
+            ..Default::default()
+        });
+
+        assert!(
+            tool.validate(&test_base).await.is_ok(),
+            "wrap pattern with sufficient surrounding context must be allowed"
+        );
+    }
+
+    /// Regression test for ticket P431388657.
+    ///
+    /// Demonstrates both halves of the bug story in one place:
+    /// 1. `validate()` rejects the substring-containment pattern (the fix).
+    /// 2. If `validate()` is bypassed, repeated `execute()` calls produce exponential file growth
+    ///    (the bug at the raw-operation layer, justifying why the guard belongs in `validate()`).
+    ///
+    /// With `replace_all=true` and `old_str` appearing twice in `new_str`,
+    /// each invocation doubles the count of matches → file grows ~2^N after
+    /// N invocations. Five iterations produce ≥16× growth.
+    #[tokio::test]
+    async fn test_substring_cascade_repro_and_fix() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("evidence.md", "L5 → L6 promotion review"))
+            .await;
+        let path_str = test_base.join("evidence.md").to_string_lossy().to_string();
+
+        // new_str contains old_str TWICE → with replace_all=true, each call
+        // multiplies the match count by 2. This is the catastrophic variant.
+        let make_tool = || {
+            FsWrite::StrReplace(StrReplace {
+                path: path_str.clone(),
+                old_str: "L5 → L6 promotion".to_string(),
+                new_str: "L5 → L6 promotion readiness — not a L5 → L6 promotion".to_string(),
+                replace_all: true,
+                ..Default::default()
+            })
+        };
+
+        // --- Part 1: the fix ---
+        let mut tool = make_tool();
+        let err = tool
+            .validate(&test_base)
+            .await
+            .expect_err("validate() must reject old_str ⊂ new_str");
+        assert!(
+            err.contains("old_str is a substring of new_str"),
+            "unexpected error: {err}"
+        );
+
+        // The file must be untouched after a rejected validate().
+        let after_validate = tokio::fs::read_to_string(test_base.join("evidence.md")).await.unwrap();
+        assert_eq!(after_validate, "L5 → L6 promotion review");
+
+        // --- Part 2: the bug at the execute() layer ---
+        // Bypass validate() and drive execute() directly to prove the cascade
+        // exists at the raw-operation layer. This is what justifies placing
+        // the guard in validate().
+        let initial_size = after_validate.len();
+        let initial_occurrences = after_validate.matches("L5 → L6 promotion").count();
+        let tool = make_tool();
+        for _ in 0..5 {
+            tool.execute(None, &test_base)
+                .await
+                .expect("execute() does not itself check for substring containment");
+        }
+        let final_content = tokio::fs::read_to_string(test_base.join("evidence.md")).await.unwrap();
+        let final_size = final_content.len();
+        let final_occurrences = final_content.matches("L5 → L6 promotion").count();
+
+        // Each invocation doubles occurrences: 1 → 2 → 4 → 8 → 16 → 32.
+        assert_eq!(
+            final_occurrences,
+            initial_occurrences * 32,
+            "expected 2^5 = 32x match-count growth, got {initial_occurrences} → {final_occurrences}"
+        );
+        assert!(
+            final_size >= initial_size * 16,
+            "expected exponential byte growth without the validate() guard: \
+             initial={initial_size} bytes, final={final_size} bytes"
+        );
     }
 }

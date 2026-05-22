@@ -2535,6 +2535,13 @@ async fn advertise_commands_and_prompts_to_client(
 ) -> Result<(), sacp::Error> {
     let commands: Vec<super::schema::AvailableCommand> = TuiCommand::all_commands()
         .into_iter()
+        .filter(|cmd| {
+            // Hide /voice from command list when rollout is not enabled
+            if cmd.name() == "/voice" {
+                return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice);
+            }
+            true
+        })
         .map(|cmd| super::schema::AvailableCommand {
             name: cmd.name().to_string(),
             description: cmd.description().to_string(),
@@ -2871,6 +2878,9 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
         UpdateEvent::AgentContent(ContentChunk::Text(text)) => Some(SessionUpdate::AgentMessageChunk(
             SacpContentChunk::new(ContentBlock::Text(TextContent::new(text))),
         )),
+        UpdateEvent::AgentThought(ContentChunk::Text(text)) => Some(SessionUpdate::AgentThoughtChunk(
+            SacpContentChunk::new(ContentBlock::Text(TextContent::new(text))),
+        )),
         UpdateEvent::ToolCall(tool_call) => {
             let locations = get_tool_locations(&tool_call.tool);
             let title = get_tool_title(&tool_call.tool);
@@ -2963,6 +2973,15 @@ fn log_entry_to_session_updates(entry: &LogEntry) -> Vec<SessionUpdate> {
                                 .kind(get_tool_kind(&tool_use.name))
                                 .raw_input(Some(tool_use.input.clone())),
                         ));
+                    },
+                    // Thinking blocks must map to AgentThoughtChunk (not AgentMessageChunk) —
+                    // see the live-streaming counterpart at `update_event_to_session_update`
+                    // for `UpdateEvent::AgentThought(...)`. Keep these two paths in sync;
+                    // dropping a variant here silently discards reasoning on session resume.
+                    AgentContentBlock::Thinking(thinking) => {
+                        updates.push(SessionUpdate::AgentThoughtChunk(SacpContentChunk::new(
+                            ContentBlock::Text(TextContent::new(thinking.text.clone())),
+                        )));
                     },
                     _ => {
                         if let Some(content) = agent_content_to_acp(block) {
@@ -3264,6 +3283,8 @@ async fn update_model_info(
     };
 
     rts_state.set_model_info(Some(model_info));
+    rts_state.apply_model_defaults(&database.settings);
+
     Ok(())
 }
 
@@ -3545,9 +3566,9 @@ pub async fn execute(
                     use crate::database::settings::Setting;
                     let key = Setting::try_from(request.key.as_str())
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
-                    // Perform an atomic read-modify-write directly on the global
-                    // settings file with fd_lock, independent of the in-memory
-                    // Settings snapshot (which is a clone and may be stale).
+                    // Perform a read-modify-write directly on the global settings
+                    // file (write is atomic via temp+rename), independent of the
+                    // in-memory Settings snapshot (which is a clone and may be stale).
                     crate::database::settings::Settings::update_global_setting(key, request.value)
                         .await
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
@@ -4135,5 +4156,84 @@ mod convert_update_event_tests {
             SessionUpdate::AgentMessageChunk(_) => {},
             other => panic!("expected AgentMessageChunk, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_agent_thought_text_maps_to_agent_thought_chunk() {
+        let event = UpdateEvent::AgentThought(ContentChunk::Text("thinking about this...".to_string()));
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_some(),
+            "AgentThought with Text should produce a SessionUpdate"
+        );
+
+        match result.unwrap() {
+            SessionUpdate::AgentThoughtChunk(_) => {},
+            other => panic!("expected AgentThoughtChunk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_agent_thought_non_text_returns_none() {
+        let event = UpdateEvent::AgentThought(ContentChunk::ResourceLink("some-link".to_string()));
+
+        let result = convert_update_event_to_session_update(event);
+        assert!(
+            result.is_none(),
+            "AgentThought with non-Text content should return None"
+        );
+    }
+}
+
+#[cfg(test)]
+mod log_entry_to_session_updates_tests {
+    use agent::agent_loop::types::{
+        ContentBlock as AgentContentBlock,
+        ThinkingBlock,
+    };
+    use agent::event_log::{
+        LogEntry,
+        LogEntryV1,
+    };
+    use sacp::schema::SessionUpdate;
+
+    use super::log_entry_to_session_updates;
+
+    /// Regression: thinking blocks were being dropped on session resume
+    /// because the replay path only converted Text content. The TUI's
+    /// `ThinkingDisplay` only renders when it sees an `AgentThoughtChunk`,
+    /// so resumed sessions appeared to have no reasoning history.
+    ///
+    /// This must stay aligned with the live counterpart:
+    /// `convert_update_event_to_session_update` for `UpdateEvent::AgentThought`.
+    #[test]
+    fn assistant_message_thinking_block_emits_agent_thought_chunk() {
+        let entry = LogEntry::V1(LogEntryV1::AssistantMessage {
+            message_id: "m1".to_string(),
+            content: vec![
+                AgentContentBlock::Thinking(ThinkingBlock {
+                    text: "Let me reason about this.".to_string(),
+                    signature: None,
+                    redacted_content: Vec::new(),
+                    model_id: None,
+                }),
+                AgentContentBlock::Text("Here is my answer.".to_string()),
+            ],
+        });
+
+        let updates = log_entry_to_session_updates(&entry);
+
+        assert_eq!(updates.len(), 2, "expected one thought chunk and one message chunk");
+        assert!(
+            matches!(updates[0], SessionUpdate::AgentThoughtChunk(_)),
+            "expected first update to be AgentThoughtChunk, got {:?}",
+            updates[0]
+        );
+        assert!(
+            matches!(updates[1], SessionUpdate::AgentMessageChunk(_)),
+            "expected second update to be AgentMessageChunk, got {:?}",
+            updates[1]
+        );
     }
 }

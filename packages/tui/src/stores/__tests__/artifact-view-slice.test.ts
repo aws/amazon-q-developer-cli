@@ -1,0 +1,302 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+import { createAppStore } from '../app-store';
+
+/**
+ * Tests for the artifactView slice navigation state machine.
+ *
+ * We exercise the public actions on a real store instance against a
+ * temp-dir workspace so the loader has actual files to read.
+ */
+
+function makeFakeKiro(): any {
+  return {
+    initialize: () => Promise.resolve(),
+    close: () => {},
+    sessionId: 'test',
+    settings: {},
+    onCommandsUpdate: () => {},
+    onKasCommandsDiscovered: () => {},
+    onPromptsUpdate: () => {},
+    onModelUpdate: () => {},
+    onAgentUpdate: () => {},
+    onCompactionStatus: () => {},
+    onTurnSummary: () => {},
+    onInitNotification: () => {},
+    onHistoryEvent: () => {},
+    onArtifactWrite: () => {},
+    onSubagentListUpdate: () => {},
+    onSessionEvent: () => {},
+    onMultiSessionUpdate: () => {},
+    onInboxNotification: () => {},
+  };
+}
+
+let workspace: string;
+let originalCwd: string;
+
+beforeEach(() => {
+  workspace = mkdtempSync(join(tmpdir(), 'artifact-view-test-'));
+  originalCwd = process.cwd();
+  process.chdir(workspace);
+});
+
+afterEach(() => {
+  process.chdir(originalCwd);
+  rmSync(workspace, { recursive: true, force: true });
+});
+
+function makeSpec(featureName: string, files: Record<string, string>): void {
+  const dir = join(workspace, '.kiro', 'specs', featureName);
+  mkdirSync(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    writeFileSync(join(dir, name), content);
+  }
+}
+
+describe('artifactView slice — openArtifactView', () => {
+  it('opens a panel with the loaded summary on success', async () => {
+    makeSpec('login', {
+      'requirements.md': [
+        '# Requirements',
+        '### Requirement 1: First',
+        '**User Story:** us-1',
+        '### Requirement 2: Second',
+        '**User Story:** us-2',
+      ].join('\n'),
+    });
+
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('login', 'requirements');
+
+    const view = store.getState().artifactViewOpen;
+    expect(view).not.toBeNull();
+    expect(view!.featureName).toBe('login');
+    expect(view!.artifact).toBe('requirements');
+    expect(view!.mode).toBe('summary');
+    expect(view!.cursor).toBe(0);
+    expect(view!.error).toBeNull();
+    if (view!.summary.kind !== 'requirements') throw new Error('kind mismatch');
+    expect(view!.summary.items).toHaveLength(2);
+  });
+
+  it('opens in error mode when feature is missing', async () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('nonexistent', 'requirements');
+
+    const view = store.getState().artifactViewOpen;
+    expect(view).not.toBeNull();
+    expect(view!.error).not.toBeNull();
+    expect(view!.error!.message).toMatch(/no spec found/i);
+  });
+
+  it('opens in error mode when artifact file is missing', async () => {
+    makeSpec('partial', { 'requirements.md': '' }); // tasks.md missing
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('partial', 'tasks');
+
+    const view = store.getState().artifactViewOpen;
+    expect(view).not.toBeNull();
+    expect(view!.error).not.toBeNull();
+  });
+});
+
+describe('artifactView slice — cursor navigation', () => {
+  it('wraps backward from first to last', async () => {
+    makeSpec('a', {
+      'requirements.md': [
+        '### Requirement 1: A',
+        '### Requirement 2: B',
+        '### Requirement 3: C',
+      ].join('\n'),
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('a', 'requirements');
+
+    expect(store.getState().artifactViewOpen!.cursor).toBe(0);
+    store.getState().moveArtifactCursor('prev');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(2);
+  });
+
+  it('wraps forward from last to first', async () => {
+    makeSpec('a', {
+      'requirements.md': [
+        '### Requirement 1: A',
+        '### Requirement 2: B',
+        '### Requirement 3: C',
+      ].join('\n'),
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('a', 'requirements');
+    // Move forward until we wrap.
+    store.getState().moveArtifactCursor('next');
+    store.getState().moveArtifactCursor('next');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(2);
+    store.getState().moveArtifactCursor('next');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(0);
+  });
+
+  it('is a no-op for empty list', async () => {
+    makeSpec('empty', { 'requirements.md': '# Requirements\n' });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('empty', 'requirements');
+
+    expect(store.getState().artifactViewOpen!.cursor).toBe(0);
+    store.getState().moveArtifactCursor('next');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(0);
+    store.getState().moveArtifactCursor('prev');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(0);
+  });
+
+  it('cursor is preserved when toggling expand', async () => {
+    makeSpec('t', {
+      'tasks.md': ['- [ ] 1. A', '  - [ ] 1.1. A1', '- [ ] 2. B'].join('\n'),
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('t', 'tasks');
+
+    store.getState().moveArtifactCursor('next');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
+    store.getState().toggleArtifactExpand(0);
+    // Cursor unchanged; expand state for index 0 toggled.
+    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
+    expect(store.getState().artifactViewOpen!.expanded[0]).toBe(true);
+  });
+});
+
+describe('artifactView slice — expand/collapse', () => {
+  it('toggle round-trips back to collapsed', async () => {
+    makeSpec('t', {
+      'tasks.md': '- [ ] 1. A\n  - [ ] 1.1. A1',
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('t', 'tasks');
+
+    expect(!!store.getState().artifactViewOpen!.expanded[0]).toBe(false);
+    store.getState().toggleArtifactExpand(0);
+    expect(store.getState().artifactViewOpen!.expanded[0]).toBe(true);
+    store.getState().toggleArtifactExpand(0);
+    expect(store.getState().artifactViewOpen!.expanded[0]).toBe(false);
+  });
+
+  it('expansion state resets when panel is closed and reopened', async () => {
+    makeSpec('t', {
+      'tasks.md': '- [ ] 1. A\n  - [ ] 1.1. A1',
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('t', 'tasks');
+    store.getState().toggleArtifactExpand(0);
+    expect(store.getState().artifactViewOpen!.expanded[0]).toBe(true);
+
+    store.getState().closeArtifactView();
+    expect(store.getState().artifactViewOpen).toBeNull();
+
+    await store.getState().openArtifactView('t', 'tasks');
+    expect(store.getState().artifactViewOpen!.expanded[0]).toBeUndefined();
+  });
+});
+
+describe('artifactView slice — detail mode', () => {
+  it('enters detail and back to summary preserving cursor', async () => {
+    makeSpec('a', {
+      'requirements.md': ['### Requirement 1: A', '### Requirement 2: B'].join(
+        '\n'
+      ),
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('a', 'requirements');
+    store.getState().moveArtifactCursor('next');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
+    store.getState().enterArtifactDetail();
+    expect(store.getState().artifactViewOpen!.mode).toBe('detail');
+    store.getState().leaveArtifactDetail();
+    expect(store.getState().artifactViewOpen!.mode).toBe('summary');
+    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
+  });
+
+  it('does not enter detail when there are no items', async () => {
+    makeSpec('empty', { 'requirements.md': '# Requirements\n' });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('empty', 'requirements');
+    store.getState().enterArtifactDetail();
+    expect(store.getState().artifactViewOpen!.mode).toBe('summary');
+  });
+});
+
+describe('artifactView slice — generation tracker', () => {
+  it('creates an entry on first write', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    const path = '/fake/.kiro/specs/x/requirements.md';
+    store.getState().notifyArtifactGenerationWrite({
+      path,
+      featureName: 'x',
+      artifact: 'requirements',
+    });
+    const entry = store.getState().artifactGenerating;
+    expect(entry).not.toBeNull();
+    expect(entry!.absolutePath).toBe(path);
+    expect(entry!.featureName).toBe('x');
+    expect(entry!.artifact).toBe('requirements');
+    expect(entry!.complete).toBe(false);
+  });
+
+  it('markArtifactGenerationComplete flips complete to true', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    const path = '/fake/.kiro/specs/x/tasks.md';
+    store.getState().notifyArtifactGenerationWrite({
+      path,
+      featureName: 'x',
+      artifact: 'tasks',
+    });
+    store.getState().markArtifactGenerationComplete(path);
+    expect(store.getState().artifactGenerating!.complete).toBe(true);
+  });
+
+  it('a write to a different path replaces the active entry', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    store.getState().notifyArtifactGenerationWrite({
+      path: '/fake/.kiro/specs/a/requirements.md',
+      featureName: 'a',
+      artifact: 'requirements',
+    });
+    store.getState().notifyArtifactGenerationWrite({
+      path: '/fake/.kiro/specs/b/design.md',
+      featureName: 'b',
+      artifact: 'design',
+    });
+    const entry = store.getState().artifactGenerating;
+    expect(entry).not.toBeNull();
+    expect(entry!.featureName).toBe('b');
+    expect(entry!.artifact).toBe('design');
+  });
+
+  it('markArtifactGenerationComplete is a no-op for a non-active path', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    const path = '/fake/.kiro/specs/x/requirements.md';
+    store.getState().notifyArtifactGenerationWrite({
+      path,
+      featureName: 'x',
+      artifact: 'requirements',
+    });
+    // Mark a different path complete — should not affect the active entry.
+    store
+      .getState()
+      .markArtifactGenerationComplete('/fake/.kiro/specs/y/design.md');
+    expect(store.getState().artifactGenerating!.complete).toBe(false);
+  });
+
+  it('clearArtifactViewOnEngineSwitch wipes both fields', () => {
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    store.getState().notifyArtifactGenerationWrite({
+      path: '/fake/x/requirements.md',
+      featureName: 'x',
+      artifact: 'requirements',
+    });
+    store.getState().clearArtifactViewOnEngineSwitch();
+    expect(store.getState().artifactGenerating).toBeNull();
+    expect(store.getState().artifactViewOpen).toBeNull();
+  });
+});

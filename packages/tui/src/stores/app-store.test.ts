@@ -568,10 +568,12 @@ describe('reopenSettingsMenu', () => {
     store.getState().reopenSettingsMenu();
 
     const { options } = store.getState().activeCommand!;
-    expect(options).toHaveLength(settingsSubcommands.length);
-    for (let i = 0; i < settingsSubcommands.length; i++) {
-      expect(options[i]!.value).toBe(settingsSubcommands[i]!.value);
-      expect(options[i]!.label).toBe(settingsSubcommands[i]!.label);
+    // Top-level menu only shows subcommands without ':' (sub-options are nested)
+    const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
+    expect(options).toHaveLength(topLevel.length);
+    for (let i = 0; i < topLevel.length; i++) {
+      expect(options[i]!.value).toBe(topLevel[i]!.value);
+      expect(options[i]!.label).toBe(topLevel[i]!.label);
     }
   });
 

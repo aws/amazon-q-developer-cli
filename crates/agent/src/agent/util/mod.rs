@@ -53,7 +53,7 @@ fn expand_env_vars_impl<E>(env_vars: &mut HashMap<String, String>, env_provider:
 where
     E: Fn(&str) -> Result<Option<String>, VarError>,
 {
-    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{env:([^}]+)\}").unwrap());
+    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{(?:env:)?([^}]+)\}").unwrap());
     for (_, value) in env_vars.iter_mut() {
         *value = ENV_VAR_REGEX
             .replace_all(value, |caps: &regex::Captures<'_>| {
@@ -212,11 +212,13 @@ mod tests {
         let mut env_vars = HashMap::new();
         env_vars.insert("KEY1".to_string(), "Value is ${env:TEST_VAR}".to_string());
         env_vars.insert("KEY2".to_string(), "No substitution".to_string());
+        env_vars.insert("KEY3".to_string(), "${TEST_VAR}".to_string());
 
         expand_env_vars_impl(&mut env_vars, env_provider);
 
         assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
         assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
+        assert_eq!(env_vars.get("KEY3").unwrap(), "test_value");
     }
 
     #[tokio::test]

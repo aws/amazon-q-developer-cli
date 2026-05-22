@@ -6,10 +6,16 @@
  */
 export class UndoStack<S> {
 	private stack: S[] = [];
+	private readonly maxSize: number;
+
+	constructor(maxSize = 200) {
+		this.maxSize = maxSize;
+	}
 
 	/** Push a deep clone of the given state onto the stack. */
 	push(state: S): void {
 		this.stack.push(structuredClone(state));
+		if (this.stack.length > this.maxSize) this.stack.shift();
 	}
 
 	/** Pop and return the most recent snapshot, or undefined if empty. */

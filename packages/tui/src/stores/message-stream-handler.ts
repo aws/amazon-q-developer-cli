@@ -18,19 +18,26 @@ export function createMessageStreamHandler(
   getAgentName?: () => string | undefined
 ): (event: AgentStreamEvent) => void {
   let bufferedContent = '';
+  let bufferedThinking = '';
   let pendingFlush: ReturnType<typeof setTimeout> | null = null;
   let lastContentId: string | null = null;
 
   const flushContent = () => {
     pendingFlush = null;
-    if (!bufferedContent) return;
+    if (!bufferedContent && !bufferedThinking) return;
     const content = bufferedContent;
+    const thinking = bufferedThinking;
     setMessages((msgs) => {
       const last = msgs[msgs.length - 1];
       if (last?.role === MessageRole.Model) {
         return [
           ...msgs.slice(0, -1),
-          { ...last, content, agentName: last.agentName ?? getAgentName?.() },
+          {
+            ...last,
+            content: content || last.content,
+            thinking: thinking || last.thinking,
+            agentName: last.agentName ?? getAgentName?.(),
+          },
         ];
       }
       return [
@@ -39,6 +46,7 @@ export function createMessageStreamHandler(
           id: lastContentId ?? crypto.randomUUID(),
           role: MessageRole.Model,
           content,
+          thinking: thinking || undefined,
           agentName: getAgentName?.(),
         },
       ];
@@ -100,9 +108,18 @@ export function createMessageStreamHandler(
         }
         break;
 
+      case AgentEventType.Thought:
+        if (event.content.type === 'text') {
+          bufferedThinking += event.content.text;
+          lastContentId = event.id;
+          if (!pendingFlush) pendingFlush = setTimeout(flushContent, 16);
+        }
+        break;
+
       case AgentEventType.ToolCall: {
         flushNow();
         bufferedContent = '';
+        bufferedThinking = '';
         lastContentId = null;
         const content = buildToolContent(event);
         setMessages((msgs) => {

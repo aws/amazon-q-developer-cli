@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -116,6 +116,25 @@ describe('trust-gate-state', () => {
     it('is idempotent', () => {
       saveTrustGateAccepted();
       saveTrustGateAccepted();
+      expect(isTrustGateAccepted()).toBe(true);
+    });
+
+    it('routes through kiro.setSetting when kiro instance provided', async () => {
+      const mockSetSetting = mock(() => Promise.resolve());
+      const kiro = { setSetting: mockSetSetting } as any;
+      saveTrustGateAccepted(kiro);
+      expect(mockSetSetting).toHaveBeenCalledWith(
+        'chat.disableTrustAllConfirmation',
+        true
+      );
+    });
+
+    it('falls back to direct write when kiro.setSetting rejects', async () => {
+      const mockSetSetting = mock(() => Promise.reject(new Error('ACP down')));
+      const kiro = { setSetting: mockSetSetting } as any;
+      saveTrustGateAccepted(kiro);
+      // Wait for the catch to fire
+      await new Promise((r) => setTimeout(r, 10));
       expect(isTrustGateAccepted()).toBe(true);
     });
   });

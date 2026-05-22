@@ -231,9 +231,17 @@ pub struct UserTurnMetadata {
     ///
     /// Only [None] if the loop never executed anything - ie, end reason is [EndReason::DidNotRun]
     pub result: Option<Result<Message, LoopError>>,
-    /// The id of each message as part of the user turn, in order
+    /// Ids of messages exchanged with the model during this turn, in order.
     ///
-    /// Messages with no id will be included in this vector as [None]
+    /// Each request in the turn contributes a `[user_prompt_id, assistant_response_id]` pair: the
+    /// id of the user prompt (or tool results) actively sent as that request's prompt, followed by
+    /// the id of the assistant response. Either entry is `None` when the corresponding message had
+    /// no id.
+    ///
+    /// These ids match the `Message.id` of the corresponding `LogEntry` in the conversation log.
+    /// Synthetic messages appended to the log purely as history (e.g. placeholders inserted on
+    /// cancel, timeout, or InvalidJson recovery) are not included here, since they were never the
+    /// active prompt or response of a request.
     pub message_ids: Vec<Option<String>>,
     /// The number of requests sent to the model
     pub total_request_count: u32,

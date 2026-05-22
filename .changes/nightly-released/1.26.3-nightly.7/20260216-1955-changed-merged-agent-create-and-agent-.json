@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Merged /agent create and /agent generate commands - /agent create now defaults to AI-assisted mode with --manual flag for editor-based creation"
+}

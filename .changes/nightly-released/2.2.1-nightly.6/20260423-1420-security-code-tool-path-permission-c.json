@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Code tool now requires approval to read files outside the workspace"
+}

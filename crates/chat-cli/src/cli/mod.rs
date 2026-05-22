@@ -63,7 +63,10 @@ use crate::logging::{
 use crate::os::Os;
 use crate::util::CLI_BINARY_NAME;
 use crate::util::consts::env_var::KIRO_API_KEY;
-use crate::util::paths::logs_dir;
+use crate::util::paths::{
+    kas_token_path,
+    logs_dir,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
@@ -160,6 +163,40 @@ pub enum RootSubcommand {
         /// Path to the ACP agent executable
         #[arg(long)]
         agent: String,
+    },
+    /// Record voice and print transcription to stdout (used by TUI).
+    #[cfg(feature = "voice")]
+    #[command(hide = true)]
+    Voice {
+        /// Push-to-talk mode (disables silence auto-stop)
+        #[arg(long)]
+        ptt: bool,
+    },
+    /// Start a voice recording server for remote/cloud desktop use.
+    #[cfg(feature = "voice")]
+    VoiceServe {
+        /// Port to listen on.
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Address to bind to.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+    },
+    /// Set up voice mode for a cloud desktop (run locally).
+    #[cfg(feature = "voice")]
+    #[command(name = "voice-cloud-setup")]
+    VoiceCloudSetup {
+        /// Cloud desktop hostname or SSH config alias
+        host: String,
+        /// Port for voice server
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Path to kiro binary on cloud desktop
+        #[arg(long)]
+        remote_bin: Option<String>,
+        /// SSH identity file
+        #[arg(long, short = 'i')]
+        identity: Option<String>,
     },
 }
 
@@ -273,7 +310,7 @@ impl RootSubcommand {
                     }
 
                     // Handle headless session commands before TUI launch
-                    if let Some(result) = handle_session_flags(&args, os) {
+                    if let Some(result) = handle_session_flags(&args, os).await {
                         return result;
                     }
 
@@ -335,6 +372,73 @@ impl RootSubcommand {
                     chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
                 Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
+                #[cfg(feature = "voice")]
+                Self::Voice { ptt } => {
+                    use crate::database::settings::Setting;
+                    let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
+                    let backend = if server_url.is_some() {
+                        "RemoteServer".to_string()
+                    } else {
+                        "LocalWhisper".to_string()
+                    };
+                    let silence_timeout = if ptt {
+                        None
+                    } else {
+                        Some(
+                            os.database
+                                .settings
+                                .get_int(Setting::VoiceSilenceTimeout)
+                                .and_then(|v| v.try_into().ok())
+                                .unwrap_or(5u64),
+                        )
+                    };
+                    let language = os.database.settings.get_string(Setting::VoiceLanguage);
+                    let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
+                    let result =
+                        voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                    let (telem_result, reason, reason_desc) = match &result {
+                        Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
+                        Err(e) => (
+                            crate::telemetry::TelemetryResult::Failed,
+                            Some("VoiceError".to_string()),
+                            Some(e.to_string()),
+                        ),
+                    };
+                    let input_method = if ptt { "PTT" } else { "SlashCommand" };
+                    os.telemetry
+                        .send_voice_input(
+                            None,
+                            telem_result,
+                            reason,
+                            reason_desc,
+                            backend,
+                            input_method.to_string(),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        )
+                        .ok();
+                    result
+                },
+                #[cfg(feature = "voice")]
+                Self::VoiceServe { port, bind } => voice::voice_serve::run_voice_server(&bind, port).await,
+                #[cfg(feature = "voice")]
+                Self::VoiceCloudSetup {
+                    host,
+                    port,
+                    remote_bin,
+                    identity,
+                } => {
+                    voice::voice_cloud_setup::run_voice_cloud_setup(
+                        &host,
+                        port,
+                        remote_bin.as_deref(),
+                        identity.as_deref(),
+                    )
+                    .await
+                },
             };
 
             if let Some(handle) = update_handle {
@@ -364,7 +468,7 @@ impl RootSubcommand {
                 }
 
                 // Handle headless session commands before TUI launch
-                if let Some(result) = handle_session_flags(&args, os) {
+                if let Some(result) = handle_session_flags(&args, os).await {
                     return result;
                 }
 
@@ -440,6 +544,68 @@ impl RootSubcommand {
                 chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },
             Self::AcpClient { agent } => chat_cli_v2::agent::acp::acp_client::execute(agent).await,
+            #[cfg(feature = "voice")]
+            Self::Voice { ptt } => {
+                use crate::database::settings::Setting;
+                let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
+                let backend = if server_url.is_some() {
+                    "RemoteServer".to_string()
+                } else {
+                    "LocalWhisper".to_string()
+                };
+                let silence_timeout = if ptt {
+                    None
+                } else {
+                    Some(
+                        os.database
+                            .settings
+                            .get_int(Setting::VoiceSilenceTimeout)
+                            .and_then(|v| v.try_into().ok())
+                            .unwrap_or(5u64),
+                    )
+                };
+                let language = os.database.settings.get_string(Setting::VoiceLanguage);
+                let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
+                let result =
+                    voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                let (telem_result, reason, reason_desc) = match &result {
+                    Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
+                    Err(e) => (
+                        crate::telemetry::TelemetryResult::Failed,
+                        Some("VoiceError".to_string()),
+                        Some(e.to_string()),
+                    ),
+                };
+                let input_method = if ptt { "PTT" } else { "SlashCommand" };
+                os.telemetry
+                    .send_voice_input(
+                        None,
+                        telem_result,
+                        reason,
+                        reason_desc,
+                        backend,
+                        input_method.to_string(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .ok();
+                result
+            },
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { port, bind } => voice::voice_serve::run_voice_server(&bind, port).await,
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup {
+                host,
+                port,
+                remote_bin,
+                identity,
+            } => {
+                voice::voice_cloud_setup::run_voice_cloud_setup(&host, port, remote_bin.as_deref(), identity.as_deref())
+                    .await
+            },
         }
     }
 }
@@ -463,6 +629,35 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
 /// Extracts embedded node + KAS assets if needed, then execs
 /// `node --experimental-wasm-modules acp-server.js --transport=stdio`.
 async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCode> {
+    let mut child = spawn_kas_process(os, KasStdio::Inherit, token_path).await?;
+    let status = child.wait().await?;
+    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+}
+
+/// Stdio configuration for a spawned KAS process.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum KasStdio {
+    /// Inherit parent stdio. Used for passthrough `kiro-cli acp`.
+    Inherit,
+    /// Pipe stdin/stdout (for ACP client use), null stderr.
+    Piped,
+}
+
+/// Spawn a KAS process with `--transport=stdio`.
+///
+/// Resolves the node binary and server script from `KIRO_KAS_SERVER_PATH` or
+/// embedded assets. Pins the child to the CLI auth token via `--token-path`
+/// (default `kas_token_path(os)`); pass `token_path_override` to use a
+/// different file (e.g. user-supplied `--token-path` on `kiro-cli acp`).
+///
+/// TODO: token sync currently lives in the autocomplete repo. Move that
+/// into this CLI binary so KAS-via-CLI flows don't depend on the desktop
+/// app having run recently.
+pub(crate) async fn spawn_kas_process(
+    os: &Os,
+    stdio: KasStdio,
+    token_path_override: Option<PathBuf>,
+) -> Result<tokio::process::Child> {
     let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
         (PathBuf::from("node"), PathBuf::from(kas_server_path))
     } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
@@ -471,45 +666,66 @@ async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCod
         bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
     };
 
-    let token_path = token_path.map_or_else(|| crate::util::paths::kas_token_path(os), Ok)?;
-
     debug!(
-        "Spawning KAS ACP: {} --experimental-wasm-modules {} --transport=stdio",
-        node_bin.display(),
-        server_js.display()
+        node = %node_bin.display(),
+        server = %server_js.display(),
+        ?stdio,
+        "spawning KAS process"
     );
 
-    let mut child = tokio::process::Command::new(&node_bin)
-        .arg("--experimental-wasm-modules")
+    let mut cmd = tokio::process::Command::new(&node_bin);
+    cmd.arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=stdio")
-        .arg(format!("--token-path={}", token_path.display()))
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    let token_path = token_path_override.map_or_else(|| kas_token_path(os), Ok)?;
+    cmd.arg(format!("--token-path={}", token_path.display()));
+
+    match stdio {
+        KasStdio::Piped => {
+            cmd.stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                // stderr is null'd in Piped mode so KAS chatter doesn't
+                // leak into one-shot output. To debug startup failures,
+                // run `kiro-cli acp --agent-engine=kas` (Inherit mode).
+                .stderr(std::process::Stdio::null());
+        },
+        KasStdio::Inherit => {
+            cmd.stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit());
+        },
+    }
+
+    let child = cmd
         .spawn()
         .with_context(|| format!("failed to spawn KAS: {} {}", node_bin.display(), server_js.display()))?;
 
-    let status = child.wait().await?;
-    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+    Ok(child)
 }
 
 /// Handle `--list-sessions` and `--delete-session` before TUI launch.
 ///
 /// Returns `Some(Result)` if a flag was handled, `None` to continue normal dispatch.
-fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCode>> {
+async fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCode>> {
     use crate::cli::chat::SessionSourceArg;
     use crate::cli::chat::cli::persist::SessionSource;
+
+    if !args.list_sessions && args.delete_session.is_none() {
+        return None;
+    }
     crate::cli::chat::cli::persist::handle_list_delete_session_flags(
         args.list_sessions,
         args.delete_session.as_deref(),
         args.session_source.map(|s| match s {
             SessionSourceArg::V1 => SessionSource::V1,
             SessionSourceArg::V2 => SessionSource::V2,
+            SessionSourceArg::V3 => SessionSource::Kas,
         }),
         os,
     )
+    .await
     .map(Ok)
 }
 
@@ -537,6 +753,12 @@ impl Display for RootSubcommand {
             Self::Bot(_) => "bot",
             Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
+            #[cfg(feature = "voice")]
+            Self::Voice { .. } => "voice",
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { .. } => "voice-serve",
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup { .. } => "voice-cloud-setup",
         };
 
         write!(f, "{name}")
@@ -557,6 +779,12 @@ pub struct Cli {
     /// Launch chat in legacy UI mode
     #[arg(long, visible_alias = "classic")]
     legacy_ui: bool,
+    /// Resume a conversation (shows picker in interactive mode)
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "SESSION_ID")]
+    resume: Option<String>,
+    /// Resume the most recent conversation without showing the picker
+    #[arg(long = "continue")]
+    continue_session: bool,
 }
 
 impl Cli {
@@ -565,6 +793,8 @@ impl Cli {
             RootSubcommand::Chat(ChatArgs {
                 tui: self.tui,
                 legacy_ui: self.legacy_ui,
+                resume: self.resume,
+                continue_session: self.continue_session,
                 ..Default::default()
             })
         });
@@ -710,6 +940,8 @@ mod test {
             verbose: 1,
             tui: false,
             legacy_ui: false,
+            resume: None,
+            continue_session: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-vvv"]), Cli {
@@ -717,11 +949,13 @@ mod test {
             verbose: 3,
             tui: false,
             legacy_ui: false,
+            resume: None,
+            continue_session: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
             subcommand: Some(RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -744,6 +978,8 @@ mod test {
             verbose: 2,
             tui: false,
             legacy_ui: false,
+            resume: None,
+            continue_session: false,
         });
     }
 
@@ -773,7 +1009,7 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -801,7 +1037,7 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile", "Hello"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -829,7 +1065,7 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -857,7 +1093,7 @@ mod test {
         assert_parse!(
             ["chat", "--no-interactive", "--resume"],
             RootSubcommand::Chat(ChatArgs {
-                resume: true,
+                resume: Some("".to_string()),
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -881,7 +1117,7 @@ mod test {
         assert_parse!(
             ["chat", "--non-interactive", "-r"],
             RootSubcommand::Chat(ChatArgs {
-                resume: true,
+                resume: Some("".to_string()),
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -909,9 +1145,38 @@ mod test {
         assert_parse!(
             ["chat", "--resume-id", "abc-123"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: Some("abc-123".to_string()),
                 resume_picker: false,
+                list_sessions: false,
+                list_models: false,
+                format: OutputFormat::Plain,
+                delete_session: None,
+                session_source: None,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: None,
+                require_mcp_startup: false,
+                tui: false,
+                legacy_ui: false,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_continue() {
+        assert_parse!(
+            ["chat", "--continue"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: None,
+                resume_id: None,
+                resume_picker: false,
+                continue_session: true,
                 list_sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
@@ -937,7 +1202,7 @@ mod test {
         assert_parse!(
             ["chat", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -965,7 +1230,7 @@ mod test {
         assert_parse!(
             ["chat", "--trust-tools="],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -993,7 +1258,7 @@ mod test {
         assert_parse!(
             ["chat", "--trust-tools=fs_read,fs_write"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -1021,7 +1286,7 @@ mod test {
         assert_parse!(
             ["chat", "--require-mcp-startup"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -1049,7 +1314,7 @@ mod test {
         assert_parse!(
             ["chat", "-w", "never"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -1073,7 +1338,7 @@ mod test {
         assert_parse!(
             ["chat", "--wrap", "always"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
@@ -1097,7 +1362,7 @@ mod test {
         assert_parse!(
             ["chat", "--wrap", "auto"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,

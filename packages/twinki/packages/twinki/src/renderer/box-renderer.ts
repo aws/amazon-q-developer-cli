@@ -140,14 +140,15 @@ export function renderBoxChildren(
  * Returns true if any descendant text node (or a Box's overflow prop) opts
  * into overflow wrapping. Used by the box compositor to decide whether to
  * let content extend past the container width.
+ * Result is cached on the node and invalidated when tree structure changes.
  */
 function hasOverflowDescendant(node: TwinkiNode): boolean {
-  if (node.props?.wrap === 'overflow') return true;
-  // A Box can explicitly opt in via `overflow="visible"` on its own props
-  // in the future — we currently only recognise Text's `wrap="overflow"`.
+  if (node._hasOverflow !== undefined) return node._hasOverflow;
+  if (node.props?.wrap === 'overflow') { node._hasOverflow = true; return true; }
   for (const child of node.children ?? []) {
-    if (hasOverflowDescendant(child)) return true;
+    if (hasOverflowDescendant(child)) { node._hasOverflow = true; return true; }
   }
+  node._hasOverflow = false;
   return false;
 }
 

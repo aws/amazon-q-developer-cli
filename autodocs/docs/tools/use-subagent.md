@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-19
-  commit: d171e67b
+  validated: 2026-05-21
+  commit: 69ae7a5f5
   status: validated
   testable_headless: true
   category: tool

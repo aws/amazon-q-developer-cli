@@ -13,7 +13,6 @@ use serde::{
 use serde_json::Map;
 use tracing::error;
 use typeshare::typeshare;
-use uuid::Uuid;
 
 use crate::agent::util::truncate_safe_in_place;
 
@@ -225,14 +224,14 @@ pub struct MessageMetadata {
 }
 
 impl Message {
-    /// Creates a new message with a new id
-    pub fn new(role: Role, content: Vec<ContentBlock>, timestamp: Option<DateTime<Utc>>) -> Self {
+    /// Creates a new message with the given id.
+    pub fn new(id: String, role: Role, content: Vec<ContentBlock>, timestamp: Option<DateTime<Utc>>) -> Self {
         let meta = timestamp.map(|ts| MessageMetadata {
             timestamp: Some(ts),
             additional_context: String::new(),
         });
         Self {
-            id: Some(Uuid::new_v4().to_string()),
+            id: Some(id),
             role,
             content,
             meta,
@@ -543,6 +542,11 @@ pub struct ThinkingBlock {
     #[serde(with = "serde_bytes")]
     #[serde(default)]
     pub redacted_content: Vec<u8>,
+    /// Model ID that generated this thinking block. Used to strip reasoning
+    /// when the active model changes (reasoning blocks are model-specific and
+    /// will be rejected if sent to a different model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 #[typeshare]
@@ -776,6 +780,8 @@ pub struct RequestAttemptsEvent {
 mod tests {
     use std::str::FromStr;
 
+    use uuid::Uuid;
+
     use super::*;
 
     macro_rules! test_ser_deser {
@@ -805,6 +811,7 @@ mod tests {
     #[test]
     fn test_message_byte_len() {
         let msg = Message::new(
+            Uuid::new_v4().to_string(),
             Role::User,
             vec![
                 ContentBlock::Text("hello".to_string()),
@@ -817,7 +824,12 @@ mod tests {
 
     #[test]
     fn test_message_truncate_under_limit() {
-        let mut msg = Message::new(Role::User, vec![ContentBlock::Text("hello".to_string())], None);
+        let mut msg = Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hello".to_string())],
+            None,
+        );
         msg.truncate(100, None);
         assert_eq!(msg.text(), "hello");
     }
@@ -825,6 +837,7 @@ mod tests {
     #[test]
     fn test_message_truncate_single_text() {
         let mut msg = Message::new(
+            Uuid::new_v4().to_string(),
             Role::User,
             vec![ContentBlock::Text("hello world this is a long message".to_string())],
             None,
@@ -837,6 +850,7 @@ mod tests {
     #[test]
     fn test_message_truncate_multiple_text_blocks() {
         let mut msg = Message::new(
+            Uuid::new_v4().to_string(),
             Role::User,
             vec![
                 ContentBlock::Text("aaaaaaaaaa".to_string()), // 10 bytes
@@ -852,6 +866,7 @@ mod tests {
     #[test]
     fn test_message_truncate_with_tool_result() {
         let mut msg = Message::new(
+            Uuid::new_v4().to_string(),
             Role::User,
             vec![ContentBlock::ToolResult(ToolResultBlock {
                 tool_use_id: "test".to_string(),
@@ -870,6 +885,7 @@ mod tests {
     #[test]
     fn test_message_truncate_skips_images() {
         let mut msg = Message::new(
+            Uuid::new_v4().to_string(),
             Role::User,
             vec![
                 ContentBlock::Text("hello".to_string()),

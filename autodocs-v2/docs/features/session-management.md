@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-30
-  commit: be2c1347
+  validated: 2026-05-22
+  commit: 773c796e6
   status: validated
   testable_headless: false
   category: feature
@@ -184,6 +184,25 @@ Sessions are per-directory by design. To work around this:
 **Symptom**: Resumed session references files from different directory  
 **Cause**: Session was created in a different directory  
 **Solution**: Sessions are tied to their original directory. Start a new session or navigate to the original directory.
+
+## Prompt History
+
+Prompt history (Up/Down arrow navigation) is scoped per-session by default. Each session stores its own history file:
+
+- `~/.kiro/sessions/cli/{session_id}.history`
+
+When you start a new session, the history starts fresh. When you resume an existing session, its prompt history is restored.
+
+### Configuration
+
+Use `/settings` → `history` to switch between:
+
+| Mode | Description |
+|------|-------------|
+| **session** (default) | Each session has its own prompt history |
+| **global** | All sessions share one history file (`~/.kiro/.cli_bash_history`) |
+
+**Note**: Switching between history modes or starting a new session does not carry over history from the previous context. Each session starts with its own history (empty if new, or restored from its history file if resuming).
 
 ## Related
 

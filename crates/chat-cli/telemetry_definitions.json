@@ -328,6 +328,43 @@
       "name": "codewhispererterminal_parentToolUseId",
       "type": "string",
       "description": "Tool use id that spawns this subagent"
+    },
+    {
+      "name": "kirocli_voiceBackend",
+      "type": "string",
+      "allowedValues": ["LocalWhisper", "RemoteServer"],
+      "description": "The voice transcription backend used"
+    },
+    {
+      "name": "kirocli_voiceInputMethod",
+      "type": "string",
+      "allowedValues": ["SlashCommand", "PTT", "ContinuousVoice", "Standalone"],
+      "description": "How voice input was triggered"
+    },
+    {
+      "name": "kirocli_voiceRecordingDurationMs",
+      "type": "int",
+      "description": "Duration of voice recording in milliseconds"
+    },
+    {
+      "name": "kirocli_voiceTranscriptionDurationMs",
+      "type": "int",
+      "description": "Duration of voice transcription processing in milliseconds"
+    },
+    {
+      "name": "kirocli_voiceTextLength",
+      "type": "int",
+      "description": "Length of transcribed text in characters"
+    },
+    {
+      "name": "kirocli_voiceModelSize",
+      "type": "string",
+      "description": "Whisper model size used for transcription (base, small)"
+    },
+    {
+      "name": "kirocli_voiceAutoSubmit",
+      "type": "boolean",
+      "description": "Whether voice input was auto-submitted without user review"
     }
   ],
   "metrics": [
@@ -604,6 +641,25 @@
         { "type": "codewhispererterminal_builtinToolUses", "required": true },
         { "type": "codewhispererterminal_mcpToolUses", "required": true },
         { "type": "codewhispererterminal_parentToolUseId", "required": true }
+      ]
+    },
+    {
+      "name": "kirocli_voiceInput",
+      "description": "Emitted when a voice input session completes (success, failure, or cancellation)",
+      "passive": false,
+      "metadata": [
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "result", "required": true },
+        { "type": "reason", "required": false },
+        { "type": "reasonDesc", "required": false },
+        { "type": "kirocli_voiceBackend", "required": true },
+        { "type": "kirocli_voiceInputMethod", "required": true },
+        { "type": "kirocli_voiceRecordingDurationMs", "required": false },
+        { "type": "kirocli_voiceTranscriptionDurationMs", "required": false },
+        { "type": "kirocli_voiceTextLength", "required": false },
+        { "type": "kirocli_voiceModelSize", "required": false },
+        { "type": "kirocli_voiceAutoSubmit", "required": false }
       ]
     }
   ]

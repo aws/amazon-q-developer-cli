@@ -40,7 +40,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppState } from '../../src/stores/app-store';
-import type { TerminalSnapshot } from '../../src/test-utils/shared/pty-manager';
+import type {
+  CellAttributes,
+  TerminalSnapshot,
+} from '../../src/test-utils/shared/pty-manager';
 import type { TestPaths } from '../../src/test-utils/shared/test-paths';
 import { TestCase, type TestCaseOptions } from '../../src/test-utils/TestCase';
 import { AcpMockServer } from './AcpMockServer';
@@ -154,6 +157,22 @@ export class AcpTestCase {
   }
   getSnapshot(): string[] {
     return this.inner.getSnapshot();
+  }
+  /**
+   * Finds the first occurrence of `text` on the terminal screen and
+   * returns the per-character formatting attributes for each cell of
+   * the match (bold, italic, underline, fgColor, etc.). Returns null
+   * if not found. See {@link TestCase.findTextCells}.
+   */
+  findTextCells(text: string): CellAttributes[] | null {
+    return this.inner.findTextCells(text);
+  }
+  /**
+   * Resets the xterm buffer (visible screen + scrollback) without
+   * touching the underlying TUI process. See {@link TestCase.clearTerminal}.
+   */
+  clearTerminal(): void {
+    this.inner.clearTerminal();
   }
   getCursorPosition(): { x: number; y: number } {
     return this.inner.getCursorPosition();

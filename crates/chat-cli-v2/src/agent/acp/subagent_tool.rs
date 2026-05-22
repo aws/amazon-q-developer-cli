@@ -137,6 +137,7 @@ pub(crate) async fn handle_internal_prompt(
                             task_description: query,
                             context_summary: None,
                             task_result: text,
+                            result_type: None,
                         });
                     }
                 },

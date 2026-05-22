@@ -7,7 +7,10 @@ import { truncateToWidth } from '../../utils/text-width.js';
 const Region = isDevMode()
   ? (await import('twinki').catch(() => ({ Region: null }))).Region
   : null;
-import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
+import {
+  AnimationPausedContext,
+  useAnimationPaused,
+} from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
 import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
@@ -21,6 +24,7 @@ import { ToolsPanel } from '../ui/ToolsPanel';
 import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
 import { KeybindingsPanel } from '../ui/KeybindingsPanel';
+import { DisplaySettingsPanel } from '../ui/DisplaySettingsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
@@ -40,6 +44,8 @@ import { Explorer } from '../ui/Explorer';
 import { CodePanel } from '../ui/CodePanel';
 import { SurveyPanel } from '../ui/SurveyPanel';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
+import { ArtifactView } from '../ui/ArtifactView/index.js';
+import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
 
 import {
   useNotificationState,
@@ -67,7 +73,7 @@ import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import { getGitBranch } from '../../utils/git';
-import { shortenPath } from '../../utils/string';
+import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
@@ -181,6 +187,7 @@ export const InlineLayout: React.FC = () => {
     noInteractive,
   } = useProcessingState();
   const { cancelApproval, approvalMode } = useApprovalState();
+  const globalPaused = useAnimationPaused();
   const trustAllToolsAccepted = useAppStore(
     (state) => state.trustAllToolsConfirmed
   );
@@ -209,12 +216,14 @@ export const InlineLayout: React.FC = () => {
     showHooksPanel,
     hooksList,
     showKeybindingsPanel,
+    showDisplaySettingsPanel,
     settingsReturnOnEscape,
     showKnowledgePanel,
     knowledgeEntries,
     knowledgeStatus,
     showCodePanel,
     codeData,
+    artifactViewOpen,
   } = useUIState();
   const {
     toggleToolOutputsExpanded,
@@ -229,6 +238,7 @@ export const InlineLayout: React.FC = () => {
     setShowStatsPanel,
     setShowHooksPanel,
     setShowKeybindingsPanel,
+    setShowDisplaySettingsPanel,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
     setShowKnowledgePanel,
@@ -256,6 +266,7 @@ export const InlineLayout: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const exitSequence = useAppStore((state) => state.exitSequence);
+  const suspendArmed = useAppStore((state) => state.suspendArmed);
 
   // Research-survey state — kept as a simple trio of selectors since it's
   // only consumed here.
@@ -517,6 +528,23 @@ export const InlineLayout: React.FC = () => {
     reopenSettingsMenu,
   ]);
 
+  const handleCloseDisplaySettingsPanel = useCallback(() => {
+    setShowDisplaySettingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    if (settingsReturnOnEscape) {
+      setSettingsReturnOnEscape(false);
+      reopenSettingsMenu();
+    }
+  }, [
+    setShowDisplaySettingsPanel,
+    setActiveCommand,
+    clearCommandInput,
+    settingsReturnOnEscape,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
+  ]);
+
   const handleCloseKnowledgePanel = useCallback(() => {
     setShowKnowledgePanel(false);
     setActiveCommand(null);
@@ -601,7 +629,7 @@ export const InlineLayout: React.FC = () => {
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
       ),
       currentEffort && (
-        <Chip value={currentEffort} color={ChipColor.SECONDARY} />
+        <Chip value={formatEffort(currentEffort)} color={ChipColor.SECONDARY} />
       ),
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
@@ -655,7 +683,9 @@ export const InlineLayout: React.FC = () => {
         />
       ),
       currentModel && <Chip value={currentModel.name} color={mutedColor} />,
-      currentEffort && <Chip value={currentEffort} color={mutedColor} />,
+      currentEffort && (
+        <Chip value={formatEffort(currentEffort)} color={mutedColor} />
+      ),
       contextUsagePercent != null && (
         <ProgressChip
           value={contextUsagePercent}
@@ -746,7 +776,9 @@ export const InlineLayout: React.FC = () => {
   }, [setAgentError]);
 
   return (
-    <AnimationPausedContext.Provider value={!!pendingApproval || !!agentError}>
+    <AnimationPausedContext.Provider
+      value={globalPaused || !!pendingApproval || !!agentError}
+    >
       <Box flexDirection="column">
         {agentError && (
           <BlockingErrorAlert
@@ -806,6 +838,8 @@ export const InlineLayout: React.FC = () => {
 
         <ActivityTray />
 
+        <ArtifactGenerationCard />
+
         {surveyPrompt && (
           <SurveyPromptBar
             message={surveyPrompt.message}
@@ -828,8 +862,10 @@ export const InlineLayout: React.FC = () => {
               showStatsPanel ||
               showHooksPanel ||
               showKeybindingsPanel ||
+              showDisplaySettingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
+              !!artifactViewOpen ||
               showSurveyPanel ||
               !!pendingApproval
                 ? undefined
@@ -883,8 +919,10 @@ export const InlineLayout: React.FC = () => {
                   showStatsPanel ||
                   showHooksPanel ||
                   showKeybindingsPanel ||
+                  showDisplaySettingsPanel ||
                   showKnowledgePanel ||
                   showCodePanel ||
+                  !!artifactViewOpen ||
                   showSurveyPanel
             }
           >
@@ -1002,6 +1040,9 @@ export const InlineLayout: React.FC = () => {
             {showKeybindingsPanel && (
               <KeybindingsPanel onClose={handleCloseKeybindingsPanel} />
             )}
+            {showDisplaySettingsPanel && (
+              <DisplaySettingsPanel onClose={handleCloseDisplaySettingsPanel} />
+            )}
             {showKnowledgePanel && (
               <KnowledgePanel
                 entries={knowledgeEntries}
@@ -1016,6 +1057,7 @@ export const InlineLayout: React.FC = () => {
                 onRefresh={handleRefreshCodePanel}
               />
             )}
+            {artifactViewOpen && <ArtifactView />}
             {showSurveyPanel && (
               <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
             )}
@@ -1044,11 +1086,14 @@ export const InlineLayout: React.FC = () => {
                 !showToolsPanel &&
                 !showHooksPanel &&
                 !showKeybindingsPanel &&
+                !showDisplaySettingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
+                !artifactViewOpen &&
                 !showSurveyPanel &&
                 commandInputValue.length === 0 &&
-                exitSequence === 0
+                exitSequence === 0 &&
+                !suspendArmed
               }
             />
             <ExitHint />

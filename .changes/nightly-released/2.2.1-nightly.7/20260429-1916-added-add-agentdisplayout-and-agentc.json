@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add $AGENT_DISPLAY_OUT and $AGENT_CONTEXT_OUT side channels for shell wrapper scripts to stream output to the TUI or agent without going through stdout"
+}

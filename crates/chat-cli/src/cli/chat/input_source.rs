@@ -1,4 +1,14 @@
 use std::io::IsTerminal;
+#[cfg(feature = "voice")]
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
+#[cfg(feature = "voice")]
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use eyre::Result;
 use rustyline::error::ReadlineError;
@@ -19,6 +29,11 @@ pub struct InputSource {
     inner: inner::Inner,
     paste_state: PasteState,
     swap_state: AgentSwapState,
+    #[cfg(feature = "voice")]
+    ptt_triggered: Arc<AtomicBool>,
+    /// Captures the actual readline buffer content at PTT trigger time.
+    #[cfg(feature = "voice")]
+    ptt_buffer: Arc<Mutex<String>>,
 }
 
 mod inner {
@@ -53,13 +68,45 @@ impl InputSource {
         receiver: PromptQueryResponseReceiver,
         agents: &crate::cli::agent::Agents,
     ) -> Result<Self> {
+        #[cfg(feature = "voice")]
+        let ptt_triggered = Arc::new(AtomicBool::new(false));
+        #[cfg(feature = "voice")]
+        let ptt_buffer = Arc::new(Mutex::new(String::new()));
+
         let paste_state = PasteState::new();
         let swap_state = AgentSwapState::new();
         Ok(Self {
-            inner: inner::Inner::Readline(rl(os, sender, receiver, paste_state.clone(), agents, &swap_state)?),
+            inner: inner::Inner::Readline(rl(
+                os,
+                sender,
+                receiver,
+                paste_state.clone(),
+                agents,
+                &swap_state,
+                #[cfg(feature = "voice")]
+                Arc::clone(&ptt_triggered),
+                #[cfg(feature = "voice")]
+                Arc::clone(&ptt_buffer),
+            )?),
             paste_state,
             swap_state,
+            #[cfg(feature = "voice")]
+            ptt_triggered,
+            #[cfg(feature = "voice")]
+            ptt_buffer,
         })
+    }
+
+    /// Returns true and clears the flag if a PTT (push-to-talk) trigger fired.
+    #[cfg(feature = "voice")]
+    pub fn take_ptt_triggered(&self) -> bool {
+        self.ptt_triggered.swap(false, Ordering::AcqRel)
+    }
+
+    /// Returns the readline buffer content captured at PTT trigger time, then clears it.
+    #[cfg(feature = "voice")]
+    pub fn take_ptt_buffer(&self) -> String {
+        std::mem::take(&mut self.ptt_buffer.lock().unwrap())
     }
 
     /// Save history to file
@@ -128,6 +175,10 @@ impl InputSource {
             inner: inner::Inner::Mock { index: 0, lines },
             paste_state: PasteState::new(),
             swap_state: AgentSwapState::new(),
+            #[cfg(feature = "voice")]
+            ptt_triggered: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "voice")]
+            ptt_buffer: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -156,6 +207,41 @@ impl InputSource {
         };
 
         // Persist history after each input to prevent loss on crash/reboot
+        if matches!(&result, Ok(Some(_))) {
+            let _ = self.save_history();
+        }
+
+        result
+    }
+
+    /// Like `read_line` but pre-fills the readline buffer with `initial` text.
+    /// The user can edit or submit as-is.
+    pub fn read_line_with_initial(
+        &mut self,
+        prompt: Option<&str>,
+        initial: &str,
+    ) -> Result<Option<String>, ReadlineError> {
+        let result = match &mut self.inner {
+            inner::Inner::Readline(rl) => {
+                let prompt = prompt.unwrap_or_default();
+                match rl.readline_with_initial(prompt, (initial, "")) {
+                    Ok(line) => {
+                        let line = line.replace('\r', "");
+                        if Self::should_append_history(&line) {
+                            let _ = rl.add_history_entry(line.as_str());
+                        }
+                        Ok(Some(line))
+                    },
+                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => Ok(None),
+                    Err(err) => Err(err),
+                }
+            },
+            inner::Inner::Mock { index, lines } => {
+                *index += 1;
+                Ok(lines.get(*index - 1).cloned())
+            },
+        };
+
         if matches!(&result, Ok(Some(_))) {
             let _ = self.save_history();
         }

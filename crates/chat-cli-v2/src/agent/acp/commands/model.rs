@@ -51,9 +51,24 @@ async fn set_current_as_default(ctx: &CommandContext<'_>) -> CommandResult {
 }
 
 pub async fn get_options(_partial: &str, ctx: &CommandContext<'_>) -> CommandOptionsResponse {
+    let current_id = ctx.rts_state.model_id().unwrap_or_default();
     match fetch_models(ctx).await {
         Ok(models) => {
-            let options: Vec<CommandOption> = models.into_iter().map(to_command_option).collect();
+            let options: Vec<CommandOption> = models
+                .into_iter()
+                .map(|m| {
+                    let is_active = m.id == current_id;
+                    let mut opt = to_command_option(m);
+                    if is_active {
+                        opt.description = Some(
+                            format!("{} [active]", opt.description.as_deref().unwrap_or(""))
+                                .trim()
+                                .to_string(),
+                        );
+                    }
+                    opt
+                })
+                .collect();
             CommandOptionsResponse {
                 options,
                 has_more: false,
@@ -119,6 +134,7 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
             })
             .unwrap_or_else(|| to_legacy_model_info(m));
         ctx.rts_state.set_model_info(Some(full_model));
+        ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
         return CommandResult::success_with_data(
             format!("Model changed to {}", display_name),
             serde_json::json!({ "model": { "id": id, "name": display_name } }),

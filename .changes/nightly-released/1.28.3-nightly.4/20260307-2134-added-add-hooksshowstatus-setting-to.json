@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add hooks.showStatus setting to suppress hook status messages (kirodotdev/Kiro#6225)"
+}

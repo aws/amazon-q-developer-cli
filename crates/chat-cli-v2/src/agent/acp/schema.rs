@@ -157,22 +157,17 @@ pub struct MetadataNotification {
 }
 
 // ---------------------------------------------------------------------------
-// session/list types — defined locally because sacp 10.x does not yet have
-// native ListSessionsRequest / ListSessionsResponse support.
+// session/list ext-method types served by chat_cli_v2's own ACP agent.
 //
-// TODO: Replace these with types from `sacp::schema` (or re-exported from
-// `agent_client_protocol_schema`) once sacp adds first-class session/list
-// support. The wire format intentionally matches the ACP session/list RFD
-// (https://agentclientprotocol.com/rfds/session-list) and the types in
-// `agent-client-protocol-schema` ≥ 0.11.
+// `agent-client-protocol` ≥ 0.10.4 (used by KAS clients in this workspace)
+// has native `session/list` types that should be preferred for new clients.
+// The types below remain because chat_cli_v2's agent still exposes session
+// listing through the legacy `_kiro.dev/session/list` ext_method - migrate
+// them to the native `acp::ListSessions{Request,Response}` once the agent
+// implements `Agent::list_sessions` directly.
 // ---------------------------------------------------------------------------
 
-/// Request parameters for `session/list`.
-///
-/// NOTE: The method is registered as `_kiro.dev/session/list` to match the Kiro
-/// extension method namespace. This is a temporary extension until sacp adds
-/// native session/list support, at which point this should use `session/list`.
-/// TODO: Change method to `session/list` once sacp adds native handler support.
+/// Request parameters for `_kiro.dev/session/list`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "_kiro.dev/session/list", response = ListSessionsResponse)]
 #[serde(rename_all = "camelCase")]
@@ -184,7 +179,7 @@ pub struct ListSessionsRequest {
     pub cursor: Option<String>,
 }
 
-/// Response from `session/list`.
+/// Response from `_kiro.dev/session/list`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsResponse {
@@ -203,8 +198,11 @@ pub struct SessionInfoEntry {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
-    #[serde(default)]
-    pub message_count: usize,
+    /// Number of log entries for this session. `None` when the serving agent
+    /// does not track or expose a count - e.g. KAS does not currently include
+    /// it in `session/list` responses. V2 always populates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<usize>,
 }
 
 /// Request to list user settings.

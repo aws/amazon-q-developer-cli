@@ -137,7 +137,7 @@ export function visibleWidth(str: string): number {
 
 	// Strip APC sequences (ESC _ ... BEL) before measuring.
 	// Neither string-width nor fastStringWidth recognise APC as zero-width,
-	// so the CURSOR_MARKER (\x1b_twinki:c\x07) would otherwise inflate the
+	// so the CURSOR_MARKER (\x1b_k\x07) would otherwise inflate the
 	// measured width.
 	if (str.includes('\x1b_')) {
 		let result = '';

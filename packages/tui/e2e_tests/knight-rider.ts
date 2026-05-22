@@ -145,6 +145,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
         KIRO_AGENT_ENGINE: 'kas',
         KIRO_AGENT_PATH: 'node',
         KIRO_KAS_TOKEN_PATH: `${process.env.HOME}/.aws/sso/cache/kiro-auth-token-cli.json`,
+        KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
         ...(serverPath && { KIRO_KAS_SERVER_PATH: serverPath }),
       },
     };
@@ -152,7 +153,10 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   // Default: run TUI source directly with local Rust binary
   return {
     cmd: 'bun ./src/index.tsx',
-    env: { KIRO_AGENT_PATH: CARGO_BIN },
+    env: {
+      KIRO_AGENT_PATH: CARGO_BIN,
+      KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
+    },
   };
 }
 

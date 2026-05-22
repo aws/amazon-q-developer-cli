@@ -1,0 +1,41 @@
+# Single-role validate preset for the bun/TUI review runner.
+#
+# Re-checks `status: open` findings in
+# `docs/review-playbook/runner/findings/` against the current source.
+# For each finding:
+#
+#   - If the evidence still holds → leave unchanged.
+#   - If the evidence is gone (code fixed, pattern absent) → set
+#     status: resolved, resolved-at, resolved-at-commit (HEAD).
+#   - If the check is ambiguous (file moved, evidence descriptive,
+#     no clean match) → set status: needs-human-check.
+#
+# Emits `docs/review-playbook/runner/findings/_validation.md` summarising
+# counts and per-finding decisions.
+#
+# Design:
+#   - Single role, one-shot.
+#   - review.enabled = false (no metareview gate).
+#   - required_events = [] (task.complete is the only signal).
+#   - Longer timeout because validate may LLM-read files for findings
+#     whose grep fast-path does not settle the question.
+
+event_loop.max_iterations = 12
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1800000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

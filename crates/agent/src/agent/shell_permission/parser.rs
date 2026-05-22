@@ -109,6 +109,10 @@ pub struct ParsedCommand {
     /// ANSI-C string (`$'\x41'`, `$'\n'`).
     #[serde(default)]
     pub has_ansi_c_string: bool,
+    /// Output redirection target paths (from `>` and `>>`). Does not include fd-to-fd redirects
+    /// like `2>&1`.
+    #[serde(default)]
+    pub redirect_targets: Vec<String>,
 }
 
 /// Result of parsing a shell command string.
@@ -226,6 +230,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                 has_variable_expansion: has_descendant(node, node::VARIABLE_EXPANSION_NODES),
                 variable_assignments: collect_matching_text(node, source, node::VARIABLE_ASSIGNMENT),
                 has_ansi_c_string: has_descendant(node, &[node::ANSI_C_STRING]),
+                redirect_targets: collect_redirect_targets(node, source),
             });
         },
         node::SUBSHELL => {
@@ -262,6 +267,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
             // Mark the last command as having redirection and propagate heredoc/process_sub
             if let Some(last) = commands.last_mut() {
                 last.has_redirection = true;
+                last.redirect_targets = collect_redirect_targets(node, source);
                 if node_has_heredoc {
                     last.has_heredoc = true;
                 }
@@ -286,6 +292,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                     has_variable_expansion: has_descendant(node, node::VARIABLE_EXPANSION_NODES),
                     variable_assignments: collect_matching_text(node, source, node::VARIABLE_ASSIGNMENT),
                     has_ansi_c_string: has_descendant(node, &[node::ANSI_C_STRING]),
+                    redirect_targets: collect_redirect_targets(node, source),
                 });
             }
         },
@@ -401,6 +408,42 @@ fn collect_matching_text_inner(node: &tree_sitter::Node<'_>, source: &str, kind:
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_matching_text_inner(&child, source, kind, results);
+    }
+}
+
+/// Collect output redirection target paths from `file_redirect` nodes.
+/// Only captures `>` and `>>` targets (not fd-to-fd like `2>&1`).
+fn collect_redirect_targets(node: &tree_sitter::Node<'_>, source: &str) -> Vec<String> {
+    let mut targets = Vec::new();
+    collect_redirect_targets_inner(node, source, &mut targets);
+    targets
+}
+
+/// Intentionally only extracts bare `word` targets (e.g., `> file.txt`). Quoted strings,
+/// variable expansions, command substitutions, and other complex targets are not extracted,
+/// causing the command to fail closed (stay dangerous) since redirect_targets will be empty.
+fn collect_redirect_targets_inner(node: &tree_sitter::Node<'_>, source: &str, targets: &mut Vec<String>) {
+    if node.kind() == node::FILE_REDIRECT {
+        let mut has_output_op = false;
+        let mut target_path = None;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                ">" | ">>" => has_output_op = true,
+                "word" => {
+                    target_path = child.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+                },
+                _ => {},
+            }
+        }
+        if has_output_op && let Some(path) = target_path {
+            targets.push(path);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_redirect_targets_inner(&child, source, targets);
     }
 }
 

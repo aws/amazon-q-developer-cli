@@ -1,3 +1,9 @@
+use std::process::ExitCode;
+
+use chat_cli_v2::agent::session::kas::{
+    KasAcpSessionClient,
+    KasSessionClient,
+};
 use clap::Subcommand;
 use crossterm::execute;
 use crossterm::style::{
@@ -370,32 +376,53 @@ fn format_timestamp(timestamp_ms: i64) -> String {
     }
 }
 
-/// A unified session entry from either V1 (SQLite) or V2 (filesystem).
-pub struct SessionEntry {
-    pub session_id: String,
-    pub summary: String,
-    pub msg_count: usize,
-    pub updated_at_ms: i64,
-    pub source: SessionSource,
+/// A unified session entry from V1 (SQLite), V2 (filesystem), or KAS (ACP).
+#[derive(Debug)]
+struct SessionEntry {
+    session_id: String,
+    summary: String,
+    /// `None` for sources that don't track it (e.g. KAS's `session/list`).
+    msg_count: Option<usize>,
+    updated_at_ms: i64,
+    source: SessionSource,
+}
+
+impl From<chat_cli_v2::agent::acp::schema::SessionInfoEntry> for SessionEntry {
+    fn from(k: chat_cli_v2::agent::acp::schema::SessionInfoEntry) -> Self {
+        let updated_at_ms = k
+            .updated_at
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map_or(0, |dt| dt.timestamp_millis());
+        Self {
+            session_id: k.session_id,
+            summary: k.title.unwrap_or_else(|| "(no title)".to_string()),
+            msg_count: k.message_count,
+            updated_at_ms,
+            source: SessionSource::Kas,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionSource {
     V1,
     V2,
+    Kas,
 }
 
 impl std::fmt::Display for SessionSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::V1 => f.write_str("v1"),
+            Self::V1 => f.write_str("classic"),
             Self::V2 => f.write_str("v2"),
+            Self::Kas => f.write_str("v3"),
         }
     }
 }
 
 /// Collect all sessions (V1 + V2) for a given cwd, sorted most-recent first.
-pub fn collect_all_sessions(db: &crate::database::Database, cwd: &std::path::Path) -> Vec<SessionEntry> {
+fn collect_all_sessions(db: &crate::database::Database, cwd: &std::path::Path) -> Vec<SessionEntry> {
     let v2_dir = chat_cli_v2::util::paths::sessions_dir().ok();
     collect_all_sessions_impl(db, cwd, v2_dir.as_deref())
 }
@@ -413,7 +440,7 @@ fn collect_all_sessions_impl(
             entries.push(SessionEntry {
                 session_id: conv_id,
                 summary: format_conversation_summary(&conv_state),
-                msg_count: conv_state.history().len() * 2,
+                msg_count: Some(conv_state.history().len() * 2),
                 updated_at_ms: updated_at,
                 source: SessionSource::V1,
             });
@@ -428,7 +455,7 @@ fn collect_all_sessions_impl(
             entries.push(SessionEntry {
                 session_id: s.session_id,
                 summary: s.title.unwrap_or_else(|| "(no title)".to_string()),
-                msg_count: s.message_count,
+                msg_count: Some(s.message_count),
                 updated_at_ms: s.updated_at.timestamp_millis(),
                 source: SessionSource::V2,
             });
@@ -442,7 +469,7 @@ fn collect_all_sessions_impl(
 /// Delete a session from V1 (SQLite) and/or V2 (filesystem).
 ///
 /// Returns which stores the session was deleted from, or `Err` if V2 lock fails.
-pub fn delete_any_session(
+fn delete_any_session(
     db: &crate::database::Database,
     session_id: &str,
     source: Option<SessionSource>,
@@ -480,50 +507,117 @@ fn delete_any_session_impl(
 /// Handle `--list-sessions` and `--delete-session` flags before TUI launch.
 ///
 /// Returns `Some(ExitCode)` if a flag was handled, `None` to continue normal dispatch.
-pub fn handle_list_delete_session_flags(
+///
+/// V1 (SQLite) and V2 (~/.kiro/sessions/cli/) sessions are always included.
+/// KAS sessions are included when [`is_kas_enabled`] returns true.
+pub async fn handle_list_delete_session_flags(
     list_sessions: bool,
     delete_session: Option<&str>,
     delete_source: Option<SessionSource>,
     os: &Os,
-) -> Option<std::process::ExitCode> {
-    use std::process::ExitCode;
-
+) -> Option<ExitCode> {
     if list_sessions {
-        if list_conversations(os, &mut std::io::stderr()).is_err() {
+        let cwd = match std::env::current_dir() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Error: cannot determine current working directory: {e}");
+                return Some(ExitCode::FAILURE);
+            },
+        };
+        let entries = collect_sessions(os, &cwd).await;
+        if let Err(e) = render_session_entries(&mut std::io::stderr(), &cwd.display().to_string(), &entries) {
+            eprintln!("Error: {e:#}");
             return Some(ExitCode::FAILURE);
         }
         return Some(ExitCode::SUCCESS);
     }
 
     if let Some(session_id) = delete_session {
-        match delete_any_session(&os.database, session_id, delete_source) {
-            Ok((v1, v2)) if v1 || v2 => {
-                if v1 {
-                    eprintln!("✔ Deleted chat session {session_id} (legacy)");
-                }
-                if v2 {
-                    eprintln!("✔ Deleted chat session {session_id} (v2)");
-                }
-                return Some(ExitCode::SUCCESS);
-            },
-            Ok(_) => {
-                eprintln!("Error: Session {session_id} not found");
-                return Some(ExitCode::FAILURE);
-            },
-            Err(e) => {
-                eprintln!("Error: Failed to delete chat session {session_id}: {e}");
-                return Some(ExitCode::FAILURE);
-            },
-        }
+        return Some(handle_delete_session(os, session_id, delete_source).await);
     }
 
     None
 }
 
-/// List all chat sessions for the current directory to a writer.
-///
-/// Merges V1 sessions (from SQLite) and V2 sessions (from `~/.kiro/sessions/cli/`),
-/// sorted by most recently updated first.
+/// Collect V1+V2 sessions, plus KAS sessions when KAS launch succeeds. KAS
+/// launch failures are logged via `tracing::warn` and do not abort the listing.
+async fn collect_sessions(os: &Os, cwd: &std::path::Path) -> Vec<SessionEntry> {
+    let mut entries = collect_all_sessions(&os.database, cwd);
+    match with_kas_session_client(os, |client| async move { collect_kas_sessions(&client, cwd).await }).await {
+        Ok(mut kas) => entries.append(&mut kas),
+        Err(e) => tracing::warn!("KAS sessions unavailable: {e:#}"),
+    }
+    entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    entries
+}
+
+/// Run a closure against a freshly-spawned KAS session client. Handles the
+/// shared boilerplate: spawn a piped KAS child, initialize ACP in a
+/// `LocalSet`, hand the connected client to `f`.
+async fn with_kas_session_client<F, Fut, R>(os: &Os, f: F) -> Result<R>
+where
+    F: FnOnce(KasAcpSessionClient) -> Fut,
+    Fut: std::future::Future<Output = Result<R>>,
+{
+    let child = crate::cli::spawn_kas_process(os, crate::cli::KasStdio::Piped, None).await?;
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async move {
+            let client = KasAcpSessionClient::connect(child).await?;
+            f(client).await
+        })
+        .await
+}
+
+/// Fetch KAS sessions for `cwd` and convert to the unified [`SessionEntry`]
+/// shape.
+async fn collect_kas_sessions<C: KasSessionClient>(client: &C, cwd: &std::path::Path) -> Result<Vec<SessionEntry>> {
+    let kas_sessions = client.list_sessions(cwd).await?;
+    Ok(kas_sessions.into_iter().map(SessionEntry::from).collect())
+}
+
+/// Delete a session from V1, V2, and/or KAS based on the optional `source`
+/// filter. With no filter: tries V1+V2 unconditionally and KAS best-effort
+/// (KAS launch failure is logged via `tracing::warn` and does not surface).
+/// Prints exactly one user-facing line and returns the exit code.
+async fn handle_delete_session(os: &Os, session_id: &str, source: Option<SessionSource>) -> ExitCode {
+    let target_rust = matches!(source, None | Some(SessionSource::V1 | SessionSource::V2));
+    let target_kas = matches!(source, None | Some(SessionSource::Kas));
+    let kas_required = matches!(source, Some(SessionSource::Kas));
+
+    let mut deleted = false;
+    let mut errors: Vec<String> = Vec::new();
+
+    if target_rust {
+        match delete_any_session(&os.database, session_id, source) {
+            Ok(_) => deleted = true,
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if target_kas {
+        match with_kas_session_client(os, |client| async move { client.delete_session(session_id).await }).await {
+            Ok(()) => deleted = true,
+            Err(e) if kas_required => errors.push(format!("{e:#}")),
+            Err(e) => tracing::warn!("KAS session delete unavailable: {e:#}"),
+        }
+    }
+
+    if deleted {
+        eprintln!("✔ Deleted chat session {session_id}");
+        ExitCode::SUCCESS
+    } else if errors.is_empty() {
+        eprintln!("Error: chat session {session_id} not found");
+        ExitCode::FAILURE
+    } else {
+        for e in &errors {
+            eprintln!("Error: Failed to delete chat session {session_id}: {e}");
+        }
+        ExitCode::FAILURE
+    }
+}
+
+/// List V1+V2 chat sessions for the current directory to a writer.
 pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(), ChatError> {
     let cwd = match std::env::current_dir() {
         Ok(path) => path,
@@ -531,12 +625,23 @@ pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(
     };
 
     let entries = collect_all_sessions(&os.database, &cwd);
+    render_session_entries(writer, &cwd.display().to_string(), &entries)?;
+    Ok(())
+}
 
+/// Shared output formatter for session listing. Produces identical output
+/// regardless of the originating source (V1, V2, or KAS); the per-row
+/// `source` column is the engine discriminator.
+fn render_session_entries(
+    writer: &mut impl std::io::Write,
+    cwd_display: &str,
+    entries: &[SessionEntry],
+) -> Result<(), ChatError> {
     if entries.is_empty() {
         execute!(
             writer,
             StyledText::info_fg(),
-            style::Print(format!("No saved chat sessions for {}\n", cwd.display())),
+            style::Print(format!("No saved chat sessions for {cwd_display}\n")),
             StyledText::reset(),
         )?;
         return Ok(());
@@ -545,12 +650,16 @@ pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(
     execute!(
         writer,
         StyledText::info_fg(),
-        style::Print(format!("\nChat sessions for {}:\n\n", cwd.display())),
+        style::Print(format!("\nChat sessions for {cwd_display}:\n\n")),
         StyledText::reset(),
     )?;
 
-    for entry in &entries {
+    for entry in entries {
         let timestamp = format_timestamp(entry.updated_at_ms);
+        let msg_count_segment = match entry.msg_count {
+            Some(n) => format!("{} | ", format!("{n} msgs").dim()),
+            None => String::new(),
+        };
         execute!(
             writer,
             style::Print("Chat SessionId: "),
@@ -558,10 +667,10 @@ pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(
             style::Print(format!("{}\n", entry.session_id)),
             StyledText::reset_attributes(),
             style::Print(format!(
-                "  {} | {} | {} | {}\n\n",
+                "  {} | {} | {}{}\n\n",
                 timestamp.dim(),
                 entry.summary,
-                format!("{} msgs", entry.msg_count).dim(),
+                msg_count_segment,
                 format!("{}", entry.source).dim(),
             )),
         )?;
@@ -778,7 +887,7 @@ mod tests {
 
         let v2 = entries.iter().find(|e| e.session_id == "v2-test-id").unwrap();
         assert_eq!(v2.summary, "v2 session title");
-        assert_eq!(v2.msg_count, 1);
+        assert_eq!(v2.msg_count, Some(1));
 
         // Sorted most-recent first (V2 was created after V1)
         assert_eq!(entries[0].session_id, "v2-test-id");
@@ -1183,5 +1292,106 @@ mod tests {
             has_mcp_tool,
             "After restore, tools should include MCP tools from the current tool_manager"
         );
+    }
+}
+
+#[cfg(test)]
+mod kas_tests {
+    use std::path::Path;
+
+    use chat_cli_v2::agent::acp::schema::SessionInfoEntry;
+    use chat_cli_v2::agent::session::kas::test::KasMockSessionClient;
+
+    use super::*;
+
+    fn kas_entry(session_id: &str, title: Option<&str>, updated_at: Option<&str>) -> SessionInfoEntry {
+        SessionInfoEntry {
+            session_id: session_id.to_string(),
+            cwd: std::path::PathBuf::from("/tmp/project"),
+            title: title.map(str::to_string),
+            updated_at: updated_at.map(str::to_string),
+            // KAS does not emit messageCount today.
+            message_count: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn render_empty_shows_no_sessions_message() {
+        let mut buf = Vec::new();
+        render_session_entries(&mut buf, "/tmp/project", &[]).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("No saved chat sessions for /tmp/project"),
+            "got: {output:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn render_multiple_sessions_shows_header_ids_titles_and_footer() {
+        let entries = vec![
+            SessionEntry {
+                session_id: "sess_v1".into(),
+                summary: "V1 session".into(),
+                msg_count: Some(4),
+                updated_at_ms: 1_735_689_600_000, // 2025-01-01
+                source: SessionSource::V1,
+            },
+            SessionEntry {
+                session_id: "sess_v2".into(),
+                summary: "V2 session".into(),
+                msg_count: Some(12),
+                updated_at_ms: 1_735_776_000_000, // 2025-01-02
+                source: SessionSource::V2,
+            },
+            SessionEntry {
+                session_id: "sess_kas".into(),
+                summary: "(no title)".into(),
+                msg_count: None,
+                updated_at_ms: 1_735_862_400_000, // 2025-01-03
+                source: SessionSource::Kas,
+            },
+        ];
+        let mut buf = Vec::new();
+        render_session_entries(&mut buf, "/tmp/project", &entries).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+
+        assert!(output.contains("Chat sessions for /tmp/project:"));
+        assert!(output.contains("sess_v1") && output.contains("V1 session"));
+        assert!(output.contains("sess_v2") && output.contains("V2 session"));
+        assert!(output.contains("sess_kas") && output.contains("(no title)"));
+        assert!(output.contains("4 msgs") && output.contains("12 msgs"));
+        assert_eq!(output.matches("msgs").count(), 2);
+        for src in &["classic", "v2", "v3"] {
+            assert!(output.contains(src), "source column should show {src}");
+        }
+        // Delete-hint footer.
+        assert!(output.contains("To delete a session, use: kiro-cli chat --delete-session"));
+    }
+
+    #[tokio::test]
+    async fn collect_kas_sessions_converts_entries() {
+        let client = KasMockSessionClient::new().with_list(vec![
+            kas_entry("sess_abc", Some("Fix auth bug"), Some("2026-01-02T00:00:00Z")),
+            kas_entry("sess_def", None, None),
+        ]);
+        let entries = collect_kas_sessions(&client, Path::new("/tmp/project")).await.unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id, "sess_abc");
+        assert_eq!(entries[0].summary, "Fix auth bug");
+        assert_eq!(entries[0].msg_count, None);
+        assert_eq!(entries[0].source, SessionSource::Kas);
+
+        // Null title falls back to the "(no title)" placeholder.
+        assert_eq!(entries[1].summary, "(no title)");
+        // Null updated_at -> 0 ms (sorted last, but `collect` does not sort KAS alone).
+        assert_eq!(entries[1].updated_at_ms, 0);
+    }
+
+    #[tokio::test]
+    async fn collect_kas_sessions_propagates_error() {
+        let client = KasMockSessionClient::new().with_list_err("rpc timeout");
+        let err = collect_kas_sessions(&client, Path::new("/tmp")).await.unwrap_err();
+        assert!(format!("{err:#}").contains("rpc timeout"));
     }
 }

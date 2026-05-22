@@ -5,6 +5,7 @@ import { Panel } from './panel/Panel.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import type { CodePanelData, CodeLspInfo } from '../../stores/app-store.js';
 
 interface CodePanelProps {
@@ -19,6 +20,8 @@ function formatDuration(ms: number): string {
 
 export function CodePanel({ data, onClose, onRefresh }: CodePanelProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const primary = getColor('primary');
   const secondary = getColor('secondary');
   const success = getColor('success');
@@ -45,12 +48,13 @@ export function CodePanel({ data, onClose, onRefresh }: CodePanelProps) {
   }
 
   // Status view
-  const statusIcon =
-    data.status === 'initialized'
-      ? '✓'
+  const statusIcon = !allowIcons
+    ? ''
+    : data.status === 'initialized'
+      ? glyphs.checkmark
       : data.status === 'initializing'
-        ? '◐'
-        : '⚠';
+        ? glyphs.executing
+        : glyphs.warning;
   const statusColor =
     data.status === 'initialized'
       ? success
@@ -77,7 +81,9 @@ export function CodePanel({ data, onClose, onRefresh }: CodePanelProps) {
 
       {data.warning && (
         <Box marginTop={1}>
-          <Text>{warning(`⚠ ${data.warning}`)}</Text>
+          <Text>
+            {warning(`${!allowIcons ? '' : glyphs.warning} ${data.warning}`)}
+          </Text>
         </Box>
       )}
 
@@ -122,7 +128,12 @@ export function CodePanel({ data, onClose, onRefresh }: CodePanelProps) {
               { label: 'Status' },
             ]}
             rows={data.lsps.map((lsp) =>
-              lspRow(lsp, { success, warning, error, secondary })
+              lspRow(
+                lsp,
+                { success, warning, error, secondary },
+                glyphs,
+                allowIcons
+              )
             )}
             showHeaders={false}
           />
@@ -150,16 +161,24 @@ export function CodePanel({ data, onClose, onRefresh }: CodePanelProps) {
 
 function lspRow(
   lsp: CodeLspInfo,
-  colors: { success: any; warning: any; error: any; secondary: any }
+  colors: { success: any; warning: any; error: any; secondary: any },
+  glyphs: {
+    checkmark: string;
+    executing: string;
+    cross: string;
+    dotEmpty: string;
+  },
+  allowIcons: boolean
 ): Row {
-  const icon =
-    lsp.status === 'initialized'
-      ? '✓'
+  const icon = !allowIcons
+    ? ''
+    : lsp.status === 'initialized'
+      ? glyphs.checkmark
       : lsp.status === 'initializing'
-        ? '◐'
+        ? glyphs.executing
         : lsp.status === 'failed'
-          ? '✗'
-          : '○';
+          ? glyphs.cross
+          : glyphs.dotEmpty;
   const color =
     lsp.status === 'initialized'
       ? colors.success
@@ -173,7 +192,7 @@ function lspRow(
       ? ` (${formatDuration(lsp.initDurationMs)})`
       : '';
   return [
-    { text: `${icon} ${lsp.name}`, color },
+    { text: icon ? `${icon} ${lsp.name}` : lsp.name, color },
     { text: `(${lsp.languages.join(', ')})`, color: colors.secondary },
     { text: `${lsp.status}${duration}`, color },
   ];

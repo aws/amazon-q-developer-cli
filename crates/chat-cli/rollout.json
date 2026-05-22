@@ -4,6 +4,12 @@
     "treatment_percent": 50,
     "segment": "internal"
   },
+  "voice": {
+    "description": "Voice input mode - internal nightly only initially",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
+  },
   "test": {
     "description": "Test experiment for unit tests",
     "treatment_percent": 100
@@ -12,5 +18,11 @@
     "description": "Test experiment for unit tests (internal only)",
     "treatment_percent": 100,
     "segment": "internal"
+  },
+  "test_nightly_only": {
+    "description": "Test experiment for unit tests (nightly channel only)",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
   }
 }

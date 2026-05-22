@@ -1060,8 +1060,11 @@ impl Agent {
                     }
                 }
             }
-            self.append_tool_results(content, results);
+            // synthetic id; message only sent as history, not as the active prompt of a request
+            self.append_tool_results(Uuid::new_v4().to_string(), content, results);
             self.append_assistant_message(Message::new(
+                // synthetic id; message only sent as history, not as the active prompt of a request
+                Uuid::new_v4().to_string(),
                 Role::Assistant,
                 vec![ContentBlock::Text(
                     "Tool uses were interrupted, waiting for the next user prompt".to_string(),
@@ -1087,14 +1090,16 @@ impl Agent {
                 } = &self.execution_state.active_state
                 {
                     match pending.clone() {
-                        PendingUserMessage::Prompt { content, meta } => {
-                            self.append_user_message(content, meta);
+                        PendingUserMessage::Prompt { id, content, meta } => {
+                            self.append_user_message(id, content, meta);
                         },
-                        PendingUserMessage::ToolResults { content, results } => {
-                            self.append_tool_results(content, results);
+                        PendingUserMessage::ToolResults { id, content, results } => {
+                            self.append_tool_results(id, content, results);
                         },
                     }
                     self.append_assistant_message(Message::new(
+                        // synthetic id; message only sent as history, not as the active prompt of a request
+                        Uuid::new_v4().to_string(),
                         Role::Assistant,
                         vec![ContentBlock::Text("Response was interrupted by the user".to_string())],
                         Some(Utc::now()),
@@ -1589,10 +1594,7 @@ impl Agent {
                     result: ToolCallResult::Error(ToolExecutionError::Custom(reason.to_string())),
                 });
             }
-            let pending = PendingUserMessage::ToolResults {
-                content: content.clone(),
-                results,
-            };
+            let pending = PendingUserMessage::new_tool_results(content.clone(), results);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -1644,9 +1646,11 @@ impl Agent {
                     } = &self.execution_state.active_state
                     {
                         match pending.clone() {
-                            PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
-                            PendingUserMessage::ToolResults { content, results } => {
-                                self.append_tool_results(content, results);
+                            PendingUserMessage::Prompt { id, content, meta } => {
+                                self.append_user_message(id, content, meta);
+                            },
+                            PendingUserMessage::ToolResults { id, content, results } => {
+                                self.append_tool_results(id, content, results);
                             },
                         }
                     }
@@ -1771,23 +1775,27 @@ impl Agent {
                 } = &self.execution_state.active_state
                 {
                     match pending.clone() {
-                        PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
-                        PendingUserMessage::ToolResults { content, results } => {
-                            self.append_tool_results(content, results);
+                        PendingUserMessage::Prompt { id, content, meta } => self.append_user_message(id, content, meta),
+                        PendingUserMessage::ToolResults { id, content, results } => {
+                            self.append_tool_results(id, content, results);
                         },
                     }
                 }
 
-                self.append_assistant_message(Message::new(Role::Assistant, assistant_content, Some(Utc::now())));
+                self.append_assistant_message(Message::new(
+                    // synthetic id; message only sent as history, not as the active prompt of a request
+                    Uuid::new_v4().to_string(),
+                    Role::Assistant,
+                    assistant_content,
+                    Some(Utc::now()),
+                ));
 
                 let error_msg = "The generated tool was too large, try again but this time split up the work between multiple tool uses";
 
                 if valid_tools.is_empty() {
                     // No valid tool uses — send a simple text retry prompt (original behavior)
-                    let retry_pending = PendingUserMessage::Prompt {
-                        content: vec![ContentBlock::Text(error_msg.to_string())],
-                        meta: None,
-                    };
+                    let retry_pending =
+                        PendingUserMessage::new_prompt(vec![ContentBlock::Text(error_msg.to_string())], None);
 
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
@@ -1818,10 +1826,7 @@ impl Agent {
                     }
                     content.push(ContentBlock::Text(error_msg.to_string()));
 
-                    let retry_pending = PendingUserMessage::ToolResults {
-                        content: content.clone(),
-                        results: HashMap::new(),
-                    };
+                    let retry_pending = PendingUserMessage::new_tool_results(content.clone(), HashMap::new());
 
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
@@ -1840,14 +1845,18 @@ impl Agent {
                     } = &self.execution_state.active_state
                     {
                         match pending.clone() {
-                            PendingUserMessage::Prompt { content, meta } => self.append_user_message(content, meta),
-                            PendingUserMessage::ToolResults { content, results } => {
-                                self.append_tool_results(content, results);
+                            PendingUserMessage::Prompt { id, content, meta } => {
+                                self.append_user_message(id, content, meta);
+                            },
+                            PendingUserMessage::ToolResults { id, content, results } => {
+                                self.append_tool_results(id, content, results);
                             },
                         }
                     }
 
                     self.append_assistant_message(Message::new(
+                        // synthetic id; message only sent as history, not as the active prompt of a request
+                        Uuid::new_v4().to_string(),
                         Role::Assistant,
                         vec![ContentBlock::Text(
                             "Response timed out - message took too long to generate".to_string(),
@@ -1856,12 +1865,12 @@ impl Agent {
                     ));
 
                     // Set new pending for the retry prompt
-                    let retry_pending = PendingUserMessage::Prompt {
-                        content: vec![ContentBlock::Text(
+                    let retry_pending = PendingUserMessage::new_prompt(
+                        vec![ContentBlock::Text(
                             "You took too long to respond - try to split up the work into smaller steps.".to_string(),
                         )],
-                        meta: None,
-                    };
+                        None,
+                    );
 
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
@@ -1898,12 +1907,17 @@ impl Agent {
                                     pending_user_message: Some(pending),
                                     ..
                                 } => {
-                                    let mut msg = Message::new(Role::User, pending.content().to_vec(), None);
+                                    // The id passed here is unused: we only use this Message
+                                    // to call truncate() on the content. We then extract msg.content
+                                    // and msg.meta into a new PendingUserMessage that gets its own id.
+                                    let mut msg = Message::new(
+                                        Uuid::new_v4().to_string(),
+                                        Role::User,
+                                        pending.content().to_vec(),
+                                        None,
+                                    );
                                     msg.truncate(compact::DEFAULT_MAX_MESSAGE_LEN, Some("...truncated due to length"));
-                                    PendingUserMessage::Prompt {
-                                        content: msg.content,
-                                        meta: msg.meta,
-                                    }
+                                    PendingUserMessage::new_prompt(msg.content, msg.meta)
                                 },
                                 _ => {
                                     error!("expected ExecutingRequest with pending message");
@@ -2016,10 +2030,7 @@ impl Agent {
             additional_context,
         });
 
-        let pending = PendingUserMessage::Prompt {
-            content: user_msg_content,
-            meta,
-        };
+        let pending = PendingUserMessage::new_prompt(user_msg_content, meta);
 
         // Create a new agent loop, and send the request.
         let loop_id = AgentLoopId::new(self.id.clone());
@@ -2046,7 +2057,7 @@ impl Agent {
     async fn format_request(&mut self, pending: &PendingUserMessage) -> SendRequestArgs {
         let latest_summary = self.conversation_state.event_log().latest_summary().map(String::from);
         let mut messages = VecDeque::from(self.conversation_state.messages().to_vec());
-        let mut user_msg = Message::new(Role::User, pending.content().to_vec(), None);
+        let mut user_msg = Message::new(pending.id().to_string(), Role::User, pending.content().to_vec(), None);
         // Preserve metadata from the pending message (e.g. per-prompt hook context).
         if let Some(meta) = pending.meta() {
             user_msg.meta = Some(meta.clone());
@@ -2283,10 +2294,7 @@ impl Agent {
                         error: user_err_msg,
                     }));
             }
-            let pending = PendingUserMessage::ToolResults {
-                content: content.clone(),
-                results,
-            };
+            let pending = PendingUserMessage::new_tool_results(content.clone(), results);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -2352,10 +2360,7 @@ impl Agent {
                         error: user_err_msg,
                     }));
             }
-            let pending = PendingUserMessage::ToolResults {
-                content: content.clone(),
-                results,
-            };
+            let pending = PendingUserMessage::new_tool_results(content.clone(), results);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -2659,10 +2664,7 @@ impl Agent {
                                 error: err_msg,
                             }));
                     }
-                    let pending = PendingUserMessage::ToolResults {
-                        content: content.clone(),
-                        results,
-                    };
+                    let pending = PendingUserMessage::new_tool_results(content.clone(), results);
                     let args = self.format_request(&pending).await;
                     self.send_request(args).await?;
                     self.set_active_state(ActiveState::ExecutingRequest {
@@ -2701,10 +2703,7 @@ impl Agent {
                     // Send the reason as a new user message to continue the conversation.
                     // The existing AgentLoop is still alive in UserTurnEnded state and can
                     // accept new requests, so we reuse it rather than spawning a new one.
-                    let pending = PendingUserMessage::Prompt {
-                        content: vec![ContentBlock::Text(reason)],
-                        meta: None,
-                    };
+                    let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(reason)], None);
                     let args = self.format_request(&pending).await;
                     self.send_request(args).await?;
                     self.set_active_state(ActiveState::ExecutingRequest {
@@ -3221,10 +3220,7 @@ impl Agent {
             }
         }
 
-        let pending = PendingUserMessage::ToolResults {
-            content: content.clone(),
-            results,
-        };
+        let pending = PendingUserMessage::new_tool_results(content.clone(), results);
         let args = self.format_request(&pending).await;
         self.send_request(args).await?;
         self.set_active_state(ActiveState::ExecutingRequest {
@@ -3263,15 +3259,15 @@ impl Agent {
     }
 
     /// Append a user message to the conversation and emit the log event.
-    fn append_user_message(&mut self, content: Vec<ContentBlock>, meta: Option<MessageMetadata>) {
-        let entry = LogEntry::prompt(Uuid::new_v4().to_string(), content, meta);
+    fn append_user_message(&mut self, id: String, content: Vec<ContentBlock>, meta: Option<MessageMetadata>) {
+        let entry = LogEntry::prompt(id, content, meta);
         let index = self.conversation_state.append_log(entry.clone());
         self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
     }
 
     /// Append tool results to the conversation and emit the log event.
-    fn append_tool_results(&mut self, content: Vec<ContentBlock>, results: HashMap<String, LogToolResult>) {
-        let entry = LogEntry::tool_results(Uuid::new_v4().to_string(), content, results);
+    fn append_tool_results(&mut self, id: String, content: Vec<ContentBlock>, results: HashMap<String, LogToolResult>) {
+        let entry = LogEntry::tool_results(id, content, results);
         let index = self.conversation_state.append_log(entry.clone());
         self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
     }
@@ -3837,11 +3833,17 @@ fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
 pub enum PendingUserMessage {
     /// A user prompt (text, images, etc.)
     Prompt {
+        /// Stable id assigned at construction. Reused for both the in-flight
+        /// [Message] sent to the model and the persisted [LogEntry] in the
+        /// conversation log so they can be correlated.
+        id: String,
         content: Vec<ContentBlock>,
         meta: Option<MessageMetadata>,
     },
     /// Tool execution results sent back to the model.
     ToolResults {
+        /// Stable id assigned at construction. See [PendingUserMessage::Prompt::id].
+        id: String,
         /// The content blocks sent to the model (ToolResultBlock items).
         content: Vec<ContentBlock>,
         /// Metadata for the event log: maps tool_use_id to the parsed tool and execution result.
@@ -3851,6 +3853,32 @@ pub enum PendingUserMessage {
 }
 
 impl PendingUserMessage {
+    /// Constructs a new prompt with a freshly generated id.
+    pub fn new_prompt(content: Vec<ContentBlock>, meta: Option<MessageMetadata>) -> Self {
+        Self::Prompt {
+            id: Uuid::new_v4().to_string(),
+            content,
+            meta,
+        }
+    }
+
+    /// Constructs a new tool results message with a freshly generated id.
+    pub fn new_tool_results(content: Vec<ContentBlock>, results: HashMap<String, LogToolResult>) -> Self {
+        Self::ToolResults {
+            id: Uuid::new_v4().to_string(),
+            content,
+            results,
+        }
+    }
+
+    /// Returns the stable id of the pending message.
+    pub fn id(&self) -> &str {
+        match self {
+            PendingUserMessage::Prompt { id, .. } => id,
+            PendingUserMessage::ToolResults { id, .. } => id,
+        }
+    }
+
     /// Returns the content blocks to be sent to the model.
     pub fn content(&self) -> &[ContentBlock] {
         match self {

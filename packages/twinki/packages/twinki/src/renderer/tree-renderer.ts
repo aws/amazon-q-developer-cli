@@ -112,7 +112,9 @@ export function renderTree(
 ): { staticLines: string[]; liveLines: string[] } {
 	const validWidth = typeof width === "number" && !isNaN(width) && width > 0 ? width : 80;
 	root.yogaNode.setWidth(validWidth);
-	root.yogaNode.calculateLayout(validWidth, undefined, Yoga.DIRECTION_LTR);
+	if (root.yogaNode.isDirty()) {
+		root.yogaNode.calculateLayout(validWidth, undefined, Yoga.DIRECTION_LTR);
+	}
 	const staticLines: string[] = [];
 	const liveLines: string[] = [];
 	

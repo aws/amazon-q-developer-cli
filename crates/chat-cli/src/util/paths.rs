@@ -117,6 +117,11 @@ pub fn tui_js_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("tui.js.sha256"))
 }
 
+/// Path to feed.json written for the TUI to read
+pub fn feed_json_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed.json"))
+}
+
 /// Path to extracted Node.js executable (for KAS agent)
 pub fn node_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("node"))
@@ -138,11 +143,15 @@ pub fn kas_bundle_sha256_path() -> Result<PathBuf> {
 }
 
 pub fn kas_token_path(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?
-        .join(".aws")
-        .join("sso")
-        .join("cache")
-        .join("kiro-auth-token-cli.json"))
+    if let Ok(path) = std::env::var("KIRO_KAS_TOKEN_PATH") {
+        Ok(PathBuf::from(path))
+    } else {
+        Ok(home_dir(os)?
+            .join(".aws")
+            .join("sso")
+            .join("cache")
+            .join("kiro-auth-token-cli.json"))
+    }
 }
 
 /// Root directory for user-level Kiro config data.

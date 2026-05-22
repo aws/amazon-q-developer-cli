@@ -31,6 +31,8 @@ export interface TwinkiNode {
 	rootContainer?: RootContainer;
 	/** Region this node belongs to (for scoped rendering) */
 	region?: RegionState;
+	/** Cached result of hasOverflowDescendant (invalidated on tree mutation) */
+	_hasOverflow?: boolean;
 }
 
 /**

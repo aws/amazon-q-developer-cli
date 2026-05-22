@@ -42,6 +42,15 @@ pub struct OrchestratedSession {
     /// Result stored on completion — injected into dependent stages' context regardless of inbox
     /// state
     pub result: Option<String>,
+    /// Loop-back config: when this session completes and output contains trigger, re-run target.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
+    /// Current loop iteration count for this session.
+    #[serde(default)]
+    pub loop_iteration: u32,
+    /// Whether the subagent explicitly signaled "changes_needed" via the summary tool's resultType.
+    #[serde(default)]
+    pub changes_needed: bool,
 }
 
 /// Status of an orchestrated session.
@@ -67,6 +76,17 @@ pub struct SessionGroup {
     pub pending_stages: Vec<PendingStage>,
 }
 
+/// Loop-back configuration for pipeline stages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopConfig {
+    /// Name of the stage to loop back to.
+    pub target: String,
+    /// Maximum number of loop iterations.
+    pub max_iterations: u32,
+    /// Text in output that triggers the loop.
+    pub trigger: String,
+}
+
 /// A pipeline stage waiting for dependencies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingStage {
@@ -75,6 +95,12 @@ pub struct PendingStage {
     pub task: String,
     pub depends_on: Vec<String>,
     pub agent_name: String,
+    /// Loop-back config: when this stage completes and output contains trigger, re-run target.
+    #[serde(default)]
+    pub loop_config: Option<LoopConfig>,
+    /// Current loop iteration count.
+    #[serde(default)]
+    pub loop_iteration: u32,
 }
 
 /// Membership info for a session in a group.
@@ -84,4 +110,18 @@ pub struct GroupMembership {
     pub name: String,
     pub role: Option<String>,
     pub joined_at: SystemTime,
+}
+
+/// Data extracted from a terminated session whose loop trigger fired.
+/// Captures everything needed to re-enqueue stages without holding a borrow
+/// on the session map.
+#[derive(Debug, Clone)]
+pub struct LoopTriggerData {
+    pub loop_config: LoopConfig,
+    pub iteration: u32,
+    pub session_name: String,
+    pub result_text: String,
+    pub session_task: String,
+    pub session_role: String,
+    pub agent_name: String,
 }

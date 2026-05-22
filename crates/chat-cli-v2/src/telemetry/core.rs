@@ -13,6 +13,7 @@ use strum::{
 use super::definitions::metrics::{
     CodewhispererterminalRecordUserTurnCompletion,
     KirocliSubagentInvocation,
+    KirocliVoiceInput,
 };
 use super::definitions::types::CodewhispererterminalChatConversationType;
 use crate::telemetry::definitions::IntoMetricDatum;
@@ -48,6 +49,8 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalUserInputId,
     CodewhispererterminalUtteranceId,
     KirocliAppType,
+    KirocliVoiceBackend,
+    KirocliVoiceInputMethod,
 };
 
 /// A serializable telemetry event that can be sent or queued.
@@ -607,6 +610,49 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::VoiceInput {
+                conversation_id,
+                result,
+                reason,
+                reason_desc,
+                backend,
+                input_method,
+                recording_duration_ms,
+                transcription_duration_ms,
+                text_length,
+                model_size,
+                auto_submit,
+            } => {
+                let voice_backend = match backend.as_str() {
+                    "LocalWhisper" => KirocliVoiceBackend::LocalWhisper,
+                    _ => KirocliVoiceBackend::RemoteServer,
+                };
+                let voice_input_method = match input_method.as_str() {
+                    "SlashCommand" => KirocliVoiceInputMethod::SlashCommand,
+                    "PTT" => KirocliVoiceInputMethod::Ptt,
+                    "ContinuousVoice" => KirocliVoiceInputMethod::ContinuousVoice,
+                    _ => KirocliVoiceInputMethod::Standalone,
+                };
+                Some(
+                    KirocliVoiceInput {
+                        create_time: self.created_time,
+                        value: None,
+                        amazonq_conversation_id: conversation_id.map(Into::into),
+                        credential_start_url: self.credential_start_url.map(Into::into),
+                        result: result.to_string().into(),
+                        reason: reason.map(Into::into),
+                        reason_desc: reason_desc.map(Into::into),
+                        kirocli_voice_backend: voice_backend,
+                        kirocli_voice_input_method: voice_input_method,
+                        kirocli_voice_recording_duration_ms: recording_duration_ms.map(Into::into),
+                        kirocli_voice_transcription_duration_ms: transcription_duration_ms.map(Into::into),
+                        kirocli_voice_text_length: text_length.map(Into::into),
+                        kirocli_voice_model_size: model_size.map(Into::into),
+                        kirocli_voice_auto_submit: auto_submit.map(Into::into),
+                    }
+                    .into_metric_datum(),
+                )
+            },
         }
     }
 }
@@ -828,6 +874,19 @@ pub enum EventType {
         builtin_tool_uses: u32,
         mcp_tool_uses: u32,
         parent_tool_use_id: String,
+    },
+    VoiceInput {
+        conversation_id: Option<String>,
+        result: TelemetryResult,
+        reason: Option<String>,
+        reason_desc: Option<String>,
+        backend: String,
+        input_method: String,
+        recording_duration_ms: Option<i64>,
+        transcription_duration_ms: Option<i64>,
+        text_length: Option<i64>,
+        model_size: Option<String>,
+        auto_submit: Option<bool>,
     },
 }
 

@@ -5,6 +5,7 @@
 //! - `{session_id}.jsonl` - append-only log entries
 //! - `{session_id}.lock` - lock file (exists only when session is active)
 
+pub mod kas;
 pub mod legacy_compat;
 
 use std::fs::{

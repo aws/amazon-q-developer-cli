@@ -574,7 +574,8 @@ impl<'a> Subagent<'a> {
                             query_status = QueryStatus::Error(Summary {
                                 task_description: self.query.to_string(),
                                 context_summary: None,
-                                task_result: format!("subagent has failed due to the following error: {agent_error:?}")
+                                task_result: format!("subagent has failed due to the following error: {agent_error:?}"),
+                                result_type: None,
                             });
                             break;
                         },
@@ -610,7 +611,8 @@ impl<'a> Subagent<'a> {
                                     query_status = QueryStatus::Error(Summary {
                                         task_description: self.query.to_string(),
                                         context_summary: None,
-                                        task_result: "Subagent cannot run in non-interactive mode with tool permission request".to_string()
+                                        task_result: "Subagent cannot run in non-interactive mode with tool permission request".to_string(),
+                                        result_type: None,
                                     });
                                     break;
                                 },

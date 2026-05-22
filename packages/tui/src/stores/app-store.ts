@@ -1,4 +1,4 @@
-import { createStore, useStore } from 'zustand';
+import { createStore, useStore, type StoreApi } from 'zustand';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Kiro } from '../kiro';
@@ -6,6 +6,8 @@ import chalk from 'chalk';
 import { kiroSafe } from '../theme/kiroSafe';
 import type { TerminalColor } from '../types/themeTypes';
 import { createContext, useContext } from 'react';
+import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
+import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -118,6 +120,7 @@ export interface StatsSummary {
 }
 
 export interface HookInfo {
+  name?: string;
   trigger: string;
   command: string;
   matcher?: string;
@@ -158,11 +161,75 @@ export interface CodePanelData {
   message?: string;
 }
 
+// ── Spec artifact view ───────────────────────────────────────
+//
+// Generation-phase tracker state and the open artifact-view panel.
+// See `utils/spec-artifact-loader.ts` and
+// `utils/spec-artifact-parser/` for the underlying types.
+
+/**
+ * Generation-phase entry for the live artifact-generation card.
+ *
+ * The store holds at most one entry at a time (see `artifactGenerating`
+ * below) — when the agent moves on to a new artifact, the prior entry
+ * is replaced. The `absolutePath` field doubles as the dedup key the
+ * lifecycle wiring in `index.tsx` uses to correlate idle timers and
+ * `ToolCallFinished` events with the active card.
+ */
+export interface ArtifactGenerationEntry {
+  /** Absolute path on disk. Used as the dedup key for idle timers. */
+  absolutePath: string;
+  featureName: string;
+  artifact: ArtifactKind;
+  /** Last successful summary parse, or null while we wait for the first read. */
+  summary: ArtifactSummary | null;
+  /** Wall-clock ms of the most recent fs_write notification. */
+  lastWriteTs: number;
+  /** Marked true after 2 s of idleness or when the panel is opened directly. */
+  complete: boolean;
+  /** Set when a parse failed mid-stream so the card can show a non-blocking indicator. */
+  parseError: string | null;
+}
+
+export interface OpenArtifactView {
+  featureName: string;
+  artifact: ArtifactKind;
+  summary: ArtifactSummary;
+  mode: 'summary' | 'detail';
+  /** Index into the displayed item list. */
+  cursor: number;
+  /** Tasks-only expansion state, keyed by item index. */
+  expanded: Record<number, boolean>;
+  /** Non-fatal load error to surface inline; null on success. */
+  error: { message: string } | null;
+  /**
+   * Workflow config for this feature, loaded from
+   * `.kiro/specs/<feature>/.config.kiro` when the panel opens. Drives
+   * the stage-bar order in the panel header. Falls back to defaults
+   * when the file is missing or malformed (see `loadSpecConfig`).
+   */
+  workflow: SpecConfig;
+}
+
+// ── End spec artifact view ───────────────────────────────────
+
 import {
   executeCommand,
   executeCommandWithArg,
   type CommandContext,
 } from '../commands/index.js';
+import {
+  loadArtifactSummary,
+  type ArtifactKind,
+  type ArtifactSummary,
+  type LoadError,
+} from '../utils/spec-artifact-loader.js';
+import { loadSpecConfig, type SpecConfig } from '../utils/spec-config.js';
+export type {
+  ArtifactKind,
+  ArtifactSummary,
+} from '../utils/spec-artifact-loader.js';
+export type { SpecConfig } from '../utils/spec-config.js';
 import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
@@ -183,6 +250,7 @@ import {
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
+import { readStringSetting } from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
   playNotification,
@@ -215,6 +283,63 @@ export enum MessageRole {
 // Helper to generate unique message IDs
 const generateMessageId = () => crypto.randomUUID();
 
+// ── Spec artifact view helpers ─────────────────────────────
+//
+// Kept local because they only exist to support the artifactView
+// slice and aren't part of the public store API.
+
+/** Count items in a summary for cursor / wrap-around math. */
+function countArtifactItems(summary: ArtifactSummary): number {
+  switch (summary.kind) {
+    case 'requirements':
+      return summary.items.length;
+    case 'design':
+      return summary.sections.length;
+    case 'tasks':
+      return summary.items.length;
+  }
+}
+
+/** Produce a human-readable message for a `LoadError`. */
+function describeLoadError(err: LoadError): string {
+  switch (err.kind) {
+    case 'FeatureNotFound':
+      return `No spec found at .kiro/specs/${err.featureName}/`;
+    case 'ArtifactNotFound':
+      return `No ${err.artifact}.md in spec "${err.featureName}".`;
+    case 'TooLarge':
+      return `Artifact at ${err.path} is too large (${err.sizeBytes} bytes).`;
+    case 'ReadFailed':
+      switch (err.category) {
+        case 'NotFound':
+          return `File not found: ${err.path}`;
+        case 'PermissionDenied':
+          return `Permission denied reading ${err.path}`;
+        case 'Io':
+          return `Failed to read ${err.path}: ${err.message}`;
+      }
+  }
+}
+
+/** Empty-summary placeholder used when opening the panel in error mode. */
+function emptySummaryFor(artifact: ArtifactKind): ArtifactSummary {
+  switch (artifact) {
+    case 'requirements':
+      return { kind: 'requirements', items: [] };
+    case 'design':
+      return {
+        kind: 'design',
+        overview: '',
+        overviewTruncated: false,
+        sections: [],
+      };
+    case 'tasks':
+      return { kind: 'tasks', items: [] };
+  }
+}
+
+// ── End spec artifact view helpers ─────────────────────────
+
 /**
  * Tools that are known to be broken or unavailable in the current environment.
  * Tool calls matching these names are immediately marked as finished with an
@@ -239,6 +364,7 @@ export type MessageType =
       id: string;
       role: MessageRole.Model;
       content: string;
+      thinking?: string;
       agentName?: string;
       shellOutput?: boolean;
       standalone?: boolean;
@@ -263,7 +389,7 @@ export interface SlashCommand extends AvailableCommand {
 }
 
 export interface ActiveCommand {
-  command: SlashCommand;
+  command: AvailableCommand;
   options: CommandOption[];
 }
 
@@ -384,6 +510,7 @@ const initialInputBufferState = (): InputBufferState => ({
 
 interface AppStoreProps {
   kiro: Kiro;
+  agentEngine?: AgentEngine;
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -431,7 +558,7 @@ interface BaseAppActions {
   startEditingQueue: (index: number) => void;
   cancelEditingQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
-  setExtensionCommands: (commands: SlashCommand[]) => void;
+  setKasCommands: (commands: KasCommand[]) => void;
   setPrompts: (
     prompts: Array<{
       name: string;
@@ -456,6 +583,20 @@ interface BaseAppActions {
   setPromptHint: (hint: string | null) => void;
   setCommandShadowText: (text: string | null) => void;
   clearCommandInput: () => void;
+  voiceStop: (() => void) | null;
+  setVoiceStop: (fn: (() => void) | null) => void;
+  voiceCancel: (() => void) | null;
+  setVoiceCancel: (fn: (() => void) | null) => void;
+  voiceLevel: number | null;
+  setVoiceLevel: (level: number | null) => void;
+  voiceAutoSubmit: boolean;
+  toggleVoiceAutoSubmit: () => void;
+  voiceHintIndex: number;
+  incrementVoiceHint: () => void;
+  voicePartialText: string | null;
+  setVoicePartialText: (text: string | null) => void;
+  pendingVoiceText: string | null;
+  setPendingVoiceText: (text: string | null) => void;
 
   navigateHistory: (direction: 'up' | 'down') => string | null;
 
@@ -477,6 +618,8 @@ interface BaseAppActions {
   addMessage: (sessionId: string, message: InboxMessage) => void;
   incrementExitSequence: () => void;
   resetExitSequence: () => void;
+  armSuspend: () => void;
+  disarmSuspend: () => void;
   showTransientAlert: (alert: TransientAlert) => void;
   dismissTransientAlert: () => void;
   setRetryStatus: (status: RetryStatus | null) => void;
@@ -519,6 +662,7 @@ interface BaseAppActions {
   ) => void;
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
+  setShowDisplaySettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   reopenSettingsMenu: () => void;
   setShowKnowledgePanel: (
@@ -527,6 +671,48 @@ interface BaseAppActions {
     status?: string
   ) => void;
   setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
+
+  // ── Spec artifact view actions ─────────────────────────────
+  /**
+   * Record an `fs_write` to a spec artifact path. Triggers a background
+   * load of the artifact summary so the generation card can render the
+   * latest state. Idempotent — calling twice for the same path with the
+   * same content is safe.
+   */
+  notifyArtifactGenerationWrite: (args: {
+    path: string;
+    featureName: string;
+    artifact: ArtifactKind;
+  }) => void;
+  /** Mark a generation-phase entry as complete (transitions card to its post-write state). */
+  markArtifactGenerationComplete: (path: string) => void;
+  /**
+   * Re-parse a tracked spec-artifact entry from disk. Called when the
+   * agent's write tool call finishes — the file is now fully flushed,
+   * so a fresh parse is more authoritative than whatever interim state
+   * the mid-stream parse captured. No-op when no entry is tracked for
+   * `path` (e.g. after the user closed the panel or switched engines).
+   */
+  reparseArtifactGeneration: (path: string) => void;
+  /** Open the artifact view panel; loads the summary and sets `artifactViewOpen`. */
+  openArtifactView: (
+    featureName: string,
+    artifact: ArtifactKind
+  ) => Promise<void>;
+  /** Close the panel and clear cursor/expansion state. */
+  closeArtifactView: () => void;
+  moveArtifactCursor: (direction: 'prev' | 'next') => void;
+  toggleArtifactExpand: (index: number) => void;
+  enterArtifactDetail: () => void;
+  leaveArtifactDetail: () => void;
+  /**
+   * Reset all artifact-view state on engine switch. The agent engine in
+   * Kiro CLI is fixed at startup (see `kas-commands.ts`), so this is
+   * a defence-in-depth no-op-safe action: callable from anywhere
+   * without breaking the store.
+   */
+  clearArtifactViewOnEngineSwitch: () => void;
+  // ── End spec artifact view actions ─────────────────────────
 
   // File attachment actions
   attachFile: (path: string) => void;
@@ -646,8 +832,26 @@ export interface AppState {
   liveOutputs: Map<string, string[]>;
   queuedMessages: string[];
   editingQueueIndex: number | null;
+  /**
+   * Slash commands sourced from the active backend's
+   * `available_commands_update` broadcast.
+   *
+   * - V2 mode: populated by `setSlashCommands` from V2's broadcast; prompts
+   *   and skills get appended directly here via `onPromptsUpdate`.
+   * - KAS mode: populated by `setSlashCommands` from KAS's broadcast, which
+   *   already includes prompts/skills/steering as commands tagged with
+   *   `_meta.kiro.type`.
+   */
   slashCommands: SlashCommand[];
-  extensionCommands: SlashCommand[];
+  /**
+   * Static, TUI-owned KAS commands. Seeded from `KAS_COMMANDS` at boot
+   * when `agentEngine === 'kas'`; empty otherwise. The dispatcher checks
+   * this list first in KAS mode so KAS-side handlers take precedence
+   * over the V2 dispatcher pipeline for the same command name.
+   */
+  kasCommands: KasCommand[];
+  /** Frozen at boot from props.agentEngine ?? process.env.KIRO_AGENT_ENGINE. */
+  agentEngine: AgentEngine;
   prompts: Array<{
     name: string;
     description?: string;
@@ -707,6 +911,8 @@ export interface AppState {
   sessionEventBuffer: Record<string, AgentStreamEvent[]>;
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
+  suspendArmed: boolean;
+  suspendTimer: NodeJS.Timeout | null;
   transientAlert: TransientAlert | null;
   /**
    * Active HTTP-retry banner, shown inline with the thinking spinner. `null` when no
@@ -765,6 +971,7 @@ export interface AppState {
   showHooksPanel: boolean;
   hooksList: HookInfo[];
   showKeybindingsPanel: boolean;
+  showDisplaySettingsPanel: boolean;
   /**
    * When true, closing the currently open overlay re-opens the /settings
    * top-level menu instead of fully dismissing. Set by /settings subcommand
@@ -780,9 +987,39 @@ export interface AppState {
   codeData: CodePanelData | null;
   codeIntelligenceActive: boolean;
 
+  // ── Spec artifact view state ───────────────────────────────
+  /**
+   * Generation-phase tracker for the live artifact-generation card.
+   * Holds at most one active entry at a time — switching to a new
+   * artifact replaces the prior entry. The entry's `absolutePath`
+   * doubles as the dedup key for idle timers.
+   *
+   * `null` when no spec artifact is being written. Entries are
+   * created when the agent's first matching `fs_write` arrives and
+   * flip to `complete: true` after 2 s of no writes (or when the
+   * tool's `ToolCallFinished` event arrives).
+   */
+  artifactGenerating: ArtifactGenerationEntry | null;
+  /**
+   * Open artifact-view panel. Mutually exclusive with the generation
+   * card path: the card can show alongside, but the panel takes over
+   * keyboard input.
+   */
+  artifactViewOpen: OpenArtifactView | null;
+  // ── End spec artifact view state ───────────────────────────
+
   // Task management state
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
+
+  // Voice state
+  voiceStop: (() => void) | null;
+  voiceCancel: (() => void) | null;
+  voiceLevel: number | null;
+  voiceAutoSubmit: boolean;
+  voiceHintIndex: number;
+  voicePartialText: string | null;
+  pendingVoiceText: string | null;
 
   // Announcement state
   announcement: { id: string; content: string; maxLines: number } | null;
@@ -827,13 +1064,7 @@ export interface AppState {
 
 interface AppStoreProps {
   kiro: Kiro;
-  noInteractive?: boolean;
-  initialInput?: string;
-  trustAllTools?: boolean;
-}
-
-interface AppStoreProps {
-  kiro: Kiro;
+  agentEngine?: AgentEngine;
   noInteractive?: boolean;
   initialInput?: string;
   trustAllTools?: boolean;
@@ -940,7 +1171,135 @@ function extractTaskState(
   }
 }
 
+/** Build a CommandContext from the current AppState + setter. */
+function buildCommandContext(
+  state: AppState & AppActions,
+  set: StoreApi<AppState & AppActions>['setState'],
+  get: StoreApi<AppState & AppActions>['getState'],
+  extraClearState?: Partial<AppState>
+): CommandContext {
+  return {
+    kiro: state.kiro,
+    agentEngine: state.agentEngine,
+    slashCommands: state.slashCommands,
+    kasCommands: state.kasCommands,
+    showAlert: (message, status, autoHideMs = 3000) =>
+      state.showTransientAlert({ message, status, autoHideMs }),
+    setLoadingMessage: state.setLoadingMessage,
+    setActiveCommand: state.setActiveCommand,
+    setCurrentModel: state.setCurrentModel,
+    setCurrentAgent: state.setCurrentAgent,
+    setContextUsage: state.setContextUsage,
+    setShowContextBreakdown: state.setShowContextBreakdown,
+    setShowHelpPanel: state.setShowHelpPanel,
+    setShowTuiPanel: state.setShowTuiPanel,
+    setShowChangelogPanel: state.setShowChangelogPanel,
+    setShowUsagePanel: state.setShowUsagePanel,
+    setShowRewindExplorer: state.setShowRewindExplorer,
+    setShowMcpPanel: state.setShowMcpPanel,
+    setShowToolsPanel: state.setShowToolsPanel,
+    setShowStatsPanel: state.setShowStatsPanel,
+    setShowHooksPanel: state.setShowHooksPanel,
+    setShowKeybindingsPanel: state.setShowKeybindingsPanel,
+    setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
+    setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+    setShowKnowledgePanel: state.setShowKnowledgePanel,
+    setShowCodePanel: state.setShowCodePanel,
+    openArtifactView: state.openArtifactView,
+    clearMessages: state.clearMessages,
+    resetMessages: state.resetMessages,
+    sendMessage: state.sendMessage,
+    createStreamEventHandler: state.createStreamEventHandler,
+    setSessionId: (id: string | null) => {
+      if (
+        id &&
+        readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session'
+      ) {
+        CommandHistory.getInstance().setSessionId(id);
+      }
+      set({ sessionId: id, initErrors: [] });
+    },
+    addSystemMessage: (content: string, success: boolean) =>
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          {
+            id: generateMessageId(),
+            role: MessageRole.System,
+            content,
+            success,
+          },
+        ],
+      })),
+    addSession: state.addSession,
+    setActiveSession: state.setActiveSession,
+    sessions: state.sessions,
+    setMode: state.setMode,
+    clearUIState: () =>
+      set({
+        activeCommand: null,
+        showContextBreakdown: false,
+        showHelpPanel: false,
+        showUsagePanel: false,
+        showRewindExplorer: false,
+        showMcpPanel: false,
+        showToolsPanel: false,
+        showStatsPanel: false,
+        showHooksPanel: false,
+        showKeybindingsPanel: false,
+        settingsReturnOnEscape: false,
+        showKnowledgePanel: false,
+        contextBreakdown: null,
+        usageData: null,
+        ...extraClearState,
+      }),
+    getMessages: () => get().messages,
+    setUserColors: (prompt?: any, response?: any, diff?: any) => {
+      const setter = get()._userColorsSetter;
+      if (setter) setter(prompt, response, diff);
+    },
+    setBaseTheme: (theme: any) => {
+      const setter = get()._baseThemeSetter;
+      if (setter) setter(theme);
+    },
+    setThemePreview: (preview: string | null) => {
+      set({ themePreview: preview });
+    },
+    getThemeDiffHex: () => {
+      const getter = get()._themeDiffHexGetter;
+      if (getter) return getter();
+      const d = kiroSafe.colors.diff;
+      return {
+        added: {
+          background: d.added.background,
+          bar: d.added.bar,
+          highlight: d.added.highlight,
+        },
+        removed: {
+          background: d.removed.background,
+          bar: d.removed.bar,
+          highlight: d.removed.highlight,
+        },
+      };
+    },
+    getAutoPreview: () => {
+      const getter = get()._autoPreviewGetter;
+      return getter ? getter() : '';
+    },
+    setVoiceStop: state.setVoiceStop,
+    setVoiceCancel: state.setVoiceCancel,
+    setVoiceLevel: state.setVoiceLevel,
+    voiceAutoSubmit: state.voiceAutoSubmit,
+    toggleVoiceAutoSubmit: state.toggleVoiceAutoSubmit,
+    voiceHintIndex: state.voiceHintIndex,
+    incrementVoiceHint: state.incrementVoiceHint,
+    setPendingVoiceText: state.setPendingVoiceText,
+    setVoicePartialText: state.setVoicePartialText,
+  };
+}
+
 export const createAppStore = (props: AppStoreProps) => {
+  const agentEngine: AgentEngine = props.agentEngine ?? resolveAgentEngine();
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
@@ -1015,7 +1374,8 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
     ], // Backend sends all commands via CommandsUpdate
-    extensionCommands: [],
+    kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
+    agentEngine,
     prompts: [],
     kiro: props.kiro,
     sessionId: null,
@@ -1041,6 +1401,13 @@ export const createAppStore = (props: AppStoreProps) => {
     filePickerHasResults: false,
     promptHint: null,
     commandShadowText: null,
+    voiceStop: null,
+    voiceCancel: null,
+    voiceLevel: null,
+    voiceAutoSubmit: false,
+    voiceHintIndex: 0,
+    voicePartialText: null,
+    pendingVoiceText: null,
 
     input: initialInputBufferState(),
     reverseSearchActive: false,
@@ -1058,6 +1425,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
     exitSequence: 0,
     exitTimer: null,
+    suspendArmed: false,
+    suspendTimer: null,
     transientAlert: null,
     retryStatus: null,
     loadingMessage: null as string | null,
@@ -1091,6 +1460,7 @@ export const createAppStore = (props: AppStoreProps) => {
     showHooksPanel: false,
     hooksList: [],
     showKeybindingsPanel: false,
+    showDisplaySettingsPanel: false,
     settingsReturnOnEscape: false,
     showKnowledgePanel: false,
     knowledgeEntries: [],
@@ -1100,6 +1470,8 @@ export const createAppStore = (props: AppStoreProps) => {
     codeIntelligenceActive: existsSync(
       join(process.cwd(), '.kiro', 'settings', 'lsp.json')
     ),
+    artifactGenerating: null,
+    artifactViewOpen: null,
     attachedFiles: [],
     _userColorsSetter: null,
     _baseThemeSetter: null,
@@ -1289,7 +1661,13 @@ export const createAppStore = (props: AppStoreProps) => {
 
         // Determine error category and handle accordingly
         const category = detectErrorCategory(errorMessage);
-        const displayMessage = simplifyErrorMessage(errorMessage);
+        let displayMessage = simplifyErrorMessage(errorMessage);
+
+        // If retries happened, enrich the message so the user knows we tried
+        const retryInfo = get().retryStatus;
+        if (retryInfo && category === 'network') {
+          displayMessage = `${displayMessage} (failed after ${retryInfo.maxAttempts} attempts)`;
+        }
 
         // Only auth and session errors are blocking (require user action)
         if (category === 'auth' || category === 'session') {
@@ -1319,6 +1697,7 @@ export const createAppStore = (props: AppStoreProps) => {
     createStreamEventHandler: () => {
       let isBuffering = false;
       let bufferedContent = '';
+      let bufferedThinking = '';
 
       // Batching: accumulate content chunks and flush to the store
       // on a timer so Ink's render loop isn't starved by rapid-fire
@@ -1359,7 +1738,7 @@ export const createAppStore = (props: AppStoreProps) => {
       };
 
       const commitBufferedContent = () => {
-        if (!bufferedContent) return;
+        if (!bufferedContent && !bufferedThinking) return;
         set((state) => {
           const lastModelMsgIndex = state.messages.findLastIndex(
             (msg) => msg.role === MessageRole.Model
@@ -1371,6 +1750,7 @@ export const createAppStore = (props: AppStoreProps) => {
               messages[lastModelMsgIndex] = {
                 ...msg,
                 content: bufferedContent,
+                thinking: bufferedThinking || msg.thinking,
               };
               return { messages };
             }
@@ -1381,7 +1761,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const flushContentToStore = () => {
         pendingContentFlush = null;
-        if (!bufferedContent) return;
+        if (!bufferedContent && !bufferedThinking) return;
 
         set((state) => {
           const lastMsg = state.messages[state.messages.length - 1];
@@ -1392,6 +1772,7 @@ export const createAppStore = (props: AppStoreProps) => {
               id: lastMsg.id,
               role: MessageRole.Model,
               content: bufferedContent,
+              thinking: bufferedThinking || lastMsg.thinking,
               agentName: lastMsg.agentName ?? state.currentAgent?.name,
             };
             return { messages };
@@ -1404,6 +1785,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   id: lastContentEventId ?? crypto.randomUUID(),
                   role: MessageRole.Model,
                   content: bufferedContent,
+                  thinking: bufferedThinking || undefined,
                   agentName: state.currentAgent?.name,
                 },
               ],
@@ -1442,6 +1824,7 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             // Reset buffer for the next assistant turn
             bufferedContent = '';
+            bufferedThinking = '';
             lastContentEventId = null;
 
             if (event.content.type === 'text') {
@@ -1475,6 +1858,19 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
+          case AgentEventType.Thought:
+            // Thinking content — tracked separately for distinct rendering
+            if (event.content.type === 'text') {
+              bufferedThinking += event.content.text;
+              lastContentEventId = event.id;
+
+              if (!isBuffering) {
+                if (!pendingContentFlush) {
+                  pendingContentFlush = setTimeout(flushContentToStore, 16);
+                }
+              }
+            }
+            break;
           case AgentEventType.ToolCall:
             if (isBuffering && bufferedContent) {
               commitBufferedContent();
@@ -1489,6 +1885,7 @@ export const createAppStore = (props: AppStoreProps) => {
             // Reset buffer so the next Model message after this tool
             // doesn't repeat text from before the tool call.
             bufferedContent = '';
+            bufferedThinking = '';
             lastContentEventId = null;
 
             set((state) => {
@@ -1920,6 +2317,11 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
+          case AgentEventType.HooksUpdate:
+            // Update cached hooks list. If the panel is open, it will
+            // re-render with the new data automatically.
+            set({ hooksList: event.hooks });
+            break;
         }
       };
 
@@ -2050,7 +2452,19 @@ export const createAppStore = (props: AppStoreProps) => {
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
     setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
-      set({ currentAgent: agent ? { name: agent.name } : null });
+      // The artifact-generation card belongs to the spec workflow's
+      // active agent. Switching agents (e.g. spec → kiro_planner →
+      // anything else) means any in-flight card is stale. Clear it.
+      // We only update the field when there's actually an agent change
+      // and an entry to clear, so no-op rerenders are avoided.
+      const isAgentChanging = prevAgent?.name !== agent?.name;
+      const hasGenerating = get().artifactGenerating !== null;
+      set({
+        currentAgent: agent ? { name: agent.name } : null,
+        ...(isAgentChanging && hasGenerating
+          ? { artifactGenerating: null }
+          : {}),
+      });
 
       // Trigger plan quality survey when switching away from planner
       // (the handoff moment — plan was presented and user approved it).
@@ -2113,7 +2527,12 @@ export const createAppStore = (props: AppStoreProps) => {
               content: summary,
             });
           }
-          return { isCompacting: false, isProcessing: false, messages };
+          return {
+            isCompacting: false,
+            isProcessing: false,
+            transientAlert: null,
+            messages,
+          };
         });
         await get().processQueue();
       } else if (event.status === 'failed') {
@@ -2177,16 +2596,48 @@ export const createAppStore = (props: AppStoreProps) => {
       target?: ApprovalRequestInfo,
       _meta?: Record<string, unknown>
     ) => {
-      const { pendingApproval, approvalQueue } = get();
+      const { pendingApproval, approvalQueue, messages } = get();
       const approval = target ?? pendingApproval;
       if (approval) {
         const toolCallId = approval.toolCall.toolCallId;
         const isRejected =
           optionId === ApprovalOptionId.RejectOnce ||
           optionId === ApprovalOptionId.RejectAlways;
+        const isTrust =
+          optionId === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
+
+        // When trusting a tool, cascade to all pending approvals of the same tool
+        let cascadeApprovals: ApprovalRequestInfo[] = [];
+        if (isTrust) {
+          const toolMsg = messages.find(
+            (m) => m.role === MessageRole.ToolUse && m.id === toolCallId
+          );
+          if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+            const trustedName = toolMsg.name;
+            cascadeApprovals = approvalQueue.filter((a) => {
+              if (a === approval) return false;
+              const msg = messages.find(
+                (m) =>
+                  m.role === MessageRole.ToolUse &&
+                  m.id === a.toolCall.toolCallId
+              );
+              return (
+                msg &&
+                msg.role === MessageRole.ToolUse &&
+                msg.name === trustedName
+              );
+            });
+          }
+        }
+
+        const cascadeIds = new Set(
+          cascadeApprovals.map((a) => a.toolCall.toolCallId)
+        );
 
         // Update the tool call status based on user response
-        const remainingQueue = approvalQueue.filter((a) => a !== approval);
+        const remainingQueue = approvalQueue.filter(
+          (a) => a !== approval && !cascadeIds.has(a.toolCall.toolCallId)
+        );
         const nextApproval = remainingQueue[0] ?? null;
 
         set((state) => ({
@@ -2200,11 +2651,15 @@ export const createAppStore = (props: AppStoreProps) => {
                 isFinished: isRejected ? true : msg.isFinished,
               };
             }
+            if (msg.role === MessageRole.ToolUse && cascadeIds.has(msg.id)) {
+              return { ...msg, status: ToolUseStatus.Approved };
+            }
             return msg;
           }),
           approvalQueue: remainingQueue,
           pendingApproval:
-            state.pendingApproval === approval
+            state.pendingApproval === approval ||
+            cascadeIds.has(state.pendingApproval?.toolCall.toolCallId ?? '')
               ? nextApproval
               : state.pendingApproval,
           approvalMode: 'dropdown',
@@ -2215,6 +2670,14 @@ export const createAppStore = (props: AppStoreProps) => {
           optionId,
           _meta,
         });
+
+        // Auto-resolve cascaded approvals with allow_once (trust is already applied)
+        for (const cascaded of cascadeApprovals) {
+          cascaded.resolve({
+            outcome: 'selected',
+            optionId: ApprovalOptionId.AllowOnce,
+          });
+        }
       }
     },
 
@@ -2300,8 +2763,8 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    setExtensionCommands: (commands: SlashCommand[]) => {
-      set({ extensionCommands: commands });
+    setKasCommands: (commands: KasCommand[]) => {
+      set({ kasCommands: commands });
     },
 
     setPrompts: (prompts) => {
@@ -2332,6 +2795,39 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ commandShadowText: text });
     },
 
+    setVoiceStop: (fn) => {
+      set({ voiceStop: fn });
+    },
+
+    setVoiceCancel: (fn) => {
+      set({ voiceCancel: fn });
+    },
+
+    setVoiceLevel: (level) => {
+      set({ voiceLevel: level });
+    },
+
+    toggleVoiceAutoSubmit: () => {
+      set((s) => {
+        const next = !s.voiceAutoSubmit;
+        return { voiceAutoSubmit: next };
+      });
+    },
+
+    incrementVoiceHint: () => {
+      set((s) => {
+        const next = s.voiceHintIndex + 1;
+        return { voiceHintIndex: next };
+      });
+    },
+
+    setVoicePartialText: (text) => {
+      set({ voicePartialText: text });
+    },
+    setPendingVoiceText: (text) => {
+      set({ pendingVoiceText: text });
+    },
+
     clearCommandInput: () => {
       set({
         commandInputValue: '',
@@ -2350,107 +2846,12 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ activeCommand: null });
 
       const state = get();
-      const ctx: CommandContext = {
-        kiro: state.kiro,
-        slashCommands: [...state.extensionCommands, ...state.slashCommands],
-        showAlert: (message, status, autoHideMs = 3000) =>
-          state.showTransientAlert({ message, status, autoHideMs }),
-        setLoadingMessage: state.setLoadingMessage,
-        setActiveCommand: state.setActiveCommand,
-        setCurrentModel: state.setCurrentModel,
-        setCurrentAgent: state.setCurrentAgent,
-        setContextUsage: state.setContextUsage,
-        setShowContextBreakdown: state.setShowContextBreakdown,
-        setShowHelpPanel: state.setShowHelpPanel,
-        setShowTuiPanel: state.setShowTuiPanel,
-        setShowChangelogPanel: state.setShowChangelogPanel,
-        setShowUsagePanel: state.setShowUsagePanel,
-        setShowRewindExplorer: state.setShowRewindExplorer,
-        setShowMcpPanel: state.setShowMcpPanel,
-        setShowToolsPanel: state.setShowToolsPanel,
-        setShowStatsPanel: state.setShowStatsPanel,
-        setShowHooksPanel: state.setShowHooksPanel,
-        setShowKeybindingsPanel: state.setShowKeybindingsPanel,
-        setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
-        setShowKnowledgePanel: state.setShowKnowledgePanel,
-        setShowCodePanel: state.setShowCodePanel,
-        clearMessages: state.clearMessages,
-        resetMessages: state.resetMessages,
-        sendMessage: state.sendMessage,
-        createStreamEventHandler: state.createStreamEventHandler,
-        setSessionId: (id: string | null) =>
-          set({ sessionId: id, initErrors: [] }),
-        addSystemMessage: (content: string, success: boolean) =>
-          set((s) => ({
-            messages: [
-              ...s.messages,
-              {
-                id: generateMessageId(),
-                role: MessageRole.System,
-                content,
-                success,
-              },
-            ],
-          })),
-        addSession: state.addSession,
-        setActiveSession: state.setActiveSession,
-        sessions: state.sessions,
-        setMode: state.setMode,
-        clearUIState: () =>
-          set({
-            activeCommand: null,
-            showContextBreakdown: false,
-            showTuiPanel: false,
-            showChangelogPanel: false,
-            showHelpPanel: false,
-            showUsagePanel: false,
-            showRewindExplorer: false,
-            showMcpPanel: false,
-            showToolsPanel: false,
-            showStatsPanel: false,
-            showHooksPanel: false,
-            showKeybindingsPanel: false,
-            settingsReturnOnEscape: false,
-            showKnowledgePanel: false,
-            showCodePanel: false,
-            contextBreakdown: null,
-            usageData: null,
-            codeData: null,
-          }),
-        getMessages: () => get().messages,
-        setUserColors: (prompt?: any, response?: any, diff?: any) => {
-          const setter = get()._userColorsSetter;
-          if (setter) setter(prompt, response, diff);
-        },
-        setBaseTheme: (theme: any) => {
-          const setter = get()._baseThemeSetter;
-          if (setter) setter(theme);
-        },
-        setThemePreview: (preview: string | null) => {
-          set({ themePreview: preview });
-        },
-        getThemeDiffHex: () => {
-          const getter = get()._themeDiffHexGetter;
-          if (getter) return getter();
-          const d = kiroSafe.colors.diff;
-          return {
-            added: {
-              background: d.added.background,
-              bar: d.added.bar,
-              highlight: d.added.highlight,
-            },
-            removed: {
-              background: d.removed.background,
-              bar: d.removed.bar,
-              highlight: d.removed.highlight,
-            },
-          };
-        },
-        getAutoPreview: () => {
-          const getter = get()._autoPreviewGetter;
-          return getter ? getter() : '';
-        },
-      };
+      const ctx: CommandContext = buildCommandContext(state, set, get, {
+        showTuiPanel: false,
+        showChangelogPanel: false,
+        showCodePanel: false,
+        codeData: null,
+      });
 
       await executeCommandWithArg(cmdName, arg, ctx);
     },
@@ -2705,7 +3106,18 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     // UI actions
-    setMode: (mode) => set({ mode }),
+    setMode: (mode) => {
+      // The artifact-generation card is tied to the spec workflow.
+      // Clear it on any mode change so the user doesn't see stale
+      // generation state after switching to vibe mode (or away from
+      // spec mode in general). The open artifact-view panel is left
+      // alone — the user explicitly opened it and dismisses with Q.
+      set((state) =>
+        state.artifactGenerating === null
+          ? { mode }
+          : { mode, artifactGenerating: null }
+      );
+    },
 
     addSubagentSession: (info) => {
       set((state) => {
@@ -2891,6 +3303,9 @@ export const createAppStore = (props: AppStoreProps) => {
         if (state.exitTimer) {
           clearTimeout(state.exitTimer);
         }
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
 
         const newSequence = state.exitSequence + 1;
 
@@ -2905,7 +3320,12 @@ export const createAppStore = (props: AppStoreProps) => {
           set({ exitSequence: 0, exitTimer: null });
         }, 2000);
 
-        return { exitSequence: newSequence, exitTimer: timer };
+        return {
+          exitSequence: newSequence,
+          exitTimer: timer,
+          suspendArmed: false,
+          suspendTimer: null,
+        };
       });
     },
 
@@ -2915,6 +3335,37 @@ export const createAppStore = (props: AppStoreProps) => {
           clearTimeout(state.exitTimer);
         }
         return { exitSequence: 0, exitTimer: null };
+      });
+    },
+
+    armSuspend: () => {
+      set((state) => {
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
+        if (state.exitTimer) {
+          clearTimeout(state.exitTimer);
+        }
+
+        const timer = setTimeout(() => {
+          set({ suspendArmed: false, suspendTimer: null });
+        }, 2000);
+
+        return {
+          suspendArmed: true,
+          suspendTimer: timer,
+          exitSequence: 0,
+          exitTimer: null,
+        };
+      });
+    },
+
+    disarmSuspend: () => {
+      set((state) => {
+        if (state.suspendTimer) {
+          clearTimeout(state.suspendTimer);
+        }
+        return { suspendArmed: false, suspendTimer: null };
       });
     },
 
@@ -3001,6 +3452,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showKeybindingsPanel: show });
     },
 
+    setShowDisplaySettingsPanel: (show) => {
+      set({ showDisplaySettingsPanel: show });
+    },
+
     setSettingsReturnOnEscape: (value) => {
       set({ settingsReturnOnEscape: value });
     },
@@ -3037,6 +3492,241 @@ export const createAppStore = (props: AppStoreProps) => {
           : {}),
       });
     },
+
+    // ── Spec artifact view actions ───────────────────────────
+    notifyArtifactGenerationWrite: ({ path, featureName, artifact }) => {
+      const now = Date.now();
+      // We render at most one generation card at a time. When a new
+      // write comes in for a different path, drop any prior entry —
+      // the user only ever sees the most-recently written artifact
+      // until the agent moves on.
+      //
+      // Same-path writes refresh the existing entry (which preserves
+      // the last good summary while parsing continues).
+      set((state) => {
+        const existing =
+          state.artifactGenerating?.absolutePath === path
+            ? state.artifactGenerating
+            : null;
+        return {
+          artifactGenerating: existing
+            ? {
+                ...existing,
+                lastWriteTs: now,
+                // A new write resets `complete` so the card returns to
+                // its live state if the agent issues another write
+                // after the 2 s idle timeout.
+                complete: false,
+              }
+            : {
+                absolutePath: path,
+                featureName,
+                artifact,
+                summary: null,
+                lastWriteTs: now,
+                complete: false,
+                parseError: null,
+              },
+        };
+      });
+
+      // Background load — never blocks the caller. Errors are surfaced
+      // as `parseError` on the entry so the card can show a non-blocking
+      // indicator while retaining the last good summary.
+      void loadArtifactSummary(process.cwd(), featureName, artifact)
+        .then((res) => {
+          set((state) => {
+            const entry = state.artifactGenerating;
+            // Entry could have been cleared by clearArtifactViewOnEngineSwitch
+            // while the load was in flight, or replaced by a write to a
+            // different artifact. Drop the result silently.
+            if (!entry || entry.absolutePath !== path) return state;
+
+            if (res.ok) {
+              return {
+                artifactGenerating: {
+                  ...entry,
+                  summary: res.summary,
+                  parseError: null,
+                },
+              };
+            }
+
+            const message = describeLoadError(res.error);
+            return {
+              artifactGenerating: { ...entry, parseError: message },
+            };
+          });
+        })
+        .catch((err: unknown) => {
+          // The loader is contracted to never throw; this is a
+          // last-resort guard so a stray rejection doesn't crash
+          // the agent stream listener.
+          logger.error('[artifact-view] load threw', {
+            path,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+    },
+
+    markArtifactGenerationComplete: (path: string) => {
+      set((state) => {
+        const entry = state.artifactGenerating;
+        if (!entry || entry.absolutePath !== path || entry.complete) {
+          return state;
+        }
+        return {
+          artifactGenerating: { ...entry, complete: true },
+        };
+      });
+    },
+
+    reparseArtifactGeneration: (path: string) => {
+      // Read the entry once to recover the (featureName, artifact) tuple
+      // without making the caller pass them in. If the active entry is
+      // for a different path (the agent moved on) or was cleared
+      // entirely (engine switch, panel teardown), bail out.
+      const entry = get().artifactGenerating;
+      if (!entry || entry.absolutePath !== path) return;
+      const { featureName, artifact } = entry;
+
+      void loadArtifactSummary(process.cwd(), featureName, artifact)
+        .then((res) => {
+          set((state) => {
+            const current = state.artifactGenerating;
+            // Re-check: another action could have cleared or replaced
+            // the entry while we were waiting on the read.
+            if (!current || current.absolutePath !== path) return state;
+
+            if (res.ok) {
+              return {
+                artifactGenerating: {
+                  ...current,
+                  summary: res.summary,
+                  // Clear any mid-stream parse error: the post-flush
+                  // parse is authoritative.
+                  parseError: null,
+                },
+              };
+            }
+
+            // Failed parse on a fully-flushed file — surface the error
+            // but keep whatever last-good summary the entry already has.
+            return {
+              artifactGenerating: {
+                ...current,
+                parseError: describeLoadError(res.error),
+              },
+            };
+          });
+        })
+        .catch((err: unknown) => {
+          logger.error('[artifact-view] reparse threw', {
+            path,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+    },
+
+    openArtifactView: async (featureName: string, artifact: ArtifactKind) => {
+      const workspaceRoot = process.cwd();
+      const workflow = loadSpecConfig(workspaceRoot, featureName);
+      const result = await loadArtifactSummary(
+        workspaceRoot,
+        featureName,
+        artifact
+      );
+      if (!result.ok) {
+        // Surface a transient alert + open the panel in error mode so
+        // the user can read the message and dismiss with `q`.
+        set({
+          artifactViewOpen: {
+            featureName,
+            artifact,
+            summary: emptySummaryFor(artifact),
+            mode: 'summary',
+            cursor: 0,
+            expanded: {},
+            error: { message: describeLoadError(result.error) },
+            workflow,
+          },
+        });
+        return;
+      }
+      set({
+        artifactViewOpen: {
+          featureName,
+          artifact,
+          summary: result.summary,
+          mode: 'summary',
+          cursor: 0,
+          expanded: {},
+          error: null,
+          workflow,
+        },
+      });
+    },
+
+    closeArtifactView: () => {
+      set({ artifactViewOpen: null });
+    },
+
+    moveArtifactCursor: (direction: 'prev' | 'next') => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'summary') return state;
+        const count = countArtifactItems(open.summary);
+        if (count === 0) return state;
+        const cursor =
+          direction === 'next'
+            ? (open.cursor + 1) % count
+            : // Wrap around: -1 mod n becomes n-1
+              (open.cursor - 1 + count) % count;
+        return { artifactViewOpen: { ...open, cursor } };
+      });
+    },
+
+    toggleArtifactExpand: (index: number) => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open) return state;
+        const next = { ...open.expanded };
+        next[index] = !next[index];
+        return { artifactViewOpen: { ...open, expanded: next } };
+      });
+    },
+
+    enterArtifactDetail: () => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'summary') return state;
+        // Guard: don't enter detail if there are no items to drill into.
+        if (countArtifactItems(open.summary) === 0) return state;
+        return {
+          artifactViewOpen: { ...open, mode: 'detail' },
+        };
+      });
+    },
+
+    leaveArtifactDetail: () => {
+      set((state) => {
+        const open = state.artifactViewOpen;
+        if (!open || open.mode !== 'detail') return state;
+        // Spec: pressing Escape returns cursor to the item that was open
+        // in detail. If the item is no longer valid (eg. the file shrank
+        // externally), clamp to first.
+        const count = countArtifactItems(open.summary);
+        const cursor = count === 0 ? 0 : Math.min(open.cursor, count - 1);
+        return {
+          artifactViewOpen: { ...open, mode: 'summary', cursor },
+        };
+      });
+    },
+
+    clearArtifactViewOnEngineSwitch: () => {
+      set({ artifactGenerating: null, artifactViewOpen: null });
+    },
+    // ── End spec artifact view actions ───────────────────────
 
     // File attachment actions
     attachFile: (path) => {
@@ -3410,103 +4100,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // Handle slash commands via command registry
       if (trimmed.startsWith('/')) {
         CommandHistory.getInstance().add(trimmed);
-        const ctx: CommandContext = {
-          kiro: state.kiro,
-          slashCommands: [...state.extensionCommands, ...state.slashCommands],
-          showAlert: (message, status, autoHideMs = 3000) =>
-            state.showTransientAlert({ message, status, autoHideMs }),
-          setLoadingMessage: state.setLoadingMessage,
-          setActiveCommand: state.setActiveCommand,
-          setCurrentModel: state.setCurrentModel,
-          setCurrentAgent: state.setCurrentAgent,
-          setContextUsage: state.setContextUsage,
-          setShowContextBreakdown: state.setShowContextBreakdown,
-          setShowHelpPanel: state.setShowHelpPanel,
-          setShowTuiPanel: state.setShowTuiPanel,
-          setShowChangelogPanel: state.setShowChangelogPanel,
-          setShowUsagePanel: state.setShowUsagePanel,
-          setShowRewindExplorer: state.setShowRewindExplorer,
-          setShowMcpPanel: state.setShowMcpPanel,
-          setShowToolsPanel: state.setShowToolsPanel,
-          setShowStatsPanel: state.setShowStatsPanel,
-          setShowHooksPanel: state.setShowHooksPanel,
-          setShowKeybindingsPanel: state.setShowKeybindingsPanel,
-          setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
-          setShowKnowledgePanel: state.setShowKnowledgePanel,
-          setShowCodePanel: state.setShowCodePanel,
-          clearMessages: state.clearMessages,
-          resetMessages: state.resetMessages,
-          sendMessage: state.sendMessage,
-          createStreamEventHandler: state.createStreamEventHandler,
-          setSessionId: (id: string | null) =>
-            set({ sessionId: id, initErrors: [] }),
-          addSystemMessage: (content: string, success: boolean) =>
-            set((s) => ({
-              messages: [
-                ...s.messages,
-                {
-                  id: generateMessageId(),
-                  role: MessageRole.System,
-                  content,
-                  success,
-                },
-              ],
-            })),
-          addSession: state.addSession,
-          setActiveSession: state.setActiveSession,
-          sessions: state.sessions,
-          setMode: state.setMode,
-          clearUIState: () =>
-            set({
-              activeCommand: null,
-              showContextBreakdown: false,
-              showHelpPanel: false,
-              showUsagePanel: false,
-              showRewindExplorer: false,
-              showMcpPanel: false,
-              showToolsPanel: false,
-              showStatsPanel: false,
-              showHooksPanel: false,
-              showKeybindingsPanel: false,
-              settingsReturnOnEscape: false,
-              showKnowledgePanel: false,
-              contextBreakdown: null,
-              usageData: null,
-            }),
-          getMessages: () => get().messages,
-          setUserColors: (prompt?: any, response?: any, diff?: any) => {
-            const setter = get()._userColorsSetter;
-            if (setter) setter(prompt, response, diff);
-          },
-          setBaseTheme: (theme: any) => {
-            const setter = get()._baseThemeSetter;
-            if (setter) setter(theme);
-          },
-          setThemePreview: (preview: string | null) => {
-            set({ themePreview: preview });
-          },
-          getThemeDiffHex: () => {
-            const getter = get()._themeDiffHexGetter;
-            if (getter) return getter();
-            const d = kiroSafe.colors.diff;
-            return {
-              added: {
-                background: d.added.background,
-                bar: d.added.bar,
-                highlight: d.added.highlight,
-              },
-              removed: {
-                background: d.removed.background,
-                bar: d.removed.bar,
-                highlight: d.removed.highlight,
-              },
-            };
-          },
-          getAutoPreview: () => {
-            const getter = get()._autoPreviewGetter;
-            return getter ? getter() : '';
-          },
-        };
+        const ctx: CommandContext = buildCommandContext(state, set, get);
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;
         // Not a recognized command — could be a file path like /Users/...

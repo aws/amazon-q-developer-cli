@@ -152,6 +152,15 @@ impl ExecuteCommand {
             auto_allow_readonly: bool,
         }
 
+        #[derive(Debug, Default, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct FsWriteSettings {
+            #[serde(default)]
+            allowed_paths: Vec<String>,
+            #[serde(default)]
+            denied_paths: Vec<String>,
+        }
+
         fn default_allow_read_only() -> bool {
             false
         }
@@ -162,7 +171,7 @@ impl ExecuteCommand {
             .iter()
             .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
 
-        // Parse settings from agent config
+        // Parse shell settings from agent config
         let settings: Settings = match Self::INFO
             .aliases
             .iter()
@@ -185,6 +194,44 @@ impl ExecuteCommand {
             },
         };
 
+        // Parse fs_write settings for redirect target checking
+        let fs_write: FsWriteSettings = super::fs_write::FsWrite::INFO
+            .aliases
+            .iter()
+            .find_map(|key| agent.tools_settings.get(*key))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let write_tool_allowed = super::fs_write::FsWrite::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+
+        let provider = agent::util::providers::RealProvider;
+
+        let effective_cwd_raw = self.working_dir.clone().unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        });
+
+        let redirect_ctx = agent::shell_permission::RedirectContext::new(
+            fs_write
+                .allowed_paths
+                .iter()
+                .chain(agent.runtime_permissions.allowed_write_paths().iter())
+                .map(String::as_str),
+            fs_write
+                .denied_paths
+                .iter()
+                .chain(agent.runtime_permissions.filesystem_denied_write_paths().iter())
+                .map(String::as_str),
+            effective_cwd_raw,
+            write_tool_allowed,
+            &provider,
+        );
+
         let shell_settings = ShellPermissionSettings {
             allowed_commands: settings.allowed_commands,
             denied_commands: settings.denied_commands,
@@ -193,7 +240,7 @@ impl ExecuteCommand {
             is_tool_allowed: is_in_allowlist,
         };
 
-        match evaluate_shell_permission(command, &shell_settings) {
+        match evaluate_shell_permission(command, &shell_settings, &redirect_ctx, &provider) {
             agent::protocol::PermissionEvalResult::Allow => PermissionEvalResult::Allow,
             agent::protocol::PermissionEvalResult::Ask { trust_options } => PermissionEvalResult::Ask { trust_options },
             agent::protocol::PermissionEvalResult::Deny { reason } => PermissionEvalResult::Deny(vec![reason]),
@@ -220,7 +267,10 @@ pub fn format_output(output: &str, max_size: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{
+        HashMap,
+        HashSet,
+    };
 
     use super::*;
     use crate::cli::agent::{
@@ -843,6 +893,95 @@ mod tests {
             matches!(res, PermissionEvalResult::Deny(_)),
             "malformed settings should deny all commands, got {:?}",
             res
+        );
+    }
+
+    #[tokio::test]
+    async fn test_redirect_to_allowed_write_path() {
+        let os = Os::new().await.unwrap();
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
+        let cwd = std::env::current_dir().unwrap();
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({ "allowedCommands": ["echo .*"] }),
+                );
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({ "allowedPaths": [cwd.to_string_lossy()] }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Redirect to cwd (allowed write path) should be allowed
+        let cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello > ./output.log",
+        }))
+        .unwrap();
+        let res = cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "redirect to allowed write path should Allow, got {res:?}"
+        );
+
+        // Redirect to /tmp (not in allowed write paths) should ask
+        let cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello > /tmp/output.log",
+        }))
+        .unwrap();
+        let res = cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Ask { .. }),
+            "redirect outside allowed paths should Ask, got {res:?}"
+        );
+
+        // /dev/null should always be allowed
+        let cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello > /dev/null",
+        }))
+        .unwrap();
+        let res = cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "/dev/null should always Allow, got {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_redirect_with_write_tool_allowed() {
+        let os = Os::new().await.unwrap();
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({ "allowedCommands": ["echo .*"] }),
+                );
+                map
+            },
+            // fs_write (via "write" alias) is in allowed tools
+            allowed_tools: HashSet::from(["write".to_string()]),
+            ..Default::default()
+        };
+
+        // Redirect to any path should be allowed when write tool is in allowlist
+        let cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "echo hello > /tmp/anywhere.log",
+        }))
+        .unwrap();
+        let res = cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "write_tool_allowed should bypass path check, got {res:?}"
         );
     }
 }

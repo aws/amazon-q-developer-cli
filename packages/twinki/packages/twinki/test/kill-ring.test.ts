@@ -63,4 +63,25 @@ describe('KillRing', () => {
 		expect(ring.length).toBe(1);
 		expect(ring.peek()).toBe('only');
 	});
+
+	it('should cap at 64 entries and evict oldest', () => {
+		const ring = new KillRing();
+		for (let i = 0; i < 70; i++) {
+			ring.push(`entry-${i}`, { prepend: false });
+		}
+		expect(ring.length).toBe(64);
+		// Oldest entries (0-5) evicted, newest (69) is at top
+		expect(ring.peek()).toBe('entry-69');
+	});
+
+	it('should not evict when accumulating into existing entry', () => {
+		const ring = new KillRing();
+		for (let i = 0; i < 64; i++) {
+			ring.push(`e${i}`, { prepend: false });
+		}
+		// Accumulate into last — should NOT increase length
+		ring.push(' extra', { prepend: false, accumulate: true });
+		expect(ring.length).toBe(64);
+		expect(ring.peek()).toBe('e63 extra');
+	});
 });

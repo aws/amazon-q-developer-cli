@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Shell escape (`!`) commands now use the user's default shell from $SHELL instead of hardcoded bash"
+}

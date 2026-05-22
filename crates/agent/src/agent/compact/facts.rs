@@ -356,6 +356,8 @@ pub fn extract_compaction_facts(messages: &[Message], exclude_last_n: usize) -> 
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     use super::*;
     use crate::agent::agent_loop::types::{
         ContentBlock,
@@ -388,6 +390,7 @@ mod tests {
                 .insert(TOOL_USE_PURPOSE_FIELD_NAME.to_string(), serde_json::json!(summary));
         }
         Message::new(
+            Uuid::new_v4().to_string(),
             Role::Assistant,
             vec![ContentBlock::ToolUse(ToolUseBlock {
                 tool_use_id: "test".into(),
@@ -408,6 +411,7 @@ mod tests {
         };
         let input = serde_json::to_value(&tool).unwrap();
         Message::new(
+            Uuid::new_v4().to_string(),
             Role::Assistant,
             vec![ContentBlock::ToolUse(ToolUseBlock {
                 tool_use_id: "test".into(),
@@ -543,6 +547,7 @@ mod tests {
     #[test]
     fn test_ignores_unknown_tools() {
         let messages = vec![Message::new(
+            Uuid::new_v4().to_string(),
             Role::Assistant,
             vec![ContentBlock::ToolUse(ToolUseBlock {
                 tool_use_id: "test".into(),
@@ -567,6 +572,7 @@ mod tests {
             .unwrap()
             .insert(TOOL_USE_PURPOSE_FIELD_NAME.to_string(), serde_json::json!("Run tests"));
         let messages = vec![Message::new(
+            Uuid::new_v4().to_string(),
             Role::Assistant,
             vec![ContentBlock::ToolUse(ToolUseBlock {
                 tool_use_id: "test".into(),

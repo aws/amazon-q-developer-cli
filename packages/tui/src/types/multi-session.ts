@@ -25,6 +25,9 @@ export interface AgentSession {
     role: string;
   };
   dependsOn?: string[]; // DAG edges: names of stages this one depends on
+  hasLoop?: boolean; // Whether this stage has a loop-back config
+  loopIteration?: number; // Current loop iteration (0 if not looping)
+  loopMaxIterations?: number; // Max loop iterations
 }
 
 export interface InboxMessage {

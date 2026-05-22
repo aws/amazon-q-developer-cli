@@ -27,6 +27,7 @@ use crate::agent::tool_permission::file_trust::generate_file_trust_options;
 use crate::agent::tools::use_aws::UseAws;
 use crate::agent::tools::{
     BuiltInTool,
+    BuiltInToolName,
     ToolKind,
 };
 use crate::agent::util::error::UtilError;
@@ -135,6 +136,11 @@ impl RuntimePermissions {
     /// Get the allowed write paths.
     pub fn allowed_write_paths(&self) -> &HashSet<String> {
         &self.filesystem.allowed_write_paths
+    }
+
+    /// Get the denied write paths.
+    pub fn filesystem_denied_write_paths(&self) -> &HashSet<String> {
+        &self.filesystem.denied_write_paths
     }
 
     /// Grant permission for an already-canonicalized path.
@@ -363,6 +369,35 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             BuiltInTool::ExecuteCmd(execute_cmd) => {
                 let mut allowed = settings.shell.allowed_commands.clone();
                 allowed.extend(permissions.allowed_commands.iter().cloned());
+
+                let write_tool_allowed = BuiltInToolName::FsWrite
+                    .aliases()
+                    .is_some_and(|aliases| aliases.iter().any(|alias| matches_any_pattern(allowed_tools, alias)));
+
+                let effective_cwd_raw = execute_cmd
+                    .working_dir
+                    .clone()
+                    .or_else(|| provider.cwd().ok().map(|p| p.to_string_lossy().to_string()))
+                    .unwrap_or_default();
+
+                let redirect_ctx = super::shell_permission::RedirectContext::new(
+                    settings
+                        .fs_write
+                        .allowed_paths
+                        .iter()
+                        .chain(permissions.allowed_write_paths().iter())
+                        .map(String::as_str),
+                    settings
+                        .fs_write
+                        .denied_paths
+                        .iter()
+                        .chain(permissions.filesystem_denied_write_paths().iter())
+                        .map(String::as_str),
+                    effective_cwd_raw,
+                    write_tool_allowed,
+                    provider,
+                );
+
                 evaluate_permission_for_shell_command(
                     &allowed,
                     &settings.shell.denied_commands,
@@ -370,6 +405,8 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     is_allowed,
                     settings.shell.auto_allow_readonly,
                     settings.shell.deny_by_default,
+                    &redirect_ctx,
+                    provider,
                 )
             },
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
@@ -482,13 +519,16 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
 }
 
 /// Evaluate permission for shell commands using the new shell_permission system.
-fn evaluate_permission_for_shell_command(
+#[allow(clippy::too_many_arguments)]
+fn evaluate_permission_for_shell_command<P: SystemProvider>(
     allowed_commands: &[String],
     denied_commands: &[String],
     command: &str,
     is_allowed: bool,
     auto_allow_readonly: bool,
     deny_by_default: bool,
+    redirect_ctx: &super::shell_permission::RedirectContext,
+    provider: &P,
 ) -> Result<PermissionEvalResult, UtilError> {
     let settings = super::shell_permission::ShellPermissionSettings {
         allowed_commands: allowed_commands.to_vec(),
@@ -497,7 +537,12 @@ fn evaluate_permission_for_shell_command(
         deny_by_default,
         is_tool_allowed: is_allowed,
     };
-    Ok(super::shell_permission::evaluate_shell_permission(command, &settings))
+    Ok(super::shell_permission::evaluate_shell_permission(
+        command,
+        &settings,
+        redirect_ctx,
+        provider,
+    ))
 }
 
 /// Evaluate permission for AWS commands using glob patterns.
@@ -924,8 +969,9 @@ mod tests {
 
     #[test]
     fn test_evaluate_permission_for_commands() {
-        // Test denied commands (should short circuit)
-        // Note: patterns are now regex, so "git push.*" matches "git push origin main"
+        let provider = TestProvider::new();
+        let ctx = super::super::shell_permission::RedirectContext::default();
+
         let result = evaluate_permission_for_shell_command(
             &["git status".to_string()],
             &["git push.*".to_string()],
@@ -933,30 +979,50 @@ mod tests {
             true,
             false,
             false,
+            &ctx,
+            &provider,
         )
         .unwrap();
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
-        // Test allowed commands (regex pattern)
-        let result =
-            evaluate_permission_for_shell_command(&["git status".to_string()], &[], "git status", false, false, false)
-                .unwrap();
-        assert!(matches!(result, PermissionEvalResult::Allow));
-        let result =
-            evaluate_permission_for_shell_command(&["git.*".to_string()], &[], "git status", false, false, false)
-                .unwrap();
+        let result = evaluate_permission_for_shell_command(
+            &["git status".to_string()],
+            &[],
+            "git status",
+            false,
+            false,
+            false,
+            &ctx,
+            &provider,
+        )
+        .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
-        // Test auto_allow_readonly
-        let result = evaluate_permission_for_shell_command(&[], &[], "ls -la", false, true, false).unwrap();
+        let result = evaluate_permission_for_shell_command(
+            &["git.*".to_string()],
+            &[],
+            "git status",
+            false,
+            false,
+            false,
+            &ctx,
+            &provider,
+        )
+        .unwrap();
         assert!(matches!(result, PermissionEvalResult::Allow));
 
-        // Test deny_by_default
-        let result = evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, true).unwrap();
+        let result =
+            evaluate_permission_for_shell_command(&[], &[], "ls -la", false, true, false, &ctx, &provider).unwrap();
+        assert!(matches!(result, PermissionEvalResult::Allow));
+
+        let result =
+            evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, true, &ctx, &provider)
+                .unwrap();
         assert!(matches!(result, PermissionEvalResult::Deny { .. }));
 
-        // Test normal ask behavior
-        let result = evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, false).unwrap();
+        let result =
+            evaluate_permission_for_shell_command(&[], &[], "rm file.txt", false, false, false, &ctx, &provider)
+                .unwrap();
         assert!(matches!(result, PermissionEvalResult::Ask { .. }));
     }
 
@@ -1290,7 +1356,7 @@ mod tests {
 
     #[test]
     fn test_with_cwd() {
-        let cwd = "/home/testuser";
+        let cwd = TestProvider::default_home();
         let permissions = RuntimePermissions::default().with_cwd(cwd);
 
         assert!(permissions.filesystem.allowed_read_paths.contains(cwd));
@@ -1372,7 +1438,7 @@ mod tests {
     #[test]
     fn test_reset_clears_all_runtime_permissions() {
         let provider = TestProvider::new();
-        let cwd = "/home/testuser/project";
+        let cwd = &format!("{}/project", TestProvider::default_home());
         let mut permissions = RuntimePermissions::default().with_cwd(cwd);
 
         // Accumulate various runtime permissions
@@ -1403,6 +1469,34 @@ mod tests {
         assert!(permissions.filesystem.denied_write_paths.is_empty());
         assert!(permissions.filesystem.allowed_read_paths.contains(cwd));
         assert_eq!(permissions.filesystem.allowed_read_paths.len(), 1);
+    }
+
+    #[test]
+    fn test_redirect_write_tool_allowed_bypasses_path_check() {
+        use crate::agent::agent_config::definitions::ExecuteCmdSettings;
+        use crate::tools::execute_cmd::ExecuteCmd;
+
+        let provider = TestProvider::new();
+        let mut allowed_tools = HashSet::new();
+        allowed_tools.insert("write".to_string());
+
+        let mut settings = ToolsSettings::default();
+        settings.shell = ExecuteCmdSettings {
+            allowed_commands: vec!["echo .*".to_string()],
+            ..Default::default()
+        };
+        let perms = RuntimePermissions::default();
+
+        let tool = ToolKind::BuiltIn(BuiltInTool::ExecuteCmd(ExecuteCmd {
+            command: "echo hello > /some/random/path.txt".to_string(),
+            working_dir: None,
+        }));
+
+        let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider).unwrap();
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "write tool in allowed_tools should bypass redirect path check, got {result:?}"
+        );
     }
 
     /// Regression tests for V2184286366: code tool's pattern_search was auto-approved

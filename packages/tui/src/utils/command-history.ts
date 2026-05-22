@@ -9,6 +9,10 @@ function defaultHistoryFile(): string {
   return kiroHomePath('.cli_bash_history');
 }
 
+function sessionHistoryFile(sessionId: string): string {
+  return kiroHomePath('sessions', 'cli', `${sessionId}.history`);
+}
+
 export class CommandHistory {
   private static instance: CommandHistory;
   private historyFile: string;
@@ -31,6 +35,28 @@ export class CommandHistory {
   /** Create a standalone instance with a custom history file path. Useful for testing. */
   static createWithFile(historyFile: string): CommandHistory {
     return new CommandHistory(historyFile);
+  }
+
+  /**
+   * Bind this history instance to a specific session.
+   * Switches to a per-session history file, loading existing session history
+   * if available. Commands added after this call are stored per-session only.
+   */
+  setSessionId(sessionId: string): void {
+    this.switchToFile(sessionHistoryFile(sessionId));
+  }
+
+  /**
+   * Switch to a different history file. If the file has existing history,
+   * use it exclusively. Otherwise keep the current in-memory history as a
+   * starting point for the new session.
+   */
+  switchToFile(filePath: string): void {
+    if (this.historyFile === filePath) return;
+    this.historyFile = filePath;
+    this.history = this.load();
+    this.currentIndex = -1;
+    this.savedInput = null;
   }
 
   private load(): string[] {

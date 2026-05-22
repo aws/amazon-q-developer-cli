@@ -94,27 +94,7 @@ impl WebFetch {
     }
 
     pub async fn invoke(&self, _os: &Os, updates: impl Write) -> Result<InvokeOutput> {
-        // Catch any panics and convert to Result
-        let fetch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| async {
-            self.fetch_url_content().await
-        }));
-
-        let content = match fetch_result {
-            Ok(future) => future.await?,
-            Err(panic_err) => {
-                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
-                    (*s).to_string()
-                } else if let Some(s) = panic_err.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "Unknown panic occurred".to_string()
-                };
-                return Err(eyre::eyre!(
-                    "Tool execution panicked: {}. Please try a different mode (e.g., 'selective' or 'full' instead of 'truncated') or a different URL.",
-                    panic_msg
-                ));
-            },
-        };
+        let content = self.fetch_url_content().await?;
 
         let content_size = content.len();
         let mode_desc = match self.mode {
@@ -216,8 +196,14 @@ impl WebFetch {
     }
 
     fn strip_html(html: &str) -> String {
-        // Use html2text library for proper HTML parsing and entity decoding
-        html2text::from_read(html.as_bytes(), usize::MAX).unwrap_or_else(|_| html.to_string())
+        let html_owned = html.to_string();
+        match std::panic::catch_unwind(move || html2text::from_read(html_owned.as_bytes(), usize::MAX)) {
+            Ok(Ok(text)) => text,
+            _ => {
+                tracing::warn!("html2text panicked, falling back to raw HTML");
+                html.to_string()
+            },
+        }
     }
 
     fn truncate_content(text: &str, max_chars: usize) -> Result<String> {
@@ -520,5 +506,27 @@ mod tests {
         } else {
             panic!("Expected Deny result");
         }
+    }
+
+    #[test]
+    fn strip_html_renders_basic_html() {
+        let html = "<p>Hello <b>world</b></p>";
+        let result = WebFetch::strip_html(html);
+        assert!(result.contains("Hello"));
+        assert!(result.contains("world"));
+        assert!(!result.contains("<p>"));
+    }
+
+    #[test]
+    fn strip_html_fallback_on_empty() {
+        let result = WebFetch::strip_html("");
+        assert!(result.is_empty() || result.trim().is_empty());
+    }
+
+    #[test]
+    fn strip_html_does_not_panic_on_malformed_html() {
+        let malformed = "<div><p>unclosed<table><tr><td>nested</div>";
+        let result = WebFetch::strip_html(malformed);
+        assert!(!result.is_empty());
     }
 }

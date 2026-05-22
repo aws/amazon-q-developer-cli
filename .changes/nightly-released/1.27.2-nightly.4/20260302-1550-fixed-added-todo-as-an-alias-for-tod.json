@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Added /todo as an alias for /todos, as shown in the docs"
+}

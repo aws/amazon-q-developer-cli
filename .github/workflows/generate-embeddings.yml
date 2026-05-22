@@ -19,6 +19,9 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -30,14 +33,20 @@ jobs:
       - name: Generate V1 embeddings
         run: ./scripts/generate-embeddings.sh
 
+      - name: Log V1 embeddings metadata
+        run: |
+          echo "=== V1 Autodocs Embeddings ==="
+          echo "generated_at: $(python3 -c "import json; print(json.load(open('autodocs/meta/doc-index.json'))['generated_at'])")"
+          echo "total_docs: $(python3 -c "import json; print(json.load(open('autodocs/meta/doc-index.json'))['total_docs'])")"
+          echo "tar.gz size: $(du -h autodocs/meta/doc-search-index.tar.gz | cut -f1)"
+          echo "tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+
       - name: Upload V1 artifacts
         uses: actions/upload-artifact@v4
         with:
           name: autodocs-embeddings-v1
           retention-days: 1
-          path: |
-            autodocs/meta/doc-search-index.tar.gz
-            autodocs/meta/doc-index.json
+          path: autodocs/meta
 
   generate-v2:
     name: Generate V2 Embeddings
@@ -58,11 +67,17 @@ jobs:
       - name: Generate V2 embeddings
         run: ./scripts/generate-embeddings-v2.sh
 
+      - name: Log V2 embeddings metadata
+        run: |
+          echo "=== V2 Autodocs Embeddings ==="
+          echo "generated_at: $(python3 -c "import json; print(json.load(open('autodocs-v2/meta/doc-index.json'))['generated_at'])")"
+          echo "total_docs: $(python3 -c "import json; print(json.load(open('autodocs-v2/meta/doc-index.json'))['total_docs'])")"
+          echo "tar.gz size: $(du -h autodocs-v2/meta/doc-search-index.tar.gz | cut -f1)"
+          echo "tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+
       - name: Upload V2 artifacts
         uses: actions/upload-artifact@v4
         with:
           name: autodocs-embeddings-v2
           retention-days: 1
-          path: |
-            autodocs-v2/meta/doc-search-index.tar.gz
-            autodocs-v2/meta/doc-index.json
+          path: autodocs-v2/meta

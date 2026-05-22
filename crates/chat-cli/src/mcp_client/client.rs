@@ -112,7 +112,7 @@ macro_rules! paginated_fetch {
 
 /// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
 fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
-    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{env:([^}]+)\}").unwrap());
+    static ENV_VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{(?:env:)?([^}]+)\}").unwrap());
 
     ENV_VAR_REGEX
         .replace_all(input, |caps: &regex::Captures<'_>| {

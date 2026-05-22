@@ -579,6 +579,10 @@ pub struct ReasoningContentForHistory {
     pub text: String,
     pub signature: Option<String>,
     pub redacted_content: Vec<u8>,
+    /// Model ID that generated this reasoning content. Used to strip reasoning
+    /// on model switch — reasoning blocks from a different model will be rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl TryFrom<AssistantResponseMessage> for amzn_codewhisperer_streaming_client::types::AssistantResponseMessage {

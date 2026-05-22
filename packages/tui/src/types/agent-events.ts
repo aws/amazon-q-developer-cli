@@ -1,8 +1,11 @@
 import { ToolNameAlias } from '../../e2e_tests/types/agent.js';
 import type { BuiltinToolId } from './tool-status.js';
+import type { CommandMeta } from './commands.js';
+import type { KasCommand } from '../kas-commands.js';
 
 export enum AgentEventType {
   Content = 'content',
+  Thought = 'thought',
   UserMessage = 'user_message',
   ToolCall = 'tool_call',
   ToolCallUpdate = 'tool_call_update',
@@ -25,8 +28,9 @@ export enum AgentEventType {
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
   McpGovernanceDisabled = 'mcp_governance_disabled',
-  ExtensionMethodsDiscovered = 'extension_methods_discovered',
+  KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
+  HooksUpdate = 'hooks_update',
 }
 
 export enum ContentType {
@@ -169,6 +173,12 @@ export interface AgentContentEvent {
   content: ContentChunk;
 }
 
+export interface AgentThoughtEvent {
+  type: AgentEventType.Thought;
+  id: string;
+  content: ContentChunk;
+}
+
 export interface UserMessageEvent {
   type: AgentEventType.UserMessage;
   id: string;
@@ -214,11 +224,7 @@ export interface CommandsUpdateEvent {
   commands: Array<{
     name: string;
     description: string;
-    meta?: {
-      inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
-      optionsMethod?: string;
-      hint?: string;
-    };
+    meta?: CommandMeta;
   }>;
 }
 
@@ -244,6 +250,16 @@ export interface ContextUsageEvent {
 export interface EffortUpdateEvent {
   type: AgentEventType.EffortUpdate;
   effort: string | null;
+}
+
+export interface HooksUpdateEvent {
+  type: AgentEventType.HooksUpdate;
+  hooks: Array<{
+    name?: string;
+    trigger: string;
+    command: string;
+    matcher?: string;
+  }>;
 }
 
 export interface MetadataEvent {
@@ -344,17 +360,14 @@ export interface McpGovernanceDisabledEvent {
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
-export interface ExtensionMethodsDiscoveredEvent {
-  type: AgentEventType.ExtensionMethodsDiscovered;
-  commands: Array<{
-    name: string;
-    description: string;
-    meta?: Record<string, unknown>;
-  }>;
+export interface KasCommandsDiscoveredEvent {
+  type: AgentEventType.KasCommandsDiscovered;
+  commands: KasCommand[];
 }
 
 export type AgentStreamEvent =
   | AgentContentEvent
+  | AgentThoughtEvent
   | UserMessageEvent
   | ToolCallEvent
   | ToolCallUpdateEvent
@@ -377,5 +390,6 @@ export type AgentStreamEvent =
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
-  | ExtensionMethodsDiscoveredEvent
-  | EffortUpdateEvent;
+  | KasCommandsDiscoveredEvent
+  | EffortUpdateEvent
+  | HooksUpdateEvent;

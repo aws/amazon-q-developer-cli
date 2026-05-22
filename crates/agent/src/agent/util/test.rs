@@ -78,23 +78,34 @@ impl SystemProvider for TestBase {}
 
 #[derive(Debug)]
 pub struct TestDir {
+    /// Held for RAII - the tempdir is deleted on drop. Never read directly; use
+    /// [`TestDir::path`] or [`TestDir::join`] which return the canonicalized path.
+    #[allow(dead_code)]
     temp_dir: tempfile::TempDir,
+    /// Canonicalized (symlink-resolved) path to `temp_dir`. On macOS the raw tempdir
+    /// path starts with `/var/...` but the canonical form is `/private/var/...`.
+    /// Canonicalizing once up front keeps this consistent with what
+    /// [`canonicalize_path_sys`] produces for paths under the tempdir.
+    canonical_path: PathBuf,
 }
 
 impl TestDir {
     pub fn new() -> Self {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let canonical_path = dunce::canonicalize(temp_dir.path()).expect("tempdir path should canonicalize");
         Self {
-            temp_dir: tempfile::tempdir().unwrap(),
+            temp_dir,
+            canonical_path,
         }
     }
 
     pub fn path(&self) -> &Path {
-        self.temp_dir.path()
+        &self.canonical_path
     }
 
     /// Returns a resolved path using the generated temporary directory as the base.
     pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.temp_dir.path().join(path)
+        self.canonical_path.join(path)
     }
 
     /// Writes the given file under the test directory. Creates parent directories if needed.
@@ -103,11 +114,11 @@ impl TestDir {
     #[deprecated]
     pub async fn with_file(self, file: impl TestFile) -> Self {
         let file_path = file.path();
-        if file_path.is_absolute() && !file_path.starts_with(self.temp_dir.path()) {
+        if file_path.is_absolute() && !file_path.starts_with(&self.canonical_path) {
             panic!("path falls outside of the temp dir");
         }
 
-        let path = self.temp_dir.path().join(file_path);
+        let path = self.canonical_path.join(file_path);
         if let Some(parent) = path.parent()
             && !parent.exists()
         {
@@ -124,7 +135,7 @@ impl TestDir {
         let file_path = canonicalize_path_sys(file.path().to_string_lossy(), provider).unwrap();
 
         // Check to ensure that the file path resolves under the test directory.
-        if !file_path.starts_with(&self.temp_dir.path().to_string_lossy().to_string()) {
+        if !file_path.starts_with(&self.canonical_path.to_string_lossy().to_string()) {
             panic!("outside of temp dir");
         }
 
@@ -143,7 +154,7 @@ impl TestDir {
     pub async fn with_directory_sys<P: SystemProvider>(self, path: impl AsRef<Path>, provider: &P) -> Self {
         let dir_path = canonicalize_path_sys(path.as_ref().to_string_lossy(), provider).unwrap();
 
-        if !dir_path.starts_with(&self.temp_dir.path().to_string_lossy().to_string()) {
+        if !dir_path.starts_with(&self.canonical_path.to_string_lossy().to_string()) {
             panic!("outside of temp dir");
         }
 
@@ -188,6 +199,17 @@ impl TestFile for Box<dyn TestFile> {
 }
 
 /// Test helper that implements [EnvProvider], [HomeProvider], and [CwdProvider].
+///
+/// # Default paths
+///
+/// The default `cwd` and `HOME` live under `/kirocli_test_home/` (Unix) or
+/// `C:\kirocli_test_home\` (Windows) on purpose: a real user's home at
+/// `/home/<user>` would sit under a system symlink on macOS
+/// (`/home -> /System/Volumes/Data/home`), which would cause
+/// [`canonicalize_path_sys`](super::path::canonicalize_path_sys) to resolve the
+/// symlink and produce platform-dependent output. Test assertions that reference
+/// the default path via [`TestProvider::default_home`] work unchanged across
+/// macOS, Linux, and Windows.
 #[derive(Debug, Clone)]
 pub struct TestProvider {
     env: std::collections::HashMap<String, String>,
@@ -197,26 +219,26 @@ pub struct TestProvider {
 
 impl TestProvider {
     /// Returns the default test home directory path for the current platform.
+    ///
+    /// Use this instead of hardcoding the path string in test assertions - the
+    /// concrete value is an implementation detail of `TestProvider`.
     pub fn default_home() -> &'static str {
         #[cfg(unix)]
         {
-            "/home/testuser"
+            "/kirocli_test_home/testuser"
         }
         #[cfg(windows)]
         {
-            "C:\\Users\\testuser"
+            "C:\\kirocli_test_home\\testuser"
         }
     }
 
     /// Creates a new implementation of [SystemProvider] with the following defaults:
-    /// - env vars: HOME=/home/testuser (Unix) or C:\Users\testuser (Windows)
+    /// - env vars: `HOME` = [`TestProvider::default_home`]
     /// - cwd: same as HOME
     /// - home: same as HOME
     pub fn new() -> Self {
-        #[cfg(unix)]
-        let home = "/home/testuser";
-        #[cfg(windows)]
-        let home = "C:\\Users\\testuser";
+        let home = Self::default_home();
 
         let mut env = std::collections::HashMap::new();
         env.insert("HOME".to_string(), home.to_string());

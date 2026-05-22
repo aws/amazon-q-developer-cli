@@ -5,6 +5,8 @@
 import type { AgentStreamEvent } from '../types/agent-events.js';
 import type { TerminalColor } from '../types/themeTypes.js';
 import type { Kiro } from '../kiro.js';
+import type { AgentEngine } from '../agent-engine.js';
+import type { KasCommand } from '../kas-commands.js';
 import type {
   SlashCommand,
   ActiveCommand,
@@ -21,8 +23,21 @@ import type {
 export interface CommandContext {
   /** Kiro client for backend communication */
   kiro: Kiro;
-  /** Available slash commands from backend */
+  /** Active agent backend */
+  agentEngine: AgentEngine;
+  /**
+   * Slash commands sourced from the active backend - V2's `available_commands_update`
+   * in V2 mode (which also gets prompts/skills appended via `onPromptsUpdate`),
+   * KAS's `available_commands_update` in KAS mode (which already includes
+   * prompts/skills/steering tagged via `_meta.kiro.type`).
+   */
   slashCommands: SlashCommand[];
+  /**
+   * Static, TUI-owned KAS commands. Always empty in V2 mode. The dispatcher
+   * checks this list first in KAS mode so KAS-side handlers take precedence
+   * over the V2 dispatcher pipeline for the same command name.
+   */
+  kasCommands: readonly KasCommand[];
   /** Show transient alert */
   showAlert: (
     message: string,
@@ -79,6 +94,7 @@ export interface CommandContext {
   /** Show/hide hooks panel */
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
+  setShowDisplaySettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   /** Show/hide knowledge panel */
   setShowKnowledgePanel: (
@@ -88,6 +104,17 @@ export interface CommandContext {
   ) => void;
   /** Show/hide code panel */
   setShowCodePanel: (show: boolean, data?: CodePanelData) => void;
+  /**
+   * Open the structured spec artifact view panel.
+   *
+   * Resolves once the summary has been loaded (or once the load fails
+   * and the panel is opened in error mode). The store handles all
+   * state — the caller doesn't have to manage cursor / mode.
+   */
+  openArtifactView: (
+    featureName: string,
+    artifact: 'requirements' | 'design' | 'tasks'
+  ) => Promise<void>;
   /** Clear conversation messages (keeps last turn for /clear) */
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */
@@ -122,6 +149,24 @@ export interface CommandContext {
     role: string;
     content: string;
   }>;
+  /** Set voice stop callback */
+  setVoiceStop: (fn: (() => void) | null) => void;
+  /** Set voice cancel callback */
+  setVoiceCancel: (fn: (() => void) | null) => void;
+  /** Set voice level */
+  setVoiceLevel: (level: number | null) => void;
+  /** Set partial transcription text for ghost text display during recording */
+  setVoicePartialText: (text: string | null) => void;
+  /** Whether voice auto-submit is enabled */
+  voiceAutoSubmit: boolean;
+  /** Toggle voice auto-submit */
+  toggleVoiceAutoSubmit: () => void;
+  /** Current voice hint index */
+  voiceHintIndex: number;
+  /** Increment voice hint index */
+  incrementVoiceHint: () => void;
+  /** Set pending voice text for insertion into input */
+  setPendingVoiceText: (text: string | null) => void;
   /** Update user theme colors (prompt text+bg combo and/or response text and/or diff colors).
    *  Pass null to clear an override, undefined to leave unchanged. */
   setUserColors: (

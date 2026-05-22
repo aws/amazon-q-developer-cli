@@ -82,6 +82,105 @@ describe('Chat Command', () => {
     expect(store.currentAgent!.name).toBe('test-agent');
   }, 120000);
 
+  it.skipIf(process.platform === 'win32')('replays persisted thinking blocks on resume', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('chat-cmd-resume-think')
+      // Explicitly set `chat.showThinking` to true to be resilient against
+      // future default changes. The setting itself is exercised by
+      // show-thinking-setting.test.ts.
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .launch();
+
+    // Create a session whose persisted log includes a reasoning block
+    // followed by a regular assistant response.
+    const acp = await testCase.launchAcpHelper();
+    const sessionId = await acp.newSession();
+
+    await acp.pushResponse(sessionId, [
+      {
+        kind: 'event',
+        data: {
+          kind: 'ReasoningEvent',
+          data: {
+            text:
+              'Thinking step one.\n' +
+              'Thinking step two.\n' +
+              'Thinking step three.',
+          },
+        },
+      },
+      {
+        kind: 'event',
+        data: {
+          kind: 'ReasoningEvent',
+          data: { signature: 'test-sig' },
+        },
+      },
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'The answer is 4.' },
+        },
+      },
+    ]);
+    await acp.pushResponse(sessionId, null);
+    await acp.prompt(sessionId, 'What is 2+2?');
+    await acp.terminateSession(sessionId);
+    await acp.close();
+
+    // Load the session via /chat in the TUI.
+    await testCase.waitForText('ask a question', 15000);
+    await testCase.waitForSlashCommands(15000);
+
+    for (const char of '/chat') {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(50);
+    }
+    await testCase.pressEnter();
+
+    await testCase.waitForText('What is 2+2?', 10000);
+    await testCase.pressEnter();
+
+    await testCase.sleepMs(2000);
+
+    try {
+      await testCase.waitForText('What is 2+2?', 60000);
+      await testCase.waitForText('The answer is 4.', 10000);
+      // The ThinkingDisplay renders a "● Thinking" header and (for >4 lines)
+      // a tail of the reasoning. With 3 short lines they should all be
+      // visible in the static snapshot, with a "Thinking" header above.
+      await testCase.waitForText('Thinking', 5000);
+      await testCase.waitForText('Thinking step three.', 5000);
+    } catch (e) {
+      console.log('FAILED snapshot:\n' + testCase.getSnapshotFormatted());
+      const store = await testCase.getStore();
+      console.log(
+        'Store messages:',
+        JSON.stringify(store.messages, null, 2)
+      );
+      throw e;
+    }
+
+    const snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('Thinking step one.');
+    expect(snapshot).toContain('Thinking step three.');
+
+    // The Model message should have its `thinking` field populated by the
+    // replayed AgentThoughtChunk. (Empty/missing would imply the chunk was
+    // dropped on the way through `log_entry_to_session_updates`.)
+    const store = await testCase.getStore();
+    const modelMsg = store.messages.find(
+      (m): m is typeof m & { role: 'model' } =>
+        m.role === 'model' && m.content.includes('The answer is 4.')
+    );
+    expect(modelMsg).toBeTruthy();
+    const thinking = (modelMsg as any)?.thinking;
+    expect(thinking).toBeTruthy();
+    expect(thinking).toContain('Thinking step one.');
+  }, 120000);
+
   it('/chat new starts a fresh conversation', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })

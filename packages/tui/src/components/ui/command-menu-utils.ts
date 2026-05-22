@@ -1,4 +1,4 @@
-import type { SlashCommand } from '../../stores/app-store';
+import type { AvailableCommand } from '../../types/commands';
 
 export interface AtMenuItem {
   label: string;
@@ -7,9 +7,9 @@ export interface AtMenuItem {
 }
 
 export function filterPromptsByQuery(
-  slashCommands: SlashCommand[],
+  slashCommands: readonly AvailableCommand[],
   atQuery: string
-): SlashCommand[] {
+): AvailableCommand[] {
   if (!atQuery) return [];
   const lower = atQuery.toLowerCase();
   return slashCommands.filter(
@@ -20,7 +20,7 @@ export function filterPromptsByQuery(
 }
 
 export function buildAtMenuItems(
-  filteredPrompts: SlashCommand[],
+  filteredPrompts: readonly AvailableCommand[],
   fileResults: string[]
 ): AtMenuItem[] {
   const promptItems = filteredPrompts.map((cmd) => ({
@@ -36,13 +36,13 @@ export function buildAtMenuItems(
 }
 
 /**
- * Find a prompt SlashCommand by its menu item label.
- * Handles labels with or without leading `/`.
+ * Find a prompt by its menu item label. Handles labels with or without
+ * leading `/`.
  */
 export function findPromptByMenuLabel(
-  slashCommands: SlashCommand[],
+  slashCommands: readonly AvailableCommand[],
   label: string
-): SlashCommand | undefined {
+): AvailableCommand | undefined {
   const name = label.startsWith('/') ? label : `/${label}`;
   return slashCommands.find(
     (c) => c.name === name && c.meta?.type === 'prompt'

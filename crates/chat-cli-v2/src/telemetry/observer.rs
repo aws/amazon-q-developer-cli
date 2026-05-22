@@ -719,6 +719,7 @@ mod tests {
         StreamErrorKind,
     };
     use agent::types::AgentId;
+    use uuid::Uuid;
 
     use super::*;
 
@@ -747,6 +748,7 @@ mod tests {
     fn success_stream_end() -> AgentLoopEventKind {
         AgentLoopEventKind::ResponseStreamEnd {
             result: Ok(Message::new(
+                Uuid::new_v4().to_string(),
                 Role::Assistant,
                 vec![ContentBlock::Text("hello".into())],
                 None,
@@ -949,6 +951,7 @@ mod tests {
             "test-session",
             &make_loop_event(AgentLoopEventKind::ResponseStreamEnd {
                 result: Ok(Message::new(
+                    Uuid::new_v4().to_string(),
                     Role::Assistant,
                     vec![ContentBlock::Text("ok".into())],
                     None,

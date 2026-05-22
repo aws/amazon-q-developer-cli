@@ -2,6 +2,13 @@ import { createAcpClient } from './acp-client';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
 import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
+import {
+  isFileWriteToolName,
+  isWriteOperation,
+  extractToolPath,
+  matchSpecArtifactPath,
+  type SpecArtifactPathMatch,
+} from './utils/spec-artifact-path';
 import type {
   SessionClient,
   ListSessionsResponse,
@@ -9,8 +16,16 @@ import type {
 import type {
   CommandOptionsResponse,
   CommandResult,
+  CommandMeta,
   TuiCommand,
 } from './types/commands';
+import type { KasCommand } from './kas-commands';
+import type {
+  SpecInvokeRequest,
+  SpecInvokeResponse,
+  SpecResolveSessionRequest,
+  SpecResolveSessionResponse,
+} from '@kiro/acp-type-covenant';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -23,16 +38,10 @@ export class Kiro {
     commands: Array<{
       name: string;
       description: string;
-      meta?: Record<string, unknown>;
+      meta?: CommandMeta;
     }>
   ) => void;
-  private extensionMethodsHandler?: (
-    commands: Array<{
-      name: string;
-      description: string;
-      meta?: Record<string, unknown>;
-    }>
-  ) => void;
+  private kasCommandsHandler?: (commands: KasCommand[]) => void;
   private promptsHandler?: (
     prompts: Array<{
       name: string;
@@ -62,8 +71,20 @@ export class Kiro {
   private historyHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
+  private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
+  private artifactFinishHandler?: (match: SpecArtifactPathMatch) => void;
+  /**
+   * Track in-flight write tool calls by id so we can correlate a
+   * `ToolCallFinished` event back to the spec-artifact path that the
+   * `ToolCall` carried. The `ToolCallFinished` payload is indexed only
+   * by id and does not include the original args.
+   */
+  private artifactWriteCallsById: Map<string, SpecArtifactPathMatch> =
+    new Map();
+  private approvalHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private pendingPrompt: Promise<void> | null = null;
+  private _promptActive = false;
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
@@ -78,23 +99,15 @@ export class Kiro {
       commands: Array<{
         name: string;
         description: string;
-        meta?: Record<string, unknown>;
+        meta?: CommandMeta;
       }>
     ) => void
   ): void {
     this.commandsHandler = handler;
   }
 
-  onExtensionMethodsDiscovered(
-    handler: (
-      commands: Array<{
-        name: string;
-        description: string;
-        meta?: Record<string, unknown>;
-      }>
-    ) => void
-  ): void {
-    this.extensionMethodsHandler = handler;
+  onKasCommandsDiscovered(handler: (commands: KasCommand[]) => void): void {
+    this.kasCommandsHandler = handler;
   }
 
   onPromptsUpdate(
@@ -136,6 +149,14 @@ export class Kiro {
     this.initNotificationHandler = handler;
   }
 
+  /**
+   * Register a handler for approval requests that arrive outside of an active
+   * sendMessage() call — e.g. from background sessions spawned via /spawn.
+   */
+  onApprovalRequest(handler: (event: AgentStreamEvent) => void): void {
+    this.approvalHandler = handler;
+  }
+
   onSubagentListUpdate(
     handler: (subagents: any[], pendingStages: any[]) => void
   ): void {
@@ -173,6 +194,47 @@ export class Kiro {
     return (this.sessionClient as any).spawnSession(task, name);
   }
 
+  /**
+   * Resolve (or create) the ACP session the agent uses for a spec feature.
+   *
+   * KAS-only: V1 engines have no spec workflow.  Throws when the active
+   * session client doesn't implement the `_kiro/spec/resolveSession`
+   * extension method.
+   */
+  async resolveSpecSession(
+    request: SpecResolveSessionRequest
+  ): Promise<SpecResolveSessionResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.resolveSpecSession) {
+      throw new Error(
+        'Spec workflow is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.resolveSpecSession(request);
+  }
+
+  /**
+   * Invoke a spec operation (`executeTask`, `runAllTasks`, or
+   * `generateDocument`) on the agent.  See `_kiro/spec/invoke` in
+   * `@kiro/acp-type-covenant`.
+   *
+   * KAS-only: throws when the active session client doesn't implement
+   * the `_kiro/spec/invoke` extension method.
+   */
+  async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.invokeSpec) {
+      throw new Error(
+        'Spec workflow is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.invokeSpec(request);
+  }
+
   async sendMessage(sessionId: string, content: string): Promise<void> {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');
@@ -194,6 +256,34 @@ export class Kiro {
 
   onTurnSummary(handler: (event: AgentStreamEvent) => void): void {
     this.turnSummaryHandler = handler;
+  }
+
+  /**
+   * Register a handler for agent-initiated writes to spec artifact files
+   * under `.kiro/specs/<feature>/{requirements,design,tasks}.md`. Fires
+   * once per `tool_call` notification whose tool name is a write tool
+   * and whose `args.path` matches the spec-artifact path pattern.
+   *
+   * The handler is engine-agnostic but the consuming layer (index.tsx)
+   * is responsible for KAS gating — V1 / V2-Rust never write the
+   * relevant tool calls in a way that should drive this UI, but we
+   * filter on engine at registration time as defence-in-depth.
+   */
+  onArtifactWrite(handler: (match: SpecArtifactPathMatch) => void): void {
+    this.artifactWriteHandler = handler;
+  }
+
+  /**
+   * Register a callback that fires once a tracked spec-artifact write
+   * tool call completes (i.e. when the agent's `ToolCallFinished`
+   * arrives for an id we previously saw write to a spec artifact).
+   *
+   * Use this to re-parse the on-disk artifact when the parser failed
+   * mid-stream — by `ToolCallFinished` the file has been fully flushed
+   * to disk and the second parse is reliable.
+   */
+  onArtifactFinish(handler: (match: SpecArtifactPathMatch) => void): void {
+    this.artifactFinishHandler = handler;
   }
 
   async initialize(
@@ -224,10 +314,10 @@ export class Kiro {
           this.commandsHandler(event.commands);
         }
         if (
-          event.type === AgentEventType.ExtensionMethodsDiscovered &&
-          this.extensionMethodsHandler
+          event.type === AgentEventType.KasCommandsDiscovered &&
+          this.kasCommandsHandler
         ) {
-          this.extensionMethodsHandler(event.commands);
+          this.kasCommandsHandler(event.commands);
         }
         if (
           event.type === AgentEventType.PromptsUpdate &&
@@ -275,6 +365,16 @@ export class Kiro {
         ) {
           this.initNotificationHandler(event);
         }
+        // Forward approval requests from background sessions (e.g. /spawn)
+        // so they surface in the UI even when no sendMessage() is active.
+        // Skip when a prompt is active — the per-message handler already covers it.
+        if (
+          event.type === AgentEventType.ApprovalRequest &&
+          this.approvalHandler &&
+          !this._promptActive
+        ) {
+          this.approvalHandler(event);
+        }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.
         if (event.type === AgentEventType.TurnSummary) {
@@ -285,12 +385,55 @@ export class Kiro {
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||
+          event.type === AgentEventType.Thought ||
           event.type === AgentEventType.ToolCall ||
           event.type === AgentEventType.ToolCallUpdate ||
           event.type === AgentEventType.ToolCallFinished
         ) {
           if (this.historyHandler) {
             this.historyHandler(event);
+          }
+        }
+        // Spec artifact write detection. KAS-gated at registration: in
+        // non-KAS engines no handler is attached so this branch is dead.
+        if (
+          event.type === AgentEventType.ToolCall &&
+          this.artifactWriteHandler
+        ) {
+          if (isFileWriteToolName(event.name) && isWriteOperation(event.args)) {
+            const path = extractToolPath(event.args);
+            if (path) {
+              const match = matchSpecArtifactPath(path, process.cwd());
+              if (match) {
+                // Log only on a successful spec-artifact match. Keeps the
+                // debug stream readable during agent streaming and avoids
+                // serialising args.argKeys for every unrelated ToolCall.
+                logger.debug('[kiro] spec-artifact write', {
+                  name: event.name,
+                  sessionId: event.sessionId,
+                  path,
+                  artifact: match.artifact,
+                  featureName: match.featureName,
+                });
+                // Track the in-flight call so we can re-parse on
+                // ToolCallFinished. Stored even when no finish handler
+                // is registered — the lookup is cheap and harmless.
+                this.artifactWriteCallsById.set(event.id, match);
+                this.artifactWriteHandler(match);
+              }
+            }
+          }
+        }
+        // Re-parse on tool completion so the final on-disk content
+        // becomes the source of truth (the mid-stream parse may have
+        // observed a half-written file with a missing closing fence,
+        // truncated heading, etc.). The store-side action is idempotent
+        // so a duplicate parse on the happy path is harmless.
+        if (event.type === AgentEventType.ToolCallFinished) {
+          const match = this.artifactWriteCallsById.get(event.id);
+          if (match) {
+            this.artifactWriteCallsById.delete(event.id);
+            this.artifactFinishHandler?.(match);
           }
         }
       }
@@ -399,7 +542,10 @@ export class Kiro {
         // before pending notification microtasks have called
         // broadcastStreamEvent.  Deferring the unsubscribe by one macrotask
         // gives those handlers time to deliver their events.
-        setTimeout(() => unsubscribe(), 0);
+        setTimeout(() => {
+          this._promptActive = false;
+          unsubscribe();
+        }, 0);
         fn();
       };
 
@@ -441,7 +587,11 @@ export class Kiro {
         }
       };
 
+      // Subscribe before setting the flag — if an event arrives between these
+      // two lines, double-delivery (both handlers fire) is harmless since the
+      // store's ApprovalRequest handler is idempotent. Lost delivery is not.
       const unsubscribe = this.sessionClient!.onUpdate(updateHandler);
+      this._promptActive = true;
 
       // Start initial-response timeout
       timeoutId = setTimeout(() => {

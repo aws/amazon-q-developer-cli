@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed fs_read reporting success when all images are dropped due to size limit"
+}

@@ -31,7 +31,7 @@ pub fn get_options(ctx: &CommandContext<'_>) -> CommandOptionsResponse {
         .iter()
         .map(|v| {
             let is_current = current.is_some_and(|c| c == v);
-            let display = capitalize(v);
+            let display = format_effort(v);
             CommandOption {
                 value: v.clone(),
                 label: if is_current {
@@ -86,7 +86,10 @@ pub fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResult {
     }
 }
 
-fn capitalize(s: &str) -> String {
+fn format_effort(s: &str) -> String {
+    if s == "xhigh" {
+        return "xHigh".to_string();
+    }
     let mut c = s.chars();
     match c.next() {
         None => String::new(),

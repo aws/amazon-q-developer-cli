@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "TUI: treat unrecognized /input (e.g. pasted file paths like /Makefile) as a message instead of showing 'Unknown command'"
+}

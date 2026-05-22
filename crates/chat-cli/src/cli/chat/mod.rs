@@ -45,6 +45,8 @@ pub mod tool_manager;
 pub mod tools;
 pub mod util;
 pub mod v1_export;
+#[cfg(feature = "voice")]
+pub mod voice;
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -261,6 +263,8 @@ fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crat
 pub enum SessionSourceArg {
     V1,
     V2,
+    #[value(hide = true)]
+    V3,
 }
 
 pub use chat_cli_v2::launch_options::{
@@ -270,15 +274,19 @@ pub use chat_cli_v2::launch_options::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
-    /// Resume the most recent conversation from this directory.
-    #[arg(short, long)]
-    pub resume: bool,
+    /// Resume a conversation. Shows picker in interactive mode; resumes specific session if ID
+    /// given.
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "SESSION_ID")]
+    pub resume: Option<String>,
     /// Resume a specific conversation by session ID.
-    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker"])]
+    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker", "continue_session"])]
     pub resume_id: Option<String>,
     /// Interactively select a conversation to resume from this directory.
-    #[arg(long, conflicts_with = "resume")]
+    #[arg(long, conflicts_with = "resume", hide = true)]
     pub resume_picker: bool,
+    /// Resume the most recent conversation without showing the picker.
+    #[arg(long = "continue", conflicts_with_all = ["resume", "resume_picker"])]
+    pub continue_session: bool,
     /// Context profile to use
     #[arg(long = "agent", alias = "profile")]
     pub agent: Option<String>,
@@ -795,14 +803,17 @@ impl ChatArgs {
             }
         }
 
-        // Handle interactive session selection if --resume-picker flag is used
+        // Handle interactive session selection
         let resume_session_id = if let Some(id) = self.resume_id.take() {
             Some(id)
-        } else if self.resume_picker {
-            // Case 3: Resume with interactive selection
-            match std::env::current_dir() {
-                Ok(cwd) => {
-                    match os.database.list_conversations_by_path(&cwd) {
+        } else if let Some(ref id) = self.resume {
+            if !id.is_empty() {
+                // --resume <ID>: resume specific session by ID
+                Some(id.clone())
+            } else if !self.no_interactive && std::io::stdin().is_terminal() {
+                // --resume (no ID) in interactive terminal: show picker
+                match std::env::current_dir() {
+                    Ok(cwd) => match os.database.list_conversations_by_path(&cwd) {
                         Ok(conversations) if !conversations.is_empty() => {
                             let entries = cli::persist::build_session_entries(conversations);
 
@@ -811,16 +822,35 @@ impl ChatArgs {
                             cli::persist::select_chat_session(&entries, prompt)
                                 .map(|index| entries[index].session_id.clone())
                         },
-                        _ => None, // No sessions or error, start new session
-                    }
-                },
-                Err(_) => None, // Can't get cwd, start new session
+                        _ => None,
+                    },
+                    Err(_) => None,
+                }
+            } else {
+                // --resume (no ID) in non-interactive/piped: resume most recent
+                Some(String::new())
             }
-        } else if self.resume {
-            // Case 2: Resume most recent (empty string signals this to ChatSession::new)
+        } else if self.resume_picker {
+            // Hidden --resume-picker: show picker (backward compat)
+            match std::env::current_dir() {
+                Ok(cwd) => match os.database.list_conversations_by_path(&cwd) {
+                    Ok(conversations) if !conversations.is_empty() => {
+                        let entries = cli::persist::build_session_entries(conversations);
+
+                        let prompt = "Select a chat session to resume:";
+
+                        cli::persist::select_chat_session(&entries, prompt)
+                            .map(|index| entries[index].session_id.clone())
+                    },
+                    _ => None,
+                },
+                Err(_) => None,
+            }
+        } else if self.continue_session {
+            // --continue: resume most recent
             Some(String::new())
         } else {
-            // Case 1: Brand new conversation
+            // Brand new conversation
             None
         };
 
@@ -1078,6 +1108,19 @@ pub struct ChatSession {
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
+    #[cfg(feature = "voice")]
+    pub continuous_voice: bool,
+    /// Voice transcription to pre-fill in the input box (non-auto-submit mode).
+    #[cfg(feature = "voice")]
+    pub pending_voice_text: Option<String>,
+    /// Set true when recording was triggered by PTT (Shift+V / Space-hold) so
+    /// listen_for_speech knows to stop when Space is released.
+    #[cfg(feature = "voice")]
+    pub ptt_voice_mode: bool,
+    /// Text already in the input box when the user re-triggered PTT, so the
+    /// new recording can be appended to it rather than replacing it.
+    #[cfg(feature = "voice")]
+    pub ptt_voice_prior_text: Option<String>,
 }
 
 use trust_scope::{
@@ -1324,6 +1367,14 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
+            #[cfg(feature = "voice")]
+            continuous_voice: false,
+            #[cfg(feature = "voice")]
+            pending_voice_text: None,
+            #[cfg(feature = "voice")]
+            ptt_voice_mode: false,
+            #[cfg(feature = "voice")]
+            ptt_voice_prior_text: None,
         };
 
         // For resumed conversations, refresh MCP data if cache is stale
@@ -1407,8 +1458,11 @@ impl ChatSession {
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
             ChatState::PromptUser { skip_printing_tools } => {
-                // Show turn complete when we're back to prompting and no tools pending
-                if self.tool_uses.is_empty() {
+                // Show turn complete when we're back to prompting and no tools pending.
+                // Skip for slash commands that return PromptUser directly (skip_printing_tools=true)
+                // such as voice recording — they have no AI turn to summarize and the \n from
+                // display_turn_usage_summary would add an extra blank line between recordings.
+                if self.tool_uses.is_empty() && !skip_printing_tools {
                     turn_summary::display_turn_usage_summary(&mut self.stderr, &self.conversation.user_turn_metadata)?;
                 }
 
@@ -1428,7 +1482,20 @@ impl ChatSession {
                     _ => (),
                 };
 
-                self.prompt_user(os, skip_printing_tools).await
+                // Continuous voice mode: auto-start recording instead of text prompt
+                #[cfg(feature = "voice")]
+                let voice_redirect = if self.continuous_voice && self.tool_uses.is_empty() {
+                    Some("/voice".to_string())
+                } else {
+                    None
+                };
+                #[cfg(not(feature = "voice"))]
+                let voice_redirect: Option<String> = None;
+                if let Some(input) = voice_redirect {
+                    Ok(ChatState::HandleInput { input })
+                } else {
+                    self.prompt_user(os, skip_printing_tools).await
+                }
             },
             ChatState::HandleInput { input } => {
                 tokio::select! {
@@ -2018,6 +2085,38 @@ impl Default for ChatState {
 }
 
 impl ChatSession {
+    /// Get voice context hint for transcription accuracy.
+    #[cfg(feature = "voice")]
+    pub fn voice_context_hint(&self) -> Option<String> {
+        let transcript = &self.conversation.transcript;
+        if transcript.is_empty() {
+            return None;
+        }
+        let hint: String = transcript
+            .iter()
+            .rev()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let hint = if hint.len() > 500 {
+            // Find a safe char boundary at or after the 500-byte-from-end mark
+            let start = hint.len() - 500;
+            let safe_start = hint
+                .char_indices()
+                .map(|(i, _)| i)
+                .find(|&i| i >= start)
+                .unwrap_or(hint.len());
+            hint[safe_start..].to_string()
+        } else {
+            hint
+        };
+        Some(hint)
+    }
+
     /// Check and refresh MCP data if stale, including server removal/reload
     /// Returns Some(registry) if MCP is enabled and registry is available, None if disabled
     pub async fn ensure_fresh_mcp_data(
@@ -3191,9 +3290,66 @@ impl ChatSession {
             error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
         }
 
-        let user_input = match self.read_user_input(&prompt, false) {
-            Some(input) => input,
-            None => return Ok(ChatState::Exit),
+        #[cfg(feature = "voice")]
+        let prefill = self.pending_voice_text.take();
+        #[cfg(not(feature = "voice"))]
+        let prefill: Option<String> = None;
+
+        // Drain any buffered terminal events (e.g. the Enter key that stopped
+        // voice recording) before showing the pre-filled editable prompt.
+        #[cfg(feature = "voice")]
+        if prefill.is_some() {
+            while crossterm::event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
+                let _ = crossterm::event::read();
+            }
+        }
+
+        let user_input = match prefill {
+            Some(ref initial) => {
+                #[cfg(feature = "voice")]
+                {
+                    eprint!("\x1B[s");
+                }
+                match self.input_source.read_line_with_initial(Some(&prompt), initial) {
+                    Ok(Some(line)) if !line.trim().is_empty() => line,
+                    Ok(None) => {
+                        // PTT fired or Ctrl+C while editing the pre-filled voice text --
+                        // must not exit: check PTT first, then fall through to normal input.
+                        #[cfg(feature = "voice")]
+                        if self.input_source.take_ptt_triggered() {
+                            self.ptt_voice_mode = true;
+                            // Use the actual buffer content captured by the handler
+                            // (not `initial`, which is the original pre-fill and may
+                            // differ if the user edited or deleted it before re-recording)
+                            let prior = self.input_source.take_ptt_buffer();
+                            let prior = prior.trim().to_string();
+                            if !prior.is_empty() {
+                                self.ptt_voice_prior_text = Some(prior);
+                            }
+                            "/voice".to_string()
+                        } else {
+                            match self.read_user_input(&prompt, false) {
+                                Some(input) => input,
+                                None => return Ok(ChatState::Exit),
+                            }
+                        }
+                        #[cfg(not(feature = "voice"))]
+                        match self.read_user_input(&prompt, false) {
+                            Some(input) => input,
+                            None => return Ok(ChatState::Exit),
+                        }
+                    },
+                    // Empty input or error -- fall through to normal readline
+                    Ok(Some(_)) | Err(_) => match self.read_user_input(&prompt, false) {
+                        Some(input) => input,
+                        None => return Ok(ChatState::Exit),
+                    },
+                }
+            },
+            None => match self.read_user_input(&prompt, false) {
+                Some(input) => input,
+                None => return Ok(ChatState::Exit),
+            },
         };
 
         // Check if there's a pending clipboard paste from Ctrl+V
@@ -3215,9 +3371,18 @@ impl ChatSession {
         // Ensure MCP data is fresh when user submits input (periodic sync check)
         self.ensure_fresh_mcp_data(os).await.ok();
 
-        queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
+
+        // Skip the leading newline for voice commands -- they manage their own terminal
+        // output and the conduit newline would create a blank line between recordings.
+        #[cfg(feature = "voice")]
+        let is_voice_cmd = input_trimmed == "/voice";
+        #[cfg(not(feature = "voice"))]
+        let is_voice_cmd = false;
+        if !is_voice_cmd {
+            queue!(self.stderr, style::Print('\n'))?;
+        }
 
         // handle image path
         if let Some(chat_state) = does_input_reference_file(&input_trimmed) {
@@ -3259,6 +3424,12 @@ impl ChatSession {
                                 // other slash commands.
                                 || matches!(chat_state, ChatState::CompactHistory { .. })
                             {
+                                return Ok(chat_state);
+                            }
+                            // Voice commands return PromptUser -- return early to skip the
+                            // trailing writeln! that would add a blank line between recordings.
+                            #[cfg(feature = "voice")]
+                            if is_voice_cmd {
                                 return Ok(chat_state);
                             }
                         },
@@ -5007,6 +5178,13 @@ impl ChatSession {
                 return Some(pending_prompt);
             }
 
+            // Save cursor so PTT recording can restore this exact position and
+            // cleanly erase the readline line regardless of later newlines.
+            #[cfg(feature = "voice")]
+            {
+                eprint!("\x1B[s");
+            }
+
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
@@ -5015,6 +5193,12 @@ impl ChatSession {
                     return Some(line);
                 },
                 (Ok(None), false) => {
+                    // Check if a PTT (push-to-talk) trigger fired -- space hold or Shift+V
+                    #[cfg(feature = "voice")]
+                    if self.input_source.take_ptt_triggered() {
+                        self.ptt_voice_mode = true;
+                        return Some("/voice".to_string());
+                    }
                     if exit_on_single_ctrl_c {
                         return None;
                     }

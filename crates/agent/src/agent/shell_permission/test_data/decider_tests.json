@@ -146,5 +146,25 @@
     },
     "expected": "Ask",
     "expected_trustable_commands": ["unknown_cmd"]
+  },
+  {
+    "name": "high_danger_excludes_trustable_commands",
+    "commands": ["git commit -m \"$(whoami)\""],
+    "settings": {
+      "allowed_commands": ["git commit.*"]
+    },
+    "detection": { "danger_level": "High", "is_readonly": false },
+    "expected": "Ask",
+    "expected_trustable_commands": []
+  },
+  {
+    "name": "redirect_output_only_forwards_trustable_commands",
+    "commands": ["echo hi > /tmp/test"],
+    "settings": {
+      "allowed_commands": ["echo .*"]
+    },
+    "detection": { "danger_level": "RedirectOutput", "is_readonly": false },
+    "expected": "Ask",
+    "expected_trustable_commands": ["echo"]
   }
 ]

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix shell command execution hanging when spawned process forks a background daemon"
+}

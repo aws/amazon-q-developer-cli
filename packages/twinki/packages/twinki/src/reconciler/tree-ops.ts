@@ -2,6 +2,19 @@ import { NODE_TYPES, CONSTANTS, PROP_NAMES } from '../text/constants.js';
 import type { TwinkiNode, RootContainer } from './types.js';
 
 /**
+ * Invalidates the _hasOverflow cache up the ancestor chain.
+ * Called when tree structure changes (add/remove/move children).
+ */
+function invalidateOverflowCache(node: TwinkiNode | null): void {
+	let p: TwinkiNode | null = node;
+	while (p) {
+		if (p._hasOverflow === undefined) break; // already uncached above
+		p._hasOverflow = undefined;
+		p = p.parent;
+	}
+}
+
+/**
  * Sets the root container reference for a node and all its descendants.
  * 
  * @param node - Node to update
@@ -56,6 +69,7 @@ export function appendChild(parent: TwinkiNode | RootContainer, child: TwinkiNod
 			if (child.yogaNode && oldParent.type !== NODE_TYPES.TWINKI_TEXT) {
 				oldParent.yogaNode?.removeChild(child.yogaNode);
 			}
+			invalidateOverflowCache(oldParent);
 		}
 		child.parent = null;
 	}
@@ -64,6 +78,7 @@ export function appendChild(parent: TwinkiNode | RootContainer, child: TwinkiNod
 	if (PROP_NAMES.TYPE in parent) {
 		child.parent = parent;
 		parent.children.push(child);
+		invalidateOverflowCache(parent);
 		if (child.yogaNode && !isTextParent) {
 			parent.yogaNode!.insertChild(child.yogaNode, parent.yogaNode!.getChildCount());
 		} else if (isTextParent && parent.yogaNode) {
@@ -101,6 +116,7 @@ export function removeChild(parent: TwinkiNode | RootContainer, child: TwinkiNod
 		} else if (isTextParent && (parent as TwinkiNode).yogaNode) {
 			(parent as TwinkiNode).yogaNode!.markDirty();
 		}
+		if (PROP_NAMES.TYPE in parent) invalidateOverflowCache(parent);
 	}
 	child.parent = null;
 	child.rootContainer = undefined;
@@ -138,6 +154,7 @@ export function insertBefore(parent: TwinkiNode | RootContainer, child: TwinkiNo
 	if (idx !== CONSTANTS.SINGLE_UNIT * -1) {
 		child.parent = 'type' in parent ? parent : null;
 		container.children.splice(idx, CONSTANTS.ZERO_INDEX, child);
+		if (PROP_NAMES.TYPE in parent) invalidateOverflowCache(parent);
 		if (child.yogaNode && !isTextParent) {
 			let yogaIdx = CONSTANTS.ZERO_INDEX;
 			for (let i = CONSTANTS.ZERO_INDEX; i < idx; i++) {

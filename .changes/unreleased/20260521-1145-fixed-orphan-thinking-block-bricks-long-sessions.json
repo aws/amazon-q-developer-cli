@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed sessions with thinking models occasionally failing every prompt after a stream interruption — affected sessions now recover automatically"
+}

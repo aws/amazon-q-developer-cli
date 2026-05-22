@@ -42,6 +42,7 @@ const baseState = (
   transientAlertHasAction: false,
   pendingOAuthUrl: null,
   surveyPromptVisible: false,
+  suspendArmed: false,
   ...overrides,
 });
 
@@ -62,6 +63,8 @@ function makeActions(): AppKeypressActions & {
     clearCommandInput: track('clearCommandInput'),
     resetExitSequence: track('resetExitSequence'),
     incrementExitSequence: track('incrementExitSequence'),
+    armSuspend: track('armSuspend'),
+    disarmSuspend: track('disarmSuspend'),
     setMode: track('setMode'),
     enterCrewMonitor: track('enterCrewMonitor'),
     fireTransientAlertAction: track('fireTransientAlertAction'),
@@ -70,6 +73,7 @@ function makeActions(): AppKeypressActions & {
     suspendProcess: track('suspendProcess'),
     shellEscapeWrite: mock(),
     acceptSurveyPrompt: track('acceptSurveyPrompt'),
+    voiceCancel: null,
     _calls: calls,
     _args: args,
   };
@@ -291,7 +295,7 @@ describe('dispatchAppKeypress: quit binding', () => {
 // ---- Hardcoded behaviors (not reconfigurable) ----
 
 describe('dispatchAppKeypress: hardcoded behaviors', () => {
-  it('Ctrl+Z suspends the process', () => {
+  it('first Ctrl+Z arms suspend, does not call suspendProcess', () => {
     const actions = makeActions();
     dispatchAppKeypress(
       'z',
@@ -300,7 +304,33 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       actions,
       DEFAULT_BINDINGS
     );
+    expect(actions._calls.armSuspend).toBe(1);
+    expect(actions._calls.suspendProcess).toBeUndefined();
+  });
+
+  it('second Ctrl+Z calls disarmSuspend then suspendProcess', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'z',
+      blankKey({ ctrl: true }),
+      baseState({ suspendArmed: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.disarmSuspend).toBe(1);
     expect(actions._calls.suspendProcess).toBe(1);
+  });
+
+  it('Ctrl+Z when picker open (pendingApproval) still arms suspend', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'z',
+      blankKey({ ctrl: true }),
+      baseState({ pendingApproval: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.armSuspend).toBe(1);
   });
 
   it('Ctrl+D on empty input starts exit sequence', () => {
@@ -449,5 +479,67 @@ describe('dispatchAppKeypress: exit sequence reset', () => {
       DEFAULT_BINDINGS
     );
     expect(actions._calls.resetExitSequence).toBeUndefined();
+  });
+
+  it('a plain printable key also disarms suspend', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'a',
+      blankKey(),
+      baseState({ suspendArmed: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.disarmSuspend).toBe(1);
+  });
+});
+
+describe('dispatchAppKeypress: suspend confirm cross-disarm', () => {
+  it('Ctrl+D when suspendArmed calls incrementExitSequence (which cross-disarms)', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'd',
+      blankKey({ ctrl: true }),
+      baseState({ suspendArmed: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.incrementExitSequence).toBe(1);
+  });
+
+  it('quit binding when suspendArmed calls incrementExitSequence (which cross-disarms)', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ suspendArmed: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.incrementExitSequence).toBe(1);
+  });
+
+  it('Ctrl+Z in crew-monitor still goes through confirm flow', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'z',
+      blankKey({ ctrl: true }),
+      baseState({ mode: 'crew-monitor' }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.armSuspend).toBe(1);
+  });
+
+  it('Ctrl+Z in session-view still goes through confirm flow', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'z',
+      blankKey({ ctrl: true }),
+      baseState({ mode: 'session-view' }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.armSuspend).toBe(1);
   });
 });

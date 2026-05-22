@@ -1,17 +1,11 @@
 use std::fmt::Display;
-use std::io::SeekFrom;
 
-use fd_lock::RwLock;
 use serde_json::{
     Map,
     Value,
 };
 use tokio::fs::File;
-use tokio::io::{
-    AsyncReadExt,
-    AsyncSeekExt,
-    AsyncWriteExt,
-};
+use tokio::io::AsyncWriteExt;
 
 use super::DatabaseError;
 use crate::os::{
@@ -168,6 +162,8 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
+    ChatModelDefaults,
     #[strum(
         message = "V2 TUI keybinding to cancel streaming response. Syntax: 'esc', 'ctrl+c', 'ctrl+shift+q' (string, default: 'esc')",
         props(scope = "global_only")
@@ -185,6 +181,49 @@ pub enum Setting {
     ChatKeybindingsQuit,
     #[strum(message = "Default agent engine: 'rust' or 'kas' (string)")]
     ChatAgentEngine,
+    #[strum(
+        message = "Enable animated spinners and progress indicators (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAnimations,
+    #[strum(
+        message = "Enable Unicode/braille symbols and decorative art (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAsciiArt,
+    #[strum(message = "Show status indicator icons (boolean)", props(scope = "global_only"))]
+    ChatAllowIcons,
+    #[strum(
+        message = "Whether the braille logo has been shown on first launch (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatHasSeenLogo,
+    #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
+    ChatShowThinking,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice input language (string)")]
+    VoiceLanguage,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whisper model size for voice transcription (string)")]
+    VoiceModelSize,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Silence timeout in seconds for voice input (number, default: 5)")]
+    VoiceSilenceTimeout,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Pause duration in ms to trigger partial transcription (number, default: 500)")]
+    VoicePartialPause,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Maximum voice session time in seconds (number)")]
+    VoiceMaxSessionTime,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice server URL for remote transcription (string)")]
+    VoiceServerUrl,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whether voice welcome box has been shown (bool)")]
+    VoiceSeenWelcome,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Auto-submit voice transcription without review (boolean, default: true)")]
+    VoiceAutoSubmit,
 }
 
 impl Setting {
@@ -196,6 +235,10 @@ impl Setting {
     /// Check if this setting can be safely changed via the session tool.
     /// Uses whitelist approach - new settings are denied by default.
     pub fn is_session_safe(&self) -> bool {
+        #[cfg(feature = "voice")]
+        if matches!(self, Self::VoiceAutoSubmit) {
+            return true;
+        }
         matches!(
             self,
             // Display/UX settings
@@ -304,10 +347,32 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatModelDefaults => "chat.modelDefaults",
             Self::ChatKeybindingsCancelStream => "chat.keybindings.cancelStream",
             Self::ChatKeybindingsCloseMenu => "chat.keybindings.closeMenu",
             Self::ChatKeybindingsQuit => "chat.keybindings.quit",
             Self::ChatAgentEngine => "chat.agentEngine",
+            Self::ChatAllowAnimations => "chat.allowAnimations",
+            Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
+            Self::ChatAllowIcons => "chat.allowIcons",
+            Self::ChatHasSeenLogo => "chat.hasSeenLogo",
+            Self::ChatShowThinking => "chat.showThinking",
+            #[cfg(feature = "voice")]
+            Self::VoiceLanguage => "voice.language",
+            #[cfg(feature = "voice")]
+            Self::VoiceModelSize => "voice.modelSize",
+            #[cfg(feature = "voice")]
+            Self::VoiceSilenceTimeout => "voice.silenceTimeout",
+            #[cfg(feature = "voice")]
+            Self::VoicePartialPause => "voice.partialPause",
+            #[cfg(feature = "voice")]
+            Self::VoiceMaxSessionTime => "voice.maxSessionTime",
+            #[cfg(feature = "voice")]
+            Self::VoiceServerUrl => "voice.serverUrl",
+            #[cfg(feature = "voice")]
+            Self::VoiceSeenWelcome => "voice.seenWelcome",
+            #[cfg(feature = "voice")]
+            Self::VoiceAutoSubmit => "voice.autoSubmit",
         }
     }
 }
@@ -379,10 +444,32 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
             "chat.keybindings.cancelStream" => Ok(Self::ChatKeybindingsCancelStream),
             "chat.keybindings.closeMenu" => Ok(Self::ChatKeybindingsCloseMenu),
             "chat.keybindings.quit" => Ok(Self::ChatKeybindingsQuit),
             "chat.agentEngine" => Ok(Self::ChatAgentEngine),
+            "chat.allowAnimations" => Ok(Self::ChatAllowAnimations),
+            "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
+            "chat.allowIcons" => Ok(Self::ChatAllowIcons),
+            "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
+            "chat.showThinking" => Ok(Self::ChatShowThinking),
+            #[cfg(feature = "voice")]
+            "voice.language" => Ok(Self::VoiceLanguage),
+            #[cfg(feature = "voice")]
+            "voice.modelSize" => Ok(Self::VoiceModelSize),
+            #[cfg(feature = "voice")]
+            "voice.silenceTimeout" => Ok(Self::VoiceSilenceTimeout),
+            #[cfg(feature = "voice")]
+            "voice.partialPause" => Ok(Self::VoicePartialPause),
+            #[cfg(feature = "voice")]
+            "voice.maxSessionTime" => Ok(Self::VoiceMaxSessionTime),
+            #[cfg(feature = "voice")]
+            "voice.serverUrl" => Ok(Self::VoiceServerUrl),
+            #[cfg(feature = "voice")]
+            "voice.seenWelcome" => Ok(Self::VoiceSeenWelcome),
+            #[cfg(feature = "voice")]
+            "voice.autoSubmit" => Ok(Self::VoiceAutoSubmit),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -447,15 +534,18 @@ impl Settings {
 
         Ok(match path.exists() {
             true => {
-                let mut file = RwLock::new(File::open(&path).await?);
-                let mut buf = Vec::new();
-                file.write()?.read_to_end(&mut buf).await?;
+                let buf = tokio::fs::read(&path).await?;
                 serde_json::from_slice(&buf)
                     .map_err(|e| DatabaseError::JsonParseWithPath(format!("failed to parse {}: {e}", path.display())))?
             },
             false => {
-                let mut file = RwLock::new(File::create(path).await?);
-                file.write()?.write_all(b"{}").await?;
+                let mut file_opts = File::options();
+                file_opts.create(true).write(true).truncate(true);
+                #[cfg(unix)]
+                file_opts.mode(0o600);
+                let mut file = file_opts.open(path).await?;
+                file.write_all(b"{}").await?;
+                file.flush().await?;
                 serde_json::Map::new()
             },
         })
@@ -579,25 +669,40 @@ impl Settings {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let mut file_opts = File::options();
-        file_opts.create(true).write(true).truncate(true);
+        let json = serde_json::to_string_pretty(map).unwrap_or_else(|_| "{}".to_string());
 
-        #[cfg(unix)]
-        file_opts.mode(0o600);
-        let mut file = RwLock::new(file_opts.open(&path).await?);
-        let mut lock = file.write()?;
+        // Write to a temp file then atomically rename to avoid partial writes.
+        let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
 
-        match serde_json::to_string_pretty(map) {
-            Ok(json) => lock.write_all(json.as_bytes()).await?,
-            Err(_err) => {
-                lock.seek(SeekFrom::Start(0)).await?;
-                lock.set_len(0).await?;
-                lock.write_all(b"{}").await?;
-            },
+        let result: Result<(), DatabaseError> = async {
+            let mut file_opts = File::options();
+            file_opts.create(true).write(true).truncate(true);
+            #[cfg(unix)]
+            file_opts.mode(0o600);
+
+            let mut file = file_opts.open(&tmp_path).await?;
+            file.write_all(json.as_bytes()).await?;
+            // Flush userspace buffers, then fsync data so the bytes hit the
+            // disk (or NFS server) before the rename. Without sync_data, a
+            // crash between write and rename can leave the renamed file
+            // empty even though rename(2) is atomic at the directory level.
+            file.flush().await?;
+            file.sync_data().await?;
+            drop(file);
+
+            tokio::fs::rename(&tmp_path, path).await?;
+            Ok(())
         }
-        lock.flush().await?;
+        .await;
 
-        Ok(())
+        if result.is_err() {
+            // Best-effort cleanup of the orphaned temp file. Ignore errors
+            // here (e.g. NotFound if open() failed) — we want to surface the
+            // original error, not mask it.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+        }
+
+        result
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {

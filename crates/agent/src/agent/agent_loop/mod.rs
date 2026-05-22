@@ -51,6 +51,7 @@ use types::{
     StreamEvent,
     ToolUseBlock,
 };
+use uuid::Uuid;
 
 use super::tools::BuiltInToolName;
 use crate::agent::AgentId;
@@ -310,7 +311,7 @@ impl AgentLoop {
                 let cancel_token = self.cancel_token.clone();
                 let stream = model.stream(args.messages, args.tool_specs, args.system_prompt, cancel_token);
                 self.curr_stream = Some(stream);
-                self.curr_stream_state = Some(StreamParseState::new(next_user_message));
+                self.curr_stream_state = Some(StreamParseState::new(next_user_message, model.model_id()));
                 Ok(AgentLoopResponse::Success)
             },
 
@@ -468,6 +469,8 @@ struct StreamParseState {
     pending_signature: Option<String>,
     /// Pending redacted content from a ReasoningEvent.
     pending_redacted_content: Option<Vec<u8>>,
+    /// Model ID that generated this response (used to tag thinking blocks).
+    model_id: Option<String>,
     /// Buffered metadata event returned from the response stream
     metadata: Option<MetadataEvent>,
     /// Buffered message start event returned from the response stream
@@ -488,7 +491,7 @@ struct StreamParseState {
 }
 
 impl StreamParseState {
-    pub fn new(user_message: Message) -> Self {
+    pub fn new(user_message: Message, model_id: Option<String>) -> Self {
         Self {
             assistant_text: String::new(),
             parsing_tool_use: None,
@@ -496,6 +499,7 @@ impl StreamParseState {
             thinking_blocks: Vec::new(),
             pending_signature: None,
             pending_redacted_content: None,
+            model_id,
             tool_uses: Vec::new(),
             invalid_tool_uses: Vec::new(),
             user_message,
@@ -632,11 +636,31 @@ impl StreamParseState {
 
                 StreamEvent::ContentBlockStop(_) => {
                     if let Some(thinking_text) = self.parsing_thinking.take() {
-                        self.thinking_blocks.push(types::ThinkingBlock {
-                            text: thinking_text,
-                            signature: self.pending_signature.take(),
-                            redacted_content: self.pending_redacted_content.take().unwrap_or_default(),
-                        });
+                        let signature = self.pending_signature.take();
+                        let redacted_content = self.pending_redacted_content.take().unwrap_or_default();
+                        // Skip orphan thinking blocks: no signature AND no redacted content.
+                        // Bedrock's API rejects history that contains a thinking block missing
+                        // both fields ("messages.N.content.0.thinking.signature: Field required"),
+                        // and once one lands in conversation history every subsequent turn
+                        // replays it and fails — bricking long sessions until /compact, /rewind,
+                        // or /chat new. Orphans can occur when the upstream stream truncates
+                        // mid-thinking-block: the RTS parser synthesizes a ContentBlockStop at
+                        // end-of-stream while in_thinking, but no ReasoningSignature delta ever
+                        // arrived. Drop the thinking text rather than poison history; the
+                        // assistant's spoken text and tool calls are preserved separately.
+                        if signature.is_none() && redacted_content.is_empty() {
+                            warn!(
+                                len = thinking_text.len(),
+                                "dropping orphan thinking block: no signature or redacted content received"
+                            );
+                        } else {
+                            self.thinking_blocks.push(types::ThinkingBlock {
+                                text: thinking_text,
+                                signature,
+                                redacted_content,
+                                model_id: self.model_id.clone(),
+                            });
+                        }
                     } else if let Some((tool_use_id, name, tool_content)) = self.parsing_tool_use.take() {
                         // Defensively clear any stale signature state from protocol violations.
                         self.pending_signature.take();
@@ -767,7 +791,7 @@ impl StreamParseState {
             for tool_use in &self.tool_uses {
                 content.push(ContentBlock::ToolUse(tool_use.clone()));
             }
-            let message = Message::new(Role::Assistant, content, Some(Utc::now()));
+            let message = Message::new(Uuid::new_v4().to_string(), Role::Assistant, content, Some(Utc::now()));
             Ok(message)
         }
     }
@@ -855,7 +879,12 @@ mod tests {
     use crate::agent::agent_loop::types::*;
 
     fn user_message() -> Message {
-        Message::new(Role::User, vec![ContentBlock::Text("test".into())], None)
+        Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("test".into())],
+            None,
+        )
     }
 
     fn message_start() -> StreamResult {
@@ -900,7 +929,7 @@ mod tests {
 
     /// Feed events into state and return the result from ResponseStreamEnd.
     fn run_stream(events: Vec<StreamResult>) -> Result<Message, LoopError> {
-        let mut state = StreamParseState::new(user_message());
+        let mut state = StreamParseState::new(user_message(), None);
         let mut buf = Vec::new();
         for ev in events {
             state.next(Some(ev), &mut buf);
@@ -921,7 +950,7 @@ mod tests {
         Result<Message, LoopError>,
         crate::agent::agent_loop::protocol::StreamMetadata,
     ) {
-        let mut state = StreamParseState::new(user_message());
+        let mut state = StreamParseState::new(user_message(), None);
         let mut buf = Vec::new();
         for ev in events {
             state.next(Some(ev), &mut buf);
@@ -1048,7 +1077,7 @@ mod tests {
 
     #[test]
     fn stream_error_takes_priority_over_invalid_json() {
-        let mut state = StreamParseState::new(user_message());
+        let mut state = StreamParseState::new(user_message(), None);
         let mut buf = Vec::new();
         state.next(Some(message_start()), &mut buf);
         state.next(
@@ -1182,9 +1211,50 @@ mod tests {
         }
     }
 
+    /// Regression test for orphan thinking blocks bricking long sessions.
+    ///
+    /// When the upstream stream ends mid-thinking-block (no signature, no
+    /// redacted content ever delivered), the RTS parser synthesizes a
+    /// ContentBlockStop at end-of-stream while `in_thinking`. Without
+    /// guarding against this, the agent_loop seals an "orphan" ThinkingBlock
+    /// with `signature: None` and empty `redacted_content`. That orphan
+    /// then poisons conversation history — every subsequent turn sends it
+    /// back to Bedrock and gets rejected with
+    /// `messages.N.content.0.thinking.signature: Field required`.
+    ///
+    /// Observed in production: a session was bricked after exactly one
+    /// truncated thinking block landed in its persisted history.
+    #[test]
+    fn orphan_thinking_block_dropped_when_no_signature_or_redacted_content() {
+        let msg = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta("Let me think about this..."),
+            // No reasoning_signature event — simulates upstream truncation.
+            block_stop(),
+            message_stop(),
+        ])
+        .expect("expected Ok");
+
+        let thinking_blocks: Vec<_> = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                ContentBlock::Thinking(tb) => Some(tb),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            thinking_blocks.is_empty(),
+            "orphan thinking block (no signature, no redacted_content) should be dropped \
+             at parse time so it cannot poison conversation history; got: {thinking_blocks:?}"
+        );
+    }
+
     #[test]
     fn thinking_emits_thinking_text_events() {
-        let mut state = StreamParseState::new(user_message());
+        let mut state = StreamParseState::new(user_message(), None);
         let mut buf = Vec::new();
         state.next(Some(message_start()), &mut buf);
         state.next(Some(thinking_start()), &mut buf);
@@ -1205,7 +1275,7 @@ mod tests {
     fn retry_warning_before_message_start_does_not_panic() {
         // RetryWarning can arrive before MessageStart (during HTTP retries).
         // This must not trigger the debug assertion that requires MessageStart first.
-        let mut state = StreamParseState::new(user_message());
+        let mut state = StreamParseState::new(user_message(), None);
         let mut buf = Vec::new();
         let warning = StreamResult::Ok(StreamEvent::RetryWarning(RetryWarningEvent {
             attempt: 2,
@@ -1316,5 +1386,153 @@ mod tests {
             },
             other => panic!("expected ToolUse, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn thinking_block_tagged_with_model_id() {
+        let mut state = StreamParseState::new(user_message(), Some("claude-opus-4.7".to_string()));
+        let mut buf = Vec::new();
+        state.next(Some(message_start()), &mut buf);
+        state.next(Some(thinking_start()), &mut buf);
+        state.next(Some(thinking_delta("reasoning")), &mut buf);
+        state.next(Some(reasoning_signature("sig")), &mut buf);
+        state.next(Some(block_stop()), &mut buf);
+        state.next(Some(text_delta("answer")), &mut buf);
+        state.next(Some(message_stop()), &mut buf);
+        state.next(None, &mut buf);
+
+        let msg = buf
+            .into_iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd")
+            .expect("expected Ok result");
+        let tb = msg
+            .content
+            .iter()
+            .find_map(|c| match c {
+                ContentBlock::Thinking(tb) => Some(tb),
+                _ => None,
+            })
+            .expect("expected ThinkingBlock");
+        assert_eq!(tb.model_id, Some("claude-opus-4.7".to_string()));
+    }
+
+    #[test]
+    fn thinking_block_model_id_none_when_no_model() {
+        let mut state = StreamParseState::new(user_message(), None);
+        let mut buf = Vec::new();
+        state.next(Some(message_start()), &mut buf);
+        state.next(Some(thinking_start()), &mut buf);
+        state.next(Some(thinking_delta("reasoning")), &mut buf);
+        state.next(Some(reasoning_signature("sig")), &mut buf);
+        state.next(Some(block_stop()), &mut buf);
+        state.next(Some(text_delta("answer")), &mut buf);
+        state.next(Some(message_stop()), &mut buf);
+        state.next(None, &mut buf);
+
+        let msg = buf
+            .into_iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd")
+            .expect("expected Ok result");
+        let tb = msg
+            .content
+            .iter()
+            .find_map(|c| match c {
+                ContentBlock::Thinking(tb) => Some(tb),
+                _ => None,
+            })
+            .expect("expected ThinkingBlock");
+        assert_eq!(tb.model_id, None);
+    }
+
+    #[test]
+    fn thinking_block_deserializes_without_model_id_field() {
+        // Simulates loading a session from an old binary that didn't write modelId
+        let json = r#"{"text":"reasoning","signature":"sig123","redactedContent":[]}"#;
+        let tb: types::ThinkingBlock = serde_json::from_str(json).unwrap();
+        assert_eq!(tb.text, "reasoning");
+        assert_eq!(tb.signature, Some("sig123".to_string()));
+        assert_eq!(tb.model_id, None);
+    }
+
+    #[test]
+    fn thinking_block_deserializes_with_model_id_field() {
+        // Simulates loading a session from the new binary
+        let json = r#"{"text":"reasoning","signature":"sig123","redactedContent":[],"modelId":"claude-opus-4.7"}"#;
+        let tb: types::ThinkingBlock = serde_json::from_str(json).unwrap();
+        assert_eq!(tb.model_id, Some("claude-opus-4.7".to_string()));
+    }
+
+    #[test]
+    fn thinking_block_serializes_without_model_id_when_none() {
+        // Old binary ignores unknown fields, so None should not emit modelId
+        let tb = types::ThinkingBlock {
+            text: "reasoning".to_string(),
+            signature: Some("sig".to_string()),
+            redacted_content: vec![],
+            model_id: None,
+        };
+        let json = serde_json::to_string(&tb).unwrap();
+        assert!(!json.contains("modelId"), "None model_id should be omitted: {json}");
+    }
+
+    #[test]
+    fn thinking_block_serializes_with_model_id_when_present() {
+        let tb = types::ThinkingBlock {
+            text: "reasoning".to_string(),
+            signature: Some("sig".to_string()),
+            redacted_content: vec![],
+            model_id: Some("claude-opus-4.7".to_string()),
+        };
+        let json = serde_json::to_string(&tb).unwrap();
+        assert!(
+            json.contains(r#""modelId":"claude-opus-4.7""#),
+            "model_id should be serialized: {json}"
+        );
+    }
+
+    #[test]
+    fn old_binary_session_with_thinking_loads_on_new_binary() {
+        // Old binary wrote ThinkingBlock without modelId. New binary must load it
+        // and treat it as model_id = None (which gets stripped on send — safe default).
+        let old_session_json = r#"{
+            "text": "The user wants to understand async...",
+            "signature": "EogFClsIDRABGAI=",
+            "redactedContent": []
+        }"#;
+        let tb: types::ThinkingBlock = serde_json::from_str(old_session_json).unwrap();
+        assert_eq!(
+            tb.model_id, None,
+            "old session without modelId should deserialize as None"
+        );
+        assert_eq!(tb.text, "The user wants to understand async...");
+        assert_eq!(tb.signature, Some("EogFClsIDRABGAI=".to_string()));
+    }
+
+    #[test]
+    fn new_binary_session_with_model_id_loads_on_old_binary_simulation() {
+        // New binary writes modelId. Old binary (simulated) should ignore unknown fields.
+        // serde_json with deny_unknown_fields would fail, but our struct uses default serde
+        // which ignores unknown fields. Verify round-trip works.
+        let new_session_json = r#"{
+            "text": "reasoning text",
+            "signature": "sig123",
+            "redactedContent": [],
+            "modelId": "claude-opus-4.7",
+            "futureField": "should be ignored"
+        }"#;
+        // This simulates what an old binary would do — it doesn't have modelId in its struct
+        // but serde ignores unknown fields by default
+        let tb: types::ThinkingBlock = serde_json::from_str(new_session_json).unwrap();
+        assert_eq!(tb.text, "reasoning text");
+        // The old binary wouldn't have model_id field, but since we're using the new struct
+        // it picks it up. The key point is: no deserialization error.
     }
 }

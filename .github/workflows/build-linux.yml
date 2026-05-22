@@ -29,6 +29,9 @@ env:
   AWS_REGION: "us-east-1"
   STAGE_NAME: ${{ inputs.environment }}
   CI: 1
+  # Avoid GitHub API rate limits (403) during postinstall scripts
+  # that download from GitHub Releases (e.g. @vscode/ripgrep).
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 permissions:
   id-token: write
@@ -98,6 +101,10 @@ jobs:
       - name: Install Python dependencies
         run: python3 -m pip install -r scripts/requirements.txt
 
+      - name: Install system dependencies (voice requires ALSA on native gnu)
+        if: "!matrix.musl && !matrix.cross_target"
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libclang-dev libssl-dev pkg-config cmake
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -119,6 +126,10 @@ jobs:
       - name: Cache Rust dependencies
         if: inputs.branch_name != 'prod'
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ~/.cargo/bin: rustup-managed binaries are tied to the
+          # runner image and break when GitHub rotates images.
+          cache-bin: "false"
 
       - name: Install cross (for cross-compilation)
         if: matrix.musl || matrix.cross_target
@@ -135,7 +146,28 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: autodocs-embeddings-*
-          merge-multiple: true
+          path: autodocs-artifacts
+
+      - name: Install autodocs embeddings
+        run: |
+          echo "=== Before: committed files ==="
+          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo ""
+          echo "=== Installing from artifacts ==="
+          find autodocs-artifacts -type f | sort
+          cp autodocs-artifacts/autodocs-embeddings-v1/doc-search-index.tar.gz autodocs/meta/doc-search-index.tar.gz
+          cp autodocs-artifacts/autodocs-embeddings-v1/doc-index.json autodocs/meta/doc-index.json
+          cp autodocs-artifacts/autodocs-embeddings-v2/doc-search-index.tar.gz autodocs-v2/meta/doc-search-index.tar.gz
+          cp autodocs-artifacts/autodocs-embeddings-v2/doc-index.json autodocs-v2/meta/doc-index.json
+          echo ""
+          echo "=== After: installed from CI ==="
+          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
+          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
+          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
 
       - uses: ./.github/actions/codeartifact-login
         with:

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from '../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { getAgentColor } from '../../../utils/agentColors.js';
 import { SpinnerIcon } from './SpinnerIcon.js';
 import type { Stage } from './types.js';
@@ -26,6 +27,7 @@ export const StageRow = React.memo(function StageRow({
   depW: number;
 }) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const agentColor = getAgentColor(stage.agentName, getColor);
 
   const statusText = stage.activeStatus ?? '';
@@ -39,8 +41,14 @@ export const StageRow = React.memo(function StageRow({
 
   // Dependency arrow column: "←2,3" or empty
   const depCol = depLabel
-    ? `←${depLabel}`.padEnd(depW + 2)
+    ? `${glyphs.arrowLeft}${depLabel}`.padEnd(depW + 2)
     : ' '.repeat(depW + 2);
+
+  // Loop indicator: "↻ [2/4]" when stage has loop config
+  const loopLabel =
+    stage.hasLoop && stage.loopMaxIterations
+      ? ` ↻ [${stage.loopIteration}/${stage.loopMaxIterations}]`
+      : '';
 
   return (
     <Box
@@ -56,6 +64,7 @@ export const StageRow = React.memo(function StageRow({
       <Box width={nameW} flexShrink={0}>
         <Text bold={isSelected} underline={isSelected} wrap="truncate">
           {getColor('primary')(truncate(stage.name, nameW))}
+          {loopLabel && <Text color="cyan">{loopLabel}</Text>}
         </Text>
       </Box>
       <Box width={agentNameW} flexShrink={0}>

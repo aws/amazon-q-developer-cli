@@ -14,6 +14,7 @@ import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
 import { SubagentToolPanel } from './SubagentToolPanel.js';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
+import { ThinkingDisplay } from '../chat/message/ThinkingDisplay';
 import { TurnUsageSummary } from '../chat/message/TurnUsageSummary';
 import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
@@ -26,6 +27,7 @@ import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
+import { useShowThinking } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 
 interface ConversationTurn {
@@ -90,6 +92,7 @@ const StaticMessage = React.memo(function StaticMessage({
   prevRole?: MessageRole;
   mainAgentName?: string;
 }) {
+  const { showThinking: SHOW_THINKING } = useShowThinking();
   if (message.role === MessageRole.User) {
     return (
       <Message
@@ -119,13 +122,25 @@ const StaticMessage = React.memo(function StaticMessage({
     );
   }
   if (message.role === MessageRole.Model) {
-    if (!message.content) return null;
+    const thinkingText =
+      SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+    // Skip messages whose only content is hidden thinking — otherwise we'd
+    // render an empty wrapping Box and leave a stray blank row in the
+    // scrollback when `chat.showThinking` is off.
+    if (!message.content && !thinkingText) return null;
     const isShell = 'shellOutput' in message && message.shellOutput;
     return (
       <Box
         flexDirection="column"
         marginTop={needsModelSpacing(prevRole) ? 1 : 0}
       >
+        {thinkingText && (
+          <ThinkingDisplay
+            text={thinkingText}
+            isStatic
+            barColor={agentBarColor}
+          />
+        )}
         {isShell ? (
           <ShellOutputMessage
             content={message.content}
@@ -163,6 +178,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
+  const { showThinking: SHOW_THINKING } = useShowThinking();
   const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
 
   // Find the last message that isn't a subagent tool call (those are hidden in rendering)
@@ -179,7 +195,8 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
       (lastVisibleMsg.role === MessageRole.Model &&
         isProcessing &&
         (!!lastVisibleMsg.content ||
-          ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput)))
+          ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput) ||
+          ('thinking' in lastVisibleMsg && !!lastVisibleMsg.thinking)))
     : false;
   const showThinking = isProcessing && !hasActiveContent;
 
@@ -224,9 +241,15 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             </React.Fragment>
           );
         }
+        const thinkingText =
+          SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+        // Skip messages whose only content is hidden thinking — otherwise we'd
+        // render an empty wrapping Box and leave a stray blank row in the
+        // streaming scrollback when `chat.showThinking` is off.
         if (
           (!message.content || message.content === '') &&
-          !('shellOutput' in message && message.shellOutput)
+          !('shellOutput' in message && message.shellOutput) &&
+          !thinkingText
         )
           return null;
 
@@ -273,6 +296,9 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             flexDirection="column"
             marginTop={needsModelSpacing(prevRole) ? 1 : 0}
           >
+            {thinkingText && (
+              <ThinkingDisplay text={thinkingText} barColor={agentBarColor} />
+            )}
             {inner}
           </Box>
         );

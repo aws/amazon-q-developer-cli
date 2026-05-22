@@ -208,3 +208,69 @@ describe('formatKeybinding', () => {
     expect(formatKeybinding(parseKeybinding('ctrl+up')!)).toBe('Ctrl+↑');
   });
 });
+
+describe('matchesKeybinding — special keys', () => {
+  it('matches tab key', () => {
+    const binding = parseKeybinding('tab')!;
+    expect(matchesKeybinding(binding, '\t', { tab: true } as any)).toBe(true);
+  });
+
+  it('matches backspace key', () => {
+    const binding = parseKeybinding('backspace')!;
+    expect(matchesKeybinding(binding, '', { backspace: true } as any)).toBe(
+      true
+    );
+  });
+
+  it('matches delete key', () => {
+    const binding = parseKeybinding('delete')!;
+    expect(matchesKeybinding(binding, '', { delete: true } as any)).toBe(true);
+  });
+
+  it('matches arrow keys', () => {
+    expect(
+      matchesKeybinding(parseKeybinding('up')!, '', { upArrow: true } as any)
+    ).toBe(true);
+    expect(
+      matchesKeybinding(parseKeybinding('down')!, '', {
+        downArrow: true,
+      } as any)
+    ).toBe(true);
+    expect(
+      matchesKeybinding(parseKeybinding('left')!, '', {
+        leftArrow: true,
+      } as any)
+    ).toBe(true);
+    expect(
+      matchesKeybinding(parseKeybinding('right')!, '', {
+        rightArrow: true,
+      } as any)
+    ).toBe(true);
+  });
+
+  it('matches pageup/pagedown', () => {
+    expect(
+      matchesKeybinding(parseKeybinding('pageup')!, '', { pageUp: true } as any)
+    ).toBe(true);
+    expect(
+      matchesKeybinding(parseKeybinding('pagedown')!, '', {
+        pageDown: true,
+      } as any)
+    ).toBe(true);
+  });
+
+  it('matches home/end', () => {
+    expect(
+      matchesKeybinding(parseKeybinding('home')!, '', { home: true } as any)
+    ).toBe(true);
+    expect(
+      matchesKeybinding(parseKeybinding('end')!, '', { end: true } as any)
+    ).toBe(true);
+  });
+
+  it('matches space', () => {
+    expect(matchesKeybinding(parseKeybinding('space')!, ' ', {} as any)).toBe(
+      true
+    );
+  });
+});

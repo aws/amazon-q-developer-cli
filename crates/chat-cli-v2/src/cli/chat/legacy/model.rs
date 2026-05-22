@@ -48,19 +48,6 @@ impl ModelInfo {
         }
     }
 
-    pub fn from_id(model_id: String) -> Self {
-        let context_window_tokens = default_context_window_for_model(&model_id);
-        Self {
-            model_id,
-            description: None,
-            model_name: None,
-            context_window_tokens,
-            rate_multiplier: None,
-            rate_unit: None,
-            additional_fields: None,
-        }
-    }
-
     pub fn display_name(&self) -> &str {
         self.model_name.as_deref().unwrap_or(&self.model_id)
     }
@@ -177,17 +164,5 @@ mod tests {
         assert_eq!(default_context_window_for_model("claude-sonnet-4.5"), 200_000);
         assert_eq!(default_context_window_for_model("auto"), 200_000);
         assert_eq!(default_context_window_for_model("unknown-model"), 200_000);
-    }
-
-    #[test]
-    fn test_from_id_uses_model_specific_context_window() {
-        let sonnet_46 = ModelInfo::from_id("claude-sonnet-4.6".to_string());
-        assert_eq!(sonnet_46.context_window_tokens, 1_000_000);
-
-        let opus_46 = ModelInfo::from_id("claude-opus-4.6".to_string());
-        assert_eq!(opus_46.context_window_tokens, 1_000_000);
-
-        let sonnet_4 = ModelInfo::from_id("claude-sonnet-4".to_string());
-        assert_eq!(sonnet_4.context_window_tokens, 200_000);
     }
 }

@@ -365,4 +365,129 @@ describe('createMessageStreamHandler', () => {
       expect(content.path).toBe('/src');
     });
   });
+
+  describe('Thought events', () => {
+    it('buffers thinking text and flushes with thinking field', async () => {
+      const { handler, getMessages } = setup();
+
+      handler({
+        type: AgentEventType.Thought,
+        id: 't1',
+        content: { type: ContentType.Text, text: 'Let me think...' },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const msgs = getMessages();
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]!.role).toBe(MessageRole.Model);
+      expect(msgs[0]!.content).toBe('');
+      expect((msgs[0] as any).thinking).toBe('Let me think...');
+    });
+
+    it('accumulates thinking across multiple chunks', async () => {
+      const { handler, getMessages } = setup();
+
+      handler({
+        type: AgentEventType.Thought,
+        id: 't1',
+        content: { type: ContentType.Text, text: 'First thought. ' },
+      });
+      handler({
+        type: AgentEventType.Thought,
+        id: 't1',
+        content: { type: ContentType.Text, text: 'Second thought.' },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const msgs = getMessages();
+      expect(msgs).toHaveLength(1);
+      expect((msgs[0] as any).thinking).toBe('First thought. Second thought.');
+    });
+
+    it('coexists with content events on the same message', async () => {
+      const { handler, getMessages } = setup();
+
+      handler({
+        type: AgentEventType.Thought,
+        id: 't1',
+        content: { type: ContentType.Text, text: 'thinking...' },
+      });
+      handler({
+        type: AgentEventType.Content,
+        id: 'c1',
+        content: { type: ContentType.Text, text: 'Here is my answer.' },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const msgs = getMessages();
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]!.role).toBe(MessageRole.Model);
+      expect(msgs[0]!.content).toBe('Here is my answer.');
+      expect((msgs[0] as any).thinking).toBe('thinking...');
+    });
+
+    it('preserves thinking when updating existing model message', async () => {
+      const initial: MessageType[] = [
+        {
+          id: 'm1',
+          role: MessageRole.Model,
+          content: '',
+          thinking: 'prior thought',
+        },
+      ];
+      const { handler, getMessages } = setup(initial);
+
+      handler({
+        type: AgentEventType.Content,
+        id: 'm1',
+        content: { type: ContentType.Text, text: 'response text' },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const msgs = getMessages();
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]!.content).toBe('response text');
+      expect((msgs[0] as any).thinking).toBe('prior thought');
+    });
+
+    it('clears thinking buffer when a ToolCall arrives', async () => {
+      const { handler, getMessages } = setup();
+
+      // Buffer thinking text
+      handler({
+        type: AgentEventType.Thought,
+        id: 't1',
+        content: { type: ContentType.Text, text: 'old thinking' },
+      });
+
+      // ToolCall should flush and clear thinking
+      handler({
+        type: AgentEventType.ToolCall,
+        id: 'tool1',
+        name: 'fs_read',
+        args: { path: '/test.txt' },
+      });
+
+      // Now send new content for the post-tool model message
+      handler({
+        type: AgentEventType.Content,
+        id: 'c1',
+        content: { type: ContentType.Text, text: 'after tool' },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const msgs = getMessages();
+      const modelMsgs = msgs.filter((m) => m.role === MessageRole.Model);
+      // The post-tool model message should NOT carry the old thinking
+      const lastModel = modelMsgs[modelMsgs.length - 1];
+      expect(lastModel).toBeDefined();
+      expect(lastModel!.content).toBe('after tool');
+      expect((lastModel as any).thinking).toBeUndefined();
+    });
+  });
 });

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Detect truecolor-capable terminals (Kitty, Ghostty, WezTerm, iTerm2, Alacritty) by identity when COLORTERM is unset, fixing poor diff contrast in tmux/SSH sessions"
+}

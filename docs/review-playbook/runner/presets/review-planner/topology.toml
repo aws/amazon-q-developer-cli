@@ -1,0 +1,13 @@
+name = "review-planner"
+completion = "task.complete"
+
+# Single role, one-shot. The planner reads the directive, the playbook,
+# and the relevant slice of the repo, then emits one work-item file per
+# conceptual unit of work plus a manifest.
+[[role]]
+id = "planner"
+emits = ["task.complete"]
+prompt_file = "roles/planner.md"
+
+[handoff]
+"loop.start" = ["planner"]

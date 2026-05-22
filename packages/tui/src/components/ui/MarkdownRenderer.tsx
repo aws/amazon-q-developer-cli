@@ -12,6 +12,7 @@ import { Text } from './text/Text.js';
 import type { TextProps } from '../../renderer.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
 import chalk from 'chalk';
 import { visibleWidth } from '../../utils/text-width.js';
@@ -52,6 +53,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   const wrapMode: TextProps['wrap'] = useOverflow ? 'overflow' : 'wrap';
   const highlightCode = useSyntaxHighlight();
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const { width: termWidth } = useTerminalSize();
   const linkColor = getColor('link');
   const inlineCodeColor = getColor('highlight');
@@ -242,7 +244,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           return (
             <Box key={i} marginTop={mt}>
               <Text>
-                {chalk.dim('│ ')}
+                {chalk.dim(`${glyphs.lineVertical} `)}
                 {chalk.italic(renderInlineText(block.segment.text))}
               </Text>
             </Box>
@@ -302,19 +304,39 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
                     visibleWidth
                   );
                 })
-                .join(` ${chalk.dim('│')} `);
-              lines.push(`${chalk.dim('│')} ${line} ${chalk.dim('│')}`);
+                .join(` ${chalk.dim(glyphs.lineVertical)} `);
+              lines.push(
+                `${chalk.dim(glyphs.lineVertical)} ${line} ${chalk.dim(glyphs.lineVertical)}`
+              );
             }
             return lines;
           };
 
           const headerLines = renderWrappedRow(headers, true);
           const rowSeparator =
-            rows.length > 0 ? chalk.dim(border('├', '┼', '┤', '─')) : undefined;
+            rows.length > 0
+              ? chalk.dim(
+                  border(
+                    glyphs.teeRight,
+                    glyphs.tableCross,
+                    glyphs.teeLeft,
+                    glyphs.lineHorizontal
+                  )
+                )
+              : undefined;
 
           return (
             <Box key={i} flexDirection="column" marginTop={mt}>
-              <Text>{chalk.dim(border('┌', '┬', '┐', '─'))}</Text>
+              <Text>
+                {chalk.dim(
+                  border(
+                    glyphs.cornerTopLeft,
+                    glyphs.teeTop,
+                    glyphs.cornerTopRight,
+                    glyphs.lineHorizontal
+                  )
+                )}
+              </Text>
               {headerLines.map((line, li) => (
                 <Text key={`h${li}`}>{line}</Text>
               ))}
@@ -328,12 +350,30 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
                       <Text key={`${ri}-${li}`}>{line}</Text>
                     ))}
                     {!isLast && (
-                      <Text>{chalk.dim(border('├', '┼', '┤', '─'))}</Text>
+                      <Text>
+                        {chalk.dim(
+                          border(
+                            glyphs.teeRight,
+                            glyphs.tableCross,
+                            glyphs.teeLeft,
+                            glyphs.lineHorizontal
+                          )
+                        )}
+                      </Text>
                     )}
                   </React.Fragment>
                 );
               })}
-              <Text>{chalk.dim(border('└', '┴', '┘', '─'))}</Text>
+              <Text>
+                {chalk.dim(
+                  border(
+                    glyphs.cornerBottomLeft,
+                    glyphs.teeBottom,
+                    glyphs.cornerBottomRight,
+                    glyphs.lineHorizontal
+                  )
+                )}
+              </Text>
             </Box>
           );
         }

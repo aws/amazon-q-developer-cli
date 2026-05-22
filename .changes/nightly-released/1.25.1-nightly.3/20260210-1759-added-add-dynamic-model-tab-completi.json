@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Add dynamic model tab completion with fuzzy matching and ghost text hints for /model command"
+}

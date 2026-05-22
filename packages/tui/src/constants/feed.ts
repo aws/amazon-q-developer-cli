@@ -1,8 +1,10 @@
 /**
- * Extensible feed system for the TUI. Reads release data from the Rust-side
- * feed.json (passed via KIRO_FEED_JSON env var) and converts the latest
- * releases into announcement entries for the greeting screen.
+ * Extensible feed system for the TUI. Reads release data from feed.json
+ * (via KIRO_FEED_FILE path) and converts the latest releases into
+ * announcement entries for the greeting screen.
  */
+
+import { readFileSync } from 'fs';
 
 import { logger } from '../utils/logger.js';
 
@@ -82,11 +84,27 @@ function releaseToContent(entry: RustFeedRelease): string {
 }
 
 /**
- * Parse KIRO_FEED_JSON and return non-hidden releases with changes.
- * Returns [] on missing/invalid env. Shared by announcement + /changelog.
+ * Read raw feed JSON from file path (KIRO_FEED_FILE).
+ * In production the Rust launcher writes feed.json to the data directory.
+ * In dev/test mode, Knight Rider sets KIRO_FEED_FILE to the repo's feed.json.
+ */
+function readFeedRaw(): string | undefined {
+  const filePath = process.env.KIRO_FEED_FILE;
+  if (!filePath) return undefined;
+  try {
+    return readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    logger.warn('[feed] Failed to read KIRO_FEED_FILE:', err);
+    return undefined;
+  }
+}
+
+/**
+ * Parse feed data and return non-hidden releases with changes.
+ * Returns [] on missing/invalid data. Shared by announcement + /changelog.
  */
 function parseReleases(): RustFeedRelease[] {
-  const raw = process.env.KIRO_FEED_JSON;
+  const raw = readFeedRaw();
   if (!raw) return [];
 
   try {
@@ -95,7 +113,7 @@ function parseReleases(): RustFeedRelease[] {
       (e) => e.type === 'release' && !e.hidden && (e.changes?.length ?? 0) > 0
     );
   } catch (err) {
-    logger.warn('[feed] Failed to parse KIRO_FEED_JSON:', err);
+    logger.warn('[feed] Failed to parse feed data:', err);
     return [];
   }
 }

@@ -1,17 +1,11 @@
 use std::fmt::Display;
-use std::io::SeekFrom;
 
-use fd_lock::RwLock;
 use serde_json::{
     Map,
     Value,
 };
 use tokio::fs::File;
-use tokio::io::{
-    AsyncReadExt,
-    AsyncSeekExt,
-    AsyncWriteExt,
-};
+use tokio::io::AsyncWriteExt;
 
 use super::DatabaseError;
 use crate::util::paths::GlobalPaths;
@@ -142,6 +136,27 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     DisableAutoupdates,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice server URL for remote transcription (string)")]
+    VoiceServerUrl,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Whisper model size for voice transcription (string)")]
+    VoiceModelSize,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Voice language for transcription (string)")]
+    VoiceLanguage,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Silence timeout in seconds for voice recording (number, default: 5)")]
+    VoiceSilenceTimeout,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Pause duration in ms to trigger partial transcription (number, default: 500)")]
+    VoicePartialPause,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Maximum session time in seconds for voice recording (number)")]
+    VoiceMaxSessionTime,
+    #[cfg(feature = "voice")]
+    #[strum(message = "Auto-submit voice transcription without review (boolean, default: true)")]
+    VoiceAutoSubmit,
     #[strum(message = "Always show full tool output inline without truncation (boolean)")]
     ChatAutoExpandToolOutput,
     #[strum(
@@ -161,6 +176,27 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
+    ChatModelDefaults,
+    #[strum(
+        message = "Enable animated spinners and progress indicators (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAnimations,
+    #[strum(
+        message = "Enable Unicode/braille symbols and decorative art (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatAllowAsciiArt,
+    #[strum(message = "Show status indicator icons (boolean)", props(scope = "global_only"))]
+    ChatAllowIcons,
+    #[strum(
+        message = "Whether the braille logo has been shown on first launch (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatHasSeenLogo,
+    #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
+    ChatShowThinking,
 }
 
 impl Setting {
@@ -231,6 +267,26 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatModelDefaults => "chat.modelDefaults",
+            Self::ChatAllowAnimations => "chat.allowAnimations",
+            Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
+            Self::ChatAllowIcons => "chat.allowIcons",
+            Self::ChatHasSeenLogo => "chat.hasSeenLogo",
+            Self::ChatShowThinking => "chat.showThinking",
+            #[cfg(feature = "voice")]
+            Self::VoiceServerUrl => "voice.serverUrl",
+            #[cfg(feature = "voice")]
+            Self::VoiceModelSize => "voice.modelSize",
+            #[cfg(feature = "voice")]
+            Self::VoiceLanguage => "voice.language",
+            #[cfg(feature = "voice")]
+            Self::VoiceSilenceTimeout => "voice.silenceTimeout",
+            #[cfg(feature = "voice")]
+            Self::VoicePartialPause => "voice.partialPause",
+            #[cfg(feature = "voice")]
+            Self::VoiceMaxSessionTime => "voice.maxSessionTime",
+            #[cfg(feature = "voice")]
+            Self::VoiceAutoSubmit => "voice.autoSubmit",
         }
     }
 }
@@ -302,6 +358,26 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
+            "chat.allowAnimations" => Ok(Self::ChatAllowAnimations),
+            "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
+            "chat.allowIcons" => Ok(Self::ChatAllowIcons),
+            "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
+            "chat.showThinking" => Ok(Self::ChatShowThinking),
+            #[cfg(feature = "voice")]
+            "voice.serverUrl" => Ok(Self::VoiceServerUrl),
+            #[cfg(feature = "voice")]
+            "voice.modelSize" => Ok(Self::VoiceModelSize),
+            #[cfg(feature = "voice")]
+            "voice.language" => Ok(Self::VoiceLanguage),
+            #[cfg(feature = "voice")]
+            "voice.silenceTimeout" => Ok(Self::VoiceSilenceTimeout),
+            #[cfg(feature = "voice")]
+            "voice.partialPause" => Ok(Self::VoicePartialPause),
+            #[cfg(feature = "voice")]
+            "voice.maxSessionTime" => Ok(Self::VoiceMaxSessionTime),
+            #[cfg(feature = "voice")]
+            "voice.autoSubmit" => Ok(Self::VoiceAutoSubmit),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -377,15 +453,18 @@ impl Settings {
 
         Ok(match path.exists() {
             true => {
-                let mut file = RwLock::new(File::open(&path).await?);
-                let mut buf = Vec::new();
-                file.write()?.read_to_end(&mut buf).await?;
+                let buf = tokio::fs::read(&path).await?;
                 serde_json::from_slice(&buf)
                     .map_err(|e| DatabaseError::JsonParseWithPath(format!("failed to parse {}: {e}", path.display())))?
             },
             false => {
-                let mut file = RwLock::new(File::create(path).await?);
-                file.write()?.write_all(b"{}").await?;
+                let mut file_opts = File::options();
+                file_opts.create(true).write(true).truncate(true);
+                #[cfg(unix)]
+                file_opts.mode(0o600);
+                let mut file = file_opts.open(path).await?;
+                file.write_all(b"{}").await?;
+                file.flush().await?;
                 serde_json::Map::new()
             },
         })
@@ -489,16 +568,19 @@ impl Settings {
         self.session.clear();
     }
 
-    /// Atomically update a single key in the global settings file.
+    /// Update a single key in the global settings file.
     ///
-    /// This performs a locked read → merge → write cycle directly on disk,
-    /// independent of any in-memory `Settings` snapshot.  It is designed to
+    /// This performs a read → merge → atomic-write cycle directly on disk,
+    /// independent of any in-memory `Settings` snapshot. It is designed to
     /// be called from the ACP handler where the `Os` (and therefore the
     /// `Settings` struct) is a clone and mutations to the in-memory map
     /// would not propagate back to the original.
     ///
-    /// The file-level `fd_lock` ensures this is safe even when the TUI
-    /// process and the Rust backend write concurrently.
+    /// Concurrency: the write itself is atomic (temp file + rename), so
+    /// readers always observe a complete file. The read-modify-write is
+    /// not atomic across writers — if another writer (another process, or
+    /// another path in this process) renames between this function's read
+    /// and rename, that update is lost. Last writer wins.
     pub async fn update_global_setting(key: Setting, value: Value) -> Result<(), DatabaseError> {
         let path = GlobalPaths::settings_path()?;
 
@@ -508,40 +590,23 @@ impl Settings {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        // Open (or create) the file with read+write and acquire an exclusive lock.
-        let mut file_opts = File::options();
-        file_opts.create(true).read(true).write(true);
-
-        #[cfg(unix)]
-        file_opts.mode(0o600);
-
-        let mut file = RwLock::new(file_opts.open(&path).await?);
-        let mut lock = file.write()?;
-
-        // Read current contents under the lock.
-        let mut buf = Vec::new();
-        lock.read_to_end(&mut buf).await?;
-
-        let mut map: Map<String, Value> = if buf.is_empty() {
-            Map::new()
+        // Read current contents.
+        let mut map: Map<String, Value> = if path.exists() {
+            let buf = tokio::fs::read(&path).await?;
+            if buf.is_empty() {
+                Map::new()
+            } else {
+                serde_json::from_slice(&buf).unwrap_or_default()
+            }
         } else {
-            serde_json::from_slice(&buf).unwrap_or_default()
+            Map::new()
         };
 
         // Merge the new value.
         map.insert(key.to_string(), value);
 
-        // Truncate and rewrite.
-        lock.seek(SeekFrom::Start(0)).await?;
-        lock.set_len(0).await?;
-
-        match serde_json::to_string_pretty(&map) {
-            Ok(json) => lock.write_all(json.as_bytes()).await?,
-            Err(_err) => {
-                lock.write_all(b"{}").await?;
-            },
-        }
-        lock.flush().await?;
+        // Atomic write via temp file + rename.
+        Self::save_settings_file(&path, &map).await?;
 
         Ok(())
     }
@@ -573,21 +638,35 @@ impl Settings {
         // original if the process is interrupted mid-write.
         let tmp_path = path.with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
 
-        let mut file_opts = File::options();
-        file_opts.create(true).write(true).truncate(true);
-        #[cfg(unix)]
-        file_opts.mode(0o600);
+        let result: Result<(), DatabaseError> = async {
+            let mut file_opts = File::options();
+            file_opts.create(true).write(true).truncate(true);
+            #[cfg(unix)]
+            file_opts.mode(0o600);
 
-        let mut file = RwLock::new(file_opts.open(&tmp_path).await?);
-        let mut lock = file.write()?;
-        lock.write_all(json.as_bytes()).await?;
-        lock.flush().await?;
-        drop(lock);
-        drop(file);
+            let mut file = file_opts.open(&tmp_path).await?;
+            file.write_all(json.as_bytes()).await?;
+            // Flush userspace buffers, then fsync data so the bytes hit the
+            // disk (or NFS server) before the rename. Without sync_data, a
+            // crash between write and rename can leave the renamed file
+            // empty even though rename(2) is atomic at the directory level.
+            file.flush().await?;
+            file.sync_data().await?;
+            drop(file);
 
-        tokio::fs::rename(&tmp_path, path).await?;
+            tokio::fs::rename(&tmp_path, path).await?;
+            Ok(())
+        }
+        .await;
 
-        Ok(())
+        if result.is_err() {
+            // Best-effort cleanup of the orphaned temp file. Ignore errors
+            // here (e.g. NotFound if open() failed) — we want to surface the
+            // original error, not mask it.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+        }
+
+        result
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {

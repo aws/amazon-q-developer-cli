@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { Text } from '../text/Text.js';
 
 export enum IconType {
@@ -13,18 +15,6 @@ export enum IconType {
   PROGRESS_75_FILLED = 'progress-75-filled',
 }
 
-const ICON_MAP: Record<IconType, string> = {
-  [IconType.DOT]: '●',
-  [IconType.SMALL_DOT]: '·',
-  [IconType.CHEVRON_RIGHT]: '❯',
-  [IconType.ARROW_DOWN]: '↓',
-  [IconType.ARROW_RIGHT]: '▸',
-  [IconType.PROGRESS_25]: '◷',
-  [IconType.PROGRESS_25_FILLED]: '◔',
-  [IconType.PROGRESS_50_FILLED]: '◑',
-  [IconType.PROGRESS_75_FILLED]: '◕',
-};
-
 export interface IconProps {
   type: IconType;
   color?: any; // chalk function, defaults to primary
@@ -32,7 +22,27 @@ export interface IconProps {
 
 export const Icon = ({ type, color }: IconProps) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const colorFn = color || getColor('primary');
+
+  const ICON_MAP = useMemo<Record<IconType, string>>(
+    () => ({
+      [IconType.DOT]: glyphs.dotFilled,
+      [IconType.SMALL_DOT]: glyphs.smallDot,
+      [IconType.CHEVRON_RIGHT]: glyphs.chevron,
+      [IconType.ARROW_DOWN]: glyphs.arrowDown,
+      [IconType.ARROW_RIGHT]: glyphs.arrowRight,
+      [IconType.PROGRESS_25]: glyphs.progress0,
+      [IconType.PROGRESS_25_FILLED]: glyphs.progress25,
+      [IconType.PROGRESS_50_FILLED]: glyphs.progress50,
+      [IconType.PROGRESS_75_FILLED]: glyphs.progress75,
+    }),
+    [glyphs]
+  );
+
+  if (!allowIcons) return <Text> </Text>;
+
   const icon = ICON_MAP[type];
   return <Text>{colorFn(icon)}</Text>;
 };

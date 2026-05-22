@@ -26,6 +26,8 @@ ignore = [
   "RUSTSEC-2025-0134",
   # bincode v1 is unmaintained, transitive dep via hnsw_rs and syntect
   "RUSTSEC-2025-0141",
+  # rustls-webpki CRL parsing panic, pinned by AWS SDK's rustls 0.21
+  "RUSTSEC-2026-0104",
 ]
 
 [licenses]
@@ -52,7 +54,14 @@ allow = [
   "Zlib",
   "CDLA-Permissive-2.0",
   "bzip2-1.0.6",
+  "Unlicense",
 ]
+
+[[licenses.clarify]]
+name = "voice_activity_detector"
+version = "*"
+expression = "MIT"
+license-files = [{ path = "LICENSE", hash = 0xe2d6b9a1 }]
 
 [[licenses.clarify]]
 name = "ring"
@@ -73,6 +82,8 @@ unused = "deny"
 
 [[bans.deny]]
 name = "openssl"
+# openssl is only permitted as a transitive build dependency via ort-sys -> ureq -> native-tls
+wrappers = ["native-tls"]
 
 [[bans.deny]]
 name = "git2"

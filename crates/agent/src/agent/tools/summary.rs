@@ -25,6 +25,11 @@ pub struct Summary {
     pub context_summary: Option<String>,
     /// The final result or outcome of the completed task
     pub task_result: String,
+    /// Result disposition: "terminal" (default) means the task is done;
+    /// "changes_needed" signals that the target stage should re-run with this feedback.
+    /// Only meaningful in crew pipelines with loop_to configured.
+    #[serde(default)]
+    pub result_type: Option<String>,
 }
 
 const SUMMARY_TOOL_DESCRIPTION: &str = r#"
@@ -37,6 +42,7 @@ HOW TO USE:
 - Provide the description of the task given
 - Optionally provide any context summary that compliments the consumer of the results. This is to aid subsequent actions to be performed with the result being sent
 - Provide the result of the task performed
+- If you are in a crew pipeline with a loop configured and you want the target stage to re-run with your feedback, set resultType to "changes_needed". Otherwise leave it unset or set to "terminal".
 "#;
 
 const SUMMARY_TOOL_SCHEMA: &str = r#"
@@ -54,6 +60,11 @@ const SUMMARY_TOOL_SCHEMA: &str = r#"
         "taskResult": {
             "type": "string",
             "description": "The final result or outcome of the completed task"
+        },
+        "resultType": {
+            "type": "string",
+            "enum": ["terminal", "changes_needed"],
+            "description": "Result disposition. Use 'changes_needed' in crew pipelines to signal the target stage should re-run with your feedback. Defaults to 'terminal'."
         }
     },
     "required": [
@@ -107,6 +118,7 @@ mod tests {
             task_description: "test task".to_string(),
             context_summary: Some("test context".to_string()),
             task_result: "test result".to_string(),
+            result_type: None,
         };
         let result = summary.execute(tx).await;
         assert!(result.is_ok());
@@ -117,6 +129,7 @@ mod tests {
             task_description,
             context_summary,
             task_result,
+            ..
         }) = event
         {
             assert_eq!(task_description, "test task");

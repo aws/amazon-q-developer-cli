@@ -552,6 +552,39 @@ impl TelemetryThread {
 
         Ok(self.tx.send(telemetry_event)?)
     }
+
+    #[cfg(feature = "voice")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_voice_input(
+        &self,
+        conversation_id: Option<String>,
+        result: TelemetryResult,
+        reason: Option<String>,
+        reason_desc: Option<String>,
+        backend: String,
+        input_method: String,
+        recording_duration_ms: Option<i64>,
+        transcription_duration_ms: Option<i64>,
+        text_length: Option<i64>,
+        model_size: Option<String>,
+        auto_submit: Option<bool>,
+    ) -> Result<(), TelemetryError> {
+        let telemetry_event = Event::new(EventType::VoiceInput {
+            conversation_id,
+            result,
+            reason,
+            reason_desc,
+            backend,
+            input_method,
+            recording_duration_ms,
+            transcription_duration_ms,
+            text_length,
+            model_size,
+            auto_submit,
+        });
+
+        Ok(self.tx.send(telemetry_event)?)
+    }
 }
 
 pub(crate) async fn set_event_metadata(database: &Database, event: &mut Event) {

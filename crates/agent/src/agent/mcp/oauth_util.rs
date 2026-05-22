@@ -68,6 +68,9 @@ pub struct OAuthConfig {
     /// If not specified, a random available port will be assigned by the OS
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_uri: Option<String>,
+    /// Optional OAuth scopes to request from the authorization server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth_scopes: Option<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -139,6 +142,8 @@ pub struct OAuthMeta {
 pub struct Registration {
     pub client_id: String,
     pub client_secret: Option<String>,
+    /// Defaults to empty so older or partially-written cache files still parse.
+    #[serde(default)]
     pub scopes: Vec<String>,
     pub redirect_uri: String,
 }
@@ -512,11 +517,33 @@ async fn get_auth_manager(
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
 
-    match (cred_as_bytes, reg_as_bytes) {
-        (Ok(cred_as_bytes), Ok(reg_as_bytes)) => {
-            let token = serde_json::from_slice::<OAuthTokenResponse>(&cred_as_bytes)?;
-            let reg = serde_json::from_slice::<Registration>(&reg_as_bytes)?;
+    // If cached credentials exist and parse, use them. Otherwise fall through
+    // to a fresh OAuth flow (and remove the bad files so we don't loop on them).
+    let cached_path = if let (Ok(cred_bytes), Ok(reg_bytes)) = (cred_as_bytes, reg_as_bytes) {
+        match (
+            serde_json::from_slice::<OAuthTokenResponse>(&cred_bytes),
+            serde_json::from_slice::<Registration>(&reg_bytes),
+        ) {
+            (Ok(token), Ok(reg)) => Some((token, reg)),
+            (cred_res, reg_res) => {
+                tracing::warn!(
+                    server_name = %server_name,
+                    cred_err = ?cred_res.err(),
+                    reg_err = ?reg_res.err(),
+                    "## mcp: cached OAuth credentials failed to parse, removing and re-running OAuth flow"
+                );
+                // Remove malformed caches so we don't loop on them.
+                let _ = tokio::fs::remove_file(&cred_full_path).await;
+                let _ = tokio::fs::remove_file(&reg_full_path).await;
+                None
+            },
+        }
+    } else {
+        None
+    };
 
+    match cached_path {
+        Some((token, reg)) => {
             oauth_state.set_credentials(&reg.client_id, token).await?;
 
             debug!("## mcp: credentials set with cache");
@@ -525,7 +552,7 @@ async fn get_auth_manager(
                 .into_authorization_manager()
                 .ok_or(OauthUtilError::MissingAuthorizationManager)?)
         },
-        _ => {
+        None => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
             let (am, redirect_uri) =
@@ -795,4 +822,23 @@ async fn make_svc(
     });
 
     Ok((actual_addr, dg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test: cached registration files lacking `scopes` must still
+    /// parse so a single bad cache doesn't permanently block re-auth.
+    #[test]
+    fn test_registration_tolerates_missing_scopes_field() {
+        let cached_json =
+            b"{\n  \"client_id\": \"abc-123\",\n  \"redirect_uri\": \"http://localhost:8080/callback\"\n}";
+
+        let reg: Registration = serde_json::from_slice(cached_json)
+            .expect("Registration should tolerate missing scopes field by defaulting to empty Vec");
+        assert_eq!(reg.client_id, "abc-123");
+        assert_eq!(reg.redirect_uri, "http://localhost:8080/callback");
+        assert!(reg.scopes.is_empty());
+    }
 }

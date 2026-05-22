@@ -51,3 +51,9 @@ export function readBoolSetting(key: string, fallback = false): boolean {
   const val = readCliSettings()[key];
   return typeof val === 'boolean' ? val : fallback;
 }
+
+/** Read a string setting with a fallback when the key is missing or malformed. */
+export function readStringSetting(key: string, fallback: string): string {
+  const val = readCliSettings()[key];
+  return typeof val === 'string' ? val : fallback;
+}

@@ -45,8 +45,30 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
 /// otherwise returns the appropriate chalk color level:
 /// - User's explicit `FORCE_COLOR` value if already set
 /// - `"3"` (truecolor) when `COLORTERM` is `truecolor` or `24bit`
+/// - `"3"` (truecolor) when a known truecolor-capable terminal is detected by identity
 /// - `"2"` (256-color) as fallback
-fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: Option<&str>) -> Option<String> {
+///
+/// Terminal identity detection covers cases where `COLORTERM` is stripped (e.g. tmux, SSH)
+/// but the terminal still supports truecolor.
+fn is_truecolor_terminal() -> bool {
+    std::env::var("KITTY_WINDOW_ID").is_ok()
+        || std::env::var("ALACRITTY_LOG").is_ok()
+        || matches!(
+            std::env::var("TERM_PROGRAM").ok().as_deref(),
+            Some("kitty" | "ghostty" | "WezTerm" | "iTerm.app")
+        )
+        || matches!(
+            std::env::var("TERM").ok().as_deref(),
+            Some("xterm-kitty" | "xterm-ghostty")
+        )
+}
+
+fn resolve_force_color(
+    no_color: bool,
+    force_color: Option<String>,
+    colorterm: Option<&str>,
+    truecolor_terminal: bool,
+) -> Option<String> {
     if no_color {
         return None;
     }
@@ -55,6 +77,7 @@ fn resolve_force_color(no_color: bool, force_color: Option<String>, colorterm: O
     }
     match colorterm {
         Some("truecolor" | "24bit") => Some("3".to_string()),
+        _ if truecolor_terminal => Some("3".to_string()),
         _ => Some("2".to_string()),
     }
 }
@@ -70,14 +93,19 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
         std::env::var_os("NO_COLOR").is_some(),
         std::env::var("FORCE_COLOR").ok(),
         std::env::var("COLORTERM").ok().as_deref(),
+        is_truecolor_terminal(),
     );
 
     let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("JSC_numberOfGCMarkers", "1")
-        .env("KIRO_FEED_JSON", include_str!("cli/feed.json"))
         .kill_on_drop(true);
+
+    // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
+    let feed_path = crate::util::paths::feed_json_path()?;
+    std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
+    cmd.env("KIRO_FEED_FILE", &feed_path);
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }
@@ -205,12 +233,12 @@ async fn launch_acp_non_interactive(
     }
 
     fn non_interactive_error(reason: &str) -> acp::Error {
-        acp::Error::internal_error().with_data(serde_json::json!({
+        acp::Error::internal_error().data(Some(serde_json::json!({
             "reason": format!(
                 "{reason} is not supported in non-interactive mode. \
                  Use --trust-all-tools to auto-approve tool use, or drop --no-interactive.",
             ),
-        }))
+        })))
     }
 
     #[async_trait::async_trait(?Send)]
@@ -254,12 +282,11 @@ async fn launch_acp_non_interactive(
                             .iter()
                             .find(|opt| opt.kind == acp::PermissionOptionKind::AllowOnce)
                     })
-                    .map(|opt| opt.id.clone())
+                    .map(|opt| opt.option_id.clone())
                     .ok_or_else(acp::Error::internal_error)?;
-                return Ok(acp::RequestPermissionResponse {
-                    outcome: acp::RequestPermissionOutcome::Selected { option_id },
-                    meta: None,
-                });
+                return Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(option_id)),
+                ));
             }
             eprintln!(
                 "[denied] tool permission approval is not supported in non-interactive mode. \
@@ -298,10 +325,7 @@ async fn launch_acp_non_interactive(
             Err(non_interactive_error("client-side terminal wait"))
         }
 
-        async fn kill_terminal_command(
-            &self,
-            _args: acp::KillTerminalCommandRequest,
-        ) -> acp::Result<acp::KillTerminalCommandResponse> {
+        async fn kill_terminal(&self, _args: acp::KillTerminalRequest) -> acp::Result<acp::KillTerminalResponse> {
             Err(non_interactive_error("client-side terminal kill"))
         }
 
@@ -362,39 +386,25 @@ async fn launch_acp_non_interactive(
             );
             tokio::task::spawn_local(handle_io);
 
-            conn.initialize(acp::InitializeRequest {
-                protocol_version: acp::V1,
-                client_capabilities: acp::ClientCapabilities::default(),
-                client_info: Some(acp::Implementation {
-                    name: "kiro-cli-non-interactive".to_string(),
-                    title: Some("Kiro CLI (non-interactive)".to_string()),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                }),
-                meta: None,
-            })
+            conn.initialize(
+                acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
+                    acp::Implementation::new("kiro-cli-non-interactive", env!("CARGO_PKG_VERSION"))
+                        .title(Some("Kiro CLI (non-interactive)".to_string())),
+                )),
+            )
             .await
             .context("ACP initialize failed")?;
 
             let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
             let session = conn
-                .new_session(acp::NewSessionRequest {
-                    mcp_servers: Vec::new(),
-                    cwd,
-                    meta: None,
-                })
+                .new_session(acp::NewSessionRequest::new(cwd))
                 .await
                 .context("ACP new_session failed")?;
 
             let response = conn
-                .prompt(acp::PromptRequest {
-                    session_id: session.session_id,
-                    prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                        text: input,
-                        annotations: None,
-                        meta: None,
-                    })],
-                    meta: None,
-                })
+                .prompt(acp::PromptRequest::new(session.session_id, vec![
+                    acp::ContentBlock::Text(acp::TextContent::new(input)),
+                ]))
                 .await;
 
             // Ensure trailing newline after streamed agent text.
@@ -412,7 +422,10 @@ async fn launch_acp_non_interactive(
                 acp::StopReason::EndTurn | acp::StopReason::MaxTokens | acp::StopReason::MaxTurnRequests => {
                     ExitCode::SUCCESS
                 },
-                acp::StopReason::Cancelled | acp::StopReason::Refusal => ExitCode::FAILURE,
+                // Cancelled / Refusal / future variants (StopReason is non_exhaustive) all
+                // surface as a failure exit. Listed under the catch-all rather than enumerated
+                // so new variants don't accidentally promote to success.
+                _ => ExitCode::FAILURE,
             };
             Ok(exit_code)
         })
@@ -428,32 +441,57 @@ mod tests {
 
     #[test]
     fn test_resolve_force_color_no_color_set() {
-        assert_eq!(resolve_force_color(true, None, None), None);
+        assert_eq!(resolve_force_color(true, None, None, false), None);
     }
 
     #[test]
     fn test_resolve_force_color_no_color_overrides_force_color() {
-        assert_eq!(resolve_force_color(true, Some("3".into()), Some("truecolor")), None);
+        assert_eq!(
+            resolve_force_color(true, Some("3".into()), Some("truecolor"), false),
+            None
+        );
     }
 
     #[test]
     fn test_resolve_force_color_respects_explicit_force_color() {
-        assert_eq!(resolve_force_color(false, Some("1".into()), None), Some("1".into()));
+        assert_eq!(
+            resolve_force_color(false, Some("1".into()), None, false),
+            Some("1".into())
+        );
     }
 
     #[test]
     fn test_resolve_force_color_truecolor() {
-        assert_eq!(resolve_force_color(false, None, Some("truecolor")), Some("3".into()));
+        assert_eq!(
+            resolve_force_color(false, None, Some("truecolor"), false),
+            Some("3".into())
+        );
     }
 
     #[test]
     fn test_resolve_force_color_24bit() {
-        assert_eq!(resolve_force_color(false, None, Some("24bit")), Some("3".into()));
+        assert_eq!(resolve_force_color(false, None, Some("24bit"), false), Some("3".into()));
     }
 
     #[test]
     fn test_resolve_force_color_fallback() {
-        assert_eq!(resolve_force_color(false, None, None), Some("2".into()));
-        assert_eq!(resolve_force_color(false, None, Some("256color")), Some("2".into()));
+        assert_eq!(resolve_force_color(false, None, None, false), Some("2".into()));
+        assert_eq!(
+            resolve_force_color(false, None, Some("256color"), false),
+            Some("2".into())
+        );
+    }
+
+    #[test]
+    fn test_resolve_force_color_truecolor_terminal_identity() {
+        // When COLORTERM is unset but terminal is identified as truecolor-capable
+        assert_eq!(resolve_force_color(false, None, None, true), Some("3".into()));
+        // COLORTERM still takes precedence
+        assert_eq!(
+            resolve_force_color(false, None, Some("truecolor"), true),
+            Some("3".into())
+        );
+        // NO_COLOR still wins
+        assert_eq!(resolve_force_color(true, None, None, true), None);
     }
 }

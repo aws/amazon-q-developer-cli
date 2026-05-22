@@ -17,13 +17,17 @@ import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
+import { resolveAgentEngine } from './agent-engine';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
-import { readBoolSetting } from './utils/cli-settings';
+import { truncateToRecentTurns } from './utils/truncate-history';
+import { readBoolSetting, readStringSetting } from './utils/cli-settings';
 import { Settings } from './constants/settings';
+import { CommandHistory } from './utils/command-history';
+import { GlyphsProvider } from './hooks/useGlyphs';
 import { getAnnouncements } from './constants/feed.js';
 import {
   getActiveAnnouncement,
@@ -65,7 +69,7 @@ const getAgentPath = (): string => {
     return 'mock-agent-path';
   }
 
-  if (process.env.KIRO_AGENT_ENGINE === 'kas') {
+  if (resolveAgentEngine() === 'kas') {
     return '';
   }
 
@@ -136,22 +140,14 @@ const wireUpHandlers = () => {
         name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
         description: cmd.description,
         source: 'backend' as const,
-        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
+        meta: cmd.meta,
       }))
     );
   });
 
-  // Extension methods are stored separately and merged at read time
-  kiro.onExtensionMethodsDiscovered((commands) => {
-    logger.debug('[tui] extension methods discovered:', commands.length);
-    appStore.getState().setExtensionCommands(
-      commands.map((cmd) => ({
-        name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
-        description: cmd.description,
-        source: 'backend' as const,
-        meta: cmd.meta as import('./types/commands').CommandMeta | undefined,
-      }))
-    );
+  kiro.onKasCommandsDiscovered((commands) => {
+    logger.debug('[tui] KAS commands discovered:', commands.length);
+    appStore.getState().setKasCommands(commands);
   });
 
   // Wire up prompts handler before initialize
@@ -222,9 +218,91 @@ const wireUpHandlers = () => {
   kiro.onInitNotification((event) => {
     initHandler(event);
   });
+
+  // Wire up approval requests from background sessions (e.g. /spawn).
+  // These arrive outside of sendMessage() so need a persistent handler.
+  const approvalHandler = appStore.getState().createStreamEventHandler();
+  kiro.onApprovalRequest((event) => {
+    approvalHandler(event);
+  });
+
+  // ── KAS-only wiring: spec artifact view ──
+  //
+  // Engine is fixed at process start (see kas-commands.ts comment),
+  // so we wire this once at startup. We still call
+  // `clearArtifactViewOnEngineSwitch` from any future engine-switch
+  // path as defence-in-depth.
+  if (resolveAgentEngine() === 'kas') {
+    // Single in-flight idle timer — the store holds at most one
+    // artifact-generating entry at a time, so we never need more than
+    // one outstanding timer. We track the path it's keyed to so that
+    // a write to a different path (the agent moved on) cleanly cancels
+    // the prior timer instead of letting it fire on stale state.
+    let activeTimer: { path: string; t: ReturnType<typeof setTimeout> } | null =
+      null;
+    const IDLE_TIMEOUT_MS = 2000;
+
+    const clearTimer = () => {
+      if (activeTimer) {
+        clearTimeout(activeTimer.t);
+        activeTimer = null;
+      }
+    };
+
+    kiro.onArtifactWrite((match) => {
+      const store = appStore.getState();
+      store.notifyArtifactGenerationWrite({
+        path: match.absolutePath,
+        featureName: match.featureName,
+        artifact: match.artifact,
+      });
+
+      // Reset the idle timer on every write. If the prior timer was
+      // for a different path the store has already replaced the entry;
+      // cancelling avoids a `markArtifactGenerationComplete` call on
+      // the now-active entry.
+      clearTimer();
+      const path = match.absolutePath;
+      activeTimer = {
+        path,
+        t: setTimeout(() => {
+          activeTimer = null;
+          appStore.getState().markArtifactGenerationComplete(path);
+        }, IDLE_TIMEOUT_MS),
+      };
+    });
+
+    // On tool completion, re-parse the on-disk file. The mid-stream
+    // parses driven by `onArtifactWrite` may have observed a partially
+    // written buffer (missing closing fence on a code block, half a
+    // heading, etc.). The post-finish read is authoritative — by this
+    // point KAS has flushed its buffer to disk.
+    //
+    // We still leave the idle timer in place as a fallback for write
+    // tools that don't emit ToolCallFinished events, but cancel it
+    // here so the "complete" transition matches the actual finish
+    // event rather than waiting out the 2 s tail.
+    kiro.onArtifactFinish((match) => {
+      const store = appStore.getState();
+      store.reparseArtifactGeneration(match.absolutePath);
+      store.markArtifactGenerationComplete(match.absolutePath);
+
+      if (activeTimer && activeTimer.path === match.absolutePath) {
+        clearTimer();
+      }
+    });
+  } else {
+    // Non-KAS engine: belt-and-braces clear in case state somehow
+    // ended up populated (shouldn't happen on cold start).
+    appStore.getState().clearArtifactViewOnEngineSwitch();
+  }
+  // ── End KAS-only wiring ──
 };
 
-const startInitialization = (resumePickerSessionId?: string) => {
+const startInitialization = (
+  resumePickerSessionId?: string,
+  pickerWasShown = false
+) => {
   if (initPromise) return initPromise;
 
   wireUpHandlers();
@@ -244,7 +322,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
               ? ('terminated' as const)
               : ('idle' as const),
         type: 'ephemeral' as const,
-        created: new Date(),
+        created: sub.createdAtMs ? new Date(sub.createdAtMs) : new Date(),
         lastActivity: new Date(),
         group: sub.group,
         parentSession: sub.parentSessionId,
@@ -259,9 +337,18 @@ const startInitialization = (resumePickerSessionId?: string) => {
           group: sub.group,
           role: sub.role,
           dependsOn: sub.dependsOn ?? [],
+          hasLoop: sub.hasLoop ?? false,
+          loopIteration: sub.loopIteration ?? 0,
+          loopMaxIterations: sub.loopMaxIterations ?? 0,
         } as any);
       } else {
-        state.addSession({ ...session, dependsOn: sub.dependsOn ?? [] } as any);
+        state.addSession({
+          ...session,
+          dependsOn: sub.dependsOn ?? [],
+          hasLoop: sub.hasLoop ?? false,
+          loopIteration: sub.loopIteration ?? 0,
+          loopMaxIterations: sub.loopMaxIterations ?? 0,
+        } as any);
       }
     });
 
@@ -299,7 +386,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
     // Mark busy sessions missing from list as terminated; remove old terminated sessions
     const activeIds = new Set(subagents.map((s: any) => s.sessionId));
-    // Also clean up terminated sessions' handlers to prevent memory leaks
+    const activeNames = new Map<string, string>(); // name::group → sessionId (latest)
+    subagents.forEach((s: any) => {
+      const key = `${s.group ?? ''}::${s.sessionName || s.agentName}`;
+      activeNames.set(key, s.sessionId);
+    });
+    // Clean up handlers for superseded sessions (same name+group but different ID)
     state.sessions.forEach((s, id) => {
       if (s.status === 'pending') return;
       if (!activeIds.has(id) && s.status === 'busy') {
@@ -308,6 +400,11 @@ const startInitialization = (resumePickerSessionId?: string) => {
           lastActivity: new Date(),
         });
       } else if (!activeIds.has(id) && s.status === 'terminated') {
+        // Only clear conversation if a newer session with same name exists
+        const key = `${(s as any).group ?? ''}::${s.name}`;
+        if (activeNames.has(key) && activeNames.get(key) !== id) {
+          sessionConversationsStore.getState().clearSession(id);
+        }
         sessionHandlers.delete(id);
       }
     });
@@ -366,7 +463,11 @@ const startInitialization = (resumePickerSessionId?: string) => {
   initPromise = kiro
     .initialize(agentPath, acpArgs)
     .then(async () => {
-      appStore.setState({ settings: kiro.settings });
+      const backendSettings = kiro.settings;
+      appStore.setState({
+        settings: backendSettings,
+        voiceAutoSubmit: backendSettings?.['voice.autoSubmit'] === true,
+      });
 
       // Initialize announcement if greeting is enabled
       if (kiro.settings?.['chat.greeting.enabled'] !== false) {
@@ -382,13 +483,20 @@ const startInitialization = (resumePickerSessionId?: string) => {
       }
 
       // Resolve resume session ID via ACP (merged V1+V2 list from backend).
-      // --resume-picker is resolved before Twinki starts (pre-passed as resumePickerSessionId)
-      // because the interactive picker can't coexist with Twinki's terminal input.
+      // --resume-picker and --resume (interactive) are resolved before Twinki starts
+      // (pre-passed as resumePickerSessionId) because the interactive picker can't
+      // coexist with Twinki's terminal input.
       let resolvedSessionId: string | undefined = resumePickerSessionId;
       if (!resolvedSessionId && cliArgs.resumeId) {
         resolvedSessionId = cliArgs.resumeId;
       }
-      if (!resolvedSessionId && cliArgs.resume) {
+      if (
+        !resolvedSessionId &&
+        (cliArgs.continueSession ||
+          (cliArgs.resume !== undefined && !pickerWasShown))
+      ) {
+        // --continue always picks most recent; --resume falls here only in
+        // non-interactive mode (interactive --resume is handled by the pre-Twinki picker).
         const { sessions } = await kiro.listSessions(process.cwd());
         if (sessions.length > 0) {
           resolvedSessionId = sessions[0]!.sessionId;
@@ -401,6 +509,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
       await kiro.createSession(resolvedSessionId);
       appStore.setState({ sessionId: kiro.sessionId ?? null });
+      if (
+        kiro.sessionId &&
+        readStringSetting(Settings.CHAT_HISTORY_MODE, 'session') === 'session'
+      ) {
+        CommandHistory.getInstance().setSessionId(kiro.sessionId);
+      }
 
       // Clear the history handler so future events (from live streaming)
       // don't get buffered.
@@ -416,8 +530,20 @@ const startInitialization = (resumePickerSessionId?: string) => {
               pendingHistoryEvents.length,
               'history events'
             );
+            // Truncate to recent turns to prevent rendering thousands of lines
+            // which causes ~200ms/frame and makes typing unresponsive.
+            // Same cap as /chat load uses.
+            const { events, omittedTurns } =
+              truncateToRecentTurns(pendingHistoryEvents);
+            if (omittedTurns > 0) {
+              logger.debug(
+                '[index] omitted',
+                omittedTurns,
+                'older turns from history replay'
+              );
+            }
             const handler = appStore.getState().createStreamEventHandler();
-            for (const event of pendingHistoryEvents) {
+            for (const event of events) {
               handler(event);
             }
             (handler as any).flush?.();
@@ -454,20 +580,28 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
-  // Handle --resume-picker before Twinki renders: the interactive picker needs
-  // raw terminal access that can't coexist with Twinki's input handling.
-  // We start the ACP backend, list sessions, run the picker, then pass the
-  // resolved ID into startInitialization.
+  // Handle --resume-picker (or --resume without ID in interactive mode) before Twinki renders:
+  // the interactive picker needs raw terminal access that can't coexist with
+  // Twinki's input handling. We start the ACP backend, list sessions, run the
+  // picker, then pass the resolved ID into startInitialization.
   let resumePickerSessionId: string | undefined;
-  if (cliArgs.resumePicker) {
+  const resumeHasId = cliArgs.resume !== undefined && cliArgs.resume !== '';
+  const isInteractive = !cliArgs.noInteractive && process.stdin.isTTY;
+  if (resumeHasId) {
+    // --resume <ID>: resume specific session directly
+    resumePickerSessionId = cliArgs.resume;
+  } else if (
+    cliArgs.resumePicker ||
+    (cliArgs.resume !== undefined && isInteractive)
+  ) {
     wireUpHandlers();
     await kiro.initialize(agentPath, acpArgs);
     const { sessions } = await kiro.listSessions(process.cwd());
     if (sessions.length > 0) {
+      // Returns undefined if user pressed Esc; we fall through to a new
+      // session (matching the V1 Rust picker). Ctrl+C exits the process
+      // from inside the picker.
       resumePickerSessionId = await pickSessionFromEntries(sessions);
-      if (!resumePickerSessionId) {
-        process.stderr.write('No session selected. Starting new session.\n');
-      }
     } else {
       process.stderr.write(
         'No saved sessions found for this directory. Starting new session.\n'
@@ -476,8 +610,11 @@ const startApp = async () => {
   }
 
   // Start initialization (non-blocking for the UI).
-  // --resume is resolved inside startInitialization via session/list.
-  startInitialization(resumePickerSessionId);
+  // --continue and --resume (non-interactive, no ID) are resolved inside startInitialization via session/list.
+  const pickerWasShown =
+    !resumeHasId &&
+    (cliArgs.resumePicker || (cliArgs.resume !== undefined && isInteractive));
+  startInitialization(resumePickerSessionId, pickerWasShown);
 
   // Handle non-interactive mode: bail early if no input provided
   if (cliArgs.noInteractive && !cliArgs.input) {
@@ -560,7 +697,7 @@ const startApp = async () => {
   }
   process.stdout.write('\x1b[2J\x1b[H');
 
-  // Set process title so tmux automatic-rename shows "kiro" instead of "twinki:c".
+  // Set process title so tmux automatic-rename shows "kiro" instead of the APC marker.
   // This doesn't override manual pane renames — only affects automatic-rename.
   process.title = 'kiro';
 
@@ -594,14 +731,16 @@ const startApp = async () => {
 
     return (
       <ErrorBoundary>
-        <ThemeProvider wrapDisabled={wrapDisabled}>
-          <AppStoreContext.Provider value={appStoreRef.current}>
-            <UserThemeBridge />
-            <TestModeProvider>
-              <AppContainer />
-            </TestModeProvider>
-          </AppStoreContext.Provider>
-        </ThemeProvider>
+        <GlyphsProvider>
+          <ThemeProvider wrapDisabled={wrapDisabled}>
+            <AppStoreContext.Provider value={appStoreRef.current}>
+              <UserThemeBridge />
+              <TestModeProvider>
+                <AppContainer />
+              </TestModeProvider>
+            </AppStoreContext.Provider>
+          </ThemeProvider>
+        </GlyphsProvider>
       </ErrorBoundary>
     );
   }
@@ -639,7 +778,7 @@ const startApp = async () => {
         if (sessionId) {
           writeSync(
             1,
-            `\x1b[2m\nSession ended.\nResume with: kiro-cli chat --resume-id ${sessionId}\n\x1b[0m`
+            `\x1b[2m\nSession ended.\nResume with: kiro-cli --resume ${sessionId}\n\x1b[0m`
           );
         }
       }

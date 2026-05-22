@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { createRequire } from "node:module";
 import { isGhostty, isKitty } from "./capabilities.js";
 import { setKittyProtocolActive } from "../input/keys.js";
@@ -6,6 +8,28 @@ import { StdinBuffer } from "../input/stdin-buffer.js";
 import type { Terminal } from "./terminal.js";
 
 const cjsRequire = createRequire(import.meta.url);
+
+/**
+ * Resolves the render log file path.
+ *
+ * - KIRO_RENDER_LOG=1 enables logging to the default path: $TMPDIR/kiro-log/kiro-render.log
+ * - KIRO_RENDER_LOG_FILE overrides the path (implies enabled)
+ * - TWINKI_WRITE_LOG is supported as a legacy fallback
+ */
+function resolveRenderLogPath(): string {
+	if (process.env.KIRO_RENDER_LOG_FILE) {
+		return process.env.KIRO_RENDER_LOG_FILE;
+	}
+	if (process.env.KIRO_RENDER_LOG === "1") {
+		const logsDir = path.join(os.tmpdir(), "kiro-log");
+		if (!fs.existsSync(logsDir)) {
+			fs.mkdirSync(logsDir, { recursive: true });
+		}
+		return path.join(logsDir, "kiro-render.log");
+	}
+	// Legacy fallback
+	return process.env.TWINKI_WRITE_LOG || "";
+}
 
 /**
  * Kitty keyboard protocol flags.
@@ -91,7 +115,7 @@ export class ProcessTerminal implements Terminal {
 	private _modifyOtherKeysActive = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
-	private writeLogPath = process.env.TWINKI_WRITE_LOG || "";
+	private writeLogPath = resolveRenderLogPath();
 	private _columns = process.stdout.columns || 80;
 	private _rows = process.stdout.rows || 24;
 
@@ -384,12 +408,27 @@ export class ProcessTerminal implements Terminal {
 	/**
 	 * Writes data to stdout with optional logging.
 	 * 
-	 * If TWINKI_WRITE_LOG environment variable is set,
-	 * all output is also logged to the specified file for debugging.
+	 * If KIRO_RENDER_LOG=1 or KIRO_RENDER_LOG_FILE is set,
+	 * all output is also logged to the render log file for debugging.
 	 * 
 	 * @param data - Data to write to terminal
 	 */
 	write(data: string): void {
+		// Safety guard: strip internal APC cursor marker if it leaked into the
+		// write buffer. Prevents terminals/multiplexers from echoing it back as
+		// visible text (e.g. tmux showing the APC payload in the input line).
+		// Only strips BEL-terminated APC (\x1b_...\x07); ST-terminated sequences
+		// (\x1b_...\x1b\\) used by Kitty graphics are preserved.
+		// Uses indexOf loop instead of regex to avoid polynomial backtracking.
+		if (data.includes('\x1b_')) {
+			let i = data.indexOf('\x1b_');
+			while (i !== -1) {
+				const end = data.indexOf('\x07', i + 2);
+				if (end === -1) break;
+				data = data.slice(0, i) + data.slice(end + 1);
+				i = data.indexOf('\x1b_', i);
+			}
+		}
 		process.stdout.write(data);
 		if (this.writeLogPath) {
 			try {

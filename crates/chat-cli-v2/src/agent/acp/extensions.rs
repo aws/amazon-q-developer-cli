@@ -70,6 +70,18 @@ pub struct SubagentInfo {
     pub group: Option<String>,
     pub role: Option<String>,
     pub depends_on: Vec<String>,
+    /// Whether this stage has a loop-back configuration.
+    #[serde(default)]
+    pub has_loop: bool,
+    /// Current loop iteration (0 if not looping).
+    #[serde(default)]
+    pub loop_iteration: u32,
+    /// Maximum loop iterations (0 if not looping).
+    #[serde(default)]
+    pub loop_max_iterations: u32,
+    /// When this session was created (millis since epoch).
+    #[serde(default)]
+    pub created_at_ms: u64,
 }
 
 /// OAuth request notification payload for MCP servers.

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Improved MCP transport-closed error messages to be more actionable and transport-aware"
+}

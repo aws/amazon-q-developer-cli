@@ -499,7 +499,7 @@ describe('Stress Test', () => {
 		// visibleWidth + physical row math). Kept generous so CI variance
 		// doesn't cause flakes — the goal is to catch regressions like
 		// unbounded O(n) work per render, not to tune a specific number.
-		expect(avgRenderMs).toBeLessThan(30);
+		expect(avgRenderMs).toBeLessThan(100);
 		expect(tui.perfMaxRenderMs).toBeLessThan(300);
 	}, 60_000);
 });

@@ -15,9 +15,6 @@ const BASE_EXCLUDED = new Set([
   'newStr',
 ]);
 
-/** Max number of params to show */
-const MAX_PARAMS = 4;
-
 /**
  * Parse tool call content JSON and return an array of formatted param strings.
  * Returns null if no displayable params exist.
@@ -43,7 +40,6 @@ export function formatToolParams(
       if (BASE_EXCLUDED.has(key)) continue;
       if (exclude && exclude.includes(key)) continue;
       if (value === null || value === undefined) continue;
-      if (parts.length >= MAX_PARAMS) break;
 
       let display: string;
       if (typeof value === 'string') {

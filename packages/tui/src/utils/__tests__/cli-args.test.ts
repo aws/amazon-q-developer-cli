@@ -21,8 +21,8 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs()).toEqual({
       trustAllTools: false,
       noInteractive: false,
-      resume: false,
       resumePicker: false,
+      continueSession: false,
     });
   });
 
@@ -31,8 +31,8 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs()).toEqual({
       trustAllTools: false,
       noInteractive: false,
-      resume: false,
       resumePicker: false,
+      continueSession: false,
     });
   });
 
@@ -88,8 +88,8 @@ describe('parseCliArgs', () => {
       model: 'claude-3',
       trustAllTools: true,
       noInteractive: true,
-      resume: false,
       resumePicker: false,
+      continueSession: false,
       input: 'do something',
     });
   });
@@ -144,12 +144,30 @@ describe('parseCliArgs', () => {
 
   it('parses --resume', () => {
     setArgs('chat', '--resume');
-    expect(parseCliArgs().resume).toBe(true);
+    expect(parseCliArgs().resume).toBe('');
   });
 
   it('parses -r as resume shorthand', () => {
     setArgs('chat', '-r');
-    expect(parseCliArgs().resume).toBe(true);
+    expect(parseCliArgs().resume).toBe('');
+  });
+
+  it('parses --resume with session ID', () => {
+    setArgs('chat', '--resume', 'abc-123');
+    expect(parseCliArgs().resume).toBe('abc-123');
+  });
+
+  it('parses --resume=ID syntax', () => {
+    setArgs('chat', '--resume=abc-123');
+    expect(parseCliArgs().resume).toBe('abc-123');
+  });
+
+  it('--resume followed by a flag does not consume the flag as ID', () => {
+    setArgs('chat', '--resume', '--no-interactive', 'hello');
+    const result = parseCliArgs();
+    expect(result.resume).toBe('');
+    expect(result.noInteractive).toBe(true);
+    expect(result.input).toBe('hello');
   });
 
   it('parses --resume-picker', () => {
@@ -162,11 +180,12 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs().input).toBe('Tell me something');
   });
 
-  it('resume flags default to false', () => {
+  it('resume flags default to undefined/false', () => {
     setArgs('chat');
     const result = parseCliArgs();
-    expect(result.resume).toBe(false);
+    expect(result.resume).toBeUndefined();
     expect(result.resumePicker).toBe(false);
+    expect(result.continueSession).toBe(false);
     expect(result.resumeId).toBeUndefined();
   });
 
@@ -179,8 +198,20 @@ describe('parseCliArgs', () => {
   it('--resume-id does not set resume flag', () => {
     setArgs('chat', '--resume-id', 'abc-123');
     const result = parseCliArgs();
-    expect(result.resume).toBe(false);
+    expect(result.resume).toBeUndefined();
     expect(result.resumeId).toBe('abc-123');
+  });
+
+  it('parses --continue', () => {
+    setArgs('chat', '--continue');
+    expect(parseCliArgs().continueSession).toBe(true);
+  });
+
+  it('--continue does not set resume flag', () => {
+    setArgs('chat', '--continue');
+    const result = parseCliArgs();
+    expect(result.continueSession).toBe(true);
+    expect(result.resume).toBeUndefined();
   });
 });
 

@@ -11,21 +11,33 @@
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { logger } from '../utils/logger.js';
+import { type AgentStreamEvent } from '../types/agent-events.js';
 import {
-  AgentEventType,
-  type AgentStreamEvent,
-} from '../types/agent-events.js';
+  truncateToRecentTurns,
+  MAX_DISPLAY_TURNS,
+} from '../utils/truncate-history.js';
 import type {
   HookInfo,
   KnowledgeEntry,
   McpServerInfo,
-  SlashCommand,
   ToolInfo,
 } from '../stores/app-store.js';
+import type { AvailableCommand } from '../types/commands.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
-import { readFileSync, writeFileSync } from 'fs';
+import { Kiro } from '../kiro.js';
+import {
+  describeSpecDocuments,
+  findSpecFeature,
+  listSpecFeatures,
+  type SpecFeatureSummary,
+} from '../utils/spec-workspace.js';
+import {
+  resolveArtifactPath,
+  type ArtifactKind,
+} from '../utils/spec-artifact-loader.js';
+import { readFileSync, writeFileSync, statSync } from 'fs';
 
 import { openTranscriptInPager } from '../utils/open-transcript.js';
 import {
@@ -37,39 +49,12 @@ import {
 export type EffectHandler = (
   result: CommandResult | null,
   ctx: CommandContext,
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   args: string
 ) => boolean | void | Promise<boolean | void>;
 
 /** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'] | 'spawn';
-
-/**
- * Keep only the last `maxTurns` user turns from a buffered event stream.
- * A "turn" starts at each UserMessage event and includes all subsequent
- * events until the next UserMessage.  Returns the truncated slice and
- * how many turns were dropped.
- */
-function truncateToRecentTurns(
-  events: AgentStreamEvent[],
-  maxTurns: number
-): { events: AgentStreamEvent[]; omittedTurns: number } {
-  // Find indices where each user turn starts
-  const turnStarts: number[] = [];
-  for (let i = 0; i < events.length; i++) {
-    if (events[i]!.type === AgentEventType.UserMessage) {
-      turnStarts.push(i);
-    }
-  }
-  if (turnStarts.length <= maxTurns) {
-    return { events, omittedTurns: 0 };
-  }
-  const keepFrom = turnStarts[turnStarts.length - maxTurns]!;
-  return {
-    events: events.slice(keepFrom),
-    omittedTurns: turnStarts.length - maxTurns,
-  };
-}
+type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
 
 /** Effect names - semantic actions the TUI can perform */
 type EffectName =
@@ -93,6 +78,7 @@ type EffectName =
   | 'showCodePanel'
   | 'showFeedbackUrl'
   | 'spawnSession'
+  | 'runSpec'
   | 'switchSession'
   | 'copyToClipboard'
   | 'openRawView'
@@ -131,6 +117,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
+  spec: 'runSpec',
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
@@ -230,6 +217,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ...data.breakdown,
         initialExpanded: data.initialExpanded,
       });
+    } else if (result?.message) {
+      ctx.showAlert(result.message, 'warning', 3000);
+      return true;
     }
     // Otherwise it's an add/remove/clear result - alert is shown by dispatcher step 4
   },
@@ -593,7 +583,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.addSystemMessage(`Loaded session ${sessionId}`, true);
         // Replay buffered history into the message store, capped to recent turns
         if (buffered.length > 0) {
-          const MAX_DISPLAY_TURNS = 10;
           const { events, omittedTurns } = truncateToRecentTurns(
             buffered,
             MAX_DISPLAY_TURNS
@@ -746,6 +735,102 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
+  /**
+   * /spec — list feature directories under `.kiro/specs/` and drive the KAS
+   * spec workflow.
+   *
+   * Subcommands (all KAS-only; surface a clear error when the agent doesn't
+   * advertise `_kiro/spec/*`):
+   *   /spec                    → selection menu of discovered specs
+   *   /spec <name>             → switch to spec mode and resume work on <name>
+   *   /spec new <name>         → switch to spec mode and ask the agent to
+   *                              start a fresh spec for <name>
+   *   /spec run <name>         → invoke `_kiro/spec/invoke runAllTasks` and
+   *                              let the agent drive to completion
+   */
+  runSpec: async (_result, ctx, cmd, args) => {
+    const trimmed = args.trim();
+    const workspaceRoot = process.cwd();
+
+    // No-args path: delegate to the shared `openSpecView` helper
+    // which handles both the empty-args feature picker and the
+    // `<name> [artifact]` direct-open path.
+    if (!trimmed) {
+      return openSpecView(ctx, cmd, workspaceRoot, '');
+    }
+
+    // /spec new <name> — switch to spec mode, then nudge the agent to
+    // kick off the spec workflow via a normal prompt. The agent's spec
+    // mode knows how to create the feature directory and the initial
+    // requirements document when asked to start a new spec.
+    if (/^new(\s|$)/.test(trimmed)) {
+      const name = trimmed.slice(3).trim();
+      if (!name) {
+        ctx.showAlert('Usage: /spec new <feature-name>', 'error', 4000);
+        return true;
+      }
+      try {
+        await ctx.kiro.setMode('spec');
+      } catch (err) {
+        ctx.showAlert(
+          extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+          'error',
+          5000
+        );
+        return true;
+      }
+      ctx.setCurrentAgent({ name: 'spec' });
+      await ctx.sendMessage(
+        `Start a new spec called "${name}". Create the .kiro/specs/${name}/ directory and draft the initial requirements document.`
+      );
+      return true;
+    }
+
+    // /spec run <name> — invoke runAllTasks via ACP ext method. The agent
+    // drives the execution from there; we surface the outcome via a toast
+    // since there's no dedicated progress UI yet.
+    if (/^run(\s|$)/.test(trimmed)) {
+      const name = trimmed.slice(3).trim();
+      if (!name) {
+        ctx.showAlert('Usage: /spec run <feature-name>', 'error', 4000);
+        return true;
+      }
+      const feature = findSpecFeature(workspaceRoot, name);
+      if (!feature) {
+        ctx.showAlert(`No spec found at .kiro/specs/${name}/`, 'error', 5000);
+        return true;
+      }
+      if (!feature.tasksFilePath) {
+        ctx.showAlert(
+          `Spec "${name}" has no tasks.md yet — generate it first.`,
+          'error',
+          5000
+        );
+        return true;
+      }
+      await runSpecFeature(ctx, feature);
+      return true;
+    }
+
+    // /spec view <name> [requirements|design|tasks] — explicit alias for
+    // the default action below. Kept so existing muscle memory and the
+    // tab-completion flow that surfaces `view` as a subcommand still work.
+    if (/^view(\s|$)/.test(trimmed)) {
+      const rest = trimmed.slice(4).trim();
+      // Strip the `view` prefix and fall through to the default-view
+      // handler with the remainder (which may be empty, in which case
+      // the picker fires; or `<name> [artifact]`, in which case we
+      // open the panel).
+      return openSpecView(ctx, cmd, workspaceRoot, rest);
+    }
+
+    // /spec <name> — default action: open the structured view panel for
+    // the named feature. The "continue work on this spec" path that
+    // used to live here is now triggered by pressing `c` inside the
+    // view panel (see useArtifactKeybinds).
+    return openSpecView(ctx, cmd, workspaceRoot, trimmed);
+  },
+
   /** Copy last assistant response to system clipboard */
   copyToClipboard: async (_result, ctx) => {
     const messages = ctx.getMessages();
@@ -801,7 +886,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const sessionId = ctx.kiro.sessionId ?? 'none';
     ctx.showAlert(
       sessionId !== 'none'
-        ? `Session ID: ${sessionId}\nResume with: kiro-cli chat --resume-id ${sessionId}`
+        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume ${sessionId}`
         : 'Session ID: none',
       'success',
       10000
@@ -1263,6 +1348,203 @@ import {
 import { spawnSync } from 'child_process';
 
 /**
+ * Pick the most-recently-modified artifact among requirements/design/tasks
+ * under `.kiro/specs/<feature>/`. Returns null when none of the three
+ * artifact files exist.
+ *
+ * Used for `/spec view <feature>` (no explicit artifact arg) so the user
+ * lands on the most-active document by default.
+ */
+function pickMostRecentArtifact(
+  workspaceRoot: string,
+  featureName: string
+): ArtifactKind | null {
+  const candidates: ArtifactKind[] = ['requirements', 'design', 'tasks'];
+  let best: { kind: ArtifactKind; mtime: number } | null = null;
+  for (const kind of candidates) {
+    const path = resolveArtifactPath(workspaceRoot, featureName, kind);
+    try {
+      const s = statSync(path);
+      // Use mtimeMs so we can compare with simple > and don't lose
+      // sub-second precision (POSIX mtime in seconds is too coarse for
+      // generation events that arrive within the same second).
+      const mtime = s.mtimeMs;
+      if (!best || mtime > best.mtime) {
+        best = { kind, mtime };
+      }
+    } catch {
+      // File missing or unreadable: skip it.
+    }
+  }
+  return best?.kind ?? null;
+}
+
+/**
+ * Render the structured view panel for a spec.
+ *
+ * Shared between `/spec <name>` (default) and `/spec view <name>`. When
+ * `rest` is empty, surfaces a feature picker; otherwise parses
+ * `<name> [artifact]` and opens the panel directly.
+ *
+ * Returns `true` (the standard "effect handled the message" signal) in
+ * all cases — even when an alert is shown for an invalid feature name.
+ */
+async function openSpecView(
+  ctx: CommandContext,
+  cmd: AvailableCommand,
+  workspaceRoot: string,
+  rest: string
+): Promise<boolean> {
+  if (!rest) {
+    const features = listSpecFeatures(workspaceRoot);
+    if (features.length === 0) {
+      ctx.showAlert(
+        'No specs found under .kiro/specs/. Use "/spec new <name>" to start one.',
+        'warning',
+        6000
+      );
+      return true;
+    }
+    ctx.setActiveCommand({
+      command: {
+        ...cmd,
+        meta: { ...cmd.meta, inputType: 'selection' as const },
+      },
+      options: features.map((f) => ({
+        // Re-enter as `/spec view <name>` so picker selection routes
+        // straight into this same handler.
+        value: `view ${f.featureName}`,
+        label: f.featureName,
+        description: describeSpecDocuments(f),
+      })),
+    });
+    return true;
+  }
+
+  const parts = rest.split(/\s+/);
+  const name = parts[0]!;
+  const explicitArtifact = parts[1];
+
+  const feature = findSpecFeature(workspaceRoot, name);
+  if (!feature) {
+    ctx.showAlert(`No spec found at .kiro/specs/${name}/`, 'error', 5000);
+    return true;
+  }
+
+  let artifact: ArtifactKind;
+  if (explicitArtifact !== undefined) {
+    if (
+      explicitArtifact !== 'requirements' &&
+      explicitArtifact !== 'design' &&
+      explicitArtifact !== 'tasks'
+    ) {
+      ctx.showAlert(
+        `Unknown artifact "${explicitArtifact}". Use one of: requirements, design, tasks.`,
+        'error',
+        5000
+      );
+      return true;
+    }
+    artifact = explicitArtifact;
+  } else {
+    const picked = pickMostRecentArtifact(workspaceRoot, name);
+    if (!picked) {
+      ctx.showAlert(
+        `No artifact files in .kiro/specs/${name}/ — generate requirements/design/tasks first.`,
+        'error',
+        5000
+      );
+      return true;
+    }
+    artifact = picked;
+  }
+
+  await ctx.openArtifactView(name, artifact);
+  return true;
+}
+
+/**
+ * Resolve a spec session and invoke `runAllTasks` via the KAS ACP ext
+ * methods.  The agent drives execution autonomously from there — the TUI
+ * observes progress through the normal session-update stream.
+ */
+async function runSpecFeature(
+  ctx: CommandContext,
+  feature: SpecFeatureSummary
+): Promise<void> {
+  try {
+    ctx.setLoadingMessage(`Running all tasks for ${feature.featureName}...`);
+    const { sessionId } = await ctx.kiro.resolveSpecSession({
+      featureName: feature.featureName,
+      strategy: 'reuse',
+      workspacePaths: [process.cwd()],
+    });
+    await ctx.kiro.invokeSpec({
+      operation: 'runAllTasks',
+      sessionId,
+      featureName: feature.featureName,
+      specDocuments: feature.specDocumentPaths,
+      tasksFilePath: feature.tasksFilePath!,
+    });
+    ctx.setLoadingMessage(null);
+    ctx.showAlert(
+      `Running all tasks for "${feature.featureName}" — the agent is working autonomously.`,
+      'success',
+      5000
+    );
+  } catch (err) {
+    ctx.setLoadingMessage(null);
+    ctx.showAlert(
+      extractRpcErrorMessage(err, 'Failed to run spec tasks'),
+      'error',
+      5000
+    );
+  }
+}
+
+/**
+ * Switch to spec mode and ask the agent to continue work on a feature.
+ *
+ * Extracted as a free function so the artifact-view `c` keybind can
+ * reuse the exact same path the slash command used to take. Keeping
+ * the wording stable matters: KAS's spec workflow keys off the prompt
+ * shape ("Continue working on the …") to know it's resuming an
+ * existing feature rather than starting a new one.
+ *
+ * Returns nothing; surfaces failures via `showAlert` so the caller
+ * doesn't have to handle errors.
+ */
+export interface ResumeSpecDeps {
+  kiro: Kiro;
+  setCurrentAgent: (agent: { name: string } | null) => void;
+  sendMessage: (content: string) => Promise<void> | void;
+  showAlert: (
+    message: string,
+    status: 'error' | 'success' | 'warning',
+    autoHideMs?: number
+  ) => void;
+}
+
+export async function resumeSpecFeature(
+  deps: ResumeSpecDeps,
+  feature: SpecFeatureSummary
+): Promise<void> {
+  try {
+    await deps.kiro.setMode('spec');
+  } catch (err) {
+    deps.showAlert(
+      extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+      'error',
+      5000
+    );
+    return;
+  }
+  deps.setCurrentAgent({ name: 'spec' });
+  await deps.sendMessage(
+    `Continue working on the "${feature.featureName}" spec. The existing documents are: ${feature.documents.join(', ')}.`
+  );
+}
+/**
  * Copy text to the system clipboard using platform-native tools.
  * Returns true if a clipboard tool was found and executed without error.
  *
@@ -1328,7 +1610,7 @@ export function copyToSystemClipboard(text: string): boolean {
  * Returns true if the effect handled its own messaging (suppresses dispatcher step 4).
  */
 export function runEffect(
-  cmd: SlashCommand,
+  cmd: AvailableCommand,
   result: CommandResult | null,
   ctx: CommandContext,
   args: string

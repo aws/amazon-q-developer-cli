@@ -53,7 +53,7 @@ export const CrewMonitorScreen: React.FC = () => {
   );
 
   const stages: Stage[] = useMemo(() => {
-    const unsorted = sessions.map((session) => ({
+    const allStages = sessions.map((session) => ({
       name: session.name,
       agentName: (session as any).agentName ?? session.name,
       state: mapSessionStatusToStageState(session.status),
@@ -64,7 +64,34 @@ export const CrewMonitorScreen: React.FC = () => {
       group: (session as any).group,
       isPending: session.status === 'pending',
       dependsOn: (session as any).dependsOn ?? [],
+      hasLoop: (session as any).hasLoop ?? false,
+      loopIteration: (session as any).loopIteration ?? 0,
+      loopMaxIterations: (session as any).loopMaxIterations ?? 0,
     }));
+    // Deduplicate by name+group: keep only the latest loop iteration per stage.
+    // When a loop fires, the backend creates new sessions with the same name —
+    // we show only the most recent one so the monitor doesn't grow unbounded.
+    const createdLookup = new Map(
+      sessions.map((s) => [s.id, s.created.getTime()])
+    );
+    const deduped = new Map<string, (typeof allStages)[0]>();
+    for (const stage of allStages) {
+      const key = `${stage.group ?? ''}::${stage.name}`;
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, stage);
+      } else if (stage.loopIteration > existing.loopIteration) {
+        deduped.set(key, stage);
+      } else if (stage.loopIteration === existing.loopIteration) {
+        // Same iteration — prefer most recently created (latest re-enqueue)
+        const stageCreated = createdLookup.get(stage.sessionId) ?? 0;
+        const existingCreated = createdLookup.get(existing.sessionId) ?? 0;
+        if (stageCreated > existingCreated) {
+          deduped.set(key, stage);
+        }
+      }
+    }
+    const unsorted = [...deduped.values()];
     // Build a lookup from name → created timestamp for stable tiebreaking
     const createdByName = new Map(
       sessions.map((s) => [s.name, s.created.getTime()])

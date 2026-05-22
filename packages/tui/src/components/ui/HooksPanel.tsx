@@ -29,7 +29,9 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
 
   const sorted = [...hooks].sort(
     (a, b) =>
-      a.trigger.localeCompare(b.trigger) || a.command.localeCompare(b.command)
+      a.trigger.localeCompare(b.trigger) ||
+      (a.name ?? '').localeCompare(b.name ?? '') ||
+      a.command.localeCompare(b.command)
   );
 
   const q = search.toLowerCase();
@@ -38,6 +40,7 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
         .map((h) => ({
           h,
           score: Math.max(
+            fuzzyScore(q, (h.name ?? '').toLowerCase()),
             fuzzyScore(q, h.trigger.toLowerCase()),
             fuzzyScore(q, h.command.toLowerCase()),
             fuzzyScore(q, (h.matcher ?? '').toLowerCase())
@@ -51,11 +54,16 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
   const canScrollDown = scrollOffset + maxVisible < filtered.length;
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
 
-  const triggerCol = 20 + GAP;
-  const matcherCol = 20 + GAP;
-  const commandCol = Math.max(termWidth - triggerCol - matcherCol - 2, 20);
+  const nameCol = 20 + GAP;
+  const triggerCol = 18 + GAP;
+  const matcherCol = 16 + GAP;
+  const commandCol = Math.max(
+    termWidth - nameCol - triggerCol - matcherCol - 2,
+    20
+  );
 
   const columns = [
+    { label: 'Name', width: nameCol },
     { label: 'Trigger', width: triggerCol },
     { label: 'Command', width: commandCol },
     { label: 'Matcher' },
@@ -64,6 +72,10 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
   const rows: Row[] = useMemo(
     () =>
       visible.map((hook) => [
+        {
+          text: truncateToWidth(hook.name ?? '—', nameCol, '...'),
+          color: primary,
+        },
         { text: hook.trigger, color: brand },
         {
           text: truncateToWidth(hook.command, commandCol, '...'),
@@ -71,7 +83,7 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
         },
         { text: hook.matcher ?? '—', color: hook.matcher ? info : dim },
       ]),
-    [visible, commandCol, primary, dim, brand, info]
+    [visible, nameCol, commandCol, primary, dim, brand, info]
   );
 
   const handleSearchChange = useCallback((s: string) => {

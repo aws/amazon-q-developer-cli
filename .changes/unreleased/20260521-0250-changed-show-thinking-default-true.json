@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`chat.showThinking` now defaults to enabled — model reasoning is visible without opt-in"
+}

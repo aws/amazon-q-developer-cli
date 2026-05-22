@@ -1,0 +1,25 @@
+# Single-role code-review preset for the bun/TUI review runner.
+#
+# Executes one [code] work item: read a specific review's techniques,
+# apply them to the files in scope, emit one finding per file in the
+# playbook's finding-file schema.
+
+event_loop.max_iterations = 8
+event_loop.completion_event = "task.complete"
+event_loop.completion_promise = "LOOP_COMPLETE"
+event_loop.required_events = []
+
+backend.kind = "kiro"
+backend.command = "kiro-cli"
+backend.args = ["acp"]
+backend.timeout_ms = 1200000
+backend.trust_all_tools = true
+
+review.enabled = false
+
+memory.prompt_budget_chars = 8000
+harness.instructions_file = "harness.md"
+
+core.state_dir = ".autoloop"
+core.journal_file = ".autoloop/journal.jsonl"
+core.memory_file = ".autoloop/memory.jsonl"

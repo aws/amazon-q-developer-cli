@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Trusting a tool now automatically approves all other pending invocations of the same tool in the current batch, instead of requiring separate approval for each one"
+}

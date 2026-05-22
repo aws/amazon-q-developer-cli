@@ -288,6 +288,7 @@ describe('UI selectors', () => {
     const result = await renderSelectorHook(useUIState);
     expect(result).toHaveProperty('mode');
     expect(result).toHaveProperty('exitSequence');
+    expect(result).toHaveProperty('suspendArmed');
     expect(result).toHaveProperty('toolOutputsExpanded');
     expect(result).toHaveProperty('hasExpandableToolOutputs');
     expect(result).toHaveProperty('showContextBreakdown');
@@ -317,6 +318,8 @@ describe('UI selectors', () => {
     expect(typeof result.setMode).toBe('function');
     expect(typeof result.incrementExitSequence).toBe('function');
     expect(typeof result.resetExitSequence).toBe('function');
+    expect(typeof result.armSuspend).toBe('function');
+    expect(typeof result.disarmSuspend).toBe('function');
     expect(typeof result.toggleToolOutputsExpanded).toBe('function');
     expect(typeof result.setHasExpandableToolOutputs).toBe('function');
     expect(typeof result.setShowContextBreakdown).toBe('function');
@@ -334,6 +337,7 @@ describe('UI selectors', () => {
     const result = await renderSelectorHook(useUIState);
     expect(result.mode).toBe('inline');
     expect(result.exitSequence).toBe(0);
+    expect(result.suspendArmed).toBe(false);
     expect(result.toolOutputsExpanded).toBe(false);
     expect(result.hasExpandableToolOutputs).toBe(false);
     expect(result.showContextBreakdown).toBe(false);

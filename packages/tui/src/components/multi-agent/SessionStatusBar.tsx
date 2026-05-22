@@ -1,8 +1,9 @@
 import { Box } from '../../renderer.js';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Text } from '../ui/text/Text.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import type { AgentSession } from '../../types/multi-session.js';
 
 export interface SessionStatusBarProps {
@@ -10,14 +11,6 @@ export interface SessionStatusBarProps {
   messageCount?: number;
   unreadCount?: number;
 }
-
-const STATUS_ICONS: Record<string, string> = {
-  idle: '○',
-  busy: '●',
-  terminated: '✓',
-  failed: '✗',
-  pending: '◌',
-} as const;
 
 function formatElapsedTime(created: Date): string {
   const elapsed = Date.now() - created.getTime();
@@ -36,8 +29,20 @@ export const SessionStatusBar = React.memo(function SessionStatusBar({
   unreadCount = 0,
 }: SessionStatusBarProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
   const agentColor = getAgentColor(session.name, getColor);
-  const statusIcon = STATUS_ICONS[session.status];
+  const statusIcons: Record<string, string> = useMemo(
+    () => ({
+      idle: !allowIcons ? '' : glyphs.dotEmpty,
+      busy: !allowIcons ? '' : glyphs.dotFilled,
+      terminated: !allowIcons ? '' : glyphs.checkmark,
+      failed: !allowIcons ? '' : glyphs.cross,
+      pending: !allowIcons ? '' : glyphs.dotLoading,
+    }),
+    [glyphs, allowIcons]
+  );
+  const statusIcon = statusIcons[session.status];
   const elapsed = formatElapsedTime(session.created);
 
   return (

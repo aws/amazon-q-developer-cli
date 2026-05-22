@@ -22,6 +22,8 @@ pub mod tangent;
 pub mod todos;
 pub mod tools;
 pub mod usage;
+#[cfg(feature = "voice")]
+pub mod voice;
 
 use changelog::ChangelogArgs;
 use clap::Parser;
@@ -44,6 +46,8 @@ use reply::ReplyArgs;
 use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
+#[cfg(feature = "voice")]
+use voice::VoiceArgs;
 
 use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::context::ContextArgs;
@@ -157,6 +161,8 @@ pub enum SlashCommand {
     Paste(PasteArgs),
     /// Get help about Kiro CLI features and commands
     Help(HelpArgs),
+    #[cfg(feature = "voice")]
+    Voice(VoiceArgs),
 }
 
 impl SlashCommand {
@@ -290,6 +296,8 @@ impl SlashCommand {
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
             Self::Paste(args) => args.execute(os, session).await,
             Self::Help(args) => args.execute(os, session).await,
+            #[cfg(feature = "voice")]
+            Self::Voice(args) => args.execute(os, session).await,
         }
     }
 
@@ -324,6 +332,8 @@ impl SlashCommand {
             Self::Todos(_) => "todos",
             Self::Paste(_) => "paste",
             Self::Help { .. } => "help",
+            #[cfg(feature = "voice")]
+            Self::Voice(_) => "voice",
         }
     }
 

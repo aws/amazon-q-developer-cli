@@ -22,6 +22,8 @@ import {
   type AppKeypressState,
   type AppKeypressActions,
 } from './app-keypress-dispatch.js';
+import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
+import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -60,6 +62,9 @@ export const AppContainer: React.FC = () => {
     (state) => state.incrementExitSequence
   );
   const resetExitSequence = useAppStore((state) => state.resetExitSequence);
+  const armSuspend = useAppStore((state) => state.armSuspend);
+  const disarmSuspend = useAppStore((state) => state.disarmSuspend);
+  const suspendArmed = useAppStore((state) => state.suspendArmed);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const hasCommandInput = useAppStore((state) => !!state.commandInputValue);
   const isProcessing = useAppStore((state) => state.isProcessing);
@@ -77,6 +82,7 @@ export const AppContainer: React.FC = () => {
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
+  const voiceCancel = useAppStore((state) => state.voiceCancel);
 
   // Restore terminal state when the process is resumed after ctrl+z suspend
   useEffect(() => {
@@ -89,6 +95,7 @@ export const AppContainer: React.FC = () => {
       } catch {
         // stdin/stdout may not be available
       }
+      disarmSuspend();
       // Write a clear sequence so twinki's stdout interceptor detects it
       // and triggers handleExternalClear() — a full redraw including static
       // scrollback content. SIGWINCH alone only redraws live content.
@@ -98,7 +105,7 @@ export const AppContainer: React.FC = () => {
     return () => {
       process.removeListener('SIGCONT', handleCont);
     };
-  }, []);
+  }, [disarmSuspend]);
 
   const shellEscapeWriter = useAppStore((state) => state._shellEscapeWriter);
 
@@ -132,6 +139,7 @@ export const AppContainer: React.FC = () => {
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
       surveyPromptVisible: !!surveyPrompt,
+      suspendArmed,
     };
 
     const actions: AppKeypressActions = {
@@ -139,6 +147,8 @@ export const AppContainer: React.FC = () => {
       clearCommandInput,
       resetExitSequence,
       incrementExitSequence,
+      armSuspend,
+      disarmSuspend,
       setMode,
       enterCrewMonitor: () => {
         // Enter alt screen immediately (before React re-renders) to prevent
@@ -163,10 +173,13 @@ export const AppContainer: React.FC = () => {
       },
       suspendProcess,
       shellEscapeWrite: shellEscapeWriter ?? null,
+      voiceCancel: voiceCancel ?? null,
     };
 
     dispatchAppKeypress(userInput, key, state, actions, keybindings);
   });
+
+  const { allowAnimations } = useAllowAnimations();
 
   // Show trust-all-tools confirmation gate before allowing session to proceed
   if (trustAllToolsRequested && !trustAllToolsConfirmed) {
@@ -187,11 +200,11 @@ export const AppContainer: React.FC = () => {
   }
 
   return (
-    <>
+    <AnimationPausedContext.Provider value={!allowAnimations}>
       {mode === 'inline' && <InlineLayout />}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}
-    </>
+    </AnimationPausedContext.Provider>
   );
 };

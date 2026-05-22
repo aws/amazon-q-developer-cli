@@ -3,10 +3,10 @@ doc_meta:
   title: Trust Configuration
   description: Configure tool auto-approval at session, agent, and directory levels
   category: feature
-  keywords: [trust, auto-approve, allowedTools, permissions, tools, security]
+  keywords: [trust, auto-approve, allowedTools, permissions, tools, security, batch, cascade]
   related: [agent-configuration, tools, chat]
-  validated: 2026-04-30
-  commit: be2c1347
+  validated: 2026-05-18
+  commit: 1dd7feeef
   status: validated
   testable_headless: true
 ---
@@ -64,6 +64,19 @@ kiro-cli chat --trust-tools=read,write,shell
 ```
 
 Session trust is temporary and resets when you start a new session.
+
+### Batch Approval Cascade
+
+When you select "Allow Always" to trust a tool, Kiro automatically approves all other pending invocations of the same tool in the current batch. This prevents repetitive approvals when the agent queues multiple calls to the same tool.
+
+For example, if the agent queues 5 `execute_bash` calls and you trust the first one:
+- The first call is approved with "Allow Always"
+- The remaining 4 `execute_bash` calls are automatically approved
+- Any pending calls to different tools (e.g., `fs_write`) still require separate approval
+
+This cascade only applies to full tool trust ("Allow Always"). It does not cascade when:
+- Using "Allow Once" — only approves the single invocation
+- Using path-specific trust — only approves the specific path/command pattern
 
 ## Agent-Level Trust
 

@@ -124,8 +124,7 @@ impl amzn_codewhisperer_client::config::endpoint::ResolveEndpoint for StaticCode
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
 
-// TODO(bskiser): confirm timeout is updated to an appropriate value?
-const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
+const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(600);
 
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
@@ -289,17 +288,9 @@ impl ApiClient {
 
         let is_social = crate::auth::social::is_social_logged_in(database).await;
 
-        let use_krs = std::env::var("KIRO_CLI_KRS_ENDPOINTS").is_ok();
-        let krs_endpoint = if use_krs {
-            Endpoint::krs_for_region(endpoint.region().as_ref())
-        } else {
-            endpoint.clone()
-        };
-        let cps_endpoint = if use_krs {
-            Endpoint::cps_for_region(endpoint.region().as_ref())
-        } else {
-            endpoint.clone()
-        };
+        let region = endpoint.region().as_ref();
+        let krs_endpoint = Endpoint::krs_for_region(region);
+        let cps_endpoint = Endpoint::cps_for_region(region);
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
@@ -1007,7 +998,7 @@ fn retry_config() -> RetryConfig {
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {
     StalledStreamProtectionConfig::enabled()
-        .grace_period(Duration::from_secs(60 * 5))
+        .grace_period(Duration::from_secs(600))
         .build()
 }
 

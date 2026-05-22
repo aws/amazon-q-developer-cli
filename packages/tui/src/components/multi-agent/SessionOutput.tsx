@@ -12,6 +12,7 @@ import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { getAgentColor } from '../../utils/agentColors';
 import { useTheme } from '../../hooks/useThemeContext';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import type { AgentSession, InboxMessage } from '../../types/multi-session';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -232,14 +233,17 @@ const SessionHeader = React.memo(function SessionHeader({
   session: AgentSession;
   agentBarColor?: string;
 }) {
-  const statusIcon =
-    session.status === 'busy'
-      ? '●'
+  const glyphs = useGlyphs();
+  const { allowIcons } = useAllowIcons();
+  const statusIcon = !allowIcons
+    ? ''
+    : session.status === 'busy'
+      ? glyphs.dotFilled
       : session.status === 'terminated'
-        ? '✓'
+        ? glyphs.checkmark
         : session.status === 'failed'
-          ? '✗'
-          : '○';
+          ? glyphs.cross
+          : glyphs.dotEmpty;
 
   const stagePrefix = session.stageInfo ? `[${session.stageInfo.name}] ` : '';
 

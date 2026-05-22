@@ -22,6 +22,12 @@ export interface PanelProps {
   canScrollDown?: boolean;
   onScrollUp?: () => void;
   onScrollDown?: () => void;
+  /**
+   * Verb shown next to the close shortcut in the footer (default: 'to close').
+   * Use to disambiguate when Esc means "go back" rather than "close everything"
+   * — the underlying keypress handler is unchanged; this only labels intent.
+   */
+  closeHintLabel?: string;
 }
 
 export const Panel: React.FC<PanelProps> = ({
@@ -40,6 +46,7 @@ export const Panel: React.FC<PanelProps> = ({
   canScrollDown = false,
   onScrollUp,
   onScrollDown,
+  closeHintLabel = 'to close',
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
@@ -117,7 +124,7 @@ export const Panel: React.FC<PanelProps> = ({
         <Box>
           <Text>
             {primary(keybindings.label('closeMenu').toUpperCase())}{' '}
-            {dim(searchable && search ? 'to clear search' : 'to close')}
+            {dim(searchable && search ? 'to clear search' : closeHintLabel)}
             {canScrollUp || canScrollDown ? dim(' · ↑↓ to scroll') : ''}
           </Text>
           {footerLeft && <Text>{dim(' | ')}</Text>}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Increased default API request timeout from 5 minutes to 10 minutes to prevent timeouts during long-running requests with adaptive thinking and large session compaction"
+}

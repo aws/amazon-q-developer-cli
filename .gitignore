@@ -103,3 +103,4 @@ scripts/.es-cookie
 .gpu-multiagent/
 .bun-pinned/
 .npmrc
+.autoloop/

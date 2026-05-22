@@ -129,6 +129,8 @@ pub struct OAuthMeta {
 pub struct Registration {
     pub client_id: String,
     pub client_secret: Option<String>,
+    /// Defaults to empty so older or partially-written cache files still parse.
+    #[serde(default)]
     pub scopes: Vec<String>,
     pub redirect_uri: String,
 }
@@ -505,11 +507,32 @@ async fn get_auth_manager(
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
 
-    match (cred_as_bytes, reg_as_bytes) {
-        (Ok(cred_as_bytes), Ok(reg_as_bytes)) => {
-            let token = serde_json::from_slice::<OAuthTokenResponse>(&cred_as_bytes)?;
-            let reg = serde_json::from_slice::<Registration>(&reg_as_bytes)?;
+    // If cached credentials exist and parse, use them. Otherwise fall through
+    // to a fresh OAuth flow (and remove the bad files so we don't loop on them).
+    let cached_path = if let (Ok(cred_bytes), Ok(reg_bytes)) = (cred_as_bytes, reg_as_bytes) {
+        match (
+            serde_json::from_slice::<OAuthTokenResponse>(&cred_bytes),
+            serde_json::from_slice::<Registration>(&reg_bytes),
+        ) {
+            (Ok(token), Ok(reg)) => Some((token, reg)),
+            (cred_res, reg_res) => {
+                tracing::warn!(
+                    cred_err = ?cred_res.err(),
+                    reg_err = ?reg_res.err(),
+                    "## mcp: cached OAuth credentials failed to parse, removing and re-running OAuth flow"
+                );
+                // Remove malformed caches so we don't loop on them.
+                let _ = tokio::fs::remove_file(&cred_full_path).await;
+                let _ = tokio::fs::remove_file(&reg_full_path).await;
+                None
+            },
+        }
+    } else {
+        None
+    };
 
+    match cached_path {
+        Some((token, reg)) => {
             oauth_state.set_credentials(&reg.client_id, token).await?;
 
             debug!("## mcp: credentials set with cache");
@@ -518,7 +541,7 @@ async fn get_auth_manager(
                 .into_authorization_manager()
                 .ok_or(OauthUtilError::MissingAuthorizationManager)?)
         },
-        _ => {
+        None => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
             let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, oauth_config, messenger, os).await?;

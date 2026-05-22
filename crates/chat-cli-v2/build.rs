@@ -415,8 +415,10 @@ fn embed_bun_and_tui() {
         let _ = std::fs::remove_file(&dest_path);
         std::fs::copy(&path, &dest_path).expect("Failed to copy bun executable to OUT_DIR");
 
+        let sha = sha256_hex(&dest_path);
         println!("cargo:rustc-cfg=bun_executable_path");
         println!("cargo:rustc-env=BUN_EXECUTABLE_PATH={}", dest_path.display());
+        println!("cargo:rustc-env=BUN_RUNTIME_SHA256={sha}");
     }
 
     if let Some(path) = tui_path {
@@ -428,7 +430,29 @@ fn embed_bun_and_tui() {
         let _ = std::fs::remove_file(&dest_path);
         std::fs::copy(&path, &dest_path).expect("Failed to copy TUI js to OUT_DIR");
 
+        let sha = sha256_hex(&dest_path);
         println!("cargo:rustc-cfg=tui_js_path");
         println!("cargo:rustc-env=TUI_JS_PATH={}", dest_path.display());
+        println!("cargo:rustc-env=TUI_JS_SHA256={sha}");
     }
+}
+
+fn sha256_hex(path: &std::path::Path) -> String {
+    use std::io::Read;
+
+    use sha2::{
+        Digest,
+        Sha256,
+    };
+    let mut file = std::fs::File::open(path).expect("Failed to open file for SHA256");
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).expect("Failed to read file for SHA256");
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    format!("{:x}", hasher.finalize())
 }

@@ -137,6 +137,40 @@ pub enum RootSubcommand {
         #[arg(long)]
         agent: String,
     },
+    /// Record voice and print transcription to stdout (used by TUI).
+    #[cfg(feature = "voice")]
+    #[command(hide = true)]
+    Voice {
+        /// Push-to-talk mode (disables silence auto-stop)
+        #[arg(long)]
+        ptt: bool,
+    },
+    /// Start a voice recording server for remote/cloud desktop use.
+    #[cfg(feature = "voice")]
+    VoiceServe {
+        /// Port to listen on.
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Address to bind to.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+    },
+    /// Set up voice mode for a cloud desktop (run locally).
+    #[cfg(feature = "voice")]
+    #[command(name = "voice-cloud-setup")]
+    VoiceCloudSetup {
+        /// Cloud desktop hostname or SSH config alias
+        host: String,
+        /// Port for voice server
+        #[arg(long, default_value = "19876")]
+        port: u16,
+        /// Path to kiro binary on cloud desktop
+        #[arg(long)]
+        remote_bin: Option<String>,
+        /// SSH identity file
+        #[arg(long, short = 'i')]
+        identity: Option<String>,
+    },
 }
 
 impl RootSubcommand {
@@ -214,6 +248,68 @@ impl RootSubcommand {
                 crate::agent::acp::acp_agent::execute(os, spawn_args, Arc::new(NoOpLegacySessionExporter)).await
             },
             Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
+            #[cfg(feature = "voice")]
+            Self::Voice { ptt } => {
+                use crate::database::settings::Setting;
+                let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
+                let backend = if server_url.is_some() {
+                    "RemoteServer".to_string()
+                } else {
+                    "LocalWhisper".to_string()
+                };
+                let silence_timeout = if ptt {
+                    None
+                } else {
+                    Some(
+                        os.database
+                            .settings
+                            .get_int(Setting::VoiceSilenceTimeout)
+                            .and_then(|v| v.try_into().ok())
+                            .unwrap_or(5u64),
+                    )
+                };
+                let language = os.database.settings.get_string(Setting::VoiceLanguage);
+                let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
+                let result =
+                    voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                let (telem_result, reason, reason_desc) = match &result {
+                    Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
+                    Err(e) => (
+                        crate::telemetry::TelemetryResult::Failed,
+                        Some("VoiceError".to_string()),
+                        Some(e.to_string()),
+                    ),
+                };
+                let input_method = if ptt { "PTT" } else { "SlashCommand" };
+                os.telemetry
+                    .send_voice_input(
+                        None,
+                        telem_result,
+                        reason,
+                        reason_desc,
+                        backend,
+                        input_method.to_string(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .ok();
+                result
+            },
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { port, bind } => voice::voice_serve::run_voice_server(&bind, port).await,
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup {
+                host,
+                port,
+                remote_bin,
+                identity,
+            } => {
+                voice::voice_cloud_setup::run_voice_cloud_setup(&host, port, remote_bin.as_deref(), identity.as_deref())
+                    .await
+            },
         }
     }
 }
@@ -240,6 +336,12 @@ impl Display for RootSubcommand {
             Self::Mcp(_) => "mcp",
             Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
+            #[cfg(feature = "voice")]
+            Self::Voice { .. } => "voice",
+            #[cfg(feature = "voice")]
+            Self::VoiceServe { .. } => "voice-serve",
+            #[cfg(feature = "voice")]
+            Self::VoiceCloudSetup { .. } => "voice-cloud-setup",
         };
 
         write!(f, "{name}")
@@ -254,11 +356,23 @@ pub struct Cli {
     /// Increase logging verbosity
     #[arg(long, short = 'v', action = ArgAction::Count, global = true)]
     pub verbose: u8,
+    /// Resume a conversation (shows picker in interactive mode)
+    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "SESSION_ID")]
+    resume: Option<String>,
+    /// Resume the most recent conversation without showing the picker
+    #[arg(long = "continue")]
+    continue_session: bool,
 }
 
 impl Cli {
     pub async fn execute(self) -> Result<ExitCode> {
-        let subcommand = self.subcommand.unwrap_or_default();
+        let subcommand = self.subcommand.unwrap_or_else(|| {
+            RootSubcommand::Chat(ChatArgs {
+                resume: self.resume,
+                continue_session: self.continue_session,
+                ..Default::default()
+            })
+        });
 
         // Initialize our logger and keep around the guard so logging can perform as expected.
         let _log_guard = initialize_logging(LogArgs {
@@ -294,6 +408,15 @@ impl Cli {
 
         let result = if matches!(&subcommand, RootSubcommand::Chat(args) if !args.legacy_mode) {
             let asset_paths = crate::embedded_tui::extract_tui_assets_if_needed(&os).await?;
+            // Write feed.json alongside TUI assets so the TUI reads it from disk
+            // instead of receiving the entire changelog (~100KB) as an env var.
+            let feed_path = crate::util::paths::feed_json_path()?;
+            std::fs::write(&feed_path, include_str!("feed.json"))?;
+            // Expose internal-user status to the TUI via env var (derived from SSO start URL).
+            if is_internal_user(&os.database) {
+                // SAFETY: single-threaded at this point — TUI subprocess hasn't spawned yet.
+                unsafe { std::env::set_var("KIRO_INTERNAL", "1") };
+            }
             crate::launch_options::launch_tui(&asset_paths).await
         } else {
             subcommand.execute(&mut os).await
@@ -383,6 +506,15 @@ impl Cli {
     }
 }
 
+/// Returns `true` if the user authenticated via the Amazon-internal SSO start URL.
+fn is_internal_user(database: &crate::database::Database) -> bool {
+    database
+        .get_start_url()
+        .ok()
+        .flatten()
+        .is_some_and(|url| url == crate::auth::AMZN_START_URL)
+}
+
 #[cfg(test)]
 mod test {
     use chat::WrapMode::{
@@ -406,18 +538,23 @@ mod test {
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-v"]), Cli {
             subcommand: None,
             verbose: 1,
+            resume: None,
+            continue_session: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "-vvv"]), Cli {
             subcommand: None,
             verbose: 3,
+            resume: None,
+            continue_session: false,
         });
 
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
             subcommand: Some(RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -430,6 +567,8 @@ mod test {
                 wrap: None,
             })),
             verbose: 2,
+            resume: None,
+            continue_session: false,
         });
     }
 
@@ -459,9 +598,10 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -481,9 +621,10 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile", "Hello"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: Some("Hello".to_string()),
@@ -503,9 +644,10 @@ mod test {
         assert_parse!(
             ["chat", "--profile", "my-profile", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -525,9 +667,10 @@ mod test {
         assert_parse!(
             ["chat", "--no-interactive", "--resume"],
             RootSubcommand::Chat(ChatArgs {
-                resume: true,
+                resume: Some("".to_string()),
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -543,9 +686,10 @@ mod test {
         assert_parse!(
             ["chat", "--non-interactive", "-r"],
             RootSubcommand::Chat(ChatArgs {
-                resume: true,
+                resume: Some("".to_string()),
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -565,9 +709,33 @@ mod test {
         assert_parse!(
             ["chat", "--resume-id", "abc-123"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: Some("abc-123".to_string()),
                 resume_picker: false,
+                continue_session: false,
+                list_sessions: false,
+                delete_session: None,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                legacy_mode: false,
+                wrap: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_continue() {
+        assert_parse!(
+            ["chat", "--continue"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: None,
+                resume_id: None,
+                resume_picker: false,
+                continue_session: true,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -587,9 +755,10 @@ mod test {
         assert_parse!(
             ["chat", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -609,9 +778,10 @@ mod test {
         assert_parse!(
             ["chat", "--trust-tools="],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -631,9 +801,10 @@ mod test {
         assert_parse!(
             ["chat", "--trust-tools=fs_read,fs_write"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -653,9 +824,10 @@ mod test {
         assert_parse!(
             ["chat", "-w", "never"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -671,9 +843,10 @@ mod test {
         assert_parse!(
             ["chat", "--wrap", "always"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -689,9 +862,10 @@ mod test {
         assert_parse!(
             ["chat", "--wrap", "auto"],
             RootSubcommand::Chat(ChatArgs {
-                resume: false,
+                resume: None,
                 resume_id: None,
                 resume_picker: false,
+                continue_session: false,
                 list_sessions: false,
                 delete_session: None,
                 input: None,
@@ -704,5 +878,25 @@ mod test {
                 wrap: Some(Auto),
             })
         );
+    }
+
+    #[tokio::test]
+    async fn test_is_internal_user_with_amzn_start_url() {
+        let mut db = crate::database::Database::new().await.unwrap();
+        db.set_start_url("https://amzn.awsapps.com/start".to_string()).unwrap();
+        assert!(super::is_internal_user(&db));
+    }
+
+    #[tokio::test]
+    async fn test_is_internal_user_with_external_start_url() {
+        let mut db = crate::database::Database::new().await.unwrap();
+        db.set_start_url("https://view.awsapps.com/start".to_string()).unwrap();
+        assert!(!super::is_internal_user(&db));
+    }
+
+    #[tokio::test]
+    async fn test_is_internal_user_with_no_start_url() {
+        let db = crate::database::Database::new().await.unwrap();
+        assert!(!super::is_internal_user(&db));
     }
 }

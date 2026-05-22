@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP registry npm/pypi servers now work when the package identifier already contains a version tag"
+}

@@ -3,6 +3,12 @@ import { Box, Text } from '../../renderer.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import {
+  useGlyphs,
+  useSpinners,
+  useAllowIcons,
+} from '../../hooks/useGlyphs.js';
+import { useAnimationPaused } from '../../contexts/AnimationPausedContext.js';
 import type { AgentSession } from '../../types/multi-session.js';
 
 export interface SessionListProps {
@@ -12,29 +18,31 @@ export interface SessionListProps {
   width?: number;
 }
 
-const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
 const getStatusIcon = (
   status: AgentSession['status'],
-  spinnerIndex: number
+  spinnerIndex: number,
+  spinnerChars: string[],
+  glyphs: { dotEmpty: string; checkmark: string; cross: string },
+  allowIcons: boolean
 ) => {
+  if (!allowIcons) return '';
   switch (status) {
     case 'idle':
-      return '○';
+      return glyphs.dotEmpty;
     case 'busy':
-      return SPINNER_CHARS[spinnerIndex];
+      return spinnerChars[spinnerIndex];
     case 'terminated':
-      return '✓';
+      return glyphs.checkmark;
     case 'failed':
-      return '✗';
+      return glyphs.cross;
     default:
-      return '○';
+      return glyphs.dotEmpty;
   }
 };
 
-const getSummaryIndicator = (session: AgentSession) => {
+const getSummaryIndicator = (session: AgentSession, clipboard: string) => {
   if (session.status === 'terminated' && session.summary) {
-    return '📋 ';
+    return `${clipboard} `;
   }
   return '';
 };
@@ -44,16 +52,22 @@ export const SessionList: React.FC<SessionListProps> = React.memo(
     const [focusedIndex, setFocusedIndex] = useState(0);
     const [spinnerIndex, setSpinnerIndex] = useState(0);
     const { getColor } = useTheme();
+    const glyphs = useGlyphs();
+    const spinners = useSpinners();
+    const spinnerChars = spinners.brailleRotate;
+    const paused = useAnimationPaused();
+    const { allowIcons } = useAllowIcons();
 
     // Animate spinner only when at least one session is busy
     const hasBusy = sessions.some((s) => s.status === 'busy');
     useEffect(() => {
       if (!hasBusy) return;
+      if (paused) return;
       const interval = setInterval(() => {
-        setSpinnerIndex((prev) => (prev + 1) % SPINNER_CHARS.length);
+        setSpinnerIndex((prev) => (prev + 1) % spinnerChars.length);
       }, 100);
       return () => clearInterval(interval);
-    }, [hasBusy]);
+    }, [hasBusy, spinnerChars.length, paused]);
 
     // Update focused index when selectedId changes
     useEffect(() => {
@@ -95,7 +109,13 @@ export const SessionList: React.FC<SessionListProps> = React.memo(
           const agentColor = getAgentColor(session.name, getColor);
 
           const getStatusText = () => {
-            const icon = getStatusIcon(session.status, spinnerIndex);
+            const icon = getStatusIcon(
+              session.status,
+              spinnerIndex,
+              spinnerChars,
+              glyphs,
+              allowIcons
+            );
             switch (session.status) {
               case 'idle':
                 return getColor('secondary')(`${icon} `);
@@ -126,7 +146,7 @@ export const SessionList: React.FC<SessionListProps> = React.memo(
                 width={width - 2}
                 backgroundColor={isFocused ? 'blue' : undefined}
               >
-                <Text>{getSummaryIndicator(session)}</Text>
+                <Text>{getSummaryIndicator(session, glyphs.clipboard)}</Text>
                 <Text>{getStatusText()}</Text>
                 <Text>{getNameText()}</Text>
                 <Text>{getColor('secondary')(` (${session.status})`)}</Text>

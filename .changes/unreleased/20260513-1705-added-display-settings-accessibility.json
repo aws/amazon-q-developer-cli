@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Added `/settings display` to toggle animations, ASCII art, and icons. Changes take effect immediately."
+}

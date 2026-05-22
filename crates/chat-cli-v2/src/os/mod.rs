@@ -63,6 +63,11 @@ impl Os {
         let region = token.as_ref().and_then(|t| t.region.as_deref());
         let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
 
+        crate::rollout::Rollout::init(
+            database.get_client_id().ok().flatten(),
+            database.get_start_url().ok().flatten(),
+        );
+
         Ok(Self {
             env,
             fs,

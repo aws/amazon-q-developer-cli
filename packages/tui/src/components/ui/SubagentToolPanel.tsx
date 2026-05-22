@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { Box } from './../../renderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Text } from '../ui/text/Text.js';
 import { Icon, IconType } from '../ui/icon/Icon.js';
@@ -56,6 +57,8 @@ interface AgentRow {
 export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
   function SubagentToolPanel({ isStatic = false }) {
     const { getColor } = useTheme();
+    const glyphs = useGlyphs();
+    const { allowIcons } = useAllowIcons();
     const sessions = useAppStore((state) => state.sessions);
     const sessionId = useAppStore((state) => state.sessionId);
     const messages = useAppStore((state) => state.messages);
@@ -175,7 +178,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
             statusText = isError ? 'Failed' : 'Completed';
             statusColor = isError ? 'error' : 'success';
           } else if (row.hasPendingApproval) {
-            statusText = '⚠ tool approval needed';
+            statusText = `${!allowIcons ? '' : glyphs.warning} tool approval needed`;
             statusColor = 'warning';
           } else if (row.activeToolDesc) {
             statusText = row.activeToolDesc;

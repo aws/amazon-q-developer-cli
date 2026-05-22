@@ -7,6 +7,9 @@ pub const BUILTIN_TOOLS_PREFIX: &str = "@builtin";
 
 pub const US_GOV_EAST: &str = "us-gov-east-1";
 pub const US_GOV_WEST: &str = "us-gov-west-1";
+pub const US_ISO_DCA: &str = "us-iso-east-1";
+pub const US_ISO_LCK: &str = "us-isob-east-1";
+pub const US_ISO_ALE: &str = "us-isof-south-1";
 
 /// Build time env vars
 pub mod build {

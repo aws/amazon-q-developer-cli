@@ -82,3 +82,58 @@ describe('parseCommand', () => {
     });
   });
 });
+
+import { groupOptions, filterCommands } from './commands';
+
+describe('groupOptions', () => {
+  it('groups options by their group field', () => {
+    const options = [
+      { value: 'a', label: 'A', group: 'First' },
+      { value: 'b', label: 'B', group: 'Second' },
+      { value: 'c', label: 'C', group: 'First' },
+    ];
+    const groups = groupOptions(options as any);
+    expect(groups.get('First')).toHaveLength(2);
+    expect(groups.get('Second')).toHaveLength(1);
+  });
+
+  it('uses "Other" as default group', () => {
+    const options = [{ value: 'x', label: 'X' }];
+    const groups = groupOptions(options as any);
+    expect(groups.get('Other')).toHaveLength(1);
+  });
+
+  it('returns empty map for empty input', () => {
+    expect(groupOptions([])).toEqual(new Map());
+  });
+});
+
+describe('filterCommands', () => {
+  const commands = [
+    { name: '/clear', description: 'Clear conversation' },
+    { name: '/help', description: 'Show help panel' },
+    { name: '/model', description: 'Change model' },
+  ];
+
+  it('filters by name prefix', () => {
+    const result = filterCommands(commands as any, '/cl');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe('/clear');
+  });
+
+  it('filters by description content', () => {
+    const result = filterCommands(commands as any, 'panel');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe('/help');
+  });
+
+  it('returns all for empty partial', () => {
+    const result = filterCommands(commands as any, '');
+    expect(result).toHaveLength(3);
+  });
+
+  it('is case-insensitive', () => {
+    const result = filterCommands(commands as any, '/CLEAR');
+    expect(result).toHaveLength(1);
+  });
+});

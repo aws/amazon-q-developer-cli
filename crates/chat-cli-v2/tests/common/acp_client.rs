@@ -35,11 +35,7 @@ use tokio_util::compat::{
 
 /// Helper to create a text content block.
 pub fn text_content(text: &str) -> acp::ContentBlock {
-    acp::ContentBlock::Text(acp::TextContent {
-        text: text.to_string(),
-        annotations: None,
-        meta: None,
-    })
+    acp::ContentBlock::Text(acp::TextContent::new(text.to_string()))
 }
 
 /// Captured notifications from the agent.
@@ -155,14 +151,11 @@ impl acp::Client for TestAcpClient {
 
         if self.trust_all {
             // Auto-approve with AllowOnce
-            return Ok(acp::RequestPermissionResponse {
-                outcome: acp::RequestPermissionOutcome::Selected {
-                    option_id: acp::PermissionOptionId(
-                        agent::protocol::PermissionOptionId::AllowOnce.to_string().into(),
-                    ),
-                },
-                meta: None,
-            });
+            return Ok(acp::RequestPermissionResponse::new(
+                acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+                    acp::PermissionOptionId::new(agent::protocol::PermissionOptionId::AllowOnce.to_string()),
+                )),
+            ));
         }
 
         // Pop from pre-queued responses
@@ -174,13 +167,13 @@ impl acp::Client for TestAcpClient {
             .expect("No permission response queued - use queue_permission_response() before prompt");
 
         let outcome = match response {
-            PermissionResponse::Select(id) => acp::RequestPermissionOutcome::Selected {
-                option_id: acp::PermissionOptionId(id.into()),
-            },
+            PermissionResponse::Select(id) => acp::RequestPermissionOutcome::Selected(
+                acp::SelectedPermissionOutcome::new(acp::PermissionOptionId::new(id)),
+            ),
             PermissionResponse::Cancel => acp::RequestPermissionOutcome::Cancelled,
         };
 
-        Ok(acp::RequestPermissionResponse { outcome, meta: None })
+        Ok(acp::RequestPermissionResponse::new(outcome))
     }
 
     async fn write_text_file(&self, _: acp::WriteTextFileRequest) -> acp::Result<acp::WriteTextFileResponse> {
@@ -210,10 +203,7 @@ impl acp::Client for TestAcpClient {
         Err(acp::Error::method_not_found())
     }
 
-    async fn kill_terminal_command(
-        &self,
-        _: acp::KillTerminalCommandRequest,
-    ) -> acp::Result<acp::KillTerminalCommandResponse> {
+    async fn kill_terminal(&self, _: acp::KillTerminalRequest) -> acp::Result<acp::KillTerminalResponse> {
         Err(acp::Error::method_not_found())
     }
 
@@ -409,21 +399,15 @@ impl AcpTestClient {
             })
             .await
             .ok();
-        rx.await.map_err(|_e| acp::Error {
-            code: -1,
-            message: "execute_command actor channel closed".to_string(),
-            data: None,
-        })?
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "execute_command actor channel closed".to_string()))?
     }
 
     pub async fn list_sessions(&self, cwd: PathBuf) -> acp::Result<ListSessionsResponse> {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::ListSessions { cwd, reply }).await.ok();
-        rx.await.map_err(|_e| acp::Error {
-            code: -1,
-            message: "list_sessions actor channel closed".to_string(),
-            data: None,
-        })?
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "list_sessions actor channel closed".to_string()))?
     }
 
     pub async fn get_command_options(
@@ -440,11 +424,8 @@ impl AcpTestClient {
             })
             .await
             .ok();
-        rx.await.map_err(|_e| acp::Error {
-            code: -1,
-            message: "get_command_options actor channel closed".to_string(),
-            data: None,
-        })?
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "get_command_options actor channel closed".to_string()))?
     }
 
     pub async fn captured(&self) -> CapturedNotifications {
@@ -515,16 +496,9 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                     let conn = conn.clone();
                     async move {
                         let result = conn
-                            .initialize(acp::InitializeRequest {
-                                protocol_version: acp::V1,
-                                client_capabilities: acp::ClientCapabilities::default(),
-                                client_info: Some(acp::Implementation {
-                                    name: "test-client".to_string(),
-                                    title: Some("Test Client".to_string()),
-                                    version: "0.1.0".to_string(),
-                                }),
-                                meta: None,
-                            })
+                            .initialize(acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
+                                acp::Implementation::new("test-client", "0.1.0").title(Some("Test Client".to_string())),
+                            )))
                             .await;
                         let _ = reply.send(result);
                     }
@@ -539,25 +513,14 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                     let conn = conn.clone();
                     async move {
                         let result = conn
-                            .new_session(acp::NewSessionRequest {
-                                mcp_servers,
-                                cwd,
-                                meta: None,
-                            })
+                            .new_session(acp::NewSessionRequest::new(cwd).mcp_servers(mcp_servers))
                             .await;
                         let _ = reply.send(result);
                     }
                 });
             },
             Command::LoadSession { session_id, cwd, reply } => {
-                let result = conn
-                    .load_session(acp::LoadSessionRequest {
-                        session_id,
-                        cwd,
-                        mcp_servers: Vec::new(),
-                        meta: None,
-                    })
-                    .await;
+                let result = conn.load_session(acp::LoadSessionRequest::new(session_id, cwd)).await;
                 let _ = reply.send(result);
             },
             Command::Prompt {
@@ -568,13 +531,7 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                 tokio::task::spawn_local({
                     let conn = conn.clone();
                     async move {
-                        let result = conn
-                            .prompt(acp::PromptRequest {
-                                session_id,
-                                prompt: content,
-                                meta: None,
-                            })
-                            .await;
+                        let result = conn.prompt(acp::PromptRequest::new(session_id, content)).await;
                         let _ = reply.send(result);
                     }
                 });
@@ -583,13 +540,16 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                 tokio::task::spawn_local({
                     let conn = conn.clone();
                     async move {
-                        let result = conn.cancel(acp::CancelNotification { session_id, meta: None }).await;
+                        let result = conn.cancel(acp::CancelNotification::new(session_id)).await;
                         let _ = reply.send(result);
                     }
                 });
             },
-            // TODO: Replace ext_method with typed conn.list_sessions() once sacp /
-            // agent-client-protocol adds native session/list support.
+            // V2's ACP server still exposes session listing via the legacy
+            // `kiro.dev/session/list` ext_method (no native session/list
+            // handler yet on the agent side). Keep the ext_method here so
+            // these tests exercise V2's actual surface. The KAS client uses
+            // native ACP session/list.
             Command::ListSessions { cwd, reply } => {
                 tokio::task::spawn_local({
                     let conn = conn.clone();
@@ -597,17 +557,11 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                         let params = serde_json::json!({ "cwd": cwd });
                         let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
                         let result = conn
-                            .ext_method(acp::ExtRequest {
-                                method: "kiro.dev/session/list".into(),
-                                params: raw_params.into(),
-                            })
+                            .ext_method(acp::ExtRequest::new("kiro.dev/session/list", raw_params.into()))
                             .await
                             .and_then(|resp| {
-                                serde_json::from_str::<ListSessionsResponse>(resp.get()).map_err(|e| acp::Error {
-                                    code: -1,
-                                    message: e.to_string(),
-                                    data: None,
-                                })
+                                serde_json::from_str::<ListSessionsResponse>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
                             });
                         let _ = reply.send(result);
                     }
@@ -628,19 +582,11 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                         });
                         let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
                         let result = conn
-                            .ext_method(acp::ExtRequest {
-                                method: "kiro.dev/commands/options".into(),
-                                params: raw_params.into(),
-                            })
+                            .ext_method(acp::ExtRequest::new("kiro.dev/commands/options", raw_params.into()))
                             .await
                             .and_then(|resp| {
-                                serde_json::from_str::<agent::tui_commands::CommandOptionsResponse>(resp.get()).map_err(
-                                    |e| acp::Error {
-                                        code: -1,
-                                        message: e.to_string(),
-                                        data: None,
-                                    },
-                                )
+                                serde_json::from_str::<agent::tui_commands::CommandOptionsResponse>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
                             });
                         let _ = reply.send(result);
                     }
@@ -652,11 +598,10 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                 reply,
             } => {
                 let result = conn
-                    .set_session_mode(acp::SetSessionModeRequest {
+                    .set_session_mode(acp::SetSessionModeRequest::new(
                         session_id,
-                        mode_id: acp::SessionModeId(mode_id.into()),
-                        meta: None,
-                    })
+                        acp::SessionModeId::new(mode_id),
+                    ))
                     .await;
                 let _ = reply.send(result);
             },
@@ -666,11 +611,10 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                 reply,
             } => {
                 let result = conn
-                    .set_session_model(acp::SetSessionModelRequest {
+                    .set_session_model(acp::SetSessionModelRequest::new(
                         session_id,
-                        model_id: acp::ModelId(model_id.into()),
-                        meta: None,
-                    })
+                        acp::ModelId::new(model_id),
+                    ))
                     .await;
                 let _ = reply.send(result);
             },
@@ -685,17 +629,11 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                 });
                 let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
                 let result = conn
-                    .ext_method(acp::ExtRequest {
-                        method: "kiro.dev/commands/execute".into(),
-                        params: raw_params.into(),
-                    })
+                    .ext_method(acp::ExtRequest::new("kiro.dev/commands/execute", raw_params.into()))
                     .await
                     .and_then(|resp| {
-                        serde_json::from_str::<agent::tui_commands::CommandResult>(resp.get()).map_err(|e| acp::Error {
-                            code: -1,
-                            message: e.to_string(),
-                            data: None,
-                        })
+                        serde_json::from_str::<agent::tui_commands::CommandResult>(resp.0.get())
+                            .map_err(|e| acp::Error::new(-1, e.to_string()))
                     });
                 let _ = reply.send(result);
             },

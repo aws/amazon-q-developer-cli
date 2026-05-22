@@ -1,9 +1,11 @@
 import * as net from 'net';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { AgentStreamEvent } from '../types/agent-events';
 import type { AppState } from '../stores/app-store';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
-import { getMockSessionClient } from './MockSessionClient';
+import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
 
@@ -15,6 +17,13 @@ export interface TestCaseOptions {
   testName?: string;
   /** Extra environment variables merged into the spawned process env. */
   extraEnv?: Record<string, string>;
+  /**
+   * User settings written to a sandboxed `$KIRO_HOME/settings/cli.json`
+   * before launch. Set via {@link TestCaseBuilder.withGlobalSettings}.
+   * Use this instead of relying on the developer's real `~/.kiro` config
+   * so tests don't depend on local environment.
+   */
+  settings?: Record<string, unknown>;
 }
 
 /**
@@ -50,6 +59,12 @@ export class TestCase {
   private paths: TestPaths;
   private options: TestCaseOptions;
   private tuiConnection?: TuiIpcConnection;
+  /**
+   * Sandbox `$KIRO_HOME` directory created when {@link TestCaseOptions.settings}
+   * is provided, so the TUI's `cli-settings` reader sees this test's settings
+   * instead of the developer's real `~/.kiro/settings/cli.json`.
+   */
+  private sandboxDir?: string;
 
   constructor(options: TestCaseOptions = {}) {
     this.options = {
@@ -63,6 +78,22 @@ export class TestCase {
       outputSubdir: 'integ',
     });
 
+    // If the test specified global settings, write them to a sandboxed
+    // $KIRO_HOME/settings/cli.json and point KIRO_HOME at it. Without this
+    // the TUI's readBoolSetting() falls through to the developer's real
+    // ~/.kiro/settings/cli.json — making tests silently dependent on local
+    // config (e.g. chat.showThinking).
+    const sandboxEnv: Record<string, string> = {};
+    if (this.options.settings) {
+      this.sandboxDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), `kiro-integ-${testName}-`)
+      );
+      const settingsPath = path.join(this.sandboxDir, 'settings', 'cli.json');
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
+      sandboxEnv.KIRO_HOME = this.sandboxDir;
+    }
+
     this.ptyManager = new PtyManager({
       width: this.options.terminalSize!.width,
       height: this.options.terminalSize!.height,
@@ -73,6 +104,7 @@ export class TestCase {
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
         KIRO_AGENT_PATH: 'mock-agent-path',
+        ...sandboxEnv,
         ...options.extraEnv,
       },
     });
@@ -162,6 +194,15 @@ export class TestCase {
 
     this.ptyManager.kill();
     this.tuiConnection?.close();
+
+    // Clean up sandbox $KIRO_HOME directory if one was created.
+    if (this.sandboxDir) {
+      try {
+        fs.rmSync(this.sandboxDir, { recursive: true, force: true });
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
   }
 
   /**
@@ -250,9 +291,14 @@ export class TestCase {
    * ```
    */
   async mockSessionUpdate(event: AgentStreamEvent): Promise<void> {
-    const mockClient = getMockSessionClient();
-    if (!mockClient) throw new Error('Mock client not available');
-    mockClient.injectEvent(event);
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MOCK_SESSION_UPDATE',
+      event,
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error((response.data as any).error);
+    }
   }
 
   // /**
@@ -300,6 +346,29 @@ export class TestCase {
    */
   getSnapshot(): string[] {
     return this.ptyManager.getSnapshot();
+  }
+
+  /**
+   * Finds the first occurrence of `text` on the terminal screen and returns
+   * the per-character formatting attributes for each cell of the match
+   * (bold, italic, underline, fgColor, etc.). Returns null if not found.
+   *
+   * Used by markdown-rendering tests to assert that styling attributes
+   * survive the markdown -> ANSI -> xterm pipeline.
+   */
+  findTextCells(text: string): CellAttributes[] | null {
+    return this.ptyManager.findTextCells(text);
+  }
+
+  /**
+   * Resets the xterm buffer (visible screen + scrollback) and the raw
+   * output buffer, leaving the underlying TUI process untouched. Used
+   * by tests that share a single TUI across multiple cases (e.g. the
+   * markdown-rendering suites) so each case starts from a clean screen
+   * for `findTextCells()` / `getSnapshot()` lookups.
+   */
+  clearTerminal(): void {
+    this.ptyManager.clearTerminal();
   }
 
   /**
@@ -440,6 +509,28 @@ export class TestCaseBuilder {
    */
   withEnv(env: Record<string, string>): TestCaseBuilder {
     this.options.extraEnv = { ...this.options.extraEnv, ...env };
+    return this;
+  }
+
+  /**
+   * Writes user settings to a sandboxed `$KIRO_HOME/settings/cli.json`
+   * before launch and points the spawned TUI at that sandbox via
+   * `KIRO_HOME`. Use this when a test depends on a setting that the TUI
+   * reads at module load (e.g. `chat.showThinking`) so it doesn't pick
+   * up the developer's real `~/.kiro/settings/cli.json`.
+   *
+   * Calls compose: subsequent invocations merge into the prior settings
+   * object.
+   *
+   * @example
+   * ```ts
+   * await TestCase.builder()
+   *   .withGlobalSettings({ 'chat.showThinking': true })
+   *   .launch();
+   * ```
+   */
+  withGlobalSettings(settings: Record<string, unknown>): TestCaseBuilder {
+    this.options.settings = { ...this.options.settings, ...settings };
     return this;
   }
 

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Persist model ID on reasoning blocks and filter stale reasoning on model switch"
+}

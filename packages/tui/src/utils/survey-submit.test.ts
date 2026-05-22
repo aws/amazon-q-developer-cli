@@ -50,7 +50,7 @@ describe('buildSurveyPayload: SessionFeedback', () => {
     expect(r.question).toBe('Experience with Kiro CLI');
     expect(r.pii).toBe(false);
     expect(r.response.responseType).toBe('rating');
-    expect(r.response.responseValue).toEqual(['Excellent']);
+    expect(r.response.responseValue).toEqual(['5']);
     expect(r.response.rowLabels).toBeDefined();
     expect(r.response.columnLabels).toBeDefined();
   });
@@ -91,9 +91,11 @@ describe('buildSurveyPayload: SessionFeedback', () => {
       { experience: 'Good' },
       { sessionId: 'sess-abc', isInternal: true }
     );
-    expect(payload.metadata!.sessionId).toBe('sess-abc');
-    expect(payload.metadata!.isInternal).toBe('true');
-    expect(payload.metadata!.userId).toMatch(/^[a-f0-9]{16}$/);
+    const findMeta = (key: string) =>
+      payload.metadataList!.find((m) => m.key === key)?.value;
+    expect(findMeta('sessionId')).toBe('sess-abc');
+    expect(findMeta('isInternal')).toBe('true');
+    expect(findMeta('userId')).toMatch(/^[a-f0-9]{16}$/);
   });
 });
 
@@ -121,7 +123,7 @@ describe('buildSurveyPayload: Plan', () => {
     const r = payload.customerResponses[0]!;
     expect(r.question).toBe('/plan');
     expect(r.response.responseType).toBe('rating');
-    expect(r.response.responseValue).toEqual(['Extremely well']);
+    expect(r.response.responseValue).toEqual(['5']);
     expect(r.response.rowLabels).toBeDefined();
     expect(r.response.columnLabels).toBeDefined();
   });
@@ -193,9 +195,7 @@ describe('submitFormToAperture', () => {
     const parsed = JSON.parse(capturedBody!);
     expect(parsed.name).toBe('Plan');
     expect(parsed.customerResponses[0].question).toBe('/plan');
-    expect(parsed.customerResponses[0].response.responseValue).toEqual([
-      'Very well',
-    ]);
+    expect(parsed.customerResponses[0].response.responseValue).toEqual(['4']);
   });
 
   test('surfaces 429 as rateLimited', async () => {

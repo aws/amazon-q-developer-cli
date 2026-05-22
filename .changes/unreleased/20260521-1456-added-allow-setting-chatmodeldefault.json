@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Allow setting chat.modelDefaults via the 'kiro-cli settings' command"
+}
