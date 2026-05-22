@@ -171,6 +171,7 @@ jobs:
         id: generated
         run: |
           echo "=== Files modified by agents ==="
+          git add -N autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
           git diff --name-only || true
           echo ""
           CHANGES=""
