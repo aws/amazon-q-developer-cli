@@ -5,7 +5,6 @@ use crate::util::consts::env_var::{
 };
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
-pub mod bot;
 pub mod chat;
 mod debug;
 mod diagnostics;
@@ -132,9 +131,6 @@ pub enum RootSubcommand {
     Mcp(McpSubcommand),
     /// Check for and install updates
     Update(update::UpdateArgs),
-    /// Manage ACP-backed bot instances
-    #[command(hide = true)]
-    Bot(bot::BotArgs),
     /// Start Agent Client Protocol (ACP) agent
     #[command(hide = true)]
     Acp {
@@ -341,7 +337,6 @@ impl RootSubcommand {
                 },
                 Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
                 Self::Update(args) => args.execute(os).await,
-                Self::Bot(args) => args.execute(os).await,
                 Self::Acp {
                     agent,
                     model,
@@ -510,7 +505,6 @@ impl RootSubcommand {
             },
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
             Self::Update(args) => args.execute(os).await,
-            Self::Bot(args) => args.execute(os).await,
             Self::Acp {
                 agent,
                 model,
@@ -750,7 +744,6 @@ impl Display for RootSubcommand {
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
             Self::Update(_) => "update",
-            Self::Bot(_) => "bot",
             Self::Acp { .. } => "acp",
             Self::AcpClient { .. } => "acp-client",
             #[cfg(feature = "voice")]

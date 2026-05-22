@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: 3d576d424
+  validated: 2026-04-08
+  commit: 1a984cb0
   status: validated
   testable_headless: true
   category: tool
   title: introspect
   description: Self-awareness tool providing information about Kiro CLI capabilities and documentation
   keywords: [introspect, help, documentation, capabilities, features, search]
-  related: [guide, help, kiro-cli-help]
+  related: [guide, help]
 ---
 
 ## Overview
@@ -137,19 +137,8 @@ Returns explanation of trust settings and permission prompts.
 **Cause**: Setting may be new or not yet documented
 **Solution**: Use `kiro-cli settings list` to see all settings directly.
 
-## Relationship with Other Help Tools
-
-The help agent (`/help`) uses multiple documentation sources together:
-
-1. **`search_kiro_knowledge`** (MCP tool, preferred) — Searches a Bedrock Knowledge Base containing canonical docs, GitHub issues, and release notes. Used first for "how do I…?" and behavioral questions.
-2. **`introspect`** (this tool) — Used for fixed-shape lookups: tool schemas, slash command indexes, configuration keys. Also serves as fallback when `search_kiro_knowledge` returns no results.
-3. **`kiro_cli_help`** — Fetches live `--help` output from the kiro-cli binary for precise flag listings.
-
-When the help agent cannot find an answer via `search_kiro_knowledge`, it falls back to `introspect` and explicitly notes the answer is not from the canonical docs.
-
 ## Related
 
-- [kiro_cli_help](kiro-cli-help.md) — Live CLI help/version output
 - [/guide](../slash-commands/guide.md) — Switch to guide agent for interactive help
 - [/help](../slash-commands/help.md) — List all slash commands
 - [Settings](../commands/settings.md) — Configuration management

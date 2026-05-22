@@ -2282,7 +2282,6 @@ dependencies = [
  "indoc",
  "insta",
  "jsonschema 0.30.0",
- "kiro-bot",
  "libc",
  "mimalloc",
  "mockito",

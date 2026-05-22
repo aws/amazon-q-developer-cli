@@ -569,45 +569,6 @@ mod tests {
         assert!(!names.contains(&"backup-agent"), "should not load .json.bak files");
     }
 
-    /// The kiro-help (Slack bot) agent is NOT a built-in — it's bot-only and
-    /// must not ship in the public kiro-cli binary. This test pins that:
-    /// load_agents() against an empty filesystem must not return kiro-help.
-    /// The bot's container ships kiro-help.json into ~/.kiro/agents/ so the
-    /// disk-loader picks it up; nothing else should.
-    #[tokio::test]
-    async fn test_kiro_help_is_not_a_builtin() {
-        let base = TestBase::new().await;
-        let (agents, _) = load_agents(base.provider()).await.unwrap();
-        assert!(
-            !agents.iter().any(|a| a.name() == "kiro-help"),
-            "kiro-help must not be a built-in — it's bot-only and ships via container disk"
-        );
-    }
-
-    /// When kiro-help.json is present in the global agents directory (which
-    /// is how the bot's container delivers it), v2's loader picks it up by
-    /// name. This is the *only* path by which the bot gets the agent.
-    #[tokio::test]
-    async fn test_kiro_help_loads_from_global_agents_dir() {
-        // Minimal valid kiro-help shape — the real prompt+skill ride in via
-        // the bot container's runtime Dockerfile, which is tested in CDK.
-        let kiro_help_json = r#"{
-            "name": "kiro-help",
-            "description": "Slack bot agent",
-            "tools": ["read", "introspect"]
-        }"#;
-        let base = TestBase::new()
-            .await
-            .with_file(("~/.kiro/agents/kiro-help.json", kiro_help_json))
-            .await;
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
-        assert!(errors.is_empty(), "no errors: {:?}", errors);
-        assert!(
-            agents.iter().any(|a| a.name() == "kiro-help"),
-            "kiro-help must load from disk so the bot's --agent kiro-help works"
-        );
-    }
-
     #[tokio::test]
     async fn test_load_agent_prompt_resolution() {
         let base = TestBase::new()
