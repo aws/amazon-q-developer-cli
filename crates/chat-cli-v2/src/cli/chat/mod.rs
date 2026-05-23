@@ -28,19 +28,15 @@ pub enum WrapMode {
 /// This struct only defines the CLI arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
-    /// Resume a conversation. Shows picker in interactive mode; resumes specific session if ID
-    /// given.
-    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "SESSION_ID")]
-    pub resume: Option<String>,
+    /// Resume the most recent conversation from this directory.
+    #[arg(short, long)]
+    pub resume: bool,
     /// Resume a specific conversation by session ID.
-    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker", "continue_session"])]
+    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker"])]
     pub resume_id: Option<String>,
     /// Interactively select a conversation to resume from this directory.
-    #[arg(long, conflicts_with = "resume", hide = true)]
+    #[arg(long, conflicts_with = "resume")]
     pub resume_picker: bool,
-    /// Resume the most recent conversation without showing the picker.
-    #[arg(long = "continue", conflicts_with_all = ["resume", "resume_picker"])]
-    pub continue_session: bool,
     /// Context profile to use
     #[arg(long = "agent", alias = "profile")]
     pub agent: Option<String>,

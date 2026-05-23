@@ -275,19 +275,15 @@ pub use chat_cli_v2::launch_options::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
-    /// Resume a conversation. Shows picker in interactive mode; resumes specific session if ID
-    /// given.
-    #[arg(short, long, num_args = 0..=1, default_missing_value = "", value_name = "SESSION_ID")]
-    pub resume: Option<String>,
+    /// Resume the most recent conversation from this directory.
+    #[arg(short, long)]
+    pub resume: bool,
     /// Resume a specific conversation by session ID.
-    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker", "continue_session"])]
+    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["resume", "resume_picker"])]
     pub resume_id: Option<String>,
     /// Interactively select a conversation to resume from this directory.
-    #[arg(long, conflicts_with = "resume", hide = true)]
+    #[arg(long, conflicts_with = "resume")]
     pub resume_picker: bool,
-    /// Resume the most recent conversation without showing the picker.
-    #[arg(long = "continue", conflicts_with_all = ["resume", "resume_picker"])]
-    pub continue_session: bool,
     /// Context profile to use
     #[arg(long = "agent", alias = "profile")]
     pub agent: Option<String>,
@@ -808,17 +804,14 @@ impl ChatArgs {
             }
         }
 
-        // Handle interactive session selection
+        // Handle interactive session selection if --resume-picker flag is used
         let resume_session_id = if let Some(id) = self.resume_id.take() {
             Some(id)
-        } else if let Some(ref id) = self.resume {
-            if !id.is_empty() {
-                // --resume <ID>: resume specific session by ID
-                Some(id.clone())
-            } else if !self.no_interactive && std::io::stdin().is_terminal() {
-                // --resume (no ID) in interactive terminal: show picker
-                match std::env::current_dir() {
-                    Ok(cwd) => match os.database.list_conversations_by_path(&cwd) {
+        } else if self.resume_picker {
+            // Case 3: Resume with interactive selection
+            match std::env::current_dir() {
+                Ok(cwd) => {
+                    match os.database.list_conversations_by_path(&cwd) {
                         Ok(conversations) if !conversations.is_empty() => {
                             let entries = cli::persist::build_session_entries(conversations);
 
@@ -827,35 +820,16 @@ impl ChatArgs {
                             cli::persist::select_chat_session(&entries, prompt)
                                 .map(|index| entries[index].session_id.clone())
                         },
-                        _ => None,
-                    },
-                    Err(_) => None,
-                }
-            } else {
-                // --resume (no ID) in non-interactive/piped: resume most recent
-                Some(String::new())
-            }
-        } else if self.resume_picker {
-            // Hidden --resume-picker: show picker (backward compat)
-            match std::env::current_dir() {
-                Ok(cwd) => match os.database.list_conversations_by_path(&cwd) {
-                    Ok(conversations) if !conversations.is_empty() => {
-                        let entries = cli::persist::build_session_entries(conversations);
-
-                        let prompt = "Select a chat session to resume:";
-
-                        cli::persist::select_chat_session(&entries, prompt)
-                            .map(|index| entries[index].session_id.clone())
-                    },
-                    _ => None,
+                        _ => None, // No sessions or error, start new session
+                    }
                 },
-                Err(_) => None,
+                Err(_) => None, // Can't get cwd, start new session
             }
-        } else if self.continue_session {
-            // --continue: resume most recent
+        } else if self.resume {
+            // Case 2: Resume most recent (empty string signals this to ChatSession::new)
             Some(String::new())
         } else {
-            // Brand new conversation
+            // Case 1: Brand new conversation
             None
         };
 

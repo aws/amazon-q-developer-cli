@@ -19,7 +19,7 @@ describe('/session-id', () => {
     runEffect(sessionIdCmd, null, ctx, '');
 
     expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
-      'Session ID: test-uuid-1234\nResume with: kiro-cli --resume test-uuid-1234',
+      'Session ID: test-uuid-1234\nResume with: kiro-cli --resume-id test-uuid-1234',
       'success',
       10000
     );

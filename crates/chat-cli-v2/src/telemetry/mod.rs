@@ -292,7 +292,7 @@ impl TelemetryThread {
         subcommand: &RootSubcommand,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::CliSubcommandExecuted {
-            subcommand: subcommand.to_string(),
+            subcommand: subcommand.telemetry_name(),
         });
         set_event_metadata(database, &mut telemetry_event).await;
 

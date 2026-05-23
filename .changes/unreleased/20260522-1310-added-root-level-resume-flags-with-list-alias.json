@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "--resume, --resume-id, and --resume-picker (with --list alias) are now available at the root level — use `kiro-cli --resume` instead of `kiro-cli chat --resume`"
+}

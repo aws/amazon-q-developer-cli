@@ -886,7 +886,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const sessionId = ctx.kiro.sessionId ?? 'none';
     ctx.showAlert(
       sessionId !== 'none'
-        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume ${sessionId}`
+        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
         : 'Session ID: none',
       'success',
       10000

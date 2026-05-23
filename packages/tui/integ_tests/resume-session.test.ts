@@ -97,103 +97,6 @@ afterEach(async () => {
 });
 
 describe('--resume', () => {
-  it('shows picker in interactive mode and selects session with Enter', async () => {
-    const cwd = realpathSync(process.cwd());
-
-    createFakeSession({
-      sessionId: 'picker-via-resume-1',
-      cwd,
-      updatedAt: '2026-02-20T10:00:00Z',
-      userPrompt: 'first conversation',
-    });
-    createFakeSession({
-      sessionId: 'picker-via-resume-2',
-      cwd,
-      updatedAt: '2026-02-20T12:00:00Z',
-      userPrompt: 'second conversation',
-    });
-
-    testCase = await TestCase.builder()
-      .withTestName('resume-shows-picker')
-      .withArgs(['--resume'])
-      .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
-      .withTimeout(15000)
-      .launchWithoutWaiting();
-
-    // The picker runs before Twinki — wait for session items to render
-    await testCase.waitForVisibleText('second conversation', 10000);
-
-    // Press Enter to select the first (most recent) session
-    await testCase.pressEnter();
-
-    await testCase.waitForReady();
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    const store = await testCase.getStore();
-    expect(store.sessionId).toBe('picker-via-resume-2');
-
-    await testCase.pressCtrlCTwice();
-    const exitCode = await testCase.expectExit();
-    expect(exitCode).toBe(0);
-  }, 20000);
-
-  it('falls back to a new session when no sessions exist (picker is skipped)', async () => {
-    // sessionsDir is empty — picker has nothing to show and is skipped entirely.
-    // (Distinct from picker-shown-then-cancelled, which exits the process.)
-
-    testCase = await TestCase.builder()
-      .withTestName('resume-no-sessions')
-      .withArgs(['--resume'])
-      .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    // Should fall back to a new session (mock returns 'mock-session-id')
-    const store = await testCase.getStore();
-    expect(store.sessionId).toBe('mock-session-id');
-
-    await testCase.pressCtrlCTwice();
-    const exitCode = await testCase.expectExit();
-    expect(exitCode).toBe(0);
-  }, 20000);
-
-  it('picker dismissed with Escape falls through to a new session', async () => {
-    const cwd = realpathSync(process.cwd());
-
-    createFakeSession({
-      sessionId: 'resume-escape-session',
-      cwd,
-      updatedAt: '2026-02-20T12:00:00Z',
-      userPrompt: 'some conversation',
-    });
-
-    testCase = await TestCase.builder()
-      .withTestName('resume-escape')
-      .withArgs(['--resume'])
-      .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
-      .withTimeout(15000)
-      .launchWithoutWaiting();
-
-    await testCase.waitForVisibleText('Select a chat session', 10000);
-
-    await testCase.pressEscape();
-
-    // Falls through to a new session rather than exiting (matches V1 picker).
-    await testCase.waitForReady();
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    const store = await testCase.getStore();
-    expect(store.sessionId).toBe('mock-session-id');
-
-    await testCase.pressCtrlCTwice();
-    const exitCode = await testCase.expectExit();
-    expect(exitCode).toBe(0);
-  }, 20000);
-});
-
-describe('--continue', () => {
   it('resumes the most recent session for cwd without picker', async () => {
     // Use realpath to match the canonicalize() in sessions.ts
     const cwd = realpathSync(process.cwd());
@@ -213,8 +116,8 @@ describe('--continue', () => {
     });
 
     testCase = await TestCase.builder()
-      .withTestName('continue-most-recent')
-      .withArgs(['--continue'])
+      .withTestName('resume-most-recent')
+      .withArgs(['--resume'])
       .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
       .withTimeout(15000)
       .launch();
@@ -233,11 +136,11 @@ describe('--continue', () => {
   }, 20000);
 
   it('starts new session when no sessions exist for cwd', async () => {
-    // sessionsDir is empty — no sessions to continue
+    // sessionsDir is empty — no sessions to resume
 
     testCase = await TestCase.builder()
-      .withTestName('continue-no-sessions')
-      .withArgs(['--continue'])
+      .withTestName('resume-no-sessions')
+      .withArgs(['--resume'])
       .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
       .withTimeout(15000)
       .launch();
@@ -263,8 +166,8 @@ describe('--continue', () => {
     });
 
     testCase = await TestCase.builder()
-      .withTestName('continue-wrong-cwd')
-      .withArgs(['--continue'])
+      .withTestName('resume-wrong-cwd')
+      .withArgs(['--resume'])
       .withEnv({ KIRO_TEST_SESSIONS_DIR: sessionsDir })
       .withTimeout(15000)
       .launch();
