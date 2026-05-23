@@ -207,18 +207,28 @@ impl RootSubcommand {
     ///
     /// Emitting telemetry takes a long time so the answer is usually no.
     pub fn valid_for_telemetry(&self) -> bool {
-        matches!(self, Self::Chat(_) | Self::Login(_) | Self::Profile | Self::Issue(_))
+        // Hidden `chat _ ...` internal subcommands are not user-initiated
+        // chat; they are a tooling surface for tests and TUI IPC. Skip
+        // telemetry for those calls.
+        match self {
+            Self::Chat(args) if args.command.is_none() => true,
+            Self::Login(_) | Self::Profile | Self::Issue(_) => true,
+            _ => false,
+        }
     }
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
         if !is_logged_in(&mut os.database).await && std::env::var("KIRO_TEST_MODE").is_err() {
-            if matches!(self, Self::Chat(ref args) if args.no_interactive) {
+            // Hidden `chat _ ...` internal subcommands run without auth so
+            // tests can drive them in sandboxes that have no logged-in user.
+            let is_internal_chat = matches!(self, Self::Chat(ref args) if args.command.is_some());
+            if matches!(self, Self::Chat(ref args) if args.no_interactive) && !is_internal_chat {
                 eprintln!(
                     "Not logged in. Set the {KIRO_API_KEY} environment variable or run `{CLI_BINARY_NAME} login` first."
                 );
                 return Ok(ExitCode::FAILURE);
-            } else if matches!(self, Self::Chat(_)) {
+            } else if matches!(self, Self::Chat(_)) && !is_internal_chat {
                 let options = ["Yes", "No"];
                 match crate::util::choose(" You are not logged in. Login now?", &options)? {
                     Some(0) => {},
@@ -304,6 +314,13 @@ impl RootSubcommand {
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
                 Self::Chat(mut args) => {
+                    // Hidden internal subcommands (`chat _ export-session`,
+                    // `chat _ import-session`). Bypass auth/login, telemetry,
+                    // and TUI launch; emit a single JSON line and exit.
+                    if let Some(command) = args.command.take() {
+                        return command.execute();
+                    }
+
                     // Handle --list-models before TUI launch
                     if args.list_models {
                         return crate::cli::chat::cli::model::print_model_list(os, args.format)
@@ -462,6 +479,13 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(mut args) => {
+                // Hidden internal subcommands (`chat _ export-session`,
+                // `chat _ import-session`). Bypass auth/login, telemetry,
+                // and TUI launch; emit a single JSON line and exit.
+                if let Some(command) = args.command.take() {
+                    return command.execute();
+                }
+
                 // Handle --list-models before TUI launch
                 if args.list_models {
                     return crate::cli::chat::cli::model::print_model_list(os, args.format)

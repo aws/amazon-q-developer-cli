@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataModelVersion": 1,
+  "id": "sess_5e804080-466c-4f65-bde9-f6133b7068f6",
+  "title": "Nimble Haze",
+  "agentMode": "vibe",
+  "workspacePaths": [
+    "/private/tmp/kiro-fixture-workspace2"
+  ],
+  "createdAt": "2026-05-21T20:35:47.304Z",
+  "lastModifiedAt": "2026-05-21T20:36:38.836Z"
+}

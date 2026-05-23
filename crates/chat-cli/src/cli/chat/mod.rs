@@ -20,6 +20,7 @@ pub mod context;
 mod conversation;
 mod file_reference;
 mod input_source;
+mod internal;
 mod message;
 mod parse;
 #[cfg(test)]
@@ -338,6 +339,10 @@ pub struct ChatArgs {
     /// Mode to use with KAS agent: "vibe" (default) or "spec"
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
+    /// Internal subcommands (`_ export-session`, `_ import-session`)
+    /// for tests and TUI IPC. Not user-facing.
+    #[command(subcommand)]
+    pub command: Option<internal::ChatCommand>,
 }
 
 impl ChatArgs {
