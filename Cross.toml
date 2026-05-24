@@ -3,6 +3,7 @@ pre-build = ["apt-get update && apt-get --assume-yes install unzip zsh libclang-
 
 [build.env]
 passthrough = [
+    "KIRO_VERSION",
     "AMAZON_Q_BUILD_TARGET_TRIPLE",
     "AMAZON_Q_BUILD_VARIANT",
     "AMAZON_Q_BUILD_HASH",
