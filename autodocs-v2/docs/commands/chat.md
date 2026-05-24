@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: c4ad3238
+  validated: 2026-05-22
+  commit: cdba9a0f8
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -69,7 +69,15 @@ kiro-cli chat --trust-tools=read,grep "Find all TODOs"
 
 **What this does**: Auto-approves only read and grep tools.
 
-#### Use Case 6: Resume Last Conversation
+#### Use Case 6: Start with Specific Effort Level
+
+```bash
+kiro-cli chat --effort low "Quick summary of this file"
+```
+
+**What this does**: Starts session with low reasoning effort for faster, cheaper responses.
+
+#### Use Case 7: Resume Last Conversation
 
 ```bash
 kiro-cli chat --resume
@@ -77,7 +85,7 @@ kiro-cli chat --resume
 
 **What this does**: Resumes most recent conversation from current directory. Restores the model that was active when the session was saved (e.g., if you switched models with `/model`).
 
-#### Use Case 7: Select Conversation to Resume
+#### Use Case 8: Select Conversation to Resume
 
 ```bash
 kiro-cli chat --resume-picker
@@ -94,6 +102,7 @@ kiro-cli chat --resume-picker
 | `--resume-picker` | | flag | Interactively select conversation to resume |
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
+| `--effort` | | string | Initial effort level (low, medium, high, xhigh, max) |
 | `--trust-all-tools` | `-a` | flag | Auto-approve all tool uses |
 | `--trust-tools` | | list | Auto-approve specific tools (comma-separated) |
 | `--no-interactive` | | flag | Run without user input (headless mode) |
@@ -125,7 +134,13 @@ kiro-cli chat --no-interactive --trust-all-tools "Run cargo test and summarize r
 kiro-cli chat --model <model-id> "Explain this codebase"
 ```
 
-### Example 4: List Conversations
+### Example 4: Set Initial Effort Level
+
+```bash
+kiro-cli chat --effort high "Review this PR for security issues"
+```
+
+### Example 5: List Conversations
 
 ```bash
 kiro-cli chat --list-sessions
@@ -144,7 +159,7 @@ Chat SessionId: 7bd2c90f-7080-4981-87f7-206d9147878f
 To delete a session, use: kiro-cli chat --delete-session <SESSION_ID>
 ```
 
-### Example 5: Delete Conversation
+### Example 6: Delete Conversation
 
 ```bash
 kiro-cli chat --delete-session abc123

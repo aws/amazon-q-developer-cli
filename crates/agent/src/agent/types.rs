@@ -158,6 +158,9 @@ pub struct AcpSpawnArgs {
     pub trust_tools: Option<Vec<String>>,
     /// Agent engine to use ("rust" or "kas").
     pub agent_engine: Option<String>,
+    /// Initial effort level to set (e.g. "low", "medium", "high").
+    /// Silently ignored if the resolved model does not support effort.
+    pub effort: Option<String>,
 }
 
 /// Settings to modify the runtime behavior of the agent.

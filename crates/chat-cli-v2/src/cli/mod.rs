@@ -129,6 +129,9 @@ pub enum RootSubcommand {
         /// Trust only this set of tools
         #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
         trust_tools: Option<Vec<String>>,
+        /// Initial effort level (e.g. low, medium, high, xhigh, max)
+        #[arg(long)]
+        effort: Option<String>,
     },
     /// ACP test client
     #[command(hide = true)]
@@ -234,6 +237,7 @@ impl RootSubcommand {
                 model,
                 trust_all_tools,
                 trust_tools,
+                effort,
             } => {
                 let spawn_args = ::agent::types::AcpSpawnArgs {
                     agent,
@@ -241,6 +245,7 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                     agent_engine: None,
+                    effort,
                 };
                 use std::sync::Arc;
 

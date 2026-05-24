@@ -8,6 +8,8 @@ export interface AcpSpawnArgs {
 	agent?: string;
 	/** Model ID to use when starting the first session. */
 	model?: string;
+	/** Initial effort level to set (e.g. "low", "medium", "high"). */
+	effort?: string;
 	/** Auto-approve all tool permission requests. */
 	trustAllTools?: boolean;
 	/** Trust only this set of tools (comma-separated names from CLI). */

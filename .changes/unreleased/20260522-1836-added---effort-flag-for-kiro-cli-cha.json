@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`--effort` flag for `kiro-cli chat` to set the initial effort level (low, medium, high, xhigh, max) for a session"
+}

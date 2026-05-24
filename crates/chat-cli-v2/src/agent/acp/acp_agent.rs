@@ -710,6 +710,7 @@ pub struct AcpSessionBuilder<'a> {
     global_mcp_path: Option<&'a PathBuf>,
     local_mcp_path: Option<&'a PathBuf>,
     model_id: Option<&'a str>,
+    effort: Option<&'a str>,
     session_tx: Option<SessionManagerHandle>,
     client_cx: Option<ConnectionTo<sacp::Client>>,
     mock_registry: Option<MockResponseRegistryHandle>,
@@ -748,6 +749,7 @@ impl<'a> Default for AcpSessionBuilder<'a> {
             global_mcp_path: None,
             local_mcp_path: None,
             model_id: None,
+            effort: None,
             session_tx: None,
             client_cx: None,
             mock_registry: None,
@@ -822,6 +824,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn model_id(mut self, id: Option<&'a str>) -> Self {
         self.model_id = id;
+        self
+    }
+
+    pub fn effort(mut self, level: Option<&'a str>) -> Self {
+        self.effort = level;
         self
     }
 
@@ -1229,6 +1236,13 @@ impl AcpSession {
             && let Some(saved_af) = saved_additional_fields
         {
             rts_state.restore_additional_fields(saved_af);
+        }
+
+        // Apply CLI --effort override (silently ignored if model doesn't support it)
+        if let Some(effort_level) = builder.effort
+            && let Err(e) = rts_state.set_additional_field("output_config.effort", effort_level)
+        {
+            warn!("--effort: {}", e);
         }
 
         let snapshot = {
@@ -3332,6 +3346,10 @@ pub async fn execute(
 
     if let Some(m) = args.model {
         let _ = session_manager_handle.set_next_model_id(m).await;
+    }
+
+    if let Some(e) = args.effort {
+        let _ = session_manager_handle.set_next_effort(e).await;
     }
 
     // Check auth status upfront so the initialize response only advertises auth methods when needed

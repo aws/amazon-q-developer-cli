@@ -60,6 +60,7 @@ const FLAG_DEFS: FlagDef[] = [
     acp: '--agent',
   },
   { type: 'string', key: 'model', flags: ['--model'], acp: '--model' },
+  { type: 'string', key: 'effort', flags: ['--effort'], acp: '--effort' },
   { type: 'string', key: 'resumeId', flags: ['--resume-id'] },
   {
     type: 'boolean',

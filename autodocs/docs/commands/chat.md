@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-05
-  commit: 21e95839
+  validated: 2026-05-22
+  commit: ee128aba5
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -53,7 +53,15 @@ kiro-cli chat --no-interactive "List all Rust files in src/"
 
 **What this does**: Executes single query non-interactively and exits.
 
-#### Use Case 4: Trust All Tools
+#### Use Case 4: Set Effort Level
+
+```bash
+kiro-cli chat --effort high "Refactor this module for better performance"
+```
+
+**What this does**: Starts session with high effort level for more thorough responses. Silently ignored if the model doesn't support effort levels.
+
+#### Use Case 5: Trust All Tools
 
 ```bash
 kiro-cli chat --trust-all-tools "Run tests and analyze results"
@@ -61,7 +69,7 @@ kiro-cli chat --trust-all-tools "Run tests and analyze results"
 
 **What this does**: Allows agent to use any tool without approval prompts.
 
-#### Use Case 5: Trust Specific Tools
+#### Use Case 6: Trust Specific Tools
 
 ```bash
 kiro-cli chat --trust-tools=fs_read,grep "Find all TODOs"
@@ -69,7 +77,7 @@ kiro-cli chat --trust-tools=fs_read,grep "Find all TODOs"
 
 **What this does**: Auto-approves only fs_read and grep tools.
 
-#### Use Case 6: Resume Last Conversation
+#### Use Case 7: Resume Last Conversation
 
 ```bash
 kiro-cli chat --resume
@@ -77,7 +85,7 @@ kiro-cli chat --resume
 
 **What this does**: Resumes most recent conversation from current directory. Restores the model that was active when the session was saved (e.g., if you switched models with `/model`).
 
-#### Use Case 7: Select Conversation to Resume
+#### Use Case 8: Select Conversation to Resume
 
 ```bash
 kiro-cli chat --resume-picker
@@ -93,6 +101,7 @@ kiro-cli chat --resume-picker
 | `--resume-picker` | | flag | Interactively select conversation to resume |
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
+| `--effort` | | string | Initial effort level (low, medium, high, xhigh, max) |
 | `--trust-all-tools` | `-a` | flag | Auto-approve all tool uses |
 | `--trust-tools` | | list | Auto-approve specific tools (comma-separated) |
 | `--no-interactive` | | flag | Run without user input (headless mode) |
@@ -241,6 +250,8 @@ Use `--no-interactive` for automation and scripts:
 **Agent Resolution**: Local agents (`.kiro/agents/`) take precedence over global (`~/.kiro/agents/`).
 
 **Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`. When resuming a session with `--resume`, the model active when the session was saved is restored (unless overridden with `--model`).
+
+**Effort Level**: The `--effort` flag sets the initial effort level for the session. Valid values are `low`, `medium`, `high`, `xhigh`, and `max`. If the resolved model doesn't support effort levels, the flag is silently ignored.
 
 **Tool Trust**: 
 - `--trust-all-tools`: Bypasses all tool approval prompts

@@ -140,6 +140,9 @@ pub enum RootSubcommand {
         /// Model ID to use when starting the first session
         #[arg(long)]
         model: Option<String>,
+        /// Initial effort level (e.g. low, medium, high, xhigh, max)
+        #[arg(long)]
+        effort: Option<String>,
         /// Auto-approve all tool permission requests
         #[arg(long, short = 'a')]
         trust_all_tools: bool,
@@ -363,6 +366,7 @@ impl RootSubcommand {
                 Self::Acp {
                     agent,
                     model,
+                    effort,
                     trust_all_tools,
                     trust_tools,
                     agent_engine,
@@ -386,6 +390,7 @@ impl RootSubcommand {
                         trust_all_tools,
                         trust_tools,
                         agent_engine: None,
+                        effort,
                     };
                     chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
                 },
@@ -539,6 +544,7 @@ impl RootSubcommand {
             Self::Acp {
                 agent,
                 model,
+                effort,
                 trust_all_tools,
                 trust_tools,
                 agent_engine,
@@ -565,6 +571,7 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                     agent_engine: None,
+                    effort,
                 };
                 chat_cli_v2::agent::acp::acp_agent::execute(&mut os, spawn_args, legacy_session_exporter).await
             },

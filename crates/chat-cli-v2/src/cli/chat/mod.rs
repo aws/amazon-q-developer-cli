@@ -43,6 +43,9 @@ pub struct ChatArgs {
     /// Current model to use
     #[arg(long = "model")]
     pub model: Option<String>,
+    /// Initial effort level (e.g. low, medium, high, xhigh, max)
+    #[arg(long = "effort")]
+    pub effort: Option<String>,
     /// Allows the model to use any tool to run commands without asking for confirmation.
     #[arg(short = 'a', long)]
     pub trust_all_tools: bool,

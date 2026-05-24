@@ -407,6 +407,8 @@ pub struct SessionManager {
     next_agent_name: Option<String>,
     /// Model ID to use for the next session, set via `--model` CLI flag.
     next_model_id: Option<String>,
+    /// Effort level to use for the next session, set via `--effort` CLI flag.
+    next_effort: Option<String>,
     /// Shared code intelligence clients - lazily initialized per CWD, shared across sessions
     code_intelligence: HashMap<PathBuf, Arc<RwLock<CodeIntelligence>>>,
     /// When true, all tool permission checks are bypassed for new sessions
@@ -490,6 +492,7 @@ impl SessionManager {
             mock_registry,
             next_agent_name: None,
             next_model_id: None,
+            next_effort: None,
             code_intelligence: HashMap::new(),
             trust_all_tools,
             trust_tools,
@@ -827,6 +830,12 @@ impl SessionManager {
                     builder = builder.model_id(Some(model_id.as_str()));
                 }
 
+                // Pass CLI --effort override to session builder
+                let next_effort = self.next_effort.take();
+                if let Some(ref effort) = next_effort {
+                    builder = builder.effort(Some(effort.as_str()));
+                }
+
                 // Fetch available models (use mock client in test mode to avoid network calls)
                 let available_models = if let Some(ref registry) = self.mock_registry {
                     let mock_client = ApiClient::new_ipc_mock(registry.clone());
@@ -973,6 +982,13 @@ impl SessionManager {
                 resp_sender,
             } => {
                 self.next_model_id = Some(next_model_id);
+                _ = resp_sender.send(Ok(()));
+            },
+            SessionManagerRequestData::SetNextEffort {
+                next_effort,
+                resp_sender,
+            } => {
+                self.next_effort = Some(next_effort);
                 _ = resp_sender.send(Ok(()));
             },
             SessionManagerRequestData::UpdateSetting {
@@ -2365,6 +2381,10 @@ pub(crate) enum SessionManagerRequestData {
         next_model_id: String,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
+    SetNextEffort {
+        next_effort: String,
+        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
+    },
     UpdateSetting {
         key: Setting,
         value: serde_json::Value,
@@ -2602,6 +2622,22 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send set_next_model_id request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_model_id response"))?
+    }
+
+    pub async fn set_next_effort(&self, next_effort: String) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::SetNextEffort {
+                    next_effort,
+                    resp_sender,
+                },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send set_next_effort request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive set_next_effort response"))?
     }
 
     pub async fn update_setting(&self, key: Setting, value: serde_json::Value) -> Result<(), sacp::Error> {

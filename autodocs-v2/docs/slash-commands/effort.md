@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-13
-  commit: 383984999
+  validated: 2026-05-22
+  commit: cdba9a0f8
   status: validated
   testable_headless: true
   category: slash_command
@@ -103,11 +103,18 @@ Per-model defaults live under the `chat.modelDefaults` key, keyed by exact model
 
 When a session starts, effort is resolved in this order (highest priority first):
 
-1. **Loaded session** (`/chat load`) — restores the session's saved effort
-2. **User defaults** from `cli.json` — applied on new session or model switch
-3. **Built-in defaults** — hardcoded per model (e.g. `xhigh` for claude-opus-4.7)
+1. **CLI flag** (`--effort`) — applied when starting a new session
+2. **Loaded session** (`/chat load`) — restores the session's saved effort
+3. **User defaults** from `cli.json` — applied on new session or model switch
+4. **Built-in defaults** — hardcoded per model (e.g. `xhigh` for claude-opus-4.7)
 
 Using `/effort` within a session always overrides whatever was set at startup.
+
+You can also set effort at launch without editing settings:
+
+```bash
+kiro-cli chat --effort low "Quick question"
+```
 
 ### Workspace Overrides
 
@@ -117,6 +124,7 @@ Workspace-level settings (`.kiro/settings/cli.json`) override global settings, s
 
 - [/model](model.md) - Switch models in session
 - [chat.defaultModel](../settings/default-model.md) - Set default model
+- [kiro-cli chat](../commands/chat.md) - Start session with `--effort` flag
 
 ## Limitations
 
