@@ -12,7 +12,6 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
 
 jobs:
   label:
@@ -29,31 +28,11 @@ jobs:
           curl -fsSL https://cli.kiro.dev/install | bash
           kiro-cli --version
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
-          aws-region: us-east-1
-
       - name: Classify PR
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          kiro-cli chat --no-interactive --trust-all-tools \
-            "Classify PR #$PR_NUMBER in this repository and apply GitHub labels.
-
-          Analyze the diff size, files changed, and nature of the change. Apply exactly one label from each category:
-
-          **Complexity** (based on diff size and scope):
-          - \`size/small\` — <50 lines changed, single package, well-scoped (typos, docs, test-only, dep updates)
-          - \`size/medium\` — 50-300 lines, may touch multiple files but stays within one package
-          - \`size/large\` — >300 lines, new commands, architectural changes, cross-package
-
-          **Review gates** (apply all that match):
-          - \`needs-ux-review\` — if the PR touches UI components, user-facing text, or interaction patterns
-          - \`needs-pm-review\` — if the PR adds new user-facing commands/flags or changes existing behavior
-
-          Use 'gh pr edit $PR_NUMBER --add-label <label>' to apply labels.
-          Do NOT remove existing labels. Do NOT post comments. Only apply labels."
+          kiro-cli chat --agent pr-classifier --no-interactive --trust-all-tools \
+            "Classify PR #$PR_NUMBER in this repository."
