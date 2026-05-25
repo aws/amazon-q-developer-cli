@@ -130,30 +130,6 @@ The exact string wasn't found. Check for whitespace differences, line endings, o
 
 Multiple matches found but `replaceAll` is false (default). Either make `oldStr` more specific to match exactly one location, or set `replaceAll: true`.
 
-### "Cannot edit file: old_str is a substring of new_str"
-
-`oldStr` appears verbatim inside `newStr`. This pattern is rejected because repeated calls would silently re-match the just-written content and grow the file on each invocation (linearly when `replaceAll` is false, exponentially when `replaceAll: true` and `oldStr` appears multiple times in `newStr`). Either include more context in `oldStr` so it no longer appears in `newStr`, or use the `insert` command at a specific line if the goal is to add text without removing anything.
-
-**"Wrap" patterns** (e.g., wrapping `Some(value)` in `Ok(...)`, wrapping a function call with retry logic) are supported as long as `oldStr` includes enough surrounding context that the substring relationship breaks.
-
-Rejected (too short):
-```json
-{
-  "command": "strReplace",
-  "oldStr": "compute()",
-  "newStr": "retry(compute())"
-}
-```
-Accepted (with surrounding context):
-```json
-{
-  "command": "strReplace",
-  "oldStr": "    let r = compute();",
-  "newStr": "    let r = retry(compute());"
-}
-```
-Including the leading whitespace and `let r = ` prefix means `oldStr` is no longer a substring of `newStr`, so the call is allowed. As a bonus, the extra context also disambiguates the match against other occurrences in the file.
-
 ### "Path must not be empty"
 
 The `path` parameter is missing or empty.

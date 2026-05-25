@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Prevent fs_write strReplace from silently growing files when oldStr is a substring of newStr"
-}
