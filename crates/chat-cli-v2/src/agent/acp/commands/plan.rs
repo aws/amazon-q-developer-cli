@@ -7,14 +7,12 @@ use super::{
     CommandContext,
     agent as agent_cmd,
 };
-
-/// KAS's built-in quick-plan mode ID.
-const QUICK_PLAN_MODE: &str = "quick-plan";
+use crate::constants::PLANNER_AGENT_NAME;
 
 pub async fn execute(prompt: Option<&str>, ctx: &CommandContext<'_>) -> CommandResult {
     let result = agent_cmd::execute(
         &AgentArgs {
-            agent_name: Some(QUICK_PLAN_MODE.to_string()),
+            agent_name: Some(PLANNER_AGENT_NAME.to_string()),
         },
         ctx,
     )
