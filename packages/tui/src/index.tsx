@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { writeSync } from 'fs';
 import { useEffect, useRef } from 'react';
-import { Text, render } from './renderer.js';
+import { render } from './renderer.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppContainer } from './components/layout/AppContainer';
 import { ThemeProvider } from './theme';
@@ -128,7 +128,6 @@ const appStore = createAppStore({
 
 // Start initialization immediately (non-blocking)
 let initPromise: Promise<void> | null = null;
-let initError: string | null = null;
 
 // Buffer history events during init so store updates don't trigger React
 // re-renders that cycle Ink's stdin listener (which breaks input under Bun).
@@ -560,7 +559,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
         guidance =
           'Close the other session first, or start a new session without --resume.';
       }
-      initError = errorMsg;
       // Push into the store so React re-renders and shows the error
       appStore.getState().setAgentError(errorMsg, guidance);
     });
@@ -653,7 +651,7 @@ const startApp = async () => {
 
     // Auto-submit after initialization completes
     startInitialization().then(() => {
-      if (initError) return; // Error will be shown by the App component
+      if (appStore.getState().agentError) return; // Error shown via BlockingErrorAlert
       const { sendMessage, slashCommands } = appStore.getState();
       sendMessage(normalizeAtPrompt(nonInteractiveInput, slashCommands));
     });
@@ -663,7 +661,7 @@ const startApp = async () => {
   if (!cliArgs.noInteractive && cliArgs.input) {
     const interactiveInput = cliArgs.input;
     startInitialization().then(() => {
-      if (initError) return;
+      if (appStore.getState().agentError) return;
       const { sendMessage, slashCommands } = appStore.getState();
       sendMessage(normalizeAtPrompt(interactiveInput, slashCommands));
     });
@@ -705,10 +703,6 @@ const startApp = async () => {
     useEffect(() => {
       startInitialization();
     }, []);
-
-    if (initError) {
-      return <Text color="red">Error: {initError}</Text>;
-    }
 
     return (
       <ErrorBoundary>
