@@ -1,4 +1,9 @@
 //! /effort command — set reasoning effort level
+//!
+//! The schema path that holds the effort field varies by model family
+//! (Claude uses `output_config.effort`; GPT uses `reasoning.effort`). The path
+//! is resolved from the model's schema via
+//! [`AdditionalModelFields::effort_path`]; this command never hardcodes it.
 
 use agent::tui_commands::{
     CommandOption,
@@ -9,23 +14,22 @@ use agent::tui_commands::{
 
 use super::CommandContext;
 
-const EFFORT_PATH: &str = "output_config.effort";
-
 pub fn get_options(ctx: &CommandContext<'_>) -> CommandOptionsResponse {
     let Some(af) = ctx.rts_state.additional_fields() else {
         return CommandOptionsResponse::default();
     };
 
-    let fields = af.flatten_schema();
-    let Some((_, values)) = fields.iter().find(|(p, _)| p == EFFORT_PATH) else {
+    // Resolve which schema path this model uses for effort.
+    let Some(path) = af.effort_path() else {
         return CommandOptionsResponse::default();
     };
 
-    let current = af
-        .overrides()
-        .and_then(|o| o.get("output_config"))
-        .and_then(|o| o.get("effort"))
-        .and_then(|v| v.as_str());
+    let fields = af.flatten_schema();
+    let Some((_, values)) = fields.iter().find(|(p, _)| p == path) else {
+        return CommandOptionsResponse::default();
+    };
+
+    let current = af.get_override_str(path);
 
     let options = values
         .iter()
@@ -71,7 +75,7 @@ pub fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResult {
         };
     };
 
-    match ctx.rts_state.set_additional_field(EFFORT_PATH, level) {
+    match ctx.rts_state.set_effort(level) {
         Ok(()) => CommandResult::success(format!("Effort set to {level}")),
         Err(e) if e.contains("does not support") => {
             let model_name = ctx

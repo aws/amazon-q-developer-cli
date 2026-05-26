@@ -3318,3 +3318,178 @@ async fn model_switch_applies_settings_defaults() {
         "effort should be 'low' from settings after /model switch, not the hardcoded 'xhigh'"
     );
 }
+
+/// E2E: /effort command on a GPT-style model whose schema declares
+/// `reasoning.effort` (instead of Claude's `output_config.effort`). Verifies
+/// the override flows through the schema-resolved path on the next prompt.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_command_e2e_reasoning_path() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_command_e2e_reasoning_path")
+        .with_setting("chat.defaultModel", serde_json::json!("gpt-5.1"))
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // 1. Get effort options — should still come from the schema.
+    let options = client
+        .get_command_options(session_id.clone(), "effort")
+        .await
+        .expect("get_command_options for effort failed");
+    assert!(
+        !options.options.is_empty(),
+        "gpt-5.1 should expose effort options via reasoning.effort schema"
+    );
+
+    // 2. Set effort to "low".
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("execute_command for effort failed");
+    assert!(result.success, "effort execute should succeed: {}", result.message);
+
+    // 3. Verify the override lands at `reasoning.effort` (not `output_config.effort`).
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(!requests.is_empty(), "should have captured at least one request");
+    let last = requests.last().unwrap();
+    let additional_fields = last
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+    assert_eq!(
+        additional_fields["reasoning"]["effort"], "low",
+        "effort should land at reasoning.effort for gpt-5.1"
+    );
+    assert!(
+        additional_fields.get("output_config").is_none(),
+        "no output_config bucket should be present for reasoning.effort models: {:?}",
+        additional_fields
+    );
+}
+
+/// E2E: `chat.modelDefaults` for a GPT-style model whose schema uses
+/// `reasoning.effort`. The user's nested settings should be applied.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_defaults_reasoning_path_applied() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_defaults_reasoning_path")
+        .with_setting("chat.defaultModel", serde_json::json!("gpt-5.1"))
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({"gpt-5.1": {"reasoning": {"effort": "medium"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    let last = requests.last().expect("should have captured a request");
+    let additional_fields = last
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+    assert_eq!(
+        additional_fields["reasoning"]["effort"], "medium",
+        "settings default should land at reasoning.effort"
+    );
+}
+
+/// E2E: `chat.modelDefaults` declared with the wrong (output_config) shape for
+/// a model whose schema uses `reasoning.effort`. Validation logs a warning and
+/// the override is dropped — no `output_config` bucket should appear in the
+/// outgoing request.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_defaults_reasoning_path_rejects_wrong_shape() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_defaults_reasoning_wrong_shape")
+        .with_setting("chat.defaultModel", serde_json::json!("gpt-5.1"))
+        .with_setting(
+            "chat.modelDefaults",
+            // gpt-5.1's schema only has reasoning.effort; output_config.effort
+            // is unknown and should be skipped with a warning.
+            serde_json::json!({"gpt-5.1": {"output_config": {"effort": "low"}}}),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    let last = requests.last().expect("should have captured a request");
+    let additional_fields = last.additional_model_request_fields.as_ref();
+    // Either no additional_model_request_fields at all, or no output_config bucket.
+    if let Some(fields) = additional_fields {
+        assert!(
+            fields.get("output_config").is_none(),
+            "output_config should be rejected by validation, got: {:?}",
+            fields
+        );
+        assert!(
+            fields.get("reasoning").is_none(),
+            "reasoning bucket should be empty since the user's override was for the wrong path: {:?}",
+            fields
+        );
+    }
+}
+
+/// E2E: `--effort` CLI flag for a model whose schema uses `reasoning.effort`.
+/// The flag should be applied at the schema-resolved path on session bootstrap.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn cli_effort_flag_reasoning_path() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("cli_effort_flag_reasoning_path")
+        .with_setting("chat.defaultModel", serde_json::json!("gpt-5.1"))
+        .with_acp_args(["--effort", "high"])
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("prompt failed");
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    let last = requests.last().expect("should have captured a request");
+    let additional_fields = last
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+    assert_eq!(
+        additional_fields["reasoning"]["effort"], "high",
+        "--effort flag should land at reasoning.effort for gpt-5.1"
+    );
+}

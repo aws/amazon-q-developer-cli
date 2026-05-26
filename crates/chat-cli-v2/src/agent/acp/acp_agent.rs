@@ -1240,7 +1240,7 @@ impl AcpSession {
 
         // Apply CLI --effort override (silently ignored if model doesn't support it)
         if let Some(effort_level) = builder.effort
-            && let Err(e) = rts_state.set_additional_field("output_config.effort", effort_level)
+            && let Err(e) = rts_state.set_effort(effort_level)
         {
             warn!("--effort: {}", e);
         }
@@ -1497,12 +1497,7 @@ impl AcpSession {
     }
 
     fn current_effort(&self) -> Option<String> {
-        self.rts_state.additional_fields().and_then(|f| {
-            f.overrides()
-                .and_then(|o| o.pointer("/output_config/effort"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
+        self.rts_state.effort()
     }
 
     fn send_turn_metadata(&self, metadata: &agent::agent_loop::protocol::UserTurnMetadata) -> Result<(), sacp::Error> {

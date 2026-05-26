@@ -44,6 +44,7 @@ pub struct AcpTestHarnessBuilder {
     agent_configs: Vec<(String, serde_json::Value)>,
     settings: serde_json::Map<String, serde_json::Value>,
     trust_all: bool,
+    extra_acp_args: Vec<String>,
 }
 
 impl AcpTestHarnessBuilder {
@@ -53,6 +54,7 @@ impl AcpTestHarnessBuilder {
             agent_configs: Vec::new(),
             settings: serde_json::Map::new(),
             trust_all: false,
+            extra_acp_args: Vec::new(),
         }
     }
 
@@ -82,6 +84,17 @@ impl AcpTestHarnessBuilder {
         self
     }
 
+    /// Append extra args to the spawned `kiro-cli acp` command line
+    /// (e.g. `--effort low` or `--model claude-opus-4.7`).
+    pub fn with_acp_args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extra_acp_args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
     /// Build and spawn the harness, returning harness + initialized client.
     pub async fn build(self) -> (AcpTestHarness, super::AcpTestClient) {
         let paths = create_test_dir(&self.test_name);
@@ -103,7 +116,7 @@ impl AcpTestHarnessBuilder {
             std::fs::write(&paths.settings_path, json).expect("failed to write settings");
         }
 
-        let mut harness = AcpTestHarness::spawn(paths).await;
+        let mut harness = AcpTestHarness::spawn_with_args(paths, &self.extra_acp_args).await;
         let (stdin, stdout) = harness.take_stdio();
         let client = super::AcpTestClient::spawn(stdin, stdout, self.trust_all);
         client.initialize().await.expect("initialize failed");
@@ -158,13 +171,22 @@ impl AcpTestHarness {
 
     /// Spawn the ACP agent subprocess with the given paths.
     async fn spawn(paths: TestPaths) -> Self {
+        Self::spawn_with_args(paths, &[]).await
+    }
+
+    /// Spawn the ACP agent subprocess with the given paths and extra ACP args.
+    async fn spawn_with_args(paths: TestPaths, extra_args: &[String]) -> Self {
         // Start IPC listener before spawning agent
         let ipc_listener = UnixListener::bind(&paths.ipc_socket).expect("failed to bind IPC socket");
 
         let binary = env!("CARGO_BIN_EXE_chat_cli_v2");
 
-        let child = Command::new(binary)
-            .arg("acp")
+        let mut cmd = Command::new(binary);
+        cmd.arg("acp");
+        for a in extra_args {
+            cmd.arg(a);
+        }
+        let child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

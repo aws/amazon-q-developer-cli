@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: cdba9a0f8
+  validated: 2026-05-26
+  commit: e79e2949d
   status: validated
   testable_headless: true
   category: slash_command
   title: /effort
   description: Set reasoning effort level for the current model
-  keywords: [effort, reasoning, low, medium, high, model, performance]
+  keywords: [effort, reasoning, low, medium, high, model, performance, output_config]
   related: [slash-model, default-model]
 ---
 
@@ -30,15 +30,15 @@ The `/effort` command controls how much reasoning effort the model applies to re
 
 ## Available Levels
 
-| Level | Description |
-|-------|-------------|
-| low | Minimal reasoning, fastest responses |
-| medium | Balanced reasoning |
-| high | Thorough reasoning |
-| xhigh | Extended reasoning |
-| max | Maximum reasoning effort |
+| Level | Description | Supported by |
+|-------|-------------|--------------|
+| low | Minimal reasoning, fastest responses | Claude, GPT |
+| medium | Balanced reasoning | Claude, GPT |
+| high | Thorough reasoning | Claude, GPT |
+| xhigh | Extended reasoning | Claude, GPT |
+| max | Maximum reasoning effort | Claude only |
 
-Available levels depend on the model. Not all models support effort configuration.
+Available levels depend on the model. Not all models support effort configuration — for example `claude-sonnet-4.5`, `minimax-*`, `glm-*`, `kimi-k2.5`, `nemotron-super-3-120b`, `openai-gpt-oss-20b`, and `gemini-2.5-pro` do not expose an effort field.
 
 ## Examples
 
@@ -48,9 +48,14 @@ Available levels depend on the model. Not all models support effort configuratio
 /effort
 ```
 
-**Output**:
+**Output** (Claude models):
 ```
 Available effort levels: low, medium, high, xhigh, max
+```
+
+**Output** (GPT models — no `max`):
+```
+Available effort levels: low, medium, high, xhigh
 ```
 
 ### Example 2: Set Effort Level
@@ -72,12 +77,21 @@ Effort set to low
 
 **Output**:
 ```
-Effort configuration is currently not available on Amazon Nova Pro. Select a /model that supports effort (like claude-opus-4.7) to configure.
+Effort configuration is currently not available on claude-sonnet-4.5. Select a /model that supports effort (like claude-opus-4.7) to configure.
 ```
 
 ## Persistent Defaults via Settings
 
-You can set a default effort level per model in `~/.kiro/settings/cli.json` so it applies automatically to every new session:
+You can set a default effort level per model in `~/.kiro/settings/cli.json` so it applies automatically to every new session.
+
+The exact JSON shape under each model mirrors that model's request schema:
+
+| Model family | Effort path | Allowed values | Example |
+|---|---|---|---|
+| Claude (e.g. `claude-opus-4.7`, `claude-opus-4.7-messages`) | `output_config.effort` | `low`, `medium`, `high`, `xhigh`, `max` | `{"output_config": {"effort": "low"}}` |
+| GPT (e.g. `openai-gpt-5.4`, `openai-gpt-5.4-1p`, `openai-gpt-5.5-1p`) | `reasoning.effort` | `low`, `medium`, `high`, `xhigh` | `{"reasoning": {"effort": "high"}}` |
+
+Use the path that matches the model. Unknown paths are ignored at session bootstrap and logged as a `tracing::warn!`.
 
 ```json
 {
@@ -88,9 +102,19 @@ You can set a default effort level per model in `~/.kiro/settings/cli.json` so i
         "effort": "low"
       }
     },
-    "claude-sonnet-4.6": {
+    "claude-opus-4.7-messages": {
       "output_config": {
         "effort": "medium"
+      }
+    },
+    "openai-gpt-5.4": {
+      "reasoning": {
+        "effort": "high"
+      }
+    },
+    "openai-gpt-5.5-1p": {
+      "reasoning": {
+        "effort": "xhigh"
       }
     }
   }

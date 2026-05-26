@@ -664,11 +664,10 @@ impl RtsState {
             return;
         };
 
-        // Hardcoded effort defaults for Claude models (only if not already set)
-        let has_effort = fields
-            .overrides()
-            .and_then(|o| o.pointer("/output_config/effort"))
-            .is_some();
+        // Resolve where this model's schema declares the effort field.
+        // Skip the hardcoded-default block entirely if the model has no effort field.
+        let effort_path = fields.effort_path();
+        let has_effort = effort_path.is_some_and(|p| fields.get_override_str(p).is_some());
         let model_id = model_info.model_id.clone();
         let id = model_id.to_lowercase();
         let default_effort = if id.contains("claude-opus-4.7") {
@@ -681,8 +680,8 @@ impl RtsState {
 
         // Now take mutable access to fields
         let fields = inner.additional_fields.as_mut().unwrap();
-        if !has_effort && let Some(effort) = default_effort {
-            let _ = fields.set("output_config.effort", effort);
+        if !has_effort && let (Some(path), Some(effort)) = (effort_path, default_effort) {
+            let _ = fields.set(path, effort);
         }
 
         // User-level DB overrides (take precedence over hardcoded defaults)
@@ -719,6 +718,32 @@ impl RtsState {
             .as_mut()
             .ok_or_else(|| "model does not support additional fields".to_string())?;
         af.set(path, value)
+    }
+
+    /// Read the current reasoning-effort override, resolving the path from the
+    /// model's schema. Returns `None` for models that do not support effort
+    /// or when no override is set.
+    pub fn effort(&self) -> Option<String> {
+        let inner = self.inner.lock().unwrap();
+        let af = inner.additional_fields.as_ref()?;
+        let path = af.effort_path()?;
+        af.get_override_str(path).map(|s| s.to_string())
+    }
+
+    /// Set the reasoning-effort override at whichever path the model's schema
+    /// declares. Returns the same `does not support` error as
+    /// `set_additional_field` when the model has no effort field, so existing
+    /// `/effort` UX continues to work.
+    pub fn set_effort(&self, level: &str) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        let af = inner
+            .additional_fields
+            .as_mut()
+            .ok_or_else(|| "model does not support additional fields".to_string())?;
+        let path = af
+            .effort_path()
+            .ok_or_else(|| "model does not support effort configuration".to_string())?;
+        af.set(path, level)
     }
 
     /// Restore additional fields from a previously persisted snapshot.

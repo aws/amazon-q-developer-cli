@@ -568,8 +568,13 @@ impl IpcMockApiClient {
     }
 
     pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
-        // Return mock models for testing
-        let schema = json_to_document(&serde_json::json!({
+        // Return mock models for testing.
+        //
+        // Two effort-schema shapes are exercised:
+        //   - Claude family + qwen → `output_config.effort`
+        //   - GPT family            → `reasoning.effort`
+        // Amazon Nova has no effort schema at all.
+        let output_config_schema = json_to_document(&serde_json::json!({
             "type": "object",
             "properties": {
                 "output_config": {
@@ -583,7 +588,22 @@ impl IpcMockApiClient {
                 }
             }
         }));
-        let mut models: Vec<Model> = [
+        let reasoning_schema = json_to_document(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reasoning": {
+                    "type": "object",
+                    "properties": {
+                        "effort": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "xhigh"]
+                        }
+                    }
+                }
+            }
+        }));
+
+        let output_config_models = [
             ("claude-opus-4.7", "Claude Opus 4.7"),
             ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
             ("Auto", "Auto"),
@@ -593,17 +613,28 @@ impl IpcMockApiClient {
             ("claude-opus-4.5", "Claude Opus 4.5"),
             ("claude-sonnet-4.5-1m", "Claude Sonnet 4.5 1M"),
             ("qwen3-coder-480b", "Qwen3 Coder 480B"),
-        ]
-        .into_iter()
-        .map(|(id, name)| {
-            Model::builder()
-                .model_id(id)
-                .model_name(name)
-                .additional_model_request_fields_schema(schema.clone())
-                .build()
-                .unwrap()
-        })
-        .collect();
+        ];
+        let reasoning_models = [("gpt-5.1", "GPT-5.1")];
+
+        let mut models: Vec<Model> = output_config_models
+            .into_iter()
+            .map(|(id, name)| {
+                Model::builder()
+                    .model_id(id)
+                    .model_name(name)
+                    .additional_model_request_fields_schema(output_config_schema.clone())
+                    .build()
+                    .unwrap()
+            })
+            .chain(reasoning_models.into_iter().map(|(id, name)| {
+                Model::builder()
+                    .model_id(id)
+                    .model_name(name)
+                    .additional_model_request_fields_schema(reasoning_schema.clone())
+                    .build()
+                    .unwrap()
+            }))
+            .collect();
         // Model without effort support (no additional_fields schema)
         models.push(
             Model::builder()

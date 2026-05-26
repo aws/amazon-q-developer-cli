@@ -11,6 +11,13 @@ use serde::{
 };
 use serde_json::Value;
 
+/// Known schema paths for the reasoning effort field, in priority order.
+///
+/// The backend guarantees at most one of these is present per model schema
+/// (Claude family uses `output_config.effort`; GPT family uses `reasoning.effort`).
+/// The order here is a defensive tiebreak only — do not re-sort alphabetically.
+pub(crate) const KNOWN_EFFORT_PATHS: &[&str] = &["output_config.effort", "reasoning.effort"];
+
 /// Manages additional model request fields: schema validation and user overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdditionalModelFields {
@@ -197,7 +204,30 @@ impl AdditionalModelFields {
         self.overrides.as_ref()
     }
 
-    /// Build the overrides as a `serde_json::Value` to pass in the API request.
+    /// Read an override value as a string, looking up by dotted path
+    /// (e.g. `"output_config.effort"`). Returns `None` if the path is unset
+    /// or the value is not a string.
+    pub fn get_override_str(&self, dotted_path: &str) -> Option<&str> {
+        let pointer = format!("/{}", dotted_path.replace('.', "/"));
+        self.overrides
+            .as_ref()
+            .and_then(|o| o.pointer(&pointer))
+            .and_then(|v| v.as_str())
+    }
+
+    /// Resolve the schema path for the reasoning effort field, if any.
+    ///
+    /// Walks [`KNOWN_EFFORT_PATHS`] in order and returns the first one present
+    /// in this model's schema. Returns `None` for models that do not expose
+    /// an effort field (e.g. Amazon Nova).
+    pub fn effort_path(&self) -> Option<&'static str> {
+        KNOWN_EFFORT_PATHS
+            .iter()
+            .copied()
+            .find(|p| self.resolve_schema_node(p).is_ok())
+    }
+
+    /// Build the overrides for the outgoing API request.
     /// Returns `None` if no overrides are set.
     pub fn to_value(&self) -> Option<&Value> {
         self.overrides.as_ref()
@@ -324,6 +354,107 @@ mod tests {
         af.clear();
         assert!(af.overrides.is_none());
         assert!(af.to_value().is_none());
+    }
+
+    #[test]
+    fn test_effort_path_output_config() {
+        // Default `sample()` schema declares `output_config.effort`.
+        let af = sample();
+        assert_eq!(af.effort_path(), Some("output_config.effort"));
+    }
+
+    #[test]
+    fn test_effort_path_reasoning() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reasoning": {
+                    "type": "object",
+                    "properties": {
+                        "effort": { "type": "string", "enum": ["low", "medium", "high"] }
+                    }
+                }
+            }
+        });
+        let af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
+        assert_eq!(af.effort_path(), Some("reasoning.effort"));
+    }
+
+    #[test]
+    fn test_effort_path_none() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "max_tokens": { "type": "integer", "minimum": 1024 }
+            }
+        });
+        let af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
+        assert_eq!(af.effort_path(), None);
+    }
+
+    #[test]
+    fn test_effort_path_priority_when_both_present() {
+        // Defensive tiebreak: backend should never declare both, but if it does
+        // `output_config.effort` wins per `KNOWN_EFFORT_PATHS` ordering.
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "output_config": {
+                    "type": "object",
+                    "properties": {
+                        "effort": { "type": "string", "enum": ["low", "high"] }
+                    }
+                },
+                "reasoning": {
+                    "type": "object",
+                    "properties": {
+                        "effort": { "type": "string", "enum": ["low", "high"] }
+                    }
+                }
+            }
+        });
+        let af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
+        assert_eq!(af.effort_path(), Some("output_config.effort"));
+    }
+
+    #[test]
+    fn test_get_override_str_roundtrip() {
+        let mut af = sample();
+        assert_eq!(af.get_override_str("output_config.effort"), None);
+        af.set("output_config.effort", "high").unwrap();
+        assert_eq!(af.get_override_str("output_config.effort"), Some("high"));
+        // Unknown path returns None rather than erroring.
+        assert_eq!(af.get_override_str("does.not.exist"), None);
+    }
+
+    #[test]
+    fn test_get_override_str_reasoning_path() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reasoning": {
+                    "type": "object",
+                    "properties": {
+                        "effort": { "type": "string", "enum": ["low", "high"] }
+                    }
+                }
+            }
+        });
+        let mut af = AdditionalModelFields {
+            schema,
+            overrides: None,
+        };
+        af.set("reasoning.effort", "low").unwrap();
+        assert_eq!(af.get_override_str("reasoning.effort"), Some("low"));
     }
 
     #[test]
