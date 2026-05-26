@@ -2484,13 +2484,12 @@ export class KasAcpClient extends BaseAcpClient {
   /** /plan — switch to quick-plan mode, optionally send trailing prompt */
   private async executePlan(prompt?: string): Promise<CommandResult> {
     const result = await this.executeAgentSwap('quick-plan');
-    if (result.success && prompt) {
-      await this.kiroClient.prompt({
-        prompt: [{ type: 'text', text: prompt }],
-        sessionId: this.sessionId!,
-      });
-    }
-    return result;
+    if (!result.success) return result;
+    return {
+      success: true,
+      message: result.message,
+      data: { agent: { name: 'quick-plan' }, ...(prompt && { prompt }) },
+    };
   }
 
   private async callExtMethod(
