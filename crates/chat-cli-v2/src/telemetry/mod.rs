@@ -632,6 +632,22 @@ impl TelemetryThread {
         });
         Ok(self.tx.send(event)?)
     }
+
+    /// Emit a single `modeChanged` telemetry event. Caller is responsible for skipping no-op
+    /// changes (`from_mode == Some(to_mode)`); we just record what we're handed.
+    pub fn send_mode_changed(
+        &self,
+        from_mode: Option<String>,
+        to_mode: String,
+        source: String,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::ModeChanged {
+            from_mode,
+            to_mode,
+            source,
+        });
+        Ok(self.tx.send(event)?)
+    }
 }
 
 pub(crate) async fn set_event_metadata(database: &Database, event: &mut Event) {

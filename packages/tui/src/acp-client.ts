@@ -469,6 +469,11 @@ abstract class BaseAcpClient implements SessionClient {
   ): Promise<{ sessionId: string; name: string }>;
   abstract sendMessage(sessionId: string, content: string): Promise<void>;
   abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
+  abstract sendModeChanged(payload: {
+    fromMode?: string;
+    toMode: string;
+    source: string;
+  }): void;
 
   // ── Shared methods ──
 
@@ -1388,6 +1393,19 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     this.connection
       .extNotification(
         this.ext('kiro.dev/telemetry/processHealth'),
+        payload as unknown as Record<string, unknown>
+      )
+      .catch(() => {});
+  }
+
+  sendModeChanged(payload: {
+    fromMode?: string;
+    toMode: string;
+    source: string;
+  }): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/modeChanged'),
         payload as unknown as Record<string, unknown>
       )
       .catch(() => {});
@@ -2754,6 +2772,14 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  }
+
+  sendModeChanged(_payload: {
+    fromMode?: string;
+    toMode: string;
+    source: string;
+  }): void {
     // TODO: implement KAS-side telemetry when KAS supports ext notifications
   }
 }

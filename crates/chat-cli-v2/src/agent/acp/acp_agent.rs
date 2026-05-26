@@ -3731,6 +3731,20 @@ pub async fn execute(
                                 }
                                 return Ok(sacp::Handled::Yes);
                             },
+                            "_kiro.dev/telemetry/modeChanged" => {
+                                use super::schema::ModeChangedPayload;
+                                match serde_json::from_value::<ModeChangedPayload>(notif.params().clone()) {
+                                    Ok(p) => {
+                                        if let Some(ref telemetry) = telemetry_thread {
+                                            let _ = telemetry.send_mode_changed(p.from_mode, p.to_mode, p.source);
+                                        }
+                                    },
+                                    Err(e) => {
+                                        debug!("Failed to deserialize modeChanged payload: {e}");
+                                    },
+                                }
+                                return Ok(sacp::Handled::Yes);
+                            },
                             _ => {},
                         }
                     }

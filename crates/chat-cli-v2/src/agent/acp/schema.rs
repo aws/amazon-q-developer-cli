@@ -267,3 +267,14 @@ pub struct ProcessHealthPayload {
     pub version: String,
     pub platform: String,
 }
+
+/// Telemetry payload sent from the TUI when the active agent (= ACP session mode) changes.
+/// `from_mode` is `None` on the very first set in a session. `source` is a free-form string
+/// indicating how the change was initiated, e.g. `"shiftTab"` or `"slashCommand"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeChangedPayload {
+    pub from_mode: Option<String>,
+    pub to_mode: String,
+    pub source: String,
+}

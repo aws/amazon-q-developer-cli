@@ -24,6 +24,8 @@ export interface CreateMockCtxOptions {
   steering?: CommandContext['steering'];
   /** Override the kiro client mock. Default: bare {} */
   kiro?: Partial<CommandContext['kiro']>;
+  /** Current-agent snapshot used by some effects. Default: null */
+  currentAgent?: CommandContext['currentAgent'];
 }
 
 /**
@@ -46,6 +48,7 @@ export function createMockCommandContext(
       Promise.resolve({ success: true, message: '', data: undefined })
     ),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
+    sendModeChanged: mock(() => undefined),
   };
 
   return {
@@ -61,6 +64,7 @@ export function createMockCommandContext(
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
     setCurrentAgent: spy('setCurrentAgent') as any,
+    currentAgent: opts.currentAgent ?? null,
     setContextUsage: spy('setContextUsage') as any,
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,
     setShowHelpPanel: spy('setShowHelpPanel') as any,

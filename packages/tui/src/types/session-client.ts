@@ -213,6 +213,18 @@ export interface SessionClient {
    * Fire-and-forget — implementations should not throw.
    */
   sendProcessHealthMetrics?(payload: ProcessHealthSnapshot): void;
+
+  /**
+   * Sends a `modeChanged` telemetry event when the active agent (= ACP session mode) changes.
+   * Caller is responsible for skipping no-op changes (`fromMode === toMode`). `source` is a
+   * free-form string identifying the entry point (e.g. `'shiftTab'`, `'slashCommand'`).
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendModeChanged?(payload: {
+    fromMode?: string;
+    toMode: string;
+    source: string;
+  }): void;
 }
 
 /**

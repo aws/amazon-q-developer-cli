@@ -31,6 +31,7 @@ use crate::telemetry::definitions::metrics::{
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
+    CodewhispererterminalModeChanged,
     CodewhispererterminalProcessHealthSnapshot,
     CodewhispererterminalRefreshCredentials,
     CodewhispererterminalToolUseSuggested,
@@ -701,6 +702,21 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::ModeChanged {
+                from_mode,
+                to_mode,
+                source,
+            } => Some(
+                CodewhispererterminalModeChanged {
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    codewhispererterminal_mode_from_agent: from_mode.map(Into::into),
+                    codewhispererterminal_mode_to_agent: Some(to_mode.into()),
+                    codewhispererterminal_mode_change_source: Some(source.into()),
+                }
+                .into_metric_datum(),
+            ),
         }
     }
 }
@@ -956,6 +972,14 @@ pub enum EventType {
         session_id: Option<String>,
         version: String,
         platform: String,
+    },
+    /// Emitted when the active agent (= ACP session mode) changes. `from_mode` is `None` when there
+    /// was no prior mode (initial bootstrap). `source` is a free-form string indicating how the
+    /// change was initiated (e.g. `"shiftTab"`, `"slashCommand"`).
+    ModeChanged {
+        from_mode: Option<String>,
+        to_mode: String,
+        source: String,
     },
 }
 

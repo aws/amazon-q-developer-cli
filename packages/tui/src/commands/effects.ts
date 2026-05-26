@@ -212,6 +212,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
 
     if (data?.agent) {
+      const fromName = ctx.currentAgent?.name;
+      const toName = data.agent.name;
+      if (toName && toName !== fromName) {
+        ctx.kiro.sendModeChanged({
+          fromMode: fromName,
+          toMode: toName,
+          source: 'slashCommand',
+        });
+      }
       ctx.setCurrentAgent(data.agent);
     }
   },

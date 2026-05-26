@@ -361,6 +361,13 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
+                if (name && name !== currentName) {
+                  kiro.sendModeChanged({
+                    fromMode: currentName,
+                    toMode: name,
+                    source: 'shiftTab',
+                  });
+                }
                 if (name) setCurrentAgent({ name });
               }
             })
@@ -377,6 +384,13 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
+                if (name && name !== currentName) {
+                  kiro.sendModeChanged({
+                    fromMode: currentName,
+                    toMode: name,
+                    source: 'shiftTab',
+                  });
+                }
                 if (name) setCurrentAgent({ name });
               }
             })

@@ -240,6 +240,15 @@ export class Kiro {
     this.sessionClient.sendProcessHealthMetrics?.(payload);
   }
 
+  sendModeChanged(payload: {
+    fromMode?: string;
+    toMode: string;
+    source: string;
+  }): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendModeChanged?.(payload);
+  }
+
   async terminateSession(sessionId: string): Promise<void> {
     if (!this.sessionClient) return;
     return (this.sessionClient as any).terminateSession(sessionId);
