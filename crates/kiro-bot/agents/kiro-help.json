@@ -29,7 +29,8 @@
   "allowedTools": [
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
-    "introspect"
+    "introspect",
+    "read"
   ],
   "resources": [
     "skill://~/.kiro/agents/SKILL.md"
