@@ -1,13 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createRequire } from "node:module";
 import { isGhostty, isKitty } from "./capabilities.js";
 import { setKittyProtocolActive } from "../input/keys.js";
 import { StdinBuffer } from "../input/stdin-buffer.js";
 import type { Terminal } from "./terminal.js";
-
-const cjsRequire = createRequire(import.meta.url);
 
 /**
  * Resolves the render log file path.
@@ -175,9 +172,6 @@ export class ProcessTerminal implements Terminal {
 			process.kill(process.pid, "SIGWINCH");
 		}
 
-		// Enable Windows VT input
-		this.enableWindowsVTInput();
-
 		// Query and enable Kitty keyboard protocol
 		this.queryAndEnableKittyProtocol();
 	}
@@ -280,33 +274,6 @@ export class ProcessTerminal implements Terminal {
 		if (this._modifyOtherKeysActive) {
 			this._modifyOtherKeysActive = false;
 			process.stdout.write(MODIFY_OTHER_KEYS_DISABLE);
-		}
-	}
-
-	/**
-	 * Enables Windows VT input support using native Windows API.
-	 * 
-	 * On Windows, this enables ENABLE_VIRTUAL_TERMINAL_INPUT flag
-	 * to support ANSI escape sequences in console input.
-	 * Uses koffi library for native API access if available.
-	 */
-	private enableWindowsVTInput(): void {
-		if (process.platform !== "win32") return;
-		try {
-			const koffi = cjsRequire("koffi");
-			const k32 = koffi.load("kernel32.dll");
-			const GetStdHandle = k32.func("void* __stdcall GetStdHandle(int)");
-			const GetConsoleMode = k32.func("bool __stdcall GetConsoleMode(void*, _Out_ uint32_t*)");
-			const SetConsoleMode = k32.func("bool __stdcall SetConsoleMode(void*, uint32_t)");
-
-			const STD_INPUT_HANDLE = -10;
-			const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
-			const handle = GetStdHandle(STD_INPUT_HANDLE);
-			const mode = new Uint32Array(1);
-			GetConsoleMode(handle, mode);
-			SetConsoleMode(handle, mode[0]! | ENABLE_VIRTUAL_TERMINAL_INPUT);
-		} catch {
-			// koffi not available
 		}
 	}
 
