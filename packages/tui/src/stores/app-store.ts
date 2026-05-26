@@ -247,6 +247,7 @@ import {
   setTerminalProgressError,
   clearTerminalProgress,
 } from '../utils/terminal-capabilities.js';
+import { syncCmuxStatus, type CmuxAgentStatus } from '../utils/cmux.js';
 import {
   getAuthErrorGuidance,
   getSessionErrorGuidance,
@@ -1136,28 +1137,41 @@ function syncTerminalProgress(
     | 'contextUsagePercent'
   >
 ): void {
+  let cmuxStatus: CmuxAgentStatus;
+
   if (state.isProcessing || state.isCompacting) {
     // Active — always spinning unless paused for approval
     if (state.agentError) {
       setTerminalProgressError(); // pulsing red
+      cmuxStatus = 'error';
     } else if (state.pendingApproval) {
       setTerminalProgressWarning(100); // static yellow at 100%
+      cmuxStatus = 'waiting-approval';
+    } else if (state.isCompacting) {
+      setTerminalProgressIndeterminate(); // spinning green
+      cmuxStatus = 'compacting';
     } else {
       setTerminalProgressIndeterminate(); // spinning green
+      cmuxStatus = 'thinking';
     }
   } else {
     // Idle — static bar or hidden
     if (state.agentError) {
       setTerminalProgressError(); // pulsing red
+      cmuxStatus = 'error';
     } else if (
       state.contextUsagePercent != null &&
       state.contextUsagePercent >= CONTEXT_WARNING_THRESHOLD
     ) {
       setTerminalProgressWarning(state.contextUsagePercent); // static yellow with %
+      cmuxStatus = 'idle';
     } else {
       clearTerminalProgress(); // hidden
+      cmuxStatus = 'idle';
     }
   }
+
+  syncCmuxStatus(cmuxStatus);
 }
 
 /** Extract task state from a ToolCallFinished event if it came from the task tool. */
@@ -1924,6 +1938,8 @@ export const createAppStore = (props: AppStoreProps) => {
               pendingContentFlush = null;
               flushContentToStore();
             }
+            // Report tool use to cmux sidebar
+            syncCmuxStatus('tool-use', event.name);
             // Reset buffer so the next Model message after this tool
             // doesn't repeat text from before the tool call.
             bufferedContent = '';

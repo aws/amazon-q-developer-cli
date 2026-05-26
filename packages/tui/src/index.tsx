@@ -15,6 +15,7 @@ import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
 import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
+import { cmuxCleanup } from './utils/cmux.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
 import { resolveAgentEngine } from './agent-engine';
@@ -64,6 +65,7 @@ const cleanup = () => {
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
+    cmuxCleanup();
   } catch {
     // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
   }
