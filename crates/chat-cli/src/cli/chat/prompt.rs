@@ -160,7 +160,7 @@ pub const COMMANDS: &[&str] = &[
 pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
     let mut commands = COMMANDS.to_vec();
     #[cfg(feature = "voice")]
-    {
+    if crate::constants::VOICE_ENABLED_IN_CLASSIC_CHAT {
         commands.push("/voice");
     }
     commands.extend(ExperimentManager::get_commands(os));
@@ -1117,7 +1117,7 @@ pub fn rl(
 
     // Voice keybindings: Ctrl+O and Space-hold trigger PTT
     #[cfg(feature = "voice")]
-    {
+    if crate::constants::VOICE_ENABLED_IN_CLASSIC_CHAT {
         // Ctrl+O: immediate PTT trigger (works with or without existing input)
         rl.bind_sequence(
             KeyEvent(KeyCode::Char('o'), Modifiers::CTRL),

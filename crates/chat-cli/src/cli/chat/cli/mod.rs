@@ -297,7 +297,16 @@ impl SlashCommand {
             Self::Paste(args) => args.execute(os, session).await,
             Self::Help(args) => args.execute(os, session).await,
             #[cfg(feature = "voice")]
-            Self::Voice(args) => args.execute(os, session).await,
+            Self::Voice(args) => {
+                if crate::constants::VOICE_ENABLED_IN_CLASSIC_CHAT {
+                    args.execute(os, session).await
+                } else {
+                    let _ = args; // suppress unused warning
+                    Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    })
+                }
+            },
         }
     }
 

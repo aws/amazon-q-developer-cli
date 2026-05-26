@@ -2,6 +2,12 @@
 
 use crate::theme::StyledText;
 
+/// Whether the /voice command and PTT keybindings are enabled in the classic
+/// (Rust-rendered) chat experience. Voice recording still works via the TUI
+/// (TypeScript) which spawns the binary's `voice` subcommand directly.
+#[allow(dead_code)]
+pub const VOICE_ENABLED_IN_CLASSIC_CHAT: bool = false;
+
 /// Base product name without any qualifiers
 pub const PRODUCT_NAME: &str = "Kiro";
 
@@ -291,6 +297,8 @@ Notes:
 
 /// Tips and rotating messages
 pub mod tips {
+    #[cfg(feature = "voice")]
+    use super::VOICE_ENABLED_IN_CLASSIC_CHAT;
     use super::{
         CLI_NAME,
         PRODUCT_NAME,
@@ -299,7 +307,8 @@ pub mod tips {
 
     /// Get rotating tips shown to users
     pub fn get_rotating_tips() -> Vec<String> {
-        vec![
+        #[allow(unused_mut)]
+        let mut tips = vec![
             format!(
                 "You can resume the last conversation from your current directory by launching with {}",
                 StyledText::command(&format!("{CLI_NAME} chat --resume"))
@@ -415,10 +424,14 @@ pub mod tips {
                 StyledText::command("@file.txt"),
                 StyledText::command("@src/")
             ),
-            format!(
+        ];
+        #[cfg(feature = "voice")]
+        if VOICE_ENABLED_IN_CLASSIC_CHAT {
+            tips.push(format!(
                 "Use {} to speak your prompt instead of typing it",
                 StyledText::command("/voice")
-            ),
-        ]
+            ));
+        }
+        tips
     }
 }

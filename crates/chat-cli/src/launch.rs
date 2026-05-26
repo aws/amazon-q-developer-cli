@@ -102,6 +102,11 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
         .env("JSC_numberOfGCMarkers", "1")
         .kill_on_drop(true);
 
+    // Used by the TUI voice helper (packages/tui/src/commands/voice-helper.ts) to
+    // spawn the `voice` subcommand of the same binary for microphone capture
+    // and Whisper transcription.
+    cmd.env("KIRO_CLI_PATH", &current_exe);
+
     // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
     let feed_path = crate::util::paths::feed_json_path()?;
     std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
