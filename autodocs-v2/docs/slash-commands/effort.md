@@ -1,13 +1,13 @@
 ---
 doc_meta:
   validated: 2026-05-26
-  commit: e79e2949d
+  commit: 38cca90e6
   status: validated
   testable_headless: true
   category: slash_command
   title: /effort
   description: Set reasoning effort level for the current model
-  keywords: [effort, reasoning, low, medium, high, model, performance, output_config]
+  keywords: [effort, reasoning, low, medium, high, model, performance, output_config, reasoning.effort]
   related: [slash-model, default-model]
 ---
 
