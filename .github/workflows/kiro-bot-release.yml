@@ -21,11 +21,15 @@ on:
     paths:
       - 'crates/kiro-bot/**'
       - 'crates/kiro-knowledge-mcp/**'
+      - 'crates/kiro-github-mcp/**'
       - 'crates/kiro-help-corpus-ingest/**'
       - 'crates/kiro-bot-eval/**'
-      - 'crates/chat-cli/src/agents/kiro-help.json'
-      - 'crates/chat-cli/src/agents/kiro_help_prompt.md'
-      - 'crates/chat-cli/src/cli/agent/mod.rs'
+      # chat-cli ships as the `kiro-cli` binary the bot execs, so any
+      # change to the ACP server, tool dispatch, agent loader, or v2
+      # chat surface affects bot behavior. Broadened from the original
+      # three-file allowlist to avoid the bot running on a stale binary.
+      - 'crates/chat-cli/**'
+      - 'crates/chat-cli-v2/**'
       - '.github/workflows/kiro-bot-release.yml'
 
 permissions:
