@@ -132,6 +132,12 @@ jobs:
           restore-role-arn: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           restore-region: ${{ env.AWS_REGION }}
 
+      - name: Set workspace version for packaging
+        shell: bash
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ inputs.version }}\"/" Cargo.toml
+          cargo update --workspace
+
       - name: Build V2 Windows Binary with TUI/Bun embedding
         shell: bash
         env:
