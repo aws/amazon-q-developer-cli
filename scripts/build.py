@@ -252,8 +252,20 @@ def download_node() -> NodePaths:
 
 
 def build_kas_bundle() -> pathlib.Path:
-    """Install @kiro/agent and create a tar.gz bundle of node_modules."""
+    """Install @kiro/agent and create a tar.gz bundle of node_modules.
+
+    The @kiro/agent version is read from packages/tui/package.json's @kiro/client
+    dep so the bundled server stays in lockstep with the client the TUI uses.
+    """
     import tarfile
+
+    tui_pkg_path = pathlib.Path("packages/tui/package.json")
+    with open(tui_pkg_path) as f:
+        tui_pkg = json.load(f)
+    kas_version = tui_pkg.get("dependencies", {}).get("@kiro/client")
+    if not kas_version:
+        raise RuntimeError(f"@kiro/client not found in {tui_pkg_path} dependencies")
+    info(f"Using @kiro/agent@{kas_version} (from packages/tui/package.json @kiro/client)")
 
     kas_dir = BUILD_DIR / "kas"
     shutil.rmtree(kas_dir, ignore_errors=True)
@@ -261,8 +273,7 @@ def build_kas_bundle() -> pathlib.Path:
 
     pkg = {
         "type": "module",
-        "dependencies": {"@kiro/agent": "0.3.11"},
-        "overrides": {"@aws/codewhisperer-streaming-client": "1.0.34"},
+        "dependencies": {"@kiro/agent": kas_version},
     }
     with open(kas_dir / "package.json", "w") as f:
         json.dump(pkg, f)
