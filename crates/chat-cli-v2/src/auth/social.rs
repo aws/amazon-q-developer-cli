@@ -64,7 +64,7 @@ pub struct SocialToken {
 }
 
 impl SocialToken {
-    const SECRET_KEY: &'static str = "kirocli:social:token";
+    pub(crate) const SECRET_KEY: &'static str = "kirocli:social:token";
 
     pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
         if cfg!(test) {
@@ -91,7 +91,10 @@ impl SocialToken {
                         }
                         if token.is_expired() {
                             trace!("token is expired, refreshing");
-                            token = token.refresh_token(database).await?;
+                            token = match Self::coordinated_refresh(database).await? {
+                                Some(t) => t,
+                                None => return Ok(None),
+                            };
                         }
                         trace!(?token, "found a valid social token");
                         Ok(Some(token))
@@ -117,6 +120,8 @@ impl SocialToken {
         database
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
             .await?;
+        // Mirrors to KAS sidecar; see kas_token_sync.
+        crate::auth::kas_token_sync::write_token(self).await;
         Ok(())
     }
 
@@ -132,6 +137,7 @@ impl SocialToken {
 
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
+        crate::auth::kas_token_sync::delete_kas_token_file();
         Ok(())
     }
 
@@ -140,11 +146,36 @@ impl SocialToken {
         (now + time::Duration::minutes(1)) > self.expires_at
     }
 
+    /// Refresh under the cross-process refresh lock. Re-reads the store
+    /// inside the lock and skips the HTTP refresh if a peer already
+    /// refreshed.
+    pub async fn coordinated_refresh(database: &Database) -> Result<Option<Self>, AuthError> {
+        crate::auth::refresh_coordinator::with_refresh_lock(|| async move {
+            let stored = match database.get_secret(Self::SECRET_KEY).await? {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+            let Some(token) = serde_json::from_str::<Option<Self>>(&stored.0)? else {
+                return Ok(None);
+            };
+            if !token.is_expired() {
+                return Ok(Some(token));
+            }
+            token.refresh_token(database).await.map(Some)
+        })
+        .await
+    }
+
     pub async fn refresh_token(&self, database: &Database) -> Result<Self, AuthError> {
-        let refresh_token = self.refresh_token.as_ref().ok_or_else(|| {
+        let Some(refresh_token) = &self.refresh_token else {
             error!("No refresh token available for social login");
-            AuthError::NoToken
-        })?;
+            // Re-check the store; if a peer already refreshed, return their token.
+            if let Some(peer) = peer_token_in_store(database, self).await {
+                return Ok(peer);
+            }
+            self.delete(database).await.ok();
+            return Err(AuthError::NoToken);
+        };
 
         debug!("Refreshing social access token for provider: {}", self.provider);
 
@@ -163,6 +194,9 @@ impl SocialToken {
             let status = response.status();
             error!("Failed to refresh social token: {}", status);
 
+            if let Some(peer) = peer_token_in_store(database, self).await {
+                return Ok(peer);
+            }
             // Clean up invalid token
             self.delete(database).await.ok();
 
@@ -181,6 +215,9 @@ impl SocialToken {
                 "Social token refresh for {} returned no profile ARN and no existing ARN available",
                 self.provider
             );
+            if let Some(peer) = peer_token_in_store(database, self).await {
+                return Ok(peer);
+            }
             self.delete(database).await.ok();
             return Err(AuthError::MissingProfileArn);
         }
@@ -270,6 +307,14 @@ pub struct TokenResponse {
     profile_arn: String,
 }
 
+/// Mirror of the BuilderId helper; see there for rationale.
+async fn peer_token_in_store(database: &Database, held: &SocialToken) -> Option<SocialToken> {
+    let secret = database.get_secret(SocialToken::SECRET_KEY).await.ok()??;
+    let stored: Option<SocialToken> = serde_json::from_str(&secret.0).ok()?;
+    let stored = stored?;
+    (stored.access_token != held.access_token).then_some(stored)
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct SocialBearerResolver;
@@ -309,6 +354,7 @@ pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
 
     // Delete local token first — user is immediately logged out.
     database.delete_secret(SocialToken::SECRET_KEY).await?;
+    crate::auth::kas_token_sync::delete_kas_token_file();
 
     // Then revoke the token server-side. Failures are non-fatal.
     if let Some(refresh_token) = refresh_token {
@@ -421,5 +467,34 @@ mod tests {
                 "test stub profile ARN should not be empty"
             );
         });
+    }
+
+    /// Stage a "peer process refreshed first" scenario: the held token has
+    /// no refresh_token (drives the destructive-delete no-RT branch), but
+    /// the secret store has a fresher token written by a peer. Refresh
+    /// must return the peer's token instead of deleting.
+    #[tokio::test]
+    async fn peer_recovery_returns_fresher_token() {
+        let database = crate::database::Database::new().await.unwrap();
+        let held = SocialToken {
+            access_token: Secret("old-access".to_string()),
+            expires_at: OffsetDateTime::now_utc() - time::Duration::seconds(1),
+            refresh_token: None,
+            provider: SocialProvider::Google,
+            profile_arn: Some("arn:aws:iam::123:role/old".to_string()),
+        };
+        let peer = SocialToken {
+            access_token: Secret("new-access".to_string()),
+            ..held.clone()
+        };
+        database
+            .set_secret(SocialToken::SECRET_KEY, &serde_json::to_string(&peer).unwrap())
+            .await
+            .unwrap();
+
+        let recovered = held.refresh_token(&database).await.unwrap();
+        assert_eq!(recovered.access_token.0, "new-access");
+        let still_there = database.get_secret(SocialToken::SECRET_KEY).await.unwrap();
+        assert!(still_there.is_some(), "peer's token must not have been deleted");
     }
 }

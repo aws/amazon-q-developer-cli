@@ -683,9 +683,7 @@ pub(crate) enum KasStdio {
 /// (default `kas_token_path(os)`); pass `token_path_override` to use a
 /// different file (e.g. user-supplied `--token-path` on `kiro-cli acp`).
 ///
-/// TODO: token sync currently lives in the autocomplete repo. Move that
-/// into this CLI binary so KAS-via-CLI flows don't depend on the desktop
-/// app having run recently.
+/// Seeds the KAS file from V2's secret store before spawn.
 pub(crate) async fn spawn_kas_process(
     os: &Os,
     stdio: KasStdio,
@@ -713,6 +711,8 @@ pub(crate) async fn spawn_kas_process(
         .kill_on_drop(true);
 
     let token_path = token_path_override.map_or_else(|| kas_token_path(os), Ok)?;
+    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
+    chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
     cmd.arg(format!("--token-path={}", token_path.display()));
 
     match stdio {
@@ -749,6 +749,7 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
     };
 
     let token_path = crate::util::paths::kas_token_path(os)?;
+    chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
 
     debug!(
         "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws (port {})",

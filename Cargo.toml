@@ -51,7 +51,7 @@ aws-config = "1.0.3"
 aws-credential-types = "1.0.3"
 aws-runtime = "1.4.4"
 aws-sdk-cognitoidentity = { version = "1.51.0", features = ["test-util"] }
-aws-sdk-ssooidc = "1.51.0"
+aws-sdk-ssooidc = { version = "1.51.0", features = ["test-util"] }
 aws-sdk-bedrockagent = "1"
 aws-sdk-bedrockagentruntime = "1.66"
 aws-sdk-cloudwatch = "1"

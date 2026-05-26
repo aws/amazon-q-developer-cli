@@ -196,6 +196,17 @@ pub struct Database {
     pub settings: Settings,
 }
 
+/// Per-connection sqlite init. A 5s busy_timeout lets concurrent writers
+/// (telemetry, conversation persist, auth `set_secret`) wait briefly for
+/// the lock to free instead of surfacing `SQLITE_BUSY` to callers. This
+/// is critical for the in-lock `Token::save()` inside `refresh_coordinator`:
+/// a transient `SQLITE_BUSY` there strands the rotated RT and forces a
+/// logout. Mirrors the autocomplete-side fix in `fig_settings`.
+fn init_connection(conn: &mut Connection) -> rusqlite::Result<()> {
+    conn.busy_timeout(std::time::Duration::from_millis(5000))?;
+    Ok(())
+}
+
 impl Database {
     pub async fn new() -> Result<Self, DatabaseError> {
         Self::new_with_workspace(None).await
@@ -207,7 +218,9 @@ impl Database {
         let path = match cfg!(test) && !is_integ_test() {
             true => {
                 return Self {
-                    pool: Pool::builder().build(SqliteConnectionManager::memory()).unwrap(),
+                    pool: Pool::builder()
+                        .build(SqliteConnectionManager::memory().with_init(init_connection))
+                        .unwrap(),
                     settings: Settings::new().await?,
                 }
                 .migrate();
@@ -222,7 +235,7 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = SqliteConnectionManager::file(&path);
+        let conn = SqliteConnectionManager::file(&path).with_init(init_connection);
         let pool = Pool::builder().build(conn)?;
 
         // Check the unix permissions of the database file, set them to 0600 if they are not
@@ -744,6 +757,16 @@ mod tests {
         // assert migration count is correct
         let max_migration = max_migration_version(&&*db.pool.get().unwrap());
         assert_eq!(max_migration, Some(MIGRATIONS.len() as i64 - 1));
+    }
+
+    /// Asserts `init_connection` set `busy_timeout = 5000ms`. Without it,
+    /// in-lock `Token::save()` can fail with `SQLITE_BUSY` and force a logout.
+    #[tokio::test]
+    async fn busy_timeout_is_set_on_pooled_connections() {
+        let db = Database::new().await.unwrap();
+        let conn = db.pool.get().unwrap();
+        let timeout: i64 = conn.query_row("PRAGMA busy_timeout", [], |row| row.get(0)).unwrap();
+        assert_eq!(timeout, 5000, "busy_timeout pragma should be 5000ms");
     }
 
     #[test]

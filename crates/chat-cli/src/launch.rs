@@ -129,6 +129,9 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
             }
 
             let token_path = kas_token_path(os)?;
+            // Seed the file at the same path KAS will read.
+            // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
+            chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
             cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 

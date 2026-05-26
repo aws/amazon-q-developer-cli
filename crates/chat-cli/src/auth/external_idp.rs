@@ -96,7 +96,7 @@ impl ExternalIdpToken {
                 match token {
                     Some(token) if token.is_expired() => {
                         trace!("External IdP token is expired, refreshing");
-                        token.refresh_token(database).await
+                        Self::coordinated_refresh(database).await
                     },
                     Some(token) => Ok(Some(token)),
                     None => Ok(None),
@@ -110,10 +110,34 @@ impl ExternalIdpToken {
         }
     }
 
+    /// Refresh under the cross-process refresh lock. Re-reads the store
+    /// inside the lock; if a peer already refreshed, returns the peer's
+    /// token without calling the IdP.
+    pub async fn coordinated_refresh(database: &Database) -> Result<Option<Self>, AuthError> {
+        crate::auth::refresh_coordinator::with_refresh_lock(|| async move {
+            let stored = match database.get_secret(Self::SECRET_KEY).await? {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+            let Some(token) = serde_json::from_str::<Option<Self>>(&stored.0)? else {
+                return Ok(None);
+            };
+            if !token.is_expired() {
+                return Ok(Some(token));
+            }
+            token.refresh_token(database).await
+        })
+        .await
+    }
+
     /// Refresh the access token directly with the customer's IdP
     pub async fn refresh_token(&self, database: &Database) -> Result<Option<Self>, AuthError> {
         let Some(refresh_token) = &self.refresh_token else {
             warn!("No refresh token available");
+            // Re-check the store; if a peer already refreshed, return their token.
+            if let Some(peer) = peer_token_in_store(database, self).await {
+                return Ok(Some(peer));
+            }
             let _ = self.delete(database).await;
             return Ok(None);
         };
@@ -158,6 +182,9 @@ impl ExternalIdpToken {
                 let error_text = response.text().await.unwrap_or_default();
                 error!(%status, %error_text, "Failed to refresh external IdP token");
                 if status.is_client_error() {
+                    if let Some(peer) = peer_token_in_store(database, self).await {
+                        return Ok(Some(peer));
+                    }
                     let _ = self.delete(database).await;
                 }
                 Err(AuthError::OAuthCustomError(format!("Token refresh failed: {status}")))
@@ -186,6 +213,14 @@ struct TokenResponse {
     refresh_token: Option<String>,
     #[serde(default, deserialize_with = "deserialize_expires_in")]
     expires_in: Option<i64>,
+}
+
+/// Mirror of the BuilderId helper; see there for rationale.
+async fn peer_token_in_store(database: &Database, held: &ExternalIdpToken) -> Option<ExternalIdpToken> {
+    let secret = database.get_secret(ExternalIdpToken::SECRET_KEY).await.ok()??;
+    let stored: Option<ExternalIdpToken> = serde_json::from_str(&secret.0).ok()?;
+    let stored = stored?;
+    (stored.access_token != held.access_token).then_some(stored)
 }
 
 /// Deserialize expires_in as number or string
@@ -385,9 +420,50 @@ async fn exchange_code_for_token(
 
 pub async fn logout_external_idp(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(ExternalIdpToken::SECRET_KEY).await?;
+    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
+    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
     Ok(())
 }
 
 pub async fn is_external_idp_logged_in(database: &Database) -> bool {
     matches!(ExternalIdpToken::load(database).await, Ok(Some(_)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stage a "peer process refreshed first" scenario: the held token has
+    /// no refresh_token (drives the destructive-delete no-RT branch), but
+    /// the secret store has a fresher token written by a peer. Refresh
+    /// must return the peer's token instead of deleting.
+    #[tokio::test]
+    async fn peer_recovery_returns_fresher_token() {
+        let database = crate::database::Database::new_default().await.unwrap();
+        let held = ExternalIdpToken {
+            access_token: Secret("old-access".to_string()),
+            expires_at: time::OffsetDateTime::now_utc() - time::Duration::seconds(1),
+            refresh_token: None,
+            issuer_url: "https://idp.example.com".to_string(),
+            token_endpoint: "https://idp.example.com/token".to_string(),
+            client_id: "abc123".to_string(),
+        };
+        let peer = ExternalIdpToken {
+            access_token: Secret("new-access".to_string()),
+            ..held.clone()
+        };
+        database
+            .set_secret(ExternalIdpToken::SECRET_KEY, &serde_json::to_string(&peer).unwrap())
+            .await
+            .unwrap();
+
+        let recovered = held
+            .refresh_token(&database)
+            .await
+            .unwrap()
+            .expect("peer's token should be returned");
+        assert_eq!(recovered.access_token.0, "new-access");
+        let still_there = database.get_secret(ExternalIdpToken::SECRET_KEY).await.unwrap();
+        assert!(still_there.is_some(), "peer's token must not have been deleted");
+    }
 }

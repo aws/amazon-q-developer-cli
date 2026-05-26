@@ -341,12 +341,9 @@ impl BuilderIdToken {
                 let token: Option<Self> = serde_json::from_str(&secret.0)?;
                 match token {
                     Some(token) => {
-                        let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-                        let client = client(region.clone());
-
                         if token.is_expired() {
                             trace!("token is expired, refreshing");
-                            token.refresh_token(&client, database, &region, telemetry).await
+                            Self::coordinated_refresh(database, telemetry).await
                         } else {
                             trace!(?token, "found a valid token");
                             Ok(Some(token))
@@ -369,6 +366,33 @@ impl BuilderIdToken {
         }
     }
 
+    /// Refresh under the cross-process refresh lock. Re-reads the store
+    /// inside the lock; if a peer already refreshed, returns the peer's
+    /// token without calling OIDC. Holding the lock during the OIDC + save
+    /// sequence guarantees that any `invalid_grant` we observe here is a
+    /// genuine RT failure rather than a peer race.
+    pub async fn coordinated_refresh(
+        database: &Database,
+        telemetry: Option<&crate::telemetry::TelemetryThread>,
+    ) -> Result<Option<Self>, AuthError> {
+        crate::auth::refresh_coordinator::with_refresh_lock(|| async move {
+            let stored = match database.get_secret(Self::SECRET_KEY).await? {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+            let Some(token) = serde_json::from_str::<Option<Self>>(&stored.0)? else {
+                return Ok(None);
+            };
+            if !token.is_expired() {
+                return Ok(Some(token));
+            }
+            let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
+            let client = client(region.clone());
+            token.refresh_token(&client, database, &region, telemetry).await
+        })
+        .await
+    }
+
     /// Refresh the access token
     pub async fn refresh_token(
         &self,
@@ -379,6 +403,11 @@ impl BuilderIdToken {
     ) -> Result<Option<Self>, AuthError> {
         let Some(refresh_token) = &self.refresh_token else {
             warn!("no refresh token was found");
+            // Lock is best-effort; re-read the store for a peer's refresh
+            // before deleting, to minimize race-induced logouts.
+            if let Some(peer) = peer_token_in_store(database, self).await {
+                return Ok(Some(peer));
+            }
             // if the token is expired and has no refresh token, delete it
             if let Err(err) = self.delete(database).await {
                 error!(?err, "Failed to delete builder id token");
@@ -457,9 +486,16 @@ impl BuilderIdToken {
                 // if the error is the client's fault, clear the token
                 if let SdkError::ServiceError(service_err) = &err
                     && !service_err.err().is_slow_down_exception()
-                    && let Err(err) = self.delete(database).await
                 {
-                    error!(?err, "Failed to delete builder id token");
+                    // Lock is best-effort; re-check the store for a peer's refresh
+                    // before deleting on `invalid_grant`.
+                    if let Some(peer) = peer_token_in_store(database, self).await {
+                        debug!("invalid_grant but peer token in store; returning peer's token");
+                        return Ok(Some(peer));
+                    }
+                    if let Err(err) = self.delete(database).await {
+                        error!(?err, "Failed to delete builder id token");
+                    }
                 }
 
                 Err(err.into())
@@ -517,6 +553,17 @@ impl BuilderIdToken {
     pub fn is_amzn_user(&self) -> bool {
         matches!(&self.start_url, Some(url) if url == AMZN_START_URL)
     }
+}
+
+/// If a peer process saved a different access token to the store since
+/// `held` was loaded, return the peer's token; otherwise `None`. Used
+/// before the destructive delete to honor a peer's successful refresh
+/// when the lock failed to serialize us.
+async fn peer_token_in_store(database: &Database, held: &BuilderIdToken) -> Option<BuilderIdToken> {
+    let secret = database.get_secret(BuilderIdToken::SECRET_KEY).await.ok()??;
+    let stored: Option<BuilderIdToken> = serde_json::from_str(&secret.0).ok()?;
+    let stored = stored?;
+    (stored.access_token != held.access_token).then_some(stored)
 }
 
 pub enum PollCreateToken {
@@ -617,6 +664,9 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
     );
 
     let profile_res = database.unset_auth_profile();
+
+    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
+    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
 
     builder_res?;
     device_res?;
@@ -720,5 +770,113 @@ mod tests {
 
         token.start_url = Some("https://amzn.awsapps.com/start".into());
         assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
+    }
+
+    /// Stage a "peer process refreshed first" scenario: the held token has
+    /// no refresh_token (drives the destructive-delete branch in
+    /// `refresh_token`), but the secret store has a fresher token written
+    /// by a peer. Refresh must return the peer's token instead of
+    /// deleting.
+    #[tokio::test]
+    async fn peer_recovery_returns_fresher_token() {
+        let database = crate::database::Database::new_default().await.unwrap();
+        let held = BuilderIdToken {
+            access_token: Secret("old-access".to_string()),
+            expires_at: time::OffsetDateTime::now_utc() - time::Duration::seconds(1),
+            refresh_token: None,
+            region: Some(OIDC_BUILDER_ID_REGION.to_string()),
+            start_url: Some(START_URL.to_string()),
+            oauth_flow: OAuthFlow::DeviceCode,
+            scopes: None,
+        };
+        let peer = BuilderIdToken {
+            access_token: Secret("new-access".to_string()),
+            ..held.clone()
+        };
+        database
+            .set_secret(BuilderIdToken::SECRET_KEY, &serde_json::to_string(&peer).unwrap())
+            .await
+            .unwrap();
+
+        let region = OIDC_BUILDER_ID_REGION;
+        let client = client(region.clone());
+        let recovered = held
+            .refresh_token(&client, &database, &region, None)
+            .await
+            .unwrap()
+            .expect("peer's token should be returned");
+        assert_eq!(recovered.access_token.0, "new-access");
+        // Peer should still be in the store (no destructive delete).
+        let still_there = database.get_secret(BuilderIdToken::SECRET_KEY).await.unwrap();
+        assert!(still_there.is_some(), "peer's token must not have been deleted");
+    }
+
+    /// The literal storm scenario: held token *has* a refresh_token, but
+    /// AWS already rotated the RT for a peer process, so when this caller
+    /// calls OIDC create_token it gets `invalid_grant`. The destructive
+    /// branch in `refresh_token` would normally delete the token from the
+    /// store; the storm fix's peer-recovery short-circuit must return the
+    /// peer's already-saved token instead.
+    #[tokio::test]
+    async fn peer_recovery_returns_fresher_token_on_invalid_grant() {
+        use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
+        use aws_sdk_ssooidc::types::error::InvalidGrantException;
+        use aws_smithy_mocks::{
+            RuleMode,
+            mock,
+            mock_client,
+        };
+
+        let database = crate::database::Database::new_default().await.unwrap();
+        let region = OIDC_BUILDER_ID_REGION;
+
+        // Pre-seed a non-expired DeviceRegistration so `refresh_token` doesn't
+        // bail out before reaching the OIDC call.
+        let registration = DeviceRegistration {
+            client_id: "test-client-id".into(),
+            client_secret: Secret("test-client-secret".into()),
+            client_secret_expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::days(30)),
+            region: region.to_string(),
+            oauth_flow: OAuthFlow::DeviceCode,
+            scopes: Some(crate::auth::scope::get_scopes(&database)),
+        };
+        registration.save(&database).await.unwrap();
+
+        // Held token *has* a refresh_token (so we go past the no-RT guard) and
+        // is expired. The peer already wrote a different access_token to the
+        // store before our OIDC call returned `invalid_grant`.
+        let held = BuilderIdToken {
+            access_token: Secret("old-access".to_string()),
+            expires_at: time::OffsetDateTime::now_utc() - time::Duration::seconds(1),
+            refresh_token: Some(Secret("burned-refresh".to_string())),
+            region: Some(region.to_string()),
+            start_url: Some(START_URL.to_string()),
+            oauth_flow: OAuthFlow::DeviceCode,
+            scopes: None,
+        };
+        let peer = BuilderIdToken {
+            access_token: Secret("new-access".to_string()),
+            ..held.clone()
+        };
+        database
+            .set_secret(BuilderIdToken::SECRET_KEY, &serde_json::to_string(&peer).unwrap())
+            .await
+            .unwrap();
+
+        // Mock OIDC: any create_token call returns InvalidGrantException, the
+        // exact `ServiceError` shape the storm produces.
+        let create_token_rule = mock!(aws_sdk_ssooidc::Client::create_token)
+            .then_error(|| CreateTokenError::InvalidGrantException(InvalidGrantException::builder().build()));
+        let client = mock_client!(aws_sdk_ssooidc, RuleMode::MatchAny, [&create_token_rule]);
+
+        let recovered = held
+            .refresh_token(&client, &database, &region, None)
+            .await
+            .unwrap()
+            .expect("peer's token should be returned despite invalid_grant");
+        assert_eq!(recovered.access_token.0, "new-access");
+        // Peer's token must still be in the store -- destructive-delete was shadowed.
+        let still_there = database.get_secret(BuilderIdToken::SECRET_KEY).await.unwrap();
+        assert!(still_there.is_some(), "peer's token must not have been deleted");
     }
 }

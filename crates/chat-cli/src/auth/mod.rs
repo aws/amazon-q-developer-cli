@@ -3,6 +3,11 @@ mod consts;
 pub mod external_idp;
 pub mod oauth_callback;
 pub mod pkce;
+// `refresh_coordinator` is shared between V1 and V2 verbatim; keeping a single
+// source file avoids drift. The module compiles into each crate against that
+// crate's own `crate::auth::AuthError`.
+#[path = "../../../chat-cli-v2/src/auth/refresh_coordinator.rs"]
+pub mod refresh_coordinator;
 mod scope;
 
 pub mod portal;
