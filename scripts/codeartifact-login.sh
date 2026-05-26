@@ -27,8 +27,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_NPMRC="$SCRIPT_DIR/../.npmrc"
 cat > "$REPO_NPMRC" <<EOF
 @kiro:registry=https://${REGISTRY}/
+@amzn:registry=https://${REGISTRY}/
 //${REGISTRY}/:always-auth=true
 //${REGISTRY}/:_authToken=${TOKEN}
 EOF
 
-echo "✓ CodeArtifact token written to .npmrc. Run 'bun install' to fetch @kiro packages."
+echo "✓ CodeArtifact token written to .npmrc. Run 'bun install' to fetch @kiro and @amzn packages."

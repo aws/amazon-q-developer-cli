@@ -29,7 +29,7 @@ runs:
       run: |
         REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
         TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
-        printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
+        printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
 
     - name: Restore AWS credentials for build
       if: inputs.restore-role-arn != ''

@@ -149,8 +149,8 @@ jobs:
         run: |
           if [[ -n "$CODEARTIFACT_TOKEN" ]]; then
             REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
-            printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
-              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
+            printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
+              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
           fi
       - name: Install TS dependencies
         run: bun install
@@ -280,8 +280,8 @@ jobs:
         run: |
           if [[ -n "$CODEARTIFACT_TOKEN" ]]; then
             REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
-            printf '@kiro:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
-              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
+            printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' \
+              "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$CODEARTIFACT_TOKEN" > .npmrc
           fi
 
       - name: Install TUI dependencies for Knight Rider
