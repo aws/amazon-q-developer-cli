@@ -1812,8 +1812,12 @@ export class KasAcpClient extends BaseAcpClient {
         return this.executeHelp();
       case 'clear':
         return this.executeClear();
-      case 'plan':
-        return this.executePlan();
+      case 'plan': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        return this.executePlan(args?.value || args?.prompt);
+      }
       case 'paste':
         return executePaste();
       case 'agent': {
@@ -2477,9 +2481,16 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
-  /** /plan — switch to quick-plan mode */
-  private async executePlan(): Promise<CommandResult> {
-    return this.executeAgentSwap('quick-plan');
+  /** /plan — switch to quick-plan mode, optionally send trailing prompt */
+  private async executePlan(prompt?: string): Promise<CommandResult> {
+    const result = await this.executeAgentSwap('quick-plan');
+    if (result.success && prompt) {
+      await this.kiroClient.prompt({
+        prompt: [{ type: 'text', text: prompt }],
+        sessionId: this.sessionId!,
+      });
+    }
+    return result;
   }
 
   private async callExtMethod(
