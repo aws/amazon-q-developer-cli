@@ -1,4 +1,24 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+// Mock the session-archive-cli helper at module load. The handler under
+// test calls these to shell out to `kiro-cli chat _ export-session` /
+// `import-session`; the unit tests stub the module so no real spawn
+// happens. The full wire-level coverage of the spawn-and-parse contract
+// lives in `utils/__tests__/session-archive-cli.test.ts`, and the
+// end-to-end coverage against the real binary lives in
+// `acp_integ_tests/chat-command.test.ts`.
+const mockExportSession = mock();
+const mockImportSession = mock();
+mock.module('../../../utils/session-archive-cli', () => ({
+  exportSession: (...args: unknown[]) =>
+    mockExportSession(...(args as Parameters<typeof mockExportSession>)),
+  importSession: (...args: unknown[]) =>
+    mockImportSession(...(args as Parameters<typeof mockImportSession>)),
+}));
+
 import { handleChat } from '../chat';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
@@ -77,21 +97,257 @@ describe('handleChat (KAS-mode dispatch)', () => {
     });
   });
 
-  describe('save / load (deferred verbs)', () => {
-    it("alerts 'not yet supported' on save", async () => {
-      const ctx = createMockCommandContext({ kasCommands: [CHAT_CMD] });
-      await handleChat(CHAT_CMD, 'save /tmp/x.json', ctx);
-      const showAlert = ctx._spies.showAlert as any;
-      expect(showAlert).toHaveBeenCalled();
-      expect(String(showAlert.mock.calls[0][0])).toContain('not yet supported');
+  describe('save (shells out to chat _ export-session)', () => {
+    beforeEach(() => {
+      mockExportSession.mockReset();
+      mockImportSession.mockReset();
     });
 
-    it("alerts 'not yet supported' on load", async () => {
+    it('invokes exportSession with sessionId, cwd, and out path', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/tmp/x.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-current' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      expect(mockExportSession).toHaveBeenCalledTimes(1);
+      const call = mockExportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.sessionId).toBe('sess-current');
+      expect(call.out).toBe('/tmp/x.zip');
+      expect(call.force).toBe(false);
+      expect(call.cwd).toBe(process.cwd());
+    });
+
+    it('passes force: true when --force is provided', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/tmp/x.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save --force /tmp/x.zip', ctx);
+      const call = mockExportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.force).toBe(true);
+      expect(call.out).toBe('/tmp/x.zip');
+    });
+
+    it('shows a success alert with the returned path', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/abs/x.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 's' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      const showAlert = ctx._spies.showAlert as any;
+      const successCall = showAlert.mock.calls.find(
+        (c: any[]) => c[1] === 'success'
+      );
+      expect(successCall).toBeDefined();
+      expect(String(successCall![0])).toContain('/abs/x.zip');
+    });
+
+    it('shows an error alert when exportSession reports failure', async () => {
+      mockExportSession.mockReturnValue({
+        ok: false,
+        error: 'session not found',
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 's' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some(
+          (c: any[]) => c[0] === 'session not found' && c[1] === 'error'
+        )
+      ).toBe(true);
+    });
+
+    it('alerts and skips the spawn when no path is provided', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 's' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save', ctx);
+      expect(mockExportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain('Usage');
+    });
+
+    it('alerts and skips the spawn when there is no active session', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: null } as any,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      expect(mockExportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain(
+        'No active session'
+      );
+    });
+  });
+
+  describe('load (shells out to chat _ import-session)', () => {
+    let tmpDir: string;
+    let archivePath: string;
+
+    beforeEach(() => {
+      mockExportSession.mockReset();
+      mockImportSession.mockReset();
+      // Real on-disk file the handler can stat; the spawn itself is
+      // mocked, so the contents don't matter - only existence + isFile.
+      tmpDir = mkdtempSync(join(tmpdir(), 'kiro-chat-load-'));
+      archivePath = join(tmpDir, 'session.zip');
+      writeFileSync(archivePath, 'not a real zip');
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('invokes importSession with archivePath and cwd', async () => {
+      mockImportSession.mockReturnValue({
+        ok: true,
+        path: '/sessions/abc/sess_imported-1',
+      });
+      const loadSession = mock(() =>
+        Promise.resolve({ sessionId: 'sess_imported-1' })
+      );
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      expect(mockImportSession).toHaveBeenCalledTimes(1);
+      const call = mockImportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.archivePath).toBe(archivePath);
+      expect(call.cwd).toBe(process.cwd());
+    });
+
+    it('calls kiro.loadSession with the basename of the imported path', async () => {
+      mockImportSession.mockReturnValue({
+        ok: true,
+        path: '/sessions/abc/sess_imported-1',
+      });
+      const loadSession = mock(() =>
+        Promise.resolve({ sessionId: 'sess_imported-1' })
+      );
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      expect((loadSession as any).mock.calls.length).toBe(1);
+      expect((loadSession as any).mock.calls[0][0]).toBe('sess_imported-1');
+    });
+
+    it('displays "Loaded session from <path>" on success', async () => {
+      mockImportSession.mockReturnValue({
+        ok: true,
+        path: '/sessions/abc/sess_imported-1',
+      });
+      const loadSession = mock(() =>
+        Promise.resolve({ sessionId: 'sess_imported-1' })
+      );
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      const addSystemMessage = ctx._spies.addSystemMessage as any;
+      expect(
+        addSystemMessage.mock.calls.some(
+          (c: any[]) => c[0] === `Loaded session from ${archivePath}`
+        )
+      ).toBe(true);
+    });
+
+    it('shows error alert and skips loadSession when import fails', async () => {
+      mockImportSession.mockReturnValue({
+        ok: false,
+        error: 'archive is not a zip',
+      });
+      const loadSession = mock(() => Promise.resolve({}));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      expect(loadSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some(
+          (c: any[]) => c[0] === 'archive is not a zip' && c[1] === 'error'
+        )
+      ).toBe(true);
+    });
+
+    it('alerts and skips the spawn when no path is provided', async () => {
       const ctx = createMockCommandContext({ kasCommands: [CHAT_CMD] });
-      await handleChat(CHAT_CMD, 'load /tmp/x.json', ctx);
+      await handleChat(CHAT_CMD, 'load', ctx);
+      expect(mockImportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain('Usage');
+    });
+
+    it('alerts "No such file" and skips the spawn when path does not exist', async () => {
+      const missing = join(tmpDir, 'does-not-exist.zip');
+      const ctx = createMockCommandContext({ kasCommands: [CHAT_CMD] });
+      await handleChat(CHAT_CMD, `load ${missing}`, ctx);
+      expect(mockImportSession).not.toHaveBeenCalled();
       const showAlert = ctx._spies.showAlert as any;
       expect(showAlert).toHaveBeenCalled();
-      expect(String(showAlert.mock.calls[0][0])).toContain('not yet supported');
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain(
+        'No such file'
+      );
+    });
+
+    it('alerts "Not a file" and skips the spawn when path is a directory', async () => {
+      const dirPath = join(tmpDir, 'a-directory');
+      mkdirSync(dirPath);
+      const ctx = createMockCommandContext({ kasCommands: [CHAT_CMD] });
+      await handleChat(CHAT_CMD, `load ${dirPath}`, ctx);
+      expect(mockImportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert).toHaveBeenCalled();
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain('Not a file');
+    });
+
+    it('ends with the loading message cleared on success', async () => {
+      mockImportSession.mockReturnValue({
+        ok: true,
+        path: '/sessions/abc/sess_imported-1',
+      });
+      const loadSession = mock(() =>
+        Promise.resolve({ sessionId: 'sess_imported-1' })
+      );
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      const setLoading = ctx._spies.setLoadingMessage as any;
+      expect(setLoading.mock.calls.at(-1)?.[0]).toBe(null);
+    });
+
+    it('does not touch setLoadingMessage on import failure', async () => {
+      mockImportSession.mockReturnValue({ ok: false, error: 'boom' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession: mock(() => Promise.resolve({})) } as any,
+      });
+      await handleChat(CHAT_CMD, `load ${archivePath}`, ctx);
+      expect(ctx._spies.setLoadingMessage).not.toHaveBeenCalled();
     });
   });
 

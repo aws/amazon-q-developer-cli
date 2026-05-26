@@ -140,7 +140,11 @@ pub fn import_session(opts: ImportSessionOptions) -> Result<PathBuf, SessionArch
 
     // 5. Rewrite metadata for the new session. Strip linkage fields that reference IDs from the source
     //    environment - they are invalid in the destination.
-    let new_id = Uuid::new_v4().to_string();
+    //
+    // The new id gets a `cli_` prefix to distinguish CLI-imported sessions from KAS-native sessions
+    // (which mint `sess_<uuid>`). All KAS surfaces tolerate arbitrary id strings - the prefix is
+    // observability sugar, not a requirement.
+    let new_id = format!("cli_{}", Uuid::new_v4());
     let new_hash = compute_workspace_hash(&opts.workspace_paths);
     metadata.id = new_id.clone();
     metadata.schema_version = CURRENT_SCHEMA_VERSION.to_string();
@@ -280,10 +284,11 @@ mod tests {
 
         let session = read_session_json(&imported);
 
-        // Fresh UUID, distinct from source, matches the directory name.
+        // Fresh UUID with `cli_` prefix, distinct from source, matches the directory name.
         let new_id = session.get("id").and_then(Value::as_str).unwrap();
         assert_ne!(new_id, original_id);
-        assert!(Uuid::parse_str(new_id).is_ok());
+        let uuid_part = new_id.strip_prefix("cli_").expect("imported id must have cli_ prefix");
+        assert!(Uuid::parse_str(uuid_part).is_ok());
         assert_eq!(imported.file_name().and_then(|s| s.to_str()).unwrap(), new_id);
 
         // workspacePaths rewritten to the destination.

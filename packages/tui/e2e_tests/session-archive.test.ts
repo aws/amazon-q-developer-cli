@@ -12,8 +12,8 @@
  * Driving them through a PTY would only add flake.
  *
  * Output contract:
- * - Success: exit 0, single JSON line `{"result":true,"path":"<abs>"}`
- * - Failure: exit 1, single JSON line `{"result":false,"error":"<msg>"}`
+ * - Success: exit 0, single JSON line `{"success":true,"path":"<abs>"}`
+ * - Failure: exit 1, single JSON line `{"success":false,"error":"<msg>"}`
  *
  * Both shapes go to stdout (never stderr) so the caller always parses
  * with `JSON.parse(stdout)` without disambiguating streams.
@@ -31,7 +31,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, basename } from 'node:path';
 import { PersistedMessageSchema, SessionMetadataSchema, type SessionMetadata } from '@kiro/acp-type-covenant';
 import { computeWorkspaceHash } from '@kiro/agent';
 
@@ -48,7 +48,7 @@ interface RunResult {
   /** Full captured stderr (binary should never write to stderr on the contract path; populated on panics or pre-flight crashes). */
   stderr: string;
   /** Last stdout line parsed as the `{result, path?, error?}` JSON contract. */
-  parsed: { result: boolean; path?: string; error?: string };
+  parsed: { success: boolean; path?: string; error?: string };
 }
 
 function runCli(args: string[]): RunResult {
@@ -62,7 +62,7 @@ function runCli(args: string[]): RunResult {
   }
   // The binary may print other lines (logs); the JSON contract is the LAST line.
   const last = lines[lines.length - 1]!;
-  let parsed: { result: boolean; path?: string; error?: string };
+  let parsed: { success: boolean; path?: string; error?: string };
   try {
     parsed = JSON.parse(last);
   } catch (cause) {
@@ -210,14 +210,14 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(0);
-    expect(res.parsed.result).toBe(true);
+    expect(res.parsed.success).toBe(true);
     expect(res.parsed.path).toBe(out);
     expect(res.parsed.error).toBeUndefined();
     expect(existsSync(out)).toBe(true);
     expect(statSync(out).size).toBeGreaterThan(0);
   });
 
-  it('JSON error contract: export with unknown id emits {result:false, error}', () => {
+  it('JSON error contract: export with unknown id emits {success:false, error}', () => {
     const sessionsRoot = join(tmp, 'sessions');
     mkdirSync(sessionsRoot);
     const out = join(tmp, 'archive.zip');
@@ -231,14 +231,14 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.result).toBe(false);
+    expect(res.parsed.success).toBe(false);
     expect(res.parsed.error).toBeTruthy();
     expect(typeof res.parsed.error).toBe('string');
     expect(res.parsed.path).toBeUndefined();
     expect(existsSync(out)).toBe(false);
   });
 
-  it('JSON error contract: import with non-zip file emits {result:false, error}', () => {
+  it('JSON error contract: import with non-zip file emits {success:false, error}', () => {
     const fakeArchive = join(tmp, 'not-a-zip.zip');
     writeFileSync(fakeArchive, 'totally not a zip file');
     const sessionsRoot = join(tmp, 'sessions');
@@ -251,7 +251,7 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.result).toBe(false);
+    expect(res.parsed.success).toBe(false);
     expect(res.parsed.error).toMatch(/zip/i);
   });
 
@@ -275,7 +275,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', sourceRoot,
     ]);
     expect(exportRes.exitCode).toBe(0);
-    expect(exportRes.parsed.result).toBe(true);
+    expect(exportRes.parsed.success).toBe(true);
 
     // 3. Import into a fresh, empty destination root, under a different cwd
     //    so we exercise the workspacePaths rewrite + bucket re-hash.
@@ -289,7 +289,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', destRoot,
     ]);
     expect(importRes.exitCode).toBe(0);
-    expect(importRes.parsed.result).toBe(true);
+    expect(importRes.parsed.success).toBe(true);
     expect(importRes.parsed.path).toBeTruthy();
 
     const importedDir = importRes.parsed.path!;
@@ -305,12 +305,12 @@ describe('chat _ export-session / import-session', () => {
     const expectedBucket = computeWorkspaceHash([newCwd]);
     expect(importedDir.startsWith(join(destRoot, expectedBucket))).toBe(true);
 
-    // The imported session id is the basename - should be a fresh UUID,
-    // not the original `sess_roundtrip-1`.
-    const newId = importedDir.split('/').pop()!;
+    // The imported session id is the basename - a fresh UUID with the
+    // `cli_` prefix that distinguishes CLI-imported sessions from
+    // KAS-native ones (which use `sess_`).
+    const newId = basename(importedDir);
     expect(newId).not.toBe('sess_roundtrip-1');
-    // KAS UUIDs from the import path are bare UUIDv4s (no `sess_` prefix).
-    expect(newId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(newId).toMatch(/^cli_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     // 4. Validate session.json against SessionMetadataSchema and confirm
     //    every field the Rust import path rewrites OR preserves.
@@ -320,7 +320,8 @@ describe('chat _ export-session / import-session', () => {
     if (!metaParse.success) {
       throw new Error('session.json failed schema: ' + JSON.stringify(metaParse.error.format()));
     }
-    // Rewritten on import:
+    // Rewritten on import - returned path basename should equal the
+    // imported session id stamped in session.json.
     expect(metaParse.data.id).toBe(newId);
     expect(metaParse.data.workspacePaths).toEqual([newCwd]);
     expect(metaParse.data.schemaVersion).toBe('1.0.0');
@@ -382,7 +383,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', destRoot,
     ]);
     expect(exportRes2.exitCode).toBe(0);
-    expect(exportRes2.parsed.result).toBe(true);
+    expect(exportRes2.parsed.success).toBe(true);
     expect(existsSync(archive2)).toBe(true);
   });
 
@@ -404,7 +405,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', sessionsRoot,
     ]);
     expect(noForce.exitCode).toBe(1);
-    expect(noForce.parsed.result).toBe(false);
+    expect(noForce.parsed.success).toBe(false);
     // Pre-existing file untouched.
     expect(readFileSync(out, 'utf8')).toBe('pre-existing content');
 
@@ -417,7 +418,7 @@ describe('chat _ export-session / import-session', () => {
       '--force',
     ]);
     expect(withForce.exitCode).toBe(0);
-    expect(withForce.parsed.result).toBe(true);
+    expect(withForce.parsed.success).toBe(true);
     expect(statSync(out).size).toBeGreaterThan('pre-existing content'.length);
   });
 

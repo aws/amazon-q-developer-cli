@@ -8,9 +8,9 @@
 //! sandbox the operation with a dedicated `--base-path` and `--cwd`.
 //!
 //! Output contract:
-//! - Single JSON line on stdout, exit code mirrors `result`.
-//! - Success (exit 0): `{"result": true, "path": "<absolute path>"}`
-//! - Failure (exit 1): `{"result": false, "error": "<message>"}`
+//! - Single JSON line on stdout, exit code mirrors `success`.
+//! - Success (exit 0): `{"success": true, "path": "<absolute path>"}`
+//! - Failure (exit 1): `{"success": false, "error": "<message>"}`
 //!
 //! No human-readable mode. Errors come out as JSON too so the TUI
 //! handler always parses with `JSON.parse(stdout)` and never has to
@@ -95,17 +95,17 @@ pub struct ImportSessionArgs {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum JsonOutput<'a> {
-    /// `{"result": true, "path": ...}` - exit 0.
+    /// `{"success": true, "path": ...}` - exit 0.
     Success {
-        result: bool,
+        success: bool,
         /// Absolute path the operation produced. Export: zip archive.
         /// Import: extracted session directory; the new session id is
         /// the basename.
         path: &'a str,
     },
-    /// `{"result": false, "error": ...}` - exit 1.
+    /// `{"success": false, "error": ...}` - exit 1.
     Error {
-        result: bool,
+        success: bool,
         /// Human-readable error message. Exact text is not stable -
         /// callers should not pattern-match on it.
         error: &'a str,
@@ -167,7 +167,10 @@ impl ImportSessionArgs {
 
 fn emit_success(path: &Path) -> ExitCode {
     let s = path.to_string_lossy();
-    let payload = JsonOutput::Success { result: true, path: &s };
+    let payload = JsonOutput::Success {
+        success: true,
+        path: &s,
+    };
     // serde_json::to_string never fails for this shape; on the
     // off-chance it does, fall back to a plain panic message so the
     // caller still sees a parseable payload.
@@ -182,7 +185,7 @@ fn emit_success(path: &Path) -> ExitCode {
 
 fn emit_error(message: &str) -> ExitCode {
     let payload = JsonOutput::Error {
-        result: false,
+        success: false,
         error: message,
     };
     match serde_json::to_string(&payload) {
@@ -192,7 +195,7 @@ fn emit_error(message: &str) -> ExitCode {
             // serialized, emit a minimal hand-rolled JSON line so the
             // contract holds.
             let escaped = message.replace('\\', "\\\\").replace('"', "\\\"");
-            println!("{{\"result\":false,\"error\":\"{escaped}\"}}");
+            println!("{{\"success\":false,\"error\":\"{escaped}\"}}");
         },
     }
     ExitCode::FAILURE

@@ -2,6 +2,12 @@ import { extractRpcErrorMessage } from '../../utils/error-handling';
 import { formatRelativeTime } from '../../utils/sessions';
 import { truncateToRecentTurns } from '../../utils/replay-history';
 import { logger } from '../../utils/logger';
+import {
+  exportSession as runExportSession,
+  importSession as runImportSession,
+} from '../../utils/session-archive-cli';
+import { basename } from 'node:path';
+import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
@@ -19,12 +25,12 @@ export async function handleChat(
     return showSessionPicker(ctx, cmd);
   }
   if (trimmed === 'save' || trimmed.startsWith('save ')) {
-    ctx.showAlert('/chat save is not yet supported', 'error', 3000);
-    return;
+    const rest = trimmed === 'save' ? '' : trimmed.slice(5).trim();
+    return handleChatSave(ctx, rest);
   }
   if (trimmed === 'load' || trimmed.startsWith('load ')) {
-    ctx.showAlert('/chat load is not yet supported', 'error', 3000);
-    return;
+    const rest = trimmed === 'load' ? '' : trimmed.slice(5).trim();
+    return handleChatLoad(ctx, rest);
   }
   if (trimmed === 'new' || trimmed.startsWith('new ')) {
     const prompt = trimmed === 'new' ? null : trimmed.slice(4).trim() || null;
@@ -103,7 +109,8 @@ async function startNewSession(
 
 async function loadExistingSession(
   ctx: CommandContext,
-  sessionId: string
+  sessionId: string,
+  options?: { systemMessage?: string }
 ): Promise<void> {
   ctx.clearUIState();
   ctx.setLoadingMessage(`Loading session ${sessionId}...`);
@@ -118,7 +125,10 @@ async function loadExistingSession(
       sessionId,
       bufferedCount: buffered.length,
     });
-    ctx.addSystemMessage(`Loaded session ${sessionId}`, true);
+    ctx.addSystemMessage(
+      options?.systemMessage ?? `Loaded session ${sessionId}`,
+      true
+    );
     if (buffered.length > 0) {
       const MAX_DISPLAY_TURNS = 10;
       const { events, omittedTurns } = truncateToRecentTurns(
@@ -157,4 +167,96 @@ async function loadExistingSession(
       5000
     );
   }
+}
+
+/**
+ * `/chat save [--force] <path>` - shell out to `kiro-cli chat _ export-session`
+ * to write the current KAS session to a portable zip archive.
+ */
+async function handleChatSave(
+  ctx: CommandContext,
+  rest: string
+): Promise<void> {
+  const tokens = rest.split(/\s+/).filter((t) => t.length > 0);
+  let force = false;
+  const positionals: string[] = [];
+  for (const t of tokens) {
+    if (t === '--force') force = true;
+    else positionals.push(t);
+  }
+  if (positionals.length === 0) {
+    ctx.showAlert('Usage: /chat save [--force] <path>', 'error', 5000);
+    return;
+  }
+  if (positionals.length > 1) {
+    ctx.showAlert(
+      'Usage: /chat save [--force] <path> (only one path argument)',
+      'error',
+      5000
+    );
+    return;
+  }
+  const out = positionals[0]!;
+  const sessionId = ctx.kiro.sessionId;
+  if (!sessionId) {
+    ctx.showAlert('No active session to save', 'error', 5000);
+    return;
+  }
+  const result = runExportSession({
+    sessionId,
+    cwd: process.cwd(),
+    out,
+    force,
+  });
+  if (result.ok) {
+    ctx.showAlert(`Saved session to ${result.path}`, 'success', 5000);
+    return;
+  }
+  logger.error('[chat] export-session failed', { error: result.error });
+  ctx.showAlert(result.error, 'error', 5000);
+}
+
+/**
+ * `/chat load <path>` - shell out to `kiro-cli chat _ import-session`
+ * to extract a portable zip archive into the local sessions tree, then
+ * load the imported session via the existing `loadExistingSession` flow.
+ */
+async function handleChatLoad(
+  ctx: CommandContext,
+  rest: string
+): Promise<void> {
+  const archivePath = rest.trim();
+  if (!archivePath) {
+    ctx.showAlert('Usage: /chat load <path>', 'error', 5000);
+    return;
+  }
+  let stat: import('node:fs').Stats;
+  try {
+    stat = statSync(archivePath);
+  } catch {
+    ctx.showAlert(`No such file: ${archivePath}`, 'error', 5000);
+    return;
+  }
+  if (!stat.isFile()) {
+    ctx.showAlert(`Not a file: ${archivePath}`, 'error', 5000);
+    return;
+  }
+  const result = runImportSession({ archivePath, cwd: process.cwd() });
+  if (!result.ok) {
+    logger.error('[chat] import-session failed', { error: result.error });
+    ctx.showAlert(result.error, 'error', 5000);
+    return;
+  }
+  const newSessionId = basename(result.path);
+  if (!newSessionId) {
+    ctx.showAlert(
+      `Imported but couldn't derive session id from ${result.path}`,
+      'error',
+      5000
+    );
+    return;
+  }
+  await loadExistingSession(ctx, newSessionId, {
+    systemMessage: `Loaded session from ${archivePath}`,
+  });
 }

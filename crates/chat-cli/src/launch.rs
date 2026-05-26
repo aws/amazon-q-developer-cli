@@ -107,6 +107,12 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
     // and Whisper transcription.
     cmd.env("KIRO_CLI_PATH", &current_exe);
 
+    // Path to chat_cli itself, so the TUI can invoke its headless
+    // `chat _ export-session` / `chat _ import-session` subcommands
+    // for /chat save and /chat load. Engine-agnostic: both V2 and KAS
+    // route the slash commands through the same Rust binary.
+    cmd.env("KIRO_CHAT_CLI_BIN", &current_exe);
+
     // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
     let feed_path = crate::util::paths::feed_json_path()?;
     std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
