@@ -4048,7 +4048,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       // Only shown if the plan-quality survey was shown this session.
       if (!state.planSurveyShownThisSession) return;
-      if (state.showSurveyPanel || state.transientAlert) return;
+      if (state.showSurveyPanel) return;
 
       // If the plan survey prompt is still showing (user never responded),
       // replace it with the more relevant implementation survey.

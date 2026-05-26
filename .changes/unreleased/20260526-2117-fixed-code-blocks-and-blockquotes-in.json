@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Code blocks and blockquotes in markdown now respect the configured wrap mode instead of truncating"
+}

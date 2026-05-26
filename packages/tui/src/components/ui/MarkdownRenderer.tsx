@@ -209,7 +209,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
           const code = expandTabs(block.segment.codeBlock!.code);
           return (
             <Box key={i} marginTop={mt}>
-              <Text>
+              <Text wrap={wrapMode}>
                 {highlightCode(code, block.segment.codeBlock!.language)}
               </Text>
             </Box>
@@ -243,7 +243,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         if (block.type === 'blockquote') {
           return (
             <Box key={i} marginTop={mt}>
-              <Text>
+              <Text wrap={wrapMode}>
                 {chalk.dim(`${glyphs.lineVertical} `)}
                 {chalk.italic(renderInlineText(block.segment.text))}
               </Text>
