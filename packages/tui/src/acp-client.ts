@@ -2477,15 +2477,9 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
-  /** /plan — effect expects data.agent.name (uses updateAgent) */
+  /** /plan — switch to quick-plan mode */
   private async executePlan(): Promise<CommandResult> {
-    const result = await this.callExtMethod('_kiro/plan');
-    if (!result.success) return result;
-    return {
-      success: true,
-      message: 'Switched to spec',
-      data: { agent: { name: 'spec' } },
-    };
+    return this.executeAgentSwap('quick-plan');
   }
 
   private async callExtMethod(
