@@ -339,6 +339,28 @@ function extractModelFromConfigOptions(
   return match ? { id: match.value, name: match.name } : undefined;
 }
 
+/**
+ * Extract the current effort level (e.g. "low", "medium", "high", "xhigh")
+ * from a KAS configOptions array. KAS exposes this as a `select` with
+ * `id: 'effortLevel'` (category: 'thought_level') only when the active
+ * model declares an effortLevels schema. Returns null when the option is
+ * absent or when its currentValue is not a string — both signal "no
+ * effort chip" to the TUI.
+ *
+ * V2 surfaces the same value through `_kiro.dev/metadata.effort` per turn;
+ * KAS surfaces it as session-level state attached to model config. We
+ * normalize both paths into the existing `EffortUpdate` event so the
+ * prompt-bar chip renders uniformly.
+ */
+function extractEffortFromConfigOptions(configOptions: unknown): string | null {
+  if (!Array.isArray(configOptions)) return null;
+  for (const opt of configOptions as Array<Record<string, unknown>>) {
+    if (opt.id !== 'effortLevel' || opt.type !== 'select') continue;
+    return typeof opt.currentValue === 'string' ? opt.currentValue : null;
+  }
+  return null;
+}
+
 // ─── Prompt types ────────────────────────────────────────────────────
 
 /**
@@ -999,10 +1021,46 @@ abstract class BaseAcpClient implements SessionClient {
                 contextUsage?: { usagePercentage?: number };
                 usagePercentage?: number;
                 breakdown?: unknown;
+                // turn_completion fields — see KiroSessionInfoUpdate in
+                // @kiro/acp-type-covenant. KAS emits these at end of turn,
+                // we surface them as TurnSummary so the client can render
+                // metering credits + turn duration.
+                promptTurnSummaries?: Array<{
+                  usage?: number;
+                  unit?: string;
+                  unitPlural?: string;
+                  usedTools?: string[];
+                }>;
+                elapsedTime?: number;
+                status?: string;
               };
             };
           }
         )._meta?.kiro;
+        if (meta?.kind === 'turn_completion') {
+          // Map KAS's UsageSummaryEntry shape (`usage` field) to the TUI's
+          // MeteringUsage shape (`value` field). Drop entries that have no
+          // numeric usage — they carry no meaningful metering signal.
+          const meteringUsage = (meta.promptTurnSummaries ?? [])
+            .filter(
+              (entry): entry is { usage: number } & typeof entry =>
+                typeof entry.usage === 'number'
+            )
+            .map((entry) => ({
+              value: entry.usage,
+              unit: entry.unit ?? '',
+              unitPlural: entry.unitPlural ?? '',
+            }));
+          if (meteringUsage.length === 0 && meta.elapsedTime == null) {
+            // Nothing to show. Returning null keeps the chip cleared.
+            return null;
+          }
+          return {
+            type: AgentEventType.TurnSummary,
+            meteringUsage,
+            turnDurationMs: meta.elapsedTime,
+          };
+        }
         if (meta?.kind === 'summarization_completed') {
           return {
             type: AgentEventType.CompactionStatus,
@@ -1598,9 +1656,17 @@ export class KasAcpClient extends BaseAcpClient {
           (update as { sessionUpdate?: string }).sessionUpdate ===
           'config_option_update'
         ) {
-          this.refreshModelCache(
-            (update as { configOptions?: unknown }).configOptions
-          );
+          const configOptions = (update as { configOptions?: unknown })
+            .configOptions;
+          this.refreshModelCache(configOptions);
+          // Effort, unlike model, propagates to the app store directly from
+          // here. KAS exposes `effortLevel` as a session config option, and
+          // the only path back to the UI for autonomous changes (e.g. the
+          // user switches model from a high-effort model to a low-effort one
+          // via the /model command) is through this notification. The store
+          // setter is idempotent — re-broadcasting an unchanged value is a
+          // harmless no-op.
+          this.broadcastEffortFromConfigOptions(configOptions);
         }
         const event = this.convertAcpUpdateToEvent(update);
         if (event) this.broadcastStreamEvent(event);
@@ -1720,6 +1786,9 @@ export class KasAcpClient extends BaseAcpClient {
     }
 
     this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+    this.broadcastEffortFromConfigOptions(
+      (r as { configOptions?: unknown }).configOptions
+    );
 
     return {
       sessionId: sid,
@@ -1752,6 +1821,9 @@ export class KasAcpClient extends BaseAcpClient {
 
     this.captureModes(r as { modes?: CachedModesState | null | undefined });
     this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+    this.broadcastEffortFromConfigOptions(
+      (r as { configOptions?: unknown }).configOptions
+    );
 
     return {
       sessionId,
@@ -2060,6 +2132,7 @@ export class KasAcpClient extends BaseAcpClient {
       const configOptions = (response as { configOptions?: unknown })
         .configOptions;
       this.refreshModelCache(configOptions);
+      this.broadcastEffortFromConfigOptions(configOptions);
       const model = extractModelFromConfigOptions(configOptions);
       // Validate the switch landed on the requested id. If KAS rejected
       // the value but still returned a configOptions state, surface a
@@ -2372,6 +2445,23 @@ export class KasAcpClient extends BaseAcpClient {
     );
     this.modelOptions = modelOpt.options;
     this.currentModelId = modelOpt.currentValue;
+  }
+
+  /**
+   * Broadcast the current effort level extracted from a KAS configOptions
+   * array (returned by session/new, session/load, set_config_option, or
+   * pushed via a `config_option_update` session notification) as an
+   * `EffortUpdate` stream event.
+   *
+   * The KAS path's effort signal is per-session config, not per-turn
+   * metadata as on V2 — but the TUI's `currentEffort` store slot is the
+   * same in both cases, so we funnel into the same event channel.
+   * Broadcasting `null` when no effortLevel option is present clears
+   * the chip cleanly when the active model has no thought-level schema.
+   */
+  private broadcastEffortFromConfigOptions(configOptions: unknown): void {
+    const effort = extractEffortFromConfigOptions(configOptions);
+    this.broadcastStreamEvent({ type: AgentEventType.EffortUpdate, effort });
   }
 
   /**

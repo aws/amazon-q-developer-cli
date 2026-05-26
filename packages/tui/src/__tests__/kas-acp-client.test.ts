@@ -842,8 +842,12 @@ describe('KasAcpClient', () => {
     });
 
     expect(handler).toHaveBeenCalled();
-    const event = handler.mock.calls[0]![0] as any;
-    expect(event.type).toBe(AgentEventType.Content);
+    // Filter rather than index — newSession() now also broadcasts an
+    // initial EffortUpdate which would otherwise occupy slot 0.
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.Content) as any;
+    expect(event).toBeDefined();
     expect(event.content.type).toBe(ContentType.Text);
     expect(event.content.text).toBe('Hello from KAS');
   });
@@ -868,8 +872,10 @@ describe('KasAcpClient', () => {
     });
 
     expect(handler).toHaveBeenCalled();
-    const event = handler.mock.calls[0]![0] as any;
-    expect(event.type).toBe(AgentEventType.ToolCall);
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.ToolCall) as any;
+    expect(event).toBeDefined();
     expect(event.id).toBe('tc-1');
     expect(event.name).toBe('fs_write');
   });
@@ -1486,6 +1492,296 @@ describe('KasAcpClient', () => {
 
     const promptsEvent = events.find((e) => e.type === 'prompts_update');
     expect(promptsEvent.prompts).toHaveLength(0);
+  });
+
+  // ── session_info_update kind=turn_completion → TurnSummary ──
+
+  it('session_info_update kind=turn_completion broadcasts TurnSummary with metering and duration', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            promptTurnSummaries: [
+              { usage: 1.5, unit: 'credit', unitPlural: 'Credits' },
+              { usage: 500, unit: 'token', unitPlural: 'Tokens' },
+            ],
+            elapsedTime: 1234,
+            status: 'success',
+          },
+        },
+      },
+    });
+
+    const summary = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.TurnSummary);
+    expect(summary).toBeDefined();
+    expect(summary.turnDurationMs).toBe(1234);
+    expect(summary.meteringUsage).toEqual([
+      { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
+      { value: 500, unit: 'token', unitPlural: 'Tokens' },
+    ]);
+  });
+
+  it('session_info_update kind=turn_completion drops entries without numeric usage', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            promptTurnSummaries: [
+              { unit: 'credit' }, // no usage — drop
+              { usage: 2, unit: 'credit', unitPlural: 'Credits' },
+            ],
+            elapsedTime: 100,
+            status: 'success',
+          },
+        },
+      },
+    });
+
+    const summary = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.TurnSummary);
+    expect(summary).toBeDefined();
+    expect(summary.meteringUsage).toEqual([
+      { value: 2, unit: 'credit', unitPlural: 'Credits' },
+    ]);
+  });
+
+  it('session_info_update kind=turn_completion fills missing unit/unitPlural with empty string', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            promptTurnSummaries: [{ usage: 7 }],
+            elapsedTime: 50,
+            status: 'success',
+          },
+        },
+      },
+    });
+
+    const summary = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.TurnSummary);
+    expect(summary).toBeDefined();
+    expect(summary.meteringUsage).toEqual([
+      { value: 7, unit: '', unitPlural: '' },
+    ]);
+  });
+
+  it('session_info_update kind=turn_completion with no metering and no duration is suppressed', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            promptTurnSummaries: [],
+            status: 'success',
+          },
+        },
+      },
+    });
+
+    const summary = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.TurnSummary);
+    expect(summary).toBeUndefined();
+  });
+
+  // ── effortLevel config option → EffortUpdate ──
+
+  it('newSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'high',
+          options: [
+            { value: 'low', name: 'Low' },
+            { value: 'medium', name: 'Medium' },
+            { value: 'high', name: 'High' },
+          ],
+        },
+      ],
+    } as any);
+
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    const effortEvents = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
+    expect(effortEvents).toHaveLength(1);
+    expect(effortEvents[0].effort).toBe('high');
+  });
+
+  it('newSession() broadcasts EffortUpdate with null when configOptions has no effortLevel entry', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          name: 'Mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Vibe' }],
+        },
+      ],
+    } as any);
+
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    const effortEvents = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
+    expect(effortEvents).toHaveLength(1);
+    expect(effortEvents[0].effort).toBeNull();
+  });
+
+  it('loadSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'kas-loaded',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'xhigh',
+          options: [{ value: 'xhigh', name: 'xHigh' }],
+        },
+      ],
+    } as any);
+
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.loadSession('kas-loaded');
+
+    const effortEvents = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
+    expect(effortEvents).toHaveLength(1);
+    expect(effortEvents[0].effort).toBe('xhigh');
+  });
+
+  it('config_option_update broadcasts EffortUpdate with the new effortLevel', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    // Drop any EffortUpdate events fired during newSession().
+    handler.mockClear();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            name: 'Effort',
+            category: 'thought_level',
+            currentValue: 'medium',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'medium', name: 'Medium' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const effortEvents = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
+    expect(effortEvents).toHaveLength(1);
+    expect(effortEvents[0].effort).toBe('medium');
+  });
+
+  it('config_option_update with no effortLevel broadcasts EffortUpdate(null) to clear the chip', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+    handler.mockClear();
+
+    // The active model just changed to one that does not declare an
+    // effortLevels schema — KAS drops the option from configOptions and
+    // we should mirror that as `null` in the store so the chip disappears.
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'mode',
+            name: 'Mode',
+            category: 'mode',
+            currentValue: 'vibe',
+            options: [{ value: 'vibe', name: 'Vibe' }],
+          },
+        ],
+      },
+    });
+
+    const effortEvents = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
+    expect(effortEvents).toHaveLength(1);
+    expect(effortEvents[0].effort).toBeNull();
   });
 });
 
