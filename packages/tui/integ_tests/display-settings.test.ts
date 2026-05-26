@@ -16,6 +16,7 @@ import { tmpdir } from 'os';
 import { TestCase } from '../src/test-utils/TestCase';
 
 const DOWN_ARROW = '\x1b[B';
+const RIGHT_ARROW = '\x1b[C';
 const ENTER = '\r';
 
 async function typeSlowly(tc: TestCase, text: string) {
@@ -91,7 +92,7 @@ describe('Display settings panel', () => {
     // ASCII art is the second item; navigate down once then toggle
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
-    await testCase.sendKeys(ENTER);
+    await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
     // Verify the toggle changed in the UI (on -> off)
@@ -110,7 +111,7 @@ describe('Display settings panel', () => {
     await testCase.waitForVisibleText('Animations', 5000);
 
     // Animations is the first item (already selected); toggle it off
-    await testCase.sendKeys(ENTER);
+    await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
     const snap = testCase.getSnapshot().join('\n');
@@ -129,21 +130,21 @@ describe('Display settings panel', () => {
 
     // First item (Animations) should show its description
     let snap = testCase.getSnapshot().join('\n');
-    expect(snap).toContain('When on: animated spinners');
+    expect(snap).toContain('Spinners, progress bars');
 
     // Navigate down to ASCII art
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(300);
 
     snap = testCase.getSnapshot().join('\n');
-    expect(snap).toContain('When on: braille dots');
+    expect(snap).toContain('Decorative text art');
 
     // Navigate down to Icons
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(300);
 
     snap = testCase.getSnapshot().join('\n');
-    expect(snap).toContain('When on: status icons');
+    expect(snap).toContain('Symbols for status');
 
     // Navigate down to Show thinking
     await testCase.sendKeys(DOWN_ARROW);
@@ -189,7 +190,7 @@ describe('Display settings panel', () => {
     await testCase.sleepMs(200);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
-    await testCase.sendKeys(ENTER);
+    await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
     // Verify the toggle changed in the UI (on -> off)
@@ -212,5 +213,25 @@ describe('Display settings panel', () => {
 
     const snap = testCase.getSnapshot().join('\n');
     expect(snap).toMatch(/Show thinking\s+off/);
+  }, 30000);
+
+  it('Enter closes the panel entirely', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('display-settings-enter-closes')
+      .withEnv({ KIRO_HOME: testDir })
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 15000);
+
+    await openDisplaySettings(testCase);
+    await testCase.waitForVisibleText('Animations', 5000);
+
+    // Press Enter — should dismiss the panel back to chat
+    await testCase.sendKeys(ENTER);
+    await testCase.sleepMs(500);
+
+    const snap = testCase.getSnapshot().join('\n');
+    // Panel should be gone — no settings items visible
+    expect(snap).not.toContain('/settings');
+    expect(snap).toContain('ask a question');
   }, 30000);
 });

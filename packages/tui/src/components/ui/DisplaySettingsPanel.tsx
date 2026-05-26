@@ -27,22 +27,19 @@ const ITEMS: ToggleItem[] = [
   {
     key: Settings.CHAT_ANIMATIONS,
     label: 'Animations',
-    description:
-      'When on: animated spinners (◑ ◐ ◑ ◐). When off: static indicators',
+    description: 'Spinners, progress bars, and loading effects',
     defaultValue: true,
   },
   {
     key: Settings.CHAT_ASCII_MODE,
     label: 'ASCII art',
-    description:
-      'When on: braille dots, box-drawing, Unicode (⣿ ◑ ✓ │). When off: plain ASCII (+, |, -, /)',
+    description: 'Decorative text art including table lines',
     defaultValue: true,
   },
   {
     key: Settings.CHAT_ICONS,
     label: 'Icons',
-    description:
-      'When on: status icons (● running, ○ idle, ⚠ warning). When off: text-only labels',
+    description: 'Symbols for status, actions, and labels',
     defaultValue: true,
   },
   {
@@ -56,10 +53,12 @@ const ITEMS: ToggleItem[] = [
 
 interface DisplaySettingsPanelProps {
   onClose: () => void;
+  onDismiss?: () => void;
 }
 
 export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   onClose,
+  onDismiss,
 }) => {
   const { getColor } = useTheme();
   const label = useTextStyle('label');
@@ -113,15 +112,22 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   useInput((input, key) => {
     if (key.upArrow) setIndex((i) => Math.max(0, i - 1));
     else if (key.downArrow) setIndex((i) => Math.min(ITEMS.length - 1, i + 1));
-    else if (key.leftArrow || key.rightArrow || key.return)
-      toggle(ITEMS[index]!.key);
+    else if (key.leftArrow || key.rightArrow) toggle(ITEMS[index]!.key);
+    else if (key.return) {
+      (onDismiss ?? onClose)();
+    }
   });
 
   return (
     <Panel
       title="/settings – display"
       onClose={onClose}
-      footerLeft={<Text>{dimText('↑↓ select · ←→ toggle')}</Text>}
+      closeHintLabel="to go back"
+      footerLeft={
+        <Text>
+          {dimText('↑↓ to navigate · ↔ to change · Enter to apply and close')}
+        </Text>
+      }
     >
       <Box flexDirection="column">
         <Box marginBottom={1}>
@@ -140,12 +146,14 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
                 <Text> </Text>
               )}
               <Text> </Text>
-              <Text>
-                {active ? selectedLabel(item.label) : label(item.label)}
-              </Text>
-              <Box width={2} />
-              <Text>{brandText(val)}</Text>
-              <Box width={2} />
+              <Box width={16}>
+                <Text>
+                  {active ? selectedLabel(item.label) : label(item.label)}
+                </Text>
+              </Box>
+              <Box width={5}>
+                <Text>{brandText(val)}</Text>
+              </Box>
               <Text>{dimText(item.description)}</Text>
             </Box>
           );

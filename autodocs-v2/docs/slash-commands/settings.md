@@ -5,7 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [settings, preferences, config, theme, keybindings, terminal, configure, multi-line, shift-enter, tmux]
   related: [theme]
-  validated: 2026-05-07
+  validated: 2026-05-26
+  commit: 2c5d9fe91
   status: validated
   testable_headless: false
 ---
@@ -41,13 +42,13 @@ You can also jump directly to a subcommand:
 
 ### display
 
-Opens a toggle panel for three display accessibility settings. Use ↑↓ to navigate, ←→ or Enter to toggle, Esc to go back.
+Opens a toggle panel for three display accessibility settings. Use ↑↓ to navigate, ←→ to toggle, Enter to apply and close, Esc to go back.
 
 | Setting | Key | Default | Effect |
 |---------|-----|---------|--------|
-| Animations | `chat.allowAnimations` | on | When off, all spinners and shimmers show static frames |
-| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces braille dots, box-drawing, and Unicode symbols with plain ASCII |
-| Icons | `chat.allowIcons` | on | When off, hides status indicator icons (●, ○, ⚠, etc.) |
+| Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
+| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
+| Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
 

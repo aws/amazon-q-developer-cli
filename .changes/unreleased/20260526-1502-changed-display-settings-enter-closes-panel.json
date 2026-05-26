@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/settings display` panel now closes entirely on Enter, updated footer hints to match new keybindings"
+}

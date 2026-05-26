@@ -543,6 +543,12 @@ export const InlineLayout: React.FC = () => {
     reopenSettingsMenu,
   ]);
 
+  const handleDismissDisplaySettingsPanel = useCallback(() => {
+    setShowDisplaySettingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setShowDisplaySettingsPanel, setActiveCommand, clearCommandInput]);
+
   const handleCloseKnowledgePanel = useCallback(() => {
     setShowKnowledgePanel(false);
     setActiveCommand(null);
@@ -1039,7 +1045,10 @@ export const InlineLayout: React.FC = () => {
               <KeybindingsPanel onClose={handleCloseKeybindingsPanel} />
             )}
             {showDisplaySettingsPanel && (
-              <DisplaySettingsPanel onClose={handleCloseDisplaySettingsPanel} />
+              <DisplaySettingsPanel
+                onClose={handleCloseDisplaySettingsPanel}
+                onDismiss={handleDismissDisplaySettingsPanel}
+              />
             )}
             {showKnowledgePanel && (
               <KnowledgePanel
