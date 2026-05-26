@@ -26,6 +26,10 @@ interface E2ETestCaseOptions {
   globalAgentConfigs?: Array<{ name: string; config: Record<string, unknown> }>;
   /** User settings written to $HOME/.kiro/settings/cli.json before launch. */
   settings?: Record<string, unknown>;
+  /** Files to write into the sandbox HOME before the CLI spawns. Paths are relative to $HOME. */
+  prelaunchFiles?: Array<{ path: string; content: string }>;
+  /** Override the spawned process's working directory. Defaults to `process.cwd()`. */
+  cwd?: string;
 }
 
 /**
@@ -80,6 +84,13 @@ export class E2ETestCase {
       fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
     }
 
+    // Write any prelaunch files into the sandbox HOME before the CLI spawns
+    for (const file of this.options.prelaunchFiles ?? []) {
+      const target = path.join(homeDir, file.path);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, file.content);
+    }
+
     const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
     const tuiJsPath = path.join(__dirname, '../dist/tui.js');
 
@@ -111,7 +122,7 @@ export class E2ETestCase {
     this.ptyManager = new PtyManager({
       width: this.options.terminalSize!.width,
       height: this.options.terminalSize!.height,
-      cwd: process.cwd(),
+      cwd: this.options.cwd ?? process.cwd(),
       env: this.sandboxEnv,
     });
 
@@ -522,6 +533,17 @@ export class E2ETestCaseBuilder {
 
   withCliArgs(...args: string[]): E2ETestCaseBuilder {
     this.options.extraCliArgs = [...(this.options.extraCliArgs ?? []), ...args];
+    return this;
+  }
+
+  withPrelaunchFile(filePath: string, content: string): E2ETestCaseBuilder {
+    this.options.prelaunchFiles = this.options.prelaunchFiles ?? [];
+    this.options.prelaunchFiles.push({ path: filePath, content });
+    return this;
+  }
+
+  withCwd(cwd: string): E2ETestCaseBuilder {
+    this.options.cwd = cwd;
     return this;
   }
 

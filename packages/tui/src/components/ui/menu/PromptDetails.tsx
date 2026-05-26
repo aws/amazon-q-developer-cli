@@ -29,7 +29,22 @@ export const PromptDetails: React.FC<PromptDetailsProps> = ({
   const brandText = getColor('primary');
 
   const args = meta?.arguments ?? [];
-  const serverName = meta?.serverName;
+  const source = meta?.source;
+  // Render a short origin label for the prompt/skill/steering. MCP prompts
+  // get "Server: <name>"; everything else surfaces the kind (and path when
+  // present) under "Source:".
+  let originLabel: string | null = null;
+  let originPrefix: string = ' · Source: ';
+  if (source) {
+    if (source.kind === 'mcp') {
+      originLabel = source.serverName;
+      originPrefix = ' · Server: ';
+    } else if (source.kind === 'agent-config') {
+      originLabel = source.path ?? source.kind;
+    } else {
+      originLabel = source.path ?? source.kind;
+    }
+  }
 
   const usage = args.length
     ? `${name} ${args.map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(' ')}`
@@ -116,10 +131,10 @@ export const PromptDetails: React.FC<PromptDetailsProps> = ({
         <Text>
           {dimText('Name: ')}
           {brandText(name)}
-          {serverName ? (
+          {originLabel ? (
             <>
-              {dimText(' · Server: ')}
-              {dimText(serverName)}
+              {dimText(originPrefix)}
+              {dimText(originLabel)}
             </>
           ) : null}
         </Text>

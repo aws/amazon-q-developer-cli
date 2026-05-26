@@ -18,6 +18,9 @@ import type {
   CommandOptionsResponse,
   CommandResult,
   CommandMeta,
+  PromptEntry,
+  SkillEntry,
+  SteeringEntry,
   TuiCommand,
 } from './types/commands';
 import type { KasCommand } from './kas-commands';
@@ -43,18 +46,9 @@ export class Kiro {
     }>
   ) => void;
   private kasCommandsHandler?: (commands: KasCommand[]) => void;
-  private promptsHandler?: (
-    prompts: Array<{
-      name: string;
-      description?: string;
-      arguments: Array<{
-        name: string;
-        description?: string;
-        required?: boolean;
-      }>;
-      serverName: string;
-    }>
-  ) => void;
+  private promptsHandler?: (prompts: PromptEntry[]) => void;
+  private skillsHandler?: (skills: SkillEntry[]) => void;
+  private steeringHandler?: (steering: SteeringEntry[]) => void;
   private modelHandler?: (model: { id: string; name: string }) => void;
   private agentHandler?: (agent: {
     name: string;
@@ -111,21 +105,16 @@ export class Kiro {
     this.kasCommandsHandler = handler;
   }
 
-  onPromptsUpdate(
-    handler: (
-      prompts: Array<{
-        name: string;
-        description?: string;
-        arguments: Array<{
-          name: string;
-          description?: string;
-          required?: boolean;
-        }>;
-        serverName: string;
-      }>
-    ) => void
-  ): void {
+  onPromptsUpdate(handler: (prompts: PromptEntry[]) => void): void {
     this.promptsHandler = handler;
+  }
+
+  onSkillsUpdate(handler: (skills: SkillEntry[]) => void): void {
+    this.skillsHandler = handler;
+  }
+
+  onSteeringUpdate(handler: (steering: SteeringEntry[]) => void): void {
+    this.steeringHandler = handler;
   }
 
   onModelUpdate(handler: (model: { id: string; name: string }) => void): void {
@@ -335,6 +324,25 @@ export class Kiro {
             'prompts'
           );
           this.promptsHandler(event.prompts);
+        }
+        if (event.type === AgentEventType.SkillsUpdate && this.skillsHandler) {
+          logger.debug(
+            '[kiro] received SkillsUpdate event with',
+            event.skills.length,
+            'skills'
+          );
+          this.skillsHandler(event.skills);
+        }
+        if (
+          event.type === AgentEventType.SteeringUpdate &&
+          this.steeringHandler
+        ) {
+          logger.debug(
+            '[kiro] received SteeringUpdate event with',
+            event.steering.length,
+            'steering docs'
+          );
+          this.steeringHandler(event.steering);
         }
         // Forward compaction, context usage, and compaction summary content events
         if (

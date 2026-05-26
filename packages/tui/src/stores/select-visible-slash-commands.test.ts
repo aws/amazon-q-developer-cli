@@ -41,10 +41,11 @@ describe('selectVisibleSlashCommands', () => {
     expect(visible.find((c) => c.name === '/kas-prompt')).toBeDefined();
   });
 
-  it("returns slashCommands directly when agentEngine === 'rust'", () => {
+  it("returns slashCommands plus prompt/skill/steering projections in 'rust' mode", () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
     const result = selectVisibleSlashCommands(store.getState());
-    expect(result).toBe(store.getState().slashCommands);
+    // Empty slices: result is just the seeded host commands.
+    expect(result).toEqual([...store.getState().slashCommands]);
   });
 
   it('keeps host-side commands like /exit and /settings reachable in KAS mode', () => {
@@ -52,5 +53,130 @@ describe('selectVisibleSlashCommands', () => {
     const visible = selectVisibleSlashCommands(store.getState());
     expect(visible.find((c) => c.name === '/exit')).toBeDefined();
     expect(visible.find((c) => c.name === '/settings')).toBeDefined();
+  });
+
+  it('merges prompts, skills, and steering into the visible list', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    store.getState().setPrompts([
+      {
+        name: 'research',
+        arguments: [{ name: 'topic', required: true }],
+        source: { kind: 'mcp', serverName: 'core' },
+      },
+    ]);
+    store.getState().setSkills([
+      {
+        name: 'agent-sop',
+        source: { kind: 'agent-config', path: '/path/to/sop.md' },
+      },
+    ]);
+    store
+      .getState()
+      .setSteering([
+        { name: 'project-context', source: { kind: 'workspace' } },
+      ]);
+    const visible = selectVisibleSlashCommands(store.getState());
+
+    const prompt = visible.find((c) => c.name === '/research');
+    expect(prompt?.meta?.type).toBe('prompt');
+    expect(prompt?.meta?.source).toEqual({
+      kind: 'mcp',
+      serverName: 'core',
+    });
+
+    const skill = visible.find((c) => c.name === '/agent-sop');
+    expect(skill?.meta?.type).toBe('skill');
+    expect(skill?.meta?.source).toEqual({
+      kind: 'agent-config',
+      path: '/path/to/sop.md',
+    });
+
+    const steering = visible.find((c) => c.name === '/project-context');
+    expect(steering?.meta?.type).toBe('steering');
+  });
+
+  it('does NOT duplicate prompts/skills/steering into AppState.slashCommands', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    store.getState().setPrompts([
+      {
+        name: 'research',
+        arguments: [],
+        source: { kind: 'workspace' },
+      },
+    ]);
+    store.getState().setSkills([
+      {
+        name: 'sop',
+        source: { kind: 'agent-config', path: '/p' },
+      },
+    ]);
+    // The slice itself only contains host commands -- prompts/skills don't
+    // leak into it.
+    const slashCommands = store.getState().slashCommands;
+    expect(slashCommands.find((c) => c.name === '/research')).toBeUndefined();
+    expect(slashCommands.find((c) => c.name === '/sop')).toBeUndefined();
+    // But the merged visible list includes them.
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/research')).toBeDefined();
+    expect(visible.find((c) => c.name === '/sop')).toBeDefined();
+  });
+
+  it('renders skill descriptions', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    store.getState().setSkills([
+      {
+        name: 'with-description',
+        description: 'Deep research on a topic',
+        source: { kind: 'agent-config', path: 'config' },
+      },
+      { name: 'workspace-fallback', source: { kind: 'workspace' } },
+      { name: 'global-fallback', source: { kind: 'global' } },
+      { name: 'agent-config-fallback', source: { kind: 'agent-config' } },
+    ]);
+    const visible = selectVisibleSlashCommands(store.getState());
+    const desc = (n: string) => visible.find((c) => c.name === n)?.description;
+    expect(desc('/with-description')).toBe('Deep research on a topic');
+    expect(desc('/workspace-fallback')).toBe('Skill from workspace');
+    expect(desc('/global-fallback')).toBe('Skill from global');
+    expect(desc('/agent-config-fallback')).toBe('Skill from agent config');
+  });
+
+  it('dedupes by name; first occurrence wins', () => {
+    // Regression: V2 ships built-in `/plan` as a slash command AND users
+    // can have a workspace skill or prompt named `plan`. Without dedup
+    // the merged list contains two `/plan` entries which causes a React
+    // duplicate-key warning in the autocomplete menu.
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    store
+      .getState()
+      .setSlashCommands([
+        { name: '/plan', description: 'Built-in plan', source: 'local' },
+      ]);
+    store
+      .getState()
+      .setPrompts([
+        { name: 'plan', arguments: [], source: { kind: 'workspace' } },
+      ]);
+    store.getState().setSkills([{ name: 'plan', source: { kind: 'global' } }]);
+    const visible = selectVisibleSlashCommands(store.getState());
+    const planEntries = visible.filter((c) => c.name === '/plan');
+    expect(planEntries).toHaveLength(1);
+    expect(planEntries[0]!.description).toBe('Built-in plan');
+  });
+
+  it('dedupes prompts vs skills with the same name; prompt wins', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    store
+      .getState()
+      .setPrompts([
+        { name: 'review', arguments: [], source: { kind: 'workspace' } },
+      ]);
+    store
+      .getState()
+      .setSkills([{ name: 'review', source: { kind: 'global' } }]);
+    const visible = selectVisibleSlashCommands(store.getState());
+    const matches = visible.filter((c) => c.name === '/review');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.meta?.type).toBe('prompt');
   });
 });

@@ -8,7 +8,12 @@ import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
 import type { KasCommand } from '../kas-commands.js';
 import type {
-  SlashCommand,
+  AvailableCommand,
+  PromptEntry,
+  SkillEntry,
+  SteeringEntry,
+} from '../types/commands.js';
+import type {
   ActiveCommand,
   HookInfo,
   KnowledgeEntry,
@@ -26,18 +31,24 @@ export interface CommandContext {
   /** Active agent backend */
   agentEngine: AgentEngine;
   /**
-   * Slash commands sourced from the active backend - V2's `available_commands_update`
-   * in V2 mode (which also gets prompts/skills appended via `onPromptsUpdate`),
-   * KAS's `available_commands_update` in KAS mode (which already includes
-   * prompts/skills/steering tagged via `_meta.kiro.type`).
+   * Slash commands visible for the current engine. This is the merged
+   * list from `selectVisibleSlashCommands` -- host commands + V2/KAS
+   * backend commands + projected prompts / skills / steering. The
+   * dispatcher uses this list to look commands up by name.
    */
-  slashCommands: SlashCommand[];
+  slashCommands: readonly AvailableCommand[];
   /**
    * Static, TUI-owned KAS commands. Always empty in V2 mode. The dispatcher
    * checks this list first in KAS mode so KAS-side handlers take precedence
    * over the V2 dispatcher pipeline for the same command name.
    */
   kasCommands: readonly KasCommand[];
+  /** Prompts available for invocation (populated by the active engine). */
+  prompts: readonly PromptEntry[];
+  /** Skills available for invocation (populated by the active engine). */
+  skills: readonly SkillEntry[];
+  /** Steering documents available for invocation (KAS only). */
+  steering: readonly SteeringEntry[];
   /** Show transient alert */
   showAlert: (
     message: string,

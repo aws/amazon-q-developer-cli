@@ -8,6 +8,7 @@ import type { TerminalColor } from '../types/themeTypes';
 import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
+import { selectVisibleSlashCommands } from './visible-slash-commands';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -22,7 +23,13 @@ import type {
   InputBufferActions,
   MoveCursorDir,
 } from '../types/input-buffer';
-import type { AvailableCommand, CommandOption } from '../types/commands';
+import type {
+  AvailableCommand,
+  CommandOption,
+  PromptEntry,
+  SkillEntry,
+  SteeringEntry,
+} from '../types/commands';
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
@@ -573,18 +580,9 @@ interface BaseAppActions {
   cancelEditingQueue: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
   setKasCommands: (commands: KasCommand[]) => void;
-  setPrompts: (
-    prompts: Array<{
-      name: string;
-      description?: string;
-      arguments: Array<{
-        name: string;
-        description?: string;
-        required?: boolean;
-      }>;
-      serverName: string;
-    }>
-  ) => void;
+  setPrompts: (prompts: PromptEntry[]) => void;
+  setSkills: (skills: SkillEntry[]) => void;
+  setSteering: (steering: SteeringEntry[]) => void;
 
   // Command UI actions
   setActiveCommand: (command: ActiveCommand | null) => void;
@@ -845,14 +843,18 @@ export interface AppState {
   queuedMessages: string[];
   editingQueueIndex: number | null;
   /**
-   * Slash commands sourced from the active backend's
-   * `available_commands_update` broadcast.
+   * V2 slash commands only. Two cohorts:
+   * 1. Hardcoded TUI host commands (`source: 'local'`), seeded at store
+   *    init and never replaced. Visible in both engines via
+   *    `selectVisibleSlashCommands`.
+   * 2. V2 backend slash commands (`source: 'backend'`, no `meta.type`),
+   *    populated by `setSlashCommands` from the
+   *    `kiro.dev/commands/available` `commands` field in
+   *    `BaseAcpClient.handleCommandsAdvertising`. Empty in KAS mode.
    *
-   * - V2 mode: populated by `setSlashCommands` from V2's broadcast; prompts
-   *   and skills get appended directly here via `onPromptsUpdate`.
-   * - KAS mode: populated by `setSlashCommands` from KAS's broadcast, which
-   *   already includes prompts/skills/steering as commands tagged with
-   *   `_meta.kiro.type`.
+   * Does NOT contain prompts, skills, or steering -- those live in their
+   * own slices (`prompts`, `skills`, `steering`) and are merged with
+   * `slashCommands` only at the autocomplete-selector layer.
    */
   slashCommands: SlashCommand[];
   /**
@@ -864,16 +866,43 @@ export interface AppState {
   kasCommands: KasCommand[];
   /** Frozen at boot from props.agentEngine ?? process.env.KIRO_AGENT_ENGINE. */
   agentEngine: AgentEngine;
-  prompts: Array<{
-    name: string;
-    description?: string;
-    arguments: Array<{
-      name: string;
-      description?: string;
-      required?: boolean;
-    }>;
-    serverName: string;
-  }>;
+  /**
+   * User-invocable prompt templates. Replace-on-update via
+   * `setPrompts` from `kiro.onPromptsUpdate`. Populated by both engines:
+   *
+   * - V2: `BaseAcpClient.handleCommandsAdvertising` ingests the
+   *   `kiro.dev/commands/available` payload, partitions out skill entries
+   *   (`server_name` carrying the `skill:` prefix), and maps the rest's
+   *   `server_name` to a discriminated `PromptSource` (`local` ->
+   *   `workspace`, `global` -> `global`, otherwise `mcp`).
+   * - KAS: `KasAcpClient.handleSessionUpdate` partitions
+   *   `available_commands_update` entries by `_meta.kiro.type === 'prompt'`.
+   *
+   * Merged into `selectVisibleSlashCommands` at read time; not stored in
+   * `slashCommands`.
+   */
+  prompts: PromptEntry[];
+  /**
+   * Skills. Replace-on-update via `setSkills` from `kiro.onSkillsUpdate`.
+   * Populated by both engines:
+   *
+   * - V2: same `kiro.dev/commands/available` payload as prompts; entries
+   *   whose `server_name` carries a `skill:` prefix are routed here at
+   *   the TUI ingest boundary.
+   * - KAS: `available_commands_update` entries with
+   *   `_meta.kiro.type === 'skill'`.
+   *
+   * Merged into `selectVisibleSlashCommands` at read time.
+   */
+  skills: SkillEntry[];
+  /**
+   * KAS steering documents. Replace-on-update via `setSteering` from
+   * `kiro.onSteeringUpdate`, populated from
+   * `available_commands_update` entries with
+   * `_meta.kiro.type === 'steering'`. Stays `[]` in V2 mode (V2 has no
+   * steering concept).
+   */
+  steering: SteeringEntry[];
 
   // Kiro/Agent state
   kiro: Kiro;
@@ -1182,11 +1211,18 @@ function buildCommandContext(
   get: StoreApi<AppState & AppActions>['getState'],
   extraClearState?: Partial<AppState>
 ): CommandContext {
+  // Dispatch + lookup work against the merged visible list so
+  // `/research` (a prompt projection) is reachable even though prompts
+  // live in their own slice.
+  const visibleSlashCommands = selectVisibleSlashCommands(state);
   return {
     kiro: state.kiro,
     agentEngine: state.agentEngine,
-    slashCommands: state.slashCommands,
+    slashCommands: visibleSlashCommands,
     kasCommands: state.kasCommands,
+    prompts: state.prompts,
+    skills: state.skills,
+    steering: state.steering,
     showAlert: (message, status, autoHideMs = 3000) =>
       state.showTransientAlert({ message, status, autoHideMs }),
     setLoadingMessage: state.setLoadingMessage,
@@ -1381,6 +1417,8 @@ export const createAppStore = (props: AppStoreProps) => {
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],
+    skills: [],
+    steering: [],
     kiro: props.kiro,
     sessionId: null,
     isProcessing: false,
@@ -2761,7 +2799,7 @@ export const createAppStore = (props: AppStoreProps) => {
     setSlashCommands: (commands: SlashCommand[]) => {
       set((state) => {
         const localCommands = state.slashCommands.filter(
-          (cmd) => cmd.source === 'local' || cmd.meta?.type === 'prompt'
+          (cmd) => cmd.source === 'local'
         );
         return { slashCommands: [...localCommands, ...commands] };
       });
@@ -2773,6 +2811,14 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setPrompts: (prompts) => {
       set({ prompts });
+    },
+
+    setSkills: (skills) => {
+      set({ skills });
+    },
+
+    setSteering: (steering) => {
+      set({ steering });
     },
 
     setActiveCommand: (command: ActiveCommand | null) => {

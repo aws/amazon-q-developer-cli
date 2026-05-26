@@ -31,6 +31,12 @@ import {
 import type {
   CommandOptionsResponse,
   CommandResult,
+  PromptEntry,
+  PromptSource,
+  SkillEntry,
+  SkillSource,
+  SteeringEntry,
+  SteeringSource,
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
@@ -335,32 +341,62 @@ function extractModelFromConfigOptions(
 
 // ─── Prompt types ────────────────────────────────────────────────────
 
-type PromptCacheEntry = {
+/**
+ * V2 wire shape for a prompt entry from `kiro.dev/commands/available`.
+ * `serverName` is overloaded by the upstream Rust HashMap key:
+ *   - 'local' / 'global' for file-based user prompts
+ *   - '<mcp-server-name>' for MCP prompts
+ *   - 'skill:<path>' for V2 skill resources
+ * The V2 ingest in `BaseAcpClient.handleCommandsAdvertising` partitions
+ * this stream into typed `PromptEntry` / `SkillEntry` arrays; consumers
+ * never see this shape directly.
+ */
+type V2WirePrompt = {
   name: string;
   description?: string;
   arguments: Array<{ name: string; description?: string; required?: boolean }>;
   serverName: string;
 };
 
-/** KAS command types that represent prompts (skills, steering docs, etc.) */
-const PROMPT_COMMAND_TYPES = new Set(['prompt', 'skill', 'steering']);
+/** Map a V2 wire prompt to a typed PromptSource. */
+function v2ServerNameToPromptSource(serverName: string): PromptSource {
+  if (serverName === 'local') return { kind: 'workspace' };
+  if (serverName === 'global') return { kind: 'global' };
+  return { kind: 'mcp', serverName };
+}
 
 /**
- * Map KAS _meta.kiro.type to a group name matching Rust's convention.
- * Rust uses "workspace" for file prompts and "skill" for skills.
- * KAS only provides the type, not a source field.
+ * Partition the V2 wire prompts array into typed prompt and skill
+ * arrays. Skills are V2 prompts whose `serverName` carries the
+ * `skill:` prefix (the upstream agent_config skill resource path).
+ * This is the only place the `skill:` prefix is parsed.
  */
-function kasTypeToGroupName(type: string | undefined): string {
-  switch (type) {
-    case 'steering':
-      return 'workspace';
-    case 'skill':
-      return 'skill';
-    case 'prompt':
-      return 'workspace';
-    default:
-      return type || '';
+function partitionV2Prompts(wire: V2WirePrompt[]): {
+  prompts: PromptEntry[];
+  skills: SkillEntry[];
+} {
+  const prompts: PromptEntry[] = [];
+  const skills: SkillEntry[] = [];
+  for (const w of wire) {
+    if (w.serverName.startsWith('skill:')) {
+      // V2 wire skills emit `server_name: "skill:config"` (literal label,
+      // not a path). The actual file path isn't carried on the wire today.
+      // Future: enrich via `_meta.kiro.path` once the agent emits it.
+      skills.push({
+        name: w.name,
+        description: w.description,
+        source: { kind: 'agent-config' },
+      });
+    } else {
+      prompts.push({
+        name: w.name,
+        description: w.description,
+        arguments: w.arguments,
+        source: v2ServerNameToPromptSource(w.serverName),
+      });
+    }
   }
+  return { prompts, skills };
 }
 
 // ─── Base class ──────────────────────────────────────────────────────
@@ -377,7 +413,6 @@ abstract class BaseAcpClient implements SessionClient {
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
-  protected promptsCache: PromptCacheEntry[] = [];
   protected cachedBreakdown: unknown = null;
 
   constructor(agentProcess: AgentProcess) {
@@ -504,7 +539,8 @@ abstract class BaseAcpClient implements SessionClient {
         description: string;
         meta?: Record<string, unknown>;
       }>) || [];
-    const prompts = (params.prompts as PromptCacheEntry[]) || [];
+    const wirePrompts = (params.prompts as V2WirePrompt[]) || [];
+    const { prompts, skills } = partitionV2Prompts(wirePrompts);
     const tools =
       (params.tools as Array<{
         name: string;
@@ -534,7 +570,8 @@ abstract class BaseAcpClient implements SessionClient {
       }),
     });
     this.broadcastStreamEvent({ type: AgentEventType.PromptsUpdate, prompts });
-    this.promptsCache = prompts;
+    this.broadcastStreamEvent({ type: AgentEventType.SkillsUpdate, skills });
+    // V2 has no steering concept; consumers keep state.steering at [].
   }
 
   private handleMetadataUpdate(params: Record<string, unknown>) {
@@ -845,13 +882,22 @@ abstract class BaseAcpClient implements SessionClient {
 
       case 'available_commands_update': {
         const cu = update as any;
-        // Extract prompt-type commands into promptsCache for /prompts selection.
-        // KAS sends prompts/skills/steering as commands with _meta.kiro.type.
+        // KAS sends prompts/skills/steering as commands tagged with
+        // _meta.kiro.type. `_meta.kiro.scope` (and `serverName` when
+        // scope is `mcp`) carry the source classification; default
+        // is `workspace` when omitted. Partition into typed slices
+        // and broadcast all three update events; remaining commands
+        // flow through CommandsUpdate.
         const allCommands = (cu.availableCommands || []) as Array<{
           name: string;
           description?: string;
           _meta?: {
-            kiro?: { type?: string };
+            kiro?: {
+              type?: string;
+              scope?: string;
+              serverName?: string;
+              path?: string;
+            };
             arguments?: Array<{
               name: string;
               description?: string;
@@ -859,23 +905,74 @@ abstract class BaseAcpClient implements SessionClient {
             }>;
           };
         }>;
-        const promptCommands = allCommands.filter((cmd) => {
-          const type = cmd._meta?.kiro?.type;
-          return type != null && PROMPT_COMMAND_TYPES.has(type);
+        const prompts: PromptEntry[] = [];
+        const skills: SkillEntry[] = [];
+        const steering: SteeringEntry[] = [];
+        const otherCommands: typeof allCommands = [];
+        for (const cmd of allCommands) {
+          const kiroMeta = cmd._meta?.kiro;
+          const kind = kiroMeta?.type;
+          const scope = kiroMeta?.scope;
+          const path = kiroMeta?.path;
+          switch (kind) {
+            case 'prompt': {
+              const source: PromptSource =
+                scope === 'mcp' && kiroMeta?.serverName
+                  ? { kind: 'mcp', serverName: kiroMeta.serverName }
+                  : scope === 'global'
+                    ? { kind: 'global', ...(path ? { path } : {}) }
+                    : { kind: 'workspace', ...(path ? { path } : {}) };
+              prompts.push({
+                name: cmd.name,
+                description: cmd.description,
+                arguments: cmd._meta?.arguments ?? [],
+                source,
+              });
+              break;
+            }
+            case 'skill': {
+              const source: SkillSource =
+                scope === 'global'
+                  ? { kind: 'global', ...(path ? { path } : {}) }
+                  : { kind: 'workspace', ...(path ? { path } : {}) };
+              skills.push({
+                name: cmd.name,
+                description: cmd.description,
+                source,
+              });
+              break;
+            }
+            case 'steering': {
+              const source: SteeringSource =
+                scope === 'global'
+                  ? { kind: 'global', ...(path ? { path } : {}) }
+                  : { kind: 'workspace', ...(path ? { path } : {}) };
+              steering.push({
+                name: cmd.name,
+                description: cmd.description,
+                source,
+              });
+              break;
+            }
+            default:
+              otherCommands.push(cmd);
+          }
+        }
+        this.broadcastStreamEvent({
+          type: AgentEventType.PromptsUpdate,
+          prompts,
         });
-        this.promptsCache = promptCommands.map((cmd) => ({
-          name: cmd.name,
-          description: cmd.description,
-          arguments: (cmd._meta?.arguments || []) as Array<{
-            name: string;
-            description?: string;
-            required?: boolean;
-          }>,
-          serverName: kasTypeToGroupName(cmd._meta?.kiro?.type),
-        }));
+        this.broadcastStreamEvent({
+          type: AgentEventType.SkillsUpdate,
+          skills,
+        });
+        this.broadcastStreamEvent({
+          type: AgentEventType.SteeringUpdate,
+          steering,
+        });
         return {
           type: AgentEventType.CommandsUpdate,
-          commands: allCommands.map((cmd: any) => ({
+          commands: otherCommands.map((cmd: any) => ({
             name: cmd.name,
             description: cmd.description,
             meta: cmd._meta,
@@ -1324,8 +1421,8 @@ export class KasAcpClient extends BaseAcpClient {
    * never need to inject a different one, and accepting it without a
    * stream would silently ignore it.
    */
-  constructor(options?: { stream: Stream }) {
-    if (options) {
+  constructor(options?: { stream?: Stream }) {
+    if (options?.stream) {
       super(createNullAgentProcess());
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
@@ -1791,21 +1888,10 @@ export class KasAcpClient extends BaseAcpClient {
         };
       }
       case 'prompts': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const promptName = args?.value ?? '';
-        if (!promptName) {
-          return {
-            success: true,
-            message: 'Use the selection menu to pick a prompt.',
-          };
-        }
-        return {
-          success: true,
-          message: '',
-          data: { executePrompt: `/${promptName}` },
-        };
+        // Owned by the `handlePrompts` kas-handler. Reaching this branch
+        // means the dispatcher's KAS intercept was skipped (e.g. caller
+        // bypassed `executeCommandWithArg`); fall through to a no-op.
+        return { success: true, message: '' };
       }
       case 'knowledge': {
         const args = (command as Record<string, unknown>).args as
@@ -2506,29 +2592,9 @@ export class KasAcpClient extends BaseAcpClient {
           }),
         };
       }
-      case 'prompts': {
-        return {
-          options: this.promptsCache
-            .map((p) => {
-              const hint =
-                p.arguments
-                  .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
-                  .join(' ') || undefined;
-              return {
-                value: p.name,
-                label: `/${p.name}`,
-                description: p.description ?? '',
-                group: p.serverName,
-                hint,
-              };
-            })
-            .sort(
-              (a, b) =>
-                (a.group ?? '').localeCompare(b.group ?? '') ||
-                a.label.toLowerCase().localeCompare(b.label.toLowerCase())
-            ),
-        };
-      }
+      // /prompts options are owned by the `handlePrompts` kas-handler,
+      // which reads directly from the typed AppState slices (prompts /
+      // skills / steering) and never round-trips through here.
       default:
         return { options: [] };
     }

@@ -5,24 +5,13 @@
  */
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore, type AppState } from './app-store.js';
-import type { AvailableCommand } from '../types/commands.js';
+import { useAppStore } from './app-store.js';
+import { selectVisibleSlashCommands } from './visible-slash-commands.js';
 
-/**
- * Returns the slash commands the autocomplete should show for the
- * current engine. In KAS mode the static TUI-side `kasCommands` list
- * is concatenated with `slashCommands`, which holds both the V2-host-
- * side `local` commands seeded at boot (`/exit`, `/settings`, etc.)
- * and KAS's own `available_commands_update` broadcast (built-ins plus
- * prompts/skills/steering). In V2 mode `slashCommands` already contains
- * locals plus V2's backend broadcast, so we return it directly.
- */
-export const selectVisibleSlashCommands = (
-  state: Pick<AppState, 'agentEngine' | 'kasCommands' | 'slashCommands'>
-): readonly AvailableCommand[] =>
-  state.agentEngine === 'kas'
-    ? [...state.kasCommands, ...state.slashCommands]
-    : state.slashCommands;
+// Re-export the merge selector. The per-slice mappers
+// (`promptToSlashCommand` etc.) are intentionally not re-exported -- they
+// are an implementation detail of the merge.
+export { selectVisibleSlashCommands };
 
 /**
  * Notification state selector - for NotificationBar and BlockingErrorAlert
@@ -58,6 +47,9 @@ export const useCommandState = () => {
       _slashCommands: s.slashCommands,
       _kasCommands: s.kasCommands,
       _agentEngine: s.agentEngine,
+      _prompts: s.prompts,
+      _skills: s.skills,
+      _steering: s.steering,
       activeCommand: s.activeCommand,
       commandInputValue: s.commandInputValue,
       activeTrigger: s.activeTrigger,
@@ -72,8 +64,18 @@ export const useCommandState = () => {
         agentEngine: state._agentEngine,
         kasCommands: state._kasCommands,
         slashCommands: state._slashCommands,
+        prompts: state._prompts,
+        skills: state._skills,
+        steering: state._steering,
       }),
-    [state._agentEngine, state._kasCommands, state._slashCommands]
+    [
+      state._agentEngine,
+      state._kasCommands,
+      state._slashCommands,
+      state._prompts,
+      state._skills,
+      state._steering,
+    ]
   );
   return { ...state, slashCommands };
 };

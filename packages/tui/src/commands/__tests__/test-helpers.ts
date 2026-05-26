@@ -16,6 +16,12 @@ export interface CreateMockCtxOptions {
   slashCommands?: CommandContext['slashCommands'];
   /** KAS-side commands. Default: [] */
   kasCommands?: CommandContext['kasCommands'];
+  /** Prompts slice. Default: [] */
+  prompts?: CommandContext['prompts'];
+  /** Skills slice. Default: [] */
+  skills?: CommandContext['skills'];
+  /** Steering slice. Default: [] */
+  steering?: CommandContext['steering'];
   /** Override the kiro client mock. Default: bare {} */
   kiro?: Partial<CommandContext['kiro']>;
 }
@@ -47,6 +53,9 @@ export function createMockCommandContext(
     agentEngine: 'rust',
     slashCommands: opts.slashCommands ?? [],
     kasCommands: opts.kasCommands ?? [],
+    prompts: opts.prompts ?? [],
+    skills: opts.skills ?? [],
+    steering: opts.steering ?? [],
     showAlert: spy('showAlert') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,

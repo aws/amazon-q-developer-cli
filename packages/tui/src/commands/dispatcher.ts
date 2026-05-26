@@ -53,8 +53,9 @@ export async function dispatch(
     }
   }
 
-  // Handle prompt and skill commands - send as regular message, backend resolves via session/prompt interception
-  if (type === 'prompt' || type === 'skill') {
+  // Handle prompt, skill, and steering commands - send as regular message,
+  // backend resolves via session/prompt interception
+  if (type === 'prompt' || type === 'skill' || type === 'steering') {
     const message = args ? `/${cmdName} ${args}` : `/${cmdName}`;
     await ctx.sendMessage(message);
     return;

@@ -20,6 +20,7 @@ import type {
   HookInfo,
   KnowledgeEntry,
   McpServerInfo,
+  SlashCommand,
   ToolInfo,
 } from '../stores/app-store.js';
 import type { AvailableCommand } from '../types/commands.js';
@@ -236,9 +237,16 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         }
       | undefined;
     if (data?.commands) {
-      // Merge backend commands with TUI-local commands for complete help listing
+      // Merge backend commands with TUI-local commands for complete help listing.
+      // `SlashCommand` is the only `AvailableCommand` subtype that adds
+      // `source`, so checking for the field is enough to narrow.
+      const isLocalHostCommand = (
+        c: AvailableCommand
+      ): c is SlashCommand & { source: 'local' } =>
+        'source' in c && c.source === 'local';
+
       const localHelpEntries = ctx.slashCommands
-        .filter((c) => c.source === 'local')
+        .filter(isLocalHostCommand)
         .map((c) => ({
           name: c.name,
           description: c.description,

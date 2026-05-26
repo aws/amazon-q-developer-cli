@@ -170,10 +170,16 @@ export const CommandMenu: React.FC = () => {
     );
     const cmds = matches.filter(
       (c) =>
-        c.meta?.type !== 'prompt' && c.meta?.type !== 'skill' && !c.meta?.hidden
+        c.meta?.type !== 'prompt' &&
+        c.meta?.type !== 'skill' &&
+        c.meta?.type !== 'steering' &&
+        !c.meta?.hidden
     );
     const promptCmds = matches.filter(
-      (c) => c.meta?.type === 'prompt' || c.meta?.type === 'skill'
+      (c) =>
+        c.meta?.type === 'prompt' ||
+        c.meta?.type === 'skill' ||
+        c.meta?.type === 'steering'
     );
     cmds.sort((a, b) => a.name.localeCompare(b.name));
     return [...cmds, ...promptCmds];

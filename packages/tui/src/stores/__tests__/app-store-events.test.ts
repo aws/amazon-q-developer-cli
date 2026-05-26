@@ -1035,10 +1035,46 @@ describe('setKasCommands', () => {
 describe('setPrompts', () => {
   it('sets prompts', () => {
     const store = makeStore();
+    store.getState().setPrompts([
+      {
+        name: 'test',
+        arguments: [],
+        source: { kind: 'mcp', serverName: 'srv' },
+      },
+    ]);
+    expect(store.getState().prompts).toHaveLength(1);
+    expect(store.getState().prompts[0]!.source).toEqual({
+      kind: 'mcp',
+      serverName: 'srv',
+    });
+  });
+});
+
+describe('setSkills', () => {
+  it('sets skills', () => {
+    const store = makeStore();
     store
       .getState()
-      .setPrompts([{ name: 'test', arguments: [], serverName: 'srv' }] as any);
-    expect(store.getState().prompts).toHaveLength(1);
+      .setSkills([{ name: 'sop', source: { kind: 'agent-config' } }]);
+    expect(store.getState().skills).toHaveLength(1);
+    expect(store.getState().skills[0]!.source).toEqual({
+      kind: 'agent-config',
+    });
+  });
+});
+
+describe('setSteering', () => {
+  it('sets steering', () => {
+    const store = makeStore();
+    store
+      .getState()
+      .setSteering([
+        { name: 'project-context', source: { kind: 'workspace' } },
+      ]);
+    expect(store.getState().steering).toHaveLength(1);
+    expect(store.getState().steering[0]!.source).toEqual({
+      kind: 'workspace',
+    });
   });
 });
 

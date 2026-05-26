@@ -36,8 +36,34 @@ const PINNED_BUN = getPinnedBun();
 const devFlags = new Set(["--skip-rust-build"]);
 const skipRustBuild = process.argv.includes("--skip-rust-build");
 
+// Optional: --rust-bin-path <path> overrides the default chat_cli binary
+// and implicitly skips the Rust build (the path must already exist).
+let rustBinOverride: string | null = null;
+{
+  const idx = process.argv.indexOf("--rust-bin-path");
+  if (idx !== -1) {
+    const value = process.argv[idx + 1];
+    if (!value || value.startsWith("--")) {
+      console.error("--rust-bin-path requires a path argument");
+      process.exit(1);
+    }
+    rustBinOverride = resolve(process.cwd(), value);
+    if (!existsSync(rustBinOverride)) {
+      console.error(`--rust-bin-path: file not found: ${rustBinOverride}`);
+      process.exit(1);
+    }
+  }
+}
+
+const RUST_BIN = rustBinOverride ?? CARGO_BIN;
+
 // Everything after "dev" that isn't a dev-script flag gets forwarded to the TUI
-const tuiArgs = process.argv.slice(2).filter((arg) => !devFlags.has(arg));
+const tuiArgs = process.argv.slice(2).filter((arg, i, arr) => {
+  if (devFlags.has(arg)) return false;
+  if (arg === "--rust-bin-path") return false;
+  if (i > 0 && arr[i - 1] === "--rust-bin-path") return false;
+  return true;
+});
 
 function buildTwinki(): boolean {
   console.log("Building twinki...");
@@ -49,11 +75,12 @@ function buildTwinki(): boolean {
 }
 
 function startTUI() {
-  if (!existsSync(CARGO_BIN)) {
-    console.error(`\nError: Rust binary not found at ${CARGO_BIN}`);
+  if (!existsSync(RUST_BIN)) {
+    console.error(`\nError: Rust binary not found at ${RUST_BIN}`);
     console.error(`Run one of:`);
     console.error(`  cargo build -p chat_cli --bin chat_cli`);
-    console.error(`  bun run dev  (without --skip-rust-build)\n`);
+    console.error(`  bun run dev  (without --skip-rust-build)`);
+    console.error(`  bun run dev --rust-bin-path <path>\n`);
     process.exit(1);
   }
 
@@ -67,7 +94,7 @@ function startTUI() {
     stdio: "inherit",
     env: {
       ...process.env,
-      ...(process.env.KIRO_AGENT_ENGINE !== 'kas' && { KIRO_AGENT_PATH: CARGO_BIN }),
+      ...(process.env.KIRO_AGENT_ENGINE !== 'kas' && { KIRO_AGENT_PATH: RUST_BIN }),
       ...(process.env.KIRO_AGENT_ENGINE === 'kas' && { KIRO_KAS_TOKEN_PATH: `${process.env.HOME}/.aws/sso/cache/kiro-auth-token-cli.json` }),
       JSC_numberOfGCMarkers: "1",
     }
@@ -109,8 +136,8 @@ function startTUI() {
 // Ensure dependencies are installed (<50ms when no deps changed)
 spawnSync("bun", ["install"], { cwd: REPO_ROOT, stdio: "inherit" });
 
-if (skipRustBuild) {
-  console.log("Skipping Rust build...");
+if (skipRustBuild || rustBinOverride) {
+  console.log(rustBinOverride ? `Using Rust binary at ${RUST_BIN}` : "Skipping Rust build...");
   if (!buildTwinki()) {
     console.error("Twinki build failed");
     process.exit(1);

@@ -55,6 +55,34 @@ describe('dispatch - additional coverage', () => {
     });
   });
 
+  describe('steering type commands', () => {
+    it('sends message for steering commands without args', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/project-context',
+        meta: { type: 'steering' },
+      });
+
+      await dispatch(cmd, '', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledWith('/project-context');
+    });
+
+    it('sends message for steering commands with args', async () => {
+      const ctx = createMockCommandContext();
+      const cmd = makeCmd({
+        name: '/project-context',
+        meta: { type: 'steering' },
+      });
+
+      await dispatch(cmd, 'extra info', ctx);
+
+      expect(ctx._spies.sendMessage!).toHaveBeenCalledWith(
+        '/project-context extra info'
+      );
+    });
+  });
+
   describe('panel inputType with no args', () => {
     it('sets activeCommand with empty options', async () => {
       const ctx = createMockCommandContext();

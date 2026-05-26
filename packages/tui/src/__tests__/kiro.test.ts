@@ -418,11 +418,69 @@ describe('Kiro — handler registration and forwarding', () => {
     if (mockOnUpdateHandler) {
       mockOnUpdateHandler({
         type: AgentEventType.PromptsUpdate,
-        prompts: [{ name: 'test-prompt', arguments: [], serverName: 'srv' }],
+        prompts: [
+          {
+            name: 'test-prompt',
+            arguments: [],
+            source: { kind: 'mcp', serverName: 'srv' },
+          },
+        ],
       } as AgentStreamEvent);
     }
     expect(handler).toHaveBeenCalledWith([
-      { name: 'test-prompt', arguments: [], serverName: 'srv' },
+      {
+        name: 'test-prompt',
+        arguments: [],
+        source: { kind: 'mcp', serverName: 'srv' },
+      },
+    ]);
+  });
+
+  it('onSkillsUpdate receives SkillsUpdate events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onSkillsUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.SkillsUpdate,
+        skills: [
+          {
+            name: 'pair-program',
+            source: { kind: 'agent-config' },
+          },
+        ],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith([
+      {
+        name: 'pair-program',
+        source: { kind: 'agent-config' },
+      },
+    ]);
+  });
+
+  it('onSteeringUpdate receives SteeringUpdate events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onSteeringUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.SteeringUpdate,
+        steering: [
+          {
+            name: 'project-context',
+            source: { kind: 'workspace' },
+          },
+        ],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith([
+      {
+        name: 'project-context',
+        source: { kind: 'workspace' },
+      },
     ]);
   });
 

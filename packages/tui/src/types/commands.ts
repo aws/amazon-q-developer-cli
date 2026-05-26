@@ -30,17 +30,86 @@ export interface CommandMeta {
   subcommandHints?: Record<string, string>;
   hint?: string;
   local?: boolean;
-  type?: 'action' | 'prompt' | 'skill';
+  type?: 'action' | 'prompt' | 'skill' | 'steering';
   arguments?: Array<{
     name: string;
     description?: string;
     required?: boolean;
   }>;
-  serverName?: string;
+  /**
+   * Discriminated source for projected prompt/skill/steering slash commands.
+   * Set by the *-to-slash-command mappers in stores/visible-slash-commands.ts.
+   * Replaces the legacy stringly-typed `serverName` field for prompt/skill
+   * projections.
+   */
+  source?: PromptSource | SkillSource | SteeringSource;
   /** When true, Menu uses bold instead of accent color for selected items, preserving embedded ANSI colors. */
   preserveLabelColors?: boolean;
   /** When true, command is executable but hidden from autocomplete dropdown. */
   hidden?: boolean;
+}
+
+/**
+ * Origin of a {@link PromptEntry}. Discriminated union; consumers switch on
+ * `kind` rather than parsing strings.
+ *
+ * - `workspace`: file under <cwd>/.kiro/prompts/*.md (V2) or KAS workspace prompt
+ * - `global`:    file under ~/.kiro/prompts/*.md (V2) or KAS global prompt
+ * - `mcp`:       prompt advertised by an MCP server; `serverName` is the
+ *                upstream MCP server name
+ *
+ * `path` is optional for workspace/global because neither V2 nor KAS reliably
+ * emits a filesystem path today; it can be enriched later without breaking
+ * consumers.
+ */
+export type PromptSource =
+  | { kind: 'workspace'; path?: string }
+  | { kind: 'global'; path?: string }
+  | { kind: 'mcp'; serverName: string };
+
+/** A user-invocable prompt template. */
+export interface PromptEntry {
+  name: string;
+  description?: string;
+  arguments: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }>;
+  source: PromptSource;
+}
+
+/**
+ * Origin of a {@link SkillEntry}.
+ *
+ * - `workspace`/`global`: KAS scope-tagged skills (path enrichment pending)
+ * - `agent-config`: V2 skill resource declared in the agent config
+ *   (`skill://` URI scheme). The wire shape today does not carry the
+ *   resolved file path, so `path` is optional; `_meta.kiro.path`
+ *   enrichment from the V2 agent will populate it.
+ */
+export type SkillSource =
+  | { kind: 'workspace'; path?: string }
+  | { kind: 'global'; path?: string }
+  | { kind: 'agent-config'; path?: string };
+
+/** A skill: agentic instruction set surfaced as a slash command. */
+export interface SkillEntry {
+  name: string;
+  description?: string;
+  source: SkillSource;
+}
+
+/** Origin of a {@link SteeringEntry}. KAS-only; V2 has no steering concept. */
+export type SteeringSource =
+  | { kind: 'workspace'; path?: string }
+  | { kind: 'global'; path?: string };
+
+/** A KAS steering document: auto-included context. */
+export interface SteeringEntry {
+  name: string;
+  description?: string;
+  source: SteeringSource;
 }
 
 /** Command advertised by backend */

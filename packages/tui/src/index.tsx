@@ -159,38 +159,21 @@ const wireUpHandlers = () => {
   // Wire up prompts handler before initialize
   kiro.onPromptsUpdate((prompts) => {
     logger.debug('[tui] prompts update received:', prompts.length, 'prompts');
-    const store = appStore.getState();
-    store.setPrompts(prompts);
+    appStore.getState().setPrompts(prompts);
+  });
 
-    // Register prompts and skills as slash commands
-    const promptCommands = prompts.map((prompt) => {
-      const isSkill = prompt.serverName.startsWith('skill:');
-      return {
-        name: `/${prompt.name}`,
-        description:
-          prompt.description ||
-          (isSkill
-            ? `Skill from ${prompt.serverName}`
-            : `Prompt from ${prompt.serverName}`),
-        source: 'backend' as const,
-        meta: {
-          type: isSkill ? 'skill' : 'prompt',
-          arguments: prompt.arguments,
-          serverName: prompt.serverName,
-        } as import('./types/commands').CommandMeta,
-      };
-    });
+  kiro.onSkillsUpdate((skills) => {
+    logger.debug('[tui] skills update received:', skills.length, 'skills');
+    appStore.getState().setSkills(skills);
+  });
 
-    // Add prompt/skill commands to existing slash commands
-    // Replace prompt/skill commands directly in state (bypass setSlashCommands to avoid double-keep);
-    appStore.setState((s) => ({
-      slashCommands: [
-        ...s.slashCommands.filter(
-          (c) => c.meta?.type !== 'prompt' && c.meta?.type !== 'skill'
-        ),
-        ...promptCommands,
-      ],
-    }));
+  kiro.onSteeringUpdate((steering) => {
+    logger.debug(
+      '[tui] steering update received:',
+      steering.length,
+      'steering docs'
+    );
+    appStore.getState().setSteering(steering);
   });
 
   // Wire up model handler before initialize

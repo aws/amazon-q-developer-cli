@@ -1,6 +1,11 @@
 import { ToolNameAlias } from '../../e2e_tests/types/agent.js';
 import type { BuiltinToolId } from './tool-status.js';
-import type { CommandMeta } from './commands.js';
+import type {
+  CommandMeta,
+  PromptEntry,
+  SkillEntry,
+  SteeringEntry,
+} from './commands.js';
 import type { KasCommand } from '../kas-commands.js';
 
 export enum AgentEventType {
@@ -13,6 +18,8 @@ export enum AgentEventType {
   ApprovalRequest = 'approval_request',
   CommandsUpdate = 'commands_update',
   PromptsUpdate = 'prompts_update',
+  SkillsUpdate = 'skills_update',
+  SteeringUpdate = 'steering_update',
   ContextUsage = 'context_usage',
   Metadata = 'metadata',
   CompactionStatus = 'compaction_status',
@@ -230,16 +237,17 @@ export interface CommandsUpdateEvent {
 
 export interface PromptsUpdateEvent {
   type: AgentEventType.PromptsUpdate;
-  prompts: Array<{
-    name: string;
-    description?: string;
-    arguments: Array<{
-      name: string;
-      description?: string;
-      required?: boolean;
-    }>;
-    serverName: string;
-  }>;
+  prompts: PromptEntry[];
+}
+
+export interface SkillsUpdateEvent {
+  type: AgentEventType.SkillsUpdate;
+  skills: SkillEntry[];
+}
+
+export interface SteeringUpdateEvent {
+  type: AgentEventType.SteeringUpdate;
+  steering: SteeringEntry[];
 }
 
 export interface ContextUsageEvent {
@@ -375,6 +383,8 @@ export type AgentStreamEvent =
   | ApprovalRequestEvent
   | CommandsUpdateEvent
   | PromptsUpdateEvent
+  | SkillsUpdateEvent
+  | SteeringUpdateEvent
   | ContextUsageEvent
   | MetadataEvent
   | CompactionStatusEvent

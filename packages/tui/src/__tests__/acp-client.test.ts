@@ -318,6 +318,101 @@ describe('AcpClient', () => {
     expect(event.commands[0].name).toBe('help');
   });
 
+  it('extNotification for commands_available partitions wire prompts into PromptsUpdate + SkillsUpdate', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    // V2 wire shape: prompts and skills both arrive in the `prompts`
+    // array. Skills are tagged via a "skill:" prefix on `serverName`.
+    await client.extNotification!('kiro.dev/commands/available', {
+      commands: [],
+      prompts: [
+        {
+          name: 'research',
+          description: 'Deep research',
+          arguments: [{ name: 'topic', required: true }],
+          serverName: 'core-mcp',
+        },
+        {
+          name: 'project-setup',
+          description: 'Set up project',
+          arguments: [],
+          serverName: 'local',
+        },
+        {
+          name: 'pair-program',
+          description: 'Skill prompt',
+          arguments: [],
+          serverName: 'skill:config',
+        },
+      ],
+      tools: [],
+      mcpServers: [],
+    });
+
+    const promptsEvent = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.PromptsUpdate);
+    const skillsEvent = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.SkillsUpdate);
+
+    expect(promptsEvent).toBeDefined();
+    expect(promptsEvent.prompts).toHaveLength(2);
+    expect(promptsEvent.prompts[0]).toMatchObject({
+      name: 'research',
+      arguments: [{ name: 'topic', required: true }],
+      source: { kind: 'mcp', serverName: 'core-mcp' },
+    });
+    expect(promptsEvent.prompts[1]).toMatchObject({
+      name: 'project-setup',
+      source: { kind: 'workspace' },
+    });
+
+    expect(skillsEvent).toBeDefined();
+    expect(skillsEvent.skills).toHaveLength(1);
+    expect(skillsEvent.skills[0]).toMatchObject({
+      name: 'pair-program',
+      source: { kind: 'agent-config' },
+    });
+    // V2 wire does NOT carry the resolved file path; partition leaves
+    // `path` undefined rather than emitting the bogus literal "config".
+    expect(skillsEvent.skills[0].source.path).toBeUndefined();
+  });
+
+  it("extNotification for commands_available maps serverName 'global' / 'local' to typed PromptSource kinds", async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.extNotification!('kiro.dev/commands/available', {
+      commands: [],
+      prompts: [
+        {
+          name: 'global-p',
+          description: '',
+          arguments: [],
+          serverName: 'global',
+        },
+        {
+          name: 'local-p',
+          description: '',
+          arguments: [],
+          serverName: 'local',
+        },
+      ],
+      tools: [],
+      mcpServers: [],
+    });
+
+    const promptsEvent = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.PromptsUpdate);
+    expect(promptsEvent.prompts[0].source).toEqual({ kind: 'global' });
+    expect(promptsEvent.prompts[1].source).toEqual({ kind: 'workspace' });
+  });
+
   it('extNotification for compaction_status broadcasts CompactionStatus', async () => {
     const client = new AcpClient('/path/to/agent', []);
     const handler = mock((_event: any) => {});
