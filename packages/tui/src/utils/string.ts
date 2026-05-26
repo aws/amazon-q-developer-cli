@@ -36,21 +36,15 @@ export function expandTabs(text: string, tabWidth = 2): string {
   return lines.join('\n');
 }
 
+// Allow: tab (9), newline (10), carriage return (13), and anything >= 32
+// except DEL (127) and C1 control characters (128-159).
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/;
+
 /**
  * Check if string contains only printable characters (including newlines and tabs)
  */
-export const isPrintable = (str: string): boolean =>
-  Array.from(str).every((c) => {
-    const code = c.codePointAt(0)!;
-    // Allow: tab (9), newline (10), carriage return (13), and anything >= 32
-    // except DEL (127) and C1 control characters (128-159)
-    return (
-      code === 9 ||
-      code === 10 ||
-      code === 13 ||
-      (code >= 32 && code !== 127 && !(code >= 128 && code <= 159))
-    );
-  });
+export const isPrintable = (str: string): boolean => !CONTROL_CHAR_RE.test(str);
 
 /**
  * Strip zero-width and non-printable Unicode characters that have no visual

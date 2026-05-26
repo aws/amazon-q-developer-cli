@@ -135,10 +135,22 @@ describe('isPrintable', () => {
     expect(isPrintable('\n')).toBe(true);
     expect(isPrintable('\r')).toBe(true);
     expect(isPrintable('hello\tworld\n')).toBe(true);
+    expect(isPrintable('line1\nline2\ttab\r\n')).toBe(true);
+  });
+
+  it('allows Unicode printable characters (CJK, emoji)', () => {
+    expect(isPrintable('こんにちは')).toBe(true);
+    expect(isPrintable('\u{1F600}')).toBe(true);
   });
 
   it('returns false for NUL char (0x00)', () => {
     expect(isPrintable('\x00')).toBe(false);
+  });
+
+  it('returns false for other C0 control characters', () => {
+    expect(isPrintable('\x08')).toBe(false); // BS
+    expect(isPrintable('\x0B')).toBe(false); // VT
+    expect(isPrintable('\x1F')).toBe(false); // US
   });
 
   it('returns false for DEL (0x7F)', () => {
@@ -156,8 +168,8 @@ describe('isPrintable', () => {
     expect(isPrintable('\u00FF')).toBe(true);
   });
 
-  it('returns true for emoji', () => {
-    expect(isPrintable('\u{1F600}')).toBe(true);
+  it('rejects string containing a control char mixed with printable', () => {
+    expect(isPrintable('hello\x00world')).toBe(false);
   });
 });
 
