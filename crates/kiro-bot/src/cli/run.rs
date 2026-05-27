@@ -112,13 +112,14 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         last_seen: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
+    let coordinator = crate::engine::coordinator_bootstrap::build_coordinator().await;
     let core = BotCore {
         work_sender: work_tx,
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         authz,
         response_policy,
         acp_info,
-        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
+        coordinator,
     };
 
     let pending_approvals: PendingApprovals = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -166,10 +167,27 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         .await?;
     info!("⚡ Bot started");
 
+    // Phase 1: bind the dispatch server alongside Slack so peer tasks can
+    // POST forwarded events. The handler is a stub for now (logs+drops);
+    // Phase 2 swaps in a real Dispatcher that replays the event into the
+    // local frontend pipeline.
+    let dispatch_port = std::env::var("KIRO_BOT_DISPATCH_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(8080);
+    let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> =
+        Arc::new(crate::engine::coordinator_bootstrap::LoggingDispatcher);
+    let dispatch_handle = tokio::spawn(async move {
+        if let Err(e) = crate::engine::dispatch_server::run_dispatch_server(dispatch_port, dispatcher).await {
+            tracing::error!(error = %e, "dispatch server exited");
+        }
+    });
+
     tokio::select! {
         _ = listener.serve() => {}
         _ = tokio::signal::ctrl_c() => { info!("Shutting down..."); }
     }
+    dispatch_handle.abort();
     Ok(())
 }
 
