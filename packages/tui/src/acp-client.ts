@@ -1489,18 +1489,6 @@ export class KasAcpClient extends BaseAcpClient {
   private oauthResetRequested: Set<string> = new Set();
 
   /**
-   * FIFO of server names whose OAuth flow we have requested but for which
-   * we haven't yet seen the corresponding `_kiro/openExternalUrl` request.
-   * KAS's openExternalUrl payload is just `{ url }` — it carries no server
-   * context — so we correlate by ordering: we push a name on this queue
-   * immediately before issuing `_kiro/mcp/resetServer`, and consume from
-   * the head when an `_kiro/openExternalUrl` arrives. Resets are issued
-   * sequentially in the same tick we observe the failure, so the URL
-   * arrives in matching order.
-   */
-  private pendingOauthQueue: string[] = [];
-
-  /**
    * Construct a KAS ACP client.
    *
    * Default (no options): spawn the KAS subprocess and wire its stdio as
@@ -2546,28 +2534,22 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /**
-   * Handle KAS's `_kiro/openExternalUrl` request. The payload is just
-   * `{ url }` with no server context, so we correlate the URL to the
-   * MCP server we most recently kicked off `_kiro/mcp/resetServer` for
-   * by popping from `pendingOauthQueue`.
-   *
-   * Falls back to broadcasting under an empty serverName if the queue
-   * is unexpectedly empty (e.g. KAS opens a URL outside the MCP-OAuth
-   * code path) — the app store ignores entries without a serverName,
-   * so this is just defensive.
+   * Handle KAS's `_kiro/openExternalUrl` request. The payload includes
+   * `{ url, serverName }` — the server name identifies which MCP server
+   * triggered the OAuth flow.
    */
   private async handleOpenExternalUrl(
     request: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const url = (request.url as string) ?? '';
-    const serverName = this.pendingOauthQueue.shift();
+    const serverName = (request.serverName as string) ?? '';
     if (!url) {
       logger.warn('[kas] _kiro/openExternalUrl missing url', request);
       return { success: false };
     }
     if (!serverName) {
       logger.warn(
-        '[kas] _kiro/openExternalUrl received with no pending server',
+        '[kas] _kiro/openExternalUrl missing serverName',
         { url }
       );
       return { success: false };
@@ -2760,7 +2742,6 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private async requestMcpOAuth(serverName: string): Promise<void> {
     if (!this.sessionId) return;
-    this.pendingOauthQueue.push(serverName);
     try {
       logger.info('[kas] requesting OAuth reset for MCP server', {
         serverName,
@@ -2772,12 +2753,6 @@ export class KasAcpClient extends BaseAcpClient {
       });
     } catch (e) {
       logger.warn('[kas] _kiro/mcp/resetServer failed', { serverName, e });
-      // Drop the queue entry we pushed if no URL ever arrives, so a
-      // future retry doesn't desync the correlation. We can only safely
-      // remove our specific entry, not the head, because earlier resets
-      // that already received their URL may have already shifted off.
-      const idx = this.pendingOauthQueue.lastIndexOf(serverName);
-      if (idx !== -1) this.pendingOauthQueue.splice(idx, 1);
     }
   }
 

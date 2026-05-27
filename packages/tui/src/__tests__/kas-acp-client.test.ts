@@ -2439,6 +2439,7 @@ describe('MCP OAuth flow', () => {
     const handler = getOpenExternalUrlHandler(client);
     const result = await handler({
       url: 'https://example.com/oauth/authorize?state=xyz',
+      serverName: 'github-mcp',
     });
     expect(result).toEqual({ success: true });
 
@@ -2452,7 +2453,7 @@ describe('MCP OAuth flow', () => {
     );
   });
 
-  it('correlates URLs to servers in FIFO order when multiple servers need OAuth', async () => {
+  it('correlates URLs to servers via serverName in payload', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
@@ -2460,28 +2461,9 @@ describe('MCP OAuth flow', () => {
     const events: any[] = [];
     client.onUpdate((e: any) => events.push(e));
 
-    // Two servers fail simultaneously — both pushed onto the queue in order
-    (client as any).handleMcpStatusNotification({
-      servers: [
-        {
-          name: 'first-mcp',
-          status: 'failed',
-          failedAuthorization: true,
-          errorMessage: 'Unauthorized',
-        },
-        {
-          name: 'second-mcp',
-          status: 'failed',
-          failedAuthorization: true,
-          errorMessage: 'Unauthorized',
-        },
-      ],
-    });
-    await Promise.resolve();
-
     const handler = getOpenExternalUrlHandler(client);
-    await handler({ url: 'https://example.com/first' });
-    await handler({ url: 'https://example.com/second' });
+    await handler({ url: 'https://example.com/first', serverName: 'first-mcp' });
+    await handler({ url: 'https://example.com/second', serverName: 'second-mcp' });
 
     const oauthEvents = events.filter(
       (e) => e.type === AgentEventType.McpOauthRequest
@@ -2497,7 +2479,7 @@ describe('MCP OAuth flow', () => {
     });
   });
 
-  it('returns empty {} response when openExternalUrl arrives with no pending server', async () => {
+  it('returns success: false when openExternalUrl has no serverName', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
@@ -2509,14 +2491,13 @@ describe('MCP OAuth flow', () => {
     const result = await handler({ url: 'https://example.com/orphan' });
     expect(result).toEqual({ success: false });
 
-    // Without a queue entry, no broadcast — defensive but safe
     const oauthEvents = events.filter(
       (e) => e.type === AgentEventType.McpOauthRequest
     );
     expect(oauthEvents).toHaveLength(0);
   });
 
-  it('returns empty {} response when openExternalUrl payload has no url', async () => {
+  it('returns success: false when openExternalUrl payload has no url', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
@@ -2530,38 +2511,6 @@ describe('MCP OAuth flow', () => {
     expect(
       events.filter((e) => e.type === AgentEventType.McpOauthRequest)
     ).toHaveLength(0);
-  });
-
-  it('cleans up pendingOauthQueue when _kiro/mcp/resetServer rejects', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSendExtMethod.mockClear();
-    mockKiroSendExtMethod.mockImplementationOnce((method: string) => {
-      if (method === '_kiro/mcp/resetServer') {
-        return Promise.reject(new Error('connection lost'));
-      }
-      return Promise.resolve({});
-    });
-
-    expect(() =>
-      (client as any).handleMcpStatusNotification({
-        servers: [
-          {
-            name: 'github-mcp',
-            status: 'failed',
-            failedAuthorization: true,
-            errorMessage: 'Unauthorized',
-          },
-        ],
-      })
-    ).not.toThrow();
-
-    // Let the rejected promise settle and the cleanup branch run
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    // Queue should be empty so a stray late URL doesn't get mis-correlated
-    expect((client as any).pendingOauthQueue).toEqual([]);
   });
 
   it('keeps servers in auth-required while OAuth reset is in-flight (connecting state)', async () => {
