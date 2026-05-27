@@ -363,15 +363,13 @@ describe('KasAcpClient', () => {
     );
   });
 
-  it('executeCommand("plan") forwards to agent via _kiro/plan', async () => {
-    mockKiroSendExtMethod.mockResolvedValue({});
+  it('executeCommand("plan") switches to quick-plan mode', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
     await client.executeCommand({ command: 'plan' } as any);
-    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
-      '_kiro/plan',
-      expect.objectContaining({ sessionId: 'kas-session-1' })
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
+      expect.objectContaining({ configId: 'mode', value: 'quick-plan' })
     );
   });
 

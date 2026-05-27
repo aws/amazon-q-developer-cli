@@ -23,6 +23,7 @@ export enum KasCommandName {
   Code = '/code',
   Hooks = '/hooks',
   Mcp = '/mcp',
+  Plan = '/plan',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -162,5 +163,9 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Mcp,
     description: 'Show MCP server status',
     meta: { inputType: 'panel' },
+  },
+  {
+    name: KasCommandName.Plan,
+    description: 'Switch to quick-plan mode for structured spec generation',
   },
 ];
