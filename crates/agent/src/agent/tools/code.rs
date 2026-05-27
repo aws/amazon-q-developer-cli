@@ -364,7 +364,16 @@ impl Code {
                 if let Err(e) = client.initialize().await {
                     return Err(ToolExecutionError::Custom(format!("Failed to initialize: {e}")));
                 }
-                Ok(text_output("Workspace initialized successfully"))
+                let warnings = client.lsp_init_warnings();
+                if warnings.is_empty() {
+                    Ok(text_output("Workspace initialized successfully"))
+                } else {
+                    let mut msg = String::from("Workspace initialized with warnings:\n");
+                    for w in &warnings {
+                        msg.push_str(&format!("⚠ {w}\n"));
+                    }
+                    Ok(text_output(&msg))
+                }
             },
 
             Code::SearchSymbols(params) => {

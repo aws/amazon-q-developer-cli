@@ -412,10 +412,22 @@ impl CodeIntelligenceServer {
     async fn initialize_tool(&self, _arguments: Option<Map<String, Value>>) -> Result<CallToolResult, ErrorData> {
         self.ensure_client(None).await?;
 
-        let response = json!({
-            "status": "initialized",
-            "message": "Language servers initialized successfully"
-        });
+        let mut client_guard = self.client.lock().await;
+        let client = client_guard.as_mut().unwrap();
+        let warnings = client.lsp_init_warnings();
+
+        let response = if warnings.is_empty() {
+            json!({
+                "status": "initialized",
+                "message": "Language servers initialized successfully"
+            })
+        } else {
+            json!({
+                "status": "initialized_with_warnings",
+                "message": "Language servers initialized with warnings",
+                "warnings": warnings
+            })
+        };
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&response).unwrap(),

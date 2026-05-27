@@ -198,6 +198,19 @@ impl CodeIntelligence {
         self.workspace_manager.initialize().await
     }
 
+    /// Returns warnings about LSP servers that are relevant to detected languages
+    /// but are not installed or failed to start.
+    pub fn lsp_init_warnings(&mut self) -> Vec<String> {
+        let info = match self.detect_workspace() {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!("Failed to detect workspace for LSP warnings: {e}");
+                return vec![];
+            },
+        };
+        lsp_warnings_for_workspace(&info)
+    }
+
     /// **Check if language servers are initialized**
     ///
     /// # Returns
@@ -1030,9 +1043,59 @@ impl CodeIntelligence {
     }
 }
 
+/// Returns warnings for LSP servers relevant to detected languages that are
+/// not installed or failed to start.
+pub fn lsp_warnings_for_workspace(info: &WorkspaceInfo) -> Vec<String> {
+    let detected: std::collections::HashSet<&str> = info.detected_languages.iter().map(|s| s.as_str()).collect();
+    info.available_lsps
+        .iter()
+        .filter(|lsp| lsp.languages.iter().any(|l| detected.contains(l.as_str())))
+        .filter_map(|lsp| {
+            if !lsp.is_available {
+                Some(format!(
+                    "Language server '{}' is not installed (needed for {}). Install it and ensure it is on your PATH.",
+                    lsp.name,
+                    lsp.languages.join(", ")
+                ))
+            } else if lsp.is_failed() {
+                Some(format!(
+                    "Language server '{}' failed to initialize: {}",
+                    lsp.name,
+                    lsp.status.as_deref().unwrap_or("unknown error")
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_lsp(name: &str, languages: &[&str], is_available: bool, status: Option<&str>) -> LspInfo {
+        LspInfo {
+            name: name.to_string(),
+            command: name.to_string(),
+            languages: languages.iter().map(|s| s.to_string()).collect(),
+            is_available,
+            is_initialized: false,
+            status: status.map(|s| s.to_string()),
+            version: None,
+            workspace_folders: vec![],
+            init_duration_ms: None,
+        }
+    }
+
+    fn make_workspace(languages: &[&str], lsps: Vec<LspInfo>) -> WorkspaceInfo {
+        WorkspaceInfo {
+            root_path: std::path::PathBuf::from("/tmp/test"),
+            detected_languages: languages.iter().map(|s| s.to_string()).collect(),
+            available_lsps: lsps,
+            project_markers: vec![],
+        }
+    }
 
     #[test]
     fn test_builder() {
@@ -1041,5 +1104,52 @@ mod tests {
         assert!(builder.workspace_root.is_none());
         assert_eq!(builder.languages.len(), 0);
         assert!(!builder.auto_detect);
+    }
+
+    #[test]
+    fn test_lsp_warnings_no_issues() {
+        let info = make_workspace(&["rust"], vec![make_lsp(
+            "rust-analyzer",
+            &["rust"],
+            true,
+            Some("initialized"),
+        )]);
+        assert!(lsp_warnings_for_workspace(&info).is_empty());
+    }
+
+    #[test]
+    fn test_lsp_warnings_not_installed() {
+        let info = make_workspace(&["java"], vec![make_lsp("jdtls", &["java"], false, None)]);
+        let warnings = lsp_warnings_for_workspace(&info);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("jdtls"));
+        assert!(warnings[0].contains("not installed"));
+    }
+
+    #[test]
+    fn test_lsp_warnings_failed() {
+        let info = make_workspace(&["python"], vec![make_lsp(
+            "pyright",
+            &["python"],
+            true,
+            Some("failed: connection refused"),
+        )]);
+        let warnings = lsp_warnings_for_workspace(&info);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("pyright"));
+        assert!(warnings[0].contains("failed to initialize"));
+    }
+
+    #[test]
+    fn test_lsp_warnings_ignores_irrelevant_lsp() {
+        let info = make_workspace(&["rust"], vec![make_lsp("jdtls", &["java"], false, None)]);
+        assert!(lsp_warnings_for_workspace(&info).is_empty());
+    }
+
+    #[test]
+    fn test_lsp_info_is_failed() {
+        assert!(make_lsp("x", &[], true, Some("failed: timeout")).is_failed());
+        assert!(!make_lsp("x", &[], true, Some("initialized")).is_failed());
+        assert!(!make_lsp("x", &[], true, None).is_failed());
     }
 }

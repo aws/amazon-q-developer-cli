@@ -345,6 +345,13 @@ pub struct LspInfo {
     pub init_duration_ms: Option<u64>,
 }
 
+impl LspInfo {
+    /// Returns true if the LSP server failed to initialize.
+    pub fn is_failed(&self) -> bool {
+        self.status.as_deref().is_some_and(|s| s.starts_with("failed:"))
+    }
+}
+
 /// Request to search for code patterns using AST matching.
 #[derive(Debug, Clone)]
 pub struct PatternSearchRequest {

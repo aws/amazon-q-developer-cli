@@ -1247,10 +1247,25 @@ impl Code {
                     }
                 },
                 Code::InitializeWorkspace => match client.initialize().await {
-                    Ok(init_response) => {
+                    Ok(_) => {
                         Self::stop_spinner(&mut spinner, _stdout)?;
-                        queue!(_stdout, style::Print("\nWorkspace initialized successfully\n"),)?;
-                        result = format!("{init_response:?}");
+                        let warnings = client.lsp_init_warnings();
+                        if warnings.is_empty() {
+                            queue!(_stdout, style::Print("\nWorkspace initialized successfully\n"),)?;
+                            result = "Workspace initialized successfully".to_string();
+                        } else {
+                            queue!(_stdout, style::Print("\nWorkspace initialized with warnings:\n"),)?;
+                            result = "Workspace initialized with warnings:\n".to_string();
+                            for w in &warnings {
+                                queue!(
+                                    _stdout,
+                                    StyledText::warning_fg(),
+                                    style::Print(&format!("⚠ {w}\n")),
+                                    StyledText::reset(),
+                                )?;
+                                result.push_str(&format!("⚠ {w}\n"));
+                            }
+                        }
                     },
                     Err(e) => {
                         Self::stop_spinner(&mut spinner, _stdout)?;
