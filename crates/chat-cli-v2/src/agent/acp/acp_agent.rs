@@ -1471,7 +1471,16 @@ impl AcpSession {
                             // The receiver couldn't keep up (e.g. a verbose shell command
                             // streaming tens of thousands of lines). Log and continue —
                             // killing the session would be much worse than dropping UI updates.
-                            warn!(%skipped, "Agent event channel lagged; skipped events");
+                            //
+                            // Diagnostic: include `pending_prompt` so logs can correlate a lag
+                            // event with an in-flight turn. If a lag fires while a prompt is
+                            // pending, EndTurn / Stop(...) may be among the dropped events,
+                            // leaving `pending_prompt_response` forever unresolved (silent stop).
+                            warn!(
+                                %skipped,
+                                pending_prompt = self.pending_prompt_response.is_some(),
+                                "Agent event channel lagged; skipped events"
+                            );
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                             warn!("Agent event channel closed, exiting");
@@ -1655,10 +1664,12 @@ impl AcpSession {
                             }
 
                             // Send result message as a text chunk so the TUI displays it
-                            if !result.message.is_empty() {
-                                let _ = self.send_session_notification(SessionUpdate::AgentMessageChunk(
+                            if !result.message.is_empty()
+                                && let Err(e) = self.send_session_notification(SessionUpdate::AgentMessageChunk(
                                     SacpContentChunk::new(ContentBlock::Text(TextContent::new(result.message))),
-                                ));
+                                ))
+                            {
+                                error!(?e, "send_session_notification failed (slash command result)");
                             }
 
                             // Respond directly — slash commands don't go through the agent loop
@@ -2141,8 +2152,13 @@ impl AcpSession {
                     }
                 }
                 // Normal path — forward to TUI
-                if let Some(update) = convert_update_event_to_session_update(update_event.clone()) {
-                    let _ = self.send_session_notification(update);
+                if let Some(update) = convert_update_event_to_session_update(update_event.clone())
+                    && let Err(e) = self.send_session_notification(update)
+                {
+                    // Hot-path notification — every UpdateEvent flows through here. A
+                    // pipe write failure is a strong silent-stop signal: the backend
+                    // keeps running its turn, but the TUI sees nothing.
+                    error!(?e, "send_session_notification failed (UpdateEvent forward)");
                 }
             },
             AgentEvent::ApprovalRequest(req) => {

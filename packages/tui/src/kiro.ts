@@ -539,12 +539,32 @@ export class Kiro {
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
-      const settle = (fn: () => void) => {
+      // Track when the most recent stream event arrived so the stuck-turn
+      // watchdog (defined below) can log the silence gap. Initialized to
+      // Promise-creation time and bumped from updateHandler on every
+      // non-historical event.
+      let lastEventAt = Date.now();
+      let watchdogId: ReturnType<typeof setInterval> | null = null;
+      const settle = (reason: string, fn: () => void) => {
         if (settled) return;
         settled = true;
+        // Silent-stop diagnostic: which path settled the turn (abort,
+        // prompt-resolved, prompt-error, initial-response-timeout) and how
+        // long it had been since the last event arrived. If a real session
+        // reports a silent stop, the absence of any settle log for the
+        // affected turn (combined with the watchdog's repeated "no events
+        // for Nms" warnings) is the fingerprint.
+        const sinceLastEvent = Date.now() - lastEventAt;
+        logger.debug(
+          `[stream] settle path=${reason} sinceLastEvent=${sinceLastEvent}ms receivedFirstEvent=${receivedFirstEvent}`
+        );
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        if (watchdogId) {
+          clearInterval(watchdogId);
+          watchdogId = null;
         }
         // Defer unsubscribe so that in-flight notification handlers in the
         // ACP SDK can finish broadcasting before we remove our listener.
@@ -566,7 +586,7 @@ export class Kiro {
       // Handle abort signal
       const onAbort = () => {
         logger.debug('[stream] signal aborted, cancelling');
-        settle(() => {
+        settle('abort', () => {
           reject(new DOMException('Aborted', 'AbortError'));
         });
       };
@@ -589,6 +609,7 @@ export class Kiro {
           return;
         }
         receivedFirstEvent = true;
+        lastEventAt = Date.now();
         // Clear the initial-response timeout once we get any event
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -627,7 +648,7 @@ export class Kiro {
               );
             })
             .finally(() => {
-              settle(() =>
+              settle('initial-response-timeout', () =>
                 reject(
                   new Error(
                     'Agent not responding. The backend may be misconfigured or unresponsive. Press Ctrl+C to cancel.'
@@ -637,6 +658,25 @@ export class Kiro {
             });
         }
       }, INITIAL_RESPONSE_TIMEOUT_MS);
+
+      // Stuck-turn watchdog — passive logger, no behavior change.
+      // Fires every STUCK_TURN_LOG_INTERVAL_MS while the turn is in flight;
+      // when no events have arrived in that window it emits a warn log
+      // including the gap. If the silent-stop bug fires, the log will show
+      // a cliff: events flowing normally, then repeated "no events for Nms"
+      // entries with no corresponding settle log. Pairs with the backend
+      // lag/notification loggers to triangulate where in the pipeline updates
+      // went missing.
+      const STUCK_TURN_LOG_INTERVAL_MS = 30_000;
+      watchdogId = setInterval(() => {
+        if (settled) return;
+        const sinceLastEvent = Date.now() - lastEventAt;
+        if (sinceLastEvent >= STUCK_TURN_LOG_INTERVAL_MS) {
+          logger.warn(
+            `[stream] no events for ${sinceLastEvent}ms — turn may be stuck (TUI still showing isProcessing=true, receivedFirstEvent=${receivedFirstEvent})`
+          );
+        }
+      }, STUCK_TURN_LOG_INTERVAL_MS);
 
       const contentBlocks: Array<
         | { type: 'text'; text: string }
@@ -655,12 +695,12 @@ export class Kiro {
 
       const promptPromise = this.sessionClient!.prompt(contentBlocks as any)
         .then(() => {
-          settle(() => resolve());
+          settle('prompt-resolved', () => resolve());
         })
         .catch((err) => {
           const errorMessage = extractRpcErrorMessage(err);
           logger.error('[stream] prompt failed:', errorMessage);
-          settle(() => reject(new Error(errorMessage)));
+          settle('prompt-error', () => reject(new Error(errorMessage)));
         });
 
       // Track the prompt RPC so cancel can wait for the backend to actually
