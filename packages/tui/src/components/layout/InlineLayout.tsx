@@ -352,6 +352,24 @@ export const InlineLayout: React.FC = () => {
     (_input, key) => {
       if (key.tab && key.shift) {
         const currentName = currentAgent?.name;
+
+        // Emit a Shift+Tab mode-change telemetry event when the agent
+        // actually changed. Centralized so both branches stay in sync if
+        // the payload shape grows or a new entry point is added.
+        const emitModeChange = (
+          from: string | undefined,
+          to: string | undefined
+        ) => {
+          if (from && to && from !== to) {
+            kiro.sendModeChanged({
+              fromMode: from,
+              toMode: to,
+              source: ModeChangeSource.ShiftTab,
+              sessionId: kiro.sessionId,
+            });
+          }
+        };
+
         if (currentName === 'kiro_planner') {
           const target = previousAgentName;
           if (!target) return;
@@ -362,14 +380,7 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
-                if (name && name !== currentName) {
-                  kiro.sendModeChanged({
-                    fromMode: currentName,
-                    toMode: name,
-                    source: ModeChangeSource.ShiftTab,
-                    sessionId: kiro.sessionId,
-                  });
-                }
+                emitModeChange(currentName, name);
                 if (name) setCurrentAgent({ name });
               }
             })
@@ -386,14 +397,7 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
-                if (currentName && name && name !== currentName) {
-                  kiro.sendModeChanged({
-                    fromMode: currentName,
-                    toMode: name,
-                    source: ModeChangeSource.ShiftTab,
-                    sessionId: kiro.sessionId,
-                  });
-                }
+                emitModeChange(currentName, name);
                 if (name) setCurrentAgent({ name });
               }
             })
