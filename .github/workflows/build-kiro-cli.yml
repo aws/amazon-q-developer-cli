@@ -35,11 +35,12 @@ on:
   # This workflow remains available for manual workflow_dispatch during the transition period.
   # schedule:
   #   - cron: "21 6 * * *"
-  push:
-    branches:
-      - prod
-      - main
-      - feature/*
+  # push trigger disabled — builds now handled by build-and-release.yml
+  # push:
+  #   branches:
+  #     - prod
+  #     - main
+  #     - feature/*
 
 env:
   AWS_REGION: "us-east-1"

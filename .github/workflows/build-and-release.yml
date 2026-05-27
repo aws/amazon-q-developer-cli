@@ -151,6 +151,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.tag.outputs.tag }}
           fetch-depth: 0
 
       - name: Derive metadata from tag
