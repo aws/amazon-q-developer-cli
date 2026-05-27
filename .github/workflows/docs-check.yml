@@ -48,7 +48,7 @@ jobs:
         with:
           ref: ${{ steps.pr.outputs.sha }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.KIRO_BOT_PAT }}
 
       - name: Determine what to run
         id: check
