@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
+import { ModeChangeSource } from '../../types/generated/chat-cli.js';
 
 // Region is twinki-only — lazy import for dev mode metrics
 const Region = isDevMode()
@@ -365,7 +366,8 @@ export const InlineLayout: React.FC = () => {
                   kiro.sendModeChanged({
                     fromMode: currentName,
                     toMode: name,
-                    source: 'shiftTab',
+                    source: ModeChangeSource.ShiftTab,
+                    sessionId: kiro.sessionId,
                   });
                 }
                 if (name) setCurrentAgent({ name });
@@ -384,11 +386,12 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
-                if (name && name !== currentName) {
+                if (currentName && name && name !== currentName) {
                   kiro.sendModeChanged({
                     fromMode: currentName,
                     toMode: name,
-                    source: 'shiftTab',
+                    source: ModeChangeSource.ShiftTab,
+                    sessionId: kiro.sessionId,
                   });
                 }
                 if (name) setCurrentAgent({ name });

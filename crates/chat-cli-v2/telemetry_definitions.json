@@ -505,7 +505,7 @@
     {
       "name": "codewhispererterminal_modeFromAgent",
       "type": "string",
-      "description": "Agent name the user was on before the mode change. Empty when there was no prior mode (initial session bootstrap)."
+      "description": "Agent name the user was on before the mode change."
     },
     {
       "name": "codewhispererterminal_modeToAgent",
@@ -515,7 +515,7 @@
     {
       "name": "codewhispererterminal_modeChangeSource",
       "type": "string",
-      "description": "How the mode change was initiated. Known values today: 'shiftTab', 'slashCommand'. Free-form string so future entry points (keybindings, agent picker, programmatic, etc.) can be added without a schema change."
+      "description": "How the mode change was initiated. Known values today: 'shiftTab', 'slashCommand'. New entry points are added by extending the ModeChangeSource enum on the producer side."
     }
   ],
   "metrics": [
@@ -864,7 +864,8 @@
       "passive": false,
       "metadata": [
         { "type": "credentialStartUrl", "required": false },
-        { "type": "codewhispererterminal_modeFromAgent", "required": false },
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "codewhispererterminal_modeFromAgent" },
         { "type": "codewhispererterminal_modeToAgent" },
         { "type": "codewhispererterminal_modeChangeSource" }
       ]

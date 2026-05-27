@@ -14,6 +14,7 @@ import type {
   SessionClient,
   ListSessionsResponse,
 } from './types/session-client';
+import type { ModeChangedNotification } from './types/generated/chat-cli';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -240,11 +241,7 @@ export class Kiro {
     this.sessionClient.sendProcessHealthMetrics?.(payload);
   }
 
-  sendModeChanged(payload: {
-    fromMode?: string;
-    toMode: string;
-    source: string;
-  }): void {
+  sendModeChanged(payload: ModeChangedNotification): void {
     if (!this.sessionClient) return;
     this.sessionClient.sendModeChanged?.(payload);
   }

@@ -16,6 +16,7 @@ typeshare crates/agent --lang=typescript --output-file=packages/tui/e2e_tests/ty
 
 # Shared types for main source
 typeshare crates/agent --lang=typescript --output-file=packages/tui/src/types/generated/agent.ts
+typeshare crates/chat-cli-v2 --lang=typescript --output-file=packages/tui/src/types/generated/chat-cli.ts
 
 echo "✓ Generated types at packages/tui/e2e_tests/types/"
 echo "✓ Generated types at packages/tui/src/types/generated/"

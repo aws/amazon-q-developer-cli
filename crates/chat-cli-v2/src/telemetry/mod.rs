@@ -634,17 +634,19 @@ impl TelemetryThread {
     }
 
     /// Emit a single `modeChanged` telemetry event. Caller is responsible for skipping no-op
-    /// changes (`from_mode == Some(to_mode)`); we just record what we're handed.
+    /// changes (`from_mode == to_mode`); we just record what we're handed.
     pub fn send_mode_changed(
         &self,
-        from_mode: Option<String>,
+        from_mode: String,
         to_mode: String,
-        source: String,
+        source: crate::agent::acp::schema::ModeChangeSource,
+        session_id: Option<String>,
     ) -> Result<(), TelemetryError> {
         let event = Event::new(EventType::ModeChanged {
             from_mode,
             to_mode,
             source,
+            session_id,
         });
         Ok(self.tx.send(event)?)
     }
