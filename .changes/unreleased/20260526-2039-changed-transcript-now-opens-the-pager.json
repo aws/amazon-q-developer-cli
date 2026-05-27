@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/transcript` now opens the pager at the bottom so the most recent messages are visible first"
+}

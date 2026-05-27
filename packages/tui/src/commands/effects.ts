@@ -40,7 +40,13 @@ import {
 } from '../utils/spec-artifact-loader.js';
 import { readFileSync, writeFileSync, statSync } from 'fs';
 
+import { resolve } from 'path';
+import { homedir } from 'os';
 import { openTranscriptInPager } from '../utils/open-transcript.js';
+import {
+  serializeConversation,
+  type TranscriptFormat,
+} from '../utils/serialize-conversation.js';
 import {
   findSettingsSubcommand,
   buildSettingsActiveCommand,
@@ -878,15 +884,67 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
-  /** Open full conversation as raw markdown in $PAGER */
-  openRawView: (_result, ctx) => {
+  /** Open full conversation in $PAGER or save to file */
+  openRawView: (_result, ctx, _cmd, args) => {
     const messages = ctx.getMessages();
     if (!messages.length) {
       ctx.showAlert('No conversation to display', 'error', 3000);
       return true;
     }
 
-    openTranscriptInPager(messages);
+    const tokens = args.trim().split(/\s+/).filter(Boolean);
+    const saving = tokens[0] === 'save';
+    if (saving) tokens.shift();
+
+    // Parse flags — everything that's not a flag is the path
+    let format: TranscriptFormat = 'markdown';
+    let filePath = '';
+    const pathParts: string[] = [];
+
+    for (const token of tokens) {
+      if (token === '--plain') {
+        format = 'plaintext';
+      } else if (token === '--json') {
+        format = 'json';
+      } else if (token.startsWith('--')) {
+        ctx.showAlert(
+          `Unknown flag: ${token}\nUsage: /transcript [save <path>] [--plain|--json]`,
+          'error',
+          5000
+        );
+        return true;
+      } else if (saving) {
+        pathParts.push(token);
+      } else {
+        ctx.showAlert(
+          `Unknown argument: ${token}\nUsage: /transcript [save <path>] [--plain|--json]`,
+          'error',
+          5000
+        );
+        return true;
+      }
+    }
+    filePath = pathParts.join(' ');
+
+    // Serialize
+    const content = serializeConversation(messages, format);
+
+    if (saving) {
+      const ext = { markdown: '.md', plaintext: '.txt', json: '.json' };
+      const expanded = filePath.startsWith('~/')
+        ? homedir() + filePath.slice(1)
+        : filePath;
+      const outputPath = resolve(expanded || `transcript${ext[format]}`);
+      try {
+        writeFileSync(outputPath, content);
+        ctx.showAlert(`Transcript saved to ${outputPath}`, 'success', 3000);
+      } catch (err: any) {
+        ctx.showAlert(`Failed to save: ${err.message}`, 'error', 5000);
+      }
+    } else {
+      const ext = { markdown: 'md', plaintext: 'txt', json: 'json' } as const;
+      openTranscriptInPager(messages, content, ext[format]);
+    }
     return true;
   },
 

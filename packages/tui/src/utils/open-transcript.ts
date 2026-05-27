@@ -6,16 +6,18 @@ import { serializeConversationToMarkdown } from './serialize-conversation.js';
 import { executeShellEscapeTTY, restoreTerminalModes } from './shell-escape.js';
 
 export function openTranscriptInPager(
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  preRendered?: string,
+  format: 'md' | 'txt' | 'json' = 'md'
 ): void {
   if (!messages.length) return;
 
-  const markdown = serializeConversationToMarkdown(messages);
+  const content = preRendered ?? serializeConversationToMarkdown(messages);
   const tempDir = mkdtempSync(join(tmpdir(), 'kiro-raw-'));
-  const tempFile = join(tempDir, 'conversation.md');
+  const tempFile = join(tempDir, `conversation.${format}`);
 
   try {
-    writeFileSync(tempFile, markdown);
+    writeFileSync(tempFile, content);
 
     if (process.platform === 'win32') {
       const pager = process.env.PAGER;
@@ -38,7 +40,12 @@ export function openTranscriptInPager(
     } else {
       const pager = process.env.PAGER || 'less';
       const quotedPath = `'${tempFile.replace(/'/g, "'\\''")}'`;
-      const { error } = executeShellEscapeTTY(`${pager} ${quotedPath}`);
+      // Start at the bottom so the most recent messages are visible first.
+      // +G is understood by less and most less-compatible pagers.
+      const startAtEnd = pager.startsWith('less') ? '+G ' : '';
+      const { error } = executeShellEscapeTTY(
+        `${pager} ${startAtEnd}${quotedPath}`
+      );
       if (error) {
         process.stderr.write(
           `Could not open transcript with pager "${pager}": ${error}\n`
