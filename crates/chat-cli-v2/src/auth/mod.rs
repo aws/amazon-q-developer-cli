@@ -1,6 +1,7 @@
 pub mod builder_id;
 mod consts;
 pub mod external_idp;
+pub mod kas_token;
 pub mod kas_token_sync;
 pub mod oauth_callback;
 pub mod pkce;
@@ -76,6 +77,8 @@ pub enum AuthError {
     SocialAuthProviderFailure(String),
     #[error("Social login failed: no profile ARN returned by the auth service")]
     MissingProfileArn,
+    #[error("No profile selected. Please log in with `kiro-cli login` and select a profile.")]
+    ProfileNotSelected,
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {

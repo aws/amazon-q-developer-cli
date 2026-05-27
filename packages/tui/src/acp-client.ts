@@ -17,6 +17,7 @@ import {
 } from './utils/telemetry-identity';
 import { buildKasSettings } from './utils/kas-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
+import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
@@ -1492,7 +1493,6 @@ export class KasAcpClient extends BaseAcpClient {
 
     // Resolve KAS server: env var override > installed npm package
     let kasServerPath = process.env.KIRO_KAS_SERVER_PATH;
-    const kasTokenPath = process.env.KIRO_KAS_TOKEN_PATH;
     if (!kasServerPath) {
       // Walk up from this file to find node_modules/@kiro/agent
       const { existsSync } = require('node:fs');
@@ -1524,7 +1524,11 @@ export class KasAcpClient extends BaseAcpClient {
         '--experimental-wasm-modules',
         kasServerPath,
         '--transport=stdio',
-        ...(kasTokenPath ? [`--token-path=${kasTokenPath}`] : []),
+        // Host-mediated OIDC refresh. KAS calls back to this client over
+        // ACP via `_kiro/auth/getAccessToken` (handled by the capability
+        // registered on `KiroClient` below). The refresh token stays in
+        // chat-cli's SQLite store; KAS only ever sees access tokens.
+        '--auth=acp-callback',
       ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -1542,6 +1546,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient = new KiroClient({
       stream: finalStream,
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+      capabilities: [createGetAccessTokenCapability()],
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),

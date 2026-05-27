@@ -21,7 +21,6 @@ use crate::embedded_tui::{
     extract_tui_assets_if_needed,
 };
 use crate::os::Os;
-use crate::util::paths::kas_token_path;
 
 /// Launch the session according to the configured options.
 pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
@@ -139,11 +138,6 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
                 cmd.env("KIRO_USER_ID", info.user_id());
             }
 
-            let token_path = kas_token_path(os)?;
-            // Seed the file at the same path KAS will read.
-            // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
-            chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
-            cmd.env("KIRO_KAS_TOKEN_PATH", &token_path);
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 
             if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
@@ -227,7 +221,7 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
 /// Drive a non-interactive V2 session.
 async fn launch_acp_non_interactive(
-    os: &Os,
+    _os: &Os,
     agent_engine: AgentEngine,
     mode: Option<AgentMode>,
     input: String,
@@ -343,8 +337,8 @@ async fn launch_acp_non_interactive(
             Err(non_interactive_error("client-side terminal kill"))
         }
 
-        async fn ext_method(&self, _args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
-            Err(acp::Error::method_not_found())
+        async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
+            chat_cli_v2::auth::kas_token::handle_ext_method(args).await
         }
 
         async fn ext_notification(&self, _args: acp::ExtNotification) -> acp::Result<()> {
@@ -357,7 +351,6 @@ async fn launch_acp_non_interactive(
     cmd.arg("acp");
     if matches!(agent_engine, AgentEngine::Kas) {
         cmd.arg("--agent-engine=kas");
-        cmd.arg(format!("--token-path={}", kas_token_path(os)?.display()));
     }
     if trust_all_tools {
         cmd.arg("--trust-all-tools");

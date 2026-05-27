@@ -62,10 +62,7 @@ use crate::logging::{
 use crate::os::Os;
 use crate::util::CLI_BINARY_NAME;
 use crate::util::consts::env_var::KIRO_API_KEY;
-use crate::util::paths::{
-    kas_token_path,
-    logs_dir,
-};
+use crate::util::paths::logs_dir;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
@@ -152,9 +149,6 @@ pub enum RootSubcommand {
         /// Agent engine to use: "v1", "v2" (default), or "kas"
         #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::V2)]
         agent_engine: chat::AgentEngine,
-        /// Path to the KAS token file (resolved internally if not provided)
-        #[arg(long)]
-        token_path: Option<PathBuf>,
     },
     /// Start a persistent KAS agent server over WebSocket
     Serve {
@@ -321,7 +315,7 @@ impl RootSubcommand {
                     // `chat _ import-session`). Bypass auth/login, telemetry,
                     // and TUI launch; emit a single JSON line and exit.
                     if let Some(command) = args.command.take() {
-                        return command.execute();
+                        return command.execute().await;
                     }
 
                     // Handle --list-models before TUI launch
@@ -370,10 +364,9 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                     agent_engine,
-                    token_path,
                 } => {
                     if agent_engine == chat::AgentEngine::Kas {
-                        return execute_kas_acp(os, token_path).await;
+                        return execute_kas_acp(os).await;
                     }
                     use std::sync::Arc;
 
@@ -488,7 +481,7 @@ impl RootSubcommand {
                 // `chat _ import-session`). Bypass auth/login, telemetry,
                 // and TUI launch; emit a single JSON line and exit.
                 if let Some(command) = args.command.take() {
-                    return command.execute();
+                    return command.execute().await;
                 }
 
                 // Handle --list-models before TUI launch
@@ -548,10 +541,9 @@ impl RootSubcommand {
                 trust_all_tools,
                 trust_tools,
                 agent_engine,
-                token_path,
             } => {
                 if agent_engine == chat::AgentEngine::Kas {
-                    return execute_kas_acp(os, token_path).await;
+                    return execute_kas_acp(os).await;
                 }
                 use std::sync::Arc;
 
@@ -660,9 +652,10 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
 
 /// Spawn the KAS TypeScript agent as an ACP server over stdio.
 /// Extracts embedded node + KAS assets if needed, then execs
-/// `node --experimental-wasm-modules acp-server.js --transport=stdio`.
-async fn execute_kas_acp(os: &Os, token_path: Option<PathBuf>) -> Result<ExitCode> {
-    let mut child = spawn_kas_process(os, KasStdio::Inherit, token_path).await?;
+/// `node --experimental-wasm-modules acp-server.js --transport=stdio
+///  --auth=acp-callback`.
+async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
+    let mut child = spawn_kas_process(os, KasStdio::Inherit).await?;
     let status = child.wait().await?;
     Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
 }
@@ -679,16 +672,15 @@ pub(crate) enum KasStdio {
 /// Spawn a KAS process with `--transport=stdio`.
 ///
 /// Resolves the node binary and server script from `KIRO_KAS_SERVER_PATH` or
-/// embedded assets. Pins the child to the CLI auth token via `--token-path`
-/// (default `kas_token_path(os)`); pass `token_path_override` to use a
-/// different file (e.g. user-supplied `--token-path` on `kiro-cli acp`).
+/// embedded assets. KAS is launched in `--auth=acp-callback` mode: it makes
+/// the ACP client (the parent of this process) responsible for fielding
+/// `_kiro/auth/getAccessToken` whenever KAS needs an access token.
 ///
-/// Seeds the KAS file from V2's secret store before spawn.
-pub(crate) async fn spawn_kas_process(
-    os: &Os,
-    stdio: KasStdio,
-    token_path_override: Option<PathBuf>,
-) -> Result<tokio::process::Child> {
+/// Internal chat-cli ACP-client paths handle the callback via
+/// `chat_cli_v2::auth::kas_token::handle_ext_method`. External
+/// clients connecting to a `KasStdio::Inherit` spawn (e.g. `kiro-cli acp`)
+/// MUST implement the same callback themselves.
+pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio::process::Child> {
     let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
         (PathBuf::from("node"), PathBuf::from(kas_server_path))
     } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
@@ -708,12 +700,10 @@ pub(crate) async fn spawn_kas_process(
     cmd.arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=stdio")
+        // Auth: KAS calls back to this process's ACP client for tokens. See
+        // function-level docs above.
+        .arg("--auth=acp-callback")
         .kill_on_drop(true);
-
-    let token_path = token_path_override.map_or_else(|| kas_token_path(os), Ok)?;
-    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
-    chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
-    cmd.arg(format!("--token-path={}", token_path.display()));
 
     match stdio {
         KasStdio::Piped => {
@@ -748,11 +738,8 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
         bail!("KAS assets not available. Install nightly or set KIRO_KAS_SERVER_PATH.");
     };
 
-    let token_path = crate::util::paths::kas_token_path(os)?;
-    chat_cli_v2::auth::kas_token_sync::populate_kas_from_store_at_path(&token_path).await;
-
     debug!(
-        "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws (port {})",
+        "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws --auth=acp-callback (port {})",
         node_bin.display(),
         server_js.display(),
         port,
@@ -765,7 +752,7 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
         .arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=ws")
-        .arg(format!("--token-path={}", token_path.display()))
+        .arg("--auth=acp-callback")
         .env("ACP_WS_PORT", port.to_string())
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())

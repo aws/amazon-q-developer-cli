@@ -148,7 +148,7 @@ pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 const MAX_ATTEMPTS: u32 = 3;
 
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
-const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+pub(crate) const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 
 /// Single entry point for all profile ARN resolution.
 ///

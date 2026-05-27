@@ -40,8 +40,7 @@ Entry point: `packages/kiro-agent/src/server/acp-server.ts`
 
 CLI args:
 - `--transport=stdio|ws` (default: stdio)
-- `--auth=user|machine` (default: user)
-- `--token-path=<path>` (custom auth token file)
+- `--auth=user|machine|acp-callback` (default: user). `acp-callback` makes KAS request OIDC tokens from its ACP host via the `_kiro/auth/getAccessToken` extension; this is what kiro-cli passes.
 - `--region=<region>` (AWS region override)
 - `--endpoint=<url>` (Q service endpoint override)
 - `--execution-environment=local|sandbox` (default: local)
@@ -123,7 +122,7 @@ KIRO_AGENT_ENGINE=kas bun run dev --skip-rust-build
 The dev script automatically:
 - Checks CodeArtifact token expiry and refreshes if needed
 - Skips setting `KIRO_AGENT_PATH` (KAS uses `node` directly)
-- Sets `KIRO_KAS_TOKEN_PATH` to `~/.aws/sso/cache/kiro-auth-token-cli.json`
+- Sets `KIRO_CHAT_CLI_BIN` so KAS's `_kiro/auth/getAccessToken` callback can shell out to chat-cli for OIDC token resolution.
 
 For manual control or overriding the KAS server path:
 

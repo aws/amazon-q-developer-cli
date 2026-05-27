@@ -84,7 +84,7 @@ impl ExternalIdpToken {
     pub(crate) const SECRET_KEY: &'static str = "kirocli:external-idp:token";
 
     pub fn is_expired(&self) -> bool {
-        (time::OffsetDateTime::now_utc() + time::Duration::minutes(1)) > self.expires_at
+        (time::OffsetDateTime::now_utc() + crate::auth::consts::REFRESH_PRE_EXPIRY_BUFFER) > self.expires_at
     }
 
     /// Load token from database, refresh if expired

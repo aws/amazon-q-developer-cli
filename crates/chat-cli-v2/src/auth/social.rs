@@ -143,7 +143,7 @@ impl SocialToken {
 
     pub fn is_expired(&self) -> bool {
         let now = OffsetDateTime::now_utc();
-        (now + time::Duration::minutes(1)) > self.expires_at
+        (now + crate::auth::consts::REFRESH_PRE_EXPIRY_BUFFER) > self.expires_at
     }
 
     /// Refresh under the cross-process refresh lock. Re-reads the store
@@ -393,7 +393,8 @@ mod tests {
     fn test_social_token_is_expired() {
         let mut token = SocialToken {
             access_token: Secret("a".into()),
-            expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(120),
+            // Outside `REFRESH_PRE_EXPIRY_BUFFER` so `is_expired()` returns false.
+            expires_at: OffsetDateTime::now_utc() + time::Duration::hours(1),
             refresh_token: Some(Secret("r".into())),
             provider: SocialProvider::Google,
             profile_arn: None,

@@ -66,10 +66,10 @@ bun run knight-rider --kas --system
 ```
 
 **Prerequisites for KAS mode:**
-- Valid auth token at `~/.aws/sso/cache/kiro-auth-token-cli.json` (created by `kiro-cli` when you log in)
+- Logged in via `kiro-cli login` (KAS asks the host for tokens via the `_kiro/auth/getAccessToken` ACP callback; the SQLite-backed token store is the source of truth)
 - Either `@kiro/agent` installed (`bun install` after `./scripts/codeartifact-login.sh`) or `--kas-repo` pointing to a local checkout
 - Workspace packages must be built: `cd packages/twinki/packages/twinki && bun run build`
-- No Rust binary needed (unlike default mode)
+- A built `chat_cli` binary at `target/debug/chat_cli` (knight-rider sets `KIRO_CHAT_CLI_BIN` to it; the TUI's auth callback handler shells out to `chat _ get-kas-token`)
 
 **Setup (first time or after clean):**
 ```bash

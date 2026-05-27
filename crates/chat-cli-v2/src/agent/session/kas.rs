@@ -191,8 +191,8 @@ impl acp::Client for MinimalAcpClient {
         Err(acp::Error::method_not_found())
     }
 
-    async fn ext_method(&self, _: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
-        Err(acp::Error::method_not_found())
+    async fn ext_method(&self, args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
+        crate::auth::kas_token::handle_ext_method(args).await
     }
 
     async fn ext_notification(&self, _: acp::ExtNotification) -> acp::Result<()> {

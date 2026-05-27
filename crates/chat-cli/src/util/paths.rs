@@ -146,12 +146,15 @@ pub fn kas_bundle_sha256_path() -> Result<PathBuf> {
 /// Always `<data_local_dir>/kiro-cli/kiro-auth-token-cli.json`; not
 /// overridable (`KIRO_KAS_TOKEN_PATH` is KAS's own env var, ignored here).
 /// See `chat_cli_v2::auth::kas_token_sync` for the full sidecar contract.
+// TODO: remove this and `chat_cli_v2::auth::kas_token_sync` - dead code.
+#[allow(dead_code)]
 pub fn kas_token_path(os: &Os) -> Result<PathBuf> {
     kas_token_path_from_env(&os.env)
 }
 
 // `_env` is unused; signature kept for symmetry with sibling `*_from_env`
 // helpers. Resolver consults no env var (see `kas_token_path` rustdoc).
+#[allow(dead_code)]
 pub(crate) fn kas_token_path_from_env(_env: &Env) -> Result<PathBuf> {
     Ok(data_dir()?.join("kiro-auth-token-cli.json"))
 }

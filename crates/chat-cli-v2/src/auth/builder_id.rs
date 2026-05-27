@@ -70,11 +70,13 @@ pub enum OAuthFlow {
     Pkce,
 }
 
-/// Indicates if an expiration time has passed, there is a small 1 min window that is removed
-/// so the token will not expire in transit
+/// Indicates if an expiration time has passed, with a buffer of
+/// [`REFRESH_PRE_EXPIRY_BUFFER`] removed so the token will not expire
+/// in transit. See [`crate::auth::consts::REFRESH_PRE_EXPIRY_BUFFER`]
+/// for buffer rationale.
 fn is_expired(expiration_time: &OffsetDateTime) -> bool {
     let now = time::OffsetDateTime::now_utc();
-    &(now + time::Duration::minutes(1)) > expiration_time
+    &(now + crate::auth::consts::REFRESH_PRE_EXPIRY_BUFFER) > expiration_time
 }
 
 pub(crate) fn oidc_url(region: &Region) -> String {

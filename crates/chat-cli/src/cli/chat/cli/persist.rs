@@ -559,7 +559,7 @@ where
     F: FnOnce(KasAcpSessionClient) -> Fut,
     Fut: std::future::Future<Output = Result<R>>,
 {
-    let child = crate::cli::spawn_kas_process(os, crate::cli::KasStdio::Piped, None).await?;
+    let child = crate::cli::spawn_kas_process(os, crate::cli::KasStdio::Piped).await?;
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async move {

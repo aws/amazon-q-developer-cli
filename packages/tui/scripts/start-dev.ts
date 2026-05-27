@@ -95,7 +95,12 @@ function startTUI() {
     env: {
       ...process.env,
       ...(process.env.KIRO_AGENT_ENGINE !== 'kas' && { KIRO_AGENT_PATH: RUST_BIN }),
-      ...(process.env.KIRO_AGENT_ENGINE === 'kas' && { KIRO_KAS_TOKEN_PATH: `${process.env.HOME}/.aws/sso/cache/kiro-auth-token-cli.json` }),
+      // KAS in `--auth=acp-callback` mode shells out to this binary for
+      // `chat _ get-kas-token` (host-mediated OIDC refresh). Also used by
+      // /chat save and /chat load. Must be set whether or not KAS is the
+      // active engine because `KasAcpClient` registers the auth capability
+      // unconditionally.
+      KIRO_CHAT_CLI_BIN: RUST_BIN,
       JSC_numberOfGCMarkers: "1",
     }
   });
