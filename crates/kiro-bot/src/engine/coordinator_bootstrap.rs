@@ -60,25 +60,36 @@ pub async fn build_coordinator() -> Arc<dyn Coordinator> {
     }
 }
 
-/// Stub [`Dispatcher`] for Phase 1: log the inbound payload and 200 it.
-/// Phase 2 swaps in a real implementation that re-enters the Slack event
-/// pipeline.
-pub struct LoggingDispatcher;
+/// Phase 2 [`Dispatcher`]: deserialize the forwarded JSON into a
+/// `SlackPushEventCallback` and run it through the same
+/// [`crate::frontend::slack::dispatch_event`] path Slack-delivered events
+/// use. After this point the in-process `pending_approvals` lookup, the
+/// approval listener, and the per-conversation worker behave exactly as if
+/// Slack had delivered the event natively.
+pub struct BotCoreDispatcher {
+    state: Arc<crate::frontend::slack::SlackState>,
+}
+
+impl BotCoreDispatcher {
+    pub fn new(state: Arc<crate::frontend::slack::SlackState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait::async_trait]
-impl crate::engine::dispatch_server::Dispatcher for LoggingDispatcher {
+impl crate::engine::dispatch_server::Dispatcher for BotCoreDispatcher {
     async fn process_as_if_from_slack(&self, event: serde_json::Value) {
-        let kind = event
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("<missing-type>");
-        // Trace the full payload at debug; emit a single info line per event
-        // so we can grep for forwards in production.
-        warn!(
-            event_type = %kind,
-            "dispatch /dispatch received but Phase 2 handler not wired yet — payload dropped"
-        );
-        tracing::debug!(?event, "forwarded event payload");
+        let parsed: slack_morphism::prelude::SlackPushEventCallback = match serde_json::from_value(event.clone()) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(error = %e, "dispatch: failed to parse forwarded Slack event JSON");
+                tracing::debug!(?event, "unparseable payload");
+                return;
+            },
+        };
+        if let Err(e) = crate::frontend::slack::dispatch_event(parsed, &self.state).await {
+            warn!(error = %e, "dispatch: forwarded event handler returned error");
+        }
     }
 }
 
@@ -107,6 +118,45 @@ mod tests {
         assert_eq!(
             outcome,
             crate::engine::coordinator::LeaseOutcome::Acquired
+        );
+    }
+
+    /// Sanity check: the JSON shape we expect from a peer's `forward` POST
+    /// (`{"type":"event_callback","event":{...}}`) deserializes into the
+    /// slack-morphism type the dispatcher feeds into `dispatch_event`. If
+    /// slack-morphism's serde shape ever drifts from what real Slack sends,
+    /// this test breaks before production does.
+    #[test]
+    fn parses_reaction_added_payload() {
+        // Minimal `reaction_added` event_callback envelope. Field names must
+        // match slack-morphism's serde. Mirrors what handle_reaction expects.
+        let payload = serde_json::json!({
+            "token": "test",
+            "team_id": "T0",
+            "api_app_id": "A0",
+            "event": {
+                "type": "reaction_added",
+                "user": "U1",
+                "reaction": "white_check_mark",
+                "item": {
+                    "type": "message",
+                    "channel": "C1",
+                    "ts": "1700000000.000100"
+                },
+                "item_user": "U2",
+                "event_ts": "1700000000.000200"
+            },
+            "type": "event_callback",
+            "event_id": "Ev1",
+            "event_time": 1700000000,
+            "authed_users": []
+        });
+        let parsed: Result<slack_morphism::prelude::SlackPushEventCallback, _> =
+            serde_json::from_value(payload);
+        assert!(
+            parsed.is_ok(),
+            "reaction_added payload must deserialize: {:?}",
+            parsed.err()
         );
     }
 }

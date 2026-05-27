@@ -278,11 +278,21 @@ pub async fn on_push(
     let guard = states.read().await;
     let state = guard.get_user_state::<SlackState>().ok_or("no state")?.clone();
     drop(guard);
+    dispatch_event(event, &state).await
+}
 
+/// Drive a `SlackPushEventCallback` through the same per-event handlers
+/// `on_push` uses. Exposed so a forwarded event arriving at this task's
+/// `/dispatch` endpoint can be processed exactly as if Slack had delivered
+/// it natively.
+pub async fn dispatch_event(
+    event: SlackPushEventCallback,
+    state: &SlackState,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match event.event {
-        SlackEventCallbackBody::Message(msg) => handle_message(msg, &state).await?,
-        SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, &state).await?,
-        SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, &state).await?,
+        SlackEventCallbackBody::Message(msg) => handle_message(msg, state).await?,
+        SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, state).await?,
+        SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, state).await?,
         _ => {},
     }
     Ok(())
