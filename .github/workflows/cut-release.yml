@@ -19,6 +19,7 @@ jobs:
   cut:
     name: Create Release Branches
     runs-on: ubuntu-latest
+    environment: gamma
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,15 +40,21 @@ jobs:
           set -euo pipefail
           BRANCH="release/${{ inputs.version }}"
           TAG="${{ inputs.base_tag }}"
+          TAG_SHA=$(git rev-parse "$TAG")
 
           if git ls-remote --heads origin "$BRANCH" | grep -q .; then
-            echo "::error::Branch $BRANCH already exists in chat repo"
-            exit 1
+            BRANCH_SHA=$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')
+            if [[ "$BRANCH_SHA" == "$TAG_SHA" ]]; then
+              echo "✅ Branch $BRANCH already exists at $TAG — nothing to do"
+            else
+              echo "::error::Branch $BRANCH already exists but points to $BRANCH_SHA (expected $TAG_SHA from $TAG)"
+              exit 1
+            fi
+          else
+            git branch "$BRANCH" "$TAG"
+            git push origin "$BRANCH"
+            echo "✅ Created $BRANCH from $TAG in chat repo"
           fi
-
-          git branch "$BRANCH" "$TAG"
-          git push origin "$BRANCH"
-          echo "✅ Created $BRANCH from $TAG in chat repo"
 
       - name: Create release branch (autocomplete repo)
         uses: actions/github-script@v7
@@ -57,34 +64,40 @@ jobs:
             const branch = 'release/${{ inputs.version }}';
             const tag = '${{ inputs.base_tag }}';
 
-            // Check if branch already exists
-            try {
-              await github.rest.repos.getBranch({
-                owner: 'kiro-team',
-                repo: 'kiro-cli-autocomplete',
-                branch: branch
-              });
-              core.setFailed(`Branch ${branch} already exists in autocomplete repo`);
-              return;
-            } catch (e) {
-              if (e.status !== 404) throw e;
-            }
-
             // Get the tag's commit SHA
-            const { data: ref } = await github.rest.git.getRef({
+            const { data: tagRef } = await github.rest.git.getRef({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
               ref: `tags/${tag}`
             });
+            const tagSha = tagRef.object.sha;
+
+            // Check if branch already exists
+            try {
+              const { data: branchData } = await github.rest.repos.getBranch({
+                owner: 'kiro-team',
+                repo: 'kiro-cli-autocomplete',
+                branch: branch
+              });
+              if (branchData.commit.sha === tagSha) {
+                core.info(`✅ Branch ${branch} already exists at ${tag} — nothing to do`);
+                return;
+              } else {
+                core.setFailed(`Branch ${branch} already exists but points to ${branchData.commit.sha} (expected ${tagSha} from ${tag})`);
+                return;
+              }
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
 
             // Create the branch
             await github.rest.git.createRef({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
               ref: `refs/heads/${branch}`,
-              sha: ref.object.sha
+              sha: tagSha
             });
-            core.info(`✅ Created ${branch} from ${tag} (${ref.object.sha}) in autocomplete repo`);
+            core.info(`✅ Created ${branch} from ${tag} (${tagSha}) in autocomplete repo`);
 
       - name: Summary
         run: |
