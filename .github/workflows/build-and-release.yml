@@ -1,17 +1,8 @@
-name: "1.0 Tag-Based Build"
+name: "Release SOP: 2.0 Build and Trigger Release"
 
 on:
   schedule:
     - cron: "21 6 * * *"  # nightly on main
-  push:
-    tags:
-      - "v*"
-  workflow_call:
-    inputs:
-      tag:
-        description: "Tag to build from"
-        type: string
-        required: true
   workflow_dispatch:
     inputs:
       increment:
@@ -48,8 +39,7 @@ jobs:
   tag:
     name: Create Tag
     runs-on: ubuntu-latest
-    # Skip tag creation when triggered by a tag push (tag already exists)
-    if: github.event_name != 'push' && (github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli')
+    if: github.event_name != 'schedule' || github.repository == 'kiro-team/kiro-cli'
     outputs:
       version: ${{ steps.compute.outputs.version }}
       tag: ${{ steps.compute.outputs.tag }}
@@ -148,10 +138,7 @@ jobs:
   prepare:
     name: Derive Release Metadata
     needs: [tag]
-    # Run if: tag push with created=true (skip deletions) OR tag job succeeded
-    if: |
-      always() &&
-      ((github.event_name == 'push' && github.event.created) || (needs.tag.result == 'success' && needs.tag.outputs.skipped != 'true'))
+    if: needs.tag.result == 'success' && needs.tag.outputs.skipped != 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -171,12 +158,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Resolve tag: from tag job output, or from the push event ref
-          if [[ -n "${{ needs.tag.outputs.tag }}" ]]; then
-            TAG="${{ needs.tag.outputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
+          TAG="${{ needs.tag.outputs.tag }}"
           VERSION="${TAG#v}"
 
           # Determine channel (downstream builds use this for KAS bundling and autocomplete routing)
@@ -290,22 +272,22 @@ jobs:
         with:
           github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
           script: |
-            const isNightly = '${{ needs.prepare.outputs.channel }}' === 'nightly';
-            const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
+            const channel = '${{ needs.prepare.outputs.channel }}';
+            const releaseQuality = channel === 'nightly' ? 'nightly' : 'beta';
 
             const inputs = {
-              release_quality: '${{ needs.prepare.outputs.channel }}',
+              release_quality: releaseQuality,
               chat_binary_commit: '${{ needs.prepare.outputs.commit_sha }}',
               chat_version: '${{ needs.prepare.outputs.version }}',
               chat_build_timestamp: '${{ needs.prepare.outputs.build_timestamp }}',
               trigger_source: 'chat-build'
             };
 
-            core.info(`Dispatching ${workflowId} with ${JSON.stringify(inputs)}`);
+            core.info(`Dispatching release-non-prod.yml with ${JSON.stringify(inputs)}`);
             await github.rest.actions.createWorkflowDispatch({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
-              workflow_id: workflowId,
+              workflow_id: 'release-non-prod.yml',
               ref: '${{ needs.prepare.outputs.branch_name }}',
               inputs: inputs
             });

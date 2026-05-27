@@ -1,0 +1,104 @@
+name: "Release SOP: 1.0 Cut Release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 2.5.0)"
+        type: string
+        required: true
+      base_tag:
+        description: "Base tag to branch from (e.g. v2.4.1-nightly.14)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    name: Create Release Branches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.base_tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]]; then
+            echo "::error::base_tag must be a nightly (v2.4.1-nightly.12) or stable (v2.5.0) tag, got: $TAG"
+            exit 1
+          fi
+
+      - name: Create release branch (chat repo)
+        run: |
+          set -euo pipefail
+          BRANCH="release/${{ inputs.version }}"
+          TAG="${{ inputs.base_tag }}"
+
+          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
+            echo "::error::Branch $BRANCH already exists in chat repo"
+            exit 1
+          fi
+
+          git branch "$BRANCH" "$TAG"
+          git push origin "$BRANCH"
+          echo "✅ Created $BRANCH from $TAG in chat repo"
+
+      - name: Create release branch (autocomplete repo)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
+          script: |
+            const branch = 'release/${{ inputs.version }}';
+            const tag = '${{ inputs.base_tag }}';
+
+            // Check if branch already exists
+            try {
+              await github.rest.repos.getBranch({
+                owner: 'kiro-team',
+                repo: 'kiro-cli-autocomplete',
+                branch: branch
+              });
+              core.setFailed(`Branch ${branch} already exists in autocomplete repo`);
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
+            // Get the tag's commit SHA
+            const { data: ref } = await github.rest.git.getRef({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              ref: `tags/${tag}`
+            });
+
+            // Create the branch
+            await github.rest.git.createRef({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              ref: `refs/heads/${branch}`,
+              sha: ref.object.sha
+            });
+            core.info(`✅ Created ${branch} from ${tag} (${ref.object.sha}) in autocomplete repo`);
+
+      - name: Summary
+        run: |
+          {
+            echo "## Release Branch Created"
+            echo
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Version** | ${{ inputs.version }} |"
+            echo "| **Base tag** | ${{ inputs.base_tag }} |"
+            echo "| **Chat branch** | \`release/${{ inputs.version }}\` |"
+            echo "| **Autocomplete branch** | \`release/${{ inputs.version }}\` |"
+            echo
+            echo "### Next steps"
+            echo "1. Cherry-pick fixes to \`release/${{ inputs.version }}\`"
+            echo "2. Run **Release SOP: 2.0 Build and Trigger Release** with \`increment=rc\`, \`ref=release/${{ inputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
