@@ -67,9 +67,16 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
     (termProgram === 'iTerm.app' ||
       termProgram === 'WezTerm' ||
       termProgram === 'Hyper' ||
-      isKitty() ||
       isGhostty() ||
-      terminalEmulator === 'JetBrains-JediTerm');
+      termProgram === 'Alacritty' ||
+      termProgram === 'vscode' ||
+      termProgram === 'foot' ||
+      termProgram === 'contour' ||
+      isKitty() ||
+      terminalEmulator === 'JetBrains-JediTerm' ||
+      process.env.WT_SESSION !== undefined ||
+      process.env.VTE_VERSION !== undefined ||
+      isTmux);
   cache.set('hyperlinks', supportsHyperlinks);
 
   // OSC 9;4 progress indicator (supported by iTerm2, WezTerm, Windows Terminal)

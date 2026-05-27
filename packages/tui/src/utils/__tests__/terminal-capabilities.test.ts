@@ -120,7 +120,7 @@ describe('hasCapability', () => {
     });
 
     it('is false for unsupported terminal', () => {
-      process.env.TERM_PROGRAM = 'Alacritty';
+      process.env.TERM_PROGRAM = 'SomeUnknownTerminal';
       expect(hasCapability('hyperlinks')).toBe(false);
     });
   });
@@ -149,8 +149,8 @@ describe('hasCapability', () => {
   });
 
   it('resetCapabilityCache allows re-detection with changed env', () => {
-    process.env.TERM_PROGRAM = 'Alacritty';
-    expect(hasCapability('synchronizedOutput')).toBe(true);
+    process.env.TERM_PROGRAM = 'SomeUnknownTerminal';
+    expect(hasCapability('synchronizedOutput')).toBe(false);
     expect(hasCapability('hyperlinks')).toBe(false);
 
     resetCapabilityCache();
@@ -235,7 +235,7 @@ describe('hyperlink', () => {
   });
 
   it('returns plain text when not capable', () => {
-    process.env.TERM_PROGRAM = 'Alacritty';
+    process.env.TERM_PROGRAM = 'SomeUnknownTerminal';
     const result = hyperlink('https://example.com', 'Click here');
     expect(result).toBe('Click here');
   });
