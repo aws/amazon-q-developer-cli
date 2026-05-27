@@ -301,7 +301,6 @@ pub struct ModeChangedNotification {
     pub session_id: Option<String>,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
