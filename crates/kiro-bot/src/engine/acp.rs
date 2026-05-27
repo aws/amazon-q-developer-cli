@@ -254,8 +254,12 @@ impl acp::Client for AcpClient {
                     if tx.send(req).is_err() {
                         return Ok(cancelled());
                     }
-                    match reply_rx.await {
-                        Ok(ApprovalResponse::Selected(option_id)) => {
+                    // Bound the wait so a missed reaction (e.g. delivered to a
+                    // peer task whose pending_approvals doesn't have the entry)
+                    // surfaces as Cancelled instead of hanging until the idle
+                    // reaper kills the ACP child.
+                    match tokio::time::timeout(Duration::from_secs(600), reply_rx).await {
+                        Ok(Ok(ApprovalResponse::Selected(option_id))) => {
                             Ok(selected(acp::PermissionOptionId(option_id.into())))
                         },
                         _ => Ok(cancelled()),
