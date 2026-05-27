@@ -53,7 +53,7 @@ pub enum KnowledgeSubcommand {
     #[command(alias = "rm")]
     Remove { path: String },
     /// Update a file or directory in knowledge base
-    Update { path: String },
+    Update { path: Option<String> },
     /// Remove all knowledge base entries
     Clear,
     /// Cancel a background operation
@@ -133,7 +133,8 @@ impl KnowledgeSubcommand {
                 index_type,
             } => Self::handle_add(os, session, name, path, include, exclude, index_type).await,
             KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, session, path).await,
-            KnowledgeSubcommand::Update { path } => Self::handle_update(os, session, path).await,
+            KnowledgeSubcommand::Update { path: Some(path) } => Self::handle_update(os, session, path).await,
+            KnowledgeSubcommand::Update { path: None } => Self::handle_update_all(os, session).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(os, session).await,
             KnowledgeSubcommand::Cancel { operation_id } => {
                 Self::handle_cancel(os, session, operation_id.as_deref()).await
@@ -362,6 +363,38 @@ impl KnowledgeSubcommand {
                     Ok(message) => OperationResult::Info(message),
                     Err(e) => OperationResult::Error(format!("Failed to update: {e}")),
                 }
+            },
+            Err(e) => OperationResult::Error(e),
+        }
+    }
+
+    /// Handle update-all operation (no path provided)
+    async fn handle_update_all(os: &Os, session: &ChatSession) -> OperationResult {
+        let agent = Self::get_agent(session);
+        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
+            Ok(store) => store,
+            Err(e) => {
+                return OperationResult::Error(format!("Error accessing knowledge base directory: {e}"));
+            },
+        };
+        let mut store = async_knowledge_store.lock().await;
+
+        match store.update_all().await {
+            Ok(results) => {
+                let mut lines = Vec::new();
+                for (name, result) in &results {
+                    match result {
+                        Ok(_) => lines.push(format!("  ✓ {name}")),
+                        Err(e) => lines.push(format!("  ✗ {name}: {e}")),
+                    }
+                }
+                let succeeded = results.iter().filter(|(_, r)| r.is_ok()).count();
+                let total = results.len();
+                lines.insert(0, format!("Updating {total} knowledge bases:"));
+                if succeeded < total {
+                    lines.push(format!("\n{succeeded}/{total} succeeded."));
+                }
+                OperationResult::Info(lines.join("\n"))
             },
             Err(e) => OperationResult::Error(e),
         }
@@ -956,6 +989,30 @@ mod tests {
             assert_eq!(exclude, vec!["node_modules/**", "target/**", ".git/**"]);
         } else {
             panic!("Expected Add subcommand");
+        }
+    }
+
+    #[test]
+    fn test_update_with_path() {
+        let result = TestCli::try_parse_from(["test", "update", "/some/path"]);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        if let KnowledgeSubcommand::Update { path } = cli.knowledge {
+            assert_eq!(path.as_deref(), Some("/some/path"));
+        } else {
+            panic!("Expected Update subcommand");
+        }
+    }
+
+    #[test]
+    fn test_update_without_path() {
+        let result = TestCli::try_parse_from(["test", "update"]);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        if let KnowledgeSubcommand::Update { path } = cli.knowledge {
+            assert!(path.is_none());
+        } else {
+            panic!("Expected Update subcommand");
         }
     }
 }

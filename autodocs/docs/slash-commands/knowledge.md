@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-03-06
+  commit: 0551dddb
   status: validated
   testable_headless: false
   category: slash_command
@@ -64,11 +64,13 @@ Remove entry by path.
 
 ### update
 
-Re-index existing entry.
+Re-index existing entry or all entries.
 
 ```
-/knowledge update <path>
+/knowledge update [path]
 ```
+
+Without a path, updates all knowledge bases that have source paths. Shows success/failure for each.
 
 ### clear
 
@@ -126,7 +128,21 @@ Prompts for additional options (include/exclude patterns, index type).
 
 Lists all stored entries with status.
 
-### Example 3: Remove Entry
+### Example 3: Update All Knowledge Bases
+
+```
+/knowledge update
+```
+
+Output:
+```
+Updated 2/3 knowledge bases:
+  ✓ rust-docs
+  ✓ api-specs
+  ✗ old-docs: Source path no longer exists
+```
+
+### Example 4: Remove Entry
 
 ```
 /knowledge remove docs/

@@ -586,6 +586,26 @@ impl KnowledgeStore {
         }
     }
 
+    /// Update all contexts that have a source path
+    pub async fn update_all(&mut self) -> Result<Vec<(String, Result<String, String>)>, String> {
+        let contexts = self.agent_client.get_contexts().await;
+        let updatable: Vec<_> = contexts
+            .into_iter()
+            .filter_map(|c| c.source_path.clone().map(|p| (c.name.clone(), p)))
+            .collect();
+
+        if updatable.is_empty() {
+            return Err("No knowledge bases with source paths found to update".to_string());
+        }
+
+        let mut results = Vec::new();
+        for (name, path) in updatable {
+            let result = self.update_by_path(&path).await;
+            results.push((name, result));
+        }
+        Ok(results)
+    }
+
     /// Update context by ID
     pub async fn update_context_by_id(&mut self, context_id: &str, path_str: &str) -> Result<String, String> {
         let contexts = self.get_all().await.map_err(|e| e.clone())?;
