@@ -90,6 +90,7 @@ type EffectName =
   | 'showSessionId'
   | 'showStatsPanel'
   | 'switchToGuideAgent'
+  | 'switchToPlanMode'
   | 'rewindAction';
 
 /**
@@ -100,7 +101,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   help: 'showHelpPanel',
   model: 'updateModel',
   agent: 'updateAgent',
-  plan: 'switchToGuideAgent',
+  plan: 'switchToPlanMode',
   context: 'showContextPanel',
   usage: 'showUsagePanel',
   prompts: 'executePrompt',
@@ -1266,6 +1267,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   switchToGuideAgent: (result, ctx) => {
+    const data = result?.data as
+      | { agent?: { name: string }; prompt?: string }
+      | undefined;
+    if (data?.agent) {
+      ctx.setCurrentAgent(data.agent);
+    }
+    if (data?.prompt) {
+      ctx.sendMessage(data.prompt);
+    }
+  },
+
+  switchToPlanMode: (result, ctx) => {
     const data = result?.data as
       | { agent?: { name: string }; prompt?: string }
       | undefined;
