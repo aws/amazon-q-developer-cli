@@ -169,3 +169,135 @@ impl Knowledge {
         provider.execute(self).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(Knowledge::name(), BuiltInToolName::Knowledge));
+        assert!(!Knowledge::description().is_empty());
+        assert!(!Knowledge::input_schema().is_empty());
+    }
+
+    #[test]
+    fn test_serde_show() {
+        let json = r#"{"command":"show"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        assert!(matches!(k, Knowledge::Show));
+    }
+
+    #[test]
+    fn test_serde_status() {
+        let json = r#"{"command":"status"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        assert!(matches!(k, Knowledge::Status));
+    }
+
+    #[test]
+    fn test_serde_clear() {
+        let json = r#"{"command":"clear"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        assert!(matches!(k, Knowledge::Clear));
+    }
+
+    #[test]
+    fn test_serde_add() {
+        let json = r#"{"command":"add","name":"mykb","value":"data"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        match k {
+            Knowledge::Add { name, value } => {
+                assert_eq!(name, "mykb");
+                assert_eq!(value, "data");
+            },
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_serde_search_minimal() {
+        let json = r#"{"command":"search","query":"q"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        match k {
+            Knowledge::Search { query, .. } => assert_eq!(query, "q"),
+            _ => panic!("expected Search"),
+        }
+    }
+
+    #[test]
+    fn test_serde_search_with_options() {
+        let json = r#"{
+            "command":"search",
+            "query":"q",
+            "context_id":"x",
+            "limit":10,
+            "offset":5,
+            "snippet_length":50,
+            "sort_by":"path",
+            "file_type":"Code"
+        }"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        match k {
+            Knowledge::Search {
+                query,
+                context_id,
+                limit,
+                offset,
+                snippet_length,
+                sort_by,
+                file_type,
+            } => {
+                assert_eq!(query, "q");
+                assert_eq!(context_id, Some("x".to_string()));
+                assert_eq!(limit, Some(10));
+                assert_eq!(offset, Some(5));
+                assert_eq!(snippet_length, Some(50));
+                assert_eq!(sort_by, Some("path".to_string()));
+                assert_eq!(file_type, Some("Code".to_string()));
+            },
+            _ => panic!("expected Search"),
+        }
+    }
+
+    #[test]
+    fn test_serde_remove() {
+        let json = r#"{"command":"remove","name":"x"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        match k {
+            Knowledge::Remove { name, context_id, path } => {
+                assert_eq!(name, "x");
+                assert_eq!(context_id, "");
+                assert_eq!(path, "");
+            },
+            _ => panic!("expected Remove"),
+        }
+    }
+
+    #[test]
+    fn test_serde_update() {
+        let json = r#"{"command":"update","path":"/p","name":"n"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        match k {
+            Knowledge::Update { path, name, .. } => {
+                assert_eq!(path, "/p");
+                assert_eq!(name, "n");
+            },
+            _ => panic!("expected Update"),
+        }
+    }
+
+    #[test]
+    fn test_serde_cancel() {
+        let json = r#"{"command":"cancel"}"#;
+        let k: Knowledge = serde_json::from_str(json).unwrap();
+        assert!(matches!(k, Knowledge::Cancel { operation_id: None }));
+
+        let json2 = r#"{"command":"cancel","operation_id":"abc"}"#;
+        let k2: Knowledge = serde_json::from_str(json2).unwrap();
+        match k2 {
+            Knowledge::Cancel { operation_id } => assert_eq!(operation_id, Some("abc".to_string())),
+            _ => panic!("expected Cancel"),
+        }
+    }
+}

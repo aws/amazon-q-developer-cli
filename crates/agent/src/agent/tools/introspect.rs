@@ -547,4 +547,75 @@ mod tests {
 
         assert_eq!(Introspect::get_doc_path(&result), "unknown");
     }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(Introspect::name(), BuiltInToolName::Introspect));
+        assert!(!Introspect::description().is_empty());
+        assert!(!Introspect::input_schema().is_empty());
+    }
+
+    #[test]
+    fn test_introspect_serde_query_only() {
+        let json = r#"{"query": "what does /chat do"}"#;
+        let i: Introspect = serde_json::from_str(json).unwrap();
+        assert_eq!(i.query.as_deref(), Some("what does /chat do"));
+        assert!(i.doc_path.is_none());
+    }
+
+    #[test]
+    fn test_introspect_serde_doc_path_only() {
+        let json = r#"{"doc_path": "features/x.md"}"#;
+        let i: Introspect = serde_json::from_str(json).unwrap();
+        assert!(i.query.is_none());
+        assert_eq!(i.doc_path.as_deref(), Some("features/x.md"));
+    }
+
+    #[test]
+    fn test_introspect_serde_empty() {
+        let json = r#"{}"#;
+        let i: Introspect = serde_json::from_str(json).unwrap();
+        assert!(i.query.is_none());
+        assert!(i.doc_path.is_none());
+    }
+
+    #[test]
+    fn test_introspect_serde_both() {
+        let json = r#"{"query":"q","doc_path":"p"}"#;
+        let i: Introspect = serde_json::from_str(json).unwrap();
+        assert_eq!(i.query.as_deref(), Some("q"));
+        assert_eq!(i.doc_path.as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn test_get_all_docs_returns_string() {
+        let docs = Introspect::get_all_docs();
+        assert!(!docs.is_empty());
+    }
+
+    #[test]
+    fn test_get_doc_by_path_invalid() {
+        let result = Introspect::get_doc_by_path("nonexistent/totally/fake.md");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_introspect_execute_no_query() {
+        let i = Introspect {
+            query: None,
+            doc_path: None,
+        };
+        let result = i.execute().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_introspect_execute_invalid_path() {
+        let i = Introspect {
+            query: None,
+            doc_path: Some("nonexistent.md".to_string()),
+        };
+        let result = i.execute().await;
+        assert!(result.is_err());
+    }
 }

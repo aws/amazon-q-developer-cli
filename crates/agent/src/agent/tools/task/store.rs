@@ -239,3 +239,161 @@ pub fn task_store_dir(session_id: &str) -> PathBuf {
     };
     base.join(session_id).join("tasks")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_task(id: &str, status: TaskStatus) -> Task {
+        Task {
+            id: id.to_string(),
+            subject: format!("Subject {id}"),
+            description: "desc".to_string(),
+            status,
+            metadata: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_task_store_dir_with_env() {
+        // Save and restore env var
+        let prev = std::env::var("KIRO_TEST_SESSIONS_DIR").ok();
+        unsafe {
+            std::env::set_var("KIRO_TEST_SESSIONS_DIR", "/tmp/testkiro");
+        }
+        let result = task_store_dir("session1");
+        assert_eq!(result, PathBuf::from("/tmp/testkiro/session1/tasks"));
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("KIRO_TEST_SESSIONS_DIR", v),
+                None => std::env::remove_var("KIRO_TEST_SESSIONS_DIR"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_task_store_creation_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        assert_eq!(store.allocate_id(), "1");
+        assert_eq!(store.allocate_id(), "2");
+    }
+
+    #[test]
+    fn test_task_store_format_context_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        let result = store.format_context().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_task_store_write_and_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        store.write_task(&make_task("2", TaskStatus::Completed)).unwrap();
+        let summaries = store.list().unwrap();
+        assert_eq!(summaries.len(), 2);
+    }
+
+    #[test]
+    fn test_task_store_list_excludes_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        // Deleted should not appear
+        let summaries = store.list().unwrap();
+        assert_eq!(summaries.len(), 1);
+    }
+
+    #[test]
+    fn test_task_store_format_context_with_tasks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        store.write_task(&make_task("2", TaskStatus::Completed)).unwrap();
+        let context = store.format_context().unwrap().unwrap();
+        assert!(context.contains("Active Task List"));
+        assert!(context.contains("Progress: 1/2"));
+        assert!(context.contains("[ ] #1"));
+        assert!(context.contains("[✓] #2"));
+        assert!(context.contains("(NEXT)"));
+    }
+
+    #[test]
+    fn test_task_store_update_status() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        let updated = store.update_status("1", TaskStatus::Completed).unwrap();
+        assert_eq!(updated.status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn test_task_store_update_status_to_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        let updated = store.update_status("1", TaskStatus::Deleted).unwrap();
+        assert_eq!(updated.status, TaskStatus::Deleted);
+        // Task file should be removed
+        let summaries = store.list().unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn test_task_store_cleanup_all() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        store.write_task(&make_task("2", TaskStatus::Completed)).unwrap();
+        store.cleanup_all().unwrap();
+        let summaries = store.list().unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn test_task_store_cleanup_if_all_completed_yes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Completed)).unwrap();
+        store.write_task(&make_task("2", TaskStatus::Completed)).unwrap();
+        store.cleanup_if_all_completed().unwrap();
+        let summaries = store.list().unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn test_task_store_cleanup_if_all_completed_no() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("1", TaskStatus::Pending)).unwrap();
+        store.write_task(&make_task("2", TaskStatus::Completed)).unwrap();
+        store.cleanup_if_all_completed().unwrap();
+        // Should not clean up because not all are completed
+        let summaries = store.list().unwrap();
+        assert_eq!(summaries.len(), 2);
+    }
+
+    #[test]
+    fn test_task_store_cleanup_if_all_completed_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        // Empty task list shouldn't cause cleanup
+        store.cleanup_if_all_completed().unwrap();
+        let summaries = store.list().unwrap();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn test_task_store_recover_next_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TaskStore::with_dir(tmp.path().to_path_buf());
+        store.write_task(&make_task("3", TaskStatus::Pending)).unwrap();
+        store.write_task(&make_task("7", TaskStatus::Pending)).unwrap();
+        // Re-create the store - should recover next_id past existing ones
+        let new_store = TaskStore::with_dir(tmp.path().to_path_buf());
+        assert_eq!(new_store.allocate_id(), "8");
+    }
+}

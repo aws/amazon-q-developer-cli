@@ -659,3 +659,76 @@ impl Clone for InnerService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_auth_constants() {
+        assert_eq!(MCP_AUTH_REFRESH_FAILED, "MCP_AUTH_REFRESH_FAILED");
+        assert_eq!(MCP_AUTH_REAUTH_FAILED, "MCP_AUTH_REAUTH_FAILED");
+    }
+
+    #[test]
+    fn test_shutdown_timeout_constant() {
+        assert_eq!(SHUTDOWN_TIMEOUT, Duration::from_secs(3));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_service_new() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec!["hello".to_string()],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("test-server".to_string(), cfg, PathBuf::from("/tmp/cred"), tx);
+        assert_eq!(service.server_name, "test-server");
+    }
+
+    #[test]
+    fn test_launch_metadata_creation() {
+        let m = LaunchMetadata {
+            serve_time_taken: Duration::from_secs(1),
+            tools: None,
+            list_tools_duration: None,
+            prompts: None,
+            list_prompts_duration: None,
+        };
+        assert_eq!(m.serve_time_taken, Duration::from_secs(1));
+        assert!(m.tools.is_none());
+    }
+
+    #[test]
+    fn test_launch_metadata_with_tools() {
+        let m = LaunchMetadata {
+            serve_time_taken: Duration::from_millis(500),
+            tools: Some(vec![]),
+            list_tools_duration: Some(Duration::from_millis(100)),
+            prompts: Some(vec![]),
+            list_prompts_duration: Some(Duration::from_millis(50)),
+        };
+        assert!(m.tools.is_some());
+        assert_eq!(m.list_tools_duration, Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn test_launch_metadata_clone() {
+        let m = LaunchMetadata {
+            serve_time_taken: Duration::from_secs(1),
+            tools: None,
+            list_tools_duration: None,
+            prompts: None,
+            list_prompts_duration: None,
+        };
+        let m2 = m.clone();
+        assert_eq!(m.serve_time_taken, m2.serve_time_taken);
+    }
+}

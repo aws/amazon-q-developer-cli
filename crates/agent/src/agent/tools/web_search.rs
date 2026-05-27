@@ -72,3 +72,46 @@ impl WebSearch {
         Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(result)]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(WebSearch::name(), BuiltInToolName::WebSearch));
+        assert!(!WebSearch::description().is_empty());
+        assert!(!WebSearch::input_schema().is_empty());
+        let aliases = WebSearch::aliases().unwrap();
+        assert!(aliases.contains(&"web_search"));
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        let search = WebSearch {
+            query: "rust programming".to_string(),
+        };
+        let json = serde_json::to_string(&search).unwrap();
+        let parsed: WebSearch = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.query, search.query);
+    }
+
+    #[test]
+    fn test_deserialize_query_only() {
+        let json = r#"{"query":"my search"}"#;
+        let s: WebSearch = serde_json::from_str(json).unwrap();
+        assert_eq!(s.query, "my search");
+    }
+
+    #[test]
+    fn test_max_query_length_const() {
+        assert_eq!(MAX_QUERY_LENGTH, 200);
+    }
+
+    #[test]
+    fn test_description_constants() {
+        assert!(WEB_SEARCH_DESCRIPTION.contains("WebSearch"));
+        assert!(WEB_SEARCH_SCHEMA.contains("query"));
+        assert!(WEB_SEARCH_SCHEMA.contains("maxLength"));
+    }
+}

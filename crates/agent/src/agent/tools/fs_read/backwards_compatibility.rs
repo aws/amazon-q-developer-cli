@@ -112,3 +112,68 @@ where
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_to_tool_ls() {
+        let legacy = LegacyTool {
+            tool_use_purpose: Some("List files".to_string()),
+            kind: LegacyToolKind::BuiltIn(LegacyBuiltInTool::Ls(LegacyLs {
+                path: "/tmp".to_string(),
+                depth: Some(2),
+                ignore: Some(vec!["*.tmp".to_string()]),
+            })),
+        };
+        let tool: Tool = legacy.into();
+        assert_eq!(tool.tool_use_purpose, Some("List files".to_string()));
+        match &tool.kind {
+            ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) => {
+                assert_eq!(fs_read.operations.len(), 1);
+                match &fs_read.operations[0] {
+                    FsReadOperation::Directory(d) => {
+                        assert_eq!(d.path, "/tmp");
+                        assert_eq!(d.depth, Some(2));
+                    },
+                    _ => panic!("expected Directory"),
+                }
+            },
+            _ => panic!("expected FileRead"),
+        }
+    }
+
+    #[test]
+    fn test_legacy_to_tool_image_read() {
+        let legacy = LegacyTool {
+            tool_use_purpose: None,
+            kind: LegacyToolKind::BuiltIn(LegacyBuiltInTool::ImageRead(LegacyImageRead {
+                paths: vec!["/img.png".to_string()],
+            })),
+        };
+        let tool: Tool = legacy.into();
+        match &tool.kind {
+            ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) => match &fs_read.operations[0] {
+                FsReadOperation::Image(_) => {},
+                _ => panic!("expected Image op"),
+            },
+            _ => panic!("expected FileRead"),
+        }
+    }
+
+    #[test]
+    fn test_legacy_to_tool_file_read() {
+        let legacy = LegacyTool {
+            tool_use_purpose: None,
+            kind: LegacyToolKind::BuiltIn(LegacyBuiltInTool::FileRead(LegacyFsRead { ops: vec![] })),
+        };
+        let tool: Tool = legacy.into();
+        match &tool.kind {
+            ToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) => {
+                assert_eq!(fs_read.operations.len(), 0);
+            },
+            _ => panic!("expected FileRead"),
+        }
+    }
+}

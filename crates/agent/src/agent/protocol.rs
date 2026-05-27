@@ -648,4 +648,270 @@ mod tests {
             PermissionOptionId::Custom("my_custom_option".to_string()).to_string()
         );
     }
+
+    #[test]
+    fn test_permission_option_id_is_allow() {
+        assert!(PermissionOptionId::AllowOnce.is_allow());
+        assert!(PermissionOptionId::AllowAlwaysTool.is_allow());
+        assert!(PermissionOptionId::AllowAlwaysToolArgs.is_allow());
+        assert!(!PermissionOptionId::RejectOnce.is_allow());
+        assert!(!PermissionOptionId::Custom("x".to_string()).is_allow());
+    }
+
+    #[test]
+    fn test_permission_option_id_is_reject() {
+        assert!(PermissionOptionId::RejectOnce.is_reject());
+        assert!(PermissionOptionId::RejectAlwaysTool.is_reject());
+        assert!(PermissionOptionId::RejectAlwaysToolArgs.is_reject());
+        assert!(!PermissionOptionId::AllowOnce.is_reject());
+        assert!(!PermissionOptionId::Custom("x".to_string()).is_reject());
+    }
+
+    #[test]
+    fn test_permission_option_hint_serde() {
+        for hint in [
+            PermissionOptionHint::AllowOnce,
+            PermissionOptionHint::AllowAlways,
+            PermissionOptionHint::RejectOnce,
+            PermissionOptionHint::RejectAlways,
+        ] {
+            let json = serde_json::to_string(&hint).unwrap();
+            let parsed: PermissionOptionHint = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, hint);
+        }
+    }
+
+    #[test]
+    fn test_compaction_event_serde() {
+        for ev in [
+            CompactionEvent::Started,
+            CompactionEvent::Completed,
+            CompactionEvent::Failed { error: "x".to_string() },
+        ] {
+            let json = serde_json::to_string(&ev).unwrap();
+            let _: CompactionEvent = serde_json::from_str(&json).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_tool_call_failure_reason_serde() {
+        for r in [
+            ToolCallFailureReason::ParseError,
+            ToolCallFailureReason::PermissionDenied,
+            ToolCallFailureReason::HookRejected,
+        ] {
+            let json = serde_json::to_string(&r).unwrap();
+            let _: ToolCallFailureReason = serde_json::from_str(&json).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_clear_event() {
+        let e = ClearEvent;
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(!json.is_empty());
+    }
+
+    #[test]
+    fn test_approval_result_equality() {
+        let a = ApprovalResult {
+            option_id: PermissionOptionId::AllowOnce,
+            reason: None,
+            trust_option: None,
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_agent_event_from_summary() {
+        use crate::agent::tools::summary::Summary;
+        let summary = Summary {
+            task_description: "task".to_string(),
+            context_summary: None,
+            task_result: "done".to_string(),
+            result_type: None,
+        };
+        let _e: AgentEvent = (&summary).into();
+    }
+
+    #[test]
+    fn test_send_prompt_args_text_with_text() {
+        let args = SendPromptArgs {
+            content: vec![
+                ContentChunk::Text("hello".to_string()),
+                ContentChunk::Text(" world".to_string()),
+            ],
+            should_continue_turn: None,
+        };
+        assert_eq!(args.text(), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_send_prompt_args_text_no_text() {
+        let args = SendPromptArgs {
+            content: vec![],
+            should_continue_turn: None,
+        };
+        assert_eq!(args.text(), None);
+    }
+
+    #[test]
+    fn test_send_prompt_args_should_continue_turn() {
+        let args = SendPromptArgs {
+            content: vec![],
+            should_continue_turn: Some(true),
+        };
+        assert!(args.should_continue_turn());
+        let args2 = SendPromptArgs {
+            content: vec![],
+            should_continue_turn: Some(false),
+        };
+        assert!(!args2.should_continue_turn());
+        let args3 = SendPromptArgs {
+            content: vec![],
+            should_continue_turn: None,
+        };
+        assert!(!args3.should_continue_turn());
+    }
+
+    #[test]
+    fn test_send_prompt_args_from_string() {
+        let args: SendPromptArgs = "hi".to_string().into();
+        assert_eq!(args.text(), Some("hi".to_string()));
+    }
+
+    #[test]
+    fn test_tool_call_result_cancelled() {
+        let r = ToolCallResult::Cancelled;
+        let block = r.to_tool_result_block("tu1");
+        assert_eq!(block.tool_use_id, "tu1");
+        assert!(matches!(block.status, ToolResultStatus::Error));
+    }
+
+    #[test]
+    fn test_tool_call_result_error() {
+        let r = ToolCallResult::Error(crate::tools::ToolExecutionError::Custom("oops".to_string()));
+        let block = r.to_tool_result_block("tu2");
+        assert_eq!(block.tool_use_id, "tu2");
+        assert!(matches!(block.status, ToolResultStatus::Error));
+    }
+
+    #[test]
+    fn test_tool_call_result_success_text() {
+        use crate::agent::tools::{
+            ToolExecutionOutput,
+            ToolExecutionOutputItem,
+        };
+        let output = ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text("hello".to_string())]);
+        let r = ToolCallResult::Success(output);
+        let block = r.to_tool_result_block("tu3");
+        assert_eq!(block.tool_use_id, "tu3");
+        assert!(matches!(block.status, ToolResultStatus::Success));
+    }
+
+    #[test]
+    fn test_permission_eval_result_ask() {
+        let r = PermissionEvalResult::ask();
+        assert!(matches!(r, PermissionEvalResult::Ask { .. }));
+    }
+
+    #[test]
+    fn test_permission_eval_result_ask_with_options() {
+        let opts = vec![TrustOption {
+            label: "Allow".to_string(),
+            display: "Allow paths".to_string(),
+            setting_key: "x".into(),
+            patterns: vec!["a".into()],
+        }];
+        let r = PermissionEvalResult::ask_with_options(opts.clone());
+        match r {
+            PermissionEvalResult::Ask { trust_options } => {
+                assert_eq!(trust_options.len(), 1);
+            },
+            _ => panic!("expected Ask"),
+        }
+    }
+
+    #[test]
+    fn test_agent_error_display() {
+        assert_eq!(AgentError::NotIdle.to_string(), "Agent is not idle");
+        assert_eq!(AgentError::Channel.to_string(), "The agent channel has closed");
+        assert_eq!(AgentError::Custom("oops".to_string()).to_string(), "oops");
+    }
+
+    #[test]
+    fn test_agent_error_from_string() {
+        let e: AgentError = "test error".to_string().into();
+        assert!(matches!(e, AgentError::Custom(_)));
+    }
+
+    #[test]
+    fn test_agent_error_serde() {
+        let e = AgentError::NotIdle;
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: AgentError = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, AgentError::NotIdle));
+    }
+
+    #[test]
+    fn test_content_chunk_from_string() {
+        let chunk: ContentChunk = "hi".to_string().into();
+        assert!(matches!(chunk, ContentChunk::Text(_)));
+    }
+
+    #[test]
+    fn test_content_chunk_serde_text() {
+        let c = ContentChunk::Text("hello".to_string());
+        let json = serde_json::to_string(&c).unwrap();
+        let parsed: ContentChunk = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, ContentChunk::Text(_)));
+    }
+
+    #[test]
+    fn test_content_chunk_resource_link() {
+        let c = ContentChunk::ResourceLink("file://x".to_string());
+        let json = serde_json::to_string(&c).unwrap();
+        let parsed: ContentChunk = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, ContentChunk::ResourceLink(_)));
+    }
+
+    #[test]
+    fn test_send_prompt_args_text_with_image_only() {
+        use crate::agent::agent_loop::types::{
+            ImageBlock,
+            ImageFormat,
+            ImageSource,
+        };
+        let args = SendPromptArgs {
+            content: vec![ContentChunk::Image(ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Bytes(vec![]),
+            })],
+            should_continue_turn: None,
+        };
+        assert_eq!(args.text(), None);
+    }
+
+    #[test]
+    fn test_send_prompt_args_text_with_resource_link() {
+        let args = SendPromptArgs {
+            content: vec![ContentChunk::ResourceLink("file://x".to_string())],
+            should_continue_turn: None,
+        };
+        assert_eq!(args.text(), None);
+    }
+
+    #[test]
+    fn test_send_prompt_args_text_mixed() {
+        let args = SendPromptArgs {
+            content: vec![
+                ContentChunk::Text("hello".to_string()),
+                ContentChunk::ResourceLink("file://x".to_string()),
+                ContentChunk::Text(" world".to_string()),
+            ],
+            should_continue_turn: None,
+        };
+        assert_eq!(args.text(), Some("hello world".to_string()));
+    }
 }

@@ -268,4 +268,34 @@ mod tests {
             .unwrap();
         assert_eq!(content, "hello...");
     }
+
+    #[test]
+    fn test_is_integ_test_returns_bool() {
+        // Just ensure it returns a bool without panicking
+        let _ = is_integ_test();
+    }
+
+    #[test]
+    fn test_expand_env_vars_no_match() {
+        let mut vars = HashMap::new();
+        vars.insert("KEY".to_string(), "no var here".to_string());
+        expand_env_vars(&mut vars);
+        assert_eq!(vars.get("KEY"), Some(&"no var here".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_read_file_with_max_limit_no_truncation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("small.txt");
+        tokio::fs::write(&path, "hi").await.unwrap();
+        let (content, truncated) = read_file_with_max_limit(&path, 1000, "...").await.unwrap();
+        assert_eq!(content, "hi");
+        assert_eq!(truncated, 0);
+    }
+
+    #[tokio::test]
+    async fn test_read_file_with_max_limit_nonexistent() {
+        let result = read_file_with_max_limit("/nonexistent/path", 100, "...").await;
+        assert!(result.is_err());
+    }
 }

@@ -128,3 +128,84 @@ where
     let (tx, rx) = mpsc::channel(16);
     (RequestSender::new(tx), rx)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("test error: {0}")]
+    struct TestErr(String);
+
+    #[tokio::test]
+    async fn test_new_request_channel() {
+        let (tx, _rx): (RequestSender<u32, u32, TestErr>, _) = new_request_channel();
+        assert_eq!(tx.count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_send_recv_success() {
+        let (tx, mut rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
+        let handle = tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                let payload = req.payload;
+                req.respond(Ok(payload * 2)).await;
+            }
+        });
+        let result = tx.send_recv(21).await;
+        assert!(matches!(result, Some(Ok(42))));
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_recv_error() {
+        let (tx, mut rx): (RequestSender<(), i32, TestErr>, _) = new_request_channel();
+        let handle = tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Err(TestErr("nope".into()))).await;
+            }
+        });
+        let result = tx.send_recv(()).await;
+        assert!(matches!(result, Some(Err(_))));
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_recv_receiver_closed() {
+        let (tx, rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
+        drop(rx);
+        let result = tx.send_recv(1).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_send_recv_response_dropped() {
+        let (tx, mut rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
+        let handle = tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                drop(req); // drop without responding
+            }
+        });
+        let result = tx.send_recv(1).await;
+        assert!(result.is_none());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_clone() {
+        let (tx, _rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
+        let _tx2 = tx.clone();
+        assert_eq!(tx.count(), 2);
+    }
+
+    #[test]
+    fn test_try_blocking_send_recv_closed() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (tx, rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
+            drop(rx);
+            let result = tx.try_blocking_send_recv(1);
+            assert!(result.is_none());
+        });
+    }
+}

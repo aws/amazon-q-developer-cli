@@ -436,4 +436,55 @@ mod tests {
     fn test_default_read_limit() {
         assert_eq!(default_read_limit(), 5);
     }
+
+    #[test]
+    fn test_message_priority_default() {
+        let p = MessagePriority::default();
+        assert_eq!(p, MessagePriority::Normal);
+    }
+
+    #[test]
+    fn test_message_priority_serde() {
+        for p in [MessagePriority::Normal, MessagePriority::Escalation] {
+            let json = serde_json::to_string(&p).unwrap();
+            let parsed: MessagePriority = serde_json::from_str(&json).unwrap();
+            assert_eq!(p, parsed);
+        }
+    }
+
+    #[test]
+    fn test_session_filter_serde() {
+        for f in [
+            SessionFilter::Active,
+            SessionFilter::Idle,
+            SessionFilter::Busy,
+            SessionFilter::Terminated,
+            SessionFilter::All,
+        ] {
+            let json = serde_json::to_string(&f).unwrap();
+            let parsed: SessionFilter = serde_json::from_str(&json).unwrap();
+            assert_eq!(f, parsed);
+        }
+    }
+
+    #[test]
+    fn test_group_action_serde() {
+        for a in [
+            GroupAction::Create,
+            GroupAction::Add,
+            GroupAction::Remove,
+            GroupAction::List,
+            GroupAction::Broadcast,
+        ] {
+            let json = serde_json::to_string(&a).unwrap();
+            let parsed: GroupAction = serde_json::from_str(&json).unwrap();
+            assert_eq!(a, parsed);
+        }
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(!SessionTool::description().is_empty());
+        assert!(!SessionTool::input_schema().is_empty());
+    }
 }

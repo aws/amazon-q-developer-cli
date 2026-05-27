@@ -476,4 +476,93 @@ mod tests {
             matches!(&fs_read.operations[0], FsReadOperation::Line(f) if f.path == "src/main.rs" && f.limit == Some(50) && f.offset == Some(10))
         );
     }
+
+    #[test]
+    fn test_log_entry_constructors() {
+        let _ = LogEntry::prompt("id".to_string(), vec![], None);
+        let _ = LogEntry::assistant_message("id".to_string(), vec![]);
+        let _ = LogEntry::tool_results("id".to_string(), vec![], HashMap::new());
+        let _ = LogEntry::reset_to(0);
+        let _ = LogEntry::cancelled_prompt();
+        let _ = LogEntry::clear();
+    }
+
+    #[test]
+    fn test_event_log_default() {
+        let log = EventLog::default();
+        assert_eq!(log.len(), 0);
+        assert!(log.entries().is_empty());
+    }
+
+    #[test]
+    fn test_event_log_new() {
+        let entries = vec![LogEntry::prompt("id".to_string(), vec![], None)];
+        let log = EventLog::new(entries);
+        assert_eq!(log.len(), 1);
+    }
+
+    #[test]
+    fn test_event_log_append() {
+        let mut log = EventLog::default();
+        log.append(LogEntry::clear());
+        assert_eq!(log.len(), 1);
+    }
+
+    #[test]
+    fn test_apply_clear() {
+        let log = EventLog::default();
+        let entry = LogEntry::clear();
+        let mut messages = vec![user_message("hi"), assistant_msg("hi")];
+        entry.apply(&mut messages, &log);
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn test_apply_cancelled_prompt() {
+        let log = EventLog::default();
+        let entry = LogEntry::cancelled_prompt();
+        let mut messages = vec![assistant_msg("a"), user_message("b")];
+        entry.apply(&mut messages, &log);
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn test_apply_cancelled_prompt_when_last_is_assistant() {
+        let log = EventLog::default();
+        let entry = LogEntry::cancelled_prompt();
+        let mut messages = vec![user_message("u"), assistant_msg("a")];
+        entry.apply(&mut messages, &log);
+        // Should not pop since last is assistant
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn test_apply_cancelled_prompt_empty() {
+        let log = EventLog::default();
+        let entry = LogEntry::cancelled_prompt();
+        let mut messages: Vec<Message> = vec![];
+        entry.apply(&mut messages, &log);
+        // No panic
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn test_apply_prompt() {
+        let log = EventLog::default();
+        let entry = LogEntry::prompt("m1".to_string(), vec![text_content("hi")], None);
+        let mut messages: Vec<Message> = vec![];
+        entry.apply(&mut messages, &log);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, Role::User);
+    }
+
+    #[test]
+    fn test_apply_assistant_message() {
+        let log = EventLog::default();
+        let entry = LogEntry::assistant_message("m1".to_string(), vec![text_content("hi")]);
+        let mut messages: Vec<Message> = vec![];
+        entry.apply(&mut messages, &log);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, Role::Assistant);
+    }
 }

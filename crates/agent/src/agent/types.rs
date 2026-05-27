@@ -442,4 +442,125 @@ mod tests {
         };
         assert_agent_id!(a3, "a1#rand|a2|a3");
     }
+
+    #[test]
+    fn test_agent_id_new() {
+        let id = AgentId::new("test".to_string());
+        assert_eq!(id.name(), "test");
+        assert!(id.rand.is_some());
+        assert!(id.parent_id.is_none());
+    }
+
+    #[test]
+    fn test_agent_id_default() {
+        let id = AgentId::default();
+        assert!(!id.name().is_empty());
+    }
+
+    #[test]
+    fn test_agent_id_clone_and_eq() {
+        let id1 = AgentId::new("test".to_string());
+        let id2 = id1.clone();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_agent_settings_default() {
+        let s = AgentSettings::default();
+        assert_eq!(s.mcp_init_timeout, Duration::from_secs(5));
+        assert!(!s.disable_auto_compact);
+        assert!(!s.trust_all_tools);
+    }
+
+    #[test]
+    fn test_agent_settings_serde() {
+        let s = AgentSettings {
+            mcp_init_timeout: Duration::from_secs(10),
+            disable_auto_compact: true,
+            trust_all_tools: true,
+            ..AgentSettings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: AgentSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.mcp_init_timeout, s.mcp_init_timeout);
+        assert_eq!(parsed.disable_auto_compact, s.disable_auto_compact);
+        assert_eq!(parsed.trust_all_tools, s.trust_all_tools);
+    }
+
+    #[test]
+    fn test_acp_spawn_args_default() {
+        let a = AcpSpawnArgs::default();
+        assert!(a.agent.is_none());
+        assert!(a.model.is_none());
+        assert!(!a.trust_all_tools);
+        assert!(a.trust_tools.is_none());
+    }
+
+    #[test]
+    fn test_conversation_state_new() {
+        let id = Uuid::new_v4();
+        let s = ConversationState::new(id, vec![]);
+        assert_eq!(s.id, id);
+        assert!(s.cached_messages().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_conversation_state_default() {
+        let s = ConversationState::default();
+        // Should have a fresh id and empty cache
+        assert!(s.cached_messages().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_conversation_state_messages() {
+        let mut s = ConversationState::new(Uuid::new_v4(), vec![]);
+        let msgs = s.messages();
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_conversation_state_cached_messages() {
+        let s = ConversationState::new(Uuid::new_v4(), vec![]);
+        let cached = s.cached_messages();
+        assert!(cached.is_some());
+        assert!(cached.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_conversation_summary_new() {
+        let state = ConversationState::new(Uuid::new_v4(), vec![]);
+        let now = Some(Utc::now());
+        let summary = ConversationSummary::new("summary text".to_string(), state, now);
+        assert_eq!(summary.content, "summary text");
+        assert!(summary.timestamp.is_some());
+    }
+
+    #[test]
+    fn test_conversation_summary_as_ref() {
+        let state = ConversationState::new(Uuid::new_v4(), vec![]);
+        let summary = ConversationSummary::new("text content".to_string(), state, None);
+        let s: &str = summary.as_ref();
+        assert_eq!(s, "text content");
+    }
+
+    #[test]
+    fn test_agent_snapshot_default() {
+        let s = AgentSnapshot::default();
+        assert!(s.tool_specs.is_empty());
+        assert!(s.session_resource_paths.is_empty());
+    }
+
+    #[test]
+    fn test_agent_snapshot_new_empty() {
+        let cfg = LoadedAgentConfig::default();
+        let s = AgentSnapshot::new_empty(cfg);
+        assert!(s.tool_specs.is_empty());
+    }
+
+    #[test]
+    fn test_conversation_state_event_log() {
+        let s = ConversationState::new(Uuid::new_v4(), vec![]);
+        let log = s.event_log();
+        assert_eq!(log.len(), 0);
+    }
 }

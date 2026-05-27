@@ -886,4 +886,106 @@ mod tests {
         assert_eq!(json["hook_event_name"], "agentSpawn");
         assert_eq!(json["session_id"], "test-session-abc-123");
     }
+
+    #[tokio::test]
+    async fn test_task_executor_new() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd.clone())));
+        let result = executor.cwd();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), cwd);
+    }
+
+    #[tokio::test]
+    async fn test_task_executor_cancel_unknown_id() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
+        // Should not panic with unknown id
+        let id = ToolExecutionId {
+            tool_use_id: "fake".to_string(),
+        };
+        executor.cancel_tool_execution(&id);
+        // No panic = test passes
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_basic() {
+        let result = sanitize_user_prompt("hello world");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_strips_control() {
+        let result = sanitize_user_prompt("hello\x00world");
+        assert_eq!(result, "helloworld");
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_keeps_newlines() {
+        let result = sanitize_user_prompt("line1\nline2\rline3\tcol");
+        assert_eq!(result, "line1\nline2\rline3\tcol");
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_truncates() {
+        let long = "a".repeat(5000);
+        let result = sanitize_user_prompt(&long);
+        assert_eq!(result.len(), 4096);
+    }
+
+    #[test]
+    fn test_tool_context_from_tool() {
+        use crate::agent::tools::fs_read::FsRead;
+        use crate::agent::tools::{
+            BuiltInTool,
+            Tool,
+            ToolKind,
+        };
+        let tool_use = ToolUseBlock {
+            tool_use_id: "tu1".to_string(),
+            name: "fs_read".to_string(),
+            input: serde_json::json!({"x": 1}),
+        };
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { operations: vec![] })),
+        };
+        let ctx: ToolContext = (&tool_use, &tool).into();
+        assert_eq!(ctx.tool_input, serde_json::json!({"x": 1}));
+        assert!(ctx.tool_response.is_none());
+    }
+
+    #[test]
+    fn test_tool_context_from_tool_with_response() {
+        use crate::agent::tools::fs_read::FsRead;
+        use crate::agent::tools::{
+            BuiltInTool,
+            Tool,
+            ToolKind,
+        };
+        let tool_use = ToolUseBlock {
+            tool_use_id: "tu1".to_string(),
+            name: "fs_read".to_string(),
+            input: serde_json::json!({}),
+        };
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { operations: vec![] })),
+        };
+        let response = serde_json::json!({"result": "ok"});
+        let ctx: ToolContext = (&tool_use, &tool, &response).into();
+        assert_eq!(ctx.tool_response, Some(serde_json::json!({"result": "ok"})));
+    }
+
+    #[test]
+    fn test_command_result_serde() {
+        let r = CommandResult {
+            exit_code: 0,
+            output: "ok".to_string(),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let parsed: CommandResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.exit_code, 0);
+        assert_eq!(parsed.output, "ok");
+    }
 }

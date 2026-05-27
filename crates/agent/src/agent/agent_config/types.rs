@@ -132,3 +132,106 @@ impl FromStr for ResourcePath {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_type_serde() {
+        let json = r#""fast""#;
+        let it: IndexType = serde_json::from_str(json).unwrap();
+        assert!(matches!(it, IndexType::Fast));
+
+        let json2 = r#""best""#;
+        let it2: IndexType = serde_json::from_str(json2).unwrap();
+        assert!(matches!(it2, IndexType::Best));
+    }
+
+    #[test]
+    fn test_resource_path_from_str_file() {
+        let r = ResourcePath::from_str("file:///tmp/x").unwrap();
+        assert!(matches!(r, ResourcePath::FilePath(_)));
+        assert_eq!(r.source(), "file:///tmp/x");
+    }
+
+    #[test]
+    fn test_resource_path_from_str_skill() {
+        let r = ResourcePath::from_str("skill://docx").unwrap();
+        assert!(matches!(r, ResourcePath::Skill(_)));
+        assert_eq!(r.source(), "skill://docx");
+    }
+
+    #[test]
+    fn test_resource_path_from_str_invalid() {
+        let r = ResourcePath::from_str("https://example.com");
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("must start with"));
+    }
+
+    #[test]
+    fn test_resource_path_deref_and_asref() {
+        let r = ResourcePath::FilePath("file://x".to_string());
+        let s: &str = &r;
+        assert_eq!(s, "file://x");
+        let r2 = ResourcePath::Skill("skill://y".to_string());
+        assert_eq!(r2.as_ref(), "skill://y");
+    }
+
+    #[test]
+    fn test_resource_path_borrow() {
+        let r = ResourcePath::FilePath("file://x".to_string());
+        let b: &str = r.borrow();
+        assert_eq!(b, "file://x");
+    }
+
+    #[test]
+    fn test_resource_path_deserialize_file() {
+        let json = r#""file:///tmp/abc""#;
+        let r: ResourcePath = serde_json::from_str(json).unwrap();
+        assert!(matches!(r, ResourcePath::FilePath(_)));
+    }
+
+    #[test]
+    fn test_resource_path_deserialize_skill() {
+        let json = r#""skill://test""#;
+        let r: ResourcePath = serde_json::from_str(json).unwrap();
+        assert!(matches!(r, ResourcePath::Skill(_)));
+    }
+
+    #[test]
+    fn test_resource_path_deserialize_invalid_string() {
+        let json = r#""no-prefix""#;
+        let r: Result<ResourcePath, _> = serde_json::from_str(json);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_resource_path_deserialize_object() {
+        let json = r#"{"type":"knowledgeBase","source":"file:///tmp/x"}"#;
+        let r: ResourcePath = serde_json::from_str(json).unwrap();
+        assert!(matches!(r, ResourcePath::Complex(_)));
+        assert_eq!(r.source(), "file:///tmp/x");
+    }
+
+    #[test]
+    fn test_resource_path_deserialize_invalid_type() {
+        let json = r#"123"#;
+        let r: Result<ResourcePath, _> = serde_json::from_str(json);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_complex_resource_source() {
+        let cr = ComplexResource::KnowledgeBase {
+            source: "file:///x".to_string(),
+            name: None,
+            description: None,
+            index_type: None,
+            include: None,
+            exclude: None,
+            auto_update: None,
+        };
+        assert_eq!(cr.source(), "file:///x");
+    }
+}

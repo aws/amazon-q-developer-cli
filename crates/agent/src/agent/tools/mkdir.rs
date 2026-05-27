@@ -77,3 +77,86 @@ impl Mkdir {
         Ok(Default::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_mkdir(path: &str) -> Mkdir {
+        Mkdir { path: path.into() }
+    }
+
+    #[tokio::test]
+    async fn test_validate_empty_path() {
+        let m = make_mkdir("");
+        let err = m.validate().await.unwrap_err();
+        assert!(err.contains("Path must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_path_exists_as_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m = make_mkdir(tmp.path().to_str().unwrap());
+        let err = m.validate().await.unwrap_err();
+        assert!(err.contains("already exists"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_path_exists_as_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("file.txt");
+        tokio::fs::write(&file_path, "x").await.unwrap();
+        let m = make_mkdir(file_path.to_str().unwrap());
+        let err = m.validate().await.unwrap_err();
+        assert!(err.contains("already exists"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_ok_for_new_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_path = tmp.path().join("new_dir");
+        let m = make_mkdir(new_path.to_str().unwrap());
+        assert!(m.validate().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_creates_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_path = tmp.path().join("newdir");
+        let m = make_mkdir(new_path.to_str().unwrap());
+        let result = m.execute().await;
+        assert!(result.is_ok());
+        assert!(new_path.exists());
+        assert!(new_path.is_dir());
+    }
+
+    #[tokio::test]
+    async fn test_execute_nested_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a").join("b").join("c");
+        let m = make_mkdir(nested.to_str().unwrap());
+        let result = m.execute().await;
+        assert!(result.is_ok());
+        assert!(nested.exists());
+    }
+
+    #[test]
+    fn test_canonical_path_works() {
+        let m = make_mkdir("/tmp/test");
+        assert!(m.canonical_path().is_ok());
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        let m = make_mkdir("/tmp/x");
+        let json = serde_json::to_string(&m).unwrap();
+        let parsed: Mkdir = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.path, "/tmp/x");
+    }
+
+    #[test]
+    fn test_mkdir_description_constant() {
+        assert!(MKDIR_TOOL_DESCRIPTION.contains("creating directories"));
+        assert!(MKDIR_SCHEMA.contains("path"));
+    }
+}

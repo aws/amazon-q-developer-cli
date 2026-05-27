@@ -618,3 +618,137 @@ impl From<McpServerActorEvent> for McpServerEvent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_manager_error_display() {
+        let e = McpManagerError::ServerNotInitialized {
+            name: "myserver".to_string(),
+        };
+        assert!(e.to_string().contains("myserver"));
+        assert!(e.to_string().contains("not initialized"));
+
+        let e2 = McpManagerError::ServerCurrentlyInitializing { name: "x".to_string() };
+        assert!(e2.to_string().contains("currently initializing"));
+
+        let e3 = McpManagerError::ServerFailed { name: "x".to_string() };
+        assert!(e3.to_string().contains("failed to initialize"));
+
+        let e4 = McpManagerError::ServerAlreadyLaunched { name: "x".to_string() };
+        assert!(e4.to_string().contains("already launched"));
+
+        let e5 = McpManagerError::Channel;
+        assert_eq!(e5.to_string(), "The channel has closed");
+
+        let e6 = McpManagerError::Custom("oops".to_string());
+        assert_eq!(e6.to_string(), "oops");
+    }
+
+    #[test]
+    fn test_mcp_manager_error_serde() {
+        let e = McpManagerError::ServerNotInitialized { name: "x".to_string() };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpManagerError = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.to_string(), e.to_string());
+    }
+
+    #[test]
+    fn test_mcp_server_event_serde_initializing() {
+        let e = McpServerEvent::Initializing {
+            server_name: "test".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerEvent::Initializing { server_name } => assert_eq!(server_name, "test"),
+            _ => panic!("expected Initializing"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_event_serde_initialized() {
+        let e = McpServerEvent::Initialized {
+            server_name: "test".to_string(),
+            serve_duration: Duration::from_secs(1),
+            list_tools_duration: Some(Duration::from_millis(100)),
+            list_prompts_duration: None,
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerEvent::Initialized {
+                server_name,
+                list_tools_duration,
+                list_prompts_duration,
+                ..
+            } => {
+                assert_eq!(server_name, "test");
+                assert_eq!(list_tools_duration, Some(Duration::from_millis(100)));
+                assert!(list_prompts_duration.is_none());
+            },
+            _ => panic!("expected Initialized"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_event_serde_initialize_error() {
+        let e = McpServerEvent::InitializeError {
+            server_name: "x".to_string(),
+            error: "boom".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerEvent::InitializeError { server_name, error } => {
+                assert_eq!(server_name, "x");
+                assert_eq!(error, "boom");
+            },
+            _ => panic!("expected InitializeError"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_event_serde_oauth_request() {
+        let e = McpServerEvent::OauthRequest {
+            server_name: "x".to_string(),
+            oauth_url: "https://auth.example.com".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                assert_eq!(server_name, "x");
+                assert_eq!(oauth_url, "https://auth.example.com");
+            },
+            _ => panic!("expected OauthRequest"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_event_serde_tool_list_changed() {
+        let e = McpServerEvent::ToolListChanged {
+            server_name: "x".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerEvent::ToolListChanged { server_name } => assert_eq!(server_name, "x"),
+            _ => panic!("expected ToolListChanged"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_event_clone() {
+        let e = McpServerEvent::Initializing {
+            server_name: "x".to_string(),
+        };
+        let cloned = e.clone();
+        match cloned {
+            McpServerEvent::Initializing { server_name } => assert_eq!(server_name, "x"),
+            _ => panic!("expected Initializing"),
+        }
+    }
+}

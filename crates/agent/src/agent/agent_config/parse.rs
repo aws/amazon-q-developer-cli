@@ -378,4 +378,146 @@ mod tests {
             _ => panic!("Expected BuiltIn variant"),
         }
     }
+
+    #[test]
+    fn test_canonical_tool_name_from_mcp_parts() {
+        let n = CanonicalToolName::from_mcp_parts("srv".into(), "tool".into());
+        assert!(matches!(n, CanonicalToolName::Mcp { .. }));
+    }
+
+    #[test]
+    fn test_canonical_tool_name_as_full_name_mcp() {
+        let n = CanonicalToolName::from_mcp_parts("srv".into(), "tool".into());
+        assert_eq!(n.as_full_name(), "@srv/tool");
+    }
+
+    #[test]
+    fn test_canonical_tool_name_as_full_name_agent() {
+        let n = CanonicalToolName::Agent {
+            agent_name: "myagent".into(),
+        };
+        assert_eq!(n.as_full_name(), "#myagent");
+    }
+
+    #[test]
+    fn test_canonical_tool_name_as_full_name_built_in() {
+        let n = CanonicalToolName::BuiltIn(BuiltInToolName::FsRead);
+        let full_name = n.as_full_name();
+        assert!(!full_name.is_empty());
+    }
+
+    #[test]
+    fn test_canonical_tool_name_serde() {
+        let n = CanonicalToolName::Mcp {
+            server_name: "s".into(),
+            tool_name: "t".into(),
+        };
+        let json = serde_json::to_string(&n).unwrap();
+        let parsed: CanonicalToolName = serde_json::from_str(&json).unwrap();
+        assert_eq!(n, parsed);
+    }
+
+    #[test]
+    fn test_canonical_tool_name_eq_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(CanonicalToolName::Mcp {
+            server_name: "s".into(),
+            tool_name: "t".into(),
+        });
+        assert!(set.contains(&CanonicalToolName::Mcp {
+            server_name: "s".into(),
+            tool_name: "t".into(),
+        }));
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_empty() {
+        // Empty string should parse to BuiltIn(empty) per the implementation
+        let _result = ToolNameKind::parse("");
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_mcp_server_only() {
+        match ToolNameKind::parse("@myserver").unwrap() {
+            ToolNameKind::McpServer { server_name } => assert_eq!(server_name, "myserver"),
+            _ => panic!("expected McpServer"),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_agent() {
+        match ToolNameKind::parse("#myagent").unwrap() {
+            ToolNameKind::Agent(name) => assert_eq!(name, "myagent"),
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_agent_glob() {
+        match ToolNameKind::parse("#agent_*").unwrap() {
+            ToolNameKind::AgentGlob(name) => assert_eq!(name, "agent_*"),
+            _ => panic!("expected AgentGlob"),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_built_in_glob() {
+        match ToolNameKind::parse("fs_*").unwrap() {
+            ToolNameKind::BuiltInGlob(g) => assert_eq!(g, "fs_*"),
+            _ => panic!("expected BuiltInGlob"),
+        }
+    }
+
+    #[test]
+    fn test_canonical_tool_name_tool_name_method() {
+        let mcp = CanonicalToolName::from_mcp_parts("server".into(), "tool".into());
+        assert_eq!(mcp.tool_name(), "tool");
+
+        let agent = CanonicalToolName::Agent {
+            agent_name: "ag".to_string(),
+        };
+        assert_eq!(agent.tool_name(), "ag");
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_built_in_tool_name() {
+        let n: CanonicalToolName = BuiltInToolName::FsRead.into();
+        assert!(matches!(n, CanonicalToolName::BuiltIn(_)));
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_str_built_in() {
+        let n: CanonicalToolName = "fs_read".parse().unwrap();
+        assert!(matches!(n, CanonicalToolName::BuiltIn(_)));
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_str_mcp() {
+        let n: CanonicalToolName = "@server/tool".parse().unwrap();
+        assert!(matches!(n, CanonicalToolName::Mcp { .. }));
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_str_agent() {
+        let n: CanonicalToolName = "#myagent".parse().unwrap();
+        match n {
+            CanonicalToolName::Agent { agent_name } => assert_eq!(agent_name, "myagent"),
+            _ => panic!("expected Agent"),
+        }
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_str_invalid_built_in() {
+        let result: Result<CanonicalToolName, _> = "nonexistent_built_in".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_canonical_tool_name_from_str_unsupported_kind() {
+        // McpServer is not supported in CanonicalToolName::from_str
+        let result: Result<CanonicalToolName, _> = "@server".parse();
+        assert!(result.is_err());
+    }
 }

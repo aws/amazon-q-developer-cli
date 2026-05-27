@@ -279,3 +279,130 @@ pub enum LoopEndReason {
     /// Loop was processing a response stream but was cancelled
     Cancelled,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_request_args_new() {
+        let args = SendRequestArgs::new(vec![], None, None);
+        assert!(args.messages.is_empty());
+        assert!(args.tool_specs.is_none());
+        assert!(args.system_prompt.is_none());
+    }
+
+    #[test]
+    fn test_send_request_args_with_data() {
+        let args = SendRequestArgs::new(vec![], Some(vec![]), Some("sys".to_string()));
+        assert_eq!(args.system_prompt, Some("sys".to_string()));
+        assert!(args.tool_specs.is_some());
+    }
+
+    #[test]
+    fn test_agent_loop_response_error_display() {
+        assert_eq!(
+            AgentLoopResponseError::AgentLoopExited.to_string(),
+            "The agent loop has already exited"
+        );
+        assert_eq!(
+            AgentLoopResponseError::StreamCurrentlyExecuting.to_string(),
+            "A response stream is currently being consumed"
+        );
+        assert_eq!(AgentLoopResponseError::Custom("x".into()).to_string(), "x");
+    }
+
+    #[test]
+    fn test_agent_loop_response_error_from_send_error() {
+        let (tx, rx) = mpsc::channel::<i32>(1);
+        drop(rx);
+        // tokio::runtime::Runtime needed for blocking_send
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async { tx.send(1).await });
+        if let Err(send_err) = result {
+            let e: AgentLoopResponseError = send_err.into();
+            assert!(matches!(e, AgentLoopResponseError::Custom(_)));
+        }
+    }
+
+    #[test]
+    fn test_loop_end_reason_display_and_parse() {
+        assert_eq!(LoopEndReason::DidNotRun.to_string(), "DidNotRun");
+        assert_eq!(LoopEndReason::UserTurnEnd.to_string(), "UserTurnEnd");
+        assert_eq!(LoopEndReason::ToolUseRejected.to_string(), "ToolUseRejected");
+        assert_eq!(LoopEndReason::Error.to_string(), "Error");
+        assert_eq!(LoopEndReason::Cancelled.to_string(), "Cancelled");
+
+        let parsed: LoopEndReason = "DidNotRun".parse().unwrap();
+        assert_eq!(parsed, LoopEndReason::DidNotRun);
+    }
+
+    #[test]
+    fn test_loop_end_reason_serde() {
+        let r = LoopEndReason::Error;
+        let json = serde_json::to_string(&r).unwrap();
+        let parsed: LoopEndReason = serde_json::from_str(&json).unwrap();
+        assert_eq!(r, parsed);
+    }
+
+    #[test]
+    fn test_agent_loop_event_new() {
+        let id = AgentLoopId::new(crate::agent::AgentId::default());
+        let e = AgentLoopEvent::new(id, AgentLoopEventKind::AssistantText("hello".to_string()));
+        assert!(matches!(e.kind, AgentLoopEventKind::AssistantText(_)));
+    }
+
+    #[test]
+    fn test_agent_loop_event_kind_serde_assistant_text() {
+        let e = AgentLoopEventKind::AssistantText("Hi".to_string());
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: AgentLoopEventKind = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, AgentLoopEventKind::AssistantText(_)));
+    }
+
+    #[test]
+    fn test_agent_loop_event_kind_serde_reasoning() {
+        let e = AgentLoopEventKind::ReasoningContent("thinking...".to_string());
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: AgentLoopEventKind = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, AgentLoopEventKind::ReasoningContent(_)));
+    }
+
+    #[test]
+    fn test_agent_loop_event_kind_serde_tool_use_start() {
+        let e = AgentLoopEventKind::ToolUseStart {
+            id: "id1".into(),
+            name: "fs_read".into(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains("toolUseStart"));
+    }
+
+    #[test]
+    fn test_stream_result_unwrap_err_on_err() {
+        use super::super::types::{
+            StreamError,
+            StreamErrorKind,
+        };
+        let err = StreamError {
+            original_request_id: None,
+            original_status_code: None,
+            original_message: Some("x".into()),
+            kind: StreamErrorKind::Interrupted,
+            source: None,
+        };
+        let r = StreamResult::Err(err);
+        let unwrapped = r.unwrap_err();
+        assert_eq!(unwrapped.original_message, Some("x".into()));
+    }
+
+    #[test]
+    fn test_loop_error_display_invalid_json() {
+        let err = LoopError::InvalidJson {
+            assistant_text: "x".into(),
+            invalid_tools: vec![],
+            valid_tools: vec![],
+        };
+        assert_eq!(err.to_string(), "The model produced invalid JSON");
+    }
+}

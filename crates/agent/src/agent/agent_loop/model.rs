@@ -242,4 +242,42 @@ mod tests {
         let events = consume_response(result).await;
         assert_contains_text(&events, "second");
     }
+
+    #[test]
+    fn test_mock_model_default() {
+        let _m = MockModel::default();
+    }
+
+    #[test]
+    fn test_mock_response_with_delay() {
+        let r = MockResponse::with_delay(make_mock_response("x"), Duration::from_millis(10));
+        assert!(r.time_to_first_chunk_delay.is_some());
+        assert_eq!(r.time_to_first_chunk_delay, Some(Duration::from_millis(10)));
+    }
+
+    #[test]
+    fn test_mock_response_default() {
+        let r = MockResponse::default();
+        assert!(r.items.is_empty());
+        assert!(r.time_to_first_chunk_delay.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_model_invoke_mcp_default() {
+        let model = MockModel::new();
+        let result = model.invoke_mcp("test", serde_json::json!({})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_model_state_default() {
+        let model = MockModel::new();
+        let _ = model.state();
+    }
+
+    #[tokio::test]
+    async fn test_mock_model_context_window_default() {
+        let model = MockModel::new();
+        let _ = model.context_window_size();
+    }
 }

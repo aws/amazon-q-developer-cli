@@ -202,3 +202,53 @@ pub const CODE_TOOL_SCHEMA: &str = r#"
     "required": ["operation"]
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_code_tool_spec_lsp_initialized() {
+        let spec = get_code_tool_spec(true);
+        assert_eq!(spec.name, "code");
+        assert!(spec.description.contains("LSP-powered") || spec.description.contains("LSP"));
+        assert!(!spec.input_schema.is_empty());
+    }
+
+    #[test]
+    fn test_get_code_tool_spec_no_lsp() {
+        let spec = get_code_tool_spec(false);
+        assert_eq!(spec.name, "code");
+        assert!(spec.description.contains("AST parsing"));
+        assert!(!spec.input_schema.is_empty());
+    }
+
+    #[test]
+    fn test_get_code_tool_spec_different_descriptions() {
+        let with_lsp = get_code_tool_spec(true);
+        let without_lsp = get_code_tool_spec(false);
+        // Descriptions should differ
+        assert_ne!(with_lsp.description, without_lsp.description);
+    }
+
+    #[test]
+    fn test_treesitter_only_description() {
+        assert!(!TREESITTER_ONLY_DESCRIPTION.is_empty());
+        assert!(TREESITTER_ONLY_DESCRIPTION.contains("AST parsing"));
+        assert!(TREESITTER_ONLY_DESCRIPTION.contains("Available Operations"));
+    }
+
+    #[test]
+    fn test_treesitter_only_schema() {
+        assert!(!TREESITTER_ONLY_SCHEMA.is_empty());
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(TREESITTER_ONLY_SCHEMA).unwrap();
+        assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn test_code_tool_schema_valid_json() {
+        let parsed: serde_json::Value = serde_json::from_str(CODE_TOOL_SCHEMA).unwrap();
+        assert!(parsed.is_object());
+    }
+}

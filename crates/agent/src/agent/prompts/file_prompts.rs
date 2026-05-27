@@ -63,3 +63,74 @@ pub fn discover(cwd: &Path) -> HashMap<String, Vec<Prompt>> {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discover_no_prompts_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = discover(tmp.path());
+        // Local dir doesn't exist; no local prompts
+        assert!(result.get("local").is_none());
+    }
+
+    #[test]
+    fn test_discover_local_prompts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prompts_dir = tmp.path().join(".kiro").join("prompts");
+        std::fs::create_dir_all(&prompts_dir).unwrap();
+        std::fs::write(prompts_dir.join("hello.md"), "Hello").unwrap();
+        std::fs::write(prompts_dir.join("greet.md"), "Greet {{name}}").unwrap();
+        // Non-md file should be ignored
+        std::fs::write(prompts_dir.join("README.txt"), "ignored").unwrap();
+
+        let result = discover(tmp.path());
+        let locals = result.get("local").expect("should have local prompts");
+        assert_eq!(locals.len(), 2);
+        let names: Vec<_> = locals.iter().map(|p| p.name.clone()).collect();
+        assert!(names.contains(&"hello".to_string()));
+        assert!(names.contains(&"greet".to_string()));
+    }
+
+    #[test]
+    fn test_discover_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prompts_dir = tmp.path().join(".kiro").join("prompts");
+        std::fs::create_dir_all(&prompts_dir).unwrap();
+        let result = discover(tmp.path());
+        // Empty dir, no entries inserted
+        assert!(result.get("local").is_none());
+    }
+
+    #[test]
+    fn test_discover_only_non_md() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prompts_dir = tmp.path().join(".kiro").join("prompts");
+        std::fs::create_dir_all(&prompts_dir).unwrap();
+        std::fs::write(prompts_dir.join("file.txt"), "ignored").unwrap();
+        std::fs::write(prompts_dir.join("config.json"), "{}").unwrap();
+        let result = discover(tmp.path());
+        // No .md files; no prompts
+        assert!(result.get("local").is_none());
+    }
+
+    #[test]
+    fn test_discover_md_with_arguments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prompts_dir = tmp.path().join(".kiro").join("prompts");
+        std::fs::create_dir_all(&prompts_dir).unwrap();
+        // Use template syntax that PromptTemplateArgs would parse
+        std::fs::write(
+            prompts_dir.join("p1.md"),
+            "---\nargs:\n  - name: x\n    required: true\n---\nUse {{x}}",
+        )
+        .unwrap();
+
+        let result = discover(tmp.path());
+        let locals = result.get("local").expect("should have local prompts");
+        assert_eq!(locals.len(), 1);
+        assert_eq!(locals[0].name, "p1");
+    }
+}

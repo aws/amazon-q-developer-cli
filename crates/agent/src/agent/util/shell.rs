@@ -85,4 +85,47 @@ mod tests {
             assert_eq!(flag, "-c");
         }
     }
+
+    #[test]
+    fn test_shell_command_cached() {
+        let first = shell_command();
+        let second = shell_command();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_detect_shell_runs() {
+        let (s, f) = detect_shell();
+        assert!(!s.is_empty());
+        assert!(!f.is_empty());
+    }
+
+    #[test]
+    fn test_wrap_cmd_with_fd_limit_macos() {
+        let wrapped = wrap_cmd_with_fd_limit("ls -la");
+        if cfg!(target_os = "macos") {
+            assert!(wrapped.starts_with("ulimit -n 10240"));
+            assert!(wrapped.contains("ls -la"));
+        } else {
+            assert_eq!(wrapped, "ls -la");
+        }
+    }
+
+    #[test]
+    fn test_wrap_cmd_empty() {
+        let wrapped = wrap_cmd_with_fd_limit("");
+        if cfg!(target_os = "macos") {
+            assert!(wrapped.contains("ulimit"));
+        } else {
+            assert_eq!(wrapped, "");
+        }
+    }
+
+    #[test]
+    fn test_wrap_cmd_complex() {
+        let wrapped = wrap_cmd_with_fd_limit("echo 'hello' && ls");
+        if cfg!(target_os = "macos") {
+            assert!(wrapped.contains("echo 'hello' && ls"));
+        }
+    }
 }

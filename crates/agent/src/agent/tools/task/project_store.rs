@@ -91,3 +91,96 @@ impl ProjectStore {
         std::fs::create_dir_all(&self.dir).map_err(|e| format!("Failed to create task dir: {e}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_project_store_read_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        let meta = store.read();
+        assert!(meta.description.is_empty());
+        assert!(meta.context.is_empty());
+        assert!(meta.modified_files.is_empty());
+    }
+
+    #[test]
+    fn test_project_store_write_and_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        let meta = ProjectMetadata {
+            description: "Build app".to_string(),
+            context: vec!["c1".to_string()],
+            modified_files: vec!["a.rs".to_string()],
+        };
+        store.write(&meta).unwrap();
+        let read_back = store.read();
+        assert_eq!(read_back.description, "Build app");
+        assert_eq!(read_back.context, vec!["c1".to_string()]);
+        assert_eq!(read_back.modified_files, vec!["a.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_project_store_append_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        store.append("first context", Some(&["a.rs".to_string()])).unwrap();
+        let meta = store.read();
+        assert_eq!(meta.context, vec!["first context".to_string()]);
+        assert_eq!(meta.modified_files, vec!["a.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_project_store_append_multiple() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        store.append("c1", Some(&["a.rs".to_string()])).unwrap();
+        store
+            .append("c2", Some(&["b.rs".to_string(), "a.rs".to_string()]))
+            .unwrap();
+        let meta = store.read();
+        assert_eq!(meta.context.len(), 2);
+        // dedup applied
+        assert_eq!(meta.modified_files, vec!["a.rs".to_string(), "b.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_project_store_append_no_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        store.append("just context", None).unwrap();
+        let meta = store.read();
+        assert_eq!(meta.context, vec!["just context".to_string()]);
+        assert!(meta.modified_files.is_empty());
+    }
+
+    #[test]
+    fn test_project_store_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        store.append("c1", None).unwrap();
+        store.delete().unwrap();
+        let meta = store.read();
+        assert!(meta.context.is_empty());
+    }
+
+    #[test]
+    fn test_project_store_delete_nonexistent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        // Should not error if file doesn't exist
+        store.delete().unwrap();
+    }
+
+    #[test]
+    fn test_project_store_read_corrupted() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("project_metadata.json"), "{invalid json").unwrap();
+        let store = ProjectStore::new(tmp.path().to_path_buf());
+        let meta = store.read();
+        // Should fall back to default
+        assert!(meta.description.is_empty());
+    }
+}

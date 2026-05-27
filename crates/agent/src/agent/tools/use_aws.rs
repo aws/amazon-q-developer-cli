@@ -356,4 +356,131 @@ mod tests {
             Some(vec!["s3://bucket/file.csv".to_string(), "/local/path/".to_string()])
         );
     }
+
+    #[tokio::test]
+    async fn test_validate_ok() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "region": "us-east-1",
+            "label": "x"
+        }};
+        assert!(cmd.validate().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_empty_service() {
+        let cmd = UseAws {
+            service_name: "".to_string(),
+            operation_name: "x".to_string(),
+            positional_args: None,
+            parameters: None,
+            region: "us-east-1".to_string(),
+            profile_name: None,
+            label: None,
+        };
+        let err = cmd.validate().await.unwrap_err();
+        assert!(err.contains("service_name must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_empty_operation() {
+        let cmd = UseAws {
+            service_name: "ec2".to_string(),
+            operation_name: "".to_string(),
+            positional_args: None,
+            parameters: None,
+            region: "us-east-1".to_string(),
+            profile_name: None,
+            label: None,
+        };
+        let err = cmd.validate().await.unwrap_err();
+        assert!(err.contains("operation_name must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_empty_region() {
+        let cmd = UseAws {
+            service_name: "ec2".to_string(),
+            operation_name: "describe-instances".to_string(),
+            positional_args: None,
+            parameters: None,
+            region: "".to_string(),
+            profile_name: None,
+            label: None,
+        };
+        let err = cmd.validate().await.unwrap_err();
+        assert!(err.contains("region must not be empty"));
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(UseAws::name(), BuiltInToolName::UseAws));
+        assert!(!UseAws::description().is_empty());
+        assert!(!UseAws::input_schema().is_empty());
+        let aliases = UseAws::aliases().unwrap();
+        assert!(aliases.contains(&"use_aws"));
+        assert!(aliases.contains(&"aws"));
+    }
+
+    #[test]
+    fn test_cli_parameters_kebab_case() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "put-object",
+            "parameters": {
+                "BucketName": "my-bucket"
+            },
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(params.iter().any(|p| p.0 == "--bucket-name"));
+    }
+
+    #[test]
+    fn test_cli_parameters_strip_leading_dashes() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "put-object",
+            "parameters": {
+                "--existing-flag": "v"
+            },
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(params.iter().any(|p| p.0 == "--existing-flag"));
+    }
+
+    #[test]
+    fn test_cli_parameters_none_returns_none() {
+        let cmd = UseAws {
+            service_name: "ec2".to_string(),
+            operation_name: "x".to_string(),
+            positional_args: None,
+            parameters: None,
+            region: "us-east-1".to_string(),
+            profile_name: None,
+            label: None,
+        };
+        assert!(cmd.cli_parameters().is_none());
+    }
+
+    #[test]
+    fn test_env_vars_with_user_agent() {
+        let env = env_vars_with_user_agent();
+        // AWS_PAGER should be set to empty
+        assert_eq!(env.get("AWS_PAGER"), Some(&String::new()));
+    }
+
+    #[test]
+    fn test_is_readonly_unknown() {
+        assert!(!UseAws::is_readonly("nonexistent:operation"));
+    }
+
+    #[test]
+    fn test_max_output_size_const() {
+        assert_eq!(MAX_OUTPUT_SIZE, 100_000);
+    }
 }

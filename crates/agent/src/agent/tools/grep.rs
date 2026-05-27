@@ -769,4 +769,89 @@ mod tests {
         sanitize_pattern(&mut p);
         assert_eq!(p, "\"foo\"bar\"");
     }
+
+    #[tokio::test]
+    async fn test_validate_empty_pattern() {
+        let test_base = TestBase::new().await;
+        let mut tool = Grep {
+            pattern: "".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_regex() {
+        let test_base = TestBase::new().await;
+        let mut tool = Grep {
+            pattern: "[invalid".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("Invalid regex"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_missing_path() {
+        let test_base = TestBase::new().await;
+        let mut tool = Grep {
+            pattern: "x".to_string(),
+            path: Some("/totally_nonexistent_dir".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("does not exist") || err.contains("path"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_ok() {
+        let test_base = TestBase::new().await;
+        let mut tool = Grep {
+            pattern: "test".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        assert!(tool.validate(&test_base).await.is_ok());
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(Grep::name(), BuiltInToolName::Grep));
+        assert!(!Grep::description().is_empty());
+        assert!(!Grep::input_schema().is_empty());
+    }
+
+    #[test]
+    fn test_serde_minimal() {
+        let json = r#"{"pattern":"foo"}"#;
+        let g: Grep = serde_json::from_str(json).unwrap();
+        assert_eq!(g.pattern, "foo");
+    }
 }

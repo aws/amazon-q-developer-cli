@@ -830,6 +830,171 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_build_planner_agent_works() {
+        let agent = build_planner_agent();
+        assert!(matches!(agent.source(), ConfigSource::BuiltIn));
+        assert!(agent.global_prompt().is_some());
+    }
+
+    #[test]
+    fn test_build_guide_agent_works() {
+        let agent = build_guide_agent();
+        assert!(matches!(agent.source(), ConfigSource::BuiltIn));
+    }
+
+    #[tokio::test]
+    async fn test_build_default_agent_no_steering() {
+        let test_base = TestBase::new().await;
+        let agent = build_default_agent(test_base.provider());
+        assert!(matches!(agent.source(), ConfigSource::BuiltIn));
+        assert_eq!(agent.name(), DEFAULT_AGENT_NAME);
+        assert!(agent.global_prompt().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_global_prompt_none() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("");
+        let result = resolve_global_prompt(None, &path, test_base.provider()).await;
+        assert!(matches!(result, ResolvedGlobalPrompt::None));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_global_prompt_inline_text() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("");
+        let result = resolve_global_prompt(Some("hello world"), &path, test_base.provider()).await;
+        match result {
+            ResolvedGlobalPrompt::Resolved(s) => assert_eq!(s, "hello world"),
+            _ => panic!("expected Resolved"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_global_prompt_empty_file_uri() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("");
+        let result = resolve_global_prompt(Some("file://"), &path, test_base.provider()).await;
+        assert!(matches!(result, ResolvedGlobalPrompt::ResolutionFailed));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_global_prompt_missing_file() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("");
+        let result = resolve_global_prompt(Some("file:///nonexistent/path/file.md"), &path, test_base.provider()).await;
+        assert!(matches!(result, ResolvedGlobalPrompt::ResolutionFailed));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_global_prompt_existing_file() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("prompt.md", "my prompt content"))
+            .await;
+        let abs_path = test_base.join("prompt.md");
+        let uri = format!("file://{}", abs_path.display());
+        let path = test_base.join("");
+        let result = resolve_global_prompt(Some(&uri), &path, test_base.provider()).await;
+        match result {
+            ResolvedGlobalPrompt::Resolved(s) => assert_eq!(s, "my prompt content"),
+            _ => panic!("expected Resolved"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_default_agent_with_amazonq_rules() {
+        let test_base = TestBase::new().await.with_directory(".amazonq/rules").await;
+        let agent = build_default_agent(test_base.provider());
+        assert!(matches!(agent.source(), ConfigSource::BuiltIn));
+        // Should include .amazonq/rules/**/*.md
+        let resources_strings: Vec<String> = agent.resources().iter().map(|r| r.as_ref().to_string()).collect();
+        let has_amazonq = resources_strings.iter().any(|r| r.contains(".amazonq/rules"));
+        assert!(has_amazonq);
+    }
+
+    #[tokio::test]
+    async fn test_build_default_agent_with_amazonq_md() {
+        let test_base = TestBase::new().await.with_file(("AmazonQ.md", "context")).await;
+        let agent = build_default_agent(test_base.provider());
+        let resources_strings: Vec<String> = agent.resources().iter().map(|r| r.as_ref().to_string()).collect();
+        let has_amazon_q_md = resources_strings.iter().any(|r| r.contains("AmazonQ.md"));
+        assert!(has_amazon_q_md);
+    }
+
+    #[tokio::test]
+    async fn test_build_default_agent_with_kiro_takes_precedence() {
+        let test_base = TestBase::new()
+            .await
+            .with_directory(".amazonq/rules")
+            .await
+            .with_directory(".kiro")
+            .await;
+        let agent = build_default_agent(test_base.provider());
+        let resources_strings: Vec<String> = agent.resources().iter().map(|r| r.as_ref().to_string()).collect();
+        // .amazonq/rules/**/*.md should NOT be added when .kiro exists
+        let has_amazonq_rules = resources_strings.iter().any(|r| r.contains(".amazonq/rules"));
+        assert!(!has_amazonq_rules);
+    }
+
+    #[tokio::test]
+    async fn test_load_agents_from_dir_nonexistent() {
+        let test_base = TestBase::new().await;
+        let path = test_base.join("nonexistent_dir");
+        let result = load_agents_from_dir(
+            &path,
+            ConfigSource::Workspace { path: path.clone() },
+            test_base.provider(),
+        )
+        .await;
+        assert!(result.is_ok());
+        let (agents, errors) = result.unwrap();
+        assert!(agents.is_empty());
+        assert!(errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_agents_from_dir_with_invalid_json() {
+        let test_base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/bad.json", "{invalid json"))
+            .await;
+        let dir = test_base.join(".kiro/agents");
+        let result = load_agents_from_dir(
+            &dir,
+            ConfigSource::Workspace { path: dir.clone() },
+            test_base.provider(),
+        )
+        .await;
+        assert!(result.is_ok());
+        let (agents, errors) = result.unwrap();
+        assert!(agents.is_empty());
+        // Should have an error for invalid json
+        assert!(!errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_agents_from_dir_skips_non_json() {
+        let test_base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/test.txt", "ignored"))
+            .await
+            .with_file((".kiro/agents/valid.json", r#"{"name": "test"}"#))
+            .await;
+        let dir = test_base.join(".kiro/agents");
+        let result = load_agents_from_dir(
+            &dir,
+            ConfigSource::Workspace { path: dir.clone() },
+            test_base.provider(),
+        )
+        .await;
+        let (agents, _errors) = result.unwrap();
+        // Only the json agent should load
+        let has_test = agents.iter().any(|a| a.name() == "test");
+        assert!(has_test);
+    }
+
     #[tokio::test]
     async fn test_no_duplicate_steering_when_cwd_equals_home() {
         // Set up a TestBase where cwd == home so global and workspace steering

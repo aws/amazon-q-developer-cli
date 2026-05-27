@@ -406,4 +406,96 @@ mod tests {
             panic!("Expected JSON output");
         }
     }
+
+    #[tokio::test]
+    async fn test_validate_empty_pattern() {
+        let test_base = TestBase::new().await;
+        let tool = Glob {
+            pattern: "".to_string(),
+            path: None,
+            limit: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_pattern() {
+        let test_base = TestBase::new().await;
+        let tool = Glob {
+            pattern: "[invalid".to_string(),
+            path: None,
+            limit: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("Invalid glob pattern"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_missing_path() {
+        let test_base = TestBase::new().await;
+        let tool = Glob {
+            pattern: "*.rs".to_string(),
+            path: Some("/nonexistent/dir/foo".to_string()),
+            limit: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_path_is_file_not_dir() {
+        let test_base = TestBase::new().await.with_file(("file.txt", "content")).await;
+        let file_path = test_base.join("file.txt").to_string_lossy().to_string();
+        let tool = Glob {
+            pattern: "*.rs".to_string(),
+            path: Some(file_path),
+            limit: None,
+            max_depth: None,
+        };
+        let err = tool.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("not a directory"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_ok() {
+        let test_base = TestBase::new().await;
+        let tool = Glob {
+            pattern: "*.rs".to_string(),
+            path: None,
+            limit: None,
+            max_depth: None,
+        };
+        assert!(tool.validate(&test_base).await.is_ok());
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(Glob::name(), BuiltInToolName::Glob));
+        assert!(!Glob::description().is_empty());
+        assert!(!Glob::input_schema().is_empty());
+    }
+
+    #[test]
+    fn test_serde_minimal() {
+        let json = r#"{"pattern":"*.rs"}"#;
+        let g: Glob = serde_json::from_str(json).unwrap();
+        assert_eq!(g.pattern, "*.rs");
+        assert!(g.path.is_none());
+        assert!(g.limit.is_none());
+        assert!(g.max_depth.is_none());
+    }
+
+    #[test]
+    fn test_serde_full() {
+        let json = r#"{"pattern":"**/*.rs","path":"/src","limit":100,"max_depth":5}"#;
+        let g: Glob = serde_json::from_str(json).unwrap();
+        assert_eq!(g.pattern, "**/*.rs");
+        assert_eq!(g.path, Some("/src".to_string()));
+        assert_eq!(g.limit, Some(100));
+        assert_eq!(g.max_depth, Some(5));
+    }
 }

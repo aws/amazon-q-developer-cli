@@ -110,3 +110,78 @@ impl CwdProvider for RealProvider {
 }
 
 impl SystemProvider for RealProvider {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_real_provider_env_var() {
+        let p = RealProvider;
+        // PATH should normally exist
+        let _ = p.var("PATH");
+        // Non-existent var
+        assert!(matches!(p.var("__NEVER_EXISTS_VAR_xyz_123"), Err(VarError::NotPresent)));
+    }
+
+    #[test]
+    fn test_real_provider_home() {
+        let p = RealProvider;
+        let _ = p.home();
+    }
+
+    #[test]
+    fn test_real_provider_cwd() {
+        let p = RealProvider;
+        let cwd = p.cwd();
+        assert!(cwd.is_ok());
+    }
+
+    #[test]
+    fn test_real_provider_clone_copy() {
+        let p = RealProvider;
+        let q = p;
+        let _ = q.cwd();
+    }
+
+    #[test]
+    fn test_real_provider_debug() {
+        let p = RealProvider;
+        let s = format!("{:?}", p);
+        assert!(s.contains("RealProvider"));
+    }
+
+    #[test]
+    fn test_box_dyn_system_provider() {
+        let p: Box<dyn SystemProvider> = Box::new(RealProvider);
+        let _ = p.cwd();
+        let _ = p.var("HOME");
+        let _ = p.home();
+    }
+
+    #[test]
+    fn test_arc_dyn_system_provider() {
+        let p: Arc<dyn SystemProvider> = Arc::new(RealProvider);
+        let _ = p.cwd();
+        let _ = p.var("HOME");
+        let _ = p.home();
+    }
+
+    #[test]
+    fn test_box_dyn_env_provider() {
+        let p: Box<dyn EnvProvider> = Box::new(RealProvider);
+        let _ = p.var("PATH");
+    }
+
+    #[test]
+    fn test_box_dyn_home_provider() {
+        let p: Box<dyn HomeProvider> = Box::new(RealProvider);
+        let _ = p.home();
+    }
+
+    #[test]
+    fn test_box_dyn_cwd_provider() {
+        let p: Box<dyn CwdProvider> = Box::new(RealProvider);
+        let _ = p.cwd();
+    }
+}

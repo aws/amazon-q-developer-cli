@@ -588,4 +588,96 @@ mod tests {
         assert_eq!(facts.commands_executed[0].command, "cargo test");
         assert_eq!(facts.commands_executed[0].reasonings, vec!["Run tests"]);
     }
+
+    #[test]
+    fn test_format_counts_zero_one_read() {
+        assert_eq!(format_counts(0, 1), "1 read");
+    }
+
+    #[test]
+    fn test_format_counts_zero_many_reads() {
+        assert_eq!(format_counts(0, 5), "5 reads");
+    }
+
+    #[test]
+    fn test_format_counts_one_write_zero_reads() {
+        assert_eq!(format_counts(1, 0), "1 modification");
+    }
+
+    #[test]
+    fn test_format_counts_many_writes_zero_reads() {
+        assert_eq!(format_counts(3, 0), "3 modifications");
+    }
+
+    #[test]
+    fn test_format_counts_one_write_one_read() {
+        assert_eq!(format_counts(1, 1), "1 modification, 1 read");
+    }
+
+    #[test]
+    fn test_format_counts_one_write_many_reads() {
+        assert_eq!(format_counts(1, 5), "1 modification, 5 reads");
+    }
+
+    #[test]
+    fn test_format_counts_many_writes_one_read() {
+        assert_eq!(format_counts(3, 1), "3 modifications, 1 read");
+    }
+
+    #[test]
+    fn test_format_counts_many_writes_many_reads() {
+        assert_eq!(format_counts(3, 5), "3 modifications, 5 reads");
+    }
+
+    #[test]
+    fn test_truncate_cmd_short() {
+        assert_eq!(truncate_cmd("ls -la"), "ls -la");
+    }
+
+    #[test]
+    fn test_truncate_cmd_long() {
+        let long = "x".repeat(500);
+        let result = truncate_cmd(&long);
+        assert!(result.ends_with("..."));
+        assert!(result.len() < long.len());
+    }
+
+    #[test]
+    fn test_add_reasoning_with_value() {
+        let mut reasonings = vec![];
+        add_reasoning(&mut reasonings, Some("test reasoning"));
+        assert_eq!(reasonings.len(), 1);
+        assert_eq!(reasonings[0], "test reasoning");
+    }
+
+    #[test]
+    fn test_add_reasoning_with_empty() {
+        let mut reasonings = vec![];
+        add_reasoning(&mut reasonings, Some(""));
+        assert!(reasonings.is_empty());
+    }
+
+    #[test]
+    fn test_add_reasoning_with_whitespace_only() {
+        let mut reasonings = vec![];
+        add_reasoning(&mut reasonings, Some("   "));
+        assert!(reasonings.is_empty());
+    }
+
+    #[test]
+    fn test_add_reasoning_with_none() {
+        let mut reasonings = vec![];
+        add_reasoning(&mut reasonings, None);
+        assert!(reasonings.is_empty());
+    }
+
+    #[test]
+    fn test_add_reasoning_truncates_long() {
+        let mut reasonings = vec![];
+        let long = "x".repeat(200);
+        add_reasoning(&mut reasonings, Some(&long));
+        assert_eq!(reasonings.len(), 1);
+        // Limited to 100 chars
+        assert_eq!(reasonings[0].chars().count(), 100);
+    }
 }

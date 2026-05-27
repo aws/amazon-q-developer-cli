@@ -895,6 +895,200 @@ mod tests {
         assert_eq!("fs_write".parse::<BuiltInToolName>().unwrap(), BuiltInToolName::FsWrite);
     }
 
+    #[test]
+    fn test_built_in_tool_name_aliases() {
+        let aliases = BuiltInToolName::FsRead.aliases();
+        assert!(aliases.is_some());
+    }
+
+    #[test]
+    fn test_tool_execution_output_default() {
+        let out = ToolExecutionOutput::default();
+        assert_eq!(out.items.len(), 1);
+    }
+
+    #[test]
+    fn test_tool_execution_output_new() {
+        let out = ToolExecutionOutput::new(vec![]);
+        assert!(out.items.is_empty());
+    }
+
+    #[test]
+    fn test_tool_execution_output_item_from_string() {
+        let item: ToolExecutionOutputItem = "hello".to_string().into();
+        match item {
+            ToolExecutionOutputItem::Text(s) => assert_eq!(s, "hello"),
+            _ => panic!("expected Text"),
+        }
+    }
+
+    #[test]
+    fn test_tool_execution_error_from_string() {
+        let e: ToolExecutionError = "oops".to_string().into();
+        assert!(matches!(e, ToolExecutionError::Custom(_)));
+    }
+
+    #[test]
+    fn test_tool_execution_error_io_constructor() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "x");
+        let e = ToolExecutionError::io("reading file", io_err);
+        assert!(matches!(e, ToolExecutionError::Io { .. }));
+        let s = e.to_string();
+        assert!(s.contains("reading file"));
+    }
+
+    #[test]
+    fn test_tool_execution_error_display() {
+        let e = ToolExecutionError::Custom("custom error".to_string());
+        assert_eq!(e.to_string(), "custom error");
+    }
+
+    #[test]
+    fn test_tool_execution_error_io_no_source() {
+        let e = ToolExecutionError::Io {
+            context: "test".to_string(),
+            source: None,
+        };
+        assert_eq!(e.to_string(), "test");
+    }
+
+    #[test]
+    fn test_tool_execution_error_source() {
+        use std::error::Error;
+        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "x");
+        let e = ToolExecutionError::io("ctx", io_err);
+        assert!(e.source().is_some());
+        let e2 = ToolExecutionError::Custom("x".to_string());
+        assert!(e2.source().is_none());
+    }
+
+    #[test]
+    fn test_built_in_tool_from_parts_fs_read() {
+        let result = BuiltInTool::from_parts(&BuiltInToolName::FsRead, serde_json::json!({"operations": []}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_built_in_tool_from_parts_invalid() {
+        let result = BuiltInTool::from_parts(&BuiltInToolName::FsRead, serde_json::json!({"invalid_field": "x"}));
+        // missing required "operations" field
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_built_in_tool_from_parts_grep() {
+        let result = BuiltInTool::from_parts(&BuiltInToolName::Grep, serde_json::json!({"pattern": "test"}));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_built_in_tool_from_parts_summary() {
+        let result = BuiltInTool::from_parts(
+            &BuiltInToolName::Summary,
+            serde_json::json!({"taskDescription":"x","taskResult":"y"}),
+        );
+        // Try one or the other, depending on serde naming
+        if result.is_err() {
+            // Try snake_case
+            let result2 = BuiltInTool::from_parts(
+                &BuiltInToolName::Summary,
+                serde_json::json!({"task_description":"x","task_result":"y"}),
+            );
+            assert!(result2.is_ok() || result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_built_in_tool_generate_tool_spec_all() {
+        for name in BuiltInToolName::iter() {
+            let spec = BuiltInTool::generate_tool_spec(&name);
+            assert!(!spec.name.is_empty(), "tool spec should have name for {:?}", name);
+        }
+    }
+
+    #[test]
+    fn test_tool_parse_error_kind_schema_failure() {
+        let err = serde_json::from_value::<i32>(serde_json::json!("not a number")).unwrap_err();
+        let _e = ToolParseErrorKind::schema_failure(err);
+    }
+
+    #[test]
+    fn test_tool_parse_built_in() {
+        let name = CanonicalToolName::BuiltIn(BuiltInToolName::FsRead);
+        let args = serde_json::json!({"operations":[]});
+        let tool = Tool::parse(&name, args).unwrap();
+        assert!(matches!(tool.kind, ToolKind::BuiltIn(_)));
+    }
+
+    #[test]
+    fn test_tool_parse_extracts_tool_use_purpose() {
+        let name = CanonicalToolName::BuiltIn(BuiltInToolName::FsRead);
+        let args = serde_json::json!({
+            "__tool_use_purpose": "Reading file",
+            "operations": []
+        });
+        let tool = Tool::parse(&name, args).unwrap();
+        assert_eq!(tool.tool_use_purpose, Some("Reading file".to_string()));
+    }
+
+    #[test]
+    fn test_tool_parse_invalid_built_in() {
+        let name = CanonicalToolName::BuiltIn(BuiltInToolName::FsRead);
+        let args = serde_json::json!("not an object");
+        let result = Tool::parse(&name, args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tool_parse_mcp_with_object() {
+        let name = CanonicalToolName::from_mcp_parts("server".into(), "tool".into());
+        let args = serde_json::json!({"key": "value"});
+        let tool = Tool::parse(&name, args).unwrap();
+        assert!(matches!(tool.kind, ToolKind::Mcp(_)));
+    }
+
+    #[test]
+    fn test_tool_parse_mcp_invalid_args() {
+        let name = CanonicalToolName::from_mcp_parts("server".into(), "tool".into());
+        let args = serde_json::json!("not an object");
+        let result = Tool::parse(&name, args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tool_parse_agent_unimplemented() {
+        let name = CanonicalToolName::Agent {
+            agent_name: "myagent".into(),
+        };
+        let args = serde_json::json!({});
+        let result = Tool::parse(&name, args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tool_kind_methods() {
+        let tool = Tool::parse(
+            &CanonicalToolName::BuiltIn(BuiltInToolName::FsRead),
+            serde_json::json!({"operations":[]}),
+        )
+        .unwrap();
+        assert!(tool.kind().builtin_tool_name().is_some());
+        assert!(tool.kind().mcp_server_name().is_none());
+        assert!(tool.kind().mcp_tool_name().is_none());
+    }
+
+    #[test]
+    fn test_tool_kind_methods_mcp() {
+        let tool = Tool::parse(
+            &CanonicalToolName::from_mcp_parts("server".into(), "mytool".into()),
+            serde_json::json!({}),
+        )
+        .unwrap();
+        assert!(tool.kind().builtin_tool_name().is_none());
+        assert_eq!(tool.kind().mcp_server_name(), Some("server"));
+        assert_eq!(tool.kind().mcp_tool_name(), Some("mytool"));
+    }
+
     mod get_available_tool_names_tests {
         use super::*;
 

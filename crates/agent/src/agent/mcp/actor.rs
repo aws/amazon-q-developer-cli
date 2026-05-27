@@ -468,3 +468,121 @@ impl McpServerActor {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_server_actor_error_display() {
+        let e = McpServerActorError::Service {
+            message: "boom".to_string(),
+            source: None,
+        };
+        assert!(e.to_string().contains("boom"));
+
+        let e2 = McpServerActorError::Channel;
+        assert_eq!(e2.to_string(), "The channel has closed");
+
+        let e3 = McpServerActorError::Custom("oops".to_string());
+        assert_eq!(e3.to_string(), "oops");
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_serde() {
+        let e = McpServerActorError::Channel;
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorError = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, McpServerActorError::Channel));
+
+        let e2 = McpServerActorError::Custom("x".into());
+        let json2 = serde_json::to_string(&e2).unwrap();
+        let parsed2: McpServerActorError = serde_json::from_str(&json2).unwrap();
+        match parsed2 {
+            McpServerActorError::Custom(s) => assert_eq!(s, "x"),
+            _ => panic!("expected Custom"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_serde_initializing() {
+        let e = McpServerActorEvent::Initializing {
+            server_name: "test".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorEvent::Initializing { server_name } => assert_eq!(server_name, "test"),
+            _ => panic!("expected Initializing"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_serde_initialize_error() {
+        let e = McpServerActorEvent::InitializeError {
+            server_name: "x".to_string(),
+            error: "boom".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorEvent::InitializeError { server_name, error } => {
+                assert_eq!(server_name, "x");
+                assert_eq!(error, "boom");
+            },
+            _ => panic!("expected InitializeError"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_serde_oauth_request() {
+        let e = McpServerActorEvent::OauthRequest {
+            server_name: "x".to_string(),
+            oauth_url: "https://x.com".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let _: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_serde_tool_list_changed() {
+        let e = McpServerActorEvent::ToolListChanged {
+            server_name: "x".to_string(),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let _: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_clone() {
+        let e = McpServerActorEvent::Initializing {
+            server_name: "x".to_string(),
+        };
+        let _cloned = e.clone();
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_initialized_serde() {
+        let e = McpServerActorEvent::Initialized {
+            server_name: "x".to_string(),
+            serve_duration: Duration::from_secs(1),
+            list_tools_duration: Some(Duration::from_millis(500)),
+            list_prompts_duration: None,
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorEvent::Initialized {
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+                ..
+            } => {
+                assert_eq!(serve_duration, Duration::from_secs(1));
+                assert_eq!(list_tools_duration, Some(Duration::from_millis(500)));
+                assert!(list_prompts_duration.is_none());
+            },
+            _ => panic!("expected Initialized"),
+        }
+    }
+}

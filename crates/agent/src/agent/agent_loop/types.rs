@@ -904,4 +904,447 @@ mod tests {
         // Image should be unchanged
         assert_eq!(msg.content[1].byte_len(), 100);
     }
+
+    #[test]
+    fn test_stream_error_new() {
+        let e = StreamError::new(StreamErrorKind::Interrupted);
+        assert!(matches!(e.kind, StreamErrorKind::Interrupted));
+        assert!(e.original_request_id.is_none());
+        assert!(e.original_status_code.is_none());
+        assert!(e.original_message.is_none());
+    }
+
+    #[test]
+    fn test_stream_error_setters() {
+        let e = StreamError::new(StreamErrorKind::Throttling)
+            .set_original_request_id(Some("req".to_string()))
+            .set_original_status_code(Some(429))
+            .set_original_message(Some("too many".to_string()));
+        assert_eq!(e.original_request_id, Some("req".to_string()));
+        assert_eq!(e.original_status_code, Some(429));
+        assert_eq!(e.original_message, Some("too many".to_string()));
+    }
+
+    #[test]
+    fn test_stream_error_display_minimal() {
+        let e = StreamError::new(StreamErrorKind::Interrupted);
+        let s = e.to_string();
+        assert!(s.contains("Encountered an error"));
+        assert!(s.contains("interrupted"));
+    }
+
+    #[test]
+    fn test_stream_error_display_with_request_id() {
+        let e = StreamError::new(StreamErrorKind::ServiceFailure).set_original_request_id(Some("xyz".to_string()));
+        let s = e.to_string();
+        assert!(s.contains("request_id: xyz"));
+    }
+
+    #[test]
+    fn test_stream_error_display_with_message() {
+        let e = StreamError::new(StreamErrorKind::Throttling).set_original_message(Some("slow down".to_string()));
+        let s = e.to_string();
+        assert!(s.contains("slow down"));
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_context_overflow() {
+        let k = StreamErrorKind::ContextWindowOverflow;
+        assert_eq!(k.to_string(), "The context window overflowed");
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_service_failure() {
+        let k = StreamErrorKind::ServiceFailure;
+        assert_eq!(k.to_string(), "The service failed to process the request");
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_throttling() {
+        let k = StreamErrorKind::Throttling;
+        assert_eq!(k.to_string(), "The request was throttled by the service");
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_validation() {
+        let k = StreamErrorKind::Validation { message: None };
+        assert_eq!(k.to_string(), "An invalid request was sent");
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_timeout() {
+        let k = StreamErrorKind::StreamTimeout {
+            duration: Duration::from_millis(5000),
+        };
+        assert!(k.to_string().contains("5000ms"));
+    }
+
+    #[test]
+    fn test_stream_error_kind_display_other() {
+        let k = StreamErrorKind::Other {
+            reason_code: Some("X".to_string()),
+            message: "custom error".to_string(),
+        };
+        assert_eq!(k.to_string(), "custom error");
+    }
+
+    #[test]
+    fn test_message_text_concatenates() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![
+                ContentBlock::Text("Hello, ".to_string()),
+                ContentBlock::Text("world".to_string()),
+            ],
+            None,
+        );
+        assert_eq!(msg.text(), "Hello, world");
+    }
+
+    #[test]
+    fn test_message_text_filters_non_text() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![
+                ContentBlock::Text("hi".to_string()),
+                ContentBlock::ToolUse(ToolUseBlock {
+                    tool_use_id: "id".to_string(),
+                    name: "tool".to_string(),
+                    input: serde_json::Value::Null,
+                }),
+            ],
+            None,
+        );
+        assert_eq!(msg.text(), "hi");
+    }
+
+    #[test]
+    fn test_message_tool_uses_none() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hi".to_string())],
+            None,
+        );
+        assert!(msg.tool_uses().is_none());
+    }
+
+    #[test]
+    fn test_message_tool_uses_some() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock {
+                tool_use_id: "id1".to_string(),
+                name: "fs_read".to_string(),
+                input: serde_json::json!({}),
+            })],
+            None,
+        );
+        let uses = msg.tool_uses().unwrap();
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].tool_use_id, "id1");
+    }
+
+    #[test]
+    fn test_message_get_tool_use_found() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock {
+                tool_use_id: "abc".to_string(),
+                name: "tool".to_string(),
+                input: serde_json::json!({}),
+            })],
+            None,
+        );
+        let found = msg.get_tool_use("abc");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "tool");
+    }
+
+    #[test]
+    fn test_message_get_tool_use_not_found() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::Text("x".to_string())],
+            None,
+        );
+        assert!(msg.get_tool_use("nope").is_none());
+    }
+
+    #[test]
+    fn test_message_new_assigns_id() {
+        let msg = Message::new(uuid::Uuid::new_v4().to_string(), Role::User, vec![], None);
+        assert!(msg.id.is_some());
+    }
+
+    #[test]
+    fn test_content_block_text_accessor() {
+        let cb = ContentBlock::Text("hi".to_string());
+        assert_eq!(cb.text(), Some("hi"));
+
+        let other = ContentBlock::ToolUse(ToolUseBlock {
+            tool_use_id: "x".into(),
+            name: "y".into(),
+            input: serde_json::json!({}),
+        });
+        assert_eq!(other.text(), None);
+    }
+
+    #[test]
+    fn test_content_block_tool_result_accessor() {
+        let cb = ContentBlock::Text("x".to_string());
+        assert!(cb.tool_result().is_none());
+    }
+
+    #[test]
+    fn test_content_block_image_accessor() {
+        let cb = ContentBlock::Text("x".to_string());
+        assert!(cb.image().is_none());
+    }
+
+    #[test]
+    fn test_content_block_truncatable_count() {
+        let cb = ContentBlock::Text("hi".to_string());
+        assert_eq!(cb.truncatable_count(), 1);
+        let cb2 = ContentBlock::ToolUse(ToolUseBlock {
+            tool_use_id: "x".into(),
+            name: "y".into(),
+            input: serde_json::json!({}),
+        });
+        assert_eq!(cb2.truncatable_count(), 0);
+    }
+
+    #[test]
+    fn test_content_block_truncate_text() {
+        let mut cb = ContentBlock::Text("hello world".to_string());
+        cb.truncate(5, None);
+        assert!(matches!(cb, ContentBlock::Text(_)));
+        if let ContentBlock::Text(s) = &cb {
+            assert!(s.len() <= 5);
+        }
+    }
+
+    #[test]
+    fn test_content_block_truncate_no_op_for_tool_use() {
+        let mut cb = ContentBlock::ToolUse(ToolUseBlock {
+            tool_use_id: "x".into(),
+            name: "y".into(),
+            input: serde_json::json!({}),
+        });
+        cb.truncate(5, None);
+        // Should not have changed (no panic)
+    }
+
+    #[test]
+    fn test_content_block_byte_len_text() {
+        let cb = ContentBlock::Text("hello".to_string());
+        assert_eq!(cb.byte_len(), 5);
+    }
+
+    #[test]
+    fn test_content_block_byte_len_tool_use() {
+        let cb = ContentBlock::ToolUse(ToolUseBlock {
+            tool_use_id: "x".into(),
+            name: "y".into(),
+            input: serde_json::json!({"key":"value"}),
+        });
+        assert!(cb.byte_len() > 0);
+    }
+
+    #[test]
+    fn test_content_block_from_string() {
+        let cb: ContentBlock = "hello".to_string().into();
+        assert!(matches!(cb, ContentBlock::Text(_)));
+    }
+
+    #[test]
+    fn test_image_block_byte_len() {
+        let img = ImageBlock {
+            format: ImageFormat::Png,
+            source: ImageSource::Bytes(vec![1, 2, 3, 4]),
+        };
+        assert_eq!(img.byte_len(), 4);
+    }
+
+    #[test]
+    fn test_tool_result_content_block_text_accessor() {
+        let cb = ToolResultContentBlock::Text("hello".to_string());
+        assert_eq!(cb.text(), Some("hello"));
+        let cb2 = ToolResultContentBlock::Json(serde_json::json!({}));
+        assert!(cb2.text().is_none());
+    }
+
+    #[test]
+    fn test_tool_result_content_block_json_accessor() {
+        let cb = ToolResultContentBlock::Json(serde_json::json!({"x": 1}));
+        assert!(cb.json().is_some());
+        let cb2 = ToolResultContentBlock::Text("x".to_string());
+        assert!(cb2.json().is_none());
+    }
+
+    #[test]
+    fn test_role_serde() {
+        let role = Role::User;
+        let json = serde_json::to_string(&role).unwrap();
+        assert_eq!(json, r#""user""#);
+        let parsed: Role = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, role);
+    }
+
+    #[test]
+    fn test_role_assistant_serde() {
+        let role = Role::Assistant;
+        let json = serde_json::to_string(&role).unwrap();
+        assert_eq!(json, r#""assistant""#);
+    }
+
+    #[test]
+    fn test_stop_reason_serde() {
+        for r in [StopReason::ToolUse, StopReason::EndTurn, StopReason::MaxTokens] {
+            let json = serde_json::to_string(&r).unwrap();
+            let _: StopReason = serde_json::from_str(&json).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_tool_result_status_serde() {
+        let s = ToolResultStatus::Success;
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, r#""success""#);
+        let s2 = ToolResultStatus::Error;
+        let json2 = serde_json::to_string(&s2).unwrap();
+        assert_eq!(json2, r#""error""#);
+    }
+
+    #[test]
+    fn test_image_format_jpg_alias() {
+        let json = r#""jpg""#;
+        let f: ImageFormat = serde_json::from_str(json).unwrap();
+        assert_eq!(f, ImageFormat::Jpeg);
+    }
+
+    #[test]
+    fn test_message_tool_results_none() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hi".to_string())],
+            None,
+        );
+        assert!(msg.tool_results().is_none());
+    }
+
+    #[test]
+    fn test_message_tool_results_some() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu1".to_string(),
+                content: vec![ToolResultContentBlock::Text("result".to_string())],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        let results = msg.tool_results().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].tool_use_id, "tu1");
+    }
+
+    #[test]
+    fn test_message_get_tool_result_found() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu1".to_string(),
+                content: vec![],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        assert!(msg.get_tool_result("tu1").is_some());
+        assert!(msg.get_tool_result("tu2").is_none());
+    }
+
+    #[test]
+    fn test_message_replace_tool_result_as_content_text() {
+        let mut msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu1".to_string(),
+                content: vec![ToolResultContentBlock::Text("result text".to_string())],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        msg.replace_tool_result_as_content("tu1");
+        // After replacement, should have Text instead of ToolResult
+        assert!(matches!(msg.content[0], ContentBlock::Text(_)));
+    }
+
+    #[test]
+    fn test_message_replace_tool_result_as_content_json() {
+        let mut msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu1".to_string(),
+                content: vec![ToolResultContentBlock::Json(serde_json::json!({"x": 1}))],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        msg.replace_tool_result_as_content("tu1");
+        // After replacement, should have Text (json serialized)
+        assert!(matches!(msg.content[0], ContentBlock::Text(_)));
+    }
+
+    #[test]
+    fn test_message_replace_tool_result_no_match() {
+        let mut msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu1".to_string(),
+                content: vec![ToolResultContentBlock::Text("text".to_string())],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        );
+        msg.replace_tool_result_as_content("nonexistent");
+        // Should still have the original ToolResult
+        assert!(matches!(msg.content[0], ContentBlock::ToolResult(_)));
+    }
+
+    #[test]
+    fn test_message_images_none() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("hi".to_string())],
+            None,
+        );
+        assert!(msg.images().is_none());
+    }
+
+    #[test]
+    fn test_message_images_some() {
+        let msg = Message::new(
+            uuid::Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Image(ImageBlock {
+                format: ImageFormat::Png,
+                source: ImageSource::Bytes(vec![1, 2]),
+            })],
+            None,
+        );
+        assert_eq!(msg.images().unwrap().len(), 1);
+    }
 }
