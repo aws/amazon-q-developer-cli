@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   InitializeRequest,
@@ -59,15 +59,35 @@ function writeScriptedBinary(
   exitCode: number = 0
 ): ScriptedBinary {
   const dir = mkdtempSync(join(tmpdir(), 'kiro-acp-integ-stub-bin-'));
-  const binPath = join(dir, 'chat_cli');
-  const script =
-    `#!/usr/bin/env bash\n` +
-    `cat <<'__KIRO_STUB_EOF__'\n` +
-    `${jsonOutput}\n` +
-    `__KIRO_STUB_EOF__\n` +
-    `exit ${exitCode}\n`;
+  const isWindows = platform() === 'win32';
+
+  let script: string;
+  let binPath: string;
+
+  if (isWindows) {
+    binPath = join(dir, 'chat_cli.cmd');
+    // cmd's `echo` doesn't honor backslash escaping, and metacharacter
+    // escapes mangle the JSON. Write the JSON byte-for-byte to a sibling
+    // file and `type` it.
+    const jsonPath = join(dir, 'output.json');
+    writeFileSync(jsonPath, jsonOutput);
+    // %~dp0 expands to the directory the .cmd lives in (with trailing \).
+    script =
+      `@echo off\r\n` +
+      `type "%~dp0output.json"\r\n` +
+      `exit /b ${exitCode}\r\n`;
+  } else {
+    binPath = join(dir, 'chat_cli');
+    script =
+      `#!/usr/bin/env bash\n` +
+      `cat <<'__KIRO_STUB_EOF__'\n` +
+      `${jsonOutput}\n` +
+      `__KIRO_STUB_EOF__\n` +
+      `exit ${exitCode}\n`;
+  }
+
   writeFileSync(binPath, script);
-  chmodSync(binPath, 0o755);
+  if (!isWindows) chmodSync(binPath, 0o755);
   return {
     binPath,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),

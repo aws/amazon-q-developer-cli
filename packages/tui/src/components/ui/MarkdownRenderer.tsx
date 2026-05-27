@@ -126,15 +126,15 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       return styled;
     }
     if (seg.link) {
-      const linkText = hyperlink(seg.link.url, linkColor(seg.text));
+      const linkText = hyperlink(seg.link.url, linkColor(inner));
       // For bare URLs (text === url), the parenthesized URL is redundant.
       // For markdown links, show the URL wrapped in OSC 8 so it stays
       // clickable even when it wraps across terminal lines.
-      styled =
-        seg.text === seg.link.url
-          ? linkText
-          : linkText +
-            secondaryColor(` (${hyperlink(seg.link.url, seg.link.url)})`);
+      const isBareUrl = !seg.children && seg.text === seg.link.url;
+      styled = isBareUrl
+        ? linkText
+        : linkText +
+          secondaryColor(` (${hyperlink(seg.link.url, seg.link.url)})`);
       styledSegmentCacheRef.current.set(seg, styled);
       return styled;
     }
