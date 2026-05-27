@@ -197,6 +197,11 @@ pub enum Setting {
     ChatHasSeenLogo,
     #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
     ChatShowThinking,
+    #[strum(
+        message = "Update terminal window title with session info (boolean)",
+        props(scope = "global_only")
+    )]
+    ChatTerminalTitle,
 }
 
 impl Setting {
@@ -273,6 +278,7 @@ impl AsRef<str> for Setting {
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
+            Self::ChatTerminalTitle => "chat.terminalTitle",
             #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
@@ -364,6 +370,7 @@ impl TryFrom<&str> for Setting {
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
+            "chat.terminalTitle" => Ok(Self::ChatTerminalTitle),
             #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]

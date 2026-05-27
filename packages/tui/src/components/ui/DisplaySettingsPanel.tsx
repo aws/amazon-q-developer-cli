@@ -49,6 +49,13 @@ const ITEMS: ToggleItem[] = [
       'When on: display model reasoning/thinking content. When off: reasoning is hidden',
     defaultValue: true,
   },
+  {
+    key: Settings.CHAT_TERMINAL_TITLE,
+    label: 'Terminal title',
+    description:
+      'When on: update terminal window title with session info. When off: title unchanged',
+    defaultValue: false,
+  },
 ];
 
 interface DisplaySettingsPanelProps {
@@ -80,6 +87,9 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowIcons } = useAllowIcons();
   const { setShowThinking } = useShowThinking();
   const kiro = useAppStore((state) => state.kiro);
+  const setTerminalTitleEnabled = useAppStore(
+    (state) => state.setTerminalTitleEnabled
+  );
 
   const toggle = useCallback(
     (key: string) => {
@@ -97,6 +107,8 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         setAllowIcons(newVal);
       } else if (key === Settings.CHAT_SHOW_THINKING) {
         setShowThinking(newVal);
+      } else if (key === Settings.CHAT_TERMINAL_TITLE) {
+        setTerminalTitleEnabled(newVal);
       }
     },
     [
@@ -106,6 +118,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       setAllowAnimations,
       setAllowIcons,
       setShowThinking,
+      setTerminalTitleEnabled,
     ]
   );
 

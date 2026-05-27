@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-21T21:11:44.848727",
-  "total_docs": 110,
+  "generated_at": "2026-05-27T11:50:34.863810",
+  "total_docs": 114,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -15,6 +15,7 @@
     ],
     "feature": [
       "features/agent-configuration.md",
+      "features/cmux-integration.md",
       "features/code-intelligence.md",
       "features/diff-tool.md",
       "features/exit-codes.md",
@@ -59,8 +60,10 @@
       "settings/hooks-show-status.md",
       "settings/introspect-progressive-mode.md",
       "settings/introspect-tangent-mode.md",
+      "settings/model-defaults.md",
       "settings/show-thinking.md",
       "settings/tangent-mode-key.md",
+      "settings/terminal-title.md",
       "settings/voice-settings.md"
     ],
     "slash_command": [
@@ -100,6 +103,7 @@
       "slash-commands/rewind.md",
       "slash-commands/stats.md",
       "slash-commands/tangent.md",
+      "slash-commands/title.md",
       "slash-commands/todo.md",
       "slash-commands/tools.md",
       "slash-commands/usage.md",
@@ -180,6 +184,7 @@
         "conversation",
         "agent",
         "model",
+        "effort",
         "interactive",
         "headless",
         "mcp",
@@ -197,7 +202,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-05-05",
+      "validated": "2026-05-22",
       "status": "validated"
     },
     {
@@ -352,6 +357,25 @@
         "slash-agent-generate"
       ],
       "validated": "2026-05-01",
+      "status": "validated"
+    },
+    {
+      "path": "features/cmux-integration.md",
+      "file": "cmux-integration.md",
+      "title": "cmux Integration",
+      "description": "Agent status reporting in the cmux sidebar when running inside cmux",
+      "category": "feature",
+      "keywords": [
+        "cmux",
+        "sidebar",
+        "status",
+        "integration",
+        "multiplexer"
+      ],
+      "related": [
+        "terminal-progress-indicator"
+      ],
+      "validated": "2026-03-24",
       "status": "validated"
     },
     {
@@ -745,7 +769,7 @@
         "network"
       ],
       "related": [],
-      "validated": "2026-01-05",
+      "validated": "2026-02-25",
       "status": "validated"
     },
     {
@@ -1160,13 +1184,14 @@
         "defaults",
         "effort",
         "output_config",
+        "reasoning",
         "per-model"
       ],
       "related": [
         "default-model",
         "slash-model"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-05-26",
       "status": "validated"
     },
     {
@@ -1220,6 +1245,26 @@
       ],
       "related": [],
       "validated": "2026-01-05",
+      "status": "validated"
+    },
+    {
+      "path": "settings/terminal-title.md",
+      "file": "terminal-title.md",
+      "title": "chat.terminalTitle",
+      "description": "Update terminal window title with session info",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "terminal",
+        "title",
+        "window",
+        "tab",
+        "display"
+      ],
+      "related": [
+        "title"
+      ],
+      "validated": "2026-05-27",
       "status": "validated"
     },
     {
@@ -1762,7 +1807,7 @@
         "knowledge-tool",
         "enable-knowledge"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-03-06",
       "status": "validated"
     },
     {
@@ -1985,6 +2030,24 @@
         "introspect"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/title.md",
+      "file": "title.md",
+      "title": "/title",
+      "description": "Set, clear, or show the terminal window title",
+      "category": "slash_command",
+      "keywords": [
+        "title",
+        "terminal",
+        "window",
+        "tab",
+        "workspace",
+        "settings"
+      ],
+      "related": [],
+      "validated": "2026-05-27",
       "status": "validated"
     },
     {
@@ -2218,7 +2281,7 @@
         "grep",
         "glob"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-10",
       "status": "validated"
     },
     {

@@ -258,7 +258,7 @@ import {
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
-import { readStringSetting } from '../utils/cli-settings.js';
+import { readBoolSetting, readStringSetting } from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
   playNotification,
@@ -1014,6 +1014,8 @@ export interface AppState {
   hooksList: HookInfo[];
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
+  terminalTitleEnabled: boolean;
+  setTerminalTitleEnabled: (enabled: boolean) => void;
   /**
    * When true, closing the currently open overlay re-opens the /settings
    * top-level menu instead of fully dismissing. Set by /settings subcommand
@@ -1427,6 +1429,12 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
+      {
+        name: '/title',
+        description: 'Set, clear, or show the terminal window title',
+        source: 'local' as const,
+        meta: { local: true },
+      },
     ], // Backend sends all commands via CommandsUpdate
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
@@ -1517,6 +1525,7 @@ export const createAppStore = (props: AppStoreProps) => {
     hooksList: [],
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
+    terminalTitleEnabled: readBoolSetting(Settings.CHAT_TERMINAL_TITLE, false),
     settingsReturnOnEscape: false,
     showKnowledgePanel: false,
     knowledgeEntries: [],
@@ -3520,6 +3529,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowDisplaySettingsPanel: (show) => {
       set({ showDisplaySettingsPanel: show });
+    },
+
+    setTerminalTitleEnabled: (enabled) => {
+      set({ terminalTitleEnabled: enabled });
     },
 
     setSettingsReturnOnEscape: (value) => {

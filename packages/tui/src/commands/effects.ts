@@ -45,6 +45,12 @@ import {
   findSettingsSubcommand,
   buildSettingsActiveCommand,
 } from './settings-subcommands.js';
+import {
+  getCurrentTitle,
+  setUserTitle,
+  clearUserTitle,
+  isTerminalTitleEnabled,
+} from '../utils/terminal-title.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
 export type EffectHandler = (
@@ -91,7 +97,8 @@ type EffectName =
   | 'showStatsPanel'
   | 'switchToGuideAgent'
   | 'switchToPlanMode'
-  | 'rewindAction';
+  | 'rewindAction'
+  | 'updateTitle';
 
 /**
  * Command → Effect mapping.
@@ -129,6 +136,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
   rewind: 'rewindAction',
+  title: 'updateTitle',
 };
 
 /**
@@ -900,6 +908,63 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       'success',
       10000
     );
+    return true;
+  },
+
+  updateTitle: (_result, ctx, _cmd, args) => {
+    const trimmed = (args ?? '').trim();
+
+    // `/title` — show the current terminal title
+    if (!trimmed) {
+      const title = getCurrentTitle();
+      if (isTerminalTitleEnabled()) {
+        ctx.showAlert(`Current title: ${title}`, 'success', 4000);
+      } else {
+        ctx.showAlert(
+          `Current title (not active): ${title} — enable via /settings display`,
+          'warning',
+          4000
+        );
+      }
+      return true;
+    }
+
+    // `/title --clear` — remove the manual override and revert to auto-derived title
+    if (trimmed === '--clear') {
+      const result = clearUserTitle();
+      if (result.ok) {
+        ctx.showAlert(
+          `Title cleared — showing: ${getCurrentTitle()}`,
+          'success',
+          4000
+        );
+      } else {
+        ctx.showAlert(
+          'Terminal title is disabled — enable via /settings display',
+          'error',
+          4000
+        );
+      }
+      return true;
+    }
+
+    // `/title <text>` — set a sticky manual title override
+    const result = setUserTitle(trimmed);
+    if (result.ok) {
+      ctx.showAlert(`Title set: ${result.title}`, 'success', 4000);
+    } else if (result.reason === 'empty') {
+      ctx.showAlert(
+        'Title is empty after removing special characters',
+        'error',
+        4000
+      );
+    } else {
+      ctx.showAlert(
+        'Terminal title is disabled — enable via /settings display',
+        'error',
+        4000
+      );
+    }
     return true;
   },
 

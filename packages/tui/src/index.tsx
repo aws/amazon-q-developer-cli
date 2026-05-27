@@ -45,6 +45,16 @@ import {
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 import { isTrustGateAccepted } from './utils/trust-gate-state';
 import { startProcessHealthCollector } from './utils/process-health-collector';
+import {
+  emitCurrentTitle,
+  initTerminalTitle,
+  refreshFromSession,
+  resetTerminalTitle,
+} from './utils/terminal-title';
+
+// Tracks which session ID has had its title synced from disk via onTurnSummary,
+// so we only read the file once per session.
+let titleSyncedForSession: string | undefined;
 
 // Circuit breaker: if stdout dies (e.g. PTY closed), exit immediately.
 // stdout.write() on a dead fd doesn't throw — it emits an async 'error' event.
@@ -66,6 +76,7 @@ const cleanup = () => {
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
     cmuxCleanup();
+    resetTerminalTitle();
   } catch {
     // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
   }
@@ -200,6 +211,13 @@ const wireUpHandlers = () => {
   // Wire up turn summary handler (credits + time)
   kiro.onTurnSummary((event) => {
     appStore.getState().handleTurnSummaryEvent(event);
+    // Refresh terminal title once after the first turn completes per session —
+    // the backend writes the session title to disk from the first user prompt,
+    // so by turn end it's guaranteed to be available.
+    if (titleSyncedForSession !== kiro.sessionId && kiro.sessionId) {
+      void refreshFromSession(kiro.sessionId);
+      titleSyncedForSession = kiro.sessionId;
+    }
   });
 
   // Wire up init-time notification handler (MCP failures, agent errors)
@@ -497,6 +515,15 @@ const startInitialization = (resumePickerSessionId?: string) => {
         CommandHistory.getInstance().setSessionId(kiro.sessionId);
       }
 
+      // Refresh terminal title from persisted session metadata. This catches
+      // resumed sessions that already have a title from a previous conversation —
+      // initTerminalTitle() at boot only had the cwd fallback since the session
+      // hadn't been loaded yet.
+      if (kiro.sessionId) {
+        await refreshFromSession(kiro.sessionId);
+        titleSyncedForSession = kiro.sessionId;
+      }
+
       // Clear the history handler so future events (from live streaming)
       // don't get buffered.
       kiro.onHistoryEvent(() => {});
@@ -677,6 +704,31 @@ const startApp = async () => {
   // Set process title so tmux automatic-rename shows "kiro" instead of the APC marker.
   // This doesn't override manual pane renames — only affects automatic-rename.
   process.title = 'kiro';
+
+  // Set the terminal window title (gated by chat.terminalTitle setting)
+  initTerminalTitle({
+    isEnabled: () => appStore.getState().terminalTitleEnabled,
+  });
+
+  // Subscribe to setting changes so toggling chat.terminalTitle mid-session
+  // takes effect immediately: enable → emit current title, disable → clear it.
+  let prevTerminalTitleEnabled = appStore.getState().terminalTitleEnabled;
+  appStore.subscribe((state) => {
+    // No change — skip
+    if (state.terminalTitleEnabled === prevTerminalTitleEnabled) {
+      return;
+    }
+    prevTerminalTitleEnabled = state.terminalTitleEnabled;
+
+    // User disabled the feature — clear the title bar immediately
+    if (!state.terminalTitleEnabled) {
+      resetTerminalTitle();
+      return;
+    }
+
+    // User enabled the feature — emit the current derived title
+    emitCurrentTitle();
+  });
 
   // Resolve wrap-disabled once at startup so the renderer option and theme
   // context see the same value for the whole session. The setting lives at
