@@ -67,7 +67,7 @@ kiro-cli chat --effort high "Refactor this module for better performance"
 kiro-cli chat --trust-all-tools "Run tests and analyze results"
 ```
 
-**What this does**: Allows agent to use any tool without approval prompts.
+**What this does**: Allows agent to use any tool without approval prompts. In interactive mode, displays a confirmation gate requiring you to accept the risks before proceeding, then shows a persistent warning banner throughout the session. In non-interactive mode (`--no-interactive`), the confirmation is auto-accepted.
 
 #### Use Case 6: Trust Specific Tools
 

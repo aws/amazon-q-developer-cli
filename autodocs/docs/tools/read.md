@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-10
+  commit: 9111223a6
   status: validated
   testable_headless: true
   category: tool
@@ -162,7 +162,7 @@ List directory contents recursively.
 - `depth` (integer, optional): Max recursion depth (default: 0 for non-recursive)
 - `max_entries` (integer, optional): Max entries to return (default: 1000)
 - `offset` (integer, optional): Skip first N entries for pagination (default: 0)
-- `exclude_patterns` (array, optional): Glob patterns to exclude (default: `["node_modules", ".git", "dist", "build", "out", ".cache", "target"]`). Empty array `[]` shows everything
+- `exclude_patterns` (array, optional): Patterns to exclude. Matches against both full path and filename. Default: `["node_modules", ".git", "dist", "build", "out", ".cache", "target"]`. Empty array `[]` disables filtering and shows everything
 - `show_deleted` (boolean, optional): Include deleted items (default: false)
 
 **Example**:

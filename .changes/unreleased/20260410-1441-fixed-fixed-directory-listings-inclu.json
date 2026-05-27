@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fixed TUI mode directory listings including .git and other build directories by default"
+}

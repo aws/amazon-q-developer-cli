@@ -31,7 +31,7 @@ use crate::util::providers::SystemProvider;
 /// The model would have to explicitly search these directories if it wants to.
 /// Directory patterns to ignore when traversing (common build/cache directories).
 /// Used by ls tool and @directory references.
-pub const IGNORE_PATTERNS: [&str; 7] = ["node_modules", "bin", "build", "dist", "out", ".cache", ".git"];
+pub const IGNORE_PATTERNS: [&str; 7] = ["node_modules", ".git", "dist", "build", "out", ".cache", "target"];
 
 // The max number of entry listing results to send to the model.
 const MAX_LS_ENTRIES: usize = 1000;
@@ -140,9 +140,7 @@ impl DirectoryOp {
 
                 // Otherwise, continue searching
                 if entry.metadata.is_dir() {
-                    // Exclude the directory from being searched if it is a commonly ignored
-                    // directory.
-                    if matches_any_pattern(IGNORE_PATTERNS, entry.path.to_string_lossy()) {
+                    if self.matches_ignore_patterns(&entry.path) {
                         continue;
                     }
                     dir_queue.push_back((entry.path.clone(), depth + 1));
@@ -158,10 +156,15 @@ impl DirectoryOp {
     }
 
     fn matches_ignore_patterns(&self, path: impl AsRef<Path>) -> bool {
-        let path = path.as_ref().to_string_lossy();
+        let path = path.as_ref();
+        let full_path = path.to_string_lossy();
+        let file_name = path.file_name().map(|n| n.to_string_lossy());
         match &self.exclude_patterns {
-            Some(patterns) => matches_any_pattern(patterns, path),
-            None => false,
+            Some(patterns) => {
+                matches_any_pattern(patterns, &*full_path)
+                    || file_name.is_some_and(|name| matches_any_pattern(patterns, &*name))
+            },
+            None => file_name.is_some_and(|name| matches_any_pattern(IGNORE_PATTERNS, &*name)),
         }
     }
 
@@ -432,6 +435,101 @@ mod tests {
         };
 
         assert!(tool.validate(&test_base).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ls_default_excludes_ignore_patterns() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("keep.txt", "content"))
+            .await
+            .with_directory(".git")
+            .await
+            .with_directory("node_modules")
+            .await
+            .with_directory("build")
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("keep.txt"));
+            assert!(!content.contains(".git"), "default should exclude .git");
+            assert!(!content.contains("node_modules"), "default should exclude node_modules");
+            assert!(!content.contains("build"), "default should exclude build");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_empty_excludes_disables_filtering() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("keep.txt", "content"))
+            .await
+            .with_directory(".git")
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("keep.txt"));
+            assert!(content.contains(".git"), "empty excludes should show .git");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_custom_exclude_simple_name() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("keep.txt", "content"))
+            .await
+            .with_directory("foo")
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec!["foo".to_string()]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("keep.txt"));
+            assert!(
+                !content.contains("foo"),
+                "custom simple name pattern should exclude foo"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_empty_excludes_allows_recursive_traversal() {
+        let test_base = TestBase::new().await.with_file(("build/nested.txt", "content")).await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: Some(1),
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("build"), "empty excludes should show build dir");
+            assert!(
+                content.contains("nested.txt"),
+                "empty excludes should recurse into build"
+            );
+        }
     }
 
     #[tokio::test]
