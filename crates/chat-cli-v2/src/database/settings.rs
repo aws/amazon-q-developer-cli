@@ -77,6 +77,10 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     ApiCodeWhispererService,
+    #[strum(message = "KRS endpoint override (JSON object)", props(scope = "global_only"))]
+    ApiKrsService,
+    #[strum(message = "CPS endpoint override (JSON object)", props(scope = "global_only"))]
+    ApiCpsService,
     #[strum(message = "OIDC scope prefix (string)", props(scope = "global_only"))]
     ApiOidcScopePrefix,
     #[strum(message = "Q service endpoint URL (string)", props(scope = "global_only"))]
@@ -240,6 +244,8 @@ impl AsRef<str> for Setting {
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ChatNotificationMethod => "chat.notificationMethod",
             Self::ApiCodeWhispererService => "api.codewhisperer.service",
+            Self::ApiKrsService => "api.krs.service",
+            Self::ApiCpsService => "api.cps.service",
             Self::ApiOidcScopePrefix => "api.oidc.scopePrefix",
             Self::ApiQService => "api.q.service",
             Self::ApiKiroAuthService => "api.kiroauth.service",
@@ -333,6 +339,8 @@ impl TryFrom<&str> for Setting {
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "chat.notificationMethod" => Ok(Self::ChatNotificationMethod),
             "api.codewhisperer.service" => Ok(Self::ApiCodeWhispererService),
+            "api.krs.service" => Ok(Self::ApiKrsService),
+            "api.cps.service" => Ok(Self::ApiCpsService),
             "api.oidc.scopePrefix" => Ok(Self::ApiOidcScopePrefix),
             "api.q.service" => Ok(Self::ApiQService),
             "api.kiroauth.service" => Ok(Self::ApiKiroAuthService),

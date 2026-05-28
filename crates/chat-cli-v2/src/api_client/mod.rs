@@ -37,6 +37,7 @@ use amzn_codewhisperer_streaming_client::config::endpoint::{
 };
 use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
 use amzn_codewhisperer_streaming_client::types::ValidationExceptionReason;
+use aws_config::Region;
 use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_credential_types::Credentials;
@@ -724,15 +725,15 @@ impl RealApiClient {
         let is_social = crate::auth::social::is_social_logged_in(database).await;
 
         let use_krs = std::env::var("KIRO_CLI_KRS_ENDPOINTS").is_ok();
-        let krs_endpoint = if use_krs {
-            Endpoint::krs_for_region(endpoint.region().as_ref())
-        } else {
-            endpoint.clone()
+        let krs_endpoint = match parse_endpoint_setting(database, Setting::ApiKrsService) {
+            Some(ep) => ep,
+            None if use_krs => Endpoint::krs_for_region(endpoint.region().as_ref()),
+            None => endpoint.clone(),
         };
-        let cps_endpoint = if use_krs {
-            Endpoint::cps_for_region(endpoint.region().as_ref())
-        } else {
-            endpoint.clone()
+        let cps_endpoint = match parse_endpoint_setting(database, Setting::ApiCpsService) {
+            Some(ep) => ep,
+            None if use_krs => Endpoint::cps_for_region(endpoint.region().as_ref()),
+            None => endpoint.clone(),
         };
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
@@ -1688,6 +1689,40 @@ fn classify_error_kind<R>(
         // to a reason code.
         reason_code: error::sdk_error_code(sdk_error),
         message: service_message,
+    }
+}
+
+/// Parse a custom endpoint override from a JSON setting.
+/// Returns `Some(Endpoint)` if the setting is present and valid, `None` otherwise.
+/// Logs an error if the setting exists but is malformed.
+fn parse_endpoint_setting(database: &Database, setting: Setting) -> Option<Endpoint> {
+    #[derive(serde::Deserialize)]
+    struct EndpointOverride {
+        endpoint: String,
+        region: String,
+    }
+
+    let value = database.settings.get(setting)?;
+    match serde_json::from_value::<EndpointOverride>(value.clone()) {
+        Ok(o) if !o.endpoint.is_empty() && !o.region.is_empty() => Some(Endpoint {
+            url: o.endpoint.into(),
+            region: Region::new(o.region),
+        }),
+        Ok(_) => {
+            tracing::error!(
+                "Setting {:?} has empty endpoint or region — ignoring override",
+                setting.as_ref()
+            );
+            None
+        },
+        Err(e) => {
+            tracing::error!(
+                "Setting {:?} is malformed (expected {{\"endpoint\": \"...\", \"region\": \"...\"}}): {} — ignoring override",
+                setting.as_ref(),
+                e
+            );
+            None
+        },
     }
 }
 
