@@ -90,7 +90,7 @@ impl crate::engine::dispatch_server::Dispatcher for BotCoreDispatcher {
             Ok(v) => v,
             Err(e) => {
                 warn!(error = %e, "dispatch: failed to parse forwarded Slack event JSON");
-                tracing::debug!(?event, "unparseable payload");
+                tracing::debug!(?event, "unparsable payload");
                 return;
             },
         };
@@ -122,10 +122,7 @@ mod tests {
         let coord = build_coordinator().await;
         // Noop always returns Acquired.
         let outcome = coord.try_acquire("convo-test").await;
-        assert_eq!(
-            outcome,
-            crate::engine::coordinator::LeaseOutcome::Acquired
-        );
+        assert_eq!(outcome, crate::engine::coordinator::LeaseOutcome::Acquired);
     }
 
     /// Sanity check: the JSON shape we expect from a peer's `forward` POST
@@ -158,8 +155,7 @@ mod tests {
             "event_time": 1700000000,
             "authed_users": []
         });
-        let parsed: Result<slack_morphism::prelude::SlackPushEventCallback, _> =
-            serde_json::from_value(payload);
+        let parsed: Result<slack_morphism::prelude::SlackPushEventCallback, _> = serde_json::from_value(payload);
         assert!(
             parsed.is_ok(),
             "reaction_added payload must deserialize: {:?}",

@@ -52,7 +52,6 @@ pub struct PendingApproval {
     pub reply_tx: Option<oneshot::Sender<ApprovalResponse>>,
 }
 
-
 // ---------------------------------------------------------------------------
 // File downloads
 // ---------------------------------------------------------------------------
@@ -733,10 +732,7 @@ pub fn spawn_approval_listener(
             // the in-memory map still works, the bot just can't route across
             // tasks until DDB recovers.
             let conv_id = conv_id_for_approval(&req.channel, req.thread_ts.as_deref());
-            if let Err(e) = coordinator
-                .register_approval(&msg_ts, &conv_id, APPROVAL_DDB_TTL)
-                .await
-            {
+            if let Err(e) = coordinator.register_approval(&msg_ts, &conv_id, APPROVAL_DDB_TTL).await {
                 warn!(error = %e, msg_ts, "register_approval failed; falling back to local-only routing");
             }
 

@@ -401,9 +401,7 @@ impl Coordinator for DynamoCoordinator {
         if !still_valid {
             return Ok(None);
         }
-        Ok(item
-            .get(col::OWNER_TASK_ARN)
-            .and_then(|v| v.as_s().ok().cloned()))
+        Ok(item.get(col::OWNER_TASK_ARN).and_then(|v| v.as_s().ok().cloned()))
     }
 }
 

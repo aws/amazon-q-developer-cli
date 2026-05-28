@@ -249,8 +249,7 @@ impl Coordinator for InMemoryClusterCoordinator {
         _conversation_id: &str,
         ttl: std::time::Duration,
     ) -> anyhow::Result<()> {
-        let expires_at = self.now()
-            + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
+        let expires_at = self.now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
         let mut s = self.cluster.lock().expect("cluster state poisoned");
         s.approvals
             .insert(slack_msg_ts.to_string(), (self.own_task_id.clone(), expires_at));
@@ -336,8 +335,7 @@ impl Coordinator for NoopCoordinator {
         _conversation_id: &str,
         ttl: std::time::Duration,
     ) -> anyhow::Result<()> {
-        let expires_at = Utc::now()
-            + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
+        let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
         let mut state = self.state.lock().expect("noop state poisoned");
         state.approvals.insert(slack_msg_ts.to_string(), expires_at);
         Ok(())

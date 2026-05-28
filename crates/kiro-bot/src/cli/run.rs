@@ -187,8 +187,9 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(8080);
-    let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> =
-        Arc::new(crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()));
+    let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> = Arc::new(
+        crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()),
+    );
     let dispatch_handle = tokio::spawn(async move {
         if let Err(e) = crate::engine::dispatch_server::run_dispatch_server(dispatch_port, dispatcher).await {
             tracing::error!(error = %e, "dispatch server exited");
