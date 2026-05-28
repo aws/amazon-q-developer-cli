@@ -5,24 +5,16 @@ scenarios from `scenarios.json`, capture evidence frames, and report results.
 
 ## Startup
 
-Use `scripts/knight-rider.sh start` to launch Knight Rider. This script
-handles timeout guards, orphan cleanup, and boot readiness polling.
-
-If running in CI with a custom output dir, start Knight Rider directly:
+**ALWAYS** use the wrapper script to start Knight Rider:
 
 ```bash
-cd packages/tui
-nohup bun run knight-rider --out "${SMOKE_OUTPUT_DIR:-.smoke-frames}" > /tmp/knight-rider.log 2>&1 &
-echo $! > /tmp/knight-rider.pid
+bash scripts/knight-rider.sh start
 ```
 
-Then wait for ready:
-```bash
-for i in $(seq 1 30); do
-  curl -sf http://localhost:3001/api/status | grep -q '"ready"' && break
-  sleep 1
-done
-```
+This script handles timeout guards, orphan cleanup, boot readiness polling,
+and will exit with an error if Knight Rider fails to start within 30 seconds.
+Do NOT start Knight Rider manually with `nohup` or `bun run knight-rider` —
+those can hang indefinitely.
 
 ## Shell Helpers
 
