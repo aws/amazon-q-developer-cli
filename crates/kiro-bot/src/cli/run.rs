@@ -139,7 +139,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
 
     let feedback_writer = build_feedback_writer().await;
 
-    let state = SlackState {
+    let state = Arc::new(SlackState {
         core,
         frontend,
         user_id: String::new(),
@@ -148,12 +148,12 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         user_map,
         pending_approvals,
         feedback_writer,
-    };
+    });
 
     let env = Arc::new(
         SlackClientEventsListenerEnvironment::new(slack_client.clone())
             .with_error_handler(on_error)
-            .with_user_state(state),
+            .with_user_state((*state).clone()),
     );
 
     let socket_config = SlackClientSocketModeConfig::new().with_ping_interval_in_seconds(30);
@@ -167,16 +167,17 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         .await?;
     info!("⚡ Bot started");
 
-    // Phase 1: bind the dispatch server alongside Slack so peer tasks can
-    // POST forwarded events. The handler is a stub for now (logs+drops);
-    // Phase 2 swaps in a real Dispatcher that replays the event into the
-    // local frontend pipeline.
+    // Phase 2: bind the dispatch server with a real Dispatcher that replays
+    // forwarded Slack events through the same handlers as Slack-native
+    // delivery. Without a coordinator instructing peers to forward (Phase 3)
+    // this code path is dormant — but it must be live before Phase 3 so a
+    // forwarded event has somewhere to land.
     let dispatch_port = std::env::var("KIRO_BOT_DISPATCH_PORT")
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(8080);
     let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> =
-        Arc::new(crate::engine::coordinator_bootstrap::LoggingDispatcher);
+        Arc::new(crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()));
     let dispatch_handle = tokio::spawn(async move {
         if let Err(e) = crate::engine::dispatch_server::run_dispatch_server(dispatch_port, dispatcher).await {
             tracing::error!(error = %e, "dispatch server exited");
