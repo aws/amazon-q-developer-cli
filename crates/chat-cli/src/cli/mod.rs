@@ -173,6 +173,7 @@ pub enum RootSubcommand {
     },
     /// Start a voice recording server for remote/cloud desktop use.
     #[cfg(feature = "voice")]
+    #[command(hide = true)]
     VoiceServe {
         /// Port to listen on.
         #[arg(long, default_value = "19876")]
@@ -183,7 +184,7 @@ pub enum RootSubcommand {
     },
     /// Set up voice mode for a cloud desktop (run locally).
     #[cfg(feature = "voice")]
-    #[command(name = "voice-cloud-setup")]
+    #[command(name = "voice-cloud-setup", hide = true)]
     VoiceCloudSetup {
         /// Cloud desktop hostname or SSH config alias
         host: String,

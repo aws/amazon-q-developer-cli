@@ -52,12 +52,9 @@ aws-credential-types = "1.0.3"
 aws-runtime = "1.4.4"
 aws-sdk-cognitoidentity = { version = "1.51.0", features = ["test-util"] }
 aws-sdk-ssooidc = { version = "1.51.0", features = ["test-util"] }
-aws-sdk-bedrockagent = "1"
 aws-sdk-bedrockagentruntime = "1.66"
 aws-sdk-cloudwatch = "1"
 aws-sdk-dynamodb = "1"
-aws-sdk-s3 = "1"
-aws-sdk-secretsmanager = "1"
 aws-smithy-async = "1.2.2"
 aws-smithy-mocks = "0.2"
 aws-smithy-runtime-api = "1.6.1"
