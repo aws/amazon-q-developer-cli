@@ -113,18 +113,28 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     });
 
     let coordinator = crate::engine::coordinator_bootstrap::build_coordinator().await;
+    // Resolve our own ECS task id once and stash it in a task-local; the
+    // reaction handler reads it to skip the forward branch when it's already
+    // the lookup-owner. Outside Fargate this falls back to hostname-pid.
+    let own_task_id = crate::engine::task_metadata::resolve_self_id().await;
     let core = BotCore {
         work_sender: work_tx,
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         authz,
         response_policy,
         acp_info,
-        coordinator,
+        coordinator: coordinator.clone(),
     };
 
     let pending_approvals: PendingApprovals = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Some(rx) = approval_rx {
-        spawn_approval_listener(rx, slack_client.clone(), bot_token.clone(), pending_approvals.clone());
+        spawn_approval_listener(
+            rx,
+            slack_client.clone(),
+            bot_token.clone(),
+            pending_approvals.clone(),
+            coordinator.clone(),
+        );
     }
 
     let bot_user_id = {
@@ -148,6 +158,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         user_map,
         pending_approvals,
         feedback_writer,
+        own_task_id,
     });
 
     let env = Arc::new(

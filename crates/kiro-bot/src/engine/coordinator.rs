@@ -96,6 +96,25 @@ pub trait Coordinator: Send + Sync {
 
     /// Load up to `limit` most-recent turns for the conversation, oldest first.
     async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>>;
+
+    /// Record that this task owns the pending approval keyed by `slack_msg_ts`.
+    /// Stored with a TTL so a crashed task's row eventually expires.
+    ///
+    /// The `pending_approvals` map in `frontend::slack` is per-process, so a
+    /// reaction delivered to a peer task whose map is empty needs a way to
+    /// learn which task does own the approval. Phase 3 writes this row at the
+    /// moment the approval prompt is posted; the reaction handler reads it on
+    /// a local miss and forwards to the owner via [`Coordinator::forward`].
+    async fn register_approval(
+        &self,
+        slack_msg_ts: &str,
+        conversation_id: &str,
+        ttl: std::time::Duration,
+    ) -> anyhow::Result<()>;
+
+    /// Read back the owning task identity for a pending approval, if any.
+    /// Returns `Ok(None)` when the row is missing or expired.
+    async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>>;
 }
 
 /// In-memory implementation. Single-task only (state isn't shared across
@@ -124,6 +143,10 @@ struct ClusterState {
     seen_events: HashSet<String>,
     leases: HashMap<String, Lease>,
     transcripts: HashMap<String, Vec<Turn>>,
+    /// `slack_msg_ts` → (owner_task_id, expires_at). Mirrors the production
+    /// approvals table so HA tests exercise the cross-task routing path the
+    /// same way `DynamoCoordinator` does.
+    approvals: HashMap<String, (String, DateTime<Utc>)>,
 }
 
 #[derive(Clone)]
@@ -219,6 +242,29 @@ impl Coordinator for InMemoryClusterCoordinator {
             Ok(all[all.len() - limit..].to_vec())
         }
     }
+
+    async fn register_approval(
+        &self,
+        slack_msg_ts: &str,
+        _conversation_id: &str,
+        ttl: std::time::Duration,
+    ) -> anyhow::Result<()> {
+        let expires_at = self.now()
+            + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        s.approvals
+            .insert(slack_msg_ts.to_string(), (self.own_task_id.clone(), expires_at));
+        Ok(())
+    }
+
+    async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>> {
+        let now = self.now();
+        let s = self.cluster.lock().expect("cluster state poisoned");
+        Ok(s.approvals
+            .get(slack_msg_ts)
+            .filter(|(_, exp)| *exp > now)
+            .map(|(owner, _)| owner.clone()))
+    }
 }
 
 #[derive(Default)]
@@ -226,6 +272,7 @@ struct NoopState {
     seen_events: HashSet<String>,
     leases: HashMap<String, ()>,
     transcripts: HashMap<String, Vec<Turn>>,
+    approvals: HashMap<String, DateTime<Utc>>,
 }
 
 impl NoopCoordinator {
@@ -281,6 +328,33 @@ impl Coordinator for NoopCoordinator {
             // Most recent `limit` turns, oldest first.
             Ok(all[all.len() - limit..].to_vec())
         }
+    }
+
+    async fn register_approval(
+        &self,
+        slack_msg_ts: &str,
+        _conversation_id: &str,
+        ttl: std::time::Duration,
+    ) -> anyhow::Result<()> {
+        let expires_at = Utc::now()
+            + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
+        let mut state = self.state.lock().expect("noop state poisoned");
+        state.approvals.insert(slack_msg_ts.to_string(), expires_at);
+        Ok(())
+    }
+
+    async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>> {
+        // Single-task: if we have the row, we are the owner. Use a stable
+        // sentinel rather than std::process::id() so test assertions are
+        // deterministic — the value is only ever compared to *peer* ids by
+        // the caller and Noop has no peers.
+        let now = Utc::now();
+        let state = self.state.lock().expect("noop state poisoned");
+        Ok(state
+            .approvals
+            .get(slack_msg_ts)
+            .filter(|exp| **exp > now)
+            .map(|_| "self".to_string()))
     }
 }
 
@@ -441,5 +515,35 @@ mod tests {
         let hist = task_b.load_history("convo-1", 10).await.unwrap();
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].text, "hi");
+    }
+
+    #[tokio::test]
+    async fn cluster_coordinator_routes_approvals_to_owner() {
+        let task_a = InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5));
+        let task_b = task_a.sibling("task-B");
+
+        task_a
+            .register_approval("1700000000.0001", "convo-1", std::time::Duration::from_secs(1800))
+            .await
+            .unwrap();
+
+        // B's lookup must find A as the owner (this is the cross-task hop the
+        // reaction handler needs to know about).
+        let owner = task_b.lookup_approval_owner("1700000000.0001").await.unwrap();
+        assert_eq!(owner.as_deref(), Some("task-A"));
+
+        // Unknown msg_ts returns None.
+        let missing = task_b.lookup_approval_owner("nope").await.unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[tokio::test]
+    async fn noop_coordinator_register_lookup_round_trips() {
+        let c = NoopCoordinator::new();
+        c.register_approval("1700000000.0001", "convo-1", std::time::Duration::from_secs(60))
+            .await
+            .unwrap();
+        let owner = c.lookup_approval_owner("1700000000.0001").await.unwrap();
+        assert_eq!(owner.as_deref(), Some("self"));
     }
 }

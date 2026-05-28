@@ -52,6 +52,7 @@ pub struct PendingApproval {
     pub reply_tx: Option<oneshot::Sender<ApprovalResponse>>,
 }
 
+
 // ---------------------------------------------------------------------------
 // File downloads
 // ---------------------------------------------------------------------------
@@ -265,6 +266,11 @@ pub struct SlackState {
     /// reactions are still consumed by the approval flow above, just not
     /// persisted as feedback.
     pub feedback_writer: Option<Arc<dyn crate::engine::feedback::FeedbackWriter>>,
+    /// This task's identity, as written into the cross-task approvals table.
+    /// Read by the reaction handler to compare against the lookup-owner so a
+    /// self-owned approval short-circuits without forwarding to ourselves.
+    /// Empty for local CLI / unit-test contexts.
+    pub own_task_id: String,
 }
 
 static MENTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<@[A-Z0-9]+>").unwrap());
@@ -278,21 +284,23 @@ pub async fn on_push(
     let guard = states.read().await;
     let state = guard.get_user_state::<SlackState>().ok_or("no state")?.clone();
     drop(guard);
-    dispatch_event(event, &state).await
+    dispatch_event(event, &state, /* forwarded */ false).await
 }
 
 /// Drive a `SlackPushEventCallback` through the same per-event handlers
 /// `on_push` uses. Exposed so a forwarded event arriving at this task's
 /// `/dispatch` endpoint can be processed exactly as if Slack had delivered
-/// it natively.
+/// it natively. `forwarded = true` suppresses re-forwarding on a local miss
+/// so peers don't ping-pong reactions.
 pub async fn dispatch_event(
     event: SlackPushEventCallback,
     state: &SlackState,
+    forwarded: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match event.event {
         SlackEventCallbackBody::Message(msg) => handle_message(msg, state).await?,
         SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, state).await?,
-        SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, state).await?,
+        SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, state, forwarded).await?,
         _ => {},
     }
     Ok(())
@@ -487,6 +495,7 @@ async fn handle_mention(
 async fn handle_reaction(
     reaction: SlackReactionAddedEvent,
     state: &SlackState,
+    forwarded: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let reactor = reaction.user.to_string();
     tracing::debug!(reactor, bot_user_id = %state.bot_user_id, member_id = %state.member_id, "Reaction event received");
@@ -543,7 +552,44 @@ async fn handle_reaction(
     }
 
     let approval = state.pending_approvals.lock().unwrap().remove(&ts);
-    let Some(mut approval) = approval else { return Ok(()) };
+    let Some(mut approval) = approval else {
+        // Local miss: maybe a peer task posted this approval. Look up the
+        // owner in the cross-task approvals table (if any) and forward.
+        // Skip forwarding for events that *already* arrived via /dispatch —
+        // otherwise we ping-pong with the original owner.
+        if !forwarded
+            && let Ok(Some(peer)) = state.core.coordinator.lookup_approval_owner(&ts).await
+            && !peer.is_empty()
+            && peer != state.own_task_id
+        {
+            let payload = serde_json::json!({
+                "token": "",
+                "team_id": "",
+                "api_app_id": "",
+                "type": "event_callback",
+                "event_id": format!("forward:{ts}:{emoji}"),
+                "event_time": chrono::Utc::now().timestamp(),
+                "authed_users": [],
+                "event": {
+                    "type": "reaction_added",
+                    "user": reactor,
+                    "reaction": emoji,
+                    "item": &reaction.item,
+                    "item_user": "",
+                    "event_ts": ts.clone(),
+                },
+            });
+            let payload = crate::engine::coordinator::ForwardEvent {
+                slack_event_json: payload,
+            };
+            if let Err(e) = state.core.coordinator.forward(&peer, payload).await {
+                warn!(error = %e, peer, msg_ts = %ts, "forward to approval owner failed");
+            } else {
+                tracing::info!(peer, msg_ts = %ts, "forwarded reaction to approval owner");
+            }
+        }
+        return Ok(());
+    };
 
     info!(emoji, tool = %approval.tool_name, "Reaction on approval message");
     let Some(reply_tx) = approval.reply_tx.take() else {
@@ -614,12 +660,30 @@ async fn handle_reaction(
     Ok(())
 }
 
+/// How long an approval row in the cross-task approvals DDB table is valid.
+/// Must outlive the in-process `tokio::time::timeout(600s)` on the ACP-side
+/// `reply_rx.await` plus a comfortable cushion so a slow user doesn't make
+/// the row TTL out before they react.
+const APPROVAL_DDB_TTL: std::time::Duration = std::time::Duration::from_secs(1800);
+
+/// Derive the conversation id used as a hash for cross-task forwarding.
+/// Mirrors `engine::core::Conversation::id` for thread/channel cases; DM
+/// approvals are rare in practice so the simpler `channel:<id>` form is
+/// fine — the routing key only needs to be stable across tasks.
+fn conv_id_for_approval(channel: &str, thread_ts: Option<&str>) -> String {
+    match thread_ts {
+        Some(ts) => format!("thread:{channel}:{ts}"),
+        None => format!("channel:{channel}"),
+    }
+}
+
 /// Spawn a task that posts approval requests to Slack and seeds emoji reactions.
 pub fn spawn_approval_listener(
     mut approval_rx: tokio::sync::mpsc::UnboundedReceiver<ApprovalRequest>,
     client: Arc<SlackHyperClient>,
     bot_token: SlackApiToken,
     pending: PendingApprovals,
+    coordinator: Arc<dyn crate::engine::coordinator::Coordinator>,
 ) {
     tokio::spawn(async move {
         while let Some(req) = approval_rx.recv().await {
@@ -660,6 +724,20 @@ pub fn spawn_approval_listener(
                         ts.clone(),
                     ))
                     .await;
+            }
+
+            // Cross-task: record this task as the owner of the approval before
+            // installing the in-memory entry so a peer's reaction lookup
+            // doesn't race against the local insert. Coordinator failure is
+            // logged and treated as a soft fall-through to local-only mode —
+            // the in-memory map still works, the bot just can't route across
+            // tasks until DDB recovers.
+            let conv_id = conv_id_for_approval(&req.channel, req.thread_ts.as_deref());
+            if let Err(e) = coordinator
+                .register_approval(&msg_ts, &conv_id, APPROVAL_DDB_TTL)
+                .await
+            {
+                warn!(error = %e, msg_ts, "register_approval failed; falling back to local-only routing");
             }
 
             pending.lock().unwrap().insert(msg_ts.clone(), PendingApproval {

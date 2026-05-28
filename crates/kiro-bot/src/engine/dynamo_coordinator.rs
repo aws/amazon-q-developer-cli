@@ -64,6 +64,7 @@ mod col {
     pub const TS: &str = "ts";
     pub const EXPIRES_AT: &str = "expires_at";
     pub const CHUNK_IDS: &str = "chunk_ids";
+    pub const SLACK_MSG_TS: &str = "slack_msg_ts";
 }
 
 /// One DDB-backed coordinator. Cheap to clone (`Client` is `Arc`-internal).
@@ -73,6 +74,11 @@ pub struct DynamoCoordinator {
     pub leases_table: String,
     pub transcripts_table: String,
     pub dedup_table: String,
+    /// Optional — when `None`, `register_approval` / `lookup_approval_owner`
+    /// are no-ops. Set on Fargate when `KIRO_BOT_APPROVALS_TABLE` is in the
+    /// env; absent in local dev so the bot still works without provisioning
+    /// the table.
+    pub approvals_table: Option<String>,
     pub own_task_arn: String,
     /// How long a lease is valid. Renewed on each successful prompt turn.
     pub lease_ttl: Duration,
@@ -95,6 +101,7 @@ impl DynamoCoordinator {
             leases_table: leases_table.into(),
             transcripts_table: transcripts_table.into(),
             dedup_table: dedup_table.into(),
+            approvals_table: None,
             own_task_arn: own_task_arn.into(),
             lease_ttl: Duration::seconds(DEFAULT_LEASE_TTL_SECS),
             http: reqwest::Client::new(),
@@ -104,6 +111,13 @@ impl DynamoCoordinator {
 
     pub fn with_lease_ttl(mut self, ttl: Duration) -> Self {
         self.lease_ttl = ttl;
+        self
+    }
+
+    /// Enable approval-row routing. Without this the two approval methods
+    /// log+ignore. The CDK injects the table name via `KIRO_BOT_APPROVALS_TABLE`.
+    pub fn with_approvals_table(mut self, table: impl Into<String>) -> Self {
+        self.approvals_table = Some(table.into());
         self
     }
 
@@ -331,6 +345,65 @@ impl Coordinator for DynamoCoordinator {
             .collect();
         turns.reverse();
         Ok(turns)
+    }
+
+    async fn register_approval(
+        &self,
+        slack_msg_ts: &str,
+        conversation_id: &str,
+        ttl: std::time::Duration,
+    ) -> anyhow::Result<()> {
+        let Some(table) = self.approvals_table.as_ref() else {
+            // Misconfigured: no approvals table provisioned. Caller will fall
+            // back to local-only behaviour; cross-task forwarding won't work
+            // for approvals until the env var is set.
+            warn!("register_approval called but no approvals_table configured");
+            return Ok(());
+        };
+        let expires = self.now().timestamp() + ttl.as_secs() as i64;
+        self.client
+            .put_item()
+            .table_name(table)
+            .item(col::SLACK_MSG_TS, Self::s(slack_msg_ts))
+            .item(col::OWNER_TASK_ARN, Self::s(&self.own_task_arn))
+            .item(col::CONVERSATION_ID, Self::s(conversation_id))
+            .item(col::EXPIRES_AT, Self::n(expires))
+            .send()
+            .await
+            .context("register_approval PutItem")?;
+        Ok(())
+    }
+
+    async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>> {
+        let Some(table) = self.approvals_table.as_ref() else {
+            return Ok(None);
+        };
+        let resp = self
+            .client
+            .get_item()
+            .table_name(table)
+            .key(col::SLACK_MSG_TS, Self::s(slack_msg_ts))
+            .send()
+            .await
+            .context("lookup_approval_owner GetItem")?;
+        // DDB TTL sweep is best-effort; honour expires_at locally so a stale
+        // row doesn't redirect a freshly registered approval.
+        let Some(item) = resp.item else {
+            return Ok(None);
+        };
+        let now = self.now().timestamp();
+        let still_valid = item
+            .get(col::EXPIRES_AT)
+            .and_then(|v| v.as_n().ok())
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(|exp| exp > now)
+            .unwrap_or(true);
+        if !still_valid {
+            return Ok(None);
+        }
+        Ok(item
+            .get(col::OWNER_TASK_ARN)
+            .and_then(|v| v.as_s().ok().cloned()))
     }
 }
 
