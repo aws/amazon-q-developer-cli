@@ -63,6 +63,12 @@ pub struct LaunchOptions {
     pub interactivity: Interactivity,
     /// Auto-approve all tool permission requests.
     pub trust_all_tools: bool,
+    /// Agent name override.
+    pub agent: Option<String>,
+    /// Model override.
+    pub model: Option<String>,
+    /// Specific tools to trust.
+    pub trust_tools: Option<Vec<String>>,
 }
 
 impl LaunchOptions {
@@ -73,6 +79,9 @@ impl LaunchOptions {
             mode,
             interactivity: Interactivity::Interactive,
             trust_all_tools: false,
+            agent: None,
+            model: None,
+            trust_tools: None,
         }
     }
 
@@ -82,12 +91,18 @@ impl LaunchOptions {
         mode: Option<AgentMode>,
         input: String,
         trust_all_tools: bool,
+        agent: Option<String>,
+        model: Option<String>,
+        trust_tools: Option<Vec<String>>,
     ) -> Self {
         Self {
             agent_engine,
             mode,
             interactivity: Interactivity::NonInteractive { input },
             trust_all_tools,
+            agent,
+            model,
+            trust_tools,
         }
     }
 }

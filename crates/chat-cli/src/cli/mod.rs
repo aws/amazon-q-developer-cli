@@ -643,7 +643,15 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
     let mode = args.mode;
     let options = if args.no_interactive {
         let input = args.resolve_non_interactive_input()?;
-        crate::launch::LaunchOptions::non_interactive(agent_engine, mode, input, args.trust_all_tools)
+        crate::launch::LaunchOptions::non_interactive(
+            agent_engine,
+            mode,
+            input,
+            args.trust_all_tools,
+            args.agent.clone(),
+            args.model.clone(),
+            args.trust_tools.clone(),
+        )
     } else {
         crate::launch::LaunchOptions::interactive(agent_engine, mode)
     };

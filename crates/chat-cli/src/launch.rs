@@ -29,10 +29,23 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
         mode,
         interactivity,
         trust_all_tools,
+        agent,
+        model,
+        trust_tools,
     } = options;
 
     if let Interactivity::NonInteractive { input } = interactivity {
-        return launch_acp_non_interactive(os, agent_engine, mode, input, trust_all_tools).await;
+        return launch_acp_non_interactive(
+            os,
+            agent_engine,
+            mode,
+            input,
+            trust_all_tools,
+            agent,
+            model,
+            trust_tools,
+        )
+        .await;
     }
 
     launch_acp_interactive(os, agent_engine, mode).await
@@ -220,12 +233,16 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 }
 
 /// Drive a non-interactive V2 session.
+#[allow(clippy::too_many_arguments)]
 async fn launch_acp_non_interactive(
     _os: &Os,
     agent_engine: AgentEngine,
     mode: Option<AgentMode>,
     input: String,
     trust_all_tools: bool,
+    agent: Option<String>,
+    model: Option<String>,
+    trust_tools: Option<Vec<String>>,
 ) -> Result<ExitCode> {
     use agent_client_protocol::{
         self as acp,
@@ -238,6 +255,7 @@ async fn launch_acp_non_interactive(
 
     struct NonInteractiveAcpClient {
         trust_all_tools: bool,
+        trust_tools: Option<Vec<String>>,
     }
 
     fn non_interactive_error(reason: &str) -> acp::Error {
@@ -280,7 +298,20 @@ async fn launch_acp_non_interactive(
             &self,
             args: acp::RequestPermissionRequest,
         ) -> acp::Result<acp::RequestPermissionResponse> {
-            if self.trust_all_tools {
+            let should_approve = self.trust_all_tools
+                || self.trust_tools.as_ref().is_some_and(|tools| {
+                    // Extract toolId from _meta.kiro.toolId (set by KAS)
+                    let tool_id = args
+                        .meta
+                        .as_ref()
+                        .and_then(|m| m.get("kiro"))
+                        .and_then(|k| k.get("toolId"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    tools.iter().any(|t| t.eq_ignore_ascii_case(tool_id))
+                });
+
+            if should_approve {
                 let option_id = args
                     .options
                     .iter()
@@ -384,7 +415,10 @@ async fn launch_acp_non_interactive(
     let result: Result<ExitCode> = local_set
         .run_until(async move {
             let (conn, handle_io) = acp::ClientSideConnection::new(
-                NonInteractiveAcpClient { trust_all_tools },
+                NonInteractiveAcpClient {
+                    trust_all_tools,
+                    trust_tools,
+                },
                 outgoing,
                 incoming,
                 |fut| {
@@ -407,6 +441,29 @@ async fn launch_acp_non_interactive(
                 .new_session(acp::NewSessionRequest::new(cwd))
                 .await
                 .context("ACP new_session failed")?;
+
+            if let Some(ref agent) = agent
+                && let Err(e) = conn
+                    .set_session_mode(acp::SetSessionModeRequest::new(
+                        session.session_id.clone(),
+                        acp::SessionModeId::new(agent.clone()),
+                    ))
+                    .await
+            {
+                eprintln!("[warn] failed to set agent '{}': {}", agent, e.message);
+            }
+
+            if let Some(ref model) = model
+                && let Err(e) = conn
+                    .set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+                        session.session_id.clone(),
+                        acp::SessionConfigId::new("model"),
+                        acp::SessionConfigValueId::new(model.clone()),
+                    ))
+                    .await
+            {
+                eprintln!("[warn] failed to set model '{}': {}", model, e.message);
+            }
 
             let response = conn
                 .prompt(acp::PromptRequest::new(session.session_id, vec![
