@@ -1,0 +1,125 @@
+name: Smoke Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platforms to run on"
+        type: choice
+        required: true
+        default: "all"
+        options:
+          - all
+          - linux
+          - macos
+          - windows
+      reason:
+        description: "Why are you running this?"
+        required: false
+        default: 'ad-hoc'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  matrix:
+    name: Resolve platforms
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.set.outputs.platforms }}
+    steps:
+      - id: set
+        run: |
+          case "${{ inputs.platform }}" in
+            linux)   echo 'platforms=["ubuntu-latest"]' >> "$GITHUB_OUTPUT" ;;
+            macos)   echo 'platforms=["macos-latest"]' >> "$GITHUB_OUTPUT" ;;
+            windows) echo 'platforms=["windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+            *)       echo 'platforms=["ubuntu-latest","macos-latest","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  smoke:
+    name: Smoke (${{ matrix.os }})
+    needs: matrix
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.matrix.outputs.platforms) }}
+    env:
+      RUN_ID: smoke-${{ github.run_id }}-${{ matrix.os }}
+      KIRO_AGENT_PATH: ${{ github.workspace }}/target/debug/chat_cli
+      TERM: xterm-256color
+      COLORTERM: truecolor
+      FORCE_COLOR: '3'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-smoke-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build chat_cli
+        run: cargo build -p chat_cli
+
+      - uses: ./.github/actions/codeartifact-login
+        continue-on-error: true
+
+      - run: bun install
+      - run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - run: bun run build
+        working-directory: packages/tui
+
+      - name: Shim chat_cli onto PATH (unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x target/debug/chat_cli
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/debug/chat_cli" "$HOME/.local/bin/kiro-cli"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Shim chat_cli onto PATH (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binDir = "$env:USERPROFILE\.local\bin"
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          Copy-Item "target\debug\chat_cli.exe" "$binDir\kiro-cli.exe"
+          "$binDir" | Out-File -Append -FilePath $env:GITHUB_PATH
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroReviewerGitHubActionsRole
+          aws-region: us-east-1
+
+      - name: Run smoke scenarios
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
+        shell: bash
+        run: |
+          kiro-cli chat --agent smoke-test --no-interactive --trust-all-tools \
+            "Run all scenarios" 2>&1 | tail -300
+
+      - name: Sync evidence to S3
+        if: always()
+        shell: bash
+        run: |
+          aws s3 sync .smoke-frames/ "s3://kiro-reviewer-archive/evidence/${RUN_ID}/" || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-frames-${{ env.RUN_ID }}
+          path: .smoke-frames/
+          retention-days: 30

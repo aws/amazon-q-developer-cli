@@ -1,0 +1,45 @@
+{
+  "name": "smoke-test",
+  "description": "Runs TUI smoke tests via Knight Rider. Starts the server, drives scenarios, captures evidence.",
+  "model": "claude-opus-4.6",
+  "prompt": "file://.kiro/agents/resources/SMOKE_TEST_PROMPT.md",
+  "tools": [
+    "fs_read",
+    "execute_bash",
+    "grep",
+    "glob"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "execute_bash",
+    "grep",
+    "glob"
+  ],
+  "resources": [
+    "file://.kiro/skills/knight-rider/SKILL.md",
+    "file://packages/tui/e2e_tests/smoke/scenarios.json"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^curl[^&;|]*$",
+        "^sleep[^&;|]*$",
+        "^kill[^&;|]*$",
+        "^lsof[^&;|]*$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^pwd$",
+        "^find[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^grep[^&;|]*$",
+        "^wc[^&;|]*$",
+        "^nohup[^&;|]*$",
+        "^bash scripts/knight-rider\\.sh[^&;|]*$",
+        "^cd packages/tui[^&;|]*$",
+        "^bun run knight-rider[^&;|]*$"
+      ]
+    }
+  }
+}
