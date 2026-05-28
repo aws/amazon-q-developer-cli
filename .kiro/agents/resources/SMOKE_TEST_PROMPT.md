@@ -5,16 +5,29 @@ scenarios from `scenarios.json`, capture evidence frames, and report results.
 
 ## Startup
 
-**ALWAYS** use the wrapper script to start Knight Rider:
+**ALWAYS** start Knight Rider with an explicit output directory:
 
 ```bash
-bash scripts/knight-rider.sh start
+cd packages/tui
+for pid in $(lsof -ti:3001 2>/dev/null); do kill $pid 2>/dev/null; done; sleep 1
+nohup bun run knight-rider --out "$GITHUB_WORKSPACE/.smoke-frames" > /tmp/knight-rider.log 2>&1 &
+echo $! > /tmp/knight-rider.pid
 ```
 
-This script handles timeout guards, orphan cleanup, boot readiness polling,
-and will exit with an error if Knight Rider fails to start within 30 seconds.
-Do NOT start Knight Rider manually with `nohup` or `bun run knight-rider` —
-those can hang indefinitely.
+Then wait for ready (max 30 seconds, exit if it fails):
+```bash
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3001/api/status | grep -q '"ready"'; then
+    echo "Knight Rider ready"
+    break
+  fi
+  sleep 1
+  if [ $i -eq 30 ]; then echo "FAILED: Knight Rider not ready"; exit 1; fi
+done
+```
+
+The `--out` flag is critical — without it, frames go to an auto-generated
+directory that the workflow can't find for S3 upload.
 
 ## Shell Helpers
 

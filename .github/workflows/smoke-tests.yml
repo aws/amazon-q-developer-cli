@@ -120,6 +120,28 @@ jobs:
         run: |
           aws s3 sync .smoke-frames/ "s3://kiro-reviewer-archive/evidence/${RUN_ID}/" || true
 
+      - name: Generate summary
+        if: always()
+        shell: bash
+        run: |
+          frames=$(find .smoke-frames -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+          {
+            echo "## Smoke Tests — ${{ matrix.os }}"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Frames captured** | $frames |"
+            echo "| **Run ID** | \`${RUN_ID}\` |"
+            echo "| **Reason** | ${{ inputs.reason }} |"
+            if [ "$frames" -gt 0 ]; then
+              echo ""
+              echo "### Evidence files"
+              echo '```'
+              find .smoke-frames -name '*.html' -printf '%f\n' 2>/dev/null | sort
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v7
