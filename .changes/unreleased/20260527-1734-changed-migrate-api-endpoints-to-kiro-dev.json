@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "API endpoints migrated to *.kiro.dev. If your network restricts outbound traffic, see https://kiro.dev/docs/privacy-and-security/firewalls/ for required allowlist domains."
+}

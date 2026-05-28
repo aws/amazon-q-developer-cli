@@ -724,17 +724,10 @@ impl RealApiClient {
 
         let is_social = crate::auth::social::is_social_logged_in(database).await;
 
-        let use_krs = std::env::var("KIRO_CLI_KRS_ENDPOINTS").is_ok();
-        let krs_endpoint = match parse_endpoint_setting(database, Setting::ApiKrsService) {
-            Some(ep) => ep,
-            None if use_krs => Endpoint::krs_for_region(endpoint.region().as_ref()),
-            None => endpoint.clone(),
-        };
-        let cps_endpoint = match parse_endpoint_setting(database, Setting::ApiCpsService) {
-            Some(ep) => ep,
-            None if use_krs => Endpoint::cps_for_region(endpoint.region().as_ref()),
-            None => endpoint.clone(),
-        };
+        let krs_endpoint = parse_endpoint_setting(database, Setting::ApiKrsService)
+            .unwrap_or_else(|| Endpoint::krs_for_region(endpoint.region().as_ref()));
+        let cps_endpoint = parse_endpoint_setting(database, Setting::ApiCpsService)
+            .unwrap_or_else(|| Endpoint::cps_for_region(endpoint.region().as_ref()));
 
         let credentials = Credentials::new("xxx", "xxx", None, None, "xxx");
         let bearer_sdk_config = aws_config::defaults(behavior_version())
