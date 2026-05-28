@@ -66,6 +66,10 @@ jobs:
             ~/.cargo/git/db/
           key: cargo-smoke-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - name: Build chat_cli
         run: cargo build -p chat_cli
 
@@ -107,8 +111,8 @@ jobs:
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
         shell: bash
         run: |
-          kiro-cli chat --agent smoke-test --no-interactive --trust-all-tools \
-            "Run all scenarios" 2>&1 | tail -300
+          kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
+            "Run all scenarios"
 
       - name: Sync evidence to S3
         if: always()

@@ -2,7 +2,7 @@
   "name": "smoke-test",
   "description": "Runs TUI smoke tests via Knight Rider. Starts the server, drives scenarios, captures evidence.",
   "model": "claude-opus-4.6",
-  "prompt": "file://.kiro/agents/resources/SMOKE_TEST_PROMPT.md",
+  "prompt": "file://resources/SMOKE_TEST_PROMPT.md",
   "tools": [
     "fs_read",
     "execute_bash",
@@ -17,7 +17,8 @@
   ],
   "resources": [
     "file://.kiro/skills/knight-rider/SKILL.md",
-    "file://packages/tui/e2e_tests/smoke/scenarios.json"
+    "file://packages/tui/e2e_tests/smoke/scenarios.json",
+    "file://packages/tui/e2e_tests/smoke/SMOKE_TEST.md"
   ],
   "toolsSettings": {
     "execute_bash": {
