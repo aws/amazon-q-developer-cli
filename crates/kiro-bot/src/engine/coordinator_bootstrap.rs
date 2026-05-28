@@ -27,6 +27,7 @@ use crate::engine::task_metadata;
 const ENV_LEASES: &str = "KIRO_BOT_LEASES_TABLE";
 const ENV_TRANSCRIPTS: &str = "KIRO_BOT_TRANSCRIPTS_TABLE";
 const ENV_DEDUP: &str = "KIRO_BOT_DEDUP_TABLE";
+const ENV_APPROVALS: &str = "KIRO_BOT_APPROVALS_TABLE";
 
 /// Bind a [`Coordinator`] for the current process. Always succeeds — on
 /// misconfiguration we log and fall back to [`NoopCoordinator`] so the bot
@@ -39,16 +40,22 @@ pub async fn build_coordinator() -> Arc<dyn Coordinator> {
     match (leases, transcripts, dedup) {
         (Some(leases), Some(transcripts), Some(dedup)) => {
             let own_id = task_metadata::resolve_self_id().await;
+            let approvals = std::env::var(ENV_APPROVALS).ok();
             info!(
                 own_id = %own_id,
                 leases = %leases,
                 transcripts = %transcripts,
                 dedup = %dedup,
+                approvals = ?approvals,
                 "coordinator: DynamoDB"
             );
             let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
             let client = aws_sdk_dynamodb::Client::new(&aws_cfg);
-            Arc::new(DynamoCoordinator::new(client, leases, transcripts, dedup, own_id))
+            let mut coord = DynamoCoordinator::new(client, leases, transcripts, dedup, own_id);
+            if let Some(t) = approvals {
+                coord = coord.with_approvals_table(t);
+            }
+            Arc::new(coord)
         },
         _ => {
             // Treat partial env as misconfiguration — most often local dev.
@@ -87,7 +94,7 @@ impl crate::engine::dispatch_server::Dispatcher for BotCoreDispatcher {
                 return;
             },
         };
-        if let Err(e) = crate::frontend::slack::dispatch_event(parsed, &self.state).await {
+        if let Err(e) = crate::frontend::slack::dispatch_event(parsed, &self.state, true).await {
             warn!(error = %e, "dispatch: forwarded event handler returned error");
         }
     }
