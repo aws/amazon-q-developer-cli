@@ -160,7 +160,7 @@ fn get_danger_level_with_config(cmd: &ParsedCommand, config: &DetectorConfig) ->
         return DangerLevel::High;
     }
 
-    if cmd.has_redirection {
+    if cmd.has_redirection_to_file {
         debug!(command = %cmd.command, "redirect-output detected");
         return DangerLevel::RedirectOutput;
     }
@@ -224,7 +224,7 @@ fn has_prompt_expansion(cmd: &ParsedCommand) -> bool {
 
 fn is_readonly_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
     // Shell features that produce side effects → not readonly
-    if cmd.has_redirection {
+    if cmd.has_redirection_to_file {
         return false;
     }
 
@@ -283,7 +283,7 @@ mod tests {
         var_assigns: &[&str],
     ) -> ParsedCommand {
         let mut cmd = make_cmd(command);
-        cmd.has_redirection = redir;
+        cmd.has_redirection_to_file = redir;
         cmd.has_command_substitution = subst;
         cmd.has_variable_expansion = var_exp;
         cmd.variable_assignments = var_assigns.iter().map(|s| s.to_string()).collect();
@@ -423,7 +423,7 @@ mod tests {
 
         // Redirection makes command not readonly
         let mut cmd = make_cmd("echo hello");
-        cmd.has_redirection = true;
+        cmd.has_redirection_to_file = true;
         assert!(!is_readonly_command(&cmd));
 
         // Safe variable assignment doesn't block readonly

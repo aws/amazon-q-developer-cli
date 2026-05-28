@@ -45,19 +45,19 @@
     "name": "output_redirection",
     "input": "echo hello > file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "redirect_targets": ["file.txt"]}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection_to_file": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "append_redirection",
     "input": "echo hello >> file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "redirect_targets": ["file.txt"]}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection_to_file": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "input_redirection",
     "input": "cat < file.txt",
     "parse_failed": false,
-    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection": true}]
+    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection_to_file": true}]
   },
   {
     "name": "command_substitution_dollar",
@@ -120,7 +120,7 @@
     "name": "heredoc",
     "input": "cat <<EOF\nhello\nEOF",
     "parse_failed": false,
-    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection": true, "has_heredoc": true}]
+    "commands": [{"command": "cat", "command_path": "cat", "command_name": "cat", "has_redirection_to_file": true, "has_heredoc": true}]
   },
   {
     "name": "process_substitution",
@@ -187,14 +187,14 @@
     "parse_failed": false,
     "commands": [
       {"command": "cat file", "command_path": "cat", "command_name": "cat", "args": ["file"], "operator": "Pipe"},
-      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "has_redirection": true, "redirect_targets": ["output.txt"]}
+      {"command": "grep pattern", "command_path": "grep", "command_name": "grep", "args": ["pattern"], "has_redirection_to_file": true, "redirect_targets": ["output.txt"]}
     ]
   },
   {
     "name": "subshell_with_redirection",
     "input": "(echo hello) > file.txt",
     "parse_failed": false,
-    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection": true, "is_subshell": true, "redirect_targets": ["file.txt"]}]
+    "commands": [{"command": "echo hello", "command_path": "echo", "command_name": "echo", "args": ["hello"], "has_redirection_to_file": true, "is_subshell": true, "redirect_targets": ["file.txt"]}]
   },
   {
     "name": "background_command",
@@ -203,10 +203,46 @@
     "commands": [{"command": "sleep 10", "command_path": "sleep", "command_name": "sleep", "args": ["10"]}]
   },
   {
-    "name": "stderr_redirection",
+    "name": "stderr_to_stdout_fd_dup_only",
     "input": "cmd 2>&1",
     "parse_failed": false,
-    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection": true}]
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd"}]
+  },
+  {
+    "name": "stdout_to_stderr_fd_dup_only",
+    "input": "cmd 1>&2",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd"}]
+  },
+  {
+    "name": "fd_dup_combined_with_file_redirect",
+    "input": "cmd > /dev/null 2>&1",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection_to_file": true, "redirect_targets": ["/dev/null"]}]
+  },
+  {
+    "name": "fd_dup_before_file_redirect",
+    "input": "cmd 2>&1 > /dev/null",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection_to_file": true, "redirect_targets": ["/dev/null"]}]
+  },
+  {
+    "name": "fd_close",
+    "input": "cmd 2>&-",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd"}]
+  },
+  {
+    "name": "stderr_redirect_to_file",
+    "input": "cmd 2> err.log",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection_to_file": true, "redirect_targets": ["err.log"]}]
+  },
+  {
+    "name": "both_streams_to_file",
+    "input": "cmd &> out.log",
+    "parse_failed": false,
+    "commands": [{"command": "cmd", "command_path": "cmd", "command_name": "cmd", "has_redirection_to_file": true}]
   },
   {
     "name": "whitespace_only",

@@ -173,6 +173,19 @@
     ]
   },
   {
+    "name": "fd_to_fd_redirect_only",
+    "settings": {"allowed_commands": ["echo .*", "cat .*", "obsidian .*"], "auto_allow_readonly": true},
+    "cases": [
+      {"input": "echo hello 2>&1", "expected": "Allow"},
+      {"input": "cat file.txt 2>&1 | head -1", "expected": "Allow"},
+      {"input": "obsidian append path=Inbox/foo.md content=hi 2>&1 | head -1", "expected": "Allow"},
+      {"input": "echo hello 1>&2", "expected": "Allow"},
+      {"input": "echo hello 2>&1 > /tmp/output", "expected": "Ask"},
+      {"input": "echo hello 2>&1 1>&2", "expected": "Allow"},
+      {"input": "echo hello 2>&-", "expected": "Allow"}
+    ]
+  },
+  {
     "name": "redirect_to_allowed_write_path",
     "settings": {"allowed_commands": ["echo .*", "cargo .*", "make .*"], "auto_allow_readonly": true},
     "cwd": "/kirocli_test_home/project",

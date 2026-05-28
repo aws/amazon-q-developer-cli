@@ -56,7 +56,7 @@ pub fn evaluate_shell_permission<P: SystemProvider>(
             command = %cmd.command,
             command_name = %cmd.command_name,
             args = ?cmd.args,
-            has_redirection = cmd.has_redirection,
+            has_redirection_to_file = cmd.has_redirection_to_file,
             has_command_substitution = cmd.has_command_substitution,
             has_process_substitution = cmd.has_process_substitution,
             has_variable_expansion = cmd.has_variable_expansion,

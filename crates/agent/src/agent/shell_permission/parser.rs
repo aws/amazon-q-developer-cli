@@ -85,9 +85,11 @@ pub struct ParsedCommand {
     pub args: Vec<String>,
     /// Operator following this command (if any).
     pub operator: Option<ChainOperator>,
-    /// File redirections (`>`, `>>`, `<`, `2>&1`). Does not include heredocs.
+    /// Whether the command writes to or reads from a file via redirection.
+    /// Set for `>`, `>>`, `<`, `&>`, `2> file`, and heredocs/herestrings.
+    /// NOT set for fd-to-fd duplicates like `2>&1` and `1>&2`.
     #[serde(default)]
-    pub has_redirection: bool,
+    pub has_redirection_to_file: bool,
     /// Whether this command is inside a subshell `()`.
     #[serde(default)]
     pub is_subshell: bool,
@@ -222,7 +224,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                 command_name,
                 args,
                 operator: None,
-                has_redirection: has_descendant(node, &[node::FILE_REDIRECT]),
+                has_redirection_to_file: has_file_targeting_redirect(node),
                 is_subshell: false,
                 has_command_substitution: has_descendant(node, &[node::COMMAND_SUBSTITUTION]),
                 has_heredoc: has_descendant(node, node::HEREDOC_NODES),
@@ -264,9 +266,11 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                     extract_commands(&child, source, commands);
                 }
             }
-            // Mark the last command as having redirection and propagate heredoc/process_sub
+            // Mark the last command as redirecting to a file and propagate heredoc/process_sub.
             if let Some(last) = commands.last_mut() {
-                last.has_redirection = true;
+                if has_file_targeting_redirect(node) || node_has_heredoc {
+                    last.has_redirection_to_file = true;
+                }
                 last.redirect_targets = collect_redirect_targets(node, source);
                 if node_has_heredoc {
                     last.has_heredoc = true;
@@ -284,7 +288,7 @@ fn extract_commands(node: &tree_sitter::Node<'_>, source: &str, commands: &mut V
                     command_name,
                     args,
                     operator: None,
-                    has_redirection: true,
+                    has_redirection_to_file: has_file_targeting_redirect(node) || node_has_heredoc,
                     is_subshell: false,
                     has_command_substitution: has_descendant(node, &[node::COMMAND_SUBSTITUTION]),
                     has_heredoc: node_has_heredoc,
@@ -389,6 +393,41 @@ fn has_descendant(node: &tree_sitter::Node<'_>, kinds: &[&str]) -> bool {
     }
     let mut cursor = node.walk();
     node.children(&mut cursor).any(|c| has_descendant(&c, kinds))
+}
+
+/// Whether `node` (or any descendant) contains a `file_redirect` that targets a file.
+///
+/// fd-to-fd duplicates like `2>&1` / `1>&2` and fd closes like `2>&-` are excluded -
+/// they shuffle or close existing file descriptors and produce no new file side
+/// effects. A `file_redirect` whose only non-operator children are `file_descriptor`
+/// (source fd) and `number` (target fd) is treated as fd-to-fd. Anything else
+/// (`word`, `string`, expansions, substitutions, etc.) is a real file target.
+fn has_file_targeting_redirect(node: &tree_sitter::Node<'_>) -> bool {
+    if node.kind() == node::FILE_REDIRECT {
+        return file_redirect_targets_file(node);
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|c| has_file_targeting_redirect(&c))
+}
+
+/// Whether a `file_redirect` node has a file target (vs being a pure fd-to-fd dup
+/// or fd close).
+fn file_redirect_targets_file(node: &tree_sitter::Node<'_>) -> bool {
+    debug_assert_eq!(node.kind(), node::FILE_REDIRECT);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // Source/target file descriptors in fd-to-fd dups (e.g. `2` and `1` in `2>&1`)
+            // and redirect operators - never a file target. `>&-` / `<&-` are fd-close
+            // operators, also fd-only.
+            "file_descriptor" | "number" | ">" | ">>" | "<" | ">&" | "<&" | "&>" | "&>>" | ">&-" | "<&-" => {},
+            // Anything else (`word`, `string`, `simple_expansion`, `expansion`,
+            // `command_substitution`, `process_substitution`, `concatenation`,
+            // `raw_string`, `ansi_c_string`, ...) is a real file target.
+            _ => return true,
+        }
+    }
+    false
 }
 
 /// Collect text of all descendant nodes matching `kind`.
