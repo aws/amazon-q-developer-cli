@@ -62,18 +62,6 @@ jobs:
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Mark Fragments as Included in Nightly
-        run: |
-          python3 .github/scripts/nightly-release-notes.py mark "${{ inputs.version }}"
-          
-          if [ -n "$(git status --porcelain .changes/nightly-released)" ]; then
-            git config user.name "GitHub Actions Bot"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add .changes/nightly-released
-            git commit -m "chore: Mark fragments as included in nightly ${{ inputs.version }}"
-            git push origin ${{ inputs.branch_name }}
-          fi
-
       - name: Format Timestamp
         id: format-timestamp
         run: |
