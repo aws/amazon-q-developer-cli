@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`toolsSettings.web_fetch.trusted` and `toolsSettings.web_fetch.blocked` URL patterns are now enforced in V2 (TUI) mode, matching existing V1 behavior"
+}

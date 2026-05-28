@@ -746,6 +746,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_web_fetch_settings_deserialization() {
+        let agent_json = r#"{
+            "name": "test-web-fetch-blocked",
+            "tools": ["web_fetch", "read"],
+            "allowedTools": ["web_fetch"],
+            "toolsSettings": {
+                "web_fetch": {
+                    "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
+                    "blocked": [".*github\\.com.*", ".*pastebin\\.com.*"]
+                }
+            }
+        }"#;
+
+        let normalized = normalize_agent_json(agent_json, Path::new("test.json"));
+        let config: AgentConfig = serde_json::from_str(&normalized).unwrap();
+        let ts = config.tool_settings().unwrap();
+        assert_eq!(ts.web_fetch.blocked, vec![".*github\\.com.*", ".*pastebin\\.com.*"]);
+        assert_eq!(ts.web_fetch.trusted, vec![".*docs\\.aws\\.amazon\\.com.*"]);
+    }
+
+    #[tokio::test]
     #[cfg(unix)]
     async fn test_load_agents_follows_symlinks() {
         let real_agent = r#"{"name": "real-agent", "tools": ["*"]}"#;

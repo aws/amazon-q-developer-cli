@@ -85,6 +85,10 @@ impl BuiltInToolTrait for WebFetch {
 }
 
 impl WebFetch {
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
     pub async fn execute(&self) -> ToolExecutionResult {
         let content = self.fetch_url_content().await?;
         Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(content)]))

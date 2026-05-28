@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-05-26
+  commit: 29f769727
   status: validated
   testable_headless: true
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract]
-  related: [web-search]
+  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, url-permission]
+  related: [web-search, trust-configuration, agent-configuration]
 ---
 
 # web_fetch
@@ -76,6 +76,56 @@ Add to agent config for permanent trust:
 ```json
 {
   "allowedTools": ["web_fetch"]
+}
+```
+
+### URL Permissions
+
+Control which URLs are auto-allowed or denied using regex patterns in `toolsSettings.web_fetch`:
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
+      "blocked": [".*github\\.com.*", ".*pastebin\\.com.*"]
+    }
+  }
+}
+```
+
+**Fields**:
+- `trusted` — URL regex patterns to auto-allow without prompting
+- `blocked` — URL regex patterns to always deny (takes precedence over trusted)
+
+**Evaluation order**:
+1. `blocked` patterns checked first — if any match, the request is denied
+2. `trusted` patterns checked next — if any match, the request is auto-allowed
+3. If no pattern matches, falls back to whether `web_fetch` is in `allowedTools`
+
+**Regex behavior**:
+- Patterns are automatically anchored with `^` and `$` if not already present
+- Invalid regex in `blocked` list denies all URLs (fail-safe)
+- Invalid regex in `trusted` list is silently skipped
+
+**Example: Allow documentation sites, block code hosting**:
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [
+        ".*docs\\.aws\\.amazon\\.com.*",
+        ".*docs\\.python\\.org.*",
+        ".*developer\\.mozilla\\.org.*"
+      ],
+      "blocked": [
+        ".*github\\.com.*",
+        ".*gitlab\\.com.*",
+        ".*pastebin\\.com.*"
+      ]
+    }
+  }
 }
 ```
 
@@ -191,4 +241,4 @@ Complete content.
 - Redirects: 10 max
 - Retries: 3 with exponential backoff
 
-**Permissions**: Requires approval unless in allowedTools.
+**Permissions**: Requires approval unless in allowedTools or URL matches a `trusted` pattern in `toolsSettings.web_fetch`. Denied if URL matches a `blocked` pattern.

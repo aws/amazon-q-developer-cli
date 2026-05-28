@@ -421,11 +421,12 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
                     settings.use_aws.auto_allow_readonly,
                 )
             },
-            BuiltInTool::WebFetch(_) => Ok(if is_allowed {
-                PermissionEvalResult::Allow
-            } else {
-                PermissionEvalResult::ask()
-            }),
+            BuiltInTool::WebFetch(web_fetch) => Ok(evaluate_url_permission(
+                &settings.web_fetch.trusted,
+                &settings.web_fetch.blocked,
+                web_fetch.url(),
+                is_allowed,
+            )),
             BuiltInTool::WebSearch(_) => Ok(if is_allowed {
                 PermissionEvalResult::Allow
             } else {
@@ -755,6 +756,66 @@ fn extract_paths_from_tool<P: SystemProvider>(tool: &ToolKind, provider: &P) -> 
             _ => (vec![], PathAccessType::Read),
         },
         ToolKind::Mcp(_) => (vec![], PathAccessType::Read),
+    }
+}
+
+/// Evaluate URL-based permission against trusted/blocked regex patterns.
+///
+/// Semantics (mirrors V1 `crates/chat-cli/src/util/resource_permission.rs`):
+/// - `blocked` patterns are checked first (highest priority).
+/// - Invalid regex in `blocked` → deny all (fail-safe).
+/// - `trusted` patterns are checked next; invalid regex entries are skipped.
+/// - If no pattern matches, falls back to `is_tool_allowed`.
+pub fn evaluate_url_permission(
+    trusted: &[String],
+    blocked: &[String],
+    url: &str,
+    is_tool_allowed: bool,
+) -> PermissionEvalResult {
+    // 1. Check blocked (highest priority)
+    for pattern in blocked {
+        let anchored = anchor_regex(pattern);
+        match regex::Regex::new(&anchored) {
+            Ok(re) => {
+                if re.is_match(url) {
+                    return PermissionEvalResult::Deny {
+                        reason: format!("URL matches blocked pattern: {pattern}"),
+                    };
+                }
+            },
+            Err(_) => {
+                // Invalid regex in blocked list → deny all (fail-safe)
+                return PermissionEvalResult::Deny {
+                    reason: format!("Invalid regex in blocked list denies all URLs: {pattern}"),
+                };
+            },
+        }
+    }
+
+    // 2. Check trusted (skip invalid patterns)
+    for pattern in trusted {
+        let anchored = anchor_regex(pattern);
+        if let Ok(re) = regex::Regex::new(&anchored)
+            && re.is_match(url)
+        {
+            return PermissionEvalResult::Allow;
+        }
+    }
+
+    // 3. Default
+    if is_tool_allowed {
+        PermissionEvalResult::Allow
+    } else {
+        PermissionEvalResult::ask()
+    }
+}
+
+fn anchor_regex(pattern: &str) -> String {
+    match (pattern.starts_with('^'), pattern.ends_with('$')) {
+        (true, true) => pattern.to_string(),
+        (true, false) => format!("{pattern}$"),
+        (false, true) => format!("^{pattern}"),
+        (false, false) => format!("^{pattern}$"),
     }
 }
 
@@ -1637,6 +1698,151 @@ mod tests {
                 matches!(result, Ok(PermissionEvalResult::Ask { .. })),
                 "got: {result:?}"
             );
+        }
+    }
+
+    mod web_fetch_url_permissions {
+        use super::*;
+        use crate::agent::agent_config::definitions::WebFetchSettings;
+        use crate::tools::web_fetch::WebFetch;
+
+        fn make_web_fetch(url: &str) -> ToolKind {
+            let wf: WebFetch = serde_json::from_value(serde_json::json!({ "url": url })).unwrap();
+            ToolKind::BuiltIn(BuiltInTool::WebFetch(wf))
+        }
+
+        #[test]
+        fn blocked_url_denies() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![],
+                blocked: vec![".*github\\.com.*".to_string()],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://github.com/documentdb/documentdb");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Deny { .. })),
+                "got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn trusted_url_allows() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![".*docs\\.aws\\.amazon\\.com.*".to_string()],
+                blocked: vec![],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://docs.aws.amazon.com/lambda/");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
+        }
+
+        #[test]
+        fn blocked_takes_precedence_over_trusted() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![".*example\\.com.*".to_string()],
+                blocked: vec![".*example\\.com.*".to_string()],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://example.com");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Deny { .. })),
+                "got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn invalid_blocked_regex_denies_all() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![],
+                blocked: vec!["(unclosed-paren".to_string()],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://totally-safe.com");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Deny { .. })),
+                "got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn invalid_trusted_regex_skipped() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec!["(unclosed".to_string(), ".*valid\\.com.*".to_string()],
+                blocked: vec![],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://valid.com/page");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
+        }
+
+        #[test]
+        fn tool_not_in_allowlist_with_trusted_url_allows() {
+            let provider = TestProvider::new();
+            let allowed_tools = HashSet::new(); // web_fetch NOT in allowlist
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![".*docs\\.aws\\.amazon\\.com.*".to_string()],
+                blocked: vec![],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://docs.aws.amazon.com/lambda/");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
+        }
+
+        #[test]
+        fn tool_not_in_allowlist_no_match_asks() {
+            let provider = TestProvider::new();
+            let allowed_tools = HashSet::new(); // web_fetch NOT in allowlist
+            let mut settings = ToolsSettings::default();
+            settings.web_fetch = WebFetchSettings {
+                trusted: vec![".*docs\\.aws\\.amazon\\.com.*".to_string()],
+                blocked: vec![],
+            };
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://example.com");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(
+                matches!(result, Ok(PermissionEvalResult::Ask { .. })),
+                "got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn no_settings_allows_when_tool_in_allowlist() {
+            let provider = TestProvider::new();
+            let mut allowed_tools = HashSet::new();
+            allowed_tools.insert("web_fetch".to_string());
+            let settings = ToolsSettings::default(); // empty web_fetch settings
+            let perms = RuntimePermissions::default();
+            let tool = make_web_fetch("https://anything.com");
+            let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &tool, &provider);
+            assert!(matches!(result, Ok(PermissionEvalResult::Allow)), "got: {result:?}");
         }
     }
 }

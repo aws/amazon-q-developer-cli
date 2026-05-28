@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 17be3b13
+  validated: 2026-05-26
+  commit: 29f769727
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked]
   related: [agent-create, agent-edit, agent-swap, mcp-registry]
 ---
 
@@ -174,6 +174,26 @@ Tool-specific configuration.
 - `deniedCommands` - Regex patterns for commands to always deny
 - `autoAllowReadonly` - Auto-approve read-only commands (e.g., `ls`, `cat`, `git status`)
 - `denyByDefault` - Deny all commands not matching `allowedCommands`. When enabled, dangerous commands are silently denied rather than prompting for approval
+
+**web_fetch settings**:
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
+      "blocked": [".*github\\.com.*", ".*pastebin\\.com.*"]
+    }
+  }
+}
+```
+
+> The `web_fetch` key also accepts alias: `webFetch`.
+
+- `trusted` - URL regex patterns to auto-allow without prompting
+- `blocked` - URL regex patterns to always deny (takes precedence over trusted)
+
+Blocked patterns are checked first. Invalid regex in `blocked` denies all URLs (fail-safe). Invalid regex in `trusted` is silently skipped. Patterns are auto-anchored with `^`/`$` if not already present.
 
 ### resources
 

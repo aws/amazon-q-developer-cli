@@ -14,6 +14,11 @@ export interface AcpSpawnArgs {
 	trustTools?: string[];
 	/** Agent engine to use ("rust" or "kas"). */
 	agentEngine?: string;
+	/**
+	 * Initial effort level to set (e.g. "low", "medium", "high").
+	 * Silently ignored if the resolved model does not support effort.
+	 */
+	effort?: string;
 }
 
 /** Arguments for /agent command */
@@ -504,6 +509,12 @@ export interface ThinkingBlock {
 	signature?: string;
 	/** Encrypted full thinking content (opaque, pass back unmodified). */
 	redactedContent?: number[];
+	/**
+	 * Model ID that generated this thinking block. Used to strip reasoning
+	 * when the active model changes (reasoning blocks are model-specific and
+	 * will be rejected if sent to a different model).
+	 */
+	modelId?: string;
 }
 
 export type ToolResultContentBlock = 
@@ -550,6 +561,12 @@ export interface ToolsArgs {
 
 /** Arguments for /usage command */
 export interface UsageArgs {
+}
+
+/** Arguments for /voice command */
+export interface VoiceArgs {
+	/** Enable continuous voice mode (auto-record after each response) */
+	continuous?: boolean;
 }
 
 export type StreamEvent = 
@@ -634,6 +651,8 @@ export type TuiCommand =
 	| { command: "reply", args: ReplyArgs }
 	/** Code intelligence workspace management */
 	| { command: "code", args: CodeArgs }
+	/** Voice input mode */
+	| { command: "voice", args: VoiceArgs }
 	/** View configured hooks */
 	| { command: "hooks", args: HooksArgs }
 	/** Switch to the guide agent for help with Kiro CLI */

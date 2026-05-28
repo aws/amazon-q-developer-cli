@@ -3,10 +3,10 @@ doc_meta:
   title: Trust Configuration
   description: Configure tool auto-approval at session, agent, and directory levels
   category: feature
-  keywords: [trust, auto-approve, allowedTools, permissions, tools, security, batch, cascade]
+  keywords: [trust, auto-approve, allowedTools, permissions, tools, security, batch, cascade, web_fetch, url, trusted, blocked]
   related: [agent-configuration, tools, chat]
-  validated: 2026-05-18
-  commit: 1dd7feeef
+  validated: 2026-05-26
+  commit: 29f769727
   status: validated
   testable_headless: true
 ---
@@ -34,6 +34,8 @@ Trust can be configured at multiple levels:
 | Permanently trust tools | Add to agent's `allowedTools` |
 | Trust all reads in a directory | Use `toolsSettings.read.allowedPaths` |
 | Trust all writes in a directory | Use `toolsSettings.write.allowedPaths` |
+| Trust specific URLs for web_fetch | Use `toolsSettings.web_fetch.trusted` |
+| Block specific URLs for web_fetch | Use `toolsSettings.web_fetch.blocked` |
 
 ## Session-Level Trust
 
@@ -178,6 +180,24 @@ Use `toolsSettings` to trust operations within specific directories:
   }
 }
 ```
+
+### Trust Web Fetch URLs
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [".*docs\\.aws\\.amazon\\.com.*", ".*docs\\.python\\.org.*"],
+      "blocked": [".*github\\.com.*", ".*pastebin\\.com.*"]
+    }
+  }
+}
+```
+
+- `trusted` — URL regex patterns to auto-allow without prompting
+- `blocked` — URL regex patterns to always deny (takes precedence over trusted)
+
+Blocked patterns are checked first. Invalid regex in `blocked` denies all URLs (fail-safe). Invalid regex in `trusted` is silently skipped. Patterns are auto-anchored with `^`/`$`.
 
 ## Subagent Trust
 

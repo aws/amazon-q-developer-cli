@@ -433,6 +433,8 @@ pub struct ToolsSettings {
         alias = "use_subagent"
     )]
     pub crew: AgentCrewSettings,
+    #[serde(default, alias = "web_fetch")]
+    pub web_fetch: WebFetchSettings,
 }
 
 impl ToolsSettings {
@@ -450,6 +452,7 @@ impl ToolsSettings {
         &["shell", "execute_bash", "executeBash", "executeCmd", "execute_cmd"],
         &["use_aws", "useAws", "aws"],
         &["crew", "agent_crew", "agentCrew", "subagent", "use_subagent"],
+        &["web_fetch", "webFetch"],
     ];
 }
 
@@ -545,6 +548,18 @@ pub struct AgentCrewSettings {
     /// patterns.
     #[serde(default, alias = "trustedAgents")]
     pub trusted_agents: Vec<AgentIdentifier>,
+}
+
+/// Settings for the web_fetch tool controlling URL-based permissions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WebFetchSettings {
+    /// URL regex patterns to auto-allow without prompting.
+    #[serde(default)]
+    pub trusted: Vec<String>,
+    /// URL regex patterns to deny (takes precedence over trusted).
+    #[serde(default)]
+    pub blocked: Vec<String>,
 }
 
 /// Identifies an agent by exact name or glob pattern.
