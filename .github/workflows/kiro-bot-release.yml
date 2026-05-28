@@ -111,6 +111,7 @@ jobs:
       - name: Build
         run: |
           cargo zigbuild --release --target ${{ env.TARGET }} \
+            --no-default-features \
             -p kiro-bot \
             -p chat_cli \
             -p kiro-knowledge-mcp \
