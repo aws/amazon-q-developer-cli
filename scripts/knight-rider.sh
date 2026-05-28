@@ -5,6 +5,7 @@
 # Usage:
 #   ./scripts/knight-rider.sh start                          # use default repo
 #   ./scripts/knight-rider.sh start --dir ~/workplace/kiro-cli-pr-1800  # use worktree
+#   ./scripts/knight-rider.sh start --out /path/to/frames   # custom output dir
 #   ./scripts/knight-rider.sh stop
 #   ./scripts/knight-rider.sh status
 #   ./scripts/knight-rider.sh restart --dir /path/to/checkout
@@ -19,13 +20,15 @@ BOOT_TIMEOUT=30
 KILL_TIMEOUT=10
 RUN_TIMEOUT=300
 
-# Parse args: first positional is action, --dir is optional
+# Parse args: first positional is action, --dir and --out are optional
 ACTION="${1:-status}"
 shift || true
 REPO_ROOT="$HOME/workplace/kiro-cli-review"
+OUT_DIR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir) REPO_ROOT="$2"; shift 2 ;;
+    --out) OUT_DIR="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -87,7 +90,12 @@ start() {
   echo "Starting Knight Rider (max ${RUN_TIMEOUT}s lifetime)..."
   echo "  Repo: $REPO_ROOT"
   cd "$TUI_DIR"
-  timeout "$RUN_TIMEOUT" bun run knight-rider > "$LOG" 2>&1 &
+  local kr_args="knight-rider"
+  if [ -n "$OUT_DIR" ]; then
+    kr_args="knight-rider --out $OUT_DIR"
+    echo "  Out: $OUT_DIR"
+  fi
+  timeout "$RUN_TIMEOUT" bun run $kr_args > "$LOG" 2>&1 &
   local kr_pid=$!
   echo "$kr_pid" > "$PID_FILE"
   echo "  PID: $kr_pid"
