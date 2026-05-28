@@ -12,6 +12,7 @@ import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { logger } from '../utils/logger.js';
 import { type AgentStreamEvent } from '../types/agent-events.js';
+import { ModeChangeSource } from '../types/generated/chat-cli.js';
 import {
   truncateToRecentTurns,
   MAX_DISPLAY_TURNS,
@@ -212,6 +213,16 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
 
     if (data?.agent) {
+      const fromName = ctx.currentAgent?.name;
+      const toName = data.agent.name;
+      if (fromName && toName && toName !== fromName) {
+        ctx.kiro.sendModeChanged({
+          fromMode: fromName,
+          toMode: toName,
+          source: ModeChangeSource.SlashCommand,
+          sessionId: ctx.kiro.sessionId,
+        });
+      }
       ctx.setCurrentAgent(data.agent);
     }
   },

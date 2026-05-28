@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
+import { ModeChangeSource } from '../../types/generated/chat-cli.js';
 
 // Region is twinki-only — lazy import for dev mode metrics
 const Region = isDevMode()
@@ -351,6 +352,24 @@ export const InlineLayout: React.FC = () => {
     (_input, key) => {
       if (key.tab && key.shift) {
         const currentName = currentAgent?.name;
+
+        // Emit a Shift+Tab mode-change telemetry event when the agent
+        // actually changed. Centralized so both branches stay in sync if
+        // the payload shape grows or a new entry point is added.
+        const emitModeChange = (
+          from: string | undefined,
+          to: string | undefined
+        ) => {
+          if (from && to && from !== to) {
+            kiro.sendModeChanged({
+              fromMode: from,
+              toMode: to,
+              source: ModeChangeSource.ShiftTab,
+              sessionId: kiro.sessionId,
+            });
+          }
+        };
+
         if (currentName === 'kiro_planner') {
           const target = previousAgentName;
           if (!target) return;
@@ -361,6 +380,7 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
+                emitModeChange(currentName, name);
                 if (name) setCurrentAgent({ name });
               }
             })
@@ -377,6 +397,7 @@ export const InlineLayout: React.FC = () => {
               setLoadingMessage(null);
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
+                emitModeChange(currentName, name);
                 if (name) setCurrentAgent({ name });
               }
             })

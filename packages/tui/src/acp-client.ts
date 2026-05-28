@@ -21,6 +21,7 @@ import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SessionClient } from './types/session-client';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
+import type { ModeChangedNotification } from './types/generated/chat-cli';
 import {
   AgentEventType,
   ContentType,
@@ -469,6 +470,7 @@ abstract class BaseAcpClient implements SessionClient {
   ): Promise<{ sessionId: string; name: string }>;
   abstract sendMessage(sessionId: string, content: string): Promise<void>;
   abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
+  abstract sendModeChanged(payload: ModeChangedNotification): void;
 
   // ── Shared methods ──
 
@@ -1388,6 +1390,15 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     this.connection
       .extNotification(
         this.ext('kiro.dev/telemetry/processHealth'),
+        payload as unknown as Record<string, unknown>
+      )
+      .catch(() => {});
+  }
+
+  sendModeChanged(payload: ModeChangedNotification): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/modeChanged'),
         payload as unknown as Record<string, unknown>
       )
       .catch(() => {});
@@ -2754,6 +2765,10 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  }
+
+  sendModeChanged(_payload: ModeChangedNotification): void {
     // TODO: implement KAS-side telemetry when KAS supports ext notifications
   }
 }

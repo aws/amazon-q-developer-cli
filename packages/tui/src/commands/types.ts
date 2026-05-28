@@ -66,6 +66,9 @@ export interface CommandContext {
     agent: { name: string; welcomeMessage?: string },
     options?: { suppressWelcome?: boolean }
   ) => void;
+  /** Current agent (read-only snapshot at the moment the context was built). Used by effects
+   *  that need to know the previous agent before swapping (e.g. modeChanged telemetry). */
+  currentAgent: { name: string } | null;
   /** Update context usage percentage */
   setContextUsage: (percent: number) => void;
   /** Show/hide context breakdown panel */

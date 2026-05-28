@@ -15,6 +15,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use typeshare::typeshare;
 
 /// Request to execute a TUI command
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
@@ -266,4 +267,61 @@ pub struct ProcessHealthPayload {
     pub session_id: Option<String>,
     pub version: String,
     pub platform: String,
+}
+
+/// How a mode change was initiated. Add a new variant when adding a new entry point —
+/// the wire format is the camelCase variant name. Keeping this as an enum (rather than a
+/// free-form string) gives us spell-check at the call site and a single documented set of
+/// known values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display)]
+#[typeshare]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum ModeChangeSource {
+    /// User pressed Shift+Tab to toggle in/out of `kiro_planner`.
+    ShiftTab,
+    /// User invoked a slash command (`/agent`, `/plan`).
+    SlashCommand,
+}
+
+/// Telemetry payload sent from the TUI when the active agent (= ACP session mode) changes.
+/// Caller is responsible for skipping no-op changes (`from_mode == to_mode`).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[notification(method = "_kiro.dev/telemetry/modeChanged")]
+#[typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct ModeChangedNotification {
+    /// Agent name the user was on before the change.
+    pub from_mode: String,
+    /// Agent name the user is on after the change.
+    pub to_mode: String,
+    /// How the change was initiated.
+    pub source: ModeChangeSource,
+    /// ACP session id, used as `amazonqConversationId` on the metric.
+    pub session_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trip + string conversions for [`ModeChangeSource`].
+    /// Exercises both the serde JSON path and the strum string path so that an accidental
+    /// rename or `rename_all` change is caught at test time rather than silently breaking
+    /// the wire format with the TUI.
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str(&quoted).unwrap());
+            assert_eq!($variant, $text.parse::<$ty>().unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
+
+    #[test]
+    fn test_mode_change_source_ser_deser() {
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
+    }
 }

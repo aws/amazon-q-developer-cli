@@ -31,6 +31,7 @@ use crate::telemetry::definitions::metrics::{
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
+    CodewhispererterminalModeChanged,
     CodewhispererterminalProcessHealthSnapshot,
     CodewhispererterminalRefreshCredentials,
     CodewhispererterminalToolUseSuggested,
@@ -701,6 +702,23 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::ModeChanged {
+                from_mode,
+                to_mode,
+                source,
+                session_id,
+            } => Some(
+                CodewhispererterminalModeChanged {
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    codewhispererterminal_mode_from_agent: Some(from_mode.into()),
+                    codewhispererterminal_mode_to_agent: Some(to_mode.into()),
+                    codewhispererterminal_mode_change_source: Some(source.to_string().into()),
+                    amazonq_conversation_id: session_id.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
         }
     }
 }
@@ -956,6 +974,15 @@ pub enum EventType {
         session_id: Option<String>,
         version: String,
         platform: String,
+    },
+    /// Emitted when the active agent (= ACP session mode) changes. Caller is responsible
+    /// for skipping no-op changes (`from_mode == to_mode`). `session_id` carries the ACP
+    /// session id that becomes `amazonqConversationId` on the metric.
+    ModeChanged {
+        from_mode: String,
+        to_mode: String,
+        source: crate::agent::acp::schema::ModeChangeSource,
+        session_id: Option<String>,
     },
 }
 

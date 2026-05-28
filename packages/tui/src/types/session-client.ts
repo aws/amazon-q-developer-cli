@@ -12,6 +12,7 @@ import type {
   CommandResult,
   TuiCommand,
 } from './commands';
+import type { ModeChangedNotification } from './generated/chat-cli';
 
 /**
  * Light abstraction over the Agent Client Protocol (ACP) for interacting with the Kiro CLI agent.
@@ -213,6 +214,13 @@ export interface SessionClient {
    * Fire-and-forget — implementations should not throw.
    */
   sendProcessHealthMetrics?(payload: ProcessHealthSnapshot): void;
+
+  /**
+   * Sends a `modeChanged` telemetry event when the active agent (= ACP session mode) changes.
+   * Caller is responsible for skipping no-op changes (`fromMode === toMode`).
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendModeChanged?(payload: ModeChangedNotification): void;
 }
 
 /**

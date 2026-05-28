@@ -1245,6 +1245,7 @@ function buildCommandContext(
     setActiveCommand: state.setActiveCommand,
     setCurrentModel: state.setCurrentModel,
     setCurrentAgent: state.setCurrentAgent,
+    currentAgent: state.currentAgent,
     setContextUsage: state.setContextUsage,
     setShowContextBreakdown: state.setShowContextBreakdown,
     setShowHelpPanel: state.setShowHelpPanel,

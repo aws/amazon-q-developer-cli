@@ -3606,6 +3606,24 @@ pub async fn execute(
             },
             sacp::on_receive_request!(),
         )
+        // Telemetry notification: mode changed in the TUI.
+        .on_receive_notification(
+            {
+                let telemetry_thread = Some(os.telemetry.clone());
+                async move |notif: super::schema::ModeChangedNotification, _cx: ConnectionTo<sacp::Client>| {
+                    if let Some(ref telemetry) = telemetry_thread {
+                        let _ = telemetry.send_mode_changed(
+                            notif.from_mode,
+                            notif.to_mode,
+                            notif.source,
+                            notif.session_id,
+                        );
+                    }
+                    Ok(())
+                }
+            },
+            sacp::on_receive_notification!(),
+        )
         .on_receive_dispatch(
             {
                 let session_tx = session_manager_handle.clone();

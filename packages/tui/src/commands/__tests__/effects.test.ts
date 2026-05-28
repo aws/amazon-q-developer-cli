@@ -28,6 +28,7 @@ import { runEffect } from '../effects.js';
 import { MessageRole } from '../../stores/app-store.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
+import { ModeChangeSource } from '../../types/generated/chat-cli.js';
 
 const copyCmd: SlashCommand = {
   name: '/copy',
@@ -569,6 +570,61 @@ describe('/agent effect', () => {
     runEffect(cmd, result, ctx, '');
 
     expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith(agent);
+  });
+
+  it('calls sendModeChanged when the new agent name differs from the current one', () => {
+    const cmd: SlashCommand = {
+      name: '/agent',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext({
+      currentAgent: { name: 'kiro_default' },
+    });
+    const agent = { name: 'kiro_planner' };
+    const result = { success: true, message: '', data: { agent } };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx.kiro.sendModeChanged).toHaveBeenCalledTimes(1);
+    expect(ctx.kiro.sendModeChanged).toHaveBeenCalledWith({
+      fromMode: 'kiro_default',
+      toMode: 'kiro_planner',
+      source: ModeChangeSource.SlashCommand,
+      sessionId: undefined,
+    });
+  });
+
+  it('does not call sendModeChanged when the new agent name matches the current one', () => {
+    const cmd: SlashCommand = {
+      name: '/agent',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext({
+      currentAgent: { name: 'kiro_default' },
+    });
+    const agent = { name: 'kiro_default' };
+    const result = { success: true, message: '', data: { agent } };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx.kiro.sendModeChanged).not.toHaveBeenCalled();
+  });
+
+  it('does not call sendModeChanged when there is no current agent (initial bootstrap)', () => {
+    const cmd: SlashCommand = {
+      name: '/agent',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const agent = { name: 'kiro_planner' };
+    const result = { success: true, message: '', data: { agent } };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx.kiro.sendModeChanged).not.toHaveBeenCalled();
   });
 });
 

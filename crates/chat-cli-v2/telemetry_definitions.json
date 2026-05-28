@@ -501,6 +501,21 @@
       "name": "codewhispererterminal_platform",
       "type": "string",
       "description": "OS platform (darwin, linux, win32)"
+    },
+    {
+      "name": "codewhispererterminal_modeFromAgent",
+      "type": "string",
+      "description": "Agent name the user was on before the mode change."
+    },
+    {
+      "name": "codewhispererterminal_modeToAgent",
+      "type": "string",
+      "description": "Agent name the user is on after the mode change."
+    },
+    {
+      "name": "codewhispererterminal_modeChangeSource",
+      "type": "string",
+      "description": "How the mode change was initiated. Known values today: 'shiftTab', 'slashCommand'. New entry points are added by extending the ModeChangeSource enum on the producer side."
     }
   ],
   "metrics": [
@@ -841,6 +856,18 @@
         { "type": "codewhispererterminal_totalMemoryMb" },
         { "type": "codewhispererterminal_terminalName" },
         { "type": "amazonqConversationId", "required": false }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_modeChanged",
+      "description": "Emitted from the TUI when the active agent (= ACP session mode) actually changes. Captures both that a mode change occurred and how the user initiated it via the 'modeChangeSource' field. Skipped when from == to (no-op set_mode) and when the change is not initiated by the embedded TUI (e.g. raw ACP set_mode from external clients).",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "codewhispererterminal_modeFromAgent" },
+        { "type": "codewhispererterminal_modeToAgent" },
+        { "type": "codewhispererterminal_modeChangeSource" }
       ]
     }
   ]
