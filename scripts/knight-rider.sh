@@ -18,7 +18,7 @@ LOG="/tmp/knight-rider.log"
 PID_FILE="/tmp/knight-rider.pid"
 BOOT_TIMEOUT=30
 KILL_TIMEOUT=10
-RUN_TIMEOUT=300
+RUN_TIMEOUT=2700
 
 # Parse args: first positional is action, --dir and --out are optional
 ACTION="${1:-status}"
