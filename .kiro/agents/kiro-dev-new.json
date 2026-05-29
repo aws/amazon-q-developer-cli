@@ -30,7 +30,7 @@
   ],
   "useLegacyMcpJson": true,
   "keyboardShortcut": "ctrl+1",
-  "welcomeMessage": "Hi! I'm the Kiro-Dev agent for CLI development.\n\nAvailable agents:\n- `oncall` - For Kiro CLI oncall activities\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@release` - Generate release notes, bump version, and create PR\n- `@docs` - Update autodocs for code changes",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev agent for CLI development.\n\nAvailable agents:\n- `oncall` - For Kiro CLI oncall activities\n\nAvailable workflows:\n- `@changelog` - Propose changelog entries for recent changes\n- `@docs` - Update autodocs for code changes",
   "toolsSettings": {
     "execute_bash": {
       "autoAllowReadonly": true,
