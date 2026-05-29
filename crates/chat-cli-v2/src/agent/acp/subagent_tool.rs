@@ -196,6 +196,7 @@ mod tests {
             None,
             None,
             Vec::new(),
+            None,
         )
         .await
         .expect("Failed to create agent");

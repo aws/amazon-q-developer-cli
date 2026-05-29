@@ -73,6 +73,7 @@ dependencies = [
  "dialoguer",
  "dirs 5.0.1",
  "dunce",
+ "dyn-clone",
  "eyre",
  "fd-lock",
  "flate2",

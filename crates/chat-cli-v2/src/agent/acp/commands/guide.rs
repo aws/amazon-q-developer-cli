@@ -30,8 +30,6 @@ pub async fn execute(args: &GuideArgs, ctx: &CommandContext<'_>) -> CommandResul
             .agent
             .swap_agent(SwapAgentArgs {
                 agent_config: agent_config.clone(),
-                local_mcp_path: ctx.local_mcp_path.cloned(),
-                global_mcp_path: ctx.global_mcp_path.cloned(),
                 force: false,
                 knowledge_provider: None,
             })
@@ -55,8 +53,6 @@ pub async fn execute(args: &GuideArgs, ctx: &CommandContext<'_>) -> CommandResul
         .agent
         .swap_agent(SwapAgentArgs {
             agent_config: agent_config.clone(),
-            local_mcp_path: ctx.local_mcp_path.cloned(),
-            global_mcp_path: ctx.global_mcp_path.cloned(),
             force: false,
             knowledge_provider: None,
         })

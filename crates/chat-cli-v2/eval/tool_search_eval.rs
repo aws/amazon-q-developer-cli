@@ -232,6 +232,7 @@ async fn run_query(query: &str, agent_config: agent::agent_config::LoadedAgentCo
         None,       // knowledge_provider
         None,       // task_store
         Vec::new(), // available_agent_configs
+        None,       // mcp_registry
     )
     .await?
     .spawn();

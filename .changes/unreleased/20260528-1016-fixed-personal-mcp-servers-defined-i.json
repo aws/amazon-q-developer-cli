@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Personal MCP servers defined in `mcp.json` now load alongside registry-managed servers when the registry is active"
+}

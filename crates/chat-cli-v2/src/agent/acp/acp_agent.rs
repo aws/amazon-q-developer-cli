@@ -279,10 +279,10 @@ pub enum AcpSessionRequest {
     /// Trigger command/prompt advertising to the client.
     AdvertiseCommands,
     EmitInitialMetadata,
-    /// Queue an MCP server refresh with updated registry data.
-    /// The actual swap happens in the event loop when the session is idle.
-    RefreshMcpServers {
-        agent_config: Box<agent::agent_config::LoadedAgentConfig>,
+    /// Queue an MCP registry refresh. The session forwards the registry to its agent
+    /// the next time it observes that no prompt is in flight (defer-until-idle).
+    RefreshMcpRegistry {
+        registry: Box<dyn agent::mcp::McpRegistry>,
     },
 }
 
@@ -391,17 +391,9 @@ impl AcpSessionHandle {
         rx.await.map_err(|_e| agent::protocol::AgentError::Channel)?
     }
 
-    /// Queue an MCP server refresh with updated registry data.
-    /// The session will apply it when idle.
-    pub async fn refresh_mcp_servers(
-        &self,
-        agent_config: agent::agent_config::LoadedAgentConfig,
-    ) -> Result<(), sacp::Error> {
-        self.tx
-            .send(AcpSessionRequest::RefreshMcpServers {
-                agent_config: agent_config.into(),
-            })
-            .await
+    /// Queue an MCP registry refresh. The session will apply it when idle.
+    pub async fn refresh_mcp_registry(&self, registry: Box<dyn agent::mcp::McpRegistry>) -> Result<(), sacp::Error> {
+        self.tx.send(AcpSessionRequest::RefreshMcpRegistry { registry }).await
     }
 
     /// Set the model ID for this session
@@ -732,6 +724,10 @@ pub struct AcpSessionBuilder<'a> {
     /// Whether MCP is enabled by governance (Kiro console MCP toggle).
     /// Fail-closed default — callers MUST set this from resolved governance.
     mcp_enabled: bool,
+    /// Optional MCP registry forwarded to [`agent::Agent::new`]. The agent
+    /// applies the registry to its config before launching MCP servers and
+    /// re-applies on swap / refresh.
+    mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
 }
 
 #[allow(clippy::derivable_impls)] // intentional — see struct doc; locks in fail-closed semantics
@@ -767,6 +763,7 @@ impl<'a> Default for AcpSessionBuilder<'a> {
             // Fail-closed: governance must be explicitly enabled by caller.
             web_tools_enabled: false,
             mcp_enabled: false,
+            mcp_registry: None,
         }
     }
 }
@@ -887,6 +884,14 @@ impl<'a> AcpSessionBuilder<'a> {
         self
     }
 
+    /// Set the MCP registry that the agent will apply to its config before
+    /// launching MCP servers. Pass `None` (or simply skip this setter) when
+    /// the host has no registry — the agent will use the config as-is.
+    pub fn mcp_registry(mut self, registry: Option<Box<dyn agent::mcp::McpRegistry>>) -> Self {
+        self.mcp_registry = registry;
+        self
+    }
+
     pub fn acp_client_info(mut self, info: Option<AcpClientInfo>) -> Self {
         self.acp_client_info = info;
         self
@@ -977,7 +982,7 @@ struct AcpSession {
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     pending_prompt_response: Option<tokio::sync::Mutex<Responder<PromptResponse>>>,
     /// Agent config to swap to when the session becomes idle (set by registry refresh)
-    pending_mcp_refresh: Option<Box<agent::agent_config::LoadedAgentConfig>>,
+    pending_mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
     compaction_summary: Option<String>,
     os: Os,
     cwd: PathBuf,
@@ -1125,7 +1130,7 @@ impl AcpSession {
     async fn with_builder(
         os: Os,
         request_rx: mpsc::Receiver<AcpSessionRequest>,
-        builder: AcpSessionBuilder<'_>,
+        mut builder: AcpSessionBuilder<'_>,
     ) -> eyre::Result<Self> {
         let session_id_str = builder
             .session_id
@@ -1335,6 +1340,7 @@ impl AcpSession {
                 )))
             },
             builder.agent_configs.clone(),
+            builder.mcp_registry.take(),
         )
         .await?;
 
@@ -1375,7 +1381,7 @@ impl AcpSession {
             rts_state,
             api_client,
             pending_prompt_response: None,
-            pending_mcp_refresh: None,
+            pending_mcp_registry: None,
             compaction_summary: None,
             os,
             cwd,
@@ -1429,24 +1435,13 @@ impl AcpSession {
         let _ = ready_tx.send(());
 
         loop {
-            // Apply pending MCP registry refresh when idle (no prompt in progress)
+            // Apply pending MCP registry refresh when idle (no prompt in progress).
+            // The agent re-applies the stored registry to its current config and
+            // reloads MCP servers internally; the host no longer pre-rewrites.
             if self.pending_prompt_response.is_none()
-                && let Some(agent_config) = self.pending_mcp_refresh.take()
+                && let Some(registry) = self.pending_mcp_registry.take()
             {
-                let resolver = crate::util::paths::PathResolver::new(&self.os);
-                let local_mcp_path = resolver.workspace().mcp_config().ok();
-                let global_mcp_path = resolver.global().mcp_config().ok();
-                if let Err(e) = self
-                    .agent
-                    .swap_agent(agent::protocol::SwapAgentArgs {
-                        agent_config: *agent_config,
-                        local_mcp_path,
-                        global_mcp_path,
-                        force: true,
-                        knowledge_provider: None,
-                    })
-                    .await
-                {
+                if let Err(e) = self.agent.refresh_mcp_registry(registry).await {
                     warn!(%e, "Failed to apply pending MCP registry refresh");
                 }
             }
@@ -1798,10 +1793,6 @@ impl AcpSession {
                 // Reset stale context usage data since it's meaningless after swapping agents
                 self.rts_state.set_context_usage_percentage(None);
 
-                let resolver = PathResolver::new(&self.os);
-                let local_mcp_path = resolver.workspace().mcp_config().ok();
-                let global_mcp_path = resolver.global().mcp_config().ok();
-
                 let new_name = agent_config.name().to_string();
                 let new_agent_path = match agent_config.source() {
                     agent::agent_config::ConfigSource::Workspace { path }
@@ -1833,8 +1824,6 @@ impl AcpSession {
                     .agent
                     .swap_agent(agent::protocol::SwapAgentArgs {
                         agent_config: *agent_config,
-                        local_mcp_path,
-                        global_mcp_path,
                         force: false,
                         knowledge_provider: new_knowledge_provider,
                     })
@@ -2092,8 +2081,8 @@ impl AcpSession {
             AcpSessionRequest::EmitInitialMetadata => {
                 self.emit_initial_context_usage().await;
             },
-            AcpSessionRequest::RefreshMcpServers { agent_config } => {
-                self.pending_mcp_refresh = Some(agent_config);
+            AcpSessionRequest::RefreshMcpRegistry { registry } => {
+                self.pending_mcp_registry = Some(registry);
             },
         }
     }
@@ -2223,15 +2212,10 @@ impl AcpSession {
                 // Execute pending swap from switch_to_execution (agent is idle after end_current_turn)
                 if let Some(agent_config) = self.pending_swap.take() {
                     let target_name = agent_config.name().to_string();
-                    let resolver = crate::util::paths::PathResolver::new(&self.os);
-                    let local_mcp_path = resolver.workspace().mcp_config().ok();
-                    let global_mcp_path = resolver.global().mcp_config().ok();
                     if let Err(e) = self
                         .agent
                         .swap_agent(agent::protocol::SwapAgentArgs {
                             agent_config,
-                            local_mcp_path,
-                            global_mcp_path,
                             force: false,
                             knowledge_provider: None,
                         })

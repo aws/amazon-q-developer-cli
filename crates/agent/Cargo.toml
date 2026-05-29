@@ -41,6 +41,7 @@ convert_case.workspace = true
 crossterm.workspace = true
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 dirs.workspace = true
+dyn-clone = "1.0"
 eyre.workspace = true
 flate2 = { workspace = true }
 fs4.workspace = true

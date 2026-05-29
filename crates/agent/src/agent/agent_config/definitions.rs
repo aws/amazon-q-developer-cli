@@ -280,8 +280,7 @@ impl AgentConfig {
     /// agent config while preserving built-in tools.
     ///
     /// Used to enforce enterprise MCP governance (Kiro console `MCP` toggle set to off)
-    /// on already-loaded agent configs. Mirrors
-    /// `chat-cli-v2::cli::agent::Agent::clear_mcp_configs`.
+    /// on already-loaded agent configs.
     ///
     /// Transformations applied:
     /// - `mcp_servers` emptied

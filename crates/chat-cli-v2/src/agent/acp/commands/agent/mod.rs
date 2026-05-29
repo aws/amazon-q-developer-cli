@@ -152,11 +152,8 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
             .add_mcp_servers(ctx.session_injected_mcp_servers.to_vec());
     }
 
-    // Resolve registry-type MCP servers before swapping
-    if let Some(registry) = ctx.session_tx.get_registry_data().await {
-        crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
-        crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
-    }
+    // The agent re-applies its stored MCP registry to this config inside
+    // `handle_swap_agent`, so we no longer pre-rewrite it here.
 
     // Create the new knowledge provider BEFORE swapping so the agent gets it immediately
     let agent_path = match config.source() {
@@ -183,8 +180,6 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
         .agent
         .swap_agent(SwapAgentArgs {
             agent_config: config.clone(),
-            local_mcp_path: ctx.local_mcp_path.cloned(),
-            global_mcp_path: ctx.global_mcp_path.cloned(),
             force: false,
             knowledge_provider: new_knowledge_provider,
         })

@@ -285,18 +285,16 @@ async fn execute_add(ctx: &CommandContext<'_>, server_names: &[&str]) -> Command
     }
     config.config_mut().set_tools(tools);
 
-    crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
-    crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
-
     // Persist to disk (patches original JSON to preserve registry entries)
     persist_mcp_changes(ctx, config.source(), &added_tools, &[]).await;
 
+    // The agent re-applies its stored MCP registry inside `handle_swap_agent`,
+    // which resolves the newly referenced registry servers and (re)filters tools.
+    // The host no longer pre-rewrites here.
     if let Err(e) = ctx
         .agent
         .swap_agent(agent::protocol::SwapAgentArgs {
             agent_config: config,
-            local_mcp_path: ctx.local_mcp_path.cloned(),
-            global_mcp_path: ctx.global_mcp_path.cloned(),
             force: true,
             knowledge_provider: None,
         })
@@ -311,10 +309,9 @@ async fn execute_add(ctx: &CommandContext<'_>, server_names: &[&str]) -> Command
 
 /// `/mcp remove <name>[,<name>...]` — remove servers from the agent config (single swap)
 async fn execute_remove(ctx: &CommandContext<'_>, server_names: &[&str]) -> CommandResult {
-    let registry = ctx.session_tx.get_registry_data().await;
-    let Some(registry) = registry else {
+    if ctx.session_tx.get_registry_data().await.is_none() {
         return CommandResult::error("No MCP registry configured");
-    };
+    }
 
     let snapshot = match ctx.agent.create_snapshot().await {
         Ok(s) => s,
@@ -340,14 +337,13 @@ async fn execute_remove(ctx: &CommandContext<'_>, server_names: &[&str]) -> Comm
     // Persist to disk (patches original JSON to preserve registry entries)
     persist_mcp_changes(ctx, config.source(), &[], server_names).await;
 
-    crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
-
+    // The agent re-applies its stored MCP registry inside `handle_swap_agent`,
+    // re-filtering tools and `use_legacy_mcp_json` against the registry; the
+    // host no longer pre-rewrites here.
     if let Err(e) = ctx
         .agent
         .swap_agent(agent::protocol::SwapAgentArgs {
             agent_config: config,
-            local_mcp_path: ctx.local_mcp_path.cloned(),
-            global_mcp_path: ctx.global_mcp_path.cloned(),
             force: true,
             knowledge_provider: None,
         })

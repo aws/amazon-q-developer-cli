@@ -665,9 +665,8 @@ impl StreamParseState {
                         // Defensively clear any stale signature state from protocol violations.
                         self.pending_signature.take();
                         self.pending_redacted_content.take();
-                        // Empty content → `{}`. Matches V1 parser
-                        // (chat-cli/src/cli/chat/parser.rs) and handles zero-arg
-                        // tool uses where the model emits "" instead of "{}".
+                        // Empty content → `{}`. Matches V1 parser behaviour and handles
+                        // zero-arg tool uses where the model emits "" instead of "{}".
                         let parsed = if tool_content.is_empty() {
                             Ok(serde_json::json!({}))
                         } else {

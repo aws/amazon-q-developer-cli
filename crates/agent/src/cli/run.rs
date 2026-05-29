@@ -124,6 +124,7 @@ impl RunArgs {
             None, // knowledge_provider
             None, // task_store
             Vec::new(), // available_agent_configs
+            None, // mcp_registry
         ).await?.spawn();
 
         self.main_loop(agent).await

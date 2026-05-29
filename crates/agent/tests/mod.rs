@@ -2005,8 +2005,6 @@ async fn test_agent_swap_agent_suppresses_mcp_when_governance_disabled() {
 
     test.swap_agent(SwapAgentArgs {
         agent_config: target,
-        local_mcp_path: None,
-        global_mcp_path: None,
         force: false,
         knowledge_provider: None,
     })
@@ -2109,8 +2107,6 @@ async fn test_swap_agent_updates_knowledge_provider() {
 
     test.swap_agent(SwapAgentArgs {
         agent_config: target,
-        local_mcp_path: None,
-        global_mcp_path: None,
         force: false,
         knowledge_provider: Some(provider_alpha),
     })
@@ -2139,8 +2135,6 @@ async fn test_swap_agent_updates_knowledge_provider() {
 
     test.swap_agent(SwapAgentArgs {
         agent_config: target_beta,
-        local_mcp_path: None,
-        global_mcp_path: None,
         force: false,
         knowledge_provider: Some(provider_beta),
     })
@@ -2165,8 +2159,6 @@ async fn test_swap_agent_updates_knowledge_provider() {
 
     test.swap_agent(SwapAgentArgs {
         agent_config: target_reload,
-        local_mcp_path: None,
-        global_mcp_path: None,
         force: true,
         knowledge_provider: None,
     })

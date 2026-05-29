@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{
@@ -242,6 +241,14 @@ pub enum AgentRequest {
     Terminate,
     /// Swap to a different agent configuration
     SwapAgent(Box<SwapAgentArgs>),
+    /// Push a new MCP registry snapshot to the running agent.
+    ///
+    /// The agent replaces its stored registry, re-applies it to the current
+    /// agent config, and reloads MCP servers. The host does not need to
+    /// pre-rewrite the agent config — that's the registry's job. The agent
+    /// reuses the `local_mcp_path` / `global_mcp_path` it was constructed
+    /// with, so they are not part of this request.
+    RefreshMcpRegistry(Box<dyn super::mcp::McpRegistry>),
     /// Manually trigger conversation compaction
     CompactConversation,
     /// Clear conversation history
@@ -522,10 +529,6 @@ impl From<ImageBlock> for ContentChunk {
 pub struct SwapAgentArgs {
     /// The new agent configuration to use
     pub agent_config: LoadedAgentConfig,
-    /// Path to workspace-level mcp.json
-    pub local_mcp_path: Option<PathBuf>,
-    /// Path to global mcp.json
-    pub global_mcp_path: Option<PathBuf>,
     /// Skip the same-name short-circuit check (used for registry refresh)
     pub force: bool,
     /// Updated knowledge provider for the new agent (if different from current)

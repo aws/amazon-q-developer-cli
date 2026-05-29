@@ -718,10 +718,167 @@ pub fn convert_registry_to_config(
 }
 
 /// Filter tools and MCP servers in a `LoadedAgentConfig` to only allow servers
-/// present in the registry. Also disables `use_legacy_mcp_json` so that user
-/// `mcp.json` servers not in the registry cannot bypass filtering.
+/// Adapter that lets an [`McpRegistryResponse`] be used as an
+/// [`agent::mcp::McpRegistry`].
+///
+/// The host wraps a fetched registry response in this adapter and hands it to
+/// `Agent::new` (via `AcpSessionBuilder::mcp_registry`). The agent then
+/// applies the registry to its config at construction, on every swap, and on
+/// every `RefreshMcpRegistry` request — so the host no longer needs to
+/// pre-rewrite agent configs before a swap or refresh.
+///
+/// The adapter also carries `mcp.json` registry-type overrides (servers
+/// declared as `{ "type": "registry", "env": {...}, ... }` in workspace or
+/// global `mcp.json`). These overrides are read eagerly at construction time
+/// (the only async hop the adapter performs) and stored alongside the
+/// registry response. At apply time — which must remain sync per the
+/// [`McpRegistry`] trait contract — the overrides are injected into
+/// `agent_config.mcp_servers` so the existing override-collection logic in
+/// [`resolve_registry_servers_for_agent_config`] picks them up.
+///
+/// Cloning is cheap: both the registry response and the override map are
+/// held behind [`std::sync::Arc`]s. `Box<dyn McpRegistry>` of this type is
+/// `Clone` via [`dyn_clone`], which lets
+/// `SessionManager::handle_refresh_registry` fan a single snapshot out to
+/// every active session.
+#[derive(Debug, Clone)]
+pub struct RegistryAdapter {
+    response: std::sync::Arc<McpRegistryResponse>,
+    /// `mcp.json` `"type": "registry"` entries indexed by server name. Used
+    /// to surface user-supplied env / headers / timeout overrides for
+    /// registry-managed servers (e.g. `BRAVE_API_KEY` for `npm-brave-search`).
+    /// Empty when no overrides are configured.
+    mcp_json_overrides:
+        std::sync::Arc<std::collections::HashMap<String, agent::agent_config::definitions::McpServerConfig>>,
+}
+
+impl RegistryAdapter {
+    /// Construct an adapter for the given registry response, eagerly loading
+    /// `mcp.json` entries whose name is in the registry. File errors are logged
+    /// and skipped — a missing or malformed `mcp.json` simply contributes no
+    /// overrides, never an error.
+    ///
+    /// **Filtering rule:** an entry in `mcp.json` is loaded iff its name appears
+    /// in the registry. This applies regardless of the entry's declared type
+    /// (`Registry`, `Local`, `Remote`) — when registry mode is active, the
+    /// registry is the single source of truth for which servers are allowed to
+    /// run. A user-defined `Local` server in `mcp.json` whose name isn't in the
+    /// registry is dropped. A registry-type entry whose name *is* in the
+    /// registry contributes its env / headers / timeout to the resolved config.
+    ///
+    /// Whether these entries are *applied* to a given agent config is a
+    /// decision deferred to [`Self::apply`], which gates injection on
+    /// `agent_config.use_legacy_mcp_json` so that agents opting out of legacy
+    /// `mcp.json` never see them.
+    pub async fn new(
+        response: McpRegistryResponse,
+        local_mcp_path: Option<&std::path::PathBuf>,
+        global_mcp_path: Option<&std::path::PathBuf>,
+    ) -> Self {
+        use agent::agent_config::definitions::McpServers;
+
+        let registry_server_names: std::collections::HashSet<String> =
+            response.servers.iter().map(|e| e.server.name.clone()).collect();
+
+        let mut overrides = std::collections::HashMap::new();
+        for path in [local_mcp_path, global_mcp_path].into_iter().flatten() {
+            let contents = match tokio::fs::read_to_string(path).await {
+                Ok(c) => c,
+                Err(_) => continue, // missing files are fine, common case
+            };
+            // Deserialize into the same structured `McpServers` shape used elsewhere.
+            // `McpServerConfig` is an untagged enum, so registry-type entries land in
+            // the `Registry(_)` variant automatically. A malformed file fails closed —
+            // we log and skip; downstream code treats that as "no overrides from this file".
+            let parsed: McpServers = match serde_json::from_str(&contents) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to parse mcp.json — skipping mcp.json contributions from this file"
+                    );
+                    continue;
+                },
+            };
+            for (name, config) in parsed.mcp_servers {
+                // Only entries whose name is in the registry are kept. Non-registry
+                // names are dropped: when registry mode is active, the registry is
+                // the source of truth for which servers may load.
+                if !registry_server_names.contains(&name) {
+                    tracing::debug!(
+                        server_name = %name,
+                        "mcp.json entry dropped: name not in registry"
+                    );
+                    continue;
+                }
+                // First write wins. We process workspace mcp.json before global, so
+                // workspace-level entries take priority.
+                overrides.entry(name).or_insert(config);
+            }
+        }
+
+        Self {
+            response: std::sync::Arc::new(response),
+            mcp_json_overrides: std::sync::Arc::new(overrides),
+        }
+    }
+}
+
+impl agent::mcp::McpRegistry for RegistryAdapter {
+    fn apply(&self, agent_config: &mut agent::agent_config::LoadedAgentConfig) {
+        // 1. Inject mcp.json contributions (already filtered to registry-known names at construction) into
+        //    the agent config. Registry-type entries feed `resolve_registry_servers_for_agent_config`'s
+        //    override-collection pass; Local/Remote entries pass through as full replacements for the
+        //    registry's package definition.
+        //
+        //    Gated on `use_legacy_mcp_json`: an agent that explicitly opts out of
+        //    legacy mcp.json (`"useLegacyMcpJson": false` in its config) opts out
+        //    of all mcp.json contributions. The agent-config side wins over
+        //    mcp.json for any name collision.
+        if agent_config.config().use_legacy_mcp_json() && !self.mcp_json_overrides.is_empty() {
+            let existing: std::collections::HashSet<String> =
+                agent_config.config().mcp_servers().keys().cloned().collect();
+            let new_entries: Vec<_> = self
+                .mcp_json_overrides
+                .iter()
+                .filter(|(name, _)| !existing.contains(*name))
+                .map(|(name, cfg)| (name.clone(), cfg.clone()))
+                .collect();
+            if !new_entries.is_empty() {
+                agent_config.config_mut().add_mcp_servers(new_entries);
+            }
+        }
+
+        // 2. Filter `mcp_servers` and `tools` against the registry. Servers we just injected from mcp.json
+        //    survive (they're registry-known by name).
+        filter_agent_config_tools_by_registry(agent_config, &self.response);
+
+        // 3. Resolve `Registry(_)` placeholders into concrete `Local` / `Remote` configs, merging in any
+        //    per-server overrides (env / headers / timeout) collected during the override-collection pass
+        //    at the top of resolve.
+        resolve_registry_servers_for_agent_config(agent_config, &self.response);
+    }
+}
+
+/// Filters the agent config's `mcp_servers` map and `tools` list to those
+/// present in the registry. Servers explicitly listed in the agent config but
+/// missing from the registry are dropped.
+///
+/// Also forces `use_legacy_mcp_json = false` so the downstream merge in
+/// [`agent::agent_config::LoadedMcpServerConfigs::from_agent_config`] does
+/// **not** re-read `mcp.json` — that would let non-registry servers
+/// (e.g. a personal `agent-memory` server) bypass governance and load
+/// alongside registry-managed ones. Registry-type overrides from `mcp.json`
+/// (env / headers / timeout for registry-managed servers) are still
+/// honoured because [`RegistryAdapter::apply`] pre-extracts them and
+/// injects them into `agent_config.mcp_servers` *before* this function
+/// runs.
 /// Companion to [`resolve_registry_servers_for_agent_config`].
-pub fn filter_agent_config_tools_by_registry(
+///
+/// Internal: the only caller is [`RegistryAdapter::apply`]. Callers outside
+/// this module should go through the [`agent::mcp::McpRegistry`] trait.
+fn filter_agent_config_tools_by_registry(
     agent_config: &mut agent::agent_config::LoadedAgentConfig,
     registry: &McpRegistryResponse,
 ) {
@@ -733,7 +890,9 @@ pub fn filter_agent_config_tools_by_registry(
         .config_mut()
         .retain_mcp_servers(|name| registry_servers.contains(name));
 
-    // Prevent mcp.json from re-adding non-registry servers downstream
+    // Block downstream `mcp.json` re-merge from re-introducing non-registry
+    // servers. RegistryAdapter has already extracted any registry-type
+    // overrides we care about and injected them above.
     agent_config.config_mut().set_use_legacy_mcp_json(false);
 
     let existing_servers: std::collections::HashSet<String> =
@@ -862,7 +1021,10 @@ pub fn filter_tools_by_registry(tools: &[String], valid_server_names: &std::coll
 ///
 /// Only servers that are referenced in the agent's `tools` list (via `@server-name/…` patterns)
 /// **and** present in the registry are resolved.
-pub fn resolve_registry_servers_for_agent_config(
+///
+/// Internal: the only caller is [`RegistryAdapter::apply`]. Callers outside
+/// this module should go through the [`agent::mcp::McpRegistry`] trait.
+fn resolve_registry_servers_for_agent_config(
     agent_config: &mut agent::agent_config::LoadedAgentConfig,
     registry: &McpRegistryResponse,
 ) {
@@ -2157,6 +2319,11 @@ mod tests {
 
         assert!(loaded.config().use_legacy_mcp_json());
         filter_agent_config_tools_by_registry(&mut loaded, &registry);
+        // When the registry is active, `use_legacy_mcp_json` is forced off so
+        // the downstream `mcp.json` merge cannot re-introduce non-registry
+        // servers (e.g. a personal `agent-memory` Local server). Registry-type
+        // overrides from `mcp.json` are still picked up via
+        // `RegistryAdapter::new`'s eager pre-extraction.
         assert!(!loaded.config().use_legacy_mcp_json());
     }
 
@@ -2235,6 +2402,596 @@ mod tests {
             "@acme/server@0.8.1"
         );
     }
+
+    // ===================================================================================
+    // RegistryAdapter — filter-by-registry-membership and apply-time gating
+    //
+    // These tests pin the contract that when registry mode is active:
+    //   1. Only mcp.json entries whose name is in the registry survive (any type).
+    //   2. Apply-time injection is gated on `useLegacyMcpJson`.
+    //   3. Apply forces `use_legacy_mcp_json = false` so the downstream merge in `from_agent_config`
+    //      cannot re-introduce filtered-out servers.
+    //   4. Registry-type overrides from mcp.json flow into the resolved Local/Remote config (env /
+    //      headers / timeout).
+    // ===================================================================================
+
+    mod registry_adapter {
+        use std::io::Write;
+
+        use agent::agent_config::definitions::{
+            AgentConfig,
+            AgentConfigV2025_08_22,
+            McpServerConfig,
+        };
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+        use agent::mcp::McpRegistry;
+        use tempfile::TempDir;
+
+        use super::*;
+
+        /// Registry response with two npm-package servers: `npm-brave-search` (in registry)
+        /// and `keep-me` (in registry). `agent-memory` is intentionally absent.
+        fn fixture_registry() -> McpRegistryResponse {
+            serde_json::from_str(
+                r#"{"servers":[
+                    {"server":{
+                        "name":"npm-brave-search",
+                        "description":"Brave search MCP",
+                        "version":"1.0.0",
+                        "packages":[{
+                            "registryType":"npm",
+                            "identifier":"@brave/brave-search-mcp",
+                            "transport":{"type":"stdio"}
+                        }]
+                    }},
+                    {"server":{
+                        "name":"keep-me",
+                        "description":"Another registry server",
+                        "version":"1.0.0",
+                        "packages":[{
+                            "registryType":"npm",
+                            "identifier":"@example/keep",
+                            "transport":{"type":"stdio"}
+                        }]
+                    }}
+                ]}"#,
+            )
+            .unwrap()
+        }
+
+        /// Helper to write an `mcp.json` file in a temp dir and return its path.
+        fn write_mcp_json(dir: &TempDir, contents: &str) -> std::path::PathBuf {
+            let path = dir.path().join("mcp.json");
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.write_all(contents.as_bytes()).unwrap();
+            path
+        }
+
+        fn loaded_agent_config(use_legacy: bool, tools: &[&str]) -> LoadedAgentConfig {
+            LoadedAgentConfig::new(
+                AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+                    name: "test-agent".to_string(),
+                    use_legacy_mcp_json: use_legacy,
+                    tools: tools.iter().map(|s| s.to_string()).collect(),
+                    ..Default::default()
+                }),
+                ConfigSource::Ephemeral,
+                ResolvedGlobalPrompt::None,
+            )
+        }
+
+        // -------------------------------------------------------------------------------
+        // Construction-time filtering
+        // -------------------------------------------------------------------------------
+
+        #[tokio::test]
+        async fn drops_non_registry_local_entry() {
+            // `agent-memory` (Local) is NOT in the registry → must be dropped at
+            // construction. This is the bug we're directly pinning.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "agent-memory":{"command":"npx","args":["-y","@modelcontextprotocol/server-memory"]}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            assert!(
+                !adapter.mcp_json_overrides.contains_key("agent-memory"),
+                "non-registry Local entry must be dropped"
+            );
+        }
+
+        #[tokio::test]
+        async fn drops_non_registry_registry_type_entry() {
+            // A registry-type entry whose name isn't in the registry is also dropped —
+            // otherwise it would survive to launch time and fail with the "not resolved"
+            // safety net.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "ghost-server":{"type":"registry","env":{"X":"y"}}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            assert!(
+                !adapter.mcp_json_overrides.contains_key("ghost-server"),
+                "registry-type entry for unknown name must be dropped"
+            );
+        }
+
+        #[tokio::test]
+        async fn keeps_registry_type_with_env_override() {
+            // The original BRAVE_API_KEY case: registry-type entry whose name IS in the
+            // registry → kept, carrying the env override.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "npm-brave-search":{"type":"registry","env":{"BRAVE_API_KEY":"abc123"}}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            let entry = adapter
+                .mcp_json_overrides
+                .get("npm-brave-search")
+                .expect("registry-type entry with name in registry must be kept");
+            match entry {
+                McpServerConfig::Registry(reg) => {
+                    let env = reg.env.as_ref().expect("env override missing");
+                    assert_eq!(env.get("BRAVE_API_KEY").map(String::as_str), Some("abc123"));
+                },
+                other => panic!("expected Registry variant, got {:?}", other),
+            }
+        }
+
+        #[tokio::test]
+        async fn keeps_local_with_name_in_registry() {
+            // A user-defined Local entry whose name IS in the registry replaces the
+            // registry's package definition. The user's command/args take precedence.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "keep-me":{"command":"my-custom","args":["--mine"]}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            match adapter.mcp_json_overrides.get("keep-me") {
+                Some(McpServerConfig::Local(local)) => {
+                    assert_eq!(local.command, "my-custom");
+                    assert_eq!(local.args, vec!["--mine".to_string()]);
+                },
+                other => panic!("expected Local variant, got {:?}", other),
+            }
+        }
+
+        #[tokio::test]
+        async fn workspace_wins_over_global() {
+            // Both files declare an override for the same registry-known name with
+            // different env values. Workspace (passed first) takes priority.
+            let workspace_dir = TempDir::new().unwrap();
+            let global_dir = TempDir::new().unwrap();
+            let workspace = write_mcp_json(
+                &workspace_dir,
+                r#"{"mcpServers":{
+                    "npm-brave-search":{"type":"registry","env":{"BRAVE_API_KEY":"workspace"}}
+                }}"#,
+            );
+            let global = write_mcp_json(
+                &global_dir,
+                r#"{"mcpServers":{
+                    "npm-brave-search":{"type":"registry","env":{"BRAVE_API_KEY":"global"}}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&workspace), Some(&global)).await;
+            let entry = adapter.mcp_json_overrides.get("npm-brave-search").unwrap();
+            match entry {
+                McpServerConfig::Registry(reg) => {
+                    assert_eq!(
+                        reg.env
+                            .as_ref()
+                            .and_then(|e| e.get("BRAVE_API_KEY"))
+                            .map(String::as_str),
+                        Some("workspace"),
+                        "workspace mcp.json must win over global"
+                    );
+                },
+                other => panic!("expected Registry variant, got {:?}", other),
+            }
+        }
+
+        #[tokio::test]
+        async fn handles_missing_files() {
+            // Paths to non-existent files: no panic, no overrides.
+            let bogus = std::path::PathBuf::from("/tmp/definitely-not-a-real-mcp-json-12345.json");
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&bogus), Some(&bogus)).await;
+            assert!(adapter.mcp_json_overrides.is_empty());
+        }
+
+        #[tokio::test]
+        async fn handles_malformed_json() {
+            // Garbage file: log + skip, no overrides loaded from it.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(&dir, "not valid json {{{");
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            assert!(adapter.mcp_json_overrides.is_empty());
+        }
+
+        // -------------------------------------------------------------------------------
+        // Apply-time gating
+        // -------------------------------------------------------------------------------
+
+        async fn adapter_with_brave_override() -> RegistryAdapter {
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "npm-brave-search":{"type":"registry","env":{"BRAVE_API_KEY":"abc"}}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            // TempDir drops at end of fn, but adapter has already read the contents.
+            std::mem::drop(dir);
+            adapter
+        }
+
+        #[tokio::test]
+        async fn apply_injects_when_legacy_enabled() {
+            let adapter = adapter_with_brave_override().await;
+            let mut config = loaded_agent_config(true, &["@npm-brave-search/web_search"]);
+            adapter.apply(&mut config);
+            // npm-brave-search must end up in mcp_servers — injected, then resolved by the
+            // resolve step into a concrete Local/Remote with the env override carried over.
+            let entry = config
+                .config()
+                .mcp_servers()
+                .get("npm-brave-search")
+                .expect("registry server should have been injected and resolved");
+            match entry {
+                McpServerConfig::Local(local) => {
+                    let env = local.env.as_ref().expect("env override should have flowed through");
+                    assert_eq!(env.get("BRAVE_API_KEY").map(String::as_str), Some("abc"));
+                },
+                other => panic!("expected resolved Local, got {:?}", other),
+            }
+        }
+
+        #[tokio::test]
+        async fn apply_skips_when_legacy_disabled() {
+            // Agent config explicitly opts out of legacy mcp.json. The mcp.json override
+            // must NOT be injected, even though the adapter has it pre-loaded.
+            let adapter = adapter_with_brave_override().await;
+            let mut config = loaded_agent_config(false, &["@npm-brave-search/web_search"]);
+            adapter.apply(&mut config);
+            // No injection happened, so the env override never made it into the resolved
+            // config. The server may still resolve from the registry's package def alone
+            // (without env), but its env must not be the BRAVE_API_KEY value.
+            if let Some(McpServerConfig::Local(local)) = config.config().mcp_servers().get("npm-brave-search") {
+                let env_has_brave = local.env.as_ref().and_then(|e| e.get("BRAVE_API_KEY")).is_some();
+                assert!(
+                    !env_has_brave,
+                    "useLegacyMcpJson=false must skip mcp.json env override injection"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn apply_forces_use_legacy_mcp_json_to_false() {
+            // After apply runs in registry mode, the flag is forced off so the downstream
+            // merge in `LoadedMcpServerConfigs::from_agent_config` cannot re-introduce
+            // mcp.json entries the registry filter just dropped.
+            let adapter = adapter_with_brave_override().await;
+            let mut config = loaded_agent_config(true, &["@npm-brave-search/web_search"]);
+            assert!(config.config().use_legacy_mcp_json());
+            adapter.apply(&mut config);
+            assert!(
+                !config.config().use_legacy_mcp_json(),
+                "apply must clear use_legacy_mcp_json so from_agent_config doesn't re-read mcp.json"
+            );
+        }
+
+        #[tokio::test]
+        async fn apply_drops_tool_refs_to_non_registry_servers() {
+            // Tools referencing servers that aren't in the registry must be filtered out
+            // of the agent's tools list. Registry-listed tool refs survive.
+            let dir = TempDir::new().unwrap();
+            let mcp = write_mcp_json(
+                &dir,
+                r#"{"mcpServers":{
+                    "agent-memory":{"command":"npx","args":["-y","@modelcontextprotocol/server-memory"]}
+                }}"#,
+            );
+            let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
+            let mut config = loaded_agent_config(true, &["@npm-brave-search/web_search", "@agent-memory/save"]);
+            adapter.apply(&mut config);
+            let tools = config.config().tools();
+            assert!(
+                tools.iter().any(|t| t == "@npm-brave-search/web_search"),
+                "registry-listed tool ref should survive; got {:?}",
+                tools
+            );
+            assert!(
+                !tools.iter().any(|t| t == "@agent-memory/save"),
+                "non-registry tool ref must be dropped; got {:?}",
+                tools
+            );
+            assert!(
+                !config.config().mcp_servers().contains_key("agent-memory"),
+                "non-registry server must not appear in mcp_servers after apply"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn test_registry_sync_behavior() {
+        use std::collections::HashMap;
+
+        use crate::cli::chat::legacy::custom_tool::CustomToolConfig;
+
+        // Test registry syncing behavior including cache refresh and server updates
+
+        // Initial registry with one server
+        let initial_registry_json = r#"{
+                "servers": [{
+                    "server": {
+                        "name": "test-server",
+                        "description": "Initial test server",
+                        "version": "1.0.0",
+                        "packages": [{
+                            "registryType": "npm",
+                            "identifier": "test-package",
+                            "transport": {"type": "stdio"}
+                        }]
+                    }
+                }]
+            }"#;
+
+        // Updated registry with version change and new server
+        let updated_registry_json = r#"{
+                "servers": [
+                    {
+                        "server": {
+                            "name": "test-server",
+                            "description": "Updated test server",
+                            "version": "2.0.0",
+                            "packages": [{
+                                "registryType": "npm",
+                                "identifier": "test-package",
+                                "transport": {"type": "stdio"}
+                            }]
+                        }
+                    },
+                    {
+                        "server": {
+                            "name": "new-server",
+                            "description": "Newly added server",
+                            "version": "1.0.0",
+                            "packages": [{
+                                "registryType": "npm",
+                                "identifier": "new-package",
+                                "transport": {"type": "stdio"}
+                            }]
+                        }
+                    }
+                ]
+            }"#;
+
+        // Parse registries
+        let initial_registry: McpRegistryResponse = serde_json::from_str(initial_registry_json).unwrap();
+        let updated_registry: McpRegistryResponse = serde_json::from_str(updated_registry_json).unwrap();
+
+        // Test 1: Initial cache creation
+        let now = time::OffsetDateTime::now_utc();
+
+        // Simulate initial cache population
+        let cache = Some(CachedRegistry {
+            data: initial_registry.clone(),
+            fetched_at: now,
+            source_url: "test".to_string(),
+        });
+
+        // Verify cache is fresh
+        assert!(!cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS));
+
+        // Test 2: Cache staleness detection
+        // Simulate cache becoming stale (6 minutes old)
+        let stale_cache = CachedRegistry {
+            data: initial_registry.clone(),
+            fetched_at: now - time::Duration::hours(25),
+            source_url: "test".to_string(),
+        };
+        assert!(stale_cache.is_stale(MCP_CACHE_TTL_HOURS));
+
+        // Test 3: Server version change detection
+        let mut cached_versions = HashMap::new();
+        cached_versions.insert("test-server".to_string(), "1.0.0".to_string());
+
+        // Check for version changes between registries
+        let initial_server = initial_registry.get_server("test-server").unwrap();
+        let updated_server = updated_registry.get_server("test-server").unwrap();
+
+        assert_eq!(initial_server.version, "1.0.0");
+        assert_eq!(updated_server.version, "2.0.0");
+
+        // Simulate version change detection
+        let has_version_change = cached_versions
+            .get("test-server")
+            .map(|cached_version| cached_version != &updated_server.version)
+            .unwrap_or(false);
+        assert!(has_version_change);
+
+        // Test 4: New server detection
+        assert!(initial_registry.get_server("new-server").is_none());
+        assert!(updated_registry.get_server("new-server").is_some());
+
+        // Test 5: Server processing with registry updates
+        let mut agent_servers = HashMap::new();
+
+        // Add initial server to agent (configured as registry type)
+        let initial_config = CustomToolConfig {
+            transport_type: Some("registry".to_string()),
+            url: String::new(),
+            headers: HashMap::new(),
+            oauth_scopes: vec![],
+            oauth: None,
+            command: String::new(), // Will be set by registry conversion
+            args: vec![],
+            env: None,
+            timeout: 30000,
+            disabled: false,
+            disabled_tools: vec![],
+            is_from_legacy_mcp_json: false,
+        };
+        agent_servers.insert("test-server".to_string(), initial_config);
+
+        // Process with initial registry
+        let initial_result = process_mcp_servers(&agent_servers, Some(&initial_registry)).unwrap();
+        assert_eq!(initial_result.servers.len(), 1);
+        assert!(initial_result.ignored_servers.is_empty());
+
+        // Process with updated registry (should update the server config)
+        let updated_result = process_mcp_servers(&agent_servers, Some(&updated_registry)).unwrap();
+        assert_eq!(updated_result.servers.len(), 1);
+        assert!(updated_result.ignored_servers.is_empty());
+
+        // Verify the server config was updated to new version
+        let updated_config = updated_result.servers.get("test-server").unwrap();
+        // For NPM packages, the command is "npx" and the package is in args
+        assert_eq!(updated_config.command, "npx");
+
+        // The args should contain the package with updated version
+        let expected_package = "test-package@2.0.0";
+        assert!(
+            updated_config.args.iter().any(|arg| arg == &expected_package),
+            "Expected args to contain '{}', but got: {:?}",
+            expected_package,
+            updated_config.args
+        );
+
+        // Test 6: Registry validation during sync
+        // Test with invalid registry (should fail validation)
+        let invalid_registry = McpRegistryResponse { servers: vec![] };
+        assert!(invalid_registry.validate().is_err());
+
+        // Test with valid registry (should pass validation)
+        assert!(updated_registry.validate().is_ok());
+
+        // Test 7: Tool filtering with registry updates
+        let initial_tools = vec![
+            "@test-server/tool1".to_string(),
+            "@invalid-server/tool2".to_string(),
+            "native-tool".to_string(),
+        ];
+
+        // Use actual server names from processing results
+        let initial_valid_servers: std::collections::HashSet<&str> =
+            initial_result.servers.keys().map(|s| s.as_str()).collect();
+        let updated_valid_servers: std::collections::HashSet<&str> =
+            updated_result.servers.keys().map(|s| s.as_str()).collect();
+
+        let initial_filtered = filter_tools_by_registry(&initial_tools, &initial_valid_servers);
+        // Should keep @test-server/tool1 (valid) and native-tool (non-prefixed), filter out
+        // @invalid-server/tool2
+        assert_eq!(initial_filtered.len(), 2);
+        assert!(initial_filtered.contains(&"@test-server/tool1".to_string()));
+        assert!(initial_filtered.contains(&"native-tool".to_string()));
+        assert!(!initial_filtered.contains(&"@invalid-server/tool2".to_string()));
+
+        let updated_filtered = filter_tools_by_registry(&initial_tools, &updated_valid_servers);
+        // Same result since updated_valid_servers still only contains "test-server"
+        assert_eq!(updated_filtered.len(), 2);
+        assert!(updated_filtered.contains(&"@test-server/tool1".to_string()));
+        assert!(updated_filtered.contains(&"native-tool".to_string()));
+
+        // Simulate cache refresh (make it 6 minutes old to trigger refresh)
+        let mut test_cache = Some(CachedRegistry {
+            data: initial_registry,
+            fetched_at: now - time::Duration::hours(25), // Stale
+            source_url: "test".to_string(),
+        });
+
+        if test_cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS) {
+            test_cache = Some(CachedRegistry {
+                data: updated_registry.clone(),
+                fetched_at: time::OffsetDateTime::now_utc(),
+                source_url: "test".to_string(),
+            });
+        }
+
+        // Verify cache was updated
+        assert!(!test_cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS));
+        assert_eq!(test_cache.as_ref().unwrap().data.servers.len(), 2); // Now has both servers
+    }
+
+    #[test]
+    fn test_registry_error_categorization() {
+        // Test that registry errors are properly categorized for sync behavior
+
+        // Network connectivity errors
+        let network_errors = [
+            "connection refused",
+            "timeout",
+            "dns resolution failed",
+            "network unreachable",
+            "http 404",
+            "http 503",
+        ];
+
+        for error_msg in network_errors {
+            let error = eyre::eyre!(error_msg);
+            let error_type = RegistryErrorType::from_error(&error);
+            assert!(matches!(error_type, RegistryErrorType::NetworkConnectivity));
+        }
+
+        // Registry data errors
+        let data_errors = [
+            "json parse error",
+            "validation failed",
+            "invalid schema",
+            "missing required field",
+        ];
+
+        for error_msg in data_errors {
+            let error = eyre::eyre!(error_msg);
+            let error_type = RegistryErrorType::from_error(&error);
+            assert!(matches!(error_type, RegistryErrorType::RegistryData));
+        }
+    }
+
+    #[test]
+    fn test_cache_ttl_edge_cases() {
+        // Test cache TTL behavior at edge cases (using 5 minutes for testing)
+        let now = time::OffsetDateTime::now_utc();
+
+        // Exactly at TTL boundary (24 hours)
+        let boundary_cache = CachedRegistry {
+            data: McpRegistryResponse { servers: vec![] },
+            fetched_at: now - time::Duration::hours(24),
+            source_url: "test".to_string(),
+        };
+        assert!(boundary_cache.is_stale(MCP_CACHE_TTL_HOURS));
+
+        // Just under TTL (23 hours 59 minutes)
+        let fresh_cache = CachedRegistry {
+            data: McpRegistryResponse { servers: vec![] },
+            fetched_at: now - time::Duration::hours(23) - time::Duration::minutes(59),
+            source_url: "test".to_string(),
+        };
+        assert!(!fresh_cache.is_stale(MCP_CACHE_TTL_HOURS));
+
+        // Way over TTL (48 hours)
+        let very_stale_cache = CachedRegistry {
+            data: McpRegistryResponse { servers: vec![] },
+            fetched_at: now - time::Duration::hours(48),
+            source_url: "test".to_string(),
+        };
+        assert!(very_stale_cache.is_stale(MCP_CACHE_TTL_HOURS));
+    }
 }
 /// Display registry error message to any writer that implements Write
 pub fn display_registry_error_to_writer<W: std::io::Write>(
@@ -2283,269 +3040,4 @@ pub fn display_registry_error_to_writer<W: std::io::Write>(
 
     writer.flush()?;
     Ok(())
-}
-#[tokio::test]
-async fn test_registry_sync_behavior() {
-    use std::collections::HashMap;
-
-    use crate::cli::chat::legacy::custom_tool::CustomToolConfig;
-
-    // Test registry syncing behavior including cache refresh and server updates
-
-    // Initial registry with one server
-    let initial_registry_json = r#"{
-            "servers": [{
-                "server": {
-                    "name": "test-server",
-                    "description": "Initial test server",
-                    "version": "1.0.0",
-                    "packages": [{
-                        "registryType": "npm",
-                        "identifier": "test-package",
-                        "transport": {"type": "stdio"}
-                    }]
-                }
-            }]
-        }"#;
-
-    // Updated registry with version change and new server
-    let updated_registry_json = r#"{
-            "servers": [
-                {
-                    "server": {
-                        "name": "test-server",
-                        "description": "Updated test server",
-                        "version": "2.0.0",
-                        "packages": [{
-                            "registryType": "npm",
-                            "identifier": "test-package",
-                            "transport": {"type": "stdio"}
-                        }]
-                    }
-                },
-                {
-                    "server": {
-                        "name": "new-server",
-                        "description": "Newly added server",
-                        "version": "1.0.0",
-                        "packages": [{
-                            "registryType": "npm",
-                            "identifier": "new-package",
-                            "transport": {"type": "stdio"}
-                        }]
-                    }
-                }
-            ]
-        }"#;
-
-    // Parse registries
-    let initial_registry: McpRegistryResponse = serde_json::from_str(initial_registry_json).unwrap();
-    let updated_registry: McpRegistryResponse = serde_json::from_str(updated_registry_json).unwrap();
-
-    // Test 1: Initial cache creation
-    let now = time::OffsetDateTime::now_utc();
-
-    // Simulate initial cache population
-    let cache = Some(CachedRegistry {
-        data: initial_registry.clone(),
-        fetched_at: now,
-        source_url: "test".to_string(),
-    });
-
-    // Verify cache is fresh
-    assert!(!cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS));
-
-    // Test 2: Cache staleness detection
-    // Simulate cache becoming stale (6 minutes old)
-    let stale_cache = CachedRegistry {
-        data: initial_registry.clone(),
-        fetched_at: now - time::Duration::hours(25),
-        source_url: "test".to_string(),
-    };
-    assert!(stale_cache.is_stale(MCP_CACHE_TTL_HOURS));
-
-    // Test 3: Server version change detection
-    let mut cached_versions = HashMap::new();
-    cached_versions.insert("test-server".to_string(), "1.0.0".to_string());
-
-    // Check for version changes between registries
-    let initial_server = initial_registry.get_server("test-server").unwrap();
-    let updated_server = updated_registry.get_server("test-server").unwrap();
-
-    assert_eq!(initial_server.version, "1.0.0");
-    assert_eq!(updated_server.version, "2.0.0");
-
-    // Simulate version change detection
-    let has_version_change = cached_versions
-        .get("test-server")
-        .map(|cached_version| cached_version != &updated_server.version)
-        .unwrap_or(false);
-    assert!(has_version_change);
-
-    // Test 4: New server detection
-    assert!(initial_registry.get_server("new-server").is_none());
-    assert!(updated_registry.get_server("new-server").is_some());
-
-    // Test 5: Server processing with registry updates
-    let mut agent_servers = HashMap::new();
-
-    // Add initial server to agent (configured as registry type)
-    let initial_config = CustomToolConfig {
-        transport_type: Some("registry".to_string()),
-        url: String::new(),
-        headers: HashMap::new(),
-        oauth_scopes: vec![],
-        oauth: None,
-        command: String::new(), // Will be set by registry conversion
-        args: vec![],
-        env: None,
-        timeout: 30000,
-        disabled: false,
-        disabled_tools: vec![],
-        is_from_legacy_mcp_json: false,
-    };
-    agent_servers.insert("test-server".to_string(), initial_config);
-
-    // Process with initial registry
-    let initial_result = process_mcp_servers(&agent_servers, Some(&initial_registry)).unwrap();
-    assert_eq!(initial_result.servers.len(), 1);
-    assert!(initial_result.ignored_servers.is_empty());
-
-    // Process with updated registry (should update the server config)
-    let updated_result = process_mcp_servers(&agent_servers, Some(&updated_registry)).unwrap();
-    assert_eq!(updated_result.servers.len(), 1);
-    assert!(updated_result.ignored_servers.is_empty());
-
-    // Verify the server config was updated to new version
-    let updated_config = updated_result.servers.get("test-server").unwrap();
-    // For NPM packages, the command is "npx" and the package is in args
-    assert_eq!(updated_config.command, "npx");
-
-    // The args should contain the package with updated version
-    let expected_package = "test-package@2.0.0";
-    assert!(
-        updated_config.args.iter().any(|arg| arg == &expected_package),
-        "Expected args to contain '{}', but got: {:?}",
-        expected_package,
-        updated_config.args
-    );
-
-    // Test 6: Registry validation during sync
-    // Test with invalid registry (should fail validation)
-    let invalid_registry = McpRegistryResponse { servers: vec![] };
-    assert!(invalid_registry.validate().is_err());
-
-    // Test with valid registry (should pass validation)
-    assert!(updated_registry.validate().is_ok());
-
-    // Test 7: Tool filtering with registry updates
-    let initial_tools = vec![
-        "@test-server/tool1".to_string(),
-        "@invalid-server/tool2".to_string(),
-        "native-tool".to_string(),
-    ];
-
-    // Use actual server names from processing results
-    let initial_valid_servers: std::collections::HashSet<&str> =
-        initial_result.servers.keys().map(|s| s.as_str()).collect();
-    let updated_valid_servers: std::collections::HashSet<&str> =
-        updated_result.servers.keys().map(|s| s.as_str()).collect();
-
-    let initial_filtered = filter_tools_by_registry(&initial_tools, &initial_valid_servers);
-    // Should keep @test-server/tool1 (valid) and native-tool (non-prefixed), filter out
-    // @invalid-server/tool2
-    assert_eq!(initial_filtered.len(), 2);
-    assert!(initial_filtered.contains(&"@test-server/tool1".to_string()));
-    assert!(initial_filtered.contains(&"native-tool".to_string()));
-    assert!(!initial_filtered.contains(&"@invalid-server/tool2".to_string()));
-
-    let updated_filtered = filter_tools_by_registry(&initial_tools, &updated_valid_servers);
-    // Same result since updated_valid_servers still only contains "test-server"
-    assert_eq!(updated_filtered.len(), 2);
-    assert!(updated_filtered.contains(&"@test-server/tool1".to_string()));
-    assert!(updated_filtered.contains(&"native-tool".to_string()));
-
-    // Simulate cache refresh (make it 6 minutes old to trigger refresh)
-    let mut test_cache = Some(CachedRegistry {
-        data: initial_registry,
-        fetched_at: now - time::Duration::hours(25), // Stale
-        source_url: "test".to_string(),
-    });
-
-    if test_cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS) {
-        test_cache = Some(CachedRegistry {
-            data: updated_registry.clone(),
-            fetched_at: time::OffsetDateTime::now_utc(),
-            source_url: "test".to_string(),
-        });
-    }
-
-    // Verify cache was updated
-    assert!(!test_cache.as_ref().unwrap().is_stale(MCP_CACHE_TTL_HOURS));
-    assert_eq!(test_cache.as_ref().unwrap().data.servers.len(), 2); // Now has both servers
-}
-
-#[test]
-fn test_registry_error_categorization() {
-    // Test that registry errors are properly categorized for sync behavior
-
-    // Network connectivity errors
-    let network_errors = [
-        "connection refused",
-        "timeout",
-        "dns resolution failed",
-        "network unreachable",
-        "http 404",
-        "http 503",
-    ];
-
-    for error_msg in network_errors {
-        let error = eyre::eyre!(error_msg);
-        let error_type = RegistryErrorType::from_error(&error);
-        assert!(matches!(error_type, RegistryErrorType::NetworkConnectivity));
-    }
-
-    // Registry data errors
-    let data_errors = [
-        "json parse error",
-        "validation failed",
-        "invalid schema",
-        "missing required field",
-    ];
-
-    for error_msg in data_errors {
-        let error = eyre::eyre!(error_msg);
-        let error_type = RegistryErrorType::from_error(&error);
-        assert!(matches!(error_type, RegistryErrorType::RegistryData));
-    }
-}
-
-#[test]
-fn test_cache_ttl_edge_cases() {
-    // Test cache TTL behavior at edge cases (using 5 minutes for testing)
-    let now = time::OffsetDateTime::now_utc();
-
-    // Exactly at TTL boundary (24 hours)
-    let boundary_cache = CachedRegistry {
-        data: McpRegistryResponse { servers: vec![] },
-        fetched_at: now - time::Duration::hours(24),
-        source_url: "test".to_string(),
-    };
-    assert!(boundary_cache.is_stale(MCP_CACHE_TTL_HOURS));
-
-    // Just under TTL (23 hours 59 minutes)
-    let fresh_cache = CachedRegistry {
-        data: McpRegistryResponse { servers: vec![] },
-        fetched_at: now - time::Duration::hours(23) - time::Duration::minutes(59),
-        source_url: "test".to_string(),
-    };
-    assert!(!fresh_cache.is_stale(MCP_CACHE_TTL_HOURS));
-
-    // Way over TTL (48 hours)
-    let very_stale_cache = CachedRegistry {
-        data: McpRegistryResponse { servers: vec![] },
-        fetched_at: now - time::Duration::hours(48),
-        source_url: "test".to_string(),
-    };
-    assert!(very_stale_cache.is_stale(MCP_CACHE_TTL_HOURS));
 }

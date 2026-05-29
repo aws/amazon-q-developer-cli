@@ -10,8 +10,8 @@ use super::{
 };
 
 /// Abstraction over the knowledge store so the agent crate doesn't depend on
-/// any concrete implementation.  chat-cli-v2 (and chat-cli) provide the real
-/// implementation backed by `semantic-search-client`.
+/// any concrete implementation. The host injects an implementation backed by
+/// `semantic-search-client` (or any other knowledge backend it chooses).
 #[async_trait]
 pub trait KnowledgeProvider: std::fmt::Debug + Send + Sync {
     async fn execute(&self, command: Knowledge) -> ToolExecutionResult;

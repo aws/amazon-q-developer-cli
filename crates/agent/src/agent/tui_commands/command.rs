@@ -4,7 +4,7 @@
 //! type safety across the Rust/TypeScript boundary.
 //!
 //! Types live here (agent crate) for typeshare generation.
-//! Execution logic lives in chat-cli crate where ApiClient is available.
+//! Execution logic lives in the host crate where ApiClient is available.
 
 use serde::{
     Deserialize,

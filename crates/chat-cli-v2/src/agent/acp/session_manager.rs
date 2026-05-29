@@ -438,8 +438,6 @@ pub struct SessionManager {
     agent_config_errors: Vec<AgentConfigLoadError>,
     /// MCP registry data for enterprise users, fetched once at startup
     mcp_registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
-    /// Tracks which agent config each session is using (for registry refresh)
-    session_agent_names: HashMap<SessionId, String>,
     /// Whether web tools (web_search, web_fetch) are enabled by governance
     web_tools_enabled: bool,
     /// Whether MCP is enabled by governance (Kiro console MCP toggle).
@@ -507,7 +505,6 @@ impl SessionManager {
             legacy_session_exporter,
             agent_config_errors,
             mcp_registry_data,
-            session_agent_names: HashMap::new(),
             web_tools_enabled,
             mcp_enabled,
             mcp_api_failure,
@@ -600,17 +597,10 @@ impl SessionManager {
             .find(|c| c.name() == mode_id)
             .ok_or_else(|| sacp::util::internal_error(format!("Mode '{}' not found", mode_id)))?;
 
-        let agent_config = if let Some(ref registry) = self.mcp_registry_data {
-            let mut config = agent_config.clone();
-            crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, registry);
-            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, registry);
-            config
-        } else {
-            agent_config.clone()
-        };
-
+        // The agent applies its stored MCP registry to the swapped-in config in
+        // `handle_swap_agent`, so we no longer pre-rewrite the config here.
         session
-            .swap_agent(agent_config)
+            .swap_agent(agent_config.clone())
             .await
             .map_err(|e| sacp::util::internal_error(format!("Failed to swap agent: {}", e)))?;
 
@@ -621,19 +611,23 @@ impl SessionManager {
         info!("Refreshing MCP registry data ({} servers)", registry.servers.len());
         self.mcp_registry_data = Some(registry.clone());
 
+        // Build a single adapter and clone the trait object into each session. The
+        // adapter holds the response in an Arc, so cloning is cheap. The agent on the
+        // other end re-applies the registry to its current config and reloads MCP
+        // servers — the host no longer pre-rewrites configs here.
+        // Build a single adapter (eagerly loads mcp.json registry-type overrides) and
+        // clone the trait object into each session. The adapter holds the response and
+        // override map in Arcs, so cloning is cheap.
+        let adapter = crate::mcp_registry::RegistryAdapter::new(
+            registry,
+            self.local_mcp_path.as_ref(),
+            self.global_mcp_path.as_ref(),
+        )
+        .await;
+        let registry_template: Box<dyn agent::mcp::McpRegistry> = Box::new(adapter);
+
         for (session_id, session_handle) in &self.sessions {
-            let Some(agent_name) = self.session_agent_names.get(session_id) else {
-                continue;
-            };
-            let Some(base_config) = self.agent_configs.iter().find(|c| c.name() == agent_name.as_str()) else {
-                continue;
-            };
-
-            let mut config = base_config.clone();
-            crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, &registry);
-            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, &registry);
-
-            if let Err(e) = session_handle.refresh_mcp_servers(config).await {
+            if let Err(e) = session_handle.refresh_mcp_registry(registry_template.clone()).await {
                 warn!(?session_id, %e, "Failed to queue registry refresh for session");
             }
         }
@@ -736,14 +730,22 @@ impl SessionManager {
                     base_agent_config.clone()
                 };
 
-                // Resolve registry servers if registry data is available
-                let agent_config_to_use = if let Some(ref registry) = self.mcp_registry_data {
-                    let mut config = agent_config_to_use;
-                    crate::mcp_registry::filter_agent_config_tools_by_registry(&mut config, registry);
-                    crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut config, registry);
-                    config
-                } else {
-                    agent_config_to_use
+                // The agent applies the registry to its config at construction (and on
+                // every swap / refresh). The adapter eagerly loads any `"type": "registry"`
+                // overrides from mcp.json so env / headers / timeout overrides for
+                // registry-managed servers (e.g. `BRAVE_API_KEY` for `npm-brave-search`)
+                // surface into the resolved Local/Remote config.
+                let mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>> = match self.mcp_registry_data.as_ref() {
+                    Some(r) => {
+                        let adapter = crate::mcp_registry::RegistryAdapter::new(
+                            r.clone(),
+                            self.local_mcp_path.as_ref(),
+                            self.global_mcp_path.as_ref(),
+                        )
+                        .await;
+                        Some(Box::new(adapter))
+                    },
+                    None => None,
                 };
 
                 // Initialize or get shared code intelligence client
@@ -775,7 +777,8 @@ impl SessionManager {
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))
-                    .session_injected_mcp_servers(converted_mcp_servers);
+                    .session_injected_mcp_servers(converted_mcp_servers)
+                    .mcp_registry(mcp_registry);
 
                 // Pass client connection to session
                 if let Some(cx) = connection_cx {
@@ -863,7 +866,6 @@ impl SessionManager {
                         let current_model_id = initial_model_id.unwrap_or_default();
                         let handle_to_give = handle.clone();
                         self.sessions.insert(session_id.clone(), handle);
-                        self.session_agent_names.insert(session_id.clone(), agent_name.clone());
                         _ = resp_sender.send(Ok(StartSessionResult {
                             handle: handle_to_give,
                             ready_rx,
@@ -900,7 +902,6 @@ impl SessionManager {
             },
             SessionManagerRequestData::TerminateSession => {
                 if let Some(handle) = self.sessions.remove(&session_id) {
-                    self.session_agent_names.remove(&session_id);
                     if tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
                         .await
                         .is_err()
@@ -965,9 +966,6 @@ impl SessionManager {
             },
             SessionManagerRequestData::SetMode { mode_id, resp_sender } => {
                 let result = self.handle_set_mode(&session_id, &mode_id).await;
-                if result.is_ok() {
-                    self.session_agent_names.insert(session_id.clone(), mode_id);
-                }
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::SetNextAgentName {

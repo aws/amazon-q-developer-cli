@@ -1,4 +1,4 @@
-// TODO - add run CLI to chat-cli as a subcommand
+// TODO - add run CLI to the host CLI as a subcommand
 // mod cli;
 //
 // use std::process::ExitCode;

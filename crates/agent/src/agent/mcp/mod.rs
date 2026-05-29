@@ -105,6 +105,7 @@
 
 pub mod actor;
 pub mod oauth_util;
+pub mod registry;
 pub(crate) mod service;
 pub mod types;
 
@@ -122,6 +123,7 @@ use actor::{
     McpServerActorHandle,
 };
 use futures::future::join_all;
+pub use registry::McpRegistry;
 use rmcp::model::CallToolResult;
 use serde::{
     Deserialize,

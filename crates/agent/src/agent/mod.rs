@@ -357,6 +357,25 @@ impl AgentHandle {
         }
     }
 
+    /// Push a new MCP registry snapshot to the running agent.
+    ///
+    /// The agent replaces its stored registry, re-applies it to the current
+    /// agent config, and reloads its MCP servers. Returns
+    /// [`AgentError::NotIdle`] if the agent is not idle; callers (such as
+    /// `AcpSession`) typically defer the call until the next idle window
+    /// rather than racing it against an in-flight prompt.
+    pub async fn refresh_mcp_registry(&self, registry: Box<dyn mcp::McpRegistry>) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::RefreshMcpRegistry(registry))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub fn terminate(&self) {
         _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
@@ -574,6 +593,13 @@ pub struct Agent {
     task_executor: TaskExecutor,
     mcp_manager_handle: McpManagerHandle,
 
+    /// Workspace-level `mcp.json` path resolved by the host. Stored on the
+    /// agent so MCP-config reloads (swap, registry refresh) don't need the
+    /// host to plumb the path back in on every call.
+    local_mcp_path: Option<PathBuf>,
+    /// Global `mcp.json` path resolved by the host. See [`Self::local_mcp_path`].
+    global_mcp_path: Option<PathBuf>,
+
     /// Cached result of agent spawn hooks.
     ///
     /// Since these hooks are only executed when the agent is initialized, they are just cached
@@ -615,7 +641,18 @@ pub struct Agent {
     session_resource_paths: HashSet<String>,
     /// All available agent configs, used for dynamic tool spec generation (e.g. AgentCrew)
     available_agent_configs: Vec<LoadedAgentConfig>,
-
+    /// MCP registry to apply to the agent config before launching MCP servers.
+    ///
+    /// When set, the registry's [`McpRegistry::apply`](mcp::McpRegistry::apply)
+    /// is invoked at construction time and on agent swap, transforming the
+    /// [`LoadedAgentConfig`] (filtering servers/tools, resolving registry
+    /// placeholders) before MCP servers are loaded. Hosts can push a fresh
+    /// registry to a running agent via the agent request channel; the agent
+    /// will re-apply it.
+    ///
+    /// `None` means no registry — the agent uses its config as-is. This is the
+    /// expected case for unmanaged users, V1 subagents, and most tests.
+    mcp_registry: Option<Box<dyn mcp::McpRegistry>>,
     /// BM25 tool index for tool_search (built from MCP tool specs)
     tool_search_index: ToolIndex,
     /// Configuration for tool search matching thresholds
@@ -643,6 +680,9 @@ impl Agent {
     /// * `knowledge_provider` - Knowledge base provider (optional)
     /// * `task_store` - Task store for task management (None for subagents and V1 agents)
     /// * `available_agent_configs` - All loaded agent configs for dynamic tool spec generation
+    /// * `mcp_registry` - Optional MCP registry to apply to the agent config before launching MCP
+    ///   servers (filters servers/tools, resolves registry placeholders). The agent stores the
+    ///   registry and re-applies it on swap and on registry refresh.
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         snapshot: AgentSnapshot,
@@ -655,6 +695,7 @@ impl Agent {
         knowledge_provider: Option<Arc<dyn tools::KnowledgeProvider>>,
         task_store: Option<Arc<TaskStore>>,
         available_agent_configs: Vec<LoadedAgentConfig>,
+        mcp_registry: Option<Box<dyn mcp::McpRegistry>>,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -665,6 +706,12 @@ impl Agent {
         // (SessionManager / TUI) forgot to strip MCP before creating the session.
         if !snapshot.settings.mcp_enabled {
             agent_config.config_mut().clear_mcp_configs();
+        }
+
+        // Apply registry transformations (filter servers/tools, resolve placeholders) before
+        // loading MCP server configs, so launches see the registry-resolved view.
+        if let Some(registry) = mcp_registry.as_ref() {
+            registry.apply(&mut agent_config);
         }
 
         let cached_mcp_configs =
@@ -687,6 +734,8 @@ impl Agent {
             compaction_loop: None,
             task_executor,
             mcp_manager_handle,
+            local_mcp_path: local_mcp_path.cloned(),
+            global_mcp_path: global_mcp_path.cloned(),
             agent_spawn_hooks: Default::default(),
             model,
             settings: snapshot.settings,
@@ -699,6 +748,7 @@ impl Agent {
             task_store,
             session_resource_paths: HashSet::new(),
             available_agent_configs,
+            mcp_registry,
             tool_search_index: ToolIndex::default(),
             tool_search_config: ToolLoadConfig::from_env(),
             tool_search_activated: HashSet::new(),
@@ -1199,6 +1249,7 @@ impl Agent {
                 Ok(AgentResponse::TerminateAcknowledged)
             },
             AgentRequest::SwapAgent(args) => self.handle_swap_agent(*args).await,
+            AgentRequest::RefreshMcpRegistry(registry) => self.handle_refresh_mcp_registry(registry).await,
             AgentRequest::CompactConversation => {
                 if !matches!(self.active_state(), ActiveState::Idle) {
                     return Err(AgentError::NotIdle);
@@ -1477,14 +1528,20 @@ impl Agent {
         if !self.settings.mcp_enabled {
             self.agent_config.config_mut().clear_mcp_configs();
         }
+        // Apply the stored registry to the swapped-in config so registry-driven filtering
+        // and placeholder resolution stay consistent across agent swaps. Hosts no longer
+        // need to pre-rewrite the config before calling swap.
+        if let Some(registry) = self.mcp_registry.as_ref() {
+            registry.apply(&mut self.agent_config);
+        }
         self.cached_tool_specs = None;
         self.session_resource_paths.clear();
 
         // 4. Reload MCP configs from new agent config
         self.cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
             &self.agent_config,
-            args.local_mcp_path.as_ref(),
-            args.global_mcp_path.as_ref(),
+            self.local_mcp_path.as_ref(),
+            self.global_mcp_path.as_ref(),
         )
         .await;
 
@@ -1497,6 +1554,53 @@ impl Agent {
         }
 
         Ok(AgentResponse::SwapComplete)
+    }
+
+    /// Replace the agent's MCP registry with a fresh snapshot and reload MCP
+    /// servers. See [`AgentHandle::refresh_mcp_registry`] for caller-side docs.
+    async fn handle_refresh_mcp_registry(
+        &mut self,
+        registry: Box<dyn mcp::McpRegistry>,
+    ) -> Result<AgentResponse, AgentError> {
+        // Refresh is only safe when the agent is idle: it tears down MCP servers
+        // mid-flight, which would corrupt an in-progress turn. Callers (e.g.
+        // AcpSession) defer the call until the next idle window.
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+
+        // Skip the work entirely when MCP is governance-disabled. No registry
+        // can resurrect MCP servers in that case.
+        if !self.settings.mcp_enabled {
+            self.mcp_registry = Some(registry);
+            return Ok(AgentResponse::Success);
+        }
+
+        // 1. Store the new registry so subsequent swaps re-apply it.
+        self.mcp_registry = Some(registry);
+
+        // 2. Re-apply registry transformations to the current agent config.
+        if let Some(registry) = self.mcp_registry.as_ref() {
+            registry.apply(&mut self.agent_config);
+        }
+
+        // 3. Tear down existing MCP servers and spin up a fresh manager.
+        self.mcp_manager_handle.terminate();
+        self.mcp_manager_handle = McpManager::default().spawn();
+
+        // 4. Invalidate cached tool specs so the next prompt picks up the new server set.
+        self.cached_tool_specs = None;
+
+        // 5. Reload MCP configs from the now-transformed agent config and launch the new server set.
+        self.cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
+            &self.agent_config,
+            self.local_mcp_path.as_ref(),
+            self.global_mcp_path.as_ref(),
+        )
+        .await;
+        self.launch_mcp_servers().await;
+
+        Ok(AgentResponse::Success)
     }
 
     /// Handlers for a [AgentRequest::Cancel] request.

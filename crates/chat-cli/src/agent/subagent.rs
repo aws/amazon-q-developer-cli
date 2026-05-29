@@ -256,10 +256,32 @@ impl<'a> Subagent<'a> {
             },
         };
 
-        // Resolve registry-type MCP servers that were dropped during agent config deserialization
-        if let Some(registry) = self.registry_data {
-            crate::mcp_registry::resolve_registry_servers_for_agent_config(&mut snapshot.agent_config, registry);
-        }
+        // Build a registry adapter from V1's registry data so the agent can apply
+        // it (filter servers/tools, resolve placeholders, inject mcp.json overrides)
+        // automatically before launching MCP servers and re-apply on swap. Reuses
+        // V2's `RegistryAdapter` since V1 and V2's `McpRegistryResponse` types are
+        // structurally identical duplicates.
+        let mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>> = match self.registry_data {
+            Some(r) => match crate::mcp_registry::to_v2_registry_response(r) {
+                Ok(v2_response) => {
+                    let adapter = chat_cli_v2::mcp_registry::RegistryAdapter::new(
+                        v2_response,
+                        Some(self.local_mcp_path),
+                        Some(self.global_mcp_path),
+                    )
+                    .await;
+                    Some(Box::new(adapter) as Box<dyn agent::mcp::McpRegistry>)
+                },
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        "Failed to convert V1 MCP registry response to V2; subagent will run without registry"
+                    );
+                    None
+                },
+            },
+            None => None,
+        };
 
         // TODO: V1 uses a separate RtsModel implementation from V2 (chat-cli-v2/src/agent/rts)
         // because they have incompatible ApiClient types. V2's RtsModel has additional features
@@ -310,6 +332,7 @@ impl<'a> Subagent<'a> {
             None,
             None,
             Vec::new(),
+            mcp_registry,
         )
         .await?;
 

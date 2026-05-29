@@ -76,6 +76,7 @@ pub struct TestCaseBuilder {
     cwd_subdir: Option<String>,
     settings: Option<AgentSettings>,
     mcp_servers: Vec<(String, McpServerConfig)>,
+    mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
 }
 
 impl TestCaseBuilder {
@@ -143,6 +144,13 @@ impl TestCaseBuilder {
         self
     }
 
+    /// Construct the agent with the given MCP registry. The agent will apply
+    /// it to its initial config and re-apply on every swap.
+    pub fn with_mcp_registry(mut self, registry: Box<dyn agent::mcp::McpRegistry>) -> Self {
+        self.mcp_registry = Some(registry);
+        self
+    }
+
     pub async fn build(self) -> Result<TestCase> {
         let mut model = MockModel::new();
         for response in self.mock_responses {
@@ -198,10 +206,11 @@ impl TestCaseBuilder {
             Arc::clone(&model) as Arc<dyn agent::agent_loop::model::Model>,
             McpManager::default().spawn(),
             false,
-            None, // code_intelligence not needed for tests
-            None, // knowledge_provider not needed for tests
-            None,
-            Vec::new(),
+            None,       // code_intelligence not needed for tests
+            None,       // knowledge_provider not needed for tests
+            None,       // task_store
+            Vec::new(), // available_agent_configs
+            self.mcp_registry,
         )
         .await?;
 
@@ -271,6 +280,17 @@ impl TestCase {
     pub async fn swap_agent(&self, args: agent::protocol::SwapAgentArgs) -> Result<()> {
         self.agent.swap_agent(args).await?;
         Ok(())
+    }
+
+    /// Push a fresh MCP registry snapshot to the running agent.
+    ///
+    /// Returns the underlying `AgentError` so tests can assert on
+    /// `NotIdle` vs success without unwrapping.
+    pub async fn refresh_mcp_registry(
+        &self,
+        registry: Box<dyn agent::mcp::McpRegistry>,
+    ) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.refresh_mcp_registry(registry).await
     }
 
     pub async fn compact_conversation(&self) -> Result<()> {
