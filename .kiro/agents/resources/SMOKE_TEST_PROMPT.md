@@ -9,12 +9,14 @@ scenarios from `scenarios.json`, capture evidence frames, and report results.
 NEVER run raw `nohup bun run knight-rider` — it WILL hang without timeout guards.
 
 ```bash
-bash scripts/knight-rider.sh start --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}"
+bash scripts/knight-rider.sh start --dir "$(pwd)" --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}"
 ```
 
 The script handles: killing stale instances, timeout guards (30s boot, 5min lifetime),
 building the Rust binary if missing, and polling for readiness. If it exits non-zero,
-Knight Rider failed to boot — check `/tmp/knight-rider.log`.
+Knight Rider failed to boot — check `/tmp/knight-rider.log` and report the failure.
+
+**If the script fails, do NOT fall back to manual startup.** Report the error and stop.
 
 The `--out` flag is critical — without it, frames go to an auto-generated
 directory that the workflow can't find for S3 upload.
@@ -100,7 +102,32 @@ If a verify fails, log `::warning::scenario <id> failed: <reason>` and
 
 ## Output
 
-When done: `SMOKE OK <N> scenarios, <M> verify failures`
+When all scenarios are done, write a file `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md` with this structure:
+
+```markdown
+# Smoke Test Results
+
+| Metric | Value |
+|--------|-------|
+| Scenarios run | <N> |
+| Passed | <P> |
+| Failed | <F> |
+| Frames captured | <frames> |
+
+## Failed scenarios
+
+| Scenario | Reason |
+|----------|--------|
+| <id> | <why it failed> |
+
+## Observations
+
+<Any notable behavior, regressions, or unexpected output observed during the run>
+```
+
+If all scenarios pass, omit the "Failed scenarios" table and write "All scenarios passed" under Observations.
+
+Then print: `SMOKE OK <N> scenarios, <M> verify failures`
 
 ## Constraints
 

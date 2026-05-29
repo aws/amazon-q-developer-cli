@@ -34,6 +34,16 @@ while [[ $# -gt 0 ]]; do
 done
 TUI_DIR="$REPO_ROOT/packages/tui"
 
+# Portable timeout: use GNU timeout if available, otherwise run without limit
+_timeout() {
+  local secs="$1"; shift
+  if command -v timeout &>/dev/null; then
+    timeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
 status() {
   if curl -s --max-time 3 "$KR_URL/api/status" 2>/dev/null | grep -q '"ready": *true'; then
     echo "✅ Knight Rider is up and ready on port $PORT"
@@ -66,7 +76,7 @@ stop() {
     rm -f "$PID_FILE"
   fi
   local pids
-  pids=$(timeout "$KILL_TIMEOUT" lsof -ti:$PORT 2>/dev/null || true)
+  pids=$(_timeout "$KILL_TIMEOUT" lsof -ti:$PORT 2>/dev/null || true)
   if [ -n "$pids" ]; then
     echo "$pids" | xargs kill 2>/dev/null && echo "  Killed port $PORT listeners" || true
   fi
@@ -83,7 +93,7 @@ start() {
   fi
   if [ ! -f "$REPO_ROOT/target/debug/chat_cli" ]; then
     echo "⚠️  No Rust binary at target/debug/chat_cli — building..."
-    (cd "$REPO_ROOT" && timeout 120 cargo build -p chat_cli) || { echo "❌ cargo build failed"; exit 1; }
+    (cd "$REPO_ROOT" && _timeout 120 cargo build -p chat_cli) || { echo "❌ cargo build failed"; exit 1; }
   fi
   echo "Cleaning up orphans..."
   stop 2>/dev/null || true
@@ -95,7 +105,7 @@ start() {
     kr_args="knight-rider --out $OUT_DIR"
     echo "  Out: $OUT_DIR"
   fi
-  timeout "$RUN_TIMEOUT" bun run $kr_args > "$LOG" 2>&1 &
+  _timeout "$RUN_TIMEOUT" bun run $kr_args > "$LOG" 2>&1 &
   local kr_pid=$!
   echo "$kr_pid" > "$PID_FILE"
   echo "  PID: $kr_pid"

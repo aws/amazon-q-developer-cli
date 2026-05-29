@@ -111,20 +111,42 @@ jobs:
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
         shell: bash
         run: |
+          mkdir -p ${{ github.workspace }}/.smoke-frames
           kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
-            "Run all scenarios"
+            "Run all scenarios" 2>&1 | tee ${{ github.workspace }}/.smoke-frames/session.log
+
+      - name: Collect evidence frames
+        if: always()
+        shell: bash
+        run: |
+          FRAMES_DIR="${{ github.workspace }}/.smoke-frames"
+          mkdir -p "$FRAMES_DIR"
+          # If agent didn't write to .smoke-frames, copy from Knight Rider's default output
+          if [ -z "$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null)" ]; then
+            KR_DIR=$(find ${{ github.workspace }}/packages/tui/e2e_tests/test-outputs -maxdepth 1 -name "knight-rider-*" -type d 2>/dev/null | sort -r | head -1)
+            if [ -n "$KR_DIR" ] && [ -d "$KR_DIR" ]; then
+              echo "Copying frames from $KR_DIR to $FRAMES_DIR"
+              cp -r "$KR_DIR"/* "$FRAMES_DIR"/ 2>/dev/null || true
+            fi
+          fi
+          # Ensure _summary.md exists for dashboard rendering
+          if [ -f "$FRAMES_DIR/summary-results.md" ]; then
+            cp "$FRAMES_DIR/summary-results.md" "$FRAMES_DIR/_summary.md"
+          fi
+          echo "Frame count: $(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l)"
 
       - name: Sync evidence to S3
         if: always()
         shell: bash
         run: |
-          aws s3 sync .smoke-frames/ "s3://kiro-reviewer-archive/evidence/${RUN_ID}/" || true
+          aws s3 sync "${{ github.workspace }}/.smoke-frames/" "s3://kiro-reviewer-archive/evidence/${RUN_ID}/" || true
 
       - name: Generate summary
         if: always()
         shell: bash
         run: |
-          frames=$(find .smoke-frames -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+          FRAMES_DIR="${{ github.workspace }}/.smoke-frames"
+          frames=$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
           {
             echo "## Smoke Tests — ${{ matrix.os }}"
             echo ""
@@ -133,12 +155,20 @@ jobs:
             echo "| **Frames captured** | $frames |"
             echo "| **Run ID** | \`${RUN_ID}\` |"
             echo "| **Reason** | ${{ inputs.reason }} |"
-            if [ "$frames" -gt 0 ]; then
+            echo ""
+            if [ -f "$FRAMES_DIR/summary-results.md" ]; then
+              cat "$FRAMES_DIR/summary-results.md"
+            else
+              echo "⚠️ Agent did not produce summary-results.md"
               echo ""
-              echo "### Evidence files"
-              echo '```'
-              find .smoke-frames -name '*.html' -printf '%f\n' 2>/dev/null | sort
-              echo '```'
+              echo "Frames captured: $frames"
+              if [ -f "$FRAMES_DIR/session.log" ]; then
+                echo ""
+                echo "### Agent output (last 40 lines)"
+                echo '```'
+                tail -40 "$FRAMES_DIR/session.log"
+                echo '```'
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -147,5 +177,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-frames-${{ env.RUN_ID }}
-          path: .smoke-frames/
+          path: ${{ github.workspace }}/.smoke-frames/
+          if-no-files-found: warn
           retention-days: 30
