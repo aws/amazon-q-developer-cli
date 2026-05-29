@@ -1,0 +1,303 @@
+name: "Fork PR: CI"
+
+# Runs full CI for fork PRs after a maintainer adds the "safe-to-test" label.
+# This is needed because fork PRs cannot access repo secrets (CodeArtifact, IAM roles).
+#
+# Security model:
+# - Only triggers on label addition (requires write access to the repo)
+# - A maintainer must review the code BEFORE adding the label
+# - Label is removed after the run so new pushes require re-approval
+# - CodeArtifact login is INLINED (not via ./.github/actions/) to prevent
+#   fork code from hijacking the composite action and exfiltrating credentials
+#
+# Parity: this workflow mirrors rust.yml + tui.yml checks. Keep in sync.
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  CI: 1
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  guard:
+    name: Check trigger
+    if: github.event.label.name == 'safe-to-test' && github.event.pull_request.head.repo.fork == true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Fork PR #${{ github.event.pull_request.number }} approved for CI via safe-to-test label"
+
+  # Remove the label so the next push requires re-approval
+  remove-label:
+    name: Remove safe-to-test label
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              name: 'safe-to-test'
+            });
+
+  # --- Rust checks (mirrors rust.yml) ---
+
+  cargo-clippy:
+    name: Clippy (${{ matrix.os }})
+    needs: guard
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev bash fish zsh shellcheck
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf fish shellcheck
+      - uses: dtolnay/rust-toolchain@1.84.0
+        id: toolchain
+        with:
+          components: clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: fork-cargo-clippy-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+      - name: Run clippy
+        run: cargo clippy --locked --workspace --color always -- -D warnings
+
+  cargo-test:
+    name: Test (${{ matrix.os }})
+    needs: guard
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev bash zsh
+      - uses: dtolnay/rust-toolchain@nightly
+        id: toolchain
+        with:
+          components: llvm-tools-preview
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: fork-cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+      - name: Run tests
+        run: cargo test --locked --workspace --lib --bins --test '*'
+
+  cargo-fmt:
+    name: Fmt
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo +nightly fmt --check -- --color always
+
+  cargo-deny:
+    name: Deny
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # --- TUI checks (mirrors tui.yml) ---
+
+  tui:
+    name: TUI (${{ matrix.check }})
+    needs: guard
+    strategy:
+      matrix:
+        check: [typecheck, lint, test]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+      # Inline CodeArtifact login — DO NOT use ./.github/actions/codeartifact-login
+      # because that resolves from the fork's checkout and could be tampered with.
+      - name: Configure AWS credentials for CodeArtifact
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
+          aws-region: us-west-2
+      - name: Login to CodeArtifact
+        run: |
+          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+          TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
+          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
+      - name: Install dependencies
+        run: bun install
+      - name: Build twinki
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - name: Run ${{ matrix.check }}
+        run: bun run ${{ matrix.check }}
+        working-directory: packages/tui
+
+  tui-integ:
+    name: TUI Integration (${{ matrix.os }})
+    needs: guard
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+      - name: Configure AWS credentials for CodeArtifact
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
+          aws-region: us-west-2
+      - name: Login to CodeArtifact
+        run: |
+          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+          TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
+          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
+      - name: Install dependencies
+        run: bun install
+      - name: Build twinki
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - name: Run integration tests (Linux)
+        if: runner.os == 'Linux'
+        run: bun run test:integ
+        working-directory: packages/tui
+      - name: Run ACP integration tests
+        run: bun run test:acp-integ
+        working-directory: packages/tui
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-integ-logs-${{ matrix.os }}
+          path: packages/tui/integ_tests/test-outputs/
+          retention-days: 7
+
+  tui-e2e:
+    name: TUI E2E (${{ matrix.os }})
+    needs: guard
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: fork-cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build chat_cli
+        run: cargo build -p chat_cli
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+      - name: Configure AWS credentials for CodeArtifact
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
+          aws-region: us-west-2
+      - name: Login to CodeArtifact
+        run: |
+          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
+          TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
+          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
+      - name: Install dependencies
+        run: bun install
+      - name: Build twinki
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - name: Build TUI
+        run: bun run build
+        working-directory: packages/tui
+      - name: Run E2E tests
+        run: bun test ./e2e_tests/
+        working-directory: packages/tui
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-e2e-logs-${{ matrix.os }}
+          path: packages/tui/e2e_tests/test-outputs/
+          retention-days: 7
