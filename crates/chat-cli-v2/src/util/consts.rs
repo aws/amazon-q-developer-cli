@@ -143,6 +143,11 @@ pub mod env_var {
         /// Kiro paths (agents, prompts, settings, steering, sessions, etc.).
         KIRO_HOME = "KIRO_HOME",
 
+        /// Overrides the data directory for runtime assets (bun, tui.js,
+        /// feed.json, todo-lists). Used by enterprise IT to redirect
+        /// extracted executables to AppLocker-whitelisted paths.
+        KIRO_DATA_DIR = "KIRO_DATA_DIR",
+
         /// Amazon Q chat shell
         AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
 

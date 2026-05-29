@@ -21,6 +21,7 @@ use tracing::{
 use crate::constants::CLI_NAME;
 use crate::os::Os;
 use crate::util::consts::env_var::{
+    KIRO_DATA_DIR,
     KIRO_HOME,
     KIRO_TEST_DB_PATH,
 };
@@ -89,8 +90,15 @@ fn should_use_data_dir(kiro_subpath: &str) -> bool {
     matches!(kiro_subpath, "knowledge_bases" | "cli-checkouts" | ".subagents")
 }
 
-/// Get the base kiro-cli data directory in Application Support
+/// Get the base kiro-cli data directory in Application Support.
+/// Honors `KIRO_DATA_DIR` when set, allowing enterprise IT to redirect
+/// runtime assets (bun, tui.js) to a whitelisted location.
 fn data_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var(KIRO_DATA_DIR) {
+        if !dir.trim().is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
     Ok(dirs::data_local_dir()
         .ok_or(DirectoryError::NoHomeDirectory)?
         .join(CLI_NAME))
@@ -836,6 +844,38 @@ mod migration_tests {
 
         let path = resolve_migrated_path_with_fs(&fs, kiro_base, amazonq_base, true, "cli-checkouts", "cli-checkouts");
         assert_eq!(path, Path::new("/data/kiro-cli/cli-checkouts"));
+    }
+
+    #[test]
+    #[serial_test::serial(env_kiro_data_dir)]
+    fn test_kiro_data_dir_override() {
+        // SAFETY: serialized via #[serial_test::serial] with the other
+        // env_kiro_data_dir tests.
+        unsafe { std::env::set_var(KIRO_DATA_DIR, "/enterprise/kiro") };
+        let dir = data_dir().unwrap();
+        unsafe { std::env::remove_var(KIRO_DATA_DIR) };
+        assert_eq!(dir, PathBuf::from("/enterprise/kiro"));
+    }
+
+    #[test]
+    #[serial_test::serial(env_kiro_data_dir)]
+    fn test_kiro_data_dir_empty_falls_back_to_default() {
+        // A set-but-empty value (e.g. misconfigured GPO) must not produce a
+        // relative path; it should fall back to the platform default.
+        // SAFETY: serialized via #[serial_test::serial].
+        unsafe { std::env::set_var(KIRO_DATA_DIR, "   ") };
+        let dir = data_dir().unwrap();
+        unsafe { std::env::remove_var(KIRO_DATA_DIR) };
+        assert!(dir.ends_with(CLI_NAME));
+    }
+
+    #[test]
+    #[serial_test::serial(env_kiro_data_dir)]
+    fn test_kiro_data_dir_unset_uses_default() {
+        // SAFETY: serialized via #[serial_test::serial].
+        unsafe { std::env::remove_var(KIRO_DATA_DIR) };
+        let dir = data_dir().unwrap();
+        assert!(dir.ends_with(CLI_NAME));
     }
 }
 

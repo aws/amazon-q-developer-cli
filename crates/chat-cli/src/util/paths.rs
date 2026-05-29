@@ -24,7 +24,10 @@ use crate::os::{
     Fs,
     Os,
 };
-use crate::util::consts::env_var::KIRO_HOME;
+use crate::util::consts::env_var::{
+    KIRO_DATA_DIR,
+    KIRO_HOME,
+};
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {
@@ -90,8 +93,15 @@ fn should_use_data_dir(kiro_subpath: &str) -> bool {
     matches!(kiro_subpath, "knowledge_bases" | "cli-checkouts" | ".subagents")
 }
 
-/// Get the base kiro-cli data directory in Application Support
+/// Get the base kiro-cli data directory in Application Support.
+/// Honors `KIRO_DATA_DIR` when set, allowing enterprise IT to redirect
+/// runtime assets (bun, tui.js, node) to a whitelisted location.
 fn data_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var(KIRO_DATA_DIR) {
+        if !dir.trim().is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
     Ok(dirs::data_local_dir()
         .ok_or(DirectoryError::NoHomeDirectory)?
         .join(CLI_NAME))
@@ -889,6 +899,23 @@ mod migration_tests {
 
         let path = resolve_migrated_path_with_fs(&fs, kiro_base, amazonq_base, true, "cli-checkouts", "cli-checkouts");
         assert_eq!(path, Path::new("/data/kiro-cli/cli-checkouts"));
+    }
+
+    #[test]
+    fn test_kiro_data_dir_override() {
+        // Combined into one test (no other test reads KIRO_DATA_DIR) so the
+        // set/unset steps stay sequential without needing a serial guard.
+        // SAFETY: KIRO_DATA_DIR is read only by data_dir(), exercised here.
+        unsafe { std::env::set_var(KIRO_DATA_DIR, "/enterprise/kiro") };
+        assert_eq!(data_dir().unwrap(), PathBuf::from("/enterprise/kiro"));
+
+        // Set-but-empty (e.g. misconfigured GPO) must fall back to default.
+        unsafe { std::env::set_var(KIRO_DATA_DIR, "   ") };
+        assert!(data_dir().unwrap().ends_with(CLI_NAME));
+
+        // Unset uses the platform default.
+        unsafe { std::env::remove_var(KIRO_DATA_DIR) };
+        assert!(data_dir().unwrap().ends_with(CLI_NAME));
     }
 }
 
