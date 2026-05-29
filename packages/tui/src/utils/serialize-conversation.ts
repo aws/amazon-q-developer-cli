@@ -13,7 +13,7 @@ export type TranscriptFormat = 'markdown' | 'plaintext' | 'json';
  */
 export function serializeConversation(
   messages: SerializableMessage[],
-  format: TranscriptFormat
+  format: TranscriptFormat = 'markdown'
 ): string {
   switch (format) {
     case 'json':
@@ -21,8 +21,7 @@ export function serializeConversation(
         messages
           .filter(
             (m) =>
-              (m.role === MessageRole.User ||
-                m.role === MessageRole.Model) &&
+              (m.role === MessageRole.User || m.role === MessageRole.Model) &&
               m.content
           )
           .map((m) => ({ role: m.role, content: m.content })),
@@ -82,7 +81,9 @@ function serializeWithLabels(
  */
 function stripMarkdown(text: string): string {
   const tokens = Lexer.lex(text);
-  return extractText(tokens).replace(/\n{3,}/g, '\n\n').trim();
+  return extractText(tokens)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function extractText(tokens: Token[]): string {
@@ -92,7 +93,11 @@ function extractText(tokens: Token[]): string {
     switch (token.type) {
       case 'heading':
       case 'paragraph':
-        parts.push(extractInline((token as Tokens.Heading | Tokens.Paragraph).tokens ?? []) + '\n\n');
+        parts.push(
+          extractInline(
+            (token as Tokens.Heading | Tokens.Paragraph).tokens ?? []
+          ) + '\n\n'
+        );
         break;
       case 'code':
         parts.push((token as Tokens.Code).text + '\n\n');
@@ -111,7 +116,10 @@ function extractText(tokens: Token[]): string {
         const headers = table.header.map((h) => extractInline(h.tokens ?? []));
         parts.push(headers.join('\t') + '\n');
         for (const row of table.rows) {
-          parts.push(row.map((cell) => extractInline(cell.tokens ?? [])).join('\t') + '\n');
+          parts.push(
+            row.map((cell) => extractInline(cell.tokens ?? [])).join('\t') +
+              '\n'
+          );
         }
         parts.push('\n');
         break;

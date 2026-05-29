@@ -909,7 +909,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
     // Parse flags — everything that's not a flag is the path
     let format: TranscriptFormat = 'markdown';
-    let filePath = '';
     const pathParts: string[] = [];
 
     for (const token of tokens) {
@@ -935,12 +934,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
     }
-    filePath = pathParts.join(' ');
 
     // Serialize
     const content = serializeConversation(messages, format);
 
     if (saving) {
+      const filePath = pathParts.join(' ');
       const ext = { markdown: '.md', plaintext: '.txt', json: '.json' };
       const expanded = filePath.startsWith('~/')
         ? homedir() + filePath.slice(1)

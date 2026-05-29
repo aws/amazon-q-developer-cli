@@ -201,7 +201,9 @@ describe('completePathAtCursor after slash command prefix', () => {
       const result = completePathAtCursor(text, text.length);
       expect(result).not.toBeNull();
       expect(result!.start).toBe('/agent-sop:pdd '.length);
-      expect(result!.candidates.some((c) => c.startsWith('.hidden'))).toBe(true);
+      expect(result!.candidates.some((c) => c.startsWith('.hidden'))).toBe(
+        true
+      );
     } finally {
       process.chdir(origCwd);
     }

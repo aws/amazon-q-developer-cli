@@ -175,7 +175,9 @@ describe('Kiro', () => {
         commands: [{ name: 'help', description: 'Show help' }],
       } as AgentStreamEvent);
     }
-    expect(commandsHandler).toHaveBeenCalledWith([
+    expect(commandsHandler).toHaveBeenCalled();
+    const firstCallArgs = (commandsHandler.mock.calls as unknown[][])[0];
+    expect(firstCallArgs![0]).toEqual([
       { name: 'help', description: 'Show help' },
     ]);
   });

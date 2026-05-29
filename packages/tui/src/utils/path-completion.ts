@@ -116,9 +116,10 @@ export function extractPathToken(
           // Only accept if the prefix actually matches an entry in the directory.
           // This prevents false positives like "/command ." where dir="/" succeeds
           // but "command ." doesn't match any real file.
-          const pfx = expanded.endsWith('/') || (isWindows && expanded.endsWith('\\'))
-            ? ''
-            : basename(expanded);
+          const pfx =
+            expanded.endsWith('/') || (isWindows && expanded.endsWith('\\'))
+              ? ''
+              : basename(expanded);
           if (!pfx || entries.some((e) => e.startsWith(pfx))) {
             // Valid directory with matching prefix — use the extended token
             return { token: candidate, start: extStart };

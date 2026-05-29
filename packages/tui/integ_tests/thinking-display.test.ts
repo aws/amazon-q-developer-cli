@@ -23,8 +23,8 @@ describe('Thinking display', () => {
 
   it('stores thinking text on model message', async () => {
     testCase = await TestCase.builder()
-          .withGlobalSettings({ 'chat.showThinking': true })
-          .withTestName('thinking-store')
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .withTestName('thinking-store')
       .withTimeout(15000)
       .launch();
 
@@ -48,7 +48,7 @@ describe('Thinking display', () => {
 
     // Send the user message — prompt() will drain the event queue
     await testCase.sendKeys('hello\r');
-    await testCase.sleepMs(300);
+    await testCase.sleepMs(1000);
 
     // Verify the store has a model message with both content and thinking
     const store = await testCase.getStore();
@@ -65,8 +65,8 @@ describe('Thinking display', () => {
 
   it('renders thinking text in terminal output', async () => {
     testCase = await TestCase.builder()
-          .withGlobalSettings({ 'chat.showThinking': true })
-          .withTestName('thinking-renders')
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .withTestName('thinking-renders')
       .withTimeout(15000)
       .launch();
 
@@ -103,8 +103,8 @@ describe('Thinking display', () => {
 
   it('long thinking shows tail and ctrl+o hint after the turn ends', async () => {
     testCase = await TestCase.builder()
-          .withGlobalSettings({ 'chat.showThinking': true })
-          .withTestName('thinking-tail-hint')
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .withTestName('thinking-tail-hint')
       .withTimeout(15000)
       .launch();
 
@@ -149,8 +149,8 @@ describe('Thinking display', () => {
 
   it('ctrl+o toggles between collapsed tail and expanded full thinking', async () => {
     testCase = await TestCase.builder()
-          .withGlobalSettings({ 'chat.showThinking': true })
-          .withTestName('thinking-ctrl-o-expand')
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .withTestName('thinking-ctrl-o-expand')
       .withTimeout(15000)
       .launch();
 
@@ -217,8 +217,8 @@ describe('Thinking display', () => {
 
   it('preserves paragraph breaks and trims leading empty in the tail', async () => {
     testCase = await TestCase.builder()
-          .withGlobalSettings({ 'chat.showThinking': true })
-          .withTestName('thinking-paragraphed')
+      .withGlobalSettings({ 'chat.showThinking': true })
+      .withTestName('thinking-paragraphed')
       .withTimeout(15000)
       .launch();
 
@@ -227,15 +227,9 @@ describe('Thinking display', () => {
     // Thinking with paragraph breaks. The slice(-4) lands on
     //   ["", "Para C.", "", "Para D."]
     // — leading empty must be trimmed; internal empty must be preserved.
-    const text = [
-      'Para A.',
-      '',
-      'Para B.',
-      '',
-      'Para C.',
-      '',
-      'Para D.',
-    ].join('\n');
+    const text = ['Para A.', '', 'Para B.', '', 'Para C.', '', 'Para D.'].join(
+      '\n'
+    );
     await testCase.mockSessionUpdate({
       type: AgentEventType.Thought,
       id: 'thought-paragraph',
