@@ -5,7 +5,6 @@ import type { Stream } from '@kiro/client';
 // TUI, KAS, and any other ACP client speak the same contract for the
 // `_kiro/spec/*` extension methods.
 import type {
-  ClientCapability,
   SpecInvokeRequest,
   SpecInvokeResponse,
   SpecResolveSessionRequest,
@@ -1477,16 +1476,7 @@ export class KasAcpClient extends BaseAcpClient {
   private mcpServerCache: McpServerInfo[] = [];
   private mcpRegistryCache: McpServerInfo[] = [];
 
-  /**
-   * Tracks which MCP servers we've already auto-triggered OAuth for, to
-   * avoid re-issuing `_kiro/mcp/resetServer` every time the agent re-emits
-   * `_kiro/mcp/status` while the server is still in `failedAuthorization`.
-   *
-   * A server is removed from this set when it transitions out of
-   * `failedAuthorization` (either back to `connected`/`connecting`, or
-   * `disabled`), so a fresh failure later on still triggers a new reset.
-   */
-  private oauthResetRequested: Set<string> = new Set();
+
 
   /**
    * Construct a KAS ACP client.
@@ -1510,10 +1500,7 @@ export class KasAcpClient extends BaseAcpClient {
       this.kiroClient = new KiroClient({
         stream: finalStream,
         clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
-        capabilities: this.buildClientCapabilities(),
-        clientMeta: {
-          openExternalUrl: true,
-        },
+        capabilities: [createGetAccessTokenCapability()],
       });
       return;
     }
@@ -1573,18 +1560,12 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient = new KiroClient({
       stream: finalStream,
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
-      capabilities: this.buildClientCapabilities(),
+      capabilities: [createGetAccessTokenCapability()],
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         telemetry: getTelemetryIdentity(),
         knowledge: true,
         hooks: { enabled: true, v2: true },
-        // Tells KAS the client can receive `_kiro/openExternalUrl` requests
-        // (gated by `resolvedCapabilities.openExternalUrl` agent-side). Used
-        // for surfacing MCP server OAuth authorization URLs — see
-        // `handleOpenExternalUrl` for how the URL is correlated to its
-        // server and broadcast as a `McpOauthRequest` stream event.
-        openExternalUrl: true,
         ...(kasSettings && { settings: kasSettings }),
       },
     });
@@ -2507,63 +2488,6 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /**
-   * Build the `capabilities` array passed to the underlying `KiroClient`.
-   * Each capability registers an extMethod handler AND advertises the
-   * matching `_meta.kiro.<key>` flag in `initialize`, which is how KAS
-   * decides whether to call the corresponding `_kiro/*` ext method.
-   *
-   * Currently we only register `openExternalUrl`. KAS uses it for MCP
-   * server OAuth flows: when a server is reset with `startOAuth: true`,
-   * the SDK eventually calls back with the authorization URL, and KAS
-   * forwards it to us via `_kiro/openExternalUrl`. The TUI surfaces
-   * the URL through the normal `pendingOAuthServers` map (notification
-   * bar + `/mcp` panel) rather than literally opening a browser, since
-   * users may be on a headless host.
-   */
-  private buildClientCapabilities(): ClientCapability[] {
-    return [
-      createGetAccessTokenCapability(),
-      {
-        type: 'other',
-        key: 'openExternalUrl',
-        value: true,
-        method: '_kiro/openExternalUrl',
-        handler: (request) => this.handleOpenExternalUrl(request),
-      },
-    ];
-  }
-
-  /**
-   * Handle KAS's `_kiro/openExternalUrl` request. The payload includes
-   * `{ url, serverName }` — the server name identifies which MCP server
-   * triggered the OAuth flow.
-   */
-  private async handleOpenExternalUrl(
-    request: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    const url = (request.url as string) ?? '';
-    const serverName = (request.serverName as string) ?? '';
-    if (!url) {
-      logger.warn('[kas] _kiro/openExternalUrl missing url', request);
-      return { success: false };
-    }
-    if (!serverName) {
-      logger.warn(
-        '[kas] _kiro/openExternalUrl missing serverName',
-        { url }
-      );
-      return { success: false };
-    }
-    logger.info('[kas] OAuth URL received for server', { serverName, url });
-    this.broadcastStreamEvent({
-      type: AgentEventType.McpOauthRequest,
-      serverName,
-      oauthUrl: url,
-    });
-    return { success: true };
-  }
-
-  /**
    * Handle `_kiro/mcp/status` notification from KAS.
    * Transforms the notification data into McpServerInfo[] and caches it.
    */
@@ -2579,6 +2503,7 @@ export class KasAcpClient extends BaseAcpClient {
             disabled: boolean;
           }>;
           failedAuthorization?: boolean;
+          authorizationUrl?: string;
           errorMessage?: string;
         }>
       | undefined;
@@ -2605,22 +2530,6 @@ export class KasAcpClient extends BaseAcpClient {
             status = 'failed';
         }
 
-        // If we've already kicked off an OAuth reset for this server,
-        // keep it in 'auth-required' regardless of what KAS reports.
-        // After the reset, KAS transitions the server through
-        // 'connecting' → 'failed' (timeout) while waiting for the user
-        // to complete OAuth. Without this override, the panel would
-        // flicker between 'loading' and 'failed', confusing the user.
-        // The override is cleared when the server successfully connects
-        // (status === 'connected') or is disabled.
-        if (
-          this.oauthResetRequested.has(server.name) &&
-          status !== 'running' &&
-          status !== 'disabled'
-        ) {
-          status = 'auth-required';
-        }
-
         return {
           name: server.name,
           status,
@@ -2628,32 +2537,14 @@ export class KasAcpClient extends BaseAcpClient {
         };
       });
 
-      // Auto-start OAuth for servers that failed with `failedAuthorization`.
-      // Without this, KAS sits in the failed state forever — initial connects
-      // use `startOAuth: false`, so the SDK never produces an authorization
-      // URL. Calling `_kiro/mcp/resetServer` with `startOAuth: true` causes
-      // KAS to retry, which surfaces the URL via `_kiro/openExternalUrl`.
-      //
-      // Gated on `oauthResetRequested` so we issue the reset at most once
-      // per failure window. We re-arm by clearing the entry whenever the
-      // server transitions out of `failedAuthorization` (handled below).
+      // Broadcast OAuth URL for servers that need authentication
       for (const server of servers) {
-        const isAuthFailed =
-          server.status === 'failed' && server.failedAuthorization === true;
-        if (isAuthFailed && !this.oauthResetRequested.has(server.name)) {
-          this.oauthResetRequested.add(server.name);
-          logger.info('[kas] MCP server needs OAuth, triggering reset', {
+        if (server.failedAuthorization && server.authorizationUrl) {
+          this.broadcastStreamEvent({
+            type: AgentEventType.McpOauthRequest,
             serverName: server.name,
+            oauthUrl: server.authorizationUrl,
           });
-          this.requestMcpOAuth(server.name);
-        } else if (
-          (server.status === 'connected' || server.status === 'disabled') &&
-          this.oauthResetRequested.has(server.name)
-        ) {
-          // Only clear the gate when the server actually recovers or is
-          // disabled — NOT when it transitions through connecting/failed
-          // during the OAuth flow.
-          this.oauthResetRequested.delete(server.name);
         }
       }
     }
@@ -2722,39 +2613,6 @@ export class KasAcpClient extends BaseAcpClient {
     };
   }
 
-  /**
-   * Trigger KAS to (re)start the OAuth flow for an MCP server. KAS only
-   * surfaces an authorization URL via `_kiro/openExternalUrl` when the
-   * connection is started with `startOAuth: true`, which only happens
-   * through `_kiro/mcp/resetServer`. The initial server connect path
-   * uses `startOAuth: false`, so we drive this from the client once we
-   * observe `failedAuthorization`.
-   *
-   * Pushes `serverName` onto `pendingOauthQueue` synchronously BEFORE
-   * issuing the reset, since the agent's `_kiro/openExternalUrl` request
-   * arrives mid-flight (during `connectServer`, while our reset call is
-   * still pending). The handler pops the head of the queue to recover
-   * which server the URL is for. Order is preserved because resets are
-   * issued sequentially in this loop.
-   *
-   * Errors are logged and swallowed — the next status update will
-   * re-trigger this path through `oauthResetRequested`.
-   */
-  private async requestMcpOAuth(serverName: string): Promise<void> {
-    if (!this.sessionId) return;
-    try {
-      logger.info('[kas] requesting OAuth reset for MCP server', {
-        serverName,
-      });
-      await this.kiroClient.sendExtMethod('_kiro/mcp/resetServer', {
-        sessionId: this.sessionId,
-        serverName,
-        startOAuth: true,
-      });
-    } catch (e) {
-      logger.warn('[kas] _kiro/mcp/resetServer failed', { serverName, e });
-    }
-  }
 
   private async callExtMethod(
     method: string,
