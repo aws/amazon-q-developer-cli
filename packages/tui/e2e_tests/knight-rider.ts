@@ -22,7 +22,7 @@
  *   GET  /report              → self-contained evidence report (works offline)
  *   WS   /ws                  → raw PTY stream for live viewer
  *   GET  /api/status          → { ready, error, frameCount, outputDir }
- *   GET  /api/screen          → { lines: string[] }
+ *   GET  /api/screen          → { lines: string[], cursor: { x, y } }
  *   GET  /api/screen/html     → rendered HTML with colors
  *   GET  /api/frames          → all captured frames
  *   POST /api/keys            → { keys: string }  — send keystrokes
@@ -425,7 +425,7 @@ const server = Bun.serve({
     try {
       const p = requirePty();
       switch (url.pathname) {
-        case '/api/screen': return json({ lines: p.getSnapshot() });
+        case '/api/screen': return json({ lines: p.getSnapshot(), cursor: p.getCursorPosition() });
         case '/api/screen/html': return new Response(p.getSnapshotHtml(), { headers: { 'content-type': 'text/html' } });
         case '/api/keys': { const { keys } = await readBody(req); if (!keys) return json({ error: 'missing "keys"' }, 400); await p.sendKeys(keys); await sleep(100); return json({ ok: true }); }
         case '/api/enter': await p.sendKeys('\r'); await sleep(100); return json({ ok: true });

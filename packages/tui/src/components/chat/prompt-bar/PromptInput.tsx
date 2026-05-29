@@ -83,9 +83,15 @@ import {
 
 /** Visual cursor (inverse block) + hardware cursor marker (APC sequence for twinki IME positioning). */
 const EXPAND_HINT = 'Press Tab to expand';
-const CursorBlock = ({ char = ' ' }: { char?: string }) => (
+const CursorBlock = ({
+  char = ' ',
+  suppressMarker = false,
+}: {
+  char?: string;
+  suppressMarker?: boolean;
+}) => (
   <>
-    <Text>{CURSOR_MARKER}</Text>
+    {!suppressMarker && <Text>{CURSOR_MARKER}</Text>}
     <Text inverse>{char}</Text>
   </>
 );
@@ -1372,6 +1378,23 @@ export const PromptInput = React.memo(function PromptInput({
   );
 
   const renderContent = () => {
+    // When a menu (slash commands, file picker) is open, it emits its own
+    // CURSOR_MARKER for screen-reader accessibility. Suppress the marker here
+    // to avoid two hardware cursors in multiplexers (tmux/zellij). The visual
+    // inverse block still renders so the user sees where their input cursor is.
+    const menuHasCursor =
+      (activeTrigger?.key === '/' &&
+        !commandInputValue.includes(' ') &&
+        slashCommands.some(
+          (cmd) =>
+            !cmd.meta?.hidden &&
+            cmd.name
+              .slice(1)
+              .toLowerCase()
+              .startsWith(commandInputValue.slice(1).toLowerCase())
+        )) ||
+      (activeTrigger?.key === '@' && filePickerHasResults);
+
     // Reverse search mode: show the search prompt
     if (reverseSearchRef.current.active) {
       const rs = reverseSearchRef.current;
@@ -1388,7 +1411,7 @@ export const PromptInput = React.memo(function PromptInput({
           <Text wrap="wrap">
             <Text>{placeholderColor(prefix)}</Text>
             <Text>{primaryColor(beforeMatch)}</Text>
-            <CursorBlock char={charAtCursor} />
+            <CursorBlock char={charAtCursor} suppressMarker={menuHasCursor} />
             {afterCursor && <Text>{primaryColor(afterCursor)}</Text>}
           </Text>
         );
@@ -1396,7 +1419,7 @@ export const PromptInput = React.memo(function PromptInput({
       return (
         <Text wrap="wrap">
           <Text>{placeholderColor(prefix)}</Text>
-          <CursorBlock />
+          <CursorBlock suppressMarker={menuHasCursor} />
         </Text>
       );
     }
@@ -1428,7 +1451,7 @@ export const PromptInput = React.memo(function PromptInput({
             </>
           ) : (
             <>
-              <CursorBlock />
+              <CursorBlock suppressMarker={menuHasCursor} />
               <Text>{placeholderColor(activePlaceholder)}</Text>
             </>
           )}
@@ -1477,7 +1500,10 @@ export const PromptInput = React.memo(function PromptInput({
               {voiceCursorChar != null ? (
                 <Text>{chalk.green(voiceCursorChar)}</Text>
               ) : (
-                <CursorBlock char={charAtCursor} />
+                <CursorBlock
+                  char={charAtCursor}
+                  suppressMarker={menuHasCursor}
+                />
               )}
               {shadowRemainder && (
                 <Text>{placeholderColor(shadowRemainder)}</Text>
@@ -1496,7 +1522,7 @@ export const PromptInput = React.memo(function PromptInput({
               {voiceCursorChar != null ? (
                 <Text>{chalk.green(voiceCursorChar)}</Text>
               ) : (
-                <CursorBlock />
+                <CursorBlock suppressMarker={menuHasCursor} />
               )}
               <FileChip filePath={seg.filePath} lineCount={seg.lineCount} />
             </React.Fragment>
@@ -1518,7 +1544,7 @@ export const PromptInput = React.memo(function PromptInput({
               {voiceCursorChar != null ? (
                 <Text>{chalk.green(voiceCursorChar)}</Text>
               ) : (
-                <CursorBlock />
+                <CursorBlock suppressMarker={menuHasCursor} />
               )}
               <PastedChip lineCount={seg.lineCount} charCount={seg.charCount} />
             </React.Fragment>
@@ -1539,7 +1565,7 @@ export const PromptInput = React.memo(function PromptInput({
               {voiceCursorChar != null ? (
                 <Text>{chalk.green(voiceCursorChar)}</Text>
               ) : (
-                <CursorBlock />
+                <CursorBlock suppressMarker={menuHasCursor} />
               )}
               <PastedChip
                 type="image"
@@ -1573,7 +1599,7 @@ export const PromptInput = React.memo(function PromptInput({
             <Text key="cursor-end">{chalk.green(voiceCursorChar)}</Text>
           ) : (
             <React.Fragment key="cursor-end">
-              <CursorBlock />
+              <CursorBlock suppressMarker={menuHasCursor} />
             </React.Fragment>
           )
         );

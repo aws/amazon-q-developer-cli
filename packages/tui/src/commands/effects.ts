@@ -934,12 +934,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
     }
+    const filePath = pathParts.join(' ');
 
     // Serialize
     const content = serializeConversation(messages, format);
 
     if (saving) {
-      const filePath = pathParts.join(' ');
       const ext = { markdown: '.md', plaintext: '.txt', json: '.json' };
       const expanded = filePath.startsWith('~/')
         ? homedir() + filePath.slice(1)

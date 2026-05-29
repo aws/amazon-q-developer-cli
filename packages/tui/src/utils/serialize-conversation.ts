@@ -37,7 +37,11 @@ export function serializeConversation(
 }
 
 // Keep the original export for backward compatibility
-export { serializeConversation as serializeConversationToMarkdown };
+export function serializeConversationToMarkdown(
+  messages: SerializableMessage[]
+): string {
+  return serializeConversation(messages, 'markdown');
+}
 
 /**
  * Serialize messages with configurable labels and optional content transform.

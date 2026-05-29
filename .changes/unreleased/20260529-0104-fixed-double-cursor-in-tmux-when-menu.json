@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Double cursor appearing in tmux and zellij when autocomplete menu is open"
+}
