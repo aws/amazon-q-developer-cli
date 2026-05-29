@@ -155,7 +155,7 @@ export const DagVisualization = React.memo(function DagVisualization({
     const stage = stageByName.get(name);
     const loopLabel =
       stage?.hasLoop && stage.loopMaxIterations
-        ? ` ↻[${stage.loopIteration}/${stage.loopMaxIterations}]`
+        ? ` ↻[${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
         : '';
 
     return (

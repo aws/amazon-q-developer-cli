@@ -45,9 +45,10 @@ export const StageRow = React.memo(function StageRow({
     : ' '.repeat(depW + 2);
 
   // Loop indicator: "↻ [2/4]" when stage has loop config
+  // loopIteration is 0-indexed, so +1 to show human-friendly "rounds completed"
   const loopLabel =
     stage.hasLoop && stage.loopMaxIterations
-      ? ` ↻ [${stage.loopIteration}/${stage.loopMaxIterations}]`
+      ? ` ↻ [${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
       : '';
 
   return (

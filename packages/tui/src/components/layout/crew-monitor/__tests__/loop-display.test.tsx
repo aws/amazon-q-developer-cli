@@ -24,23 +24,23 @@ const baseStage = (overrides: Partial<Stage> = {}): Stage => ({
 /**
  * Replicates the loop label logic from StageRow.tsx:
  *   stage.hasLoop && stage.loopMaxIterations
- *     ? ` ↻ [${stage.loopIteration}/${stage.loopMaxIterations}]`
+ *     ? ` ↻ [${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
  *     : ''
  */
 const stageRowLoopLabel = (stage: Stage): string =>
   stage.hasLoop && stage.loopMaxIterations
-    ? ` ↻ [${stage.loopIteration}/${stage.loopMaxIterations}]`
+    ? ` ↻ [${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
     : '';
 
 /**
  * Replicates the loop label logic from DagVisualization.tsx:
  *   stage?.hasLoop && stage.loopMaxIterations
- *     ? ` ↻[${stage.loopIteration}/${stage.loopMaxIterations}]`
+ *     ? ` ↻[${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
  *     : ''
  */
 const dagLoopLabel = (stage: Stage | undefined): string =>
   stage?.hasLoop && stage.loopMaxIterations
-    ? ` ↻[${stage.loopIteration}/${stage.loopMaxIterations}]`
+    ? ` ↻[${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
     : '';
 
 // ---------------------------------------------------------------------------
@@ -106,13 +106,13 @@ describe('Stage type loop fields', () => {
 // ---------------------------------------------------------------------------
 
 describe('StageRow loop label', () => {
-  it('when hasLoop=true and loopMaxIterations=4 and loopIteration=2 then renders ↻ [2/4]', () => {
+  it('when hasLoop=true and loopMaxIterations=4 and loopIteration=2 then renders ↻ [3/4]', () => {
     const stage = baseStage({
       hasLoop: true,
       loopIteration: 2,
       loopMaxIterations: 4,
     });
-    expect(stageRowLoopLabel(stage)).toBe(' ↻ [2/4]');
+    expect(stageRowLoopLabel(stage)).toBe(' ↻ [3/4]');
   });
 
   it('when hasLoop=false then no loop label', () => {
@@ -129,13 +129,13 @@ describe('StageRow loop label', () => {
     expect(stageRowLoopLabel(stage)).toBe('');
   });
 
-  it('when loopIteration=0 and loopMaxIterations=5 then renders ↻ [0/5]', () => {
+  it('when loopIteration=0 and loopMaxIterations=5 then renders ↻ [1/5]', () => {
     const stage = baseStage({
       hasLoop: true,
       loopIteration: 0,
       loopMaxIterations: 5,
     });
-    expect(stageRowLoopLabel(stage)).toBe(' ↻ [0/5]');
+    expect(stageRowLoopLabel(stage)).toBe(' ↻ [1/5]');
   });
 });
 
@@ -144,13 +144,13 @@ describe('StageRow loop label', () => {
 // ---------------------------------------------------------------------------
 
 describe('DagVisualization loop label', () => {
-  it('when hasLoop=true and loopMaxIterations=3 and loopIteration=1 then renders ↻[1/3]', () => {
+  it('when hasLoop=true and loopMaxIterations=3 and loopIteration=1 then renders ↻[2/3]', () => {
     const stage = baseStage({
       hasLoop: true,
       loopIteration: 1,
       loopMaxIterations: 3,
     });
-    expect(dagLoopLabel(stage)).toBe(' ↻[1/3]');
+    expect(dagLoopLabel(stage)).toBe(' ↻[2/3]');
   });
 
   it('when hasLoop=false then no loop label', () => {
@@ -343,5 +343,50 @@ describe('Loop iteration deduplication', () => {
 
     const result = deduplicateStages(stages);
     expect(result).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Off-by-one regression: loopIteration is 0-indexed, display is 1-indexed
+// ---------------------------------------------------------------------------
+
+describe('Loop display is 1-indexed (human-friendly round count)', () => {
+  it('after 3 rounds with max 4, StageRow shows ↻ [3/4] not [2/4]', () => {
+    // Backend sets loopIteration=2 after 3 rounds (0-indexed)
+    const stage = baseStage({
+      hasLoop: true,
+      loopIteration: 2,
+      loopMaxIterations: 4,
+    });
+    expect(stageRowLoopLabel(stage)).toBe(' ↻ [3/4]');
+  });
+
+  it('after 3 rounds with max 4, DagVisualization shows ↻[3/4] not [2/4]', () => {
+    const stage = baseStage({
+      hasLoop: true,
+      loopIteration: 2,
+      loopMaxIterations: 4,
+    });
+    expect(dagLoopLabel(stage)).toBe(' ↻[3/4]');
+  });
+
+  it('first round (loopIteration=0) shows 1/N not 0/N', () => {
+    const stage = baseStage({
+      hasLoop: true,
+      loopIteration: 0,
+      loopMaxIterations: 4,
+    });
+    expect(stageRowLoopLabel(stage)).toBe(' ↻ [1/4]');
+    expect(dagLoopLabel(stage)).toBe(' ↻[1/4]');
+  });
+
+  it('max iterations reached (loopIteration=3, max=4) shows 4/4', () => {
+    const stage = baseStage({
+      hasLoop: true,
+      loopIteration: 3,
+      loopMaxIterations: 4,
+    });
+    expect(stageRowLoopLabel(stage)).toBe(' ↻ [4/4]');
+    expect(dagLoopLabel(stage)).toBe(' ↻[4/4]');
   });
 });
