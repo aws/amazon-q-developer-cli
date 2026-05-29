@@ -26,11 +26,11 @@ impl Endpoint {
         region: Region::from_static(US_ISO_ALE),
     };
     pub const CPS_EU_CENTRAL_1: Self = Self {
-        url: Cow::Borrowed("https://cps.prod-eu-central-1.codewhisperer.ai.aws.dev"),
+        url: Cow::Borrowed("https://management.eu-central-1.kiro.dev"),
         region: Region::from_static("eu-central-1"),
     };
     pub const CPS_US_EAST_1: Self = Self {
-        url: Cow::Borrowed("https://cps.prod-us-east-1.codewhisperer.ai.aws.dev"),
+        url: Cow::Borrowed("https://management.us-east-1.kiro.dev"),
         region: Region::from_static("us-east-1"),
     };
     pub const DCA_ENDPOINT: Self = Self {
