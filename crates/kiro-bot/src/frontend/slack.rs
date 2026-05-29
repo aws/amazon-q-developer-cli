@@ -178,66 +178,49 @@ impl Frontend for SlackFrontend {
         if self.conversation_history == 0 {
             return vec![];
         }
+        // No `thread_ts` means this is a top-level channel event (a DM, or a
+        // bare @mention that the response policy is about to put into a new
+        // thread). Pulling `conversations.history` here would inject whatever
+        // unrelated chatter ran in the channel since the last event into the
+        // agent prompt — exactly the cross-thread pollution we want to avoid.
+        // The mention's own text is already passed as the prompt, and any
+        // follow-up in the new thread will fetch via the thread branch below.
+        let Some(ts) = thread_ts else {
+            self.last_seen
+                .lock()
+                .unwrap()
+                .insert(conversation.to_string(), before.into());
+            return vec![];
+        };
+
         let session = self.client.open_session(&self.bot_token);
         let channel: SlackChannelId = conversation.into();
         let latest: SlackTs = before.into();
 
-        let result = if let Some(ts) = thread_ts {
-            let req = SlackApiConversationsRepliesRequest::new(channel, ts.into())
-                .with_latest(latest)
-                .with_limit(self.conversation_history);
-            match session.conversations_replies(&req).await {
-                Ok(resp) => resp
-                    .messages
-                    .iter()
-                    .skip(1)
-                    .rev()
-                    .filter_map(|m| {
-                        let text = m.content.text.as_deref()?;
-                        let user = m
-                            .sender
-                            .user
-                            .as_ref()
-                            .map(|u| self.user_map.resolve(u.as_ref()).to_string())
-                            .unwrap_or_else(|| "bot".into());
-                        Some(format!("{user}: {text}"))
-                    })
-                    .collect(),
-                Err(e) => {
-                    warn!("Thread context fetch failed: {e}");
-                    vec![]
-                },
-            }
-        } else {
-            let oldest = self.last_seen.lock().unwrap().get(conversation).cloned();
-            let mut req = SlackApiConversationsHistoryRequest::new()
-                .with_channel(channel)
-                .with_latest(latest)
-                .with_limit(self.conversation_history);
-            if let Some(oldest) = oldest {
-                req = req.with_oldest(oldest);
-            }
-            match session.conversations_history(&req).await {
-                Ok(resp) => resp
-                    .messages
-                    .iter()
-                    .rev()
-                    .filter_map(|m| {
-                        let text = m.content.text.as_deref()?;
-                        let user = m
-                            .sender
-                            .user
-                            .as_ref()
-                            .map(|u| self.user_map.resolve(u.as_ref()).to_string())
-                            .unwrap_or_else(|| "bot".into());
-                        Some(format!("{user}: {text}"))
-                    })
-                    .collect(),
-                Err(e) => {
-                    warn!("Context fetch failed: {e}");
-                    vec![]
-                },
-            }
+        let req = SlackApiConversationsRepliesRequest::new(channel, ts.into())
+            .with_latest(latest)
+            .with_limit(self.conversation_history);
+        let result = match session.conversations_replies(&req).await {
+            Ok(resp) => resp
+                .messages
+                .iter()
+                .skip(1)
+                .rev()
+                .filter_map(|m| {
+                    let text = m.content.text.as_deref()?;
+                    let user = m
+                        .sender
+                        .user
+                        .as_ref()
+                        .map(|u| self.user_map.resolve(u.as_ref()).to_string())
+                        .unwrap_or_else(|| "bot".into());
+                    Some(format!("{user}: {text}"))
+                })
+                .collect(),
+            Err(e) => {
+                warn!("Thread context fetch failed: {e}");
+                vec![]
+            },
         };
         self.last_seen
             .lock()
