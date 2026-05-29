@@ -12,6 +12,134 @@
     },
     {
       "type": "release",
+      "date": "2026-06-01",
+      "version": "2.5.1",
+      "title": "Version 2.5.1",
+      "changes": [
+        {
+          "type": "changed",
+          "description": "API endpoints migrated to *.kiro.dev. If your network restricts outbound traffic, see https://kiro.dev/docs/privacy-and-security/firewalls/ for required allowlist domains."
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-05-28",
+      "version": "2.5.0",
+      "title": "Version 2.5.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Thinking display -- see the agent's reasoning process in real time. Enabled by default, toggle via `/settings` > Display > Show thinking."
+        },
+        {
+          "type": "added",
+          "description": "Prompt history (Up/Down arrow) is now per-session by default. Configure via `/settings` \u2192 history to switch between session and global modes"
+        },
+        {
+          "type": "added",
+          "description": "Subagent pipelines now support review loops \u2014 a reviewer stage can send work back to an implementer for revisions automatically"
+        },
+        {
+          "type": "added",
+          "description": "`/settings display` to toggle animations, ASCII art, and icons. Changes take effect immediately."
+        },
+        {
+          "type": "changed",
+          "description": "Suppress terminal notifications when terminal window is focused"
+        },
+        {
+          "type": "changed",
+          "description": "Faster message rendering during streaming \u2014 messages now update incrementally instead of reconstructing the full conversation on each chunk"
+        },
+        {
+          "type": "changed",
+          "description": "Faster shell command output rendering \u2014 long-running commands no longer cause increasing lag as output grows"
+        },
+        {
+          "type": "changed",
+          "description": "MCP tool call summaries now show all parameters instead of truncating to 4"
+        },
+        {
+          "type": "changed",
+          "description": "Require double Ctrl+Z to suspend, preventing accidental suspension during LLM streaming"
+        },
+        {
+          "type": "changed",
+          "description": "Screen reader support in menus \u2014 cursor now tracks the selected item, and `/model` marks the current model with `[active]`"
+        },
+        {
+          "type": "changed",
+          "description": "What's New popup shows only new features by default \u2014 press ctrl+o to reveal all changes"
+        },
+        {
+          "type": "changed",
+          "description": "Trusting a tool now automatically approves all other pending invocations of the same tool in the current batch"
+        },
+        {
+          "type": "fixed",
+          "description": "`/rewind` picker now adapts to small terminal panes instead of overflowing"
+        },
+        {
+          "type": "fixed",
+          "description": "`/spawn` background sessions now correctly surface permission dialogs and recover from startup failures instead of hanging silently"
+        },
+        {
+          "type": "fixed",
+          "description": "Settings file I/O now works on NFS4 mounts without crashing"
+        },
+        {
+          "type": "fixed",
+          "description": "Ctrl+C now correctly clears history-recalled text from the input line"
+        },
+        {
+          "type": "fixed",
+          "description": "Truecolor rendering now auto-detects capable terminals even when COLORTERM is unset, restoring proper diff contrast in tmux/SSH sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "Spinner animation during long-running shell commands no longer causes high CPU"
+        },
+        {
+          "type": "fixed",
+          "description": "Invisible control characters no longer leak into terminal input in tmux, preventing garbled text when pasting or typing"
+        },
+        {
+          "type": "fixed",
+          "description": "OAuth authentication now completes successfully for registry-type MCP servers"
+        },
+        {
+          "type": "fixed",
+          "description": "Shell command output redirection now validates target paths, preventing writes outside allowed directories"
+        },
+        {
+          "type": "fixed",
+          "description": "Steering files and skills are now deduplicated when working directory equals home, preventing double-injection into context"
+        },
+        {
+          "type": "fixed",
+          "description": "Resumed sessions now replay only the last 10 turns, eliminating typing lag on long conversations"
+        },
+        {
+          "type": "fixed",
+          "description": "Clipboard history and undo stack are now capped, preventing memory growth during long sessions"
+        },
+        {
+          "type": "fixed",
+          "description": "Web_fetch tool now recovers gracefully from malformed HTML instead of hanging permanently"
+        },
+        {
+          "type": "fixed",
+          "description": "`/usage` overage label now shows the appropriate unit"
+        },
+        {
+          "type": "fixed",
+          "description": "Settings changes in one session no longer leak to other concurrent sessions"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-05-13",
       "version": "2.4.0",
       "title": "Version 2.4.0",
