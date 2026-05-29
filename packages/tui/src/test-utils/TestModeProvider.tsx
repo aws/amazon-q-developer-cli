@@ -67,6 +67,9 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
             data: {
               ...state,
               liveOutputs: Object.fromEntries(state.liveOutputs),
+              pendingOAuthServers: Object.fromEntries(
+                state.pendingOAuthServers
+              ),
             } as any,
           };
 

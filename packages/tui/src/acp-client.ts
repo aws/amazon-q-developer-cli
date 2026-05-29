@@ -1476,6 +1476,8 @@ export class KasAcpClient extends BaseAcpClient {
   private mcpServerCache: McpServerInfo[] = [];
   private mcpRegistryCache: McpServerInfo[] = [];
 
+
+
   /**
    * Construct a KAS ACP client.
    *
@@ -1498,6 +1500,7 @@ export class KasAcpClient extends BaseAcpClient {
       this.kiroClient = new KiroClient({
         stream: finalStream,
         clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+        capabilities: [createGetAccessTokenCapability()],
       });
       return;
     }
@@ -2500,6 +2503,7 @@ export class KasAcpClient extends BaseAcpClient {
             disabled: boolean;
           }>;
           failedAuthorization?: boolean;
+          authorizationUrl?: string;
           errorMessage?: string;
         }>
       | undefined;
@@ -2532,6 +2536,17 @@ export class KasAcpClient extends BaseAcpClient {
           toolCount: server.tools?.length ?? 0,
         };
       });
+
+      // Broadcast OAuth URL for servers that need authentication
+      for (const server of servers) {
+        if (server.failedAuthorization && server.authorizationUrl) {
+          this.broadcastStreamEvent({
+            type: AgentEventType.McpOauthRequest,
+            serverName: server.name,
+            oauthUrl: server.authorizationUrl,
+          });
+        }
+      }
     }
 
     // Cache registry servers separately
@@ -2597,6 +2612,7 @@ export class KasAcpClient extends BaseAcpClient {
       data: { agent: { name: 'quick-plan' }, ...(prompt && { prompt }) },
     };
   }
+
 
   private async callExtMethod(
     method: string,

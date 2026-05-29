@@ -2251,3 +2251,89 @@ describe('mcp command (push model)', () => {
     expect((result.data as any).mode).toBeUndefined();
   });
 });
+
+// ── MCP OAuth flow ──
+//
+// KAS includes `authorizationUrl` directly in the `_kiro/mcp/status`
+// notification when a server fails with OAuth. The TUI reads it from
+// the status notification and broadcasts `McpOauthRequest`.
+
+describe('MCP OAuth flow', () => {
+  it('broadcasts McpOauthRequest when status has failedAuthorization + authorizationUrl', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          authorizationUrl: 'https://github.com/login/oauth/authorize?state=abc',
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+
+    const oauthEvents = events.filter(
+      (e) => e.type === AgentEventType.McpOauthRequest
+    );
+    expect(oauthEvents).toHaveLength(1);
+    expect(oauthEvents[0].serverName).toBe('github-mcp');
+    expect(oauthEvents[0].oauthUrl).toBe(
+      'https://github.com/login/oauth/authorize?state=abc'
+    );
+  });
+
+  it('does NOT broadcast when failedAuthorization but no authorizationUrl', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+
+    const oauthEvents = events.filter(
+      (e) => e.type === AgentEventType.McpOauthRequest
+    );
+    expect(oauthEvents).toHaveLength(0);
+  });
+
+  it('shows server as auth-required when failedAuthorization is true', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    (client as any).handleMcpStatusNotification({
+      servers: [
+        {
+          name: 'github-mcp',
+          status: 'failed',
+          failedAuthorization: true,
+          errorMessage: 'Unauthorized',
+        },
+      ],
+    });
+
+    const result = await client.executeCommand({ command: 'mcp' } as any);
+    expect((result.data as any).servers[0]).toMatchObject({
+      name: 'github-mcp',
+      status: 'auth-required',
+    });
+  });
+});
