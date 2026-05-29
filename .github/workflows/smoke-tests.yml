@@ -71,7 +71,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Build chat_cli
-        run: cargo build -p chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --no-default-features
+          else
+            cargo build -p chat_cli
+          fi
 
       - uses: ./.github/actions/codeartifact-login
         continue-on-error: true
@@ -177,6 +183,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-frames-${{ env.RUN_ID }}
-          path: ${{ github.workspace }}/.smoke-frames/
+          path: ${{ github.workspace }}/.smoke-frames
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
