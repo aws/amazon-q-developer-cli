@@ -41,11 +41,17 @@ These references are read-only `.md` files in the same directory as this skill. 
 
 5. **Use `execute_bash` only for git history and cross-file search.** When the user asks "when did X change?" / "why was Y added?" / "who wrote this?" or you're checking for recent regressions on a bug report, follow `references/shell-commands.md`. Don't use shell for routine file reads — `read` is always preferable.
 
-6. **Draft the answer** in this shape:
-   - One-line direct answer (no preamble).
-   - One ```fenced``` code block if the answer involves a command or a code excerpt.
-   - Optional 1-sentence context.
-   - Sources line: `Sources: \`crates/chat-cli/src/cli/chat/mod.rs:330-345\`, \`docs/foo.md\`, \`github_issue:#42\`` — list every file:line range you read, every chunk you cited, every shell command that fed the answer. Source paths come first.
+6. **Draft the answer.** Default ceiling: **3 sentences of prose**, plus a code block if relevant, plus a Sources line. Slack threads are read on phones — every extra paragraph costs the user.
+   - **First line is the direct answer.** No preamble ("Great question," "Let me explain", "Based on the source"). State the conclusion, then support it.
+   - **Use fenced ```code blocks``` aggressively.** Every command, file path, flag, error string, code excerpt, config snippet, or short structured fact goes in a ``` block — they render in monospace in Slack and are scannable at a glance. Annotate the language when applicable (` ```rust`, ` ```bash`, ` ```toml`).
+   - **One sentence of context max** if the answer needs a "why" — otherwise drop it.
+   - **TL;DR block when the answer must run long** (>~6 sentences, or >2 code blocks, or you're walking the user through multiple files). Lead the message with:
+     ```
+     *TL;DR:* <one-sentence answer>
+     ```
+     Then the detail underneath. Long without a TL;DR is a bad answer.
+   - **Use bold section headers to break up long answers.** Once the response has 2+ logical chunks (cause / fix, V1 / V2, what / why, before / after, multiple files, multiple steps), separate them with `*Section name*` on its own line followed by a blank line. Skim-friendly beats a wall of text. A 3-sentence answer doesn't need sections; a multi-paragraph answer always does.
+   - **Sources line, last:** `Sources: \`crates/chat-cli/src/cli/chat/mod.rs:330-345\`, \`docs/foo.md\`, \`github_issue:#42\`` — every file:line range you read, every chunk you cited, every shell command that fed the answer. Source paths come first.
 
 7. **Self-check before sending.**
    - If the question was about behavior/flags/errors and your draft has no source citation (a `crates/...` or `packages/...` path), you skipped step 3 — go read the code.
@@ -84,6 +90,11 @@ The kiro-help agent has access to seven tools (see the prompt for full descripti
 
 ## Format
 
-- 1–3 sentences + code block + sources line.
-- Slack mrkdwn-friendly: backticks for inline code, triple-backtick blocks with language.
-- For ambiguous questions, ask ONE clarifying follow-up rather than guessing.
+- **Default ceiling:** ≤3 sentences of prose + code block(s) + sources line. Anything longer needs a `*TL;DR:*` first line (see step 6).
+- **Lead with the answer**, not the journey. No "Looking at the source...", "I found that...", "After investigating..." preambles.
+- **Code blocks render in Slack — use them.** Backticks for inline (`flag`, `path/to/file.rs`, `error_string`); triple-backtick fenced blocks with language tag for any command, snippet, config, or multi-line excerpt.
+- **No filler bullet lists.** Only use bullets when there are genuinely 3+ parallel items. Two items become a sentence.
+- **No restating the question.** Don't open with "You're asking about X..." — just answer.
+- **One clarifying follow-up over a guess.** If the question is ambiguous, ask one targeted question instead of writing two paragraphs covering both interpretations.
+- **Sections for any multi-paragraph answer.** Use `*Section name*` on its own line + blank line to break up logical chunks (cause/fix, V1/V2, what/why, multiple files). Skim-friendly always beats a wall of text.
+- Slack mrkdwn quirks: `**bold**` and `# heading` get rewritten to `*bold*` by the frontend, so prefer `*bold*` directly. Fenced code blocks pass through unchanged.
