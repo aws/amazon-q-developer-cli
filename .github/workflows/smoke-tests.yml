@@ -34,8 +34,8 @@ jobs:
           case "${{ inputs.platform }}" in
             linux)   echo 'platforms=["ubuntu-latest"]' >> "$GITHUB_OUTPUT" ;;
             macos)   echo 'platforms=["macos-latest"]' >> "$GITHUB_OUTPUT" ;;
-            windows) echo 'platforms=["windows-latest"]' >> "$GITHUB_OUTPUT" ;;
-            *)       echo 'platforms=["ubuntu-latest","macos-latest","windows-latest"]' >> "$GITHUB_OUTPUT" ;;
+            windows) echo 'platforms=["windows-x64-latest-16-cores"]' >> "$GITHUB_OUTPUT" ;;
+            *)       echo 'platforms=["ubuntu-latest","macos-latest","windows-x64-latest-16-cores"]' >> "$GITHUB_OUTPUT" ;;
           esac
 
   smoke:
