@@ -82,6 +82,13 @@ pub trait Coordinator: Send + Sync {
     /// Try to acquire the conversation lease.
     async fn try_acquire(&self, conversation_id: &str) -> LeaseOutcome;
 
+    /// Force-acquire the lease when the previous holder is unreachable.
+    /// Succeeds iff the existing lease is unowned, expired, or owned by
+    /// `dead_peer`. Used by the dispatch path to recover when `forward()` to
+    /// the lease holder fails — the caller assumes the peer is dead and
+    /// claims the lease for itself rather than dropping the user's message.
+    async fn force_acquire(&self, conversation_id: &str, dead_peer: &str) -> bool;
+
     /// Renew the lease this task owns.
     async fn renew(&self, conversation_id: &str) -> anyhow::Result<()>;
 
@@ -203,6 +210,23 @@ impl Coordinator for InMemoryClusterCoordinator {
         }
     }
 
+    async fn force_acquire(&self, conversation_id: &str, dead_peer: &str) -> bool {
+        let mut s = self.cluster.lock().expect("cluster state poisoned");
+        let now = self.now();
+        let expires_at = now + self.lease_ttl;
+        let claimable = match s.leases.get(conversation_id) {
+            None => true,
+            Some(existing) => existing.owner == dead_peer || existing.expires_at <= now,
+        };
+        if claimable {
+            s.leases.insert(conversation_id.to_string(), Lease {
+                owner: self.own_task_id.clone(),
+                expires_at,
+            });
+        }
+        claimable
+    }
+
     async fn renew(&self, conversation_id: &str) -> anyhow::Result<()> {
         let mut s = self.cluster.lock().expect("cluster state poisoned");
         if let Some(lease) = s.leases.get_mut(conversation_id)
@@ -291,6 +315,13 @@ impl Coordinator for NoopCoordinator {
         let mut state = self.state.lock().expect("noop state poisoned");
         state.leases.insert(conversation_id.to_string(), ());
         LeaseOutcome::Acquired
+    }
+
+    async fn force_acquire(&self, conversation_id: &str, _dead_peer: &str) -> bool {
+        // Single-task: no peers, so claiming is always safe.
+        let mut state = self.state.lock().expect("noop state poisoned");
+        state.leases.insert(conversation_id.to_string(), ());
+        true
     }
 
     async fn renew(&self, _conversation_id: &str) -> anyhow::Result<()> {

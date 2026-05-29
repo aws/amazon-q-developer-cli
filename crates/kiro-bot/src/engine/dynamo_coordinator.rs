@@ -205,7 +205,17 @@ impl Coordinator for DynamoCoordinator {
                 // Someone else has it (or held it within the TTL) — read who.
                 match self.read_lease_owner(conversation_id).await {
                     Ok(Some(owner)) if owner != self.own_task_arn => LeaseOutcome::Held { peer: owner },
-                    Ok(_) => LeaseOutcome::Unavailable, // raced — no owner now
+                    // Same task already owns the lease — renew expires_at and
+                    // treat as Acquired so follow-up turns in an in-progress
+                    // conversation don't fall through to Unavailable.
+                    Ok(Some(_)) => match self.renew(conversation_id).await {
+                        Ok(()) => LeaseOutcome::Acquired,
+                        Err(renew_err) => {
+                            warn!(?renew_err, "self-owned lease renew failed");
+                            LeaseOutcome::Unavailable
+                        },
+                    },
+                    Ok(None) => LeaseOutcome::Unavailable, // raced — no owner now
                     Err(read_err) => {
                         warn!(?read_err, "lease read after conflict failed");
                         LeaseOutcome::Unavailable
@@ -215,6 +225,36 @@ impl Coordinator for DynamoCoordinator {
             Err(e) => {
                 warn!(?e, "try_acquire PutItem failed");
                 LeaseOutcome::Unavailable
+            },
+        }
+    }
+
+    async fn force_acquire(&self, conversation_id: &str, dead_peer: &str) -> bool {
+        let now = self.now().timestamp_millis();
+        let expires = now + self.lease_ttl.num_milliseconds();
+        let result = self
+            .client
+            .put_item()
+            .table_name(&self.leases_table)
+            .item(col::CONVERSATION_ID, Self::s(conversation_id))
+            .item(col::OWNER_TASK_ARN, Self::s(&self.own_task_arn))
+            .item(col::LEASE_EXPIRES_AT, Self::n(expires))
+            .item(col::EXPIRES_AT, Self::n((expires / 1000) + 24 * 3600))
+            .condition_expression(format!(
+                "attribute_not_exists({owner}) OR {expires_col} < :now OR {owner} = :dead",
+                owner = col::OWNER_TASK_ARN,
+                expires_col = col::LEASE_EXPIRES_AT,
+            ))
+            .expression_attribute_values(":now", Self::n(now))
+            .expression_attribute_values(":dead", Self::s(dead_peer))
+            .send()
+            .await;
+        match result {
+            Ok(_) => true,
+            Err(e) if is_conditional_check_failed_put(&e) => false,
+            Err(e) => {
+                warn!(?e, "force_acquire PutItem failed");
+                false
             },
         }
     }

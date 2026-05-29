@@ -18,6 +18,11 @@ use crate::engine::acp::{
     Work,
 };
 use crate::engine::authz::Authorizer;
+use crate::engine::coordinator::{
+    Coordinator,
+    ForwardEvent,
+    LeaseOutcome,
+};
 use crate::engine::response_policy::{
     Location,
     ResponsePolicyConfig,
@@ -76,6 +81,22 @@ pub struct IncomingMessage {
     pub reply_to: Option<String>,
     pub directed: bool,
     pub context: Vec<String>,
+    /// Source-frontend dispatch envelope. `Some` for Slack-delivered events
+    /// (so the dispatch path can dedupe by `event_id` and forward the raw
+    /// JSON to a peer); `None` for CLI / cron / other single-process
+    /// frontends where cross-task arbitration is a no-op.
+    pub envelope: Option<DispatchEnvelope>,
+}
+
+/// Per-event metadata threaded from a Slack-style frontend into
+/// [`dispatch`] so it can deduplicate the event cluster-wide and forward
+/// the raw payload to a peer task that already owns the conversation lease.
+#[derive(Debug, Clone)]
+pub struct DispatchEnvelope {
+    /// Cluster-wide unique id (e.g. Slack `event_id`). Used as the dedup key.
+    pub event_id: String,
+    /// Raw event JSON to ship to a peer via `coordinator.forward()`.
+    pub raw: serde_json::Value,
 }
 
 #[derive(Debug)]
@@ -211,22 +232,71 @@ fn check_authz(authz: &Option<Arc<Authorizer>>, check_fn: impl FnOnce(&Authorize
 // Dispatch
 // ---------------------------------------------------------------------------
 
+/// RAII guard that releases the cluster lease and removes the per-process
+/// inflight entry when the dispatch task exits — including on panic, error
+/// returns, and lease-not-held branches. Without this, every early-return
+/// site in the per-action arms would need to remember to call `release()`,
+/// and every miss would leak a 5-minute lease row in DDB.
+struct DispatchGuard {
+    coordinator: Arc<dyn Coordinator>,
+    inflight: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    conv_id: String,
+    /// Whether to remove the inflight entry on drop. Read-only commands
+    /// (Help / Status / ListAgents) never insert one, so don't try.
+    holds_inflight: bool,
+    /// Whether to release the cluster lease on drop. False when we never
+    /// acquired one (CLI / cron / Held branch that forwarded).
+    holds_lease: bool,
+}
+
+impl Drop for DispatchGuard {
+    fn drop(&mut self) {
+        if self.holds_inflight {
+            self.inflight.lock().unwrap().remove(&self.conv_id);
+        }
+        if self.holds_lease {
+            // Coordinator.release is async; spawn a detached task. Bound it
+            // with the same 5s ceiling `forward()` uses so a degraded DDB
+            // can't keep this future alive for the AWS SDK's full retry
+            // budget. The lease TTL is the ultimate backstop.
+            let coord = self.coordinator.clone();
+            let conv = self.conv_id.clone();
+            tokio::spawn(async move {
+                match tokio::time::timeout(std::time::Duration::from_secs(5), coord.release(&conv)).await {
+                    Ok(Ok(())) => {},
+                    Ok(Err(e)) => tracing::warn!(error = %e, conv_id = %conv, "lease release failed"),
+                    Err(_) => tracing::warn!(conv_id = %conv, "lease release timed out after 5s; relying on TTL"),
+                }
+            });
+        }
+    }
+}
+
 /// Dispatch an incoming message to the appropriate handler.
 ///
 /// For prompts, spawns an async task that sends a progress placeholder,
 /// routes the message to the ACP pool, and replaces the placeholder with
 /// the agent's response.
+///
+/// In a multi-task fleet, every Slack delivery fans to all tasks. To keep
+/// the user from seeing duplicate replies, this function arbitrates the
+/// event cluster-wide via [`Coordinator`]: dedup by `event_id`, then
+/// acquire a per-conversation lease. Only the winning task reaches the
+/// per-action work below; losers drop silently or forward to the lease
+/// holder. See [`DispatchEnvelope`] for the inputs.
 pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend>) {
     let conversation = msg.conversation.clone();
     let conv_id = conversation.id();
-    let authz_scope = conversation.authz_id();
     let platform_id = conversation.platform_id().to_string();
     let reply_to = msg.reply_to.clone();
     let session_key = conv_id.clone();
 
     let action = resolve_action(&msg.text);
 
-    // Cancel bypasses inflight guard — must fire while a prompt is in-flight
+    // Cancel bypasses dedup, lease, and the inflight guard — it has to fire
+    // while a prompt is in-flight. Sending 🛑 from both tasks is acceptable
+    // (idempotent on the ACP side) and preferable to dropping a cancel that
+    // never reaches the leader.
     if matches!(action, Action::Cancel) {
         let _ = core.work_sender.send(Work::Cancel {
             conversation: session_key,
@@ -243,21 +313,131 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
         return;
     }
 
-    if !action.is_readonly() && !core.inflight.lock().unwrap().insert(session_key.clone()) {
-        tokio::spawn(async move {
-            let _ = frontend
-                .send(Reply::Send {
-                    conversation: platform_id,
-                    reply_to,
-                    text: "⏳ A request is already in progress — this message was dropped".into(),
-                })
-                .await;
-        });
-        return;
-    }
-
     let core = core.clone();
+    let envelope = msg.envelope.clone();
 
+    tokio::spawn(async move {
+        // 1. Cluster-wide dedup. Skip when there's no envelope (CLI / cron / forwarded-from-peer events) —
+        //    those callers have already arbitrated and `NoopCoordinator` would dedup per-process anyway.
+        if let Some(ref env) = envelope
+            && !core.coordinator.dedupe_event(&env.event_id).await
+        {
+            tracing::debug!(event_id = %env.event_id, conv_id = %conv_id, "duplicate event, dropping");
+            return;
+        }
+
+        // 2. Lease arbitration. Held → forward; on forward failure, force-acquire and proceed locally.
+        //    Unavailable → silent drop (operators alarm on the structured log; users retry).
+        let mut holds_lease = false;
+        if let Some(ref env) = envelope {
+            match core.coordinator.try_acquire(&conv_id).await {
+                LeaseOutcome::Acquired => {
+                    holds_lease = true;
+                },
+                LeaseOutcome::Held { peer } => {
+                    let payload = ForwardEvent {
+                        slack_event_json: env.raw.clone(),
+                    };
+                    match core.coordinator.forward(&peer, payload).await {
+                        Ok(()) => {
+                            tracing::debug!(%peer, conv_id = %conv_id, "forwarded to lease holder");
+                            return;
+                        },
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                %peer,
+                                conv_id = %conv_id,
+                                "forward failed; attempting force_acquire"
+                            );
+                            if !core.coordinator.force_acquire(&conv_id, &peer).await {
+                                tracing::warn!(
+                                    conv_id = %conv_id,
+                                    "force_acquire failed; dropping (lease still held by live peer or coordinator down)"
+                                );
+                                return;
+                            }
+                            holds_lease = true;
+                        },
+                    }
+                },
+                LeaseOutcome::Unavailable => {
+                    tracing::warn!(
+                        target: "kiro_bot::coordinator",
+                        event_id = %env.event_id,
+                        conv_id = %conv_id,
+                        "coordinator_unavailable_dropped: lease unavailable, dropping event"
+                    );
+                    return;
+                },
+            }
+        }
+
+        // 3. Inflight guard. Read-only commands skip it.
+        let mut holds_inflight = false;
+        if !action.is_readonly() {
+            if !core.inflight.lock().unwrap().insert(session_key.clone()) {
+                let _ = frontend
+                    .send(Reply::Send {
+                        conversation: platform_id.clone(),
+                        reply_to: reply_to.clone(),
+                        text: "⏳ A request is already in progress — this message was dropped".into(),
+                    })
+                    .await;
+                let _guard = DispatchGuard {
+                    coordinator: core.coordinator.clone(),
+                    inflight: core.inflight.clone(),
+                    conv_id: conv_id.clone(),
+                    holds_inflight: false,
+                    holds_lease,
+                };
+                drop(_guard);
+                return;
+            }
+            holds_inflight = true;
+        }
+
+        // From here on, _guard releases the lease and the inflight slot on
+        // every exit path (success, panic, early return).
+        let _guard = DispatchGuard {
+            coordinator: core.coordinator.clone(),
+            inflight: core.inflight.clone(),
+            conv_id: conv_id.clone(),
+            holds_inflight,
+            holds_lease,
+        };
+
+        run_action(
+            action,
+            msg,
+            conversation,
+            conv_id,
+            platform_id,
+            reply_to,
+            session_key,
+            core,
+            frontend,
+        )
+        .await;
+    });
+}
+
+/// Per-action body. Factored out of `dispatch` so the dedup / lease /
+/// inflight gating around it stays readable. All cleanup is handled by the
+/// `DispatchGuard` in `dispatch`.
+#[allow(clippy::too_many_arguments)]
+async fn run_action(
+    action: Action,
+    msg: IncomingMessage,
+    conversation: Conversation,
+    conv_id: String,
+    platform_id: String,
+    reply_to: Option<String>,
+    session_key: String,
+    core: BotCore,
+    frontend: Arc<dyn Frontend>,
+) {
+    let authz_scope = conversation.authz_id();
     match action {
         Action::Prompt { text } => {
             if let Some(authz) = &core.authz {
@@ -265,17 +445,14 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                     Ok(true) => {},
                     _ => {
                         info!("Bot access denied for user {} in {}", msg.user, conv_id);
-                        core.inflight.lock().unwrap().remove(&session_key);
                         let denied = format!("❌ Access denied for user `{}` in `{}`", msg.user, conv_id);
-                        tokio::spawn(async move {
-                            let _ = frontend
-                                .send(Reply::Send {
-                                    conversation: platform_id,
-                                    reply_to,
-                                    text: denied,
-                                })
-                                .await;
-                        });
+                        let _ = frontend
+                            .send(Reply::Send {
+                                conversation: platform_id,
+                                reply_to,
+                                text: denied,
+                            })
+                            .await;
                         return;
                     },
                 }
@@ -285,285 +462,275 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
             // the post-reply retrieval check without re-fetching it.
             let prompt_for_check = text.clone();
 
-            tokio::spawn(async move {
-                let ack_id = match frontend
-                    .send(Reply::Send {
-                        conversation: platform_id.clone(),
-                        reply_to: reply_to.clone(),
-                        text: "_Looking into it..._".into(),
-                    })
-                    .await
-                {
-                    Ok(id) => id,
-                    Err(e) => {
-                        tracing::error!("ack failed: {}", e);
-                        core.inflight.lock().unwrap().remove(&session_key);
-                        return;
-                    },
-                };
+            let ack_id = match frontend
+                .send(Reply::Send {
+                    conversation: platform_id.clone(),
+                    reply_to: reply_to.clone(),
+                    text: "_Looking into it..._".into(),
+                })
+                .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::error!("ack failed: {}", e);
+                    return;
+                },
+            };
 
-                let (reply_tx, reply_rx) = oneshot::channel();
-                let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
-                let (approval_channel, approval_thread) = match &conversation {
-                    Conversation::Dm { channel, .. } => (channel.clone(), reply_to.clone()),
-                    Conversation::Channel(id) => (id.clone(), reply_to.clone()),
-                    Conversation::Thread { channel, thread_ts } => (channel.clone(), Some(thread_ts.clone())),
-                };
-                let _ = core.work_sender.send(Work::Prompt {
-                    text,
-                    context: msg.context,
-                    conversation: session_key.clone(),
-                    channel: approval_channel,
-                    thread_ts: approval_thread,
-                    user: msg.user.clone(),
-                    slack_user_id: msg.slack_user_id.clone(),
-                    reply_tx,
-                    progress_tx,
-                });
-
-                // Stream tool status updates to the placeholder message
-                {
-                    let frontend2 = frontend.clone();
-                    let conv = platform_id.clone();
-                    let ack = ack_id.clone();
-                    tokio::spawn(async move {
-                        while let Some(status) = progress_rx.recv().await {
-                            let _ = frontend2
-                                .send(Reply::Update {
-                                    conversation: conv.clone(),
-                                    message_id: ack.clone(),
-                                    text: status,
-                                })
-                                .await;
-                        }
-                    });
-                }
-
-                let reply_text = reply_rx.await.unwrap_or("Error".into());
-
-                // Post-reply retrieval check. If the model answered a
-                // kiro-shaped question without citing, log a structured
-                // warning AND inject a coercive retry through the same ACP
-                // session asking it to redo the answer with retrieval. The
-                // retry takes the place of the original reply so the user
-                // never sees the un-cited draft.
-                use crate::engine::retrieval_check::{
-                    RetrievalCheck,
-                    check,
-                };
-                let final_reply_text = match check(&prompt_for_check, &reply_text) {
-                    RetrievalCheck::MissingCitation => {
-                        tracing::warn!(
-                            target: "retrieval_check",
-                            conversation = %session_key,
-                            user = %msg.user,
-                            prompt_preview = %prompt_for_check.chars().take(120).collect::<String>(),
-                            "model answered a kiro-related question without citing — issuing retry"
-                        );
-                        // Coercive retry. Don't repeat the user's question —
-                        // the ACP session retains its own history. Just give
-                        // the model a one-line procedural correction.
-                        let retry_prompt = "[system retry] You answered the previous question \
-                            without calling search_kiro_knowledge. That violates the workflow. \
-                            Call search_kiro_knowledge now with a focused query, then re-answer \
-                            the original question and end with a `Sources:` line citing the \
-                            retrieved chunk paths. Do not apologize or explain — just produce \
-                            the corrected answer.";
-                        let (retry_tx, retry_rx) = oneshot::channel();
-                        let (retry_progress_tx, _retry_progress_rx) = mpsc::unbounded_channel::<String>();
-                        let _ = core.work_sender.send(Work::Prompt {
-                            text: retry_prompt.to_string(),
-                            context: Vec::new(),
-                            conversation: session_key.clone(),
-                            channel: match &conversation {
-                                Conversation::Dm { channel, .. } => channel.clone(),
-                                Conversation::Channel(id) => id.clone(),
-                                Conversation::Thread { channel, .. } => channel.clone(),
-                            },
-                            thread_ts: match &conversation {
-                                Conversation::Thread { thread_ts, .. } => Some(thread_ts.clone()),
-                                _ => reply_to.clone(),
-                            },
-                            user: msg.user.clone(),
-                            slack_user_id: msg.slack_user_id.clone(),
-                            reply_tx: retry_tx,
-                            progress_tx: retry_progress_tx,
-                        });
-                        // If the retry also fails, fall back to the original
-                        // answer with a tag so the user knows to ask for
-                        // sources explicitly.
-                        match retry_rx.await {
-                            Ok(retried) => {
-                                if matches!(check(&prompt_for_check, &retried), RetrievalCheck::Cited) {
-                                    retried
-                                } else {
-                                    tracing::warn!(
-                                        target: "retrieval_check",
-                                        conversation = %session_key,
-                                        "retry also lacked a citation — sending original answer with a soft note"
-                                    );
-                                    format!(
-                                        "{reply_text}\n\n_(I answered from training; if this should be grounded in our docs, ask me to cite a source.)_"
-                                    )
-                                }
-                            },
-                            Err(_) => {
-                                tracing::error!(target: "retrieval_check", "retry channel closed");
-                                reply_text
-                            },
-                        }
-                    },
-                    _ => reply_text,
-                };
-
-                let _ = frontend
-                    .send(Reply::Delete {
-                        conversation: platform_id.clone(),
-                        message_id: ack_id,
-                    })
-                    .await;
-                let _ = frontend
-                    .send(Reply::Send {
-                        conversation: platform_id,
-                        reply_to,
-                        text: final_reply_text,
-                    })
-                    .await;
-                core.inflight.lock().unwrap().remove(&session_key);
+            let (reply_tx, reply_rx) = oneshot::channel();
+            let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
+            let (approval_channel, approval_thread) = match &conversation {
+                Conversation::Dm { channel, .. } => (channel.clone(), reply_to.clone()),
+                Conversation::Channel(id) => (id.clone(), reply_to.clone()),
+                Conversation::Thread { channel, thread_ts } => (channel.clone(), Some(thread_ts.clone())),
+            };
+            let _ = core.work_sender.send(Work::Prompt {
+                text,
+                context: msg.context,
+                conversation: session_key.clone(),
+                channel: approval_channel,
+                thread_ts: approval_thread,
+                user: msg.user.clone(),
+                slack_user_id: msg.slack_user_id.clone(),
+                reply_tx,
+                progress_tx,
             });
-        },
-        action => {
-            let user = msg.user.clone();
-            tokio::spawn(async move {
-                match check_authz(&core.authz, |a| a.can_use_bot(&user, &conversation)) {
-                    Ok(true) => {},
-                    _ => {
-                        let _ = frontend
-                            .send(Reply::Send {
-                                conversation: platform_id.clone(),
-                                reply_to: reply_to.clone(),
-                                text: format!("❌ Access denied for user `{}` in `{}`", user, conv_id),
-                            })
-                            .await;
-                        core.inflight.lock().unwrap().remove(&session_key);
-                        return;
-                    },
-                }
 
-                let send = |text: String| {
-                    let f = frontend.clone();
-                    let conv = platform_id.clone();
-                    let rt = reply_to.clone();
-                    async move {
-                        let _ = f
-                            .send(Reply::Send {
-                                conversation: conv,
-                                reply_to: rt,
-                                text,
+            // Stream tool status updates to the placeholder message
+            {
+                let frontend2 = frontend.clone();
+                let conv = platform_id.clone();
+                let ack = ack_id.clone();
+                tokio::spawn(async move {
+                    while let Some(status) = progress_rx.recv().await {
+                        let _ = frontend2
+                            .send(Reply::Update {
+                                conversation: conv.clone(),
+                                message_id: ack.clone(),
+                                text: status,
                             })
                             .await;
                     }
-                };
+                });
+            }
 
-                match action {
-                    Action::Help => {
-                        send(
-                            concat!(
-                                "*Commands:*\n",
-                                "`!help` — show this message\n",
-                                "`!new` — new session\n",
-                                "`!agent <name>` — switch agent\n",
-                                "`!model <name>` — switch model\n",
-                                "`!status` — current agent/model/session\n",
-                                "`!agents` — list available agents\n",
-                                "`!cancel` — cancel current request",
-                            )
-                            .into(),
-                        )
+            let reply_text = reply_rx.await.unwrap_or("Error".into());
+
+            // Post-reply retrieval check. If the model answered a
+            // kiro-shaped question without citing, log a structured
+            // warning AND inject a coercive retry through the same ACP
+            // session asking it to redo the answer with retrieval. The
+            // retry takes the place of the original reply so the user
+            // never sees the un-cited draft.
+            use crate::engine::retrieval_check::{
+                RetrievalCheck,
+                check,
+            };
+            let final_reply_text = match check(&prompt_for_check, &reply_text) {
+                RetrievalCheck::MissingCitation => {
+                    tracing::warn!(
+                        target: "retrieval_check",
+                        conversation = %session_key,
+                        user = %msg.user,
+                        prompt_preview = %prompt_for_check.chars().take(120).collect::<String>(),
+                        "model answered a kiro-related question without citing — issuing retry"
+                    );
+                    // Coercive retry. Don't repeat the user's question —
+                    // the ACP session retains its own history. Just give
+                    // the model a one-line procedural correction.
+                    let retry_prompt = "[system retry] You answered the previous question \
+                        without calling search_kiro_knowledge. That violates the workflow. \
+                        Call search_kiro_knowledge now with a focused query, then re-answer \
+                        the original question and end with a `Sources:` line citing the \
+                        retrieved chunk paths. Do not apologize or explain — just produce \
+                        the corrected answer.";
+                    let (retry_tx, retry_rx) = oneshot::channel();
+                    let (retry_progress_tx, _retry_progress_rx) = mpsc::unbounded_channel::<String>();
+                    let _ = core.work_sender.send(Work::Prompt {
+                        text: retry_prompt.to_string(),
+                        context: Vec::new(),
+                        conversation: session_key.clone(),
+                        channel: match &conversation {
+                            Conversation::Dm { channel, .. } => channel.clone(),
+                            Conversation::Channel(id) => id.clone(),
+                            Conversation::Thread { channel, .. } => channel.clone(),
+                        },
+                        thread_ts: match &conversation {
+                            Conversation::Thread { thread_ts, .. } => Some(thread_ts.clone()),
+                            _ => reply_to.clone(),
+                        },
+                        user: msg.user.clone(),
+                        slack_user_id: msg.slack_user_id.clone(),
+                        reply_tx: retry_tx,
+                        progress_tx: retry_progress_tx,
+                    });
+                    // If the retry also fails, fall back to the original
+                    // answer with a tag so the user knows to ask for
+                    // sources explicitly.
+                    match retry_rx.await {
+                        Ok(retried) => {
+                            if matches!(check(&prompt_for_check, &retried), RetrievalCheck::Cited) {
+                                retried
+                            } else {
+                                tracing::warn!(
+                                    target: "retrieval_check",
+                                    conversation = %session_key,
+                                    "retry also lacked a citation — sending original answer with a soft note"
+                                );
+                                format!(
+                                    "{reply_text}\n\n_(I answered from training; if this should be grounded in our docs, ask me to cite a source.)_"
+                                )
+                            }
+                        },
+                        Err(_) => {
+                            tracing::error!(target: "retrieval_check", "retry channel closed");
+                            reply_text
+                        },
+                    }
+                },
+                _ => reply_text,
+            };
+
+            let _ = frontend
+                .send(Reply::Delete {
+                    conversation: platform_id.clone(),
+                    message_id: ack_id,
+                })
+                .await;
+            let _ = frontend
+                .send(Reply::Send {
+                    conversation: platform_id,
+                    reply_to,
+                    text: final_reply_text,
+                })
+                .await;
+        },
+        action => {
+            let user = msg.user.clone();
+            match check_authz(&core.authz, |a| a.can_use_bot(&user, &conversation)) {
+                Ok(true) => {},
+                _ => {
+                    let _ = frontend
+                        .send(Reply::Send {
+                            conversation: platform_id.clone(),
+                            reply_to: reply_to.clone(),
+                            text: format!("❌ Access denied for user `{}` in `{}`", user, conv_id),
+                        })
                         .await;
-                    },
-                    Action::NewSession => {
-                        let (tx, rx) = oneshot::channel();
-                        let _ = core.work_sender.send(Work::NewSession {
-                            conversation: session_key.clone(),
-                            reply_tx: tx,
-                        });
-                        if let Ok(m) = rx.await {
-                            send(m).await;
-                        }
-                    },
-                    Action::SetAgent { name } => {
-                        match check_authz(&core.authz, |a| a.can_use_agent(&user, &name, &authz_scope)) {
-                            Ok(true) => {
-                                let (tx, rx) = oneshot::channel();
-                                let _ = core.work_sender.send(Work::SetMode {
-                                    conversation: session_key.clone(),
-                                    mode: name,
-                                    reply_tx: tx,
-                                });
-                                if let Ok(m) = rx.await {
-                                    send(m).await;
-                                }
-                            },
-                            Ok(false) => {
-                                send(format!("❌ Unauthorized: You don't have access to agent '{name}'")).await
-                            },
-                            Err(e) => send(format!("❌ Authorization error: {e}")).await,
-                        }
-                    },
-                    Action::SetModel { name } => match check_authz(&core.authz, |a| a.can_use_model(&user, &name)) {
+                    return;
+                },
+            }
+
+            let send = |text: String| {
+                let f = frontend.clone();
+                let conv = platform_id.clone();
+                let rt = reply_to.clone();
+                async move {
+                    let _ = f
+                        .send(Reply::Send {
+                            conversation: conv,
+                            reply_to: rt,
+                            text,
+                        })
+                        .await;
+                }
+            };
+
+            match action {
+                Action::Help => {
+                    send(
+                        concat!(
+                            "*Commands:*\n",
+                            "`!help` — show this message\n",
+                            "`!new` — new session\n",
+                            "`!agent <name>` — switch agent\n",
+                            "`!model <name>` — switch model\n",
+                            "`!status` — current agent/model/session\n",
+                            "`!agents` — list available agents\n",
+                            "`!cancel` — cancel current request",
+                        )
+                        .into(),
+                    )
+                    .await;
+                },
+                Action::NewSession => {
+                    let (tx, rx) = oneshot::channel();
+                    let _ = core.work_sender.send(Work::NewSession {
+                        conversation: session_key.clone(),
+                        reply_tx: tx,
+                    });
+                    if let Ok(m) = rx.await {
+                        send(m).await;
+                    }
+                },
+                Action::SetAgent { name } => {
+                    match check_authz(&core.authz, |a| a.can_use_agent(&user, &name, &authz_scope)) {
                         Ok(true) => {
                             let (tx, rx) = oneshot::channel();
-                            let _ = core.work_sender.send(Work::SetModel {
+                            let _ = core.work_sender.send(Work::SetMode {
                                 conversation: session_key.clone(),
-                                model: name,
+                                mode: name,
                                 reply_tx: tx,
                             });
                             if let Ok(m) = rx.await {
                                 send(m).await;
                             }
                         },
-                        Ok(false) => send(format!("❌ Unauthorized: You don't have access to model '{name}'")).await,
+                        Ok(false) => send(format!("❌ Unauthorized: You don't have access to agent '{name}'")).await,
                         Err(e) => send(format!("❌ Authorization error: {e}")).await,
-                    },
-                    Action::Status => {
+                    }
+                },
+                Action::SetModel { name } => match check_authz(&core.authz, |a| a.can_use_model(&user, &name)) {
+                    Ok(true) => {
                         let (tx, rx) = oneshot::channel();
-                        let _ = core.work_sender.send(Work::Status {
+                        let _ = core.work_sender.send(Work::SetModel {
                             conversation: session_key.clone(),
+                            model: name,
                             reply_tx: tx,
                         });
                         if let Ok(m) = rx.await {
                             send(m).await;
                         }
                     },
-                    Action::ListAgents => {
-                        let agents: Vec<String> = {
-                            let info = core.acp_info.lock().unwrap();
-                            info.available_modes
-                                .iter()
-                                .filter(|m| {
-                                    check_authz(&core.authz, |a| a.can_use_agent(&user, &m.id, &authz_scope))
-                                        .unwrap_or(false)
-                                })
-                                .map(|m| match &m.description {
-                                    Some(d) => format!("• `{}` ({}) — {}", m.id, m.name, d),
-                                    None => format!("• `{}` ({})", m.id, m.name),
-                                })
-                                .collect()
-                        };
-                        send(if agents.is_empty() {
-                            "No agents available".into()
-                        } else {
-                            format!("*Available agents:*\n{}", agents.join("\n"))
-                        })
-                        .await;
-                    },
-                    Action::Cancel => unreachable!(),
-                    Action::Unknown => {},
-                    Action::Prompt { .. } => unreachable!(),
-                }
-                core.inflight.lock().unwrap().remove(&session_key);
-            });
+                    Ok(false) => send(format!("❌ Unauthorized: You don't have access to model '{name}'")).await,
+                    Err(e) => send(format!("❌ Authorization error: {e}")).await,
+                },
+                Action::Status => {
+                    let (tx, rx) = oneshot::channel();
+                    let _ = core.work_sender.send(Work::Status {
+                        conversation: session_key.clone(),
+                        reply_tx: tx,
+                    });
+                    if let Ok(m) = rx.await {
+                        send(m).await;
+                    }
+                },
+                Action::ListAgents => {
+                    let agents: Vec<String> = {
+                        let info = core.acp_info.lock().unwrap();
+                        info.available_modes
+                            .iter()
+                            .filter(|m| {
+                                check_authz(&core.authz, |a| a.can_use_agent(&user, &m.id, &authz_scope))
+                                    .unwrap_or(false)
+                            })
+                            .map(|m| match &m.description {
+                                Some(d) => format!("• `{}` ({}) — {}", m.id, m.name, d),
+                                None => format!("• `{}` ({})", m.id, m.name),
+                            })
+                            .collect()
+                    };
+                    send(if agents.is_empty() {
+                        "No agents available".into()
+                    } else {
+                        format!("*Available agents:*\n{}", agents.join("\n"))
+                    })
+                    .await;
+                },
+                Action::Cancel => unreachable!(),
+                Action::Unknown => {},
+                Action::Prompt { .. } => unreachable!(),
+            }
         },
     }
 }

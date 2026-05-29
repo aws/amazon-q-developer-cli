@@ -32,6 +32,7 @@ use crate::engine::acp::{
 use crate::engine::core::{
     BotCore,
     Conversation,
+    DispatchEnvelope,
     Frontend,
     IncomingMessage,
     Reply,
@@ -203,7 +204,7 @@ impl Frontend for SlackFrontend {
                     })
                     .collect(),
                 Err(e) => {
-                    info!("Thread context fetch failed: {e}");
+                    warn!("Thread context fetch failed: {e}");
                     vec![]
                 },
             }
@@ -233,7 +234,7 @@ impl Frontend for SlackFrontend {
                     })
                     .collect(),
                 Err(e) => {
-                    info!("Context fetch failed: {e}");
+                    warn!("Context fetch failed: {e}");
                     vec![]
                 },
             }
@@ -296,9 +297,21 @@ pub async fn dispatch_event(
     state: &SlackState,
     forwarded: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Capture the dispatch envelope before we destructure `event` — the body
+    // handlers below may need to forward the raw JSON to a peer task. Skip
+    // for forwarded events: the original receiver already deduped and routed
+    // this event to us, so we should process it locally without re-arbitrating.
+    let envelope = if forwarded {
+        None
+    } else {
+        let event_id = event.event_id.0.clone();
+        serde_json::to_value(&event)
+            .ok()
+            .map(|raw| DispatchEnvelope { event_id, raw })
+    };
     match event.event {
-        SlackEventCallbackBody::Message(msg) => handle_message(msg, state).await?,
-        SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, state).await?,
+        SlackEventCallbackBody::Message(msg) => handle_message(msg, state, envelope).await?,
+        SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, state, envelope).await?,
         SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, state, forwarded).await?,
         _ => {},
     }
@@ -308,6 +321,7 @@ pub async fn dispatch_event(
 async fn handle_message(
     msg: SlackMessageEvent,
     state: &SlackState,
+    envelope: Option<DispatchEnvelope>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let raw_user_id = msg.sender.user.as_ref().map(|u| u.to_string()).unwrap_or_default();
     if msg.subtype.is_some() || msg.sender.bot_id.is_some() {
@@ -330,6 +344,16 @@ async fn handle_message(
     let is_dm = msg.origin.channel_type.as_ref().map(|t| t.to_string()) == Some("im".into());
     let mentioned = !state.member_id.is_empty() && text.contains(&format!("<@{}>", state.member_id));
     let is_thread = msg.origin.thread_ts.is_some();
+
+    // Slack delivers both `message` and `app_mention` events for an @-mention
+    // in a channel — they have different `event_id`s so dedup can't suppress
+    // them, and they'd both reach `dispatch` and produce two replies. Defer
+    // channel mentions to `handle_mention`; this handler still owns DMs and
+    // policy-driven non-mention replies (Trigger::Always / ThreadOnly).
+    if mentioned && !is_dm {
+        return Ok(());
+    }
+
     let mut text = if mentioned {
         MENTION_PATTERN.replace_all(&text, "").trim().to_string()
     } else {
@@ -362,7 +386,7 @@ async fn handle_message(
         &msg.origin.ts.0,
     );
 
-    let mut context = state
+    let context = state
         .frontend
         .fetch_context(
             channel.as_ref(),
@@ -370,14 +394,6 @@ async fn handle_message(
             msg.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
         )
         .await;
-    if context.is_empty()
-        && let Some(ts) = msg.origin.thread_ts.as_ref()
-    {
-        context.push(format!(
-            "[This message is in a Slack thread. Channel: {channel}, thread_ts: {}. Use Slack tools to read the thread for context if needed.]",
-            ts.0
-        ));
-    }
 
     let conversation = if is_dm {
         Conversation::Dm {
@@ -409,6 +425,7 @@ async fn handle_message(
             reply_to,
             directed,
             context,
+            envelope,
         },
         state.frontend.clone(),
     );
@@ -418,6 +435,7 @@ async fn handle_message(
 async fn handle_mention(
     mention: SlackAppMentionEvent,
     state: &SlackState,
+    envelope: Option<DispatchEnvelope>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if !state.user_id.is_empty() && mention.user.to_string() != state.user_id {
         return Ok(());
@@ -443,7 +461,7 @@ async fn handle_mention(
         &mention.origin.ts.0,
     );
 
-    let mut context = state
+    let context = state
         .frontend
         .fetch_context(
             mention.channel.as_ref(),
@@ -451,14 +469,6 @@ async fn handle_mention(
             mention.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
         )
         .await;
-    if context.is_empty()
-        && let Some(ts) = mention.origin.thread_ts.as_ref()
-    {
-        context.push(format!(
-            "[This message is in a Slack thread. Channel: {}, thread_ts: {}. Use Slack tools to read the thread for context if needed.]",
-            mention.channel, ts.0
-        ));
-    }
 
     let conversation = if let Some(ref rt) = reply_to {
         let thread_ts = mention
@@ -485,6 +495,7 @@ async fn handle_mention(
             reply_to,
             directed: true,
             context,
+            envelope,
         },
         state.frontend.clone(),
     );
@@ -508,6 +519,18 @@ async fn handle_reaction(
     let ts = msg.origin.ts.to_string();
     let channel = msg.origin.channel.clone();
     let emoji = reaction.reaction.0.as_str();
+
+    // Cluster-wide dedup. slack-morphism's `SlackReactionAddedEvent` does not
+    // surface a stable `event_id`, so synthesize a composite key that is the
+    // same on every task receiving the same delivery. Skip on `forwarded`
+    // (the peer that originally received it already deduped).
+    if !forwarded {
+        let dedup_key = format!("rxn:{ts}:{}:{emoji}", reaction.user.0);
+        if !state.core.coordinator.dedupe_event(&dedup_key).await {
+            tracing::debug!(dedup_key, "duplicate reaction event, dropping");
+            return Ok(());
+        }
+    }
 
     let pending_count = state.pending_approvals.lock().unwrap().len();
     tracing::info!(

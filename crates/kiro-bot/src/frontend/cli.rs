@@ -89,6 +89,7 @@ pub async fn run_cli(core: &BotCore, frontend: Arc<CliFrontend>) {
                 reply_to: None,
                 directed: true,
                 context: vec![],
+                envelope: None,
             },
             frontend.clone(),
         );

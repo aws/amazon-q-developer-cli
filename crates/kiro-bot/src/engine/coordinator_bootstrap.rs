@@ -7,8 +7,12 @@
 //! [`NoopCoordinator`] so local CLI runs (`cmd_chat`) and unit tests are
 //! unaffected.
 //!
-//! Phase 1 only *constructs* the coordinator; the engine integration
-//! (`dedupe_event`, `try_acquire`, `forward`) lands in Phase 3.
+//! The engine integration (`dedupe_event`, `try_acquire`, `forward`,
+//! `release`) is wired into [`crate::engine::core::dispatch`]: every
+//! Slack-delivered message is deduped and lease-arbitrated cluster-wide
+//! before any reply is sent, so a multi-task fleet posts exactly one
+//! reply per Slack event. CLI / cron callers pass `envelope = None`
+//! and bypass coordinator gating entirely.
 
 use std::sync::Arc;
 
@@ -22,7 +26,6 @@ use crate::engine::coordinator::{
     NoopCoordinator,
 };
 use crate::engine::dynamo_coordinator::DynamoCoordinator;
-use crate::engine::task_metadata;
 
 const ENV_LEASES: &str = "KIRO_BOT_LEASES_TABLE";
 const ENV_TRANSCRIPTS: &str = "KIRO_BOT_TRANSCRIPTS_TABLE";
@@ -31,15 +34,18 @@ const ENV_APPROVALS: &str = "KIRO_BOT_APPROVALS_TABLE";
 
 /// Bind a [`Coordinator`] for the current process. Always succeeds — on
 /// misconfiguration we log and fall back to [`NoopCoordinator`] so the bot
-/// keeps running in a degraded (single-task) mode.
-pub async fn build_coordinator() -> Arc<dyn Coordinator> {
+/// keeps running in a degraded (single-task) mode. `own_id` is this task's
+/// resolved identity (e.g. `<ipv4>:<dispatch_port>` on Fargate) and gets
+/// written into the leases table so peers can `POST http://<own_id>/dispatch`
+/// directly. The caller resolves it once so the value here matches the one
+/// `SlackState.own_task_id` compares against in approval-owner short-circuits.
+pub async fn build_coordinator(own_id: String) -> Arc<dyn Coordinator> {
     let leases = std::env::var(ENV_LEASES).ok();
     let transcripts = std::env::var(ENV_TRANSCRIPTS).ok();
     let dedup = std::env::var(ENV_DEDUP).ok();
 
     match (leases, transcripts, dedup) {
         (Some(leases), Some(transcripts), Some(dedup)) => {
-            let own_id = task_metadata::resolve_self_id().await;
             let approvals = std::env::var(ENV_APPROVALS).ok();
             info!(
                 own_id = %own_id,
@@ -119,7 +125,7 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_noop_when_env_missing() {
         clear_env();
-        let coord = build_coordinator().await;
+        let coord = build_coordinator("test-self".into()).await;
         // Noop always returns Acquired.
         let outcome = coord.try_acquire("convo-test").await;
         assert_eq!(outcome, crate::engine::coordinator::LeaseOutcome::Acquired);

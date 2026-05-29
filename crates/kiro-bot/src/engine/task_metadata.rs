@@ -1,10 +1,12 @@
 //! Per-task self-identification.
 //!
 //! `DynamoCoordinator` writes the owning task's identifier into the leases /
-//! approvals tables so peers know who to forward to. On Fargate, the runtime
-//! injects the metadata endpoint via `ECS_CONTAINER_METADATA_URI_V4`; querying
-//! `<URI>/task` returns the task ARN. Outside Fargate (local CLI, unit tests),
-//! callers should fall through to a hostname-based fallback.
+//! approvals tables so peers know who to forward to. The id has to be a
+//! reachable network endpoint — `forward()` builds `http://{peer}/dispatch`
+//! verbatim — so on Fargate we resolve the container's private IPv4 from
+//! `ECS_CONTAINER_METADATA_URI_V4` and return `<ip>:<dispatch_port>`. Outside
+//! Fargate (local CLI, unit tests) we fall back to a hostname-based id; the
+//! `NoopCoordinator` doesn't actually `forward()` so the URL never gets used.
 
 use serde::Deserialize;
 
@@ -12,30 +14,43 @@ const METADATA_ENV: &str = "ECS_CONTAINER_METADATA_URI_V4";
 const FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[derive(Debug, Deserialize)]
-struct TaskMetadata {
-    #[serde(rename = "TaskARN")]
-    task_arn: String,
+struct ContainerMetadata {
+    #[serde(rename = "Networks", default)]
+    networks: Vec<ContainerNetwork>,
 }
 
-/// Best-effort: read `ECS_CONTAINER_METADATA_URI_V4` and GET `<URI>/task`.
-/// Returns `None` if the env var is missing or the HTTP call fails.
-pub async fn fetch_task_arn() -> Option<String> {
+#[derive(Debug, Deserialize)]
+struct ContainerNetwork {
+    #[serde(rename = "IPv4Addresses", default)]
+    ipv4_addresses: Vec<String>,
+}
+
+/// Best-effort: read the container's own private IPv4 from
+/// `ECS_CONTAINER_METADATA_URI_V4` (no `/task` suffix → container-level
+/// metadata, which has the Networks block for this container directly).
+/// Returns `None` outside Fargate or on network failure.
+pub async fn fetch_container_ipv4() -> Option<String> {
     let base = std::env::var(METADATA_ENV).ok()?;
-    let url = format!("{base}/task");
     let client = reqwest::Client::builder().timeout(FETCH_TIMEOUT).build().ok()?;
-    let resp = client.get(&url).send().await.ok()?;
+    let resp = client.get(&base).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }
-    let body: TaskMetadata = resp.json().await.ok()?;
-    Some(body.task_arn)
+    let body: ContainerMetadata = resp.json().await.ok()?;
+    body.networks
+        .into_iter()
+        .find_map(|n| n.ipv4_addresses.into_iter().next())
 }
 
-/// Identify this process for coordinator bookkeeping. Prefers the ECS task
-/// ARN; falls back to `hostname-pid` so local CLI runs still get a stable id.
-pub async fn resolve_self_id() -> String {
-    if let Some(arn) = fetch_task_arn().await {
-        return arn;
+/// Identify this process for coordinator bookkeeping. On Fargate, returns
+/// `<private-ipv4>:<dispatch_port>` so peers can `POST http://<id>/dispatch`
+/// against this task directly. Falls back to `hostname-pid` outside Fargate
+/// (or when the container-metadata Networks block is unavailable) so local
+/// CLI runs still get a stable id; we never return a task ARN because peers
+/// would build a malformed forward URL from it.
+pub async fn resolve_self_id(dispatch_port: u16) -> String {
+    if let Some(ip) = fetch_container_ipv4().await {
+        return format!("{ip}:{dispatch_port}");
     }
     let host = hostname().unwrap_or_else(|| "unknown".to_string());
     format!("{host}-{}", std::process::id())
@@ -74,7 +89,7 @@ mod tests {
         unsafe {
             std::env::remove_var(METADATA_ENV);
         }
-        assert!(fetch_task_arn().await.is_none());
+        assert!(fetch_container_ipv4().await.is_none());
     }
 
     #[tokio::test]
@@ -82,7 +97,7 @@ mod tests {
         unsafe {
             std::env::remove_var(METADATA_ENV);
         }
-        let id = resolve_self_id().await;
+        let id = resolve_self_id(8080).await;
         assert!(!id.is_empty(), "fallback id must be non-empty");
         assert!(id.contains('-'), "fallback id has hostname-pid shape");
     }

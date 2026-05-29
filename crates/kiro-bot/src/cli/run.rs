@@ -112,11 +112,24 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         last_seen: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
-    let coordinator = crate::engine::coordinator_bootstrap::build_coordinator().await;
-    // Resolve our own ECS task id once and stash it in a task-local; the
-    // reaction handler reads it to skip the forward branch when it's already
-    // the lookup-owner. Outside Fargate this falls back to hostname-pid.
-    let own_task_id = crate::engine::task_metadata::resolve_self_id().await;
+    // Hoisted above the coordinator so the self-id we write into DDB is the
+    // same `<ip>:<port>` peers will POST to. `0` would yield a `<ip>:0`
+    // self-id that peers can't reach — refuse it explicitly rather than
+    // silently let `unwrap_or` paper over it.
+    let dispatch_port = match std::env::var("KIRO_BOT_DISPATCH_PORT") {
+        Ok(raw) => match raw.parse::<u16>() {
+            Ok(0) | Err(_) => anyhow::bail!("KIRO_BOT_DISPATCH_PORT must be 1-65535, got {raw:?}"),
+            Ok(p) => p,
+        },
+        Err(_) => 8080,
+    };
+    // Resolve our own task id once. On Fargate this is `<private-ipv4>:<port>`
+    // so peers can forward straight here; outside Fargate it falls back to
+    // `hostname-pid`. Used both as the lease owner identity (DynamoCoordinator)
+    // and as the comparison target in the reaction-forward short-circuit;
+    // resolving once avoids the two callsites diverging if metadata is flaky.
+    let own_task_id = crate::engine::task_metadata::resolve_self_id(dispatch_port).await;
+    let coordinator = crate::engine::coordinator_bootstrap::build_coordinator(own_task_id.clone()).await;
     let core = BotCore {
         work_sender: work_tx,
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
@@ -180,13 +193,8 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
 
     // Phase 2: bind the dispatch server with a real Dispatcher that replays
     // forwarded Slack events through the same handlers as Slack-native
-    // delivery. Without a coordinator instructing peers to forward (Phase 3)
-    // this code path is dormant — but it must be live before Phase 3 so a
-    // forwarded event has somewhere to land.
-    let dispatch_port = std::env::var("KIRO_BOT_DISPATCH_PORT")
-        .ok()
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(8080);
+    // delivery. `dispatch_port` was resolved earlier so the self-id stitched
+    // into the lease table matches the port we listen on here.
     let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> = Arc::new(
         crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()),
     );
