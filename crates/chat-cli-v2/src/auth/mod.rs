@@ -2,7 +2,6 @@ pub mod builder_id;
 mod consts;
 pub mod external_idp;
 pub mod kas_token;
-pub mod kas_token_sync;
 pub mod oauth_callback;
 pub mod pkce;
 pub mod refresh_coordinator;

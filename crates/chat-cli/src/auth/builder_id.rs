@@ -665,9 +665,6 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
 
     let profile_res = database.unset_auth_profile();
 
-    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
-    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
-
     builder_res?;
     device_res?;
     profile_res?;

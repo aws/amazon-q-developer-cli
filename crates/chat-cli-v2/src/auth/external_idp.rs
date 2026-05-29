@@ -197,14 +197,11 @@ impl ExternalIdpToken {
         database
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
             .await?;
-        // Mirrors to KAS sidecar; see kas_token_sync.
-        crate::auth::kas_token_sync::write_token(self).await;
         Ok(())
     }
 
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
-        crate::auth::kas_token_sync::delete_kas_token_file();
         Ok(())
     }
 }
@@ -423,7 +420,6 @@ async fn exchange_code_for_token(
 
 pub async fn logout_external_idp(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(ExternalIdpToken::SECRET_KEY).await?;
-    crate::auth::kas_token_sync::delete_kas_token_file();
     Ok(())
 }
 

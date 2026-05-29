@@ -120,8 +120,6 @@ impl SocialToken {
         database
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
             .await?;
-        // Mirrors to KAS sidecar; see kas_token_sync.
-        crate::auth::kas_token_sync::write_token(self).await;
         Ok(())
     }
 
@@ -137,7 +135,6 @@ impl SocialToken {
 
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
-        crate::auth::kas_token_sync::delete_kas_token_file();
         Ok(())
     }
 
@@ -354,7 +351,6 @@ pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
 
     // Delete local token first — user is immediately logged out.
     database.delete_secret(SocialToken::SECRET_KEY).await?;
-    crate::auth::kas_token_sync::delete_kas_token_file();
 
     // Then revoke the token server-side. Failures are non-fatal.
     if let Some(refresh_token) = refresh_token {

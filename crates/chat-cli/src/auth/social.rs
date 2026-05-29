@@ -352,8 +352,6 @@ pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
 
     // Delete local token first — user is immediately logged out.
     database.delete_secret(SocialToken::SECRET_KEY).await?;
-    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
-    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
 
     // Then revoke the token server-side. Failures are non-fatal.
     if let Some(refresh_token) = refresh_token {

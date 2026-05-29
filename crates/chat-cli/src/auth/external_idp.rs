@@ -420,8 +420,6 @@ async fn exchange_code_for_token(
 
 pub async fn logout_external_idp(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(ExternalIdpToken::SECRET_KEY).await?;
-    // KAS sidecar lifecycle: see chat_cli_v2::auth::kas_token_sync.
-    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
     Ok(())
 }
 

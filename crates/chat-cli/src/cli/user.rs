@@ -302,7 +302,6 @@ pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     let _ = crate::auth::logout(&mut os.database).await;
     let _ = crate::auth::social::logout_social(&os.database).await;
     let _ = crate::auth::external_idp::logout_external_idp(&os.database).await;
-    chat_cli_v2::auth::kas_token_sync::delete_kas_token_file();
 
     eprintln!("You are now logged out");
     eprintln!(

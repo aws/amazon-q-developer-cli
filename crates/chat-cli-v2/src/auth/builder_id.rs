@@ -511,15 +511,12 @@ impl BuilderIdToken {
         database
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
             .await?;
-        // Mirrors to KAS sidecar; see kas_token_sync.
-        crate::auth::kas_token_sync::write_token(self).await;
         Ok(())
     }
 
     /// Delete the token from the keychain
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
-        crate::auth::kas_token_sync::delete_kas_token_file();
         Ok(())
     }
 
@@ -661,8 +658,6 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
     );
 
     let profile_res = database.unset_auth_profile();
-
-    crate::auth::kas_token_sync::delete_kas_token_file();
 
     builder_res?;
     device_res?;

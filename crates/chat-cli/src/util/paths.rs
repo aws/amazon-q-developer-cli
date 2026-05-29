@@ -142,23 +142,6 @@ pub fn kas_bundle_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("kas.sha256"))
 }
 
-/// Path to the KAS token file consumed by kiro-agent's `FileAuthProvider`.
-/// Always `<data_local_dir>/kiro-cli/kiro-auth-token-cli.json`; not
-/// overridable (`KIRO_KAS_TOKEN_PATH` is KAS's own env var, ignored here).
-/// See `chat_cli_v2::auth::kas_token_sync` for the full sidecar contract.
-// TODO: remove this and `chat_cli_v2::auth::kas_token_sync` - dead code.
-#[allow(dead_code)]
-pub fn kas_token_path(os: &Os) -> Result<PathBuf> {
-    kas_token_path_from_env(&os.env)
-}
-
-// `_env` is unused; signature kept for symmetry with sibling `*_from_env`
-// helpers. Resolver consults no env var (see `kas_token_path` rustdoc).
-#[allow(dead_code)]
-pub(crate) fn kas_token_path_from_env(_env: &Env) -> Result<PathBuf> {
-    Ok(data_dir()?.join("kiro-auth-token-cli.json"))
-}
-
 /// Root directory for user-level Kiro config data.
 ///
 /// Honors the `KIRO_HOME` environment variable when set; otherwise falls back
@@ -1016,55 +999,6 @@ mod path_tests {
             db_str.ends_with("kiro-cli/data.sqlite3") || db_str.ends_with("kiro-cli\\data.sqlite3"),
             "database path should live under the data dir, got: {}",
             db_str
-        );
-    }
-
-    /// Default KAS token path must live under the same data dir as the
-    /// SQLite store. Older builds rooted it at `~/.aws/sso/cache/`, which
-    /// ignored `XDG_DATA_HOME` on Linux and `~/Library/Application Support`
-    /// on macOS.
-    #[test]
-    fn test_kas_token_path_default_is_under_data_dir() {
-        let env = env_from(&[("HOME", "/home/testuser")]);
-        let path = kas_token_path_from_env(&env).unwrap();
-        let data_dir = dirs::data_local_dir()
-            .expect("data_local_dir must resolve in test env")
-            .join(CLI_NAME);
-        assert!(
-            path.starts_with(&data_dir),
-            "kas token path {path:?} must live under data dir {data_dir:?}",
-        );
-        assert_eq!(
-            path.file_name().and_then(|s| s.to_str()),
-            Some("kiro-auth-token-cli.json"),
-        );
-    }
-
-    /// External env values must not be allowed to mutate kiro-cli's choice
-    /// of where to write its own state. `KIRO_KAS_TOKEN_PATH` is KAS's own
-    /// user-facing env var; kiro-cli's resolver must ignore it.
-    #[test]
-    fn test_kas_token_path_ignores_env_var() {
-        let env = env_from(&[
-            ("HOME", "/home/testuser"),
-            ("KIRO_KAS_TOKEN_PATH", "/tmp/custom-kas-token.json"),
-        ]);
-        let path = kas_token_path_from_env(&env).unwrap();
-        assert_ne!(
-            path,
-            PathBuf::from("/tmp/custom-kas-token.json"),
-            "resolver must ignore KIRO_KAS_TOKEN_PATH",
-        );
-        let data_dir = dirs::data_local_dir()
-            .expect("data_local_dir must resolve in test env")
-            .join(CLI_NAME);
-        assert!(
-            path.starts_with(&data_dir),
-            "kas token path {path:?} must live under data dir {data_dir:?}",
-        );
-        assert_eq!(
-            path.file_name().and_then(|s| s.to_str()),
-            Some("kiro-auth-token-cli.json"),
         );
     }
 }
