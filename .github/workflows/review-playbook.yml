@@ -237,6 +237,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
           aws-region: us-east-1
+          role-duration-seconds: 3600
 
       # ----- Download pre-built artifacts ----------------------------
       - name: Download build artifact
@@ -569,6 +570,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
           aws-region: us-east-1
+          role-duration-seconds: 3600
 
       - name: Download build artifact
         uses: actions/download-artifact@v8

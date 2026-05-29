@@ -13,7 +13,7 @@ inputs:
   restore-duration:
     description: Role duration in seconds for the restored role
     required: false
-    default: "7200"
+    default: "3600"
 
 runs:
   using: composite
