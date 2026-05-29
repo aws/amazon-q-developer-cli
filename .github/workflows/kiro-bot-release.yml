@@ -126,10 +126,9 @@ jobs:
           # Bot-only agent definition. Not in the public chat_cli binary —
           # the runtime container drops these into ~/.kiro/agents/ so v2's
           # disk-loader picks them up when `kiro-cli acp --agent kiro-help`
-          # runs.
-          cp crates/kiro-bot/agents/kiro-help.json       artifacts/agents/
-          cp crates/kiro-bot/agents/kiro_help_prompt.md  artifacts/agents/
-          cp crates/kiro-bot/agents/SKILL.md             artifacts/agents/
+          # runs. Ship the whole agents/ directory so any new prompt,
+          # skill, or reference file is picked up without a workflow edit.
+          cp -r crates/kiro-bot/agents/. artifacts/agents/
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ env.TARGET }}

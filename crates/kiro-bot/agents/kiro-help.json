@@ -1,6 +1,7 @@
 {
   "name": "kiro-help",
   "description": "Help agent for the kiro-help Slack bot. Distinct from the in-CLI kiro_guide built-in: tools list and prompt are tuned for Slack DMs and channel mentions, not terminal sessions.",
+  "prompt": "file://kiro_help_prompt.md",
   "mcpServers": {
     "kiro-knowledge": {
       "command": "kiro-knowledge-mcp",
@@ -21,6 +22,7 @@
   "tools": [
     "introspect",
     "read",
+    "execute_bash",
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
     "@kiro-github-write/create_github_issue",
@@ -32,6 +34,43 @@
     "introspect",
     "read"
   ],
+  "toolsSettings": {
+    "shell": {
+      "denyByDefault": true,
+      "allowedCommands": [
+        "git log( .*)?",
+        "git blame( .*)?",
+        "git show( .*)?",
+        "git diff( .*)?",
+        "git status( .*)?",
+        "git rev-parse( .*)?",
+        "git branch( .*)?",
+        "git tag( .*)?",
+        "git ls-files( .*)?",
+        "rg( .*)?",
+        "find( .*)?",
+        "wc( .*)?",
+        "ls( .*)?",
+        "stat( .*)?",
+        "file( .*)?",
+        "head( .*)?",
+        "tail( .*)?",
+        "cat( .*)?"
+      ],
+      "deniedCommands": [
+        ".*--force.*",
+        ".*\\bsudo\\b.*",
+        ".*\\bcurl\\b.*",
+        ".*\\bwget\\b.*",
+        ".*\\bgit (push|pull|fetch|commit|reset|checkout|clean|rebase|merge|cherry-pick|stash)( .*)?",
+        ".*\\b(rm|mv|cp|mkdir|rmdir|chmod|chown|tee|kill|killall|pkill)\\b.*",
+        ".*\\b(npm|bun|yarn|pnpm|cargo)\\s+install\\b.*",
+        ".*\\b(bash|sh|zsh)\\s+-c\\b.*",
+        ".*\\beval\\b.*",
+        ".*\\bsource\\b.*"
+      ]
+    }
+  },
   "resources": [
     "skill://~/.kiro/agents/SKILL.md"
   ],

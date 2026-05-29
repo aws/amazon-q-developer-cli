@@ -43,14 +43,16 @@ mod tests {
     }
 
     /// Slack bot is read-only by default; write capabilities live behind a
-    /// reaction-approval gate. Assert the agent JSON does not auto-approve
-    /// write tools and does not expose execute_bash/fs_write/shell.
+    /// reaction-approval gate. Assert the agent JSON does not expose write
+    /// tools, does not auto-approve the GitHub write tools, and that the
+    /// shell tool (when present) is locked down with denyByDefault + a
+    /// scoped allowlist that excludes git writes and network commands.
     #[test]
     fn kiro_help_agent_json_keeps_writes_behind_approval() {
         let raw = include_str!("../agents/kiro-help.json");
         let v: serde_json::Value = serde_json::from_str(raw).expect("valid JSON");
         let tools = v["tools"].as_array().expect("array");
-        for forbidden in ["fs_write", "execute_bash", "shell"] {
+        for forbidden in ["fs_write"] {
             assert!(
                 !tools.iter().any(|t| t == forbidden),
                 "bot agent must not expose write tool {forbidden}"
@@ -64,6 +66,72 @@ mod tests {
             assert!(
                 !allowed.iter().any(|t| t == write_tool),
                 "{write_tool} must NOT be auto-approved — every invocation has to pass through the Slack reaction gate"
+            );
+        }
+
+        // If execute_bash is exposed, it must be locked down: denyByDefault
+        // on, an explicit allowlist, and no write/network commands sneaking
+        // in. The agent's shell-permission machinery enforces these — but
+        // pin the config so a careless edit can't loosen the policy.
+        if tools.iter().any(|t| t == "execute_bash") {
+            // CRITICAL: execute_bash MUST NOT appear in allowedTools. When
+            // a tool is in allowedTools, the shell-permission decider's
+            // step 2 short-circuits with Allow before the denyByDefault +
+            // allowedCommands checks ever run (see
+            // crates/agent/src/agent/shell_permission/decider.rs:148-153).
+            // The whole point of the toolsSettings.shell policy below is
+            // to be enforced — it only is when is_tool_allowed = false,
+            // i.e. when execute_bash is NOT auto-approved.
+            assert!(
+                !allowed.iter().any(|t| t == "execute_bash"),
+                "execute_bash MUST NOT be in allowedTools — that bypasses the \
+                 denyByDefault + allowedCommands enforcement in the shell \
+                 permission decider (decider.rs step 2). Keep execute_bash in \
+                 the `tools` array but NOT in `allowedTools`."
+            );
+
+            let shell = &v["toolsSettings"]["shell"];
+            assert_eq!(
+                shell["denyByDefault"], true,
+                "shell must run with denyByDefault: true so unlisted commands are denied"
+            );
+            let allowlist: Vec<&str> = shell["allowedCommands"]
+                .as_array()
+                .expect("allowedCommands array")
+                .iter()
+                .filter_map(|p| p.as_str())
+                .collect();
+            assert!(
+                !allowlist.is_empty(),
+                "execute_bash with denyByDefault must declare a non-empty allowlist"
+            );
+            for forbidden_substr in [
+                "git push",
+                "git pull",
+                "git fetch",
+                "git commit",
+                "git reset",
+                "rm ",
+                "curl ",
+                "wget ",
+                "sudo ",
+                "bash -c",
+                "sh -c",
+            ] {
+                assert!(
+                    !allowlist.iter().any(|p| p.contains(forbidden_substr)),
+                    "shell allowlist must not include `{forbidden_substr}` — that's a write/network command"
+                );
+            }
+            let denylist: Vec<&str> = shell["deniedCommands"]
+                .as_array()
+                .expect("deniedCommands array")
+                .iter()
+                .filter_map(|p| p.as_str())
+                .collect();
+            assert!(
+                !denylist.is_empty(),
+                "shell denylist must explicitly block writes/network as defense-in-depth"
             );
         }
     }
@@ -121,6 +189,7 @@ mod tests {
             "comment_on_existing",
             "introspect",
             "read",
+            "execute_bash",
         ] {
             assert!(
                 prompt.contains(&format!("`{named}`")),
@@ -140,15 +209,15 @@ mod tests {
     fn kiro_help_prompt_carries_hard_constraints() {
         let prompt = include_str!("../agents/kiro_help_prompt.md");
         assert!(
-            prompt.contains("Retrieval is mandatory"),
-            "prompt must hard-require retrieval for kiro-touching questions"
+            prompt.contains("Read the source for behavior questions"),
+            "prompt must hard-require reading source for kiro-touching questions"
         );
         assert!(
             prompt.contains("Cite every non-trivial claim"),
             "prompt must require citations on retrieved answers"
         );
         assert!(
-            prompt.contains("Never invent doc paths or issue numbers"),
+            prompt.contains("Never invent doc paths, file paths, or issue numbers"),
             "prompt must keep the no-fabrication rule"
         );
         assert!(
