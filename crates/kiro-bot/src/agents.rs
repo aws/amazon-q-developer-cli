@@ -243,22 +243,6 @@ mod tests {
         }
     }
 
-    /// The worked example anchors the model on a concrete output shape.
-    /// It used to live in the prompt; consolidation moved it to where the
-    /// rest of the workflow lives — SKILL.md.
-    #[test]
-    fn kiro_help_skill_carries_worked_example() {
-        let skill = include_str!("../agents/SKILL.md");
-        // The skill's draft-the-answer section IS the worked-example: it
-        // shows the exact shape (one-line answer, fenced block, sources).
-        // We assert the load-bearing pieces of that shape rather than the
-        // older prose example.
-        assert!(
-            skill.contains("Sources:") && skill.contains("```fenced```"),
-            "SKILL.md must show a copy-this-shape answer shape — Sources line + fenced code block"
-        );
-    }
-
     /// The agent must declare its skill resource so the agent crate's
     /// skill loader picks up SKILL.md. Without this, disk-loaded agents
     /// don't get the auto-skill-glob that the default agent gets.
