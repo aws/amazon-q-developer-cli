@@ -147,3 +147,63 @@ describe('escapePath / unescapePath platform behavior', () => {
     });
   });
 });
+
+describe('completePathAtCursor after slash command prefix', () => {
+  it('completes path after /command prefix', () => {
+    const text = `/some-prompt ${TEST_DIR}/file.`;
+    const result = completePathAtCursor(text, text.length);
+    expect(result).not.toBeNull();
+    expect(result!.replacement).toContain('file.txt');
+    // Token should start after the space, not include the command
+    expect(result!.start).toBe('/some-prompt '.length);
+  });
+
+  it('completes path after /command:variant prefix', () => {
+    const text = `/agent-sop:pdd ${TEST_DIR}/sub`;
+    const result = completePathAtCursor(text, text.length);
+    expect(result).not.toBeNull();
+    expect(result!.replacement).toContain('subdir/');
+    expect(result!.start).toBe('/agent-sop:pdd '.length);
+  });
+
+  it('completes relative path after prompt invocation', () => {
+    // Change cwd to TEST_DIR so relative paths resolve there
+    const origCwd = process.cwd();
+    process.chdir(TEST_DIR);
+    try {
+      const text = '/my-prompt ./sub';
+      const result = completePathAtCursor(text, text.length);
+      expect(result).not.toBeNull();
+      expect(result!.replacement).toContain('subdir/');
+      expect(result!.start).toBe('/my-prompt '.length);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it('completes bare prefix after prompt invocation', () => {
+    // Use an absolute path prefix that we know exists in TEST_DIR
+    const text = `/my-prompt ${TEST_DIR}/fi`;
+    const result = completePathAtCursor(text, text.length);
+    expect(result).not.toBeNull();
+    // Should find file.txt and "file with spaces.txt"
+    expect(result!.candidates.length).toBeGreaterThanOrEqual(1);
+    expect(result!.start).toBe(`/my-prompt `.length);
+  });
+
+  it('completes dot prefix after prompt invocation (hidden files)', () => {
+    // Create a dotfile for this test
+    writeFileSync(join(TEST_DIR, '.hidden'), 'test');
+    const origCwd = process.cwd();
+    process.chdir(TEST_DIR);
+    try {
+      const text = '/agent-sop:pdd .';
+      const result = completePathAtCursor(text, text.length);
+      expect(result).not.toBeNull();
+      expect(result!.start).toBe('/agent-sop:pdd '.length);
+      expect(result!.candidates.some((c) => c.startsWith('.hidden'))).toBe(true);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+});

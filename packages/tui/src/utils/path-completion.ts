@@ -112,9 +112,17 @@ export function extractPathToken(
             expanded.endsWith('/') || (isWindows && expanded.endsWith('\\'))
               ? resolve(expanded)
               : resolve(dirname(expanded));
-          readdirSync(dir);
-          // Valid directory — use the extended token
-          return { token: candidate, start: extStart };
+          const entries = readdirSync(dir);
+          // Only accept if the prefix actually matches an entry in the directory.
+          // This prevents false positives like "/command ." where dir="/" succeeds
+          // but "command ." doesn't match any real file.
+          const pfx = expanded.endsWith('/') || (isWindows && expanded.endsWith('\\'))
+            ? ''
+            : basename(expanded);
+          if (!pfx || entries.some((e) => e.startsWith(pfx))) {
+            // Valid directory with matching prefix — use the extended token
+            return { token: candidate, start: extStart };
+          }
         } catch {
           // Not a valid path, keep trying
         }
