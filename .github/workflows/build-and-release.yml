@@ -14,10 +14,6 @@ on:
           - rc
           - stable
           - nightly
-      ref:
-        description: "Branch to tag (for rc/stable: release/X.Y.Z)"
-        type: string
-        required: false
       dry_run:
         description: "Dry run (compute version but don't build)"
         type: boolean
@@ -47,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -85,6 +81,22 @@ jobs:
           set -euo pipefail
           MODE="${{ steps.mode.outputs.mode }}"
           BRANCH="${{ github.ref_name }}"
+
+          # Validate branch matches mode
+          case "$MODE" in
+            nightly)
+              if [[ "$BRANCH" != "main" ]]; then
+                echo "❌ Nightly builds must run from 'main' branch. Got: $BRANCH"
+                exit 1
+              fi
+              ;;
+            rc|stable)
+              if [[ ! "$BRANCH" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "❌ $MODE builds must run from a release/X.Y.Z branch. Got: $BRANCH"
+                exit 1
+              fi
+              ;;
+          esac
 
           case "$MODE" in
             nightly)
