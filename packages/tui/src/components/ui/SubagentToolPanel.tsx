@@ -75,13 +75,31 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
     );
 
     const rows = useMemo(() => {
-      const subagentSessions: AgentSession[] = [];
+      const allEphemeral: AgentSession[] = [];
       for (const s of sessions.values()) {
         if (s.id === sessionId) continue;
         if (s.id.startsWith('pending:')) continue;
         if (s.type !== 'ephemeral') continue;
-        subagentSessions.push(s);
+        allEphemeral.push(s);
       }
+      // Deduplicate by name+group: keep only the latest loop iteration per stage
+      // (mirrors CrewMonitorScreen logic). Prevents stale completed stages from
+      // previous iterations showing in the outside view.
+      const deduped = new Map<string, AgentSession>();
+      for (const s of allEphemeral) {
+        const key = `${s.group ?? ''}::${s.name}`;
+        const existing = deduped.get(key);
+        if (!existing) {
+          deduped.set(key, s);
+        } else if ((s.loopIteration ?? 0) > (existing.loopIteration ?? 0)) {
+          deduped.set(key, s);
+        } else if ((s.loopIteration ?? 0) === (existing.loopIteration ?? 0)) {
+          if (s.created.getTime() > existing.created.getTime()) {
+            deduped.set(key, s);
+          }
+        }
+      }
+      const subagentSessions = [...deduped.values()];
 
       const activeToolByAgent = new Map<
         string,

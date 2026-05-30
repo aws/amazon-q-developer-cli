@@ -12,7 +12,8 @@ export function openTranscriptInPager(
 ): void {
   if (!messages.length) return;
 
-  const content = preRendered ?? serializeConversationToMarkdown(messages);
+  const content =
+    preRendered ?? serializeConversationToMarkdown(messages, 'markdown');
   const tempDir = mkdtempSync(join(tmpdir(), 'kiro-raw-'));
   const tempFile = join(tempDir, `conversation.${format}`);
 

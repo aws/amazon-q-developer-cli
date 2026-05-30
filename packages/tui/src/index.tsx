@@ -424,10 +424,18 @@ const startInitialization = (resumePickerSessionId?: string) => {
         lastActivity: new Date(),
       });
     } else if (event.type === 'session_created') {
-      // Clear stale conversation data for terminated sessions before adding new one
+      // Only clear conversation data for terminated sessions that share the same
+      // name+group as the new session (i.e., superseded by a loop iteration).
+      // This preserves output from other completed stages so users can still view them.
       if (event.session.status === 'busy') {
+        const newName = event.session.name;
+        const newGroup = event.session.group ?? '';
         for (const [id, s] of state.sessions) {
-          if (s.status === 'terminated') {
+          if (
+            s.status === 'terminated' &&
+            s.name === newName &&
+            (s.group ?? '') === newGroup
+          ) {
             sessionConversationsStore.getState().clearSession(id);
             sessionHandlers.delete(id);
           }
