@@ -33,7 +33,8 @@ jobs:
     if: github.event.label.name == 'safe-to-test' && github.event.pull_request.head.repo.fork == true
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Fork PR #${{ github.event.pull_request.number }} approved for CI via safe-to-test label"
+      - run: |
+          echo "Fork PR #${{ github.event.pull_request.number }} approved for CI via safe-to-test label"
 
   # Remove the label so the next push requires re-approval
   remove-label:
