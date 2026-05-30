@@ -2273,7 +2273,8 @@ describe('MCP OAuth flow', () => {
           name: 'github-mcp',
           status: 'failed',
           failedAuthorization: true,
-          authorizationUrl: 'https://github.com/login/oauth/authorize?state=abc',
+          authorizationUrl:
+            'https://github.com/login/oauth/authorize?state=abc',
           errorMessage: 'Unauthorized',
         },
       ],

@@ -60,7 +60,8 @@ describe('MCP OAuth via authorizationUrl in status', () => {
           name: 'github-mcp',
           status: 'failed',
           failedAuthorization: true,
-          authorizationUrl: 'https://github.com/login/oauth/authorize?state=abc123',
+          authorizationUrl:
+            'https://github.com/login/oauth/authorize?state=abc123',
           errorMessage: 'Unauthorized',
         },
       ],

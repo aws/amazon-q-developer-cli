@@ -660,7 +660,7 @@ abstract class BaseAcpClient implements SessionClient {
     });
   }
 
-  private handleMcpGovernanceDisabled(params: Record<string, unknown>) {
+  protected handleMcpGovernanceDisabled(params: Record<string, unknown>) {
     const apiFailure = (params.apiFailure as boolean) ?? false;
     logger.warn('MCP governance disabled:', { apiFailure });
     this.broadcastStreamEvent({
@@ -669,14 +669,14 @@ abstract class BaseAcpClient implements SessionClient {
     });
   }
 
-  private handleRateLimitError(params: Record<string, unknown>) {
+  protected handleRateLimitError(params: Record<string, unknown>) {
     this.broadcastStreamEvent({
       type: AgentEventType.RateLimitError,
       message: (params.message as string) ?? '',
     });
   }
 
-  private handleAgentNotFound(params: Record<string, unknown>) {
+  protected handleAgentNotFound(params: Record<string, unknown>) {
     this.broadcastStreamEvent({
       type: AgentEventType.AgentNotFound,
       requestedAgent: (params.requestedAgent as string) ?? '',
@@ -684,7 +684,7 @@ abstract class BaseAcpClient implements SessionClient {
     });
   }
 
-  private handleAgentConfigError(params: Record<string, unknown>) {
+  protected handleAgentConfigError(params: Record<string, unknown>) {
     this.broadcastStreamEvent({
       type: AgentEventType.AgentConfigError,
       path: params.path as string | undefined,
@@ -1476,8 +1476,6 @@ export class KasAcpClient extends BaseAcpClient {
   private mcpServerCache: McpServerInfo[] = [];
   private mcpRegistryCache: McpServerInfo[] = [];
 
-
-
   /**
    * Construct a KAS ACP client.
    *
@@ -1742,6 +1740,35 @@ export class KasAcpClient extends BaseAcpClient {
       this.handleMcpStatusNotification(params);
     });
 
+    // Route _kiro.dev/* notifications to the same handlers used by the Rust backend path.
+    // The BaseAcpClient.extNotification() callback strips the leading '_', so we do the same.
+    this.kiroClient.onExtNotification('_kiro.dev/agent/not_found', (params) => {
+      this.handleAgentNotFound(params);
+      // KAS doesn't send current_mode_update after fallback, so update the cached mode here
+      const fallback = params.fallbackAgent as string | undefined;
+      if (fallback) {
+        this.modesState = { ...this.modesState, currentModeId: fallback };
+      }
+    });
+    this.kiroClient.onExtNotification(
+      '_kiro.dev/agent/config_error',
+      (params) => {
+        this.handleAgentConfigError(params);
+      }
+    );
+    this.kiroClient.onExtNotification(
+      '_kiro.dev/error/rate_limit',
+      (params) => {
+        this.handleRateLimitError(params);
+      }
+    );
+    this.kiroClient.onExtNotification(
+      '_kiro.dev/mcp/governance_disabled',
+      (params) => {
+        this.handleMcpGovernanceDisabled(params);
+      }
+    );
+
     const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
@@ -1793,12 +1820,16 @@ export class KasAcpClient extends BaseAcpClient {
     const mode = process.env.KIRO_MODE;
     if (mode) {
       try {
-        await this.kiroClient.setSessionConfigOption({
+        const modeResp = await this.kiroClient.setSessionConfigOption({
           sessionId: sid,
           configId: 'mode',
           value: mode,
         });
-        this.modesState = { ...this.modesState, currentModeId: mode };
+        // Read the actual mode from the response (may differ if KAS fell back)
+        this.refreshModeFromConfigOptions(
+          (modeResp as { configOptions?: unknown }).configOptions,
+          mode
+        );
       } catch (e) {
         logger.debug('Failed to set mode:', e);
       }
@@ -2470,6 +2501,27 @@ export class KasAcpClient extends BaseAcpClient {
     this.currentModelId = modelOpt.currentValue;
   }
 
+  /** Update cached currentModeId from a setSessionConfigOption response.
+   *  Falls back to `requestedMode` if the response doesn't contain mode info. */
+  private refreshModeFromConfigOptions(
+    configOptions: unknown,
+    requestedMode: string
+  ): void {
+    if (!Array.isArray(configOptions)) {
+      this.modesState = { ...this.modesState, currentModeId: requestedMode };
+      return;
+    }
+    const modeOpt = (configOptions as Array<Record<string, unknown>>).find(
+      (o) => o.id === 'mode'
+    );
+    const actual = (modeOpt as { currentValue?: string } | undefined)
+      ?.currentValue;
+    this.modesState = {
+      ...this.modesState,
+      currentModeId: actual ?? requestedMode,
+    };
+  }
+
   /**
    * Broadcast the current effort level extracted from a KAS configOptions
    * array (returned by session/new, session/load, set_config_option, or
@@ -2612,7 +2664,6 @@ export class KasAcpClient extends BaseAcpClient {
       data: { agent: { name: 'quick-plan' }, ...(prompt && { prompt }) },
     };
   }
-
 
   private async callExtMethod(
     method: string,
