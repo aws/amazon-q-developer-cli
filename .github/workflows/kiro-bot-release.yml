@@ -90,7 +90,7 @@ jobs:
   build-binaries:
     name: Cross-compile ARM64 binaries
     runs-on: ubuntu-latest
-    needs: eval
+    needs: test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -98,6 +98,12 @@ jobs:
           toolchain: 1.92.0
           targets: ${{ env.TARGET }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache slot for the cross-compile target dir so it
+          # doesn't churn against the host-target caches in `test` and
+          # `eval`, and persists even when the build step itself fails.
+          shared-key: arm64-build
+          cache-on-failure: true
       - name: Install zig (cross-toolchain)
         uses: mlugg/setup-zig@v1
         # Pin to a Zig release that's still on the official mirror network.
@@ -137,7 +143,7 @@ jobs:
   publish-image:
     name: Publish binary-carrier image
     runs-on: ubuntu-latest
-    needs: build-binaries
+    needs: [build-binaries, eval]
     outputs:
       digest: ${{ steps.push.outputs.digest }}
       stage: ${{ steps.stage.outputs.stage }}
