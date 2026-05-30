@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: ee128aba5
+  validated: 2026-05-29
+  commit: 32a300b94
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -311,6 +311,18 @@ unaffected:
 
 - Workspace-local `.kiro/` directories under the current working directory
   (agents, prompts, settings, steering, skills) — these remain project-local.
-- The SQLite database (`data.sqlite3`), which lives under the platform data
+- The data directory for runtime assets, which lives under the platform data
   directory (`~/Library/Application Support/kiro-cli` on macOS,
   `~/.local/share/kiro-cli` on Linux, `%LOCALAPPDATA%\kiro-cli` on Windows).
+
+### KIRO_DATA_DIR
+
+Set `KIRO_DATA_DIR` to relocate the data directory where runtime assets are
+stored (bun, tui.js, node, feed.json, todo-lists). This is useful for
+enterprise IT to redirect extracted executables to AppLocker-whitelisted paths.
+
+```bash
+KIRO_DATA_DIR=/opt/approved/kiro kiro-cli chat
+```
+
+When unset or empty, falls back to the platform default data directory.

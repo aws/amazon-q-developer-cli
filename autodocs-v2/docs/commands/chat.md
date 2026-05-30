@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: cdba9a0f8
+  validated: 2026-05-29
+  commit: 32a300b94
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, config-directory]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -315,6 +315,33 @@ unaffected:
 
 - Workspace-local `.kiro/` directories under the current working directory
   (agents, prompts, settings, steering, skills) — these remain project-local.
-- The SQLite database (`data.sqlite3`), which lives under the platform data
-  directory (`~/Library/Application Support/kiro-cli` on macOS,
-  `~/.local/share/kiro-cli` on Linux, `%LOCALAPPDATA%\kiro-cli` on Windows).
+- The data directory (see below).
+
+## Data Directory
+
+Runtime assets (bun, tui.js, node, feed.json) are extracted to a platform data
+directory:
+
+- **macOS**: `~/Library/Application Support/kiro-cli`
+- **Linux**: `~/.local/share/kiro-cli`
+- **Windows**: `%LOCALAPPDATA%\kiro-cli`
+
+Set `KIRO_DATA_DIR` to relocate this directory. This is useful for enterprise
+deployments where executables must reside in whitelisted paths (e.g., Windows
+AppLocker policies that restrict execution to `C:\Program Files`).
+
+```bash
+KIRO_DATA_DIR=/opt/kiro/data kiro-cli chat
+```
+
+On Windows with AppLocker:
+
+```powershell
+$env:KIRO_DATA_DIR = "C:\Program Files\Kiro\data"
+kiro-cli chat
+```
+
+A set-but-empty `KIRO_DATA_DIR` (e.g., from a misconfigured GPO) is treated as
+unset and falls back to the platform default.
+
+The SQLite database (`data.sqlite3`) also lives in this directory.
