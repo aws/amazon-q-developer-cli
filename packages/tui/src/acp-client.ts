@@ -814,69 +814,81 @@ abstract class BaseAcpClient implements SessionClient {
       }
 
       case 'tool_call': {
-        const toolContent = ((update as any).content || [])
-          .filter((c: any) => c.type === 'diff')
-          .map((c: any) => ({
+        const toolContent = (update.content ?? [])
+          .filter((c) => c.type === 'diff')
+          .map((c) => ({
             type: 'diff' as const,
             path: c.path,
-            newText: c.newText || '',
-            oldText: c.oldText,
+            newText: c.newText ?? '',
+            oldText: c.oldText ?? undefined,
           }));
-        const locations = ((update as any).locations || []).map((loc: any) => ({
+        const locations = (update.locations ?? []).map((loc) => ({
           path: loc.path,
-          line: loc.line,
+          line: loc.line ?? undefined,
         }));
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
           name: update.title || 'unknown',
-          kind: (update as any).kind,
-          args: (update as any).rawInput || {},
+          kind: update.kind ?? undefined,
+          args: (update.rawInput as Record<string, unknown>) ?? {},
           toolContent: toolContent.length > 0 ? toolContent : undefined,
           locations: locations.length > 0 ? locations : undefined,
         };
       }
 
       case 'tool_call_update': {
-        const toolCallUpdate = update as any;
-        if (toolCallUpdate.status === ToolCallStatus.Completed)
+        if (update.status === ToolCallStatus.Completed) {
+          const diffContent = (update.content ?? [])
+            .filter((c) => c.type === 'diff')
+            .map((c) => ({
+              type: 'diff' as const,
+              path: c.path,
+              newText: c.newText ?? '',
+              oldText: c.oldText ?? undefined,
+            }));
           return {
             type: AgentEventType.ToolCallFinished,
-            id: toolCallUpdate.toolCallId,
-            result: { status: 'success', output: toolCallUpdate.rawOutput },
+            id: update.toolCallId,
+            result: { status: 'success', output: update.rawOutput },
+            toolContent: diffContent.length > 0 ? diffContent : undefined,
           };
-        if (toolCallUpdate.status === ToolCallStatus.Failed) {
+        }
+        if (update.status === ToolCallStatus.Failed) {
           // If the backend rejected the tool before execution, no `tool_call`
           // notification was sent. Synthesize one from rawInput so the TUI
           // can render the tool name and attempted arguments.
-          if (toolCallUpdate.rawInput !== undefined) {
+          if (update.rawInput !== undefined) {
             this.broadcastStreamEvent({
               type: AgentEventType.ToolCall,
-              id: toolCallUpdate.toolCallId,
-              name: toolCallUpdate.title || 'unknown',
-              kind: toolCallUpdate.kind,
-              args: toolCallUpdate.rawInput || {},
+              id: update.toolCallId,
+              name: update.title || 'unknown',
+              kind: update.kind ?? undefined,
+              args: (update.rawInput as Record<string, unknown>) ?? {},
             });
           }
           // Prefer a descriptive error from the content block; fall back to
           // rawOutput, then a generic message.
           let errorText: string | undefined;
-          const failedContent = toolCallUpdate.content;
+          const failedContent = update.content;
           if (Array.isArray(failedContent)) {
             const textItem = failedContent.find(
-              (item: any) =>
-                item.type === 'content' && item.content?.type === 'text'
+              (item) => item.type === 'content' && item.content.type === 'text'
             );
-            if (textItem && typeof textItem.content.text === 'string') {
+            if (
+              textItem &&
+              textItem.type === 'content' &&
+              textItem.content.type === 'text'
+            ) {
               errorText = textItem.content.text;
             }
           }
-          if (!errorText && typeof toolCallUpdate.rawOutput === 'string') {
-            errorText = toolCallUpdate.rawOutput;
+          if (!errorText && typeof update.rawOutput === 'string') {
+            errorText = update.rawOutput;
           }
           return {
             type: AgentEventType.ToolCallFinished,
-            id: toolCallUpdate.toolCallId,
+            id: update.toolCallId,
             result: {
               status: 'error',
               error: errorText || 'Tool execution failed',
@@ -886,21 +898,24 @@ abstract class BaseAcpClient implements SessionClient {
 
         // content is a Vec<ToolCallContent> — a tagged enum where the Content
         // variant wraps a ContentBlock: { type: "content", content: { type: "text", text: "..." } }
-        const contentArray = toolCallUpdate.content;
+        const contentArray = update.content;
         let firstText = '';
         if (Array.isArray(contentArray)) {
           const textItem = contentArray.find(
-            (item: any) =>
-              item.type === 'content' && item.content?.type === 'text'
+            (item) => item.type === 'content' && item.content.type === 'text'
           );
-          if (textItem) {
+          if (
+            textItem &&
+            textItem.type === 'content' &&
+            textItem.content.type === 'text'
+          ) {
             firstText = textItem.content.text ?? '';
           }
         }
 
         return {
           type: AgentEventType.ToolCallUpdate,
-          id: toolCallUpdate.toolCallId,
+          id: update.toolCallId,
           content: { type: ContentType.Text, text: firstText },
         };
       }

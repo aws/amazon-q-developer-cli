@@ -14,8 +14,10 @@ import {
   ApprovalOptionId,
   TASK_TOOL_NAMES,
   SESSION_TOOL_NAMES,
+  deriveToolDiff,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
+  type ToolDiff,
   type ToolKind,
 } from '../types/agent-events';
 import type {
@@ -383,6 +385,12 @@ export type MessageType =
       name: string;
       kind?: ToolKind;
       content: string;
+      /**
+       * Structured diff produced by an edit-kind tool, when known.
+       * Carried separately from `content` so renderers don't have to
+       * parse a JSON-encoded blob to find the diff text.
+       */
+      diff?: ToolDiff;
       isFinished?: boolean;
       status?: ToolUseStatus;
       result?: ToolResult;
@@ -1961,43 +1969,8 @@ export const createAppStore = (props: AppStoreProps) => {
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
               );
 
-              let content: string;
-              const diff = event.toolContent?.[0];
-              if (diff) {
-                const args = event.args as Record<string, unknown>;
-                let command = 'create';
-                if (args.oldStr !== undefined) {
-                  command = 'strReplace';
-                } else if (args.insertLine !== undefined || args.append) {
-                  command = 'insert';
-                }
-                content = JSON.stringify({
-                  command,
-                  path: diff.path,
-                  content: diff.newText,
-                  oldStr: diff.oldText,
-                  newStr: diff.newText,
-                  insertLine: args.insertLine,
-                });
-              } else if (event.kind === 'edit') {
-                const args = event.args as Record<string, unknown>;
-                let command = 'create';
-                if (args.oldStr !== undefined) {
-                  command = 'strReplace';
-                } else if (args.insertLine !== undefined || args.append) {
-                  command = 'insert';
-                }
-                content = JSON.stringify({
-                  command,
-                  path: args.path,
-                  content: args.text || args.content || '',
-                  oldStr: args.oldStr,
-                  newStr: args.newStr,
-                  insertLine: args.insertLine,
-                });
-              } else {
-                content = JSON.stringify(event.args);
-              }
+              const content = JSON.stringify(event.args);
+              const diff = deriveToolDiff(event);
 
               if (existingIndex !== -1) {
                 const existingMsg = state.messages[existingIndex];
@@ -2011,6 +1984,7 @@ export const createAppStore = (props: AppStoreProps) => {
                       content,
                       kind: event.kind || existingMsg.kind,
                       locations: event.locations || existingMsg.locations,
+                      diff: diff ?? existingMsg.diff,
                     };
                     return { messages };
                   }
@@ -2069,6 +2043,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     name: event.name,
                     kind: event.kind,
                     content,
+                    diff,
                     locations: event.locations,
                     agentName,
                     ...(isNotReady && {
@@ -2115,12 +2090,35 @@ export const createAppStore = (props: AppStoreProps) => {
               if (toolMsgIndex !== -1) {
                 const toolMsg = messages[toolMsgIndex];
                 if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+                  // If the user cancelled the tool (e.g. denied approval),
+                  // the local cancellation flow already marked the message
+                  // as 'cancelled'. Preserve that — don't let a subsequent
+                  // backend-emitted ToolCallFinished (e.g. KAS sends
+                  // status:'failed' for cancelled tools) overwrite it.
+                  if (
+                    toolMsg.isFinished &&
+                    toolMsg.result?.status === 'cancelled'
+                  ) {
+                    return { messages, liveOutputs: newLiveOutputs };
+                  }
+                  // If the finished event carries diff content (e.g. from KAS,
+                  // which only emits the file diff once the write completes),
+                  // attach it as a structured field so <Write> can render it.
+                  const wireDiff = event.toolContent?.[0];
+                  const diff: ToolDiff | undefined = wireDiff
+                    ? {
+                        path: wireDiff.path,
+                        newText: wireDiff.newText,
+                        oldText: wireDiff.oldText,
+                      }
+                    : toolMsg.diff;
                   messages[toolMsgIndex] = {
                     id: toolMsg.id,
                     role: MessageRole.ToolUse,
                     name: toolMsg.name,
                     kind: toolMsg.kind,
                     content: toolMsg.content,
+                    diff,
                     isFinished: true,
                     status: toolMsg.status,
                     result: event.result,
@@ -2457,6 +2455,16 @@ export const createAppStore = (props: AppStoreProps) => {
                   ? {
                       ...msg,
                       isFinished: true,
+                      // Clear Pending so the shimmer gate
+                      // (effectiveFinished = isFinished && status !== Pending)
+                      // resolves. A tool the user already Approved stays
+                      // Approved — `result.status === 'cancelled'` drives the
+                      // user-visible 'Cancelled' label and error icon
+                      // regardless of the internal status.
+                      status:
+                        msg.status === ToolUseStatus.Approved
+                          ? ToolUseStatus.Approved
+                          : ToolUseStatus.Rejected,
                       result: { status: 'cancelled' },
                     }
                   : msg
@@ -2773,6 +2781,10 @@ export const createAppStore = (props: AppStoreProps) => {
               return {
                 ...msg,
                 isFinished: true,
+                // Clear Pending status so `effectiveFinished` evaluates to true
+                // and the shimmer stops. Use Rejected to mirror an explicit
+                // user-driven denial.
+                status: ToolUseStatus.Rejected,
                 result: { status: 'cancelled' as const },
               };
             }

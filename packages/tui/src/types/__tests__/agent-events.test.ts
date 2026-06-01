@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveToolId } from '../agent-events';
+import { resolveToolId, kindToToolId } from '../agent-events';
 
 describe('resolveToolId', () => {
   it('resolves write tools', () => {
@@ -54,5 +54,18 @@ describe('resolveToolId', () => {
 
   it('returns undefined for unknown tools', () => {
     expect(resolveToolId('custom_mcp_tool')).toBeUndefined();
+  });
+});
+
+describe('kindToToolId', () => {
+  it('maps the kinds that routing keys on', () => {
+    expect(kindToToolId('read')).toBe('read');
+    expect(kindToToolId('edit')).toBe('write');
+  });
+
+  it('returns undefined for other kinds and undefined', () => {
+    expect(kindToToolId('search')).toBeUndefined();
+    expect(kindToToolId('execute')).toBeUndefined();
+    expect(kindToToolId(undefined)).toBeUndefined();
   });
 });

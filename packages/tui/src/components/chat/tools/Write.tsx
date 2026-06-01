@@ -12,11 +12,13 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 
 export interface WriteProps {
-  /** Old text content for diff (empty string for new files) */
-  oldText: string;
+  /** Old text content for diff (empty string for new files). When undefined,
+   *  Write falls back to parsing `oldStr` out of the JSON `content` blob. */
+  oldText?: string;
 
-  /** New text content for diff */
-  newText: string;
+  /** New text content for diff. When undefined, Write falls back to parsing
+   *  `newStr`/`content` out of the JSON `content` blob. */
+  newText?: string;
 
   /** File path for syntax highlighting and display */
   filePath?: string;
@@ -79,11 +81,15 @@ export const Write = React.memo<WriteProps>(function Write({
     }
   }, [content]);
 
-  // Determine display values from parsed content or props
-  const displayPath = parsedContent?.path || filePath;
-  const displayOldText = parsedContent?.oldStr ?? oldText;
+  // Prefer explicit props (set by ToolUseMessage from `msg.diff`) over
+  // anything we can recover from the JSON-encoded content blob.
+  const displayPath = filePath ?? parsedContent?.path;
+  const displayOldText =
+    oldText !== undefined ? oldText : (parsedContent?.oldStr ?? '');
   const displayNewText =
-    parsedContent?.newStr ?? parsedContent?.content ?? newText;
+    newText !== undefined
+      ? newText
+      : (parsedContent?.newStr ?? parsedContent?.content ?? '');
 
   // Show diff content when there's either new text or old text (deletions)
   const hasContent =

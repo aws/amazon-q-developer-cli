@@ -8,7 +8,9 @@
 
 import {
   AgentEventType,
+  deriveToolDiff,
   type AgentStreamEvent,
+  type ToolDiff,
 } from '../types/agent-events.js';
 import { MessageRole, type MessageType } from './app-store.js';
 
@@ -61,43 +63,6 @@ export function createMessageStreamHandler(
     flushContent();
   };
 
-  const buildToolContent = (
-    event: AgentStreamEvent & { type: typeof AgentEventType.ToolCall }
-  ): string => {
-    const diff = event.toolContent?.[0];
-    if (diff) {
-      const args = event.args as Record<string, unknown>;
-      let command = 'create';
-      if (args.oldStr !== undefined) command = 'strReplace';
-      else if (args.insertLine !== undefined || (args as any).append)
-        command = 'insert';
-      return JSON.stringify({
-        command,
-        path: diff.path,
-        content: diff.newText,
-        oldStr: diff.oldText,
-        newStr: diff.newText,
-        insertLine: args.insertLine,
-      });
-    }
-    if (event.kind === 'edit') {
-      const args = event.args as Record<string, unknown>;
-      let command = 'create';
-      if (args.oldStr !== undefined) command = 'strReplace';
-      else if (args.insertLine !== undefined || (args as any).append)
-        command = 'insert';
-      return JSON.stringify({
-        command,
-        path: args.path,
-        content: args.text || args.content || '',
-        oldStr: args.oldStr,
-        newStr: args.newStr,
-        insertLine: args.insertLine,
-      });
-    }
-    return JSON.stringify(event.args);
-  };
-
   return (event: AgentStreamEvent) => {
     switch (event.type) {
       case AgentEventType.Content:
@@ -121,7 +86,8 @@ export function createMessageStreamHandler(
         bufferedContent = '';
         bufferedThinking = '';
         lastContentId = null;
-        const content = buildToolContent(event);
+        const content = JSON.stringify(event.args);
+        const diff = deriveToolDiff(event);
         setMessages((msgs) => {
           const idx = msgs.findIndex(
             (m) => m.role === MessageRole.ToolUse && m.id === event.id
@@ -138,6 +104,7 @@ export function createMessageStreamHandler(
                 content,
                 kind: event.kind || existing.kind,
                 locations: event.locations || existing.locations,
+                diff: diff ?? existing.diff,
               };
               return next;
             }
@@ -151,6 +118,7 @@ export function createMessageStreamHandler(
               name: event.name,
               kind: event.kind,
               content,
+              diff,
               locations: event.locations,
               agentName: getAgentName?.(),
             },
@@ -171,9 +139,25 @@ export function createMessageStreamHandler(
           if (idx === -1) return msgs;
           const msg = msgs[idx]!;
           if (msg.role !== MessageRole.ToolUse) return msgs;
+          // Preserve user-initiated cancellation status — don't let a backend
+          // ToolCallFinished (e.g. KAS sends status:'failed' for a cancelled
+          // tool) overwrite a locally-set 'cancelled' result.
+          if (msg.isFinished && msg.result?.status === 'cancelled') return msgs;
+          // If the finished event carries diff content, attach it so <Write>
+          // can render the post-write diff. Otherwise keep whatever was set
+          // from the initial tool_call.
+          const wireDiff = event.toolContent?.[0];
+          const diff: ToolDiff | undefined = wireDiff
+            ? {
+                path: wireDiff.path,
+                newText: wireDiff.newText,
+                oldText: wireDiff.oldText,
+              }
+            : msg.diff;
           const next = [...msgs];
           next[idx] = {
             ...msg,
+            diff,
             isFinished: true,
             result: event.result,
           };

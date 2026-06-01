@@ -70,7 +70,16 @@ export const Read = React.memo(function Read({
   content,
 }: ReadProps) {
   const params = useMemo(
-    () => formatToolParams(content, ['operations', 'path']),
+    // Exclude fields already reflected in the header/line-range or used for
+    // parsing: operations/path/paths (targets) and offset/limit (shown as L#-#).
+    () =>
+      formatToolParams(content, [
+        'operations',
+        'path',
+        'paths',
+        'offset',
+        'limit',
+      ]),
     [content]
   );
 
@@ -99,6 +108,20 @@ export const Read = React.memo(function Read({
             },
           ];
         });
+      }
+      // Flat format: KAS read_file sends { path, offset?, limit? } directly
+      if (typeof parsed.path === 'string') {
+        return [
+          {
+            path: parsed.path,
+            limit: parsed.limit as number | undefined,
+            offset: parsed.offset as number | undefined,
+          },
+        ];
+      }
+      // Multi-file format: KAS read_files sends { paths: string[] }
+      if (Array.isArray(parsed.paths)) {
+        return parsed.paths.map((p: string) => ({ path: p }));
       }
       return [];
     } catch {

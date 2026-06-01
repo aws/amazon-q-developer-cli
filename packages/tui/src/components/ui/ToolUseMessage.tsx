@@ -33,9 +33,11 @@ import {
   CODE_TOOL_NAMES,
   SESSION_TOOL_NAMES,
   resolveToolId,
+  kindToToolId,
   INTROSPECT_TOOL_NAMES,
   IMAGE_READ_TOOL_NAMES,
   TASK_TOOL_NAMES,
+  type ToolDiff,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
@@ -46,6 +48,7 @@ export interface ToolUseMessageProps {
   id: string;
   name: string;
   content: string;
+  diff?: ToolDiff;
   isFinished?: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -63,9 +66,11 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     id,
     name,
     content,
+    diff,
     isFinished = false,
     status,
     result,
+    kind,
     locations,
     barColor,
     isStatic = false,
@@ -105,7 +110,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
         <ToolUseContent
           id={id}
           name={name}
+          kind={kind}
           content={content}
+          diff={diff}
           isFinished={isFinished}
           status={status}
           result={result}
@@ -136,7 +143,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 const ToolUseContent = React.memo(function ToolUseContent({
   id,
   name,
+  kind,
   content,
+  diff,
   isFinished,
   status,
   result,
@@ -145,7 +154,9 @@ const ToolUseContent = React.memo(function ToolUseContent({
 }: {
   id: string;
   name: string;
+  kind?: ToolKind;
   content: string;
+  diff?: ToolDiff;
   isFinished: boolean;
   status?: ToolUseStatus;
   result?: ToolResult;
@@ -181,11 +192,16 @@ const ToolUseContent = React.memo(function ToolUseContent({
   if (result?.status === 'error' && effectiveFinished) {
     const toolRendersOwnError =
       !WRITE_TOOL_NAMES.has(name) &&
+      kind !== 'edit' &&
       !READ_TOOL_NAMES.has(name) &&
+      kind !== 'read' &&
       !IMAGE_READ_TOOL_NAMES.has(name) &&
       !TASK_TOOL_NAMES.has(name);
     if (!toolRendersOwnError) {
-      const toolId = resolveToolId(name);
+      // Resolve a friendly label by name, falling back to kind — KAS sends
+      // wire names (e.g. "read_files") that aren't in the builtin name sets,
+      // but routing already keyed on kind, so reuse it for the label too.
+      const toolId = resolveToolId(name) ?? kindToToolId(kind);
       const displayName = toolId ? getToolLabel(toolId) : name;
       return (
         <FallbackError
@@ -197,13 +213,14 @@ const ToolUseContent = React.memo(function ToolUseContent({
     }
   }
 
-  if (WRITE_TOOL_NAMES.has(name)) {
+  if (WRITE_TOOL_NAMES.has(name) || kind === 'edit') {
     // Extract start line from locations for accurate diff line numbers
     const startLine = locations?.[0]?.line;
     return (
       <Write
-        oldText=""
-        newText=""
+        oldText={diff?.oldText}
+        newText={diff?.newText}
+        filePath={diff?.path}
         content={content}
         isFinished={effectiveFinished}
         isStatic={isStatic}
@@ -212,7 +229,7 @@ const ToolUseContent = React.memo(function ToolUseContent({
     );
   }
 
-  if (READ_TOOL_NAMES.has(name)) {
+  if (READ_TOOL_NAMES.has(name) || kind === 'read') {
     return (
       <Read
         noStatusBar

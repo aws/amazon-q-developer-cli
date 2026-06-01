@@ -63,8 +63,15 @@ describe('Stream event handler — ToolCall', () => {
     await new Promise((r) => setTimeout(r, 50));
     const msg = store.getState().messages.find((m: any) => m.id === 'tc-2');
     expect(msg).toBeDefined();
-    const parsed = JSON.parse(msg!.content);
-    expect(parsed.command).toBe('strReplace');
+    if (msg!.role === MessageRole.ToolUse) {
+      // After the second call, the diff is synthesized from edit args
+      // (oldStr/newStr/path), not stuffed into a JSON-encoded `command` blob.
+      expect(msg!.diff).toEqual({
+        path: '/tmp/a.ts',
+        newText: 'v2',
+        oldText: 'v1',
+      });
+    }
   });
 
   it('handles toolContent diff in ToolCall', async () => {
@@ -76,14 +83,19 @@ describe('Stream event handler — ToolCall', () => {
       name: 'fs_write',
       kind: 'edit',
       args: {},
-      toolContent: [{ path: '/tmp/x.ts', oldText: 'old', newText: 'new' }],
+      toolContent: [
+        { type: 'diff', path: '/tmp/x.ts', oldText: 'old', newText: 'new' },
+      ],
     });
     await new Promise((r) => setTimeout(r, 50));
     const msg = store.getState().messages.find((m: any) => m.id === 'tc-3');
-    const parsed = JSON.parse(msg!.content);
-    expect(parsed.path).toBe('/tmp/x.ts');
-    expect(parsed.oldStr).toBe('old');
-    expect(parsed.newStr).toBe('new');
+    if (msg!.role === MessageRole.ToolUse) {
+      expect(msg!.diff).toEqual({
+        path: '/tmp/x.ts',
+        newText: 'new',
+        oldText: 'old',
+      });
+    }
   });
 
   it('handles insert command detection via insertLine arg', async () => {
@@ -98,8 +110,15 @@ describe('Stream event handler — ToolCall', () => {
     });
     await new Promise((r) => setTimeout(r, 50));
     const msg = store.getState().messages.find((m: any) => m.id === 'tc-4');
-    const parsed = JSON.parse(msg!.content);
-    expect(parsed.command).toBe('insert');
+    if (msg!.role === MessageRole.ToolUse) {
+      // Edit-kind without explicit toolContent: derive a diff from args.
+      // `text` becomes newText; oldText is undefined for an insert.
+      expect(msg!.diff).toEqual({
+        path: '/tmp/b.ts',
+        newText: 'inserted',
+        oldText: undefined,
+      });
+    }
   });
 });
 

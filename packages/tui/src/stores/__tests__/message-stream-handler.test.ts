@@ -258,8 +258,8 @@ describe('createMessageStreamHandler', () => {
     });
   });
 
-  describe('buildToolContent', () => {
-    it('diff toolContent creates strReplace command', () => {
+  describe('diff extraction (deriveToolDiff)', () => {
+    it('toolContent populates msg.diff with strReplace-style fields', () => {
       const { handler, getMessages } = setup();
 
       handler({
@@ -279,12 +279,23 @@ describe('createMessageStreamHandler', () => {
 
       const msgs = getMessages();
       const toolMsg = msgs.find((m) => m.id === 'tool1');
-      const content = JSON.parse(toolMsg!.content);
-      expect(content.command).toBe('strReplace');
-      expect(content.path).toBe('/test.txt');
+      expect(toolMsg!.role).toBe(MessageRole.ToolUse);
+      if (toolMsg!.role === MessageRole.ToolUse) {
+        expect(toolMsg!.diff).toEqual({
+          path: '/test.txt',
+          newText: 'new',
+          oldText: 'old',
+        });
+        // content stays as a JSON-encoded copy of the args, no diff fields
+        // re-stringified into it.
+        expect(JSON.parse(toolMsg!.content)).toEqual({
+          oldStr: 'old',
+          newStr: 'new',
+        });
+      }
     });
 
-    it('diff toolContent creates insert command', () => {
+    it('toolContent populates msg.diff for insert-style writes', () => {
       const { handler, getMessages } = setup();
 
       handler({
@@ -303,11 +314,16 @@ describe('createMessageStreamHandler', () => {
 
       const msgs = getMessages();
       const toolMsg = msgs.find((m) => m.id === 'tool1');
-      const content = JSON.parse(toolMsg!.content);
-      expect(content.command).toBe('insert');
+      if (toolMsg!.role === MessageRole.ToolUse) {
+        expect(toolMsg!.diff).toEqual({
+          path: '/test.txt',
+          newText: 'inserted',
+          oldText: undefined,
+        });
+      }
     });
 
-    it('diff toolContent creates create command by default', () => {
+    it('toolContent populates msg.diff for create-style writes', () => {
       const { handler, getMessages } = setup();
 
       handler({
@@ -326,11 +342,16 @@ describe('createMessageStreamHandler', () => {
 
       const msgs = getMessages();
       const toolMsg = msgs.find((m) => m.id === 'tool1');
-      const content = JSON.parse(toolMsg!.content);
-      expect(content.command).toBe('create');
+      if (toolMsg!.role === MessageRole.ToolUse) {
+        expect(toolMsg!.diff).toEqual({
+          path: '/new-file.txt',
+          newText: 'content',
+          oldText: undefined,
+        });
+      }
     });
 
-    it('edit kind creates proper command JSON', () => {
+    it('edit kind without toolContent synthesizes diff from args', () => {
       const { handler, getMessages } = setup();
 
       handler({
@@ -343,12 +364,16 @@ describe('createMessageStreamHandler', () => {
 
       const msgs = getMessages();
       const toolMsg = msgs.find((m) => m.id === 'tool1');
-      const content = JSON.parse(toolMsg!.content);
-      expect(content.command).toBe('strReplace');
-      expect(content.path).toBe('/test.txt');
+      if (toolMsg!.role === MessageRole.ToolUse) {
+        expect(toolMsg!.diff).toEqual({
+          path: '/test.txt',
+          newText: 'new',
+          oldText: 'old',
+        });
+      }
     });
 
-    it('fallback is JSON.stringify(args)', () => {
+    it('non-edit tools leave msg.diff undefined; content holds args', () => {
       const { handler, getMessages } = setup();
 
       handler({
@@ -360,9 +385,12 @@ describe('createMessageStreamHandler', () => {
 
       const msgs = getMessages();
       const toolMsg = msgs.find((m) => m.id === 'tool1');
-      const content = JSON.parse(toolMsg!.content);
-      expect(content.query).toBe('test');
-      expect(content.path).toBe('/src');
+      if (toolMsg!.role === MessageRole.ToolUse) {
+        expect(toolMsg!.diff).toBeUndefined();
+        const content = JSON.parse(toolMsg!.content);
+        expect(content.query).toBe('test');
+        expect(content.path).toBe('/src');
+      }
     });
   });
 

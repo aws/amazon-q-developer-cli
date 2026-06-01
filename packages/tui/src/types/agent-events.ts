@@ -117,9 +117,87 @@ export function resolveToolId(name: string): BuiltinToolId | undefined {
 
 export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
 
+/**
+ * Map an ACP `ToolKind` to a `BuiltinToolId` for display-label purposes.
+ *
+ * Used as a fallback when a tool's wire name isn't a known builtin but its
+ * `kind` is — mirroring the kind-based routing in ToolUseMessage so a failed
+ * read/edit renders a friendly label ("Read"/"Write") instead of the raw wire
+ * name (e.g. KAS sends "read_files"/"Replace in File"). Only the kinds that
+ * routing keys on are mapped; everything else falls back to the raw name.
+ */
+export function kindToToolId(
+  kind: ToolKind | undefined
+): BuiltinToolId | undefined {
+  switch (kind) {
+    case 'read':
+      return 'read';
+    case 'edit':
+      return 'write';
+    default:
+      return undefined;
+  }
+}
+
 export interface ToolCallLocation {
   path: string;
   line?: number;
+}
+
+/**
+ * A file diff produced by a tool call.
+ * Carried on tool messages so the Write component can render a diff
+ * without parsing tool args out of a JSON-encoded `content` blob.
+ */
+export interface ToolDiff {
+  path: string;
+  newText: string;
+  oldText?: string;
+}
+
+/**
+ * Wire shape of a `diff` entry inside an ACP `ToolCallContent` array.
+ * Matches `(Diff & { type: 'diff' })` from the ACP SDK.
+ */
+export type ToolCallDiffContent = ToolDiff & { type: 'diff' };
+
+/**
+ * Extract a `ToolDiff` from a `ToolCall` event, if one is implied.
+ *
+ * Two sources, in priority order:
+ *   1. `event.toolContent[0]` — explicit diff content from the agent
+ *      (e.g. KAS sends this on the initial tool_call for fs_write/str_replace).
+ *   2. `event.kind === 'edit'` with `oldStr`/`newStr`/`path` in args — the V2
+ *      shape, where the LLM's tool input itself describes the diff.
+ *
+ * Returns undefined when no diff can be derived, in which case the tool will
+ * not render a diff preview during approval.
+ */
+export function deriveToolDiff(event: ToolCallEvent): ToolDiff | undefined {
+  const wireDiff = event.toolContent?.[0];
+  if (wireDiff) {
+    return {
+      path: wireDiff.path,
+      newText: wireDiff.newText,
+      oldText: wireDiff.oldText,
+    };
+  }
+  if (event.kind === 'edit') {
+    const args = event.args as Record<string, unknown>;
+    const path = typeof args.path === 'string' ? args.path : undefined;
+    if (!path) return undefined;
+    const oldStr = typeof args.oldStr === 'string' ? args.oldStr : undefined;
+    const newStr = typeof args.newStr === 'string' ? args.newStr : undefined;
+    const content =
+      typeof args.text === 'string'
+        ? args.text
+        : typeof args.content === 'string'
+          ? args.content
+          : undefined;
+    const newText = newStr ?? content ?? '';
+    return { path, newText, oldText: oldStr };
+  }
+  return undefined;
 }
 
 export type ContentChunk =
@@ -198,12 +276,7 @@ export interface ToolCallEvent {
   name: string;
   kind?: ToolKind;
   args: Record<string, unknown>;
-  toolContent?: Array<{
-    type: 'diff';
-    path: string;
-    newText: string;
-    oldText?: string;
-  }>;
+  toolContent?: Array<ToolCallDiffContent>;
   locations?: ToolCallLocation[];
   /** Session ID of the subagent that made this tool call (if from a subagent) */
   sessionId?: string;
@@ -219,6 +292,7 @@ export interface ToolCallFinishedEvent {
   type: AgentEventType.ToolCallFinished;
   id: string;
   result: ToolCallResult;
+  toolContent?: Array<ToolCallDiffContent>;
 }
 
 export interface ApprovalRequestEvent {

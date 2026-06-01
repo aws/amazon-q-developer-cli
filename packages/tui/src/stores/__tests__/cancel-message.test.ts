@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
-import { createAppStore } from '../app-store';
+import { createAppStore, MessageRole, ToolUseStatus } from '../app-store';
 import { Kiro } from '../../kiro';
 
 mock.module('../../kiro', () => ({
@@ -96,5 +96,63 @@ describe('cancelMessage clears isProcessing (P409238957)', () => {
 
     expect(store.getState().isProcessing).toBe(false);
     expect(store.getState().cancelInProgress).toBeNull();
+  });
+
+  it('flips unfinished Pending tools to Rejected with cancelled result', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      messages: [
+        {
+          id: 'pending-tool',
+          role: MessageRole.ToolUse,
+          name: 'fs_write',
+          content: '{}',
+          status: ToolUseStatus.Pending,
+        },
+      ],
+    });
+
+    await store.getState().cancelMessage();
+
+    const msg = store.getState().messages.find((m) => m.id === 'pending-tool');
+    expect(msg).toBeDefined();
+    if (msg!.role === MessageRole.ToolUse) {
+      expect(msg!.isFinished).toBe(true);
+      expect(msg!.status).toBe(ToolUseStatus.Rejected);
+      expect(msg!.result).toEqual({ status: 'cancelled' });
+    }
+  });
+
+  it('preserves Approved status on already-approved unfinished tools', async () => {
+    // A tool that the user explicitly Approved and is still executing should
+    // not get reclassified as Rejected when streaming is cancelled. The
+    // user-visible "Cancelled" label comes from `result.status === 'cancelled'`,
+    // so the internal status can stay Approved without affecting render.
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      messages: [
+        {
+          id: 'approved-tool',
+          role: MessageRole.ToolUse,
+          name: 'shell',
+          content: '{"command":"sleep 30"}',
+          status: ToolUseStatus.Approved,
+        },
+      ],
+    });
+
+    await store.getState().cancelMessage();
+
+    const msg = store.getState().messages.find((m) => m.id === 'approved-tool');
+    expect(msg).toBeDefined();
+    if (msg!.role === MessageRole.ToolUse) {
+      expect(msg!.isFinished).toBe(true);
+      expect(msg!.status).toBe(ToolUseStatus.Approved);
+      expect(msg!.result).toEqual({ status: 'cancelled' });
+    }
   });
 });
