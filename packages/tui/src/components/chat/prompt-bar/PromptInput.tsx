@@ -1252,9 +1252,10 @@ export const PromptInput = React.memo(function PromptInput({
         userInput === ' ' &&
         !key.ctrl &&
         !key.meta &&
-        totalWidth(segments) === 0
+        totalWidth(segments) === 0 &&
+        slashCommands.some((c) => c.name === '/voice' && !c.meta?.type)
       ) {
-        // Space hold-to-record: only intercept when input is empty
+        // Space hold-to-record: only intercept when voice mode is available
         const now = Date.now();
 
         // Clear existing release timer -- key is still being held
