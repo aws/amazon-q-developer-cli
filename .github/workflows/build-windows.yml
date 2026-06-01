@@ -209,13 +209,19 @@ jobs:
 
           SIGNED_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}-${JOB_ID}"
           echo "  Waiting for signed artifact..."
-          for i in $(seq 1 60); do
+          SIGNED_READY=false
+          for i in $(seq 1 120); do
             if aws s3 ls "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" --region us-east-1 2>/dev/null; then
               echo "  ✓ Signed artifact ready"
+              SIGNED_READY=true
               break
             fi
             sleep 5
           done
+          if [ "$SIGNED_READY" != "true" ]; then
+            echo "  ❌ Signed artifact not produced within timeout"
+            exit 1
+          fi
 
           aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1
           echo "  ✓ ${FILENAME} signed successfully"
@@ -297,6 +303,15 @@ jobs:
           ARCH="${{ matrix.arch }}"
           S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
           S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
+
+          # Move credentials from env vars to a profile file to avoid
+          # Windows shell mangling special characters (SignatureDoesNotMatch)
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID" --profile upload
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY" --profile upload
+          aws configure set aws_session_token "$AWS_SESSION_TOKEN" --profile upload
+          aws configure set region "${{ env.AWS_REGION }}" --profile upload
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+          export AWS_PROFILE=upload
 
           aws s3 cp "build/kiro-cli.zip" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
           aws s3 cp "build/kiro-cli.zip.sha256" "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
