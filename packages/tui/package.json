@@ -62,7 +62,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
     "vitest": "^3.2.1",
-    "@kiro/agent": "0.3.45"
+    "@kiro/agent": "0.3.47"
   },
   "module": "src/index.tsx",
   "private": true
