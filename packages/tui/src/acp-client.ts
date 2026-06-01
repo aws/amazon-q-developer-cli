@@ -1477,6 +1477,14 @@ export class KasAcpClient extends BaseAcpClient {
   private mcpRegistryCache: McpServerInfo[] = [];
 
   /**
+   * Initial agent name (KAS "mode") to apply on the next `newSession`.
+   * Sourced from the TUI's `--agent` CLI flag.  Mirrors V2's
+   * `set_next_agent_name` semantics: only applied to brand-new sessions;
+   * `loadSession` keeps the persisted agent.
+   */
+  private readonly initialAgent?: string;
+
+  /**
    * Construct a KAS ACP client.
    *
    * Default (no options): spawn the KAS subprocess and wire its stdio as
@@ -1487,13 +1495,19 @@ export class KasAcpClient extends BaseAcpClient {
    * `kill()`/`onExit()` through a no-op null agent process internally so
    * `BaseAcpClient` has a uniform interface to work against.
    *
+   * With `options.initialAgent`: apply the given agent name as the KAS
+   * `mode` config option on the first `newSession`.  Takes precedence
+   * over the legacy `KIRO_MODE` env var (which is the propagation
+   * channel for the KAS-only `--mode=vibe|spec` Rust flag).
+   *
    * `agentProcess` is intentionally not a public option - mock callers
    * never need to inject a different one, and accepting it without a
    * stream would silently ignore it.
    */
-  constructor(options?: { stream?: Stream }) {
+  constructor(options?: { stream?: Stream; initialAgent?: string }) {
     if (options?.stream) {
       super(createNullAgentProcess());
+      this.initialAgent = options.initialAgent;
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
@@ -1552,6 +1566,7 @@ export class KasAcpClient extends BaseAcpClient {
       }
     );
     super(toAgentProcess(proc));
+    this.initialAgent = options?.initialAgent;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
@@ -1817,18 +1832,22 @@ export class KasAcpClient extends BaseAcpClient {
       logger.debug('Failed to set autopilot config:', e);
     }
 
-    const mode = process.env.KIRO_MODE;
-    if (mode) {
+    // Initial agent (KAS "mode") resolution.  CLI `--agent` flag takes
+    // precedence over the legacy `KIRO_MODE` env var so explicit user
+    // input always wins; the env var remains a propagation channel for
+    // the KAS-only `--mode=vibe|spec` Rust flag.
+    const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
+    if (initialMode) {
       try {
         const modeResp = await this.kiroClient.setSessionConfigOption({
           sessionId: sid,
           configId: 'mode',
-          value: mode,
+          value: initialMode,
         });
         // Read the actual mode from the response (may differ if KAS fell back)
         this.refreshModeFromConfigOptions(
           (modeResp as { configOptions?: unknown }).configOptions,
-          mode
+          initialMode
         );
       } catch (e) {
         logger.debug('Failed to set mode:', e);
@@ -2983,7 +3002,8 @@ export function executePaste(): CommandResult {
 
 export function createAcpClient(
   agentPath: string,
-  extraAcpArgs: string[] = []
+  extraAcpArgs: string[] = [],
+  kasOptions?: { initialAgent?: string }
 ): SessionClient {
   if (resolveAgentEngine() === 'kas') {
     // Test-only: inject an in-process mock transport when the harness set
@@ -2999,9 +3019,9 @@ export function createAcpClient(
         connectMockTransport,
       } = require('./test-utils/acp-mock/MockAcpTransport');
       const stream = connectMockTransport(mockSocketPath);
-      return new KasAcpClient({ stream });
+      return new KasAcpClient({ stream, ...(kasOptions ?? {}) });
     }
-    return new KasAcpClient();
+    return new KasAcpClient(kasOptions);
   }
   return new RustAcpClient(agentPath, extraAcpArgs);
 }

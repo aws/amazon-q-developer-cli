@@ -474,7 +474,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
   });
 
   initPromise = kiro
-    .initialize(agentPath, acpArgs)
+    .initialize(agentPath, acpArgs, { initialAgent: cliArgs.agent })
     .then(async () => {
       const backendSettings = kiro.settings;
       appStore.setState({
@@ -610,7 +610,7 @@ const startApp = async () => {
   let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
     wireUpHandlers();
-    await kiro.initialize(agentPath, acpArgs);
+    await kiro.initialize(agentPath, acpArgs, { initialAgent: cliArgs.agent });
     const { sessions } = await kiro.listSessions(process.cwd());
     if (sessions.length > 0) {
       // Returns undefined if user pressed Esc; we fall through to a new

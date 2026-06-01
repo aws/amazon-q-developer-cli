@@ -289,7 +289,8 @@ export class Kiro {
 
   async initialize(
     agentPath: string,
-    extraAcpArgs: string[] = []
+    extraAcpArgs: string[] = [],
+    kasOptions?: { initialAgent?: string }
   ): Promise<void> {
     logger.debug('[kiro] initialize() called');
 
@@ -300,7 +301,7 @@ export class Kiro {
       this.sessionClient = mockClient;
       setMockSessionClient(mockClient);
     } else {
-      this.sessionClient = createAcpClient(agentPath, extraAcpArgs);
+      this.sessionClient = createAcpClient(agentPath, extraAcpArgs, kasOptions);
     }
     logger.debug('[kiro] AcpClient created');
 

@@ -272,6 +272,60 @@ describe('KasAcpClient', () => {
     );
   });
 
+  it('newSession() applies initialAgent via setSessionConfigOption(mode)', async () => {
+    const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
+    await client.newSession();
+
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
+      expect.objectContaining({
+        configId: 'mode',
+        value: 'kiro_planner',
+        sessionId: 'kas-session-1',
+      })
+    );
+  });
+
+  it('newSession() does not set mode config when initialAgent absent and KIRO_MODE unset', async () => {
+    const prev = process.env.KIRO_MODE;
+    delete process.env.KIRO_MODE;
+    try {
+      const client = new KasAcpClient();
+      await client.newSession();
+      const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+        ([req]: any[]) => req?.configId === 'mode'
+      );
+      expect(modeCalls.length).toBe(0);
+    } finally {
+      if (prev !== undefined) process.env.KIRO_MODE = prev;
+    }
+  });
+
+  it('newSession() prefers initialAgent over KIRO_MODE env var', async () => {
+    const prev = process.env.KIRO_MODE;
+    process.env.KIRO_MODE = 'vibe';
+    try {
+      const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
+      await client.newSession();
+      const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+        ([req]: any[]) => req?.configId === 'mode'
+      );
+      expect(modeCalls.length).toBe(1);
+      expect(modeCalls[0][0].value).toBe('kiro_planner');
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_MODE;
+      else process.env.KIRO_MODE = prev;
+    }
+  });
+
+  it('loadSession() does NOT apply initialAgent (V2 parity, persisted agent wins)', async () => {
+    const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
+    await client.loadSession('existing-session');
+    const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'mode'
+    );
+    expect(modeCalls.length).toBe(0);
+  });
+
   it('newSession() wires session update and permission listeners', async () => {
     const client = new KasAcpClient();
     await client.newSession();
