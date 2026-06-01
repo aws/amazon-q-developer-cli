@@ -540,7 +540,7 @@ export class Kiro {
     });
 
     const INITIAL_RESPONSE_TIMEOUT_MS =
-      Number(process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS) || 180_000;
+      Number(process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS) || 600_000;
     let receivedFirstEvent = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
