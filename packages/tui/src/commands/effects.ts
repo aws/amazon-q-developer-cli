@@ -379,7 +379,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         // Re-apply the previous agent to the new session
         ctx.kiro.setMode(previousAgent.name).catch(() => {
           if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
-          ctx.showAlert(`Failed to restore agent "${previousAgent.name}", reverted to default`, 'error', 5000);
+          ctx.showAlert(
+            `Failed to restore agent "${previousAgent.name}", reverted to default`,
+            'error',
+            5000
+          );
         });
         ctx.setCurrentAgent(previousAgent);
       } else if (data.currentAgent) {

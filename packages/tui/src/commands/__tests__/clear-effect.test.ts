@@ -34,7 +34,9 @@ describe('/clear effect — clearMessages', () => {
     expect(ctx._spies.setSessionId!).toHaveBeenCalledWith('new-session-123');
     // Should re-apply previous agent, not the backend default
     expect(setModeMock).toHaveBeenCalledWith('kiro-dev-v2');
-    expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({ name: 'kiro-dev-v2' });
+    expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
+      name: 'kiro-dev-v2',
+    });
   });
 
   it('uses backend agent when no previous agent is set', () => {
@@ -82,11 +84,14 @@ describe('/clear effect — clearMessages', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Should have fallen back to backend agent and shown alert
-    expect(ctx._spies.setCurrentAgent!).toHaveBeenNthCalledWith(2, { name: 'vibe', welcomeMessage: 'Welcome' });
+    expect(ctx._spies.setCurrentAgent!).toHaveBeenNthCalledWith(2, {
+      name: 'vibe',
+      welcomeMessage: 'Welcome',
+    });
     expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
       'Failed to restore agent "kiro-dev-v2", reverted to default',
       'error',
-      5000,
+      5000
     );
   });
 

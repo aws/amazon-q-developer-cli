@@ -1,4 +1,19 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect, mock, afterAll, spyOn } from 'bun:test';
+
+// Prevent /editor effect from spawning a real $EDITOR subprocess during tests.
+const mockSpawnSync = mock(() => ({ status: 1 }));
+mock.module('child_process', () => ({ spawnSync: mockSpawnSync }));
+
+import * as fs from 'fs';
+const mockWriteFileSync = spyOn(fs, 'writeFileSync').mockImplementation(
+  () => {}
+);
+
+afterAll(() => {
+  mockWriteFileSync.mockRestore();
+  mock.restore();
+});
+
 import { dispatch } from '../dispatcher';
 import type { SlashCommand } from '../../stores/app-store';
 import { createMockCommandContext } from './test-helpers.js';
