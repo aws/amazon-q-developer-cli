@@ -368,11 +368,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         }
       | undefined;
     if (data?.sessionId) {
+      // Preserve the current agent across /clear — the user expects to stay
+      // on the same agent, just with a fresh conversation.
+      const previousAgent = ctx.currentAgent;
       ctx.clearUIState();
       ctx.resetMessages();
       ctx.setSessionId(data.sessionId);
       if (data.currentModel) ctx.setCurrentModel(data.currentModel);
-      if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
+      if (previousAgent) {
+        // Re-apply the previous agent to the new session
+        ctx.kiro.setMode(previousAgent.name).catch(() => {
+          if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
+          ctx.showAlert(`Failed to restore agent "${previousAgent.name}", reverted to default`, 'error', 5000);
+        });
+        ctx.setCurrentAgent(previousAgent);
+      } else if (data.currentAgent) {
+        ctx.setCurrentAgent(data.currentAgent);
+      }
       return;
     }
     ctx.clearMessages();
