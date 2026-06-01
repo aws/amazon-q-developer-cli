@@ -22,6 +22,7 @@ on:
       - 'crates/kiro-bot/**'
       - 'crates/kiro-knowledge-mcp/**'
       - 'crates/kiro-github-mcp/**'
+      - 'crates/kiro-taskei-mcp/**'
       - 'crates/kiro-bot-eval/**'
       # chat-cli ships as the `kiro-cli` binary the bot execs, so any
       # change to the ACP server, tool dispatch, agent loader, or v2
@@ -121,7 +122,8 @@ jobs:
             -p kiro-bot \
             -p chat_cli \
             -p kiro-knowledge-mcp \
-            -p kiro-github-mcp
+            -p kiro-github-mcp \
+            -p kiro-taskei-mcp
       - name: Stage artifacts
         run: |
           mkdir -p artifacts artifacts/agents
@@ -129,6 +131,7 @@ jobs:
           cp target/${{ env.TARGET }}/release/chat_cli           artifacts/kiro-cli
           cp target/${{ env.TARGET }}/release/kiro-knowledge-mcp artifacts/
           cp target/${{ env.TARGET }}/release/kiro-github-mcp    artifacts/
+          cp target/${{ env.TARGET }}/release/kiro-taskei-mcp    artifacts/
           # Bot-only agent definition. Not in the public chat_cli binary —
           # the runtime container drops these into ~/.kiro/agents/ so v2's
           # disk-loader picks them up when `kiro-cli acp --agent kiro-help`
@@ -171,13 +174,14 @@ jobs:
       - name: Build & push binary-carrier image
         id: push
         run: |
-          chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp artifacts/kiro-github-mcp
+          chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp artifacts/kiro-github-mcp artifacts/kiro-taskei-mcp
           cat > Dockerfile.carrier <<'EOF'
           FROM scratch
           COPY artifacts/kiro-bot              /usr/local/bin/kiro-bot
           COPY artifacts/kiro-cli              /usr/local/bin/kiro-cli
           COPY artifacts/kiro-knowledge-mcp    /usr/local/bin/kiro-knowledge-mcp
           COPY artifacts/kiro-github-mcp       /usr/local/bin/kiro-github-mcp
+          COPY artifacts/kiro-taskei-mcp       /usr/local/bin/kiro-taskei-mcp
           # Agent files for kiro-help. The runtime Dockerfile copies them
           # into /root/.kiro/agents/ so chat-cli-v2's disk-loader resolves
           # `--agent kiro-help` when the bot launches the ACP worker.

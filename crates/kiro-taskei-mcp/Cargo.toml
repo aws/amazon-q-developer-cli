@@ -1,0 +1,19 @@
+[package]
+name = "kiro-taskei-mcp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "MCP stdio server backed by Amazon Taskei (SigV4 + STS). Phase 1a: stub — args parse and exit; HTTP/SigV4 land in 1b–1d."
+
+[[bin]]
+name = "kiro-taskei-mcp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["env"] }
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true

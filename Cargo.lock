@@ -5417,6 +5417,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiro-taskei-mcp"
+version = "0.0.0-dev"
+dependencies = [
+ "anyhow",
+ "clap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
