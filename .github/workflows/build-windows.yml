@@ -187,44 +187,54 @@ jobs:
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           export AWS_PROFILE=signing
 
-          echo "🔏 Signing ${FILENAME}..."
-          aws s3 cp "${FILE_PATH}" "s3://${UNSIGNED_BUCKET}/${S3_KEY}" --region us-east-1
+          # One signing attempt: re-submit + poll. Returns non-zero on timeout
+          # so the caller can retry (the signing service occasionally stalls
+          # and produces no artifact even past the poll budget).
+          MAX_ATTEMPTS=2
+          attempt_sign() {
+            echo "🔏 Signing ${FILENAME} (attempt ${1}/${MAX_ATTEMPTS})..."
+            aws s3 cp "${FILE_PATH}" "s3://${UNSIGNED_BUCKET}/${S3_KEY}" --region us-east-1
 
-          echo "  Waiting for signing job..."
-          JOB_ID=""
-          for i in $(seq 1 60); do
-            JOB_ID=$(aws s3api get-object-tagging \
-              --bucket "${UNSIGNED_BUCKET}" --key "${S3_KEY}" --region us-east-1 \
-              --query "TagSet[?Key=='signer-job-id'].Value" --output text 2>/dev/null || true)
-            if [ -n "$JOB_ID" ] && [ "$JOB_ID" != "None" ]; then
-              echo "  ✓ Job started: ${JOB_ID}"
-              break
+            echo "  Waiting for signing job..."
+            local JOB_ID=""
+            for i in $(seq 1 60); do
+              JOB_ID=$(aws s3api get-object-tagging \
+                --bucket "${UNSIGNED_BUCKET}" --key "${S3_KEY}" --region us-east-1 \
+                --query "TagSet[?Key=='signer-job-id'].Value" --output text 2>/dev/null || true)
+              if [ -n "$JOB_ID" ] && [ "$JOB_ID" != "None" ]; then
+                echo "  ✓ Job started: ${JOB_ID}"
+                break
+              fi
+              sleep 5
+            done
+            if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "None" ]; then
+              echo "  ⚠ Signing job did not start within timeout"
+              return 1
             fi
-            sleep 5
-          done
-          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "None" ]; then
-            echo "  ❌ Signing job did not start within timeout"
-            exit 1
-          fi
 
-          SIGNED_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}-${JOB_ID}"
-          echo "  Waiting for signed artifact..."
-          SIGNED_READY=false
-          for i in $(seq 1 120); do
-            if aws s3 ls "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" --region us-east-1 2>/dev/null; then
-              echo "  ✓ Signed artifact ready"
-              SIGNED_READY=true
-              break
+            local SIGNED_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}-${JOB_ID}"
+            echo "  Waiting for signed artifact..."
+            for i in $(seq 1 360); do
+              if aws s3 ls "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" --region us-east-1 2>/dev/null; then
+                echo "  ✓ Signed artifact ready"
+                aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1
+                echo "  ✓ ${FILENAME} signed successfully"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "  ⚠ Signed artifact not produced within timeout"
+            return 1
+          }
+
+          for attempt in $(seq 1 ${MAX_ATTEMPTS}); do
+            if attempt_sign "$attempt"; then
+              exit 0
             fi
-            sleep 5
+            echo "  ↻ Signing attempt ${attempt} failed; retrying..."
           done
-          if [ "$SIGNED_READY" != "true" ]; then
-            echo "  ❌ Signed artifact not produced within timeout"
-            exit 1
-          fi
-
-          aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1
-          echo "  ✓ ${FILENAME} signed successfully"
+          echo "  ❌ Signing failed after ${MAX_ATTEMPTS} attempts"
+          exit 1
           SIGNEOF
           chmod +x /tmp/sign-artifact.sh
 
