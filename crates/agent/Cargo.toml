@@ -6,6 +6,7 @@ homepage.workspace = true
 publish.workspace = true
 version.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [features]
 tst_phase5_tests = []

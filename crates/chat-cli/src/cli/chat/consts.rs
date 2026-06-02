@@ -20,3 +20,20 @@ pub const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
 pub const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
 pub const USER_AGENT_VERSION_KEY: &str = "Version";
 pub const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    /// `USER_AGENT_VERSION_VALUE` flows outbound to KRS as the `appVersion`
+    /// header. KRS gates "thinking" on `appVersion >= 2.4.0`, so if the
+    /// `0.0.0-dev` placeholder ever leaks into a built binary, every dev
+    /// session silently runs models without thinking.
+    /// `crates/chat-cli/build.rs::inject_kiro_version()` overrides this.
+    /// Don't remove this test without removing that override.
+    #[test]
+    fn cli_version_is_not_dev_placeholder() {
+        assert_ne!(
+            super::USER_AGENT_VERSION_VALUE, "0.0.0-dev",
+            "build.rs failed to inject a real version — KRS will silently disable thinking"
+        );
+    }
+}
