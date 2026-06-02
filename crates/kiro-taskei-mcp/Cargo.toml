@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "MCP stdio server backed by Amazon Taskei (SigV4 + STS). Phase 1b: signs HTTP with SigV4 and emits a structured taskei_audit log per call; rmcp server lands in 1d."
+description = "MCP stdio server backed by Amazon Taskei (SigV4 + STS). Phase 1c: SigV4 client + STS AssumeRole bridge with cached read-role creds and per-call write-role assumption (no-op when both role ARNs are unset). Rmcp server lands in 1d."
 
 [[bin]]
 name = "kiro-taskei-mcp"

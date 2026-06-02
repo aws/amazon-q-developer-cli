@@ -1,11 +1,14 @@
 //! kiro-taskei-mcp — MCP stdio server backed by Amazon Taskei.
 //!
-//! Phase 1b: this binary now signs and sends a real MCP `initialize` POST
-//! to the configured Taskei endpoint and prints the response status. No MCP
-//! stdio server yet — that lands in Phase 1d once the rmcp transport
-//! bridge is wired in. The point of 1b is to prove the credential +
-//! signing path end-to-end inside the kiro-bot ECS task role before any
-//! agent-loaded MCP traffic goes through it.
+//! Phase 1c: the initialize probe now routes through the STS bridge. With
+//! both `--read-role-arn` and `--write-role-arn` unset (the Phase-0
+//! reality, where Taskei accepts the kiro-bot ECS task role directly), the
+//! bridge is a no-op pass-through and the call signs with the same base
+//! creds Phase 1b used. When a read role is configured, the read path
+//! goes through a cached `AssumeRoleProvider`. When `--scope=write` and a
+//! write role is configured, the binary builds a one-shot signed client
+//! from a per-call `AssumeRole` snapshot. No MCP stdio server yet — that
+//! lands in Phase 1d once the rmcp transport bridge is wired in.
 //!
 //! Credentials note: this binary takes NO --aws-profile flag. At runtime it
 //! uses the AWS default provider chain — task role in ECS, profile from
@@ -15,8 +18,16 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
-
-use kiro_taskei_mcp::sigv4_client::{SigV4Error, SigV4HttpClient};
+use kiro_taskei_mcp::sigv4_client::{
+    SigV4Error,
+    SigV4HttpClient,
+};
+use kiro_taskei_mcp::sts_bridge::{
+    StsBridge,
+    StsBridgeConfig,
+    WriteMode,
+    one_shot_provider,
+};
 
 #[derive(Parser, Debug, Clone, Copy, PartialEq, Eq)]
 enum Scope {
@@ -92,11 +103,9 @@ async fn main() -> ExitCode {
     init_tracing();
 
     let args = Args::parse();
-    let endpoint = args
-        .endpoint
-        .clone()
-        .unwrap_or_else(|| default_endpoint(&args.region));
+    let endpoint = args.endpoint.clone().unwrap_or_else(|| default_endpoint(&args.region));
 
+    let bridge_cfg = StsBridgeConfig::new(args.read_role_arn.clone(), args.write_role_arn.clone());
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         region = %args.region,
@@ -105,11 +114,12 @@ async fn main() -> ExitCode {
         read_role_arn = ?args.read_role_arn,
         write_role_arn = ?args.write_role_arn,
         allow_rooms = ?args.allow_rooms,
-        "kiro-taskei-mcp v{} starting (Phase 1b — signed initialize probe)",
+        sts_bridge_no_op = bridge_cfg.is_no_op(),
+        "kiro-taskei-mcp v{} starting (Phase 1c — STS bridge + signed initialize probe)",
         env!("CARGO_PKG_VERSION"),
     );
 
-    match run(&args.region, &endpoint).await {
+    match run(&args.region, &endpoint, args.scope, bridge_cfg).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             // Paging-severity audit line on the dedicated target so log-search
@@ -121,12 +131,56 @@ async fn main() -> ExitCode {
                 "kiro-taskei-mcp exiting non-zero",
             );
             ExitCode::FAILURE
-        }
+        },
     }
 }
 
-async fn run(region: &str, endpoint: &str) -> Result<()> {
-    let client = SigV4HttpClient::from_default_chain(region.to_string()).await?;
+async fn run(region: &str, endpoint: &str, scope: Scope, bridge_cfg: StsBridgeConfig) -> Result<()> {
+    let bridge = StsBridge::from_default_chain(region.to_string(), bridge_cfg)
+        .await
+        .map_err(|e| anyhow::anyhow!("sts bridge build failed: {e}"))?;
+
+    let client = match scope {
+        Scope::Read => {
+            // Read-tool probe: cached read-role provider (or base creds if
+            // no read role is configured). One client, reused across calls.
+            let provider = bridge
+                .read_credentials_provider()
+                .map_err(|e| anyhow::anyhow!("read provider: {e}"))?;
+            tracing::info!(
+                target: "taskei_audit",
+                scope = "read",
+                writes_use_dedicated_role = bridge.writes_use_dedicated_role(),
+                "initialized read SigV4 client"
+            );
+            SigV4HttpClient::with_provider(provider, region.to_string())?
+        },
+        Scope::Write => {
+            // Write-tool probe: one-shot creds. We resolve once, drop the
+            // AssumeRoleProvider, sign exactly one call, and exit.
+            let wc = bridge
+                .assume_write_once()
+                .await
+                .map_err(|e| anyhow::anyhow!("assume write: {e}"))?;
+            tracing::info!(
+                target: "taskei_audit",
+                scope = "write",
+                write_mode = wc.mode.as_str(),
+                "resolved one-shot write credentials"
+            );
+            // Treat operator misconfig as a hard error: a `--scope=write`
+            // probe with no `--write-role-arn` would silently sign with
+            // base creds, which would mask the misconfig in production.
+            if scope == Scope::Write && wc.mode != WriteMode::WriteRole {
+                tracing::warn!(
+                    target: "taskei_audit",
+                    write_mode = wc.mode.as_str(),
+                    "scope=write but no dedicated write role — proceeding with non-WriteRole creds (Phase-0 reality when both ARNs unset)"
+                );
+            }
+            SigV4HttpClient::with_provider(one_shot_provider(wc.creds), region.to_string())?
+        },
+    };
 
     // MCP initialize. Phase 1d will replace this with rmcp's transport
     // driving real tool calls; today this is just an end-to-end signing
@@ -160,22 +214,21 @@ async fn run(region: &str, endpoint: &str) -> Result<()> {
                 anyhow::bail!("initialize returned non-success: {status} body={text}");
             }
             Ok(())
-        }
+        },
         Err(SigV4Error::CredentialFailure(msg)) => {
             // Already audit-logged inside the client; surface as a regular
             // error for the process exit path.
             anyhow::bail!("fail-closed on credentials: {msg}");
-        }
+        },
         Err(e) => Err(e.into()),
     }
 }
 
 fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    use tracing_subscriber::fmt;
+    use tracing_subscriber::{
+        EnvFilter,
+        fmt,
+    };
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .init();
+    fmt().with_env_filter(filter).with_writer(std::io::stderr).init();
 }

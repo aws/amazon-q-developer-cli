@@ -3,3 +3,4 @@
 //! against a localhost mock without re-implementing it.
 
 pub mod sigv4_client;
+pub mod sts_bridge;

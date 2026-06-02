@@ -14,19 +14,38 @@
 //! with a paging-severity log line — see the `taskei_audit` emission for the
 //! shape downstream alarms should match on.
 
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{
+    Duration,
+    Instant,
+    SystemTime,
+};
 
 use aws_credential_types::Credentials;
-use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
+use aws_credential_types::provider::{
+    ProvideCredentials,
+    SharedCredentialsProvider,
+};
 use aws_sigv4::http_request::{
-    PayloadChecksumKind, SignableBody, SignableRequest, SigningSettings, sign,
+    PayloadChecksumKind,
+    SignableBody,
+    SignableRequest,
+    SigningSettings,
+    sign,
 };
 use aws_sigv4::sign::v4;
 use http::HeaderValue;
-use reqwest::{Method, Response};
+use reqwest::{
+    Method,
+    Response,
+};
 use serde::Serialize;
 use thiserror::Error;
-use tracing::{Level, debug, error, event};
+use tracing::{
+    Level,
+    debug,
+    error,
+    event,
+};
 use uuid::Uuid;
 
 /// Service name for the API Gateway-fronted Taskei MCP endpoint.
@@ -109,17 +128,19 @@ impl SigV4HttpClient {
             .region(aws_config::Region::new(region.clone()))
             .load()
             .await;
-        let creds = cfg.credentials_provider().ok_or_else(|| {
-            anyhow::anyhow!("aws-config returned no credentials provider for region {region}")
-        })?;
-        let inner = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-        Ok(Self {
-            inner,
-            creds,
-            region,
-        })
+        let creds = cfg
+            .credentials_provider()
+            .ok_or_else(|| anyhow::anyhow!("aws-config returned no credentials provider for region {region}"))?;
+        Self::with_provider(creds, region)
+    }
+
+    /// Build with a caller-supplied credentials provider. This is the
+    /// path Phase 1c's STS bridge takes: it hands us a provider that may
+    /// already be wrapping an [`AssumeRoleProvider`], and the SigV4
+    /// signing path stays identical.
+    pub fn with_provider(creds: SharedCredentialsProvider, region: String) -> anyhow::Result<Self> {
+        let inner = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
+        Ok(Self { inner, creds, region })
     }
 
     /// Construct directly. Used by tests (in-crate and integration) to
@@ -129,30 +150,17 @@ impl SigV4HttpClient {
     /// [`SigV4HttpClient::from_default_chain`] so the default provider
     /// chain's caching + refresh behaviour applies.
     #[doc(hidden)]
-    pub fn for_test(
-        inner: reqwest::Client,
-        creds: SharedCredentialsProvider,
-        region: String,
-    ) -> Self {
-        Self {
-            inner,
-            creds,
-            region,
-        }
+    pub fn for_test(inner: reqwest::Client, creds: SharedCredentialsProvider, region: String) -> Self {
+        Self { inner, creds, region }
     }
 
     /// POST a JSON body to `url`, signing the request with the current
     /// credential snapshot. Emits one `taskei_audit` line on success or
     /// failure.
-    pub async fn post_json(
-        &self,
-        url: &str,
-        body: serde_json::Value,
-    ) -> Result<Response, SigV4Error> {
-        let payload = serde_json::to_vec(&body)
-            .map_err(|e| SigV4Error::InvalidRequest(format!("body serialize: {e}")))?;
-        self.sign_and_send(Method::POST, url, payload, "application/json")
-            .await
+    pub async fn post_json(&self, url: &str, body: serde_json::Value) -> Result<Response, SigV4Error> {
+        let payload =
+            serde_json::to_vec(&body).map_err(|e| SigV4Error::InvalidRequest(format!("body serialize: {e}")))?;
+        self.sign_and_send(Method::POST, url, payload, "application/json").await
     }
 
     async fn sign_and_send(
@@ -164,8 +172,7 @@ impl SigV4HttpClient {
     ) -> Result<Response, SigV4Error> {
         let request_id = Uuid::new_v4().to_string();
         let started = Instant::now();
-        let parsed = url::Url::parse(url)
-            .map_err(|e| SigV4Error::InvalidRequest(format!("parse url: {e}")))?;
+        let parsed = url::Url::parse(url).map_err(|e| SigV4Error::InvalidRequest(format!("parse url: {e}")))?;
         let path = parsed.path().to_string();
 
         let creds = self.fresh_creds(&request_id, method.as_str(), &path).await?;
@@ -198,9 +205,10 @@ impl SigV4HttpClient {
         let signable = SignableRequest::new(
             to_sign.method().as_str(),
             to_sign.uri().to_string(),
-            to_sign.headers().iter().map(|(k, v)| {
-                (k.as_str(), std::str::from_utf8(v.as_bytes()).unwrap_or(""))
-            }),
+            to_sign
+                .headers()
+                .iter()
+                .map(|(k, v)| (k.as_str(), std::str::from_utf8(v.as_bytes()).unwrap_or(""))),
             SignableBody::Bytes(&body),
         )
         .map_err(|e| SigV4Error::SigningFailure(e.to_string()))?;
@@ -233,11 +241,7 @@ impl SigV4HttpClient {
         match send_res {
             Ok(resp) => {
                 let status = resp.status().as_u16();
-                let outcome = if resp.status().is_success() {
-                    "ok"
-                } else {
-                    "http_error"
-                };
+                let outcome = if resp.status().is_success() { "ok" } else { "http_error" };
                 emit_audit(AuditLine {
                     request_id: &request_id,
                     method: method.as_str(),
@@ -249,7 +253,7 @@ impl SigV4HttpClient {
                     error: None,
                 });
                 Ok(resp)
-            }
+            },
             Err(e) => {
                 let msg = e.to_string();
                 emit_audit(AuditLine {
@@ -263,7 +267,7 @@ impl SigV4HttpClient {
                     error: Some(&msg),
                 });
                 Err(SigV4Error::HttpFailure(e))
-            }
+            },
         }
     }
 
@@ -276,12 +280,7 @@ impl SigV4HttpClient {
     /// the snapshot returned by the provider is *already* about to expire,
     /// we treat that as a refresh failure (provider is unhealthy) and fail
     /// closed rather than send a request that may 403 on a stale signature.
-    async fn fresh_creds(
-        &self,
-        request_id: &str,
-        method: &str,
-        path: &str,
-    ) -> Result<Credentials, SigV4Error> {
+    async fn fresh_creds(&self, request_id: &str, method: &str, path: &str) -> Result<Credentials, SigV4Error> {
         let snap = self.creds.provide_credentials().await.map_err(|e| {
             let msg = e.to_string();
             error!(target: "taskei_audit", request_id, method, path, error = %msg, "credential resolution failed; fail-closed");
@@ -299,9 +298,7 @@ impl SigV4HttpClient {
         })?;
 
         if let Some(expiry) = snap.expiry() {
-            let remaining = expiry
-                .duration_since(SystemTime::now())
-                .unwrap_or(Duration::ZERO);
+            let remaining = expiry.duration_since(SystemTime::now()).unwrap_or(Duration::ZERO);
             if remaining < REFRESH_MARGIN {
                 let msg = format!(
                     "credential expiry within refresh margin ({}s remaining < {}s margin); provider did not refresh",
@@ -334,8 +331,7 @@ fn host_header(url: &url::Url) -> Result<HeaderValue, SigV4Error> {
         Some(p) => format!("{host}:{p}"),
         None => host.to_string(),
     };
-    HeaderValue::from_str(&value)
-        .map_err(|e| SigV4Error::InvalidRequest(format!("host header: {e}")))
+    HeaderValue::from_str(&value).map_err(|e| SigV4Error::InvalidRequest(format!("host header: {e}")))
 }
 
 /// Emit one structured audit line. Goes to the `taskei_audit` tracing
@@ -351,8 +347,9 @@ fn emit_audit(line: AuditLine<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use aws_credential_types::Credentials;
+
+    use super::*;
 
     #[test]
     fn host_header_includes_port_when_present() {
@@ -367,16 +364,12 @@ mod tests {
         #[derive(Debug)]
         struct Broken;
         impl ProvideCredentials for Broken {
-            fn provide_credentials<'a>(
-                &'a self,
-            ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+            fn provide_credentials<'a>(&'a self) -> aws_credential_types::provider::future::ProvideCredentials<'a>
             where
                 Self: 'a,
             {
                 aws_credential_types::provider::future::ProvideCredentials::ready(Err(
-                    aws_credential_types::provider::error::CredentialsError::not_loaded(
-                        "test failure",
-                    ),
+                    aws_credential_types::provider::error::CredentialsError::not_loaded("test failure"),
                 ))
             }
         }
@@ -428,10 +421,7 @@ mod tests {
             SharedCredentialsProvider::new(fresh),
             "us-east-1".into(),
         );
-        let snap = client
-            .fresh_creds("rid", "POST", "/mcp")
-            .await
-            .expect("should resolve");
+        let snap = client.fresh_creds("rid", "POST", "/mcp").await.expect("should resolve");
         assert_eq!(snap.access_key_id(), "AKIDEXAMPLE");
     }
 }

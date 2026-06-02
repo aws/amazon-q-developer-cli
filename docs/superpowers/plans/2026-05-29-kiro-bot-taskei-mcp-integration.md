@@ -263,9 +263,9 @@ radius becomes a concern in production.
 ### Phase 1c — STS AssumeRole bridge + per-call write sessions
 
 - **Goal:** read-tool calls present Read-role creds; write-tool calls
-  re-assume the Write role *per invocation* (≤60s session). Replaces
-  the prior "process-level scope" design — scope is now a per-tool
-  property, enforced inside one process.
+  re-assume the Write role *per invocation*. Replaces the prior
+  "process-level scope" design — scope is now a per-tool property,
+  enforced inside one process.
 - **Changes:**
   - `crates/kiro-mcp/src/sts_bridge.rs` with role-keyed session caches:
     Read role cached with refresh-on-expiry-5min + 50-min hard recycle;
@@ -284,6 +284,87 @@ radius becomes a concern in production.
 - **Exit:** scope-bound creds verified in audit log; no-op-when-unset
   path verified.
 - **Depends on:** Phase 1b.
+
+**Phase 1c implementation notes (technical drifts from the original draft):**
+
+The bridge as shipped lives at `crates/kiro-taskei-mcp/src/sts_bridge.rs`
+(the pre-bundle path); Phase 1c-bundle (below) moves it to
+`crates/kiro-mcp/src/sts_bridge.rs` along with the rest of the binary.
+Two STS-API-level adjustments:
+
+1. **Write `DurationSeconds`.** The original draft said "≤60s session"
+   for write-role assumption. STS rejects values below 900s, so the
+   shim requests STS's 900s minimum and drops the
+   `AssumeRoleProvider` after a single resolve. The "single-call"
+   intent is preserved at the *cache* level — no other call ever
+   reuses the snapshot. Bounding wall-clock blast radius below 900s
+   is left to IAM and the per-call audit log, not the duration knob.
+2. **Read provider caching.** `AssumeRoleProvider` does not cache
+   credentials internally (per the SDK's
+   `provider_does_not_cache_credentials_by_default` test). Phase 1c
+   adds a small in-crate `CachingProvider` wrapper so the read-tool
+   fan-out doesn't burn one STS call per invocation, honoring the
+   plan's stated 5-min refresh margin and 50-min recycle.
+
+The trybuild compile-fail fixture for the read/write boundary lands in
+Phase 1d alongside the `families/<x>/read/` modules that will hold a
+`ReadOnlyView`. Until then the boundary is API-shape (the view doesn't
+expose `assume_write_once`) plus the visibility on the helper.
+
+### Phase 1c-bundle — rename to `crates/kiro-mcp/` + bundled-shim shape
+
+- **Goal:** finish the rename §2 / Phase 1a's revision note committed
+  to: a single `crates/kiro-mcp/` binary with `families/` module
+  scaffolding, so Phase 1d's rmcp proxy + read-tool annotations land
+  inside the bundled shape (one MCP server entry in `kiro-help.json`,
+  not a sibling-crate fan-out). Without this phase the bundled-vs-
+  sibling decision quietly slips back to siblings, which review
+  ([discussion_r3336117006](https://github.com/kiro-team/kiro-cli/pull/2727#discussion_r3336117006))
+  rejected.
+- **Why this is its own phase, not a phase-1d prerequisite:** the
+  rename touches the workspace member table, the OCI image's binary
+  name, the kiro-bot release pipeline, and the Phase-2 `kiro-help.json`
+  entry. Folding it into Phase 1d would mix "rename + module split"
+  with "rmcp transport + schema pin," and reviewers would have to
+  unpick the diff to tell which change broke what. Splitting it lands
+  the rename on its own, leaves Phase 1d to do exactly what its name
+  says, and keeps each PR independently revertable.
+- **Changes:**
+  - Rename `crates/kiro-taskei-mcp/` → `crates/kiro-mcp/`. Binary name
+    `kiro-mcp`, library name `kiro_mcp`. The Phase-1c `sts_bridge.rs`
+    and Phase-1b `sigv4_client.rs` move under the new path unchanged.
+  - Workspace `Cargo.toml` member rename (not a new entry — the old
+    name leaves the workspace).
+  - `src/families/mod.rs` + `src/families/taskei/mod.rs` — module
+    scaffold, no logic. `families/taskei/read/` and
+    `families/taskei/write/` submodules established empty so the
+    "read code does not import the write-role STS helper" lint
+    boundary lands from day 1 (trybuild compile-fail fixture lands
+    here, not in 1d).
+  - Add `--enabled-families` clap arg (default `taskei`; later
+    `taskei,knowledge,github`). No behavioral effect yet — knowledge
+    and github migrations are out of scope for this integration plan;
+    they get a follow-up consolidation plan (§5 open question 6).
+  - Update binary name in `.github/workflows/kiro-bot-release.yml` and
+    the runtime image referenced in
+    `crates/kiro-bot/PHASE-6-FOLLOW-UP.md`.
+  - Phase-1c's `kiro-taskei-mcp` binary becomes a deprecated alias for
+    one release: keep the old `[[bin]]` entry pointing at the same
+    `main.rs` so any in-flight kiro-bot agent.json or local script
+    referencing `kiro-taskei-mcp` keeps working until Phase 2's
+    `kiro-help.json` switch is merged. The alias is removed in Phase 2.
+- **Test plan:**
+  - `cargo build -p kiro-mcp` clean; release CI green.
+  - `kiro-mcp --help` works; `kiro-mcp --enabled-families taskei`
+    parses cleanly.
+  - `kiro-taskei-mcp --help` still works (alias).
+  - All Phase 1b/1c unit tests pass under the new crate name.
+  - The trybuild compile-fail fixture asserting `families/taskei/read/`
+    cannot import `sts_bridge::assume_write_once` is added in this
+    phase and fails closed when the boundary is violated.
+- **Exit:** new binary lands in ECR / runtime image; alias still
+  works; trybuild boundary asserted.
+- **Depends on:** Phase 1c.
 
 ### Phase 1d — rmcp HTTP proxy + tool annotations + schema pin
 
@@ -335,7 +416,7 @@ radius becomes a concern in production.
   same binary running with no `AWS_PROFILE` and only
   `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` set also succeeds (proves
   the prod credential path); schema-pin negative test fails closed.
-- **Depends on:** Phase 1c.
+- **Depends on:** Phase 1c-bundle.
 
 ### Phase 2 — Read-only wiring into kiro-help agent
 

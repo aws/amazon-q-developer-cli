@@ -10,16 +10,28 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::{
+    Arc,
+    Mutex,
+};
+use std::time::{
+    Duration,
+    SystemTime,
+};
 
 use aws_credential_types::Credentials;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{
+    BodyExt,
+    Full,
+};
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Request, Response};
+use hyper::{
+    Request,
+    Response,
+};
 use hyper_util::rt::TokioIo;
 use kiro_taskei_mcp::sigv4_client::SigV4HttpClient;
 use tokio::net::TcpListener;
@@ -33,13 +45,11 @@ impl CapturedHeaders {
     fn snapshot(&self) -> Vec<(String, String)> {
         self.inner.lock().unwrap().clone()
     }
+
     fn record(&self, req: &Request<hyper::body::Incoming>) {
         let mut guard = self.inner.lock().unwrap();
         for (k, v) in req.headers() {
-            guard.push((
-                k.as_str().to_string(),
-                v.to_str().unwrap_or("").to_string(),
-            ));
+            guard.push((k.as_str().to_string(), v.to_str().unwrap_or("").to_string()));
         }
     }
 }
@@ -67,9 +77,7 @@ async fn start_capturing_server(headers: CapturedHeaders) -> SocketAddr {
                         ))))
                     }
                 });
-                let _ = http1::Builder::new()
-                    .serve_connection(TokioIo::new(stream), svc)
-                    .await;
+                let _ = http1::Builder::new().serve_connection(TokioIo::new(stream), svc).await;
             });
         }
     });
@@ -90,11 +98,7 @@ async fn signed_post_arrives_with_required_sigv4_headers() {
         "sigv4-smoke-test",
     );
     let provider = SharedCredentialsProvider::new(creds);
-    let client = SigV4HttpClient::for_test(
-        reqwest::Client::new(),
-        provider,
-        "us-east-1".into(),
-    );
+    let client = SigV4HttpClient::for_test(reqwest::Client::new(), provider, "us-east-1".into());
 
     let resp = client
         .post_json(&url, serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize"}))
@@ -182,11 +186,7 @@ async fn omits_security_token_when_creds_have_none() {
         .await
         .expect("signed post should succeed");
 
-    let names: Vec<String> = captured
-        .snapshot()
-        .into_iter()
-        .map(|(k, _)| k.to_lowercase())
-        .collect();
+    let names: Vec<String> = captured.snapshot().into_iter().map(|(k, _)| k.to_lowercase()).collect();
     assert!(
         !names.iter().any(|n| n == "x-amz-security-token"),
         "long-term creds must not produce X-Amz-Security-Token; got {names:?}"

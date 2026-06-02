@@ -4,24 +4,25 @@ MCP stdio server that will back the kiro-help bot's Taskei-side tools. Tracks
 the Phase 1 plan in
 [`docs/superpowers/plans/2026-05-29-kiro-bot-taskei-mcp-integration.md`](../../docs/superpowers/plans/2026-05-29-kiro-bot-taskei-mcp-integration.md).
 
-## Status: Phase 1a (stub)
+## Status: Phase 1c (signed initialize probe with STS bridge)
 
-This binary is intentionally a no-op today. It parses its CLI surface,
-initializes tracing, prints a startup line, and exits 0. No HTTP, no SigV4,
-no STS, no MCP server is wired up yet.
+The binary now signs and sends a real MCP `initialize` POST to the
+configured Taskei endpoint and exits with the gateway's response status.
+With both `--read-role-arn` and `--write-role-arn` unset (the Phase-0
+reality, where Taskei accepts the kiro-bot ECS task role directly), the
+STS bridge is a no-op pass-through and the call signs with the same base
+creds Phase 1b used. When a read role is configured, the read path goes
+through a cached `AssumeRoleProvider`. When `--scope=write` and a write
+role is configured, the binary builds a one-shot signed client from a
+per-call `AssumeRole` snapshot and drops the provider after the single
+signed call.
 
-Phases that will fill it in:
+Phases still ahead:
 
-- **1b** — SigV4-signed Taskei HTTP client with the ambient default provider
-  chain.
-- **1c** — STS `AssumeRole` for `--read-role-arn` / `--write-role-arn` so the
-  bot can sign with a least-privileged downstream identity.
-- **1d** — `rmcp::ServerHandler` exposing the read tool set (get/list rooms,
-  get/list tasks); write tools (`create_task`, `update_task`) gate on
+- **1d** — `rmcp::ServerHandler` exposing the read tool set (get/list
+  rooms, get/list tasks) with `readOnlyHint` annotations; write tools
+  (`Taskei___create_task`, `Taskei___update_task`) gate on
   `--scope=write` and the room allowlist.
-
-Even as a stub it ships in the kiro-bot binary-carrier image so the runtime
-container picks it up the moment 1b lands.
 
 ## CLI
 
@@ -51,8 +52,12 @@ default provider chain:
   AWS_PROFILE=kiro-bot kiro-taskei-mcp --scope read
   ```
 
-Setting `--read-role-arn` / `--write-role-arn` (Phase 1c) tells the binary to
-`sts:AssumeRole` from those base credentials before signing requests.
+Setting `--read-role-arn` tells the binary to `sts:AssumeRole` from those
+base credentials before signing read-tool calls; the assumed snapshot is
+cached in-process (5-min refresh margin, 50-min hard recycle).
+`--write-role-arn` causes write-tool calls to assume the write role
+*per invocation* — the `AssumeRoleProvider` is built fresh, resolved
+once, and dropped before the signed call returns.
 
 ## See also
 
