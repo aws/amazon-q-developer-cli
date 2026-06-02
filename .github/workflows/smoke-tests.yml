@@ -17,6 +17,17 @@ on:
         description: "Why are you running this?"
         required: false
         default: 'ad-hoc'
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      channel:
+        type: string
+        required: true
+      commit_sha:
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -55,6 +66,8 @@ jobs:
       FORCE_COLOR: '3'
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
 
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable

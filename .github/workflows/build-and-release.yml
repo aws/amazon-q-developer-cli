@@ -270,6 +270,21 @@ jobs:
       branch_name: ${{ needs.prepare.outputs.branch_name }}
       commit_sha: ${{ needs.prepare.outputs.commit_sha }}
 
+  smoke_tests:
+    name: Smoke Tests
+    needs: [prepare, build_darwin, build_linux, build_windows]
+    # Non-blocking: runs in parallel with dispatch_autocomplete, does not gate the release
+    if: |
+      needs.build_darwin.result == 'success' &&
+      needs.build_linux.result == 'success' &&
+      needs.build_windows.result == 'success'
+    uses: ./.github/workflows/smoke-tests.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      channel: ${{ needs.prepare.outputs.channel }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
   dispatch_autocomplete:
     name: Trigger Autocomplete Build
     needs: [prepare, build_darwin, build_linux, build_windows]
@@ -307,7 +322,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [tag, prepare, build_darwin, build_linux, build_windows, dispatch_autocomplete]
+    needs: [tag, prepare, build_darwin, build_linux, build_windows, smoke_tests, dispatch_autocomplete]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -332,6 +347,7 @@ jobs:
               echo "| Darwin | ${{ needs.build_darwin.result == 'success' && '✅' || '❌' }} |"
               echo "| Linux | ${{ needs.build_linux.result == 'success' && '✅' || '❌' }} |"
               echo "| Windows | ${{ needs.build_windows.result == 'success' && '✅' || '❌' }} |"
+              echo "| Smoke Tests | ${{ needs.smoke_tests.result == 'success' && '✅' || needs.smoke_tests.result == 'skipped' && '⏭️' || '⚠️' }} |"
               echo "| Autocomplete | ${{ needs.dispatch_autocomplete.result == 'success' && '✅' || needs.dispatch_autocomplete.result == 'skipped' && '⏭️' || '❌' }} |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
