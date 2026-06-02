@@ -215,9 +215,7 @@ jobs:
             local SIGNED_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}-${JOB_ID}"
             echo "  Waiting for signed artifact..."
             for i in $(seq 1 360); do
-              if aws s3 ls "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" --region us-east-1 2>/dev/null; then
-                echo "  ✓ Signed artifact ready"
-                aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1
+              if aws s3 cp "s3://${SIGNED_BUCKET}/${SIGNED_KEY}" "${FILE_PATH}" --region us-east-1 2>/dev/null; then
                 echo "  ✓ ${FILENAME} signed successfully"
                 return 0
               fi
