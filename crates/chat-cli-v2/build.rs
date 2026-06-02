@@ -497,5 +497,9 @@ fn git_describe_fallback() -> Option<String> {
         .trim()
         .trim_start_matches('v')
         .to_string();
-    if tag.is_empty() { None } else { Some(format!("{tag}+dev")) }
+    if tag.is_empty() {
+        None
+    } else {
+        Some(format!("{tag}+dev"))
+    }
 }

@@ -74,8 +74,8 @@ mod tests {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let workspace_root = std::path::Path::new(manifest_dir).join("../..");
 
-        let cargo_toml = std::fs::read_to_string(workspace_root.join("Cargo.toml"))
-            .expect("failed to read workspace Cargo.toml");
+        let cargo_toml =
+            std::fs::read_to_string(workspace_root.join("Cargo.toml")).expect("failed to read workspace Cargo.toml");
         let cargo_version = cargo_toml
             .lines()
             .skip_while(|l| !l.starts_with("[workspace.package]"))

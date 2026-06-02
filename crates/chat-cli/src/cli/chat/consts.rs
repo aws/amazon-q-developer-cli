@@ -32,7 +32,8 @@ mod tests {
     #[test]
     fn cli_version_is_not_dev_placeholder() {
         assert_ne!(
-            super::USER_AGENT_VERSION_VALUE, "0.0.0-dev",
+            super::USER_AGENT_VERSION_VALUE,
+            "0.0.0-dev",
             "build.rs failed to inject a real version — KRS will silently disable thinking"
         );
     }
