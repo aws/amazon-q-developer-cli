@@ -17,9 +17,8 @@ permissions:
 
 jobs:
   cut:
-    name: Create Release Branches
+    name: Create Release Branch
     runs-on: ubuntu-latest
-    environment: gamma
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,49 +55,6 @@ jobs:
             echo "✅ Created $BRANCH from $TAG in chat repo"
           fi
 
-      - name: Create release branch (autocomplete repo)
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
-          script: |
-            const branch = 'release/${{ inputs.version }}';
-            const tag = '${{ inputs.base_tag }}';
-
-            // Get the tag's commit SHA
-            const { data: tagRef } = await github.rest.git.getRef({
-              owner: 'kiro-team',
-              repo: 'kiro-cli-autocomplete',
-              ref: `tags/${tag}`
-            });
-            const tagSha = tagRef.object.sha;
-
-            // Check if branch already exists
-            try {
-              const { data: branchData } = await github.rest.repos.getBranch({
-                owner: 'kiro-team',
-                repo: 'kiro-cli-autocomplete',
-                branch: branch
-              });
-              if (branchData.commit.sha === tagSha) {
-                core.info(`✅ Branch ${branch} already exists at ${tag} — nothing to do`);
-                return;
-              } else {
-                core.setFailed(`Branch ${branch} already exists but points to ${branchData.commit.sha} (expected ${tagSha} from ${tag})`);
-                return;
-              }
-            } catch (e) {
-              if (e.status !== 404) throw e;
-            }
-
-            // Create the branch
-            await github.rest.git.createRef({
-              owner: 'kiro-team',
-              repo: 'kiro-cli-autocomplete',
-              ref: `refs/heads/${branch}`,
-              sha: tagSha
-            });
-            core.info(`✅ Created ${branch} from ${tag} (${tagSha}) in autocomplete repo`);
-
       - name: Summary
         run: |
           {
@@ -109,9 +65,9 @@ jobs:
             echo "| **Version** | ${{ inputs.version }} |"
             echo "| **Base tag** | ${{ inputs.base_tag }} |"
             echo "| **Chat branch** | \`release/${{ inputs.version }}\` |"
-            echo "| **Autocomplete branch** | \`release/${{ inputs.version }}\` |"
             echo
             echo "### Next steps"
-            echo "1. Cherry-pick fixes to \`release/${{ inputs.version }}\`"
-            echo "2. Run **Release SOP: 2.0 Build and Trigger Release** with \`increment=rc\`, \`ref=release/${{ inputs.version }}\`"
+            echo "1. Run \`create-release-branch.yml\` in autocomplete repo with the same inputs"
+            echo "2. Cherry-pick fixes to \`release/${{ inputs.version }}\`"
+            echo "3. Run **build-and-release.yml** with \`increment=rc\` from \`release/${{ inputs.version }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
