@@ -7,26 +7,10 @@ import React, {
 } from 'react';
 import { Box } from './../../renderer.js';
 import { Menu } from '../ui/menu/Menu';
-import { Text } from '../ui/text/Text.js';
-import { Divider } from '../ui/divider/Divider.js';
-import { useTheme } from '../../hooks/useThemeContext.js';
 import { useAppStore } from '../../stores/app-store';
 import { useCommandState } from '../../stores/selectors';
 import type { AvailableCommand } from '../../types/commands';
 import { searchFilesAbortable } from '../../utils/file-search.js';
-import {
-  getBundledTheme,
-  buildBundledPreview,
-  buildCurrentPreview,
-  buildFallbackDiff,
-  getPromptPreset,
-  getResponsePreset,
-  getDiffPreset,
-  promptPresets,
-  responsePresets,
-  diffPresets,
-  loadUserThemePrefs,
-} from '../../theme/user-theme.js';
 import {
   filterPromptsByQuery,
   buildAtMenuItems,
@@ -34,8 +18,6 @@ import {
 import { PromptsMenu } from './menu/PromptsMenu.js';
 
 export const CommandMenu: React.FC = () => {
-  const { getColor, colors: themeColors } = useTheme();
-  const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const activeTrigger = useAppStore((state) => state.activeTrigger);
   const activeCommand = useAppStore((state) => state.activeCommand);
@@ -66,8 +48,6 @@ export const CommandMenu: React.FC = () => {
     (state) => state.setCommandShadowText
   );
   const kiro = useAppStore((state) => state.kiro);
-  const setThemePreview = useAppStore((state) => state.setThemePreview);
-  const getAutoPreview = useAppStore((state) => state._autoPreviewGetter);
 
   // File search state
   const [fileResults, setFileResults] = useState<string[]>([]);
@@ -377,125 +357,6 @@ export const CommandMenu: React.FC = () => {
     setPromptHint(null);
   }, [setActiveTrigger, setPromptHint]);
 
-  // Theme preview from store (set by effect handler during /theme flow)
-  const themePreview = useAppStore((state) => state.themePreview);
-
-  const isThemeMenu = activeCommand?.command.name === '/theme';
-
-  // Clear theme preview when navigating away from /theme
-  useEffect(() => {
-    if (!isThemeMenu && themePreview) {
-      setThemePreview(null);
-    }
-  }, [isThemeMenu, themePreview, setThemePreview]);
-
-  const handleActiveCommandHighlight = useCallback(
-    (item: { label: string; description: string }) => {
-      if (!isThemeMenu || !activeCommand) return;
-      const opt = activeCommand.options.find((o) => o.label === item.label);
-      if (!opt) return;
-
-      const fallbackDiff = buildFallbackDiff({
-        added: {
-          background: themeColors.diff.added.background,
-          bar: themeColors.diff.added.bar,
-          highlight: themeColors.diff.added.highlight,
-        },
-        removed: {
-          background: themeColors.diff.removed.background,
-          bar: themeColors.diff.removed.bar,
-          highlight: themeColors.diff.removed.highlight,
-        },
-      });
-
-      // Top-level: bundled theme preview
-      if (opt.value.startsWith('bundled:')) {
-        const themeId = opt.value.slice('bundled:'.length);
-        if (themeId === 'default') {
-          // Auto — show base theme preview with no user overrides
-          const preview = getAutoPreview?.();
-          setThemePreview(preview || null);
-          return;
-        }
-        const theme = getBundledTheme(themeId);
-        if (theme) setThemePreview(buildBundledPreview(theme, fallbackDiff));
-        return;
-      }
-
-      // Custom option — show current prefs preview
-      if (opt.value === 'custom') {
-        const currentPrefs = loadUserThemePrefs();
-        setThemePreview(buildCurrentPreview(currentPrefs, fallbackDiff));
-        return;
-      }
-
-      // Custom prompt/response preset: build preview combining highlighted preset with current other setting
-      const prefs = loadUserThemePrefs();
-      if (opt.value.startsWith('prompt:')) {
-        const presetId = opt.value.slice('prompt:'.length);
-        const prompt = getPromptPreset(presetId) ?? promptPresets[0]!;
-        const response =
-          getResponsePreset(prefs.responsePreset) ?? responsePresets[0]!;
-        const diff = getDiffPreset(prefs.diffPreset) ?? diffPresets[0]!;
-        setThemePreview(
-          buildBundledPreview(
-            {
-              id: 'preview',
-              label: 'Preview',
-              prompt,
-              response,
-              diff,
-            },
-            fallbackDiff
-          )
-        );
-        return;
-      }
-      if (opt.value.startsWith('response:')) {
-        const presetId = opt.value.slice('response:'.length);
-        const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
-        const response = getResponsePreset(presetId) ?? responsePresets[0]!;
-        const diff = getDiffPreset(prefs.diffPreset) ?? diffPresets[0]!;
-        setThemePreview(
-          buildBundledPreview(
-            {
-              id: 'preview',
-              label: 'Preview',
-              prompt,
-              response,
-              diff,
-            },
-            fallbackDiff
-          )
-        );
-        return;
-      }
-      if (opt.value.startsWith('diff:')) {
-        const presetId = opt.value.slice('diff:'.length);
-        const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
-        const response =
-          getResponsePreset(prefs.responsePreset) ?? responsePresets[0]!;
-        const diff = getDiffPreset(presetId) ?? diffPresets[0]!;
-        setThemePreview(
-          buildBundledPreview(
-            {
-              id: 'preview',
-              label: 'Preview',
-              prompt,
-              response,
-              diff,
-            },
-            fallbackDiff
-          )
-        );
-        return;
-      }
-
-      // Keep current preview for other options (Custom, Prompt style, Response text color)
-    },
-    [isThemeMenu, activeCommand, setThemePreview, getColor, themeColors]
-  );
-
   if (showAtMenu && !activeCommand) {
     return (
       <Menu
@@ -581,7 +442,6 @@ export const CommandMenu: React.FC = () => {
               }
             }
           }}
-          onHighlight={handleActiveCommandHighlight}
           onEscape={() => {
             // If this overlay was opened from /settings (e.g. the user is
             // now in the /theme menu reached via /settings → Theme), ESC
@@ -593,7 +453,6 @@ export const CommandMenu: React.FC = () => {
             setActiveCommand(null);
             clearCommandInput();
             setPromptHint(null);
-            setThemePreview(null);
 
             if (returnToSettings) {
               setSettingsReturnOnEscape(false);
@@ -618,15 +477,6 @@ export const CommandMenu: React.FC = () => {
             activeCommand.command.meta?.preserveLabelColors === true
           }
         />
-        {themePreview && (
-          <Box flexDirection="column" marginTop={1}>
-            <Divider />
-            <Box paddingX={1} flexDirection="column">
-              <Text>{secondaryColor('Preview')}</Text>
-              <Text>{themePreview}</Text>
-            </Box>
-          </Box>
-        )}
       </Box>
     );
   }

@@ -16,14 +16,22 @@ describe('buildAutoPreview', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('contains "This is how your prompt will look" with kiroDark', () => {
+  it('contains "This is the user input" with kiroDark', () => {
     const result = buildAutoPreview(kiroDark.colors);
     expect(result).toContain(PROMPT_PREVIEW);
   });
 
-  it('contains "This is how the response will look" with kiroDark', () => {
+  it('contains "This is the system response" with kiroDark', () => {
     const result = buildAutoPreview(kiroDark.colors);
     expect(result).toContain(RESPONSE_PREVIEW);
+  });
+
+  it('uses brand colour for the ▌ bar (not surface or primary)', () => {
+    // After the spec UX update, both prompt and response rows share the
+    // same brand-coloured bar, matching `<StatusBar>` in the live
+    // conversation. kiroDark's brand is #C19AFF → 193;154;255 in RGB.
+    const result = buildAutoPreview(kiroDark.colors);
+    expect(result).toContain('48;2;193;154;255');
   });
 
   it('contains diff added and removed preview lines with kiroDark', () => {

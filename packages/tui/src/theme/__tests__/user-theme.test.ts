@@ -287,19 +287,53 @@ describe('user-theme', () => {
   });
 
   describe('buildBundledPreview', () => {
+    // Brand colour required by the new signature; using kiroDark's brand
+    // hex keeps the test independent of theme registration.
+    const TEST_BRAND = { truecolor: '#C19AFF', color256: 141 } as const;
+
     it('returns non-empty string for each bundledTheme', () => {
       for (const t of bundledThemes) {
-        const preview = buildBundledPreview(t);
+        const preview = buildBundledPreview(t, undefined, TEST_BRAND);
         expect(preview.length).toBeGreaterThan(0);
       }
     });
 
     it('contains prompt and response text', () => {
       for (const t of bundledThemes) {
-        const preview = buildBundledPreview(t);
+        const preview = buildBundledPreview(t, undefined, TEST_BRAND);
         expect(preview).toContain(PROMPT_PREVIEW);
         expect(preview).toContain(RESPONSE_PREVIEW);
       }
+    });
+
+    it('emits prompt and response on separate lines, diff block underneath', () => {
+      const dark = bundledThemes.find((t) => t.id === 'dark')!;
+      const preview = buildBundledPreview(dark, undefined, TEST_BRAND);
+      // Strip ANSI escape sequences to compare layout structure rather
+      // than colour codes — those are environment dependent and tested
+      // implicitly via `toContain` checks.
+      // eslint-disable-next-line no-control-regex -- intentional ANSI strip
+      const plain = preview.replace(/\u001b\[[0-9;]*m/g, '');
+      const lines = plain.split('\n');
+      // Row 0: "▌ <PROMPT_PREVIEW>" — first non-bar character is the
+      // bar's trailing space, then the prompt text.
+      expect(lines[0]).toContain(PROMPT_PREVIEW);
+      // Row 1: "▌ <RESPONSE_PREVIEW>"
+      expect(lines[1]).toContain(RESPONSE_PREVIEW);
+      // Diff block has its own header and +/- lines further down.
+      expect(plain).toContain('Code diff:');
+      expect(plain).toContain('+');
+      expect(plain).toContain('-');
+    });
+
+    it('uses brand colour for the ▌ bar (not prompt/response colors)', () => {
+      // The brand colour appears as a truecolor SGR (e.g. \x1b[48;2;193;154;255m)
+      // — match it specifically. Prompt/response colors of the dark
+      // bundle are different so we can prove the bar is brand-coloured.
+      const dark = bundledThemes.find((t) => t.id === 'dark')!;
+      const preview = buildBundledPreview(dark, undefined, TEST_BRAND);
+      // C19AFF -> 193;154;255 in decimal RGB
+      expect(preview).toContain('48;2;193;154;255');
     });
   });
 
@@ -320,17 +354,23 @@ describe('user-theme', () => {
   });
 
   describe('buildCurrentPreview', () => {
+    const TEST_BRAND = { truecolor: '#C19AFF', color256: 141 } as const;
+
     it('returns non-empty string with default prefs {}', () => {
-      const preview = buildCurrentPreview({});
+      const preview = buildCurrentPreview({}, undefined, TEST_BRAND);
       expect(preview.length).toBeGreaterThan(0);
     });
 
     it('returns non-empty string with specific prefs', () => {
-      const preview = buildCurrentPreview({
-        promptPreset: 'purple',
-        responsePreset: 'light',
-        diffPreset: 'dark',
-      });
+      const preview = buildCurrentPreview(
+        {
+          promptPreset: 'purple',
+          responsePreset: 'light',
+          diffPreset: 'dark',
+        },
+        undefined,
+        TEST_BRAND
+      );
       expect(preview.length).toBeGreaterThan(0);
     });
   });

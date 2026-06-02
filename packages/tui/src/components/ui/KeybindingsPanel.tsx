@@ -4,6 +4,7 @@ import { Panel } from './panel/Panel.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
+import { useAppStore } from '../../stores/app-store.js';
 import {
   parseKeybinding,
   type KeybindingName,
@@ -62,12 +63,19 @@ export const KeybindingsPanel: React.FC<KeybindingsPanelProps> = ({
   const { label, cancelStream, closeMenu, quit } = useKeybindings();
   const dim = getColor('secondary');
   const primary = getColor('primary');
+  // Drives the ESC hint label only — back-nav itself happens upstream.
+  const fromSettings = useAppStore((state) => state.settingsReturnOnEscape);
 
   const bindings = { cancelStream, closeMenu, quit };
 
   return (
-    <Panel title="/settings – keybindings" onClose={onClose}>
+    <Panel
+      title="/settings – keybindings"
+      onClose={onClose}
+      closeHintLabel={fromSettings ? 'to go back' : 'to close'}
+    >
       <Box flexDirection="column">
+        <Box height={1} />
         <Box paddingX={1} marginBottom={1}>
           <Text>
             {dim('Keybindings can be customised in ')}

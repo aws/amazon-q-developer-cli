@@ -3,7 +3,6 @@
  */
 
 import type { AgentStreamEvent } from '../types/agent-events.js';
-import type { TerminalColor } from '../types/themeTypes.js';
 import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
 import type { KasCommand } from '../kas-commands.js';
@@ -109,7 +108,22 @@ export interface CommandContext {
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
+  setShowThemePanel: (show: boolean) => void;
+  setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
+  /**
+   * Snapshot of `settingsReturnOnEscape`. Effect handlers read this to
+   * decide whether to bounce the user back into the /settings picker on
+   * completion (true when the flow was launched from /settings) or just
+   * close the overlay (true for direct /theme, /keybindings, etc.).
+   */
+  settingsReturnOnEscape: boolean;
+  /**
+   * Re-open the /settings top-level menu. Used by command flows that finish
+   * a sub-action and should return the user to the /settings picker rather
+   * than dismissing the overlay (per the /settings UX spec).
+   */
+  reopenSettingsMenu: () => void;
   /** Show/hide knowledge panel */
   setShowKnowledgePanel: (
     show: boolean,
@@ -181,30 +195,4 @@ export interface CommandContext {
   incrementVoiceHint: () => void;
   /** Set pending voice text for insertion into input */
   setPendingVoiceText: (text: string | null) => void;
-  /** Update user theme colors (prompt text+bg combo and/or response text and/or diff colors).
-   *  Pass null to clear an override, undefined to leave unchanged. */
-  setUserColors: (
-    prompt?: { text: any; bg: any } | null,
-    response?: any | null,
-    diff?: any | null
-  ) => void;
-  /** Switch the base theme at runtime. Pass null to reset to auto-detected. */
-  setBaseTheme: (theme: any) => void;
-  /** Set theme preview string (rendered below menu during /theme flow) */
-  setThemePreview: (preview: string | null) => void;
-  /** Get the base theme's diff colors (for preview fallback when user preset is 'default') */
-  getThemeDiffHex: () => {
-    added: {
-      background: TerminalColor;
-      bar: TerminalColor;
-      highlight: TerminalColor;
-    };
-    removed: {
-      background: TerminalColor;
-      bar: TerminalColor;
-      highlight: TerminalColor;
-    };
-  };
-  /** Get a preview string showing the auto-detected theme with no user overrides */
-  getAutoPreview: () => string;
 }

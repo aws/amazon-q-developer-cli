@@ -26,6 +26,8 @@ import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
 import { KeybindingsPanel } from '../ui/KeybindingsPanel';
 import { DisplaySettingsPanel } from '../ui/DisplaySettingsPanel';
+import { ThemePanel } from '../ui/ThemePanel';
+import { SettingsPanel } from '../ui/SettingsPanel';
 import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
@@ -218,6 +220,8 @@ export const InlineLayout: React.FC = () => {
     hooksList,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
+    showThemePanel,
+    showSettingsPanel,
     settingsReturnOnEscape,
     showKnowledgePanel,
     knowledgeEntries,
@@ -240,6 +244,8 @@ export const InlineLayout: React.FC = () => {
     setShowHooksPanel,
     setShowKeybindingsPanel,
     setShowDisplaySettingsPanel,
+    setShowThemePanel,
+    setShowSettingsPanel,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
     setShowKnowledgePanel,
@@ -562,6 +568,38 @@ export const InlineLayout: React.FC = () => {
     settingsReturnOnEscape,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
+  ]);
+
+  const handleCloseThemePanel = useCallback(() => {
+    setShowThemePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    if (settingsReturnOnEscape) {
+      setSettingsReturnOnEscape(false);
+      reopenSettingsMenu();
+    }
+  }, [
+    setShowThemePanel,
+    setActiveCommand,
+    clearCommandInput,
+    settingsReturnOnEscape,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
+  ]);
+
+  const handleCloseSettingsPanel = useCallback(() => {
+    // Top-level /settings close. Always clears the back-flag so the next
+    // overlay open starts fresh — avoids a stale `settingsReturnOnEscape`
+    // bouncing the user into /settings unexpectedly.
+    setShowSettingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    setSettingsReturnOnEscape(false);
+  }, [
+    setShowSettingsPanel,
+    setActiveCommand,
+    clearCommandInput,
+    setSettingsReturnOnEscape,
   ]);
 
   const handleDismissDisplaySettingsPanel = useCallback(() => {
@@ -888,6 +926,8 @@ export const InlineLayout: React.FC = () => {
               showHooksPanel ||
               showKeybindingsPanel ||
               showDisplaySettingsPanel ||
+              showThemePanel ||
+              showSettingsPanel ||
               showKnowledgePanel ||
               showCodePanel ||
               !!artifactViewOpen ||
@@ -945,6 +985,8 @@ export const InlineLayout: React.FC = () => {
                   showHooksPanel ||
                   showKeybindingsPanel ||
                   showDisplaySettingsPanel ||
+                  showThemePanel ||
+                  showSettingsPanel ||
                   showKnowledgePanel ||
                   showCodePanel ||
                   !!artifactViewOpen ||
@@ -1071,6 +1113,10 @@ export const InlineLayout: React.FC = () => {
                 onDismiss={handleDismissDisplaySettingsPanel}
               />
             )}
+            {showThemePanel && <ThemePanel onClose={handleCloseThemePanel} />}
+            {showSettingsPanel && (
+              <SettingsPanel onClose={handleCloseSettingsPanel} />
+            )}
             {showKnowledgePanel && (
               <KnowledgePanel
                 entries={knowledgeEntries}
@@ -1115,6 +1161,8 @@ export const InlineLayout: React.FC = () => {
                 !showHooksPanel &&
                 !showKeybindingsPanel &&
                 !showDisplaySettingsPanel &&
+                !showThemePanel &&
+                !showSettingsPanel &&
                 !showKnowledgePanel &&
                 !showCodePanel &&
                 !artifactViewOpen &&

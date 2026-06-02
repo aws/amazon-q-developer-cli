@@ -214,7 +214,7 @@ export interface BundledTheme {
 export const bundledThemes: BundledTheme[] = [
   {
     id: 'dark',
-    label: 'Dark Theme',
+    label: 'Dark theme',
     prompt: {
       id: 'default',
       label: 'Default',
@@ -230,7 +230,7 @@ export const bundledThemes: BundledTheme[] = [
   },
   {
     id: 'light',
-    label: 'Light Theme',
+    label: 'Light theme',
     prompt: {
       id: 'paper',
       label: 'Paper',
@@ -246,12 +246,15 @@ export const bundledThemes: BundledTheme[] = [
   },
 ];
 
-export const PROMPT_PREVIEW = 'This is how your prompt will look';
-export const RESPONSE_PREVIEW = 'This is how the response will look';
+// Preview placeholder text matches the /settings UX spec so the rendered
+// preview reads as "this is what the chrome will look like" rather than
+// describing itself.
+export const PROMPT_PREVIEW = 'This is the user input';
+export const RESPONSE_PREVIEW = 'This is the system response';
 export const DIFF_ADDED_PREVIEW = '+  const result = compute(input);';
 export const DIFF_REMOVED_PREVIEW = '-  const result = calculate(input);';
 export const DIFF_HEADER = chalk.gray(
-  'Code diff — added and removed lines will look like:'
+  'Code diff: added and removed lines will look like:'
 );
 
 /** Build a short diff preview showing one added and one removed line.
@@ -279,23 +282,46 @@ export function buildDiffPreview(
   return `\n${DIFF_HEADER}\n${addedLine}\n${removedLine}${marker}`;
 }
 
-/** Build a combined preview for a bundled theme showing prompt, response, and diff.
- *  @param fallbackDiff - base theme diff colors, used when diff preset is 'default'
+/**
+ * Build a combined preview for a bundled theme. Mirrors the conversation's
+ * actual rendering so users see what the theme will look like in practice:
+ *
+ *   - Prompt row → user message: brand ▌ + prompt.bgColor box + prompt.textColor text.
+ *     (Same shape as `<Message type=DEVELOPER>`: StatusBar + bg-coloured Box.)
+ *   - Response row → agent message: brand ▌ + response.textColor text.
+ *     (Same shape as `<Message type=AGENT>`: StatusBar + plain text.)
+ *   - Diff block: +/- lines coloured directly via the diff preset; no ▌.
+ *
+ * Both ▌ bars use the brand colour because that's what `<StatusBar>`
+ * draws in the live conversation — independent of the user's chosen
+ * prompt/response palette.
+ *
+ * @param fallbackDiff - base theme diff colors, used when diff preset is 'default'
+ * @param brandColor   - the active theme's brand colour (`colors.brand`).
+ *                       Required so the bar matches the conversation's
+ *                       actual StatusBar colour.
  */
 export function buildBundledPreview(
   theme: BundledTheme,
-  fallbackDiff?: DiffPreset
+  fallbackDiff: DiffPreset | undefined,
+  brandColor: TerminalColor
 ): string {
-  const bg = chalkFromTerminalColor(theme.prompt.bgColor, 'bg');
-  const fg = chalkFromTerminalColor(theme.prompt.textColor, 'fg');
-  const promptPart = bg(fg(` ${PROMPT_PREVIEW} `));
+  const bar = chalkFromTerminalColor(brandColor, 'bg')(' ');
 
+  // Prompt: full-row bg + fg colouring, like a real user message.
+  const promptBg = chalkFromTerminalColor(theme.prompt.bgColor, 'bg');
+  const promptFg = chalkFromTerminalColor(theme.prompt.textColor, 'fg');
+  const promptLine = `${bar} ${promptBg(promptFg(` ${PROMPT_PREVIEW} `))}`;
+
+  // Response: text-only colouring, like a real agent message.
   const responseFg = chalkFromTerminalColor(theme.response.textColor, 'fg');
-  const responsePart = responseFg(RESPONSE_PREVIEW);
+  const responseLine = `${bar} ${responseFg(RESPONSE_PREVIEW)}`;
 
   const diffPart = buildDiffPreview(theme.diff, undefined, fallbackDiff);
 
-  return `${promptPart}\n${responsePart}\n${diffPart}`;
+  // `buildDiffPreview` emits its own leading newline + header so we
+  // don't repeat the gap here.
+  return `${promptLine}\n${responseLine}\n${diffPart}`;
 }
 
 /** Look up a bundled theme by id */
@@ -308,10 +334,12 @@ export function getBundledTheme(
 
 /** Build a preview from current prefs (for custom flow — shows what the user currently has).
  *  @param fallbackDiff - base theme diff colors, used when diff preset is 'default'
+ *  @param brandColor   - the active theme's brand colour for the ▌ bar
  */
 export function buildCurrentPreview(
   prefs: UserThemePrefs,
-  fallbackDiff?: DiffPreset
+  fallbackDiff: DiffPreset | undefined,
+  brandColor: TerminalColor
 ): string {
   const prompt = getPromptPreset(prefs.promptPreset) ?? promptPresets[0]!;
   const response =
@@ -325,7 +353,8 @@ export function buildCurrentPreview(
       response,
       diff,
     },
-    fallbackDiff
+    fallbackDiff,
+    brandColor
   );
 }
 

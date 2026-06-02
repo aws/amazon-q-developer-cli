@@ -127,12 +127,12 @@ export const Panel: React.FC<PanelProps> = ({
             {dim(searchable && search ? 'to clear search' : closeHintLabel)}
             {canScrollUp || canScrollDown ? dim(' · ↑↓ to scroll') : ''}
           </Text>
-          {footerLeft && <Text>{dim(' | ')}</Text>}
+          {footerLeft && <Text>{dim(' · ')}</Text>}
           {footerLeft}
         </Box>
         <Box>
           {footerExtra}
-          {footerExtra && showTabHint && <Text>{dim(' | ')}</Text>}
+          {footerExtra && showTabHint && <Text>{dim(' · ')}</Text>}
           {showTabHint && (
             <Text>
               {primary('Tab')} {dim(tabHintLabel)}

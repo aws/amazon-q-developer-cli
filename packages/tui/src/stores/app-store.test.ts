@@ -533,64 +533,30 @@ describe('RetryWarning event handling', () => {
 
 describe('reopenSettingsMenu', () => {
   // This action is called by ESC handlers when a /settings-derived overlay
-  // is dismissed — going back one level to the top-level /settings menu
-  // instead of closing entirely. The structure of the re-opened menu must
-  // match what showSettingsMenu produces, otherwise the menu renders wrong.
-  it('sets activeCommand to the /settings selection menu', () => {
+  // is dismissed — going back one level to the top-level /settings overlay
+  // instead of closing entirely. After the SettingsPanel rewrite this is
+  // a single store flag flip; the panel itself owns row rendering and
+  // navigation.
+  it('opens the SettingsPanel by setting showSettingsPanel=true', () => {
     const mockKiro = new Kiro();
     const store = createAppStore({ kiro: mockKiro });
 
+    expect(store.getState().showSettingsPanel).toBe(false);
+
     store.getState().reopenSettingsMenu();
 
-    const { activeCommand } = store.getState();
-    expect(activeCommand).not.toBeNull();
-    expect(activeCommand!.command.name).toBe('/settings');
+    expect(store.getState().showSettingsPanel).toBe(true);
   });
 
-  it('marks the menu as a non-searchable selection', () => {
+  it('does not touch activeCommand', () => {
+    // Old behaviour set activeCommand to a synthetic /settings menu —
+    // that path is gone, replaced by the SettingsPanel overlay. Make
+    // sure we don't accidentally re-introduce activeCommand coupling.
     const mockKiro = new Kiro();
     const store = createAppStore({ kiro: mockKiro });
 
     store.getState().reopenSettingsMenu();
 
-    const meta = store.getState().activeCommand!.command.meta!;
-    expect(meta.inputType).toBe('selection');
-    expect(meta.searchable).toBe(false);
-  });
-
-  it('mirrors every registered subcommand as a menu option', async () => {
-    // Dynamic import so we read the same registry the action uses.
-    const { settingsSubcommands } =
-      await import('../commands/settings-subcommands.js');
-    const mockKiro = new Kiro();
-    const store = createAppStore({ kiro: mockKiro });
-
-    store.getState().reopenSettingsMenu();
-
-    const { options } = store.getState().activeCommand!;
-    // Top-level menu only shows subcommands without ':' (sub-options are nested)
-    const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
-    expect(options).toHaveLength(topLevel.length);
-    for (let i = 0; i < topLevel.length; i++) {
-      expect(options[i]!.value).toBe(topLevel[i]!.value);
-      expect(options[i]!.label).toBe(topLevel[i]!.label);
-    }
-  });
-
-  it('is a no-op when the /settings command is not registered', () => {
-    const mockKiro = new Kiro();
-    const store = createAppStore({ kiro: mockKiro });
-
-    // Remove /settings from slashCommands (e.g. in a stripped-down test harness).
-    store.setState({
-      slashCommands: store
-        .getState()
-        .slashCommands.filter((c) => c.name !== '/settings'),
-    });
-
-    store.getState().reopenSettingsMenu();
-
-    // Should gracefully do nothing rather than throw or set a bad activeCommand.
     expect(store.getState().activeCommand).toBeNull();
   });
 });

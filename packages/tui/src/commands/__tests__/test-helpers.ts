@@ -24,6 +24,12 @@ export interface CreateMockCtxOptions {
   steering?: CommandContext['steering'];
   /** Override the kiro client mock. Default: bare {} */
   kiro?: Partial<CommandContext['kiro']>;
+  /**
+   * Initial value for `settingsReturnOnEscape`. Defaults to `false`. Set to
+   * `true` to simulate flows that were launched via /settings and should
+   * therefore return to the /settings picker on completion.
+   */
+  settingsReturnOnEscape?: boolean;
   /** Current-agent snapshot used by some effects. Default: null */
   currentAgent?: CommandContext['currentAgent'];
 }
@@ -78,7 +84,11 @@ export function createMockCommandContext(
     setShowHooksPanel: spy('setShowHooksPanel') as any,
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
     setShowDisplaySettingsPanel: spy('setShowDisplaySettingsPanel') as any,
+    setShowThemePanel: spy('setShowThemePanel') as any,
+    setShowSettingsPanel: spy('setShowSettingsPanel') as any,
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
+    settingsReturnOnEscape: opts.settingsReturnOnEscape ?? false,
+    reopenSettingsMenu: spy('reopenSettingsMenu') as any,
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     setShowCodePanel: spy('setShowCodePanel') as any,
     openArtifactView: spy('openArtifactView') as any,
@@ -94,22 +104,6 @@ export function createMockCommandContext(
     sessions: new Map(),
     setMode: spy('setMode') as any,
     getMessages: mock(() => opts.messages ?? []) as any,
-    setUserColors: spy('setUserColors') as any,
-    setBaseTheme: spy('setBaseTheme') as any,
-    setThemePreview: spy('setThemePreview') as any,
-    getThemeDiffHex: mock(() => ({
-      added: {
-        background: { named: 'default' as const },
-        bar: { named: 'green' as const },
-        highlight: { named: 'default' as const },
-      },
-      removed: {
-        background: { named: 'default' as const },
-        bar: { named: 'red' as const },
-        highlight: { named: 'default' as const },
-      },
-    })) as any,
-    getAutoPreview: mock(() => '') as any,
     setVoiceStop: spy('setVoiceStop') as any,
     setVoiceCancel: spy('setVoiceCancel') as any,
     setVoiceLevel: spy('setVoiceLevel') as any,

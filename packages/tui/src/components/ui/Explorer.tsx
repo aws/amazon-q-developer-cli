@@ -64,6 +64,13 @@ export interface ExplorerProps {
   /** When true, shows a search input for type-to-filter. Defaults to true. */
   searchable?: boolean;
   searchPlaceholder?: string;
+  /**
+   * Verb shown next to the close shortcut in the footer (default: 'to close').
+   * Forwarded to {@link Panel}. Use to disambiguate when ESC means "go back"
+   * rather than "close" — e.g. multi-step flows like /settings → theme
+   * wizard where ESC walks the user back one screen at a time.
+   */
+  closeHintLabel?: string;
   onSelect: (row: ExplorerRow) => void;
   onClose: () => void;
 }
@@ -78,6 +85,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   keyHints,
   searchable = true,
   searchPlaceholder = 'type to filter',
+  closeHintLabel,
   onSelect,
   onClose,
 }) => {
@@ -221,13 +229,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
   const renderHint = (hint: { key: string; label: string }) => (
     <>
-      {chalk.bold(hint.key)} {chalk.hex(secondaryHex)(hint.label)}
+      {hint.key} {chalk.hex(secondaryHex)(hint.label)}
     </>
   );
 
   const defaultHints: Array<{ key: string; label: string }> = [
-    { key: '↑↓', label: 'navigate' },
-    { key: 'Enter', label: 'select' },
+    { key: '↑↓', label: 'to navigate' },
+    { key: '↵', label: 'to select' },
   ];
   const effectiveHints = keyHints ?? defaultHints;
 
@@ -235,6 +243,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
     <Panel
       title={title}
       onClose={onClose}
+      closeHintLabel={closeHintLabel}
       footerLeft={
         <Text>
           {effectiveHints.map((h, i) => (
@@ -250,7 +259,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
         {description && (
           <>
             <Box height={1} />
-            <Text>{chalk.bold(description)}</Text>
+            <Text>{chalk.hex(secondaryHex)(description)}</Text>
             <Box height={1} />
           </>
         )}

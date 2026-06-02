@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
-import { kiroSafe } from '../theme/kiroSafe';
 import type { TerminalColor } from '../types/themeTypes';
 import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
@@ -239,7 +238,6 @@ export type {
   ArtifactSummary,
 } from '../utils/spec-artifact-loader.js';
 export type { SpecConfig } from '../utils/spec-config.js';
-import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { logger } from '../utils/logger.js';
@@ -684,6 +682,8 @@ interface BaseAppActions {
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
+  setShowThemePanel: (show: boolean) => void;
+  setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   reopenSettingsMenu: () => void;
   setShowKnowledgePanel: (
@@ -785,10 +785,6 @@ interface BaseAppActions {
   // Auto preview getter (set by ThemeProvider bridge)
   _autoPreviewGetter: (() => string) | null;
   registerAutoPreviewGetter: (getter: () => string) => void;
-
-  // Theme preview string (rendered below menu during /theme flow)
-  themePreview: string | null;
-  setThemePreview: (preview: string | null) => void;
 
   setPendingFileAttachment: (
     path: string | null,
@@ -1022,6 +1018,8 @@ export interface AppState {
   hooksList: HookInfo[];
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
+  showThemePanel: boolean;
+  showSettingsPanel: boolean;
   terminalTitleEnabled: boolean;
   setTerminalTitleEnabled: (enabled: boolean) => void;
   /**
@@ -1267,7 +1265,11 @@ function buildCommandContext(
     setShowHooksPanel: state.setShowHooksPanel,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
+    setShowThemePanel: state.setShowThemePanel,
+    setShowSettingsPanel: state.setShowSettingsPanel,
     setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+    settingsReturnOnEscape: state.settingsReturnOnEscape,
+    reopenSettingsMenu: state.reopenSettingsMenu,
     setShowKnowledgePanel: state.setShowKnowledgePanel,
     setShowCodePanel: state.setShowCodePanel,
     openArtifactView: state.openArtifactView,
@@ -1312,6 +1314,7 @@ function buildCommandContext(
         showStatsPanel: false,
         showHooksPanel: false,
         showKeybindingsPanel: false,
+        showThemePanel: false,
         settingsReturnOnEscape: false,
         showKnowledgePanel: false,
         contextBreakdown: null,
@@ -1319,38 +1322,6 @@ function buildCommandContext(
         ...extraClearState,
       }),
     getMessages: () => get().messages,
-    setUserColors: (prompt?: any, response?: any, diff?: any) => {
-      const setter = get()._userColorsSetter;
-      if (setter) setter(prompt, response, diff);
-    },
-    setBaseTheme: (theme: any) => {
-      const setter = get()._baseThemeSetter;
-      if (setter) setter(theme);
-    },
-    setThemePreview: (preview: string | null) => {
-      set({ themePreview: preview });
-    },
-    getThemeDiffHex: () => {
-      const getter = get()._themeDiffHexGetter;
-      if (getter) return getter();
-      const d = kiroSafe.colors.diff;
-      return {
-        added: {
-          background: d.added.background,
-          bar: d.added.bar,
-          highlight: d.added.highlight,
-        },
-        removed: {
-          background: d.removed.background,
-          bar: d.removed.bar,
-          highlight: d.removed.highlight,
-        },
-      };
-    },
-    getAutoPreview: () => {
-      const getter = get()._autoPreviewGetter;
-      return getter ? getter() : '';
-    },
     setVoiceStop: state.setVoiceStop,
     setVoiceCancel: state.setVoiceCancel,
     setVoiceLevel: state.setVoiceLevel,
@@ -1534,6 +1505,8 @@ export const createAppStore = (props: AppStoreProps) => {
     hooksList: [],
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
+    showThemePanel: false,
+    showSettingsPanel: false,
     terminalTitleEnabled: readBoolSetting(Settings.CHAT_TERMINAL_TITLE, false),
     settingsReturnOnEscape: false,
     showKnowledgePanel: false,
@@ -1551,7 +1524,6 @@ export const createAppStore = (props: AppStoreProps) => {
     _baseThemeSetter: null,
     _themeDiffHexGetter: null,
     _autoPreviewGetter: null,
-    themePreview: null,
     pendingFileAttachment: null,
     pendingImages: [],
     currentAbortController: null,
@@ -3544,6 +3516,14 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showDisplaySettingsPanel: show });
     },
 
+    setShowThemePanel: (show) => {
+      set({ showThemePanel: show });
+    },
+
+    setShowSettingsPanel: (show) => {
+      set({ showSettingsPanel: show });
+    },
+
     setTerminalTitleEnabled: (enabled) => {
       set({ terminalTitleEnabled: enabled });
     },
@@ -3553,18 +3533,12 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     /**
-     * Re-open the top-level /settings menu. Used by ESC handlers when a
+     * Re-open the top-level /settings panel. Used by ESC handlers when a
      * /settings-derived overlay is dismissed: we go back one level rather
-     * than close everything. Bypasses handleUserInput() so we don't go
-     * through the whole input-reset pipeline (which can race with the
-     * concurrent overlay-close side-effects).
+     * than close everything.
      */
     reopenSettingsMenu: () => {
-      const settingsCmd = get().slashCommands.find(
-        (c) => c.name === '/settings'
-      );
-      if (!settingsCmd) return;
-      set({ activeCommand: buildSettingsActiveCommand(settingsCmd) });
+      set({ showSettingsPanel: true });
     },
 
     setShowKnowledgePanel: (show, entries = [], status) => {
@@ -3853,10 +3827,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     registerAutoPreviewGetter: (getter) => {
       set({ _autoPreviewGetter: getter });
-    },
-
-    setThemePreview: (preview) => {
-      set({ themePreview: preview });
     },
 
     setPendingFileAttachment: (path, triggerPosition = 0) => {

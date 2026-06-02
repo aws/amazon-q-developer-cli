@@ -87,6 +87,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowIcons } = useAllowIcons();
   const { setShowThinking } = useShowThinking();
   const kiro = useAppStore((state) => state.kiro);
+  const fromSettings = useAppStore((state) => state.settingsReturnOnEscape);
   const setTerminalTitleEnabled = useAppStore(
     (state) => state.setTerminalTitleEnabled
   );
@@ -135,14 +136,17 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
     <Panel
       title="/settings – display"
       onClose={onClose}
-      closeHintLabel="to go back"
+      closeHintLabel={fromSettings ? 'to go back' : 'to close'}
       footerLeft={
         <Text>
-          {dimText('↑↓ to navigate · ↔ to change · Enter to apply and close')}
+          {brandText('↑↓')} {dimText('to select')}
+          {dimText(' · ')}
+          {brandText('←→')} {dimText('to toggle')}
         </Text>
       }
     >
       <Box flexDirection="column">
+        <Box height={1} />
         <Box marginBottom={1}>
           <Text>{dimText('How would you like Kiro to display output?')}</Text>
         </Box>

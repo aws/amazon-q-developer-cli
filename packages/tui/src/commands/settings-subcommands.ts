@@ -59,12 +59,9 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     value: 'theme',
     label: 'theme',
     description: 'Colors, prompt style, diff styling',
-    handle: ({ ctx, settingsCommand, resolveEffect }) => {
+    handle: ({ ctx }) => {
       ctx.setSettingsReturnOnEscape(true);
-
-      // Pass the /settings cmd object (not /theme) so showThemeMenu's
-      // deprecation alert (gated on cmd.name === '/theme') stays silent.
-      resolveEffect('showThemeMenu')(null, ctx, settingsCommand, '');
+      ctx.setShowThemePanel(true);
     },
   },
   {
@@ -186,31 +183,4 @@ export function findSettingsSubcommand(
  */
 function alertDurationFor(message: string): number {
   return message.length > 180 ? 10000 : 5000;
-}
-
-/**
- * Build the `activeCommand` shape for the /settings top-level menu.
- * Shared by showSettingsMenu (first open) and reopenSettingsMenu (Esc-back).
- */
-export function buildSettingsActiveCommand(settingsCommand: AvailableCommand): {
-  command: AvailableCommand;
-  options: Array<{ value: string; label: string; description: string }>;
-} {
-  return {
-    command: {
-      ...settingsCommand,
-      meta: {
-        ...settingsCommand.meta,
-        inputType: 'selection' as const,
-        searchable: false,
-      },
-    },
-    options: settingsSubcommands
-      .filter((s) => !s.value.includes(':'))
-      .map((s) => ({
-        value: s.value,
-        label: s.label,
-        description: s.description,
-      })),
-  };
 }

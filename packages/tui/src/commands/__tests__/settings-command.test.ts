@@ -5,7 +5,6 @@ import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createMockCommandContext } from './test-helpers.js';
-import { settingsSubcommands } from '../settings-subcommands.js';
 
 const settingsCmd: SlashCommand = {
   name: '/settings',
@@ -49,45 +48,34 @@ describe('/settings command', () => {
   });
 
   describe('bare /settings (no args)', () => {
-    it('opens a selection menu listing every registered subcommand', async () => {
+    it('opens the SettingsPanel overlay', async () => {
+      // The /settings UI now lives in <SettingsPanel> (an Explorer-based
+      // overlay), not in the slash-command active-command machinery.
+      // Bare /settings just flips the panel state on; the panel itself
+      // owns the row list and routing.
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
       await dispatch(settingsCmd, '', ctx);
 
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const { options } = call[0];
-
-      // One menu option per top-level subcommand (sub-options with ':' are nested)
-      const topLevel = settingsSubcommands.filter(
-        (s) => !s.value.includes(':')
-      );
-      expect(options).toHaveLength(topLevel.length);
-      for (let i = 0; i < topLevel.length; i++) {
-        expect(options[i].value).toBe(topLevel[i]!.value);
-        expect(options[i].label).toBe(topLevel[i]!.label);
-      }
-    });
-
-    it('renders as a non-searchable selection menu', async () => {
-      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
-      await dispatch(settingsCmd, '', ctx);
-
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const { meta } = call[0].command;
-      expect(meta.inputType).toBe('selection');
-      expect(meta.searchable).toBe(false);
+      expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
+      expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
+      // We no longer route through setActiveCommand for the top-level
+      // /settings menu — keep this assertion as a regression guard.
+      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
     });
   });
 
   describe('/settings <subcommand>', () => {
-    it('routes /settings theme to the theme menu without firing the /theme deprecation alert', async () => {
+    it('routes /settings theme by opening ThemePanel without firing the /theme deprecation alert', async () => {
       const ctx = createMockCommandContext({
         slashCommands: [settingsCmd, themeCmd],
       });
       await dispatch(settingsCmd, 'theme', ctx);
 
-      // Theme menu opens (setActiveCommand called with theme options)
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+      // Theme flow now lives in <ThemePanel> — the subcommand handler
+      // surfaces it via setShowThemePanel(true) rather than a Menu/active
+      // command sub-screen.
+      expect(ctx._spies.setShowThemePanel!).toHaveBeenCalled();
+      expect(ctx._spies.setShowThemePanel!.mock.calls[0]![0]).toBe(true);
 
       // Deprecation alert must NOT fire on this chained path — it would
       // be noisy and, more importantly, would break the "/theme has

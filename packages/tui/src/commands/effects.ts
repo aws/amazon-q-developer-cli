@@ -48,10 +48,7 @@ import {
   serializeConversation,
   type TranscriptFormat,
 } from '../utils/serialize-conversation.js';
-import {
-  findSettingsSubcommand,
-  buildSettingsActiveCommand,
-} from './settings-subcommands.js';
+import { findSettingsSubcommand } from './settings-subcommands.js';
 import {
   getCurrentTitle,
   setUserTitle,
@@ -1052,333 +1049,17 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
-  showThemeMenu: (_result, ctx, cmd, args) => {
-    // Deprecation notice shown once per menu-open. Skipped on in-menu
-    // selections (args !== '') to avoid re-nagging, and on calls chained
-    // from /settings theme (cmd.name !== '/theme').
-    if (cmd.name === '/theme' && args === '') {
+  /**
+   * Legacy /theme alias. The actual theme UI lives in `<ThemePanel>`,
+   * driven by the `showThemePanel` store flag — see settings-subcommands.ts
+   * for the canonical /settings → theme entry. This handler exists purely
+   * to keep `/theme` working with a one-shot deprecation hint.
+   */
+  showThemeMenu: (_result, ctx, cmd) => {
+    if (cmd.name === '/theme') {
       ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
     }
-
-    const prefs = loadUserThemePrefs();
-    const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
-    if (!themeCmd) return;
-
-    const fallbackDiff = buildFallbackDiff(ctx.getThemeDiffHex());
-
-    // /theme bundled:default — reset to auto-detected theme
-    if (args === 'bundled:default') {
-      ctx.setUserColors(null, null, null);
-      ctx.setBaseTheme(null);
-      const saved = saveUserThemePrefs({});
-      ctx.showAlert(
-        saved ? 'Theme reset to default' : 'Theme reset but failed to save',
-        saved ? 'success' : 'error',
-        3000
-      );
-      ctx.setThemePreview(null);
-      return true;
-    }
-
-    // /theme bundled:<id> — apply a bundled theme (Light/Dark)
-    if (args.startsWith('bundled:')) {
-      const themeId = args.slice('bundled:'.length);
-      const bundled = getBundledTheme(themeId);
-      if (!bundled) {
-        ctx.showAlert(`Unknown theme: ${themeId}`, 'error', 3000);
-        return true;
-      }
-      // Switch the base theme (kiroDark/kiroLight) so ALL UI elements update
-      ctx.setBaseTheme(
-        themeId === 'light' ? kiroLight : themeId === 'dark' ? kiroDark : null
-      );
-      ctx.setUserColors(
-        { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
-        bundled.response.textColor,
-        bundled.diff
-      );
-      const baseThemePref: 'dark' | 'light' | undefined =
-        themeId === 'light' ? 'light' : themeId === 'dark' ? 'dark' : undefined;
-      const saved = saveUserThemePrefs({
-        promptPreset:
-          bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
-        responsePreset:
-          bundled.response.id === 'default' ? undefined : bundled.response.id,
-        diffPreset: bundled.diff.id === 'default' ? undefined : bundled.diff.id,
-        baseTheme: baseThemePref,
-      });
-      ctx.showAlert(
-        saved
-          ? `Theme set to ${bundled.label}`
-          : `Theme applied but failed to save`,
-        saved ? 'success' : 'error',
-        3000
-      );
-      ctx.setThemePreview(null);
-      return true;
-    }
-
-    // /theme custom — show prompt vs response vs diff selection with current preview
-    if (args === 'custom') {
-      const currentPrompt = getPromptPreset(prefs.promptPreset);
-      const currentResponse = getResponsePreset(prefs.responsePreset);
-      const currentDiff = getDiffPreset(prefs.diffPreset);
-      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
-      ctx.setActiveCommand({
-        command: {
-          ...themeCmd,
-          meta: {
-            ...themeCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options: [
-          {
-            value: 'prompt',
-            label: 'Prompt style',
-            description: currentPrompt ? currentPrompt.label : 'Default',
-          },
-          {
-            value: 'response',
-            label: 'Response text color',
-            description: currentResponse ? currentResponse.label : 'Default',
-          },
-          {
-            value: 'diff',
-            label: 'Code diff colors',
-            description: currentDiff ? currentDiff.label : 'Default',
-          },
-        ],
-      });
-      return true;
-    }
-
-    // /theme prompt — show prompt combo presets with preview
-    if (args === 'prompt') {
-      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
-      ctx.setActiveCommand({
-        command: {
-          ...themeCmd,
-          meta: {
-            ...themeCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options: promptPresets.map((p) => {
-          const isActive = p.id === (prefs.promptPreset ?? 'default');
-          return {
-            value: `prompt:${p.id}`,
-            label: p.label,
-            description: isActive ? '[active]' : '',
-          };
-        }),
-      });
-      return true;
-    }
-
-    // /theme response — show response color presets with preview
-    if (args === 'response') {
-      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
-      ctx.setActiveCommand({
-        command: {
-          ...themeCmd,
-          meta: {
-            ...themeCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options: responsePresets.map((p) => {
-          const isActive = p.id === (prefs.responsePreset ?? 'default');
-          return {
-            value: `response:${p.id}`,
-            label: p.label,
-            description: isActive ? '[active]' : '',
-          };
-        }),
-      });
-      return true;
-    }
-
-    // /theme diff — show diff color presets with preview
-    if (args === 'diff') {
-      ctx.setThemePreview(buildCurrentPreview(prefs, fallbackDiff));
-      ctx.setActiveCommand({
-        command: {
-          ...themeCmd,
-          meta: {
-            ...themeCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options: diffPresets.map((p) => {
-          const isActive = p.id === (prefs.diffPreset ?? 'default');
-          return {
-            value: `diff:${p.id}`,
-            label: p.label,
-            description: isActive ? '[active]' : '',
-          };
-        }),
-      });
-      return true;
-    }
-
-    // /theme prompt:<id>, response:<id>, or diff:<id> — apply custom selection, then return to custom menu
-    if (
-      args.startsWith('prompt:') ||
-      args.startsWith('response:') ||
-      args.startsWith('diff:')
-    ) {
-      const colonIdx = args.indexOf(':');
-      const category = args.slice(0, colonIdx);
-      const presetId = args.slice(colonIdx + 1);
-
-      const updatedPrefs = { ...prefs };
-      if (category === 'prompt') {
-        const preset = getPromptPreset(presetId);
-        if (!preset) {
-          ctx.showAlert(`Unknown prompt preset: ${presetId}`, 'error', 3000);
-          return true;
-        }
-        updatedPrefs.promptPreset =
-          preset.id === 'default' ? undefined : preset.id;
-        ctx.setUserColors(
-          { text: preset.textColor, bg: preset.bgColor },
-          undefined,
-          undefined
-        );
-        const saved1 = saveUserThemePrefs(updatedPrefs);
-        ctx.showAlert(
-          saved1
-            ? `Prompt style set to ${preset.label}`
-            : `Prompt applied but failed to save`,
-          saved1 ? 'success' : 'error',
-          3000
-        );
-      } else if (category === 'response') {
-        const preset = getResponsePreset(presetId);
-        if (!preset) {
-          ctx.showAlert(`Unknown response preset: ${presetId}`, 'error', 3000);
-          return true;
-        }
-        updatedPrefs.responsePreset =
-          preset.id === 'default' ? undefined : preset.id;
-        ctx.setUserColors(undefined, preset.textColor, undefined);
-        const saved2 = saveUserThemePrefs(updatedPrefs);
-        ctx.showAlert(
-          saved2
-            ? `Response color set to ${preset.label}`
-            : `Response applied but failed to save`,
-          saved2 ? 'success' : 'error',
-          3000
-        );
-      } else {
-        // diff
-        const preset = getDiffPreset(presetId);
-        if (!preset) {
-          ctx.showAlert(`Unknown diff preset: ${presetId}`, 'error', 3000);
-          return true;
-        }
-        updatedPrefs.diffPreset =
-          preset.id === 'default' ? undefined : preset.id;
-        ctx.setUserColors(undefined, undefined, preset);
-        const saved3 = saveUserThemePrefs(updatedPrefs);
-        ctx.showAlert(
-          saved3
-            ? `Diff colors set to ${preset.label}`
-            : `Diff applied but failed to save`,
-          saved3 ? 'success' : 'error',
-          3000
-        );
-      }
-
-      // Return to custom menu with updated preview
-      const currentPrompt = getPromptPreset(updatedPrefs.promptPreset);
-      const currentResponse = getResponsePreset(updatedPrefs.responsePreset);
-      const currentDiff = getDiffPreset(updatedPrefs.diffPreset);
-      ctx.setThemePreview(buildCurrentPreview(updatedPrefs, fallbackDiff));
-      ctx.setActiveCommand({
-        command: {
-          ...themeCmd,
-          meta: {
-            ...themeCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options: [
-          {
-            value: 'prompt',
-            label: 'Prompt style',
-            description: currentPrompt ? currentPrompt.label : 'Default',
-          },
-          {
-            value: 'response',
-            label: 'Response text color',
-            description: currentResponse ? currentResponse.label : 'Default',
-          },
-          {
-            value: 'diff',
-            label: 'Code diff colors',
-            description: currentDiff ? currentDiff.label : 'Default',
-          },
-        ],
-      });
-      return true;
-    }
-
-    // Bare /theme — show top-level: Auto, Dark Theme, Light Theme, Custom
-    // Initial preview matches first highlighted item (Auto)
-    ctx.setThemePreview(ctx.getAutoPreview() || null);
-
-    // Determine which option is currently active
-    const activeBundledId = bundledThemes.find((t) => {
-      const matchPrompt = (prefs.promptPreset ?? 'default') === t.prompt.id;
-      const matchResponse =
-        (prefs.responsePreset ?? 'default') === t.response.id;
-      const matchDiff = (prefs.diffPreset ?? 'default') === t.diff.id;
-      return matchPrompt && matchResponse && matchDiff;
-    })?.id;
-    const isCustomActive =
-      !activeBundledId &&
-      (prefs.promptPreset || prefs.responsePreset || prefs.diffPreset);
-
-    const isDefaultActive = !activeBundledId && !isCustomActive;
-
-    ctx.setActiveCommand({
-      command: {
-        ...themeCmd,
-        meta: {
-          ...themeCmd.meta,
-          inputType: 'selection' as const,
-          searchable: false,
-        },
-      },
-      options: [
-        {
-          value: 'bundled:default',
-          label: 'Auto',
-          description: isDefaultActive
-            ? '[active]'
-            : 'Auto-detected theme for your terminal',
-        },
-        ...bundledThemes.map((t) => ({
-          value: `bundled:${t.id}`,
-          label: t.label,
-          description: t.id === activeBundledId ? '[active]' : '',
-        })),
-        {
-          value: 'custom',
-          label: 'Custom',
-          description: isCustomActive
-            ? '[active]'
-            : 'Choose prompt, response, and diff colors separately',
-        },
-      ],
-    });
+    ctx.setShowThemePanel(true);
     return true;
   },
 
@@ -1411,7 +1092,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    ctx.setActiveCommand(buildSettingsActiveCommand(cmd));
+    // Bare /settings opens the SettingsPanel overlay; the panel handles
+    // its own item rendering and routing to sub-panels.
+    ctx.setShowSettingsPanel(true);
     return true;
   },
 
@@ -1499,22 +1182,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
-import { kiroDark } from '../theme/kiroDark.js';
-import { kiroLight } from '../theme/kiroLight.js';
-import {
-  promptPresets,
-  responsePresets,
-  diffPresets,
-  bundledThemes,
-  buildCurrentPreview,
-  buildFallbackDiff,
-  loadUserThemePrefs,
-  saveUserThemePrefs,
-  getPromptPreset,
-  getResponsePreset,
-  getDiffPreset,
-  getBundledTheme,
-} from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
 
 /**

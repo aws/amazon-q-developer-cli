@@ -47,12 +47,16 @@ export function extractThemeDiffColors(colors: Theme['colors']): {
 
 /** @internal Exported for testing */
 export function buildAutoPreview(colors: Theme['colors']): string {
-  // Prompt: terminal default text on surface background
-  const bg = chalkFromTerminalColor(colors.surface, 'bg');
-  const promptPart = bg(` ${PROMPT_PREVIEW} `);
-
-  // Response: terminal default text
-  const responsePart = RESPONSE_PREVIEW;
+  // Auto preview mirrors how the conversation actually renders messages
+  // under no user overrides:
+  //   - Prompt row: brand ▌ + surface bg + default fg (user message)
+  //   - Response row: brand ▌ + default fg (agent message, no bg)
+  // Both ▌ bars use the brand colour because that's what `<StatusBar>`
+  // draws in the live conversation.
+  const bar = chalkFromTerminalColor(colors.brand, 'bg')(' ');
+  const promptBg = chalkFromTerminalColor(colors.surface, 'bg');
+  const promptLine = `${bar} ${promptBg(` ${PROMPT_PREVIEW} `)}`;
+  const responseLine = `${bar} ${RESPONSE_PREVIEW}`;
 
   // Diff
   const addedBg = chalkFromTerminalColor(colors.diff.added.background, 'bg');
@@ -78,7 +82,7 @@ export function buildAutoPreview(colors: Theme['colors']): string {
     ? removedBg(removedFg(DIFF_REMOVED_PREVIEW))
     : removedBg(removedBar(DIFF_REMOVED_PREVIEW));
 
-  return `${promptPart}\n${responsePart}\n\n${DIFF_HEADER}\n${addedLine}\n${removedLine}`;
+  return `${promptLine}\n${responseLine}\n\n${DIFF_HEADER}\n${addedLine}\n${removedLine}`;
 }
 
 export const UserThemeBridge = () => {

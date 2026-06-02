@@ -3,7 +3,7 @@ doc_meta:
   title: /settings
   description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, configure, multi-line, shift-enter, tmux]
+  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux]
   related: [theme]
   validated: 2026-05-26
   commit: 2c5d9fe91
@@ -39,6 +39,7 @@ You can also jump directly to a subcommand:
 | `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
 | `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
 | `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
+| `history`     | Prompt history scope (session or global)             | Choose between per-session or shared history |
 
 ### display
 
@@ -100,6 +101,17 @@ Before modifying anything, the command writes a `.bak` of the file it's about to
 
 **Why Apple Terminal also flips the bell**: enabling `useOptionAsMetaKey` causes Option+<char> sequences to be delivered as escape sequences, which also trip the audio bell on some keypresses. Switching to visual bell avoids the terminal beeping on every Option+Enter. If you'd rather keep the audio bell, you can flip it back in Terminal.app → Settings → <profile> → Advanced → "Audible bell".
 
+### history
+
+Choose where prompt history is stored. Two options:
+
+- **Session** (default) — Each session has its own prompt history; ↑ in the prompt only recalls inputs typed in the current session.
+- **Global** — All sessions share one prompt history; ↑ recalls inputs from any session.
+
+The active choice is marked with `●` next to the row label. Changes take effect on the next session.
+
+The `chat.historyMode` setting persists to `~/.kiro/settings/cli.json`.
+
 ## Examples
 
 ### Open the settings menu
@@ -130,6 +142,12 @@ Before modifying anything, the command writes a `.bak` of the file it's about to
 
 ```
 /settings terminal
+```
+
+### Choose prompt history scope
+
+```
+/settings history
 ```
 
 ## Related

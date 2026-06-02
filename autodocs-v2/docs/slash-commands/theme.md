@@ -28,11 +28,21 @@ Theme preferences are saved to `~/.kiro/settings/kiro_cli_theme.json` and persis
 Opens the theme selection menu with four options:
 
 - **Auto** — Uses auto-detected theme based on terminal background
-- **Dark Theme** — Switches to dark base theme with optimized colors
-- **Light Theme** — Switches to light base theme with optimized colors
-- **Custom** — Configure prompt, response, and diff colors separately
+- **Dark theme** — Switches to dark base theme with optimized colors
+- **Light theme** — Switches to light base theme with optimized colors
+- **Custom** — Configure prompt, response, and diff colors through a step-by-step wizard
 
-When you select Dark Theme or Light Theme, the entire base theme switches (not just accent colors), ensuring all UI elements render correctly for your terminal background.
+Selecting Auto, Dark theme, or Light theme applies immediately and closes the overlay. Selecting Custom enters a 3-step wizard:
+
+1. **Prompt style** — Default, Purple, Ocean, Forest, Paper
+2. **Response text color** — Default, Light, Dark
+3. **Code diff colors** — Default, Dark, Light, Accessible Dark, Accessible Light
+
+Each step persists on Enter and auto-advances to the next. After Step 3 you see a `Theme updated. ✓` confirmation. Esc walks back one step at a time (Step 3 → Step 2 → Step 1 → top-level → close), so you can revise an earlier choice without restarting the wizard.
+
+A live preview block underneath the menu shows what each option will look like in the conversation — coloured `▌` bars match the user/agent message rendering, and the diff sample matches the code-diff styling.
+
+When you select Dark theme or Light theme, the entire base theme switches (not just accent colors), ensuring all UI elements render correctly for your terminal background.
 
 ## Examples
 
@@ -42,7 +52,7 @@ When you select Dark Theme or Light Theme, the entire base theme switches (not j
 /theme
 ```
 
-Select "Dark Theme" or "Light Theme" from the menu.
+Select "Dark theme" or "Light theme" from the menu.
 
 ### Reset to auto-detected theme
 
