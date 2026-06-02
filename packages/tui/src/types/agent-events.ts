@@ -134,6 +134,10 @@ export function kindToToolId(
       return 'read';
     case 'edit':
       return 'write';
+    case 'execute':
+      return 'shell';
+    case 'search':
+      return 'grep';
     default:
       return undefined;
   }

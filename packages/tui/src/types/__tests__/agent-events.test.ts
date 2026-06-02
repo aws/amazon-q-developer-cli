@@ -61,11 +61,11 @@ describe('kindToToolId', () => {
   it('maps the kinds that routing keys on', () => {
     expect(kindToToolId('read')).toBe('read');
     expect(kindToToolId('edit')).toBe('write');
+    expect(kindToToolId('execute')).toBe('shell');
+    expect(kindToToolId('search')).toBe('grep');
   });
 
   it('returns undefined for other kinds and undefined', () => {
-    expect(kindToToolId('search')).toBeUndefined();
-    expect(kindToToolId('execute')).toBeUndefined();
     expect(kindToToolId(undefined)).toBeUndefined();
   });
 });
