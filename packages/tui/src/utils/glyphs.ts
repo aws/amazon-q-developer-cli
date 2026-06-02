@@ -23,6 +23,7 @@ export interface Glyphs {
   cornerTopRight: string;
   cornerBottomRight: string;
   cornerBottomLeft: string;
+  cornerBottomLeftRound: string;
   teeLeft: string;
   teeRight: string;
   arrow: string;
@@ -67,6 +68,7 @@ export const UNICODE_GLYPHS: Glyphs = {
   cornerTopRight: '┐',
   cornerBottomRight: '┘',
   cornerBottomLeft: '└',
+  cornerBottomLeftRound: '╰',
   teeLeft: '┤',
   teeRight: '├',
   arrow: '→',
@@ -104,6 +106,7 @@ export const ASCII_GLYPHS: Glyphs = {
   cornerTopRight: '+',
   cornerBottomRight: '+',
   cornerBottomLeft: '+',
+  cornerBottomLeftRound: '+',
   teeLeft: '+',
   teeRight: '+',
   arrow: '->',

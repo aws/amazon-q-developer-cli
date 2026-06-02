@@ -163,11 +163,6 @@ describe('Chat Command', () => {
       try {
         await testCase.waitForText('What is 2+2?', 60000);
         await testCase.waitForText('The answer is 4.', 10000);
-        // The ThinkingDisplay renders a "● Thinking" header and (for >4 lines)
-        // a tail of the reasoning. With 3 short lines they should all be
-        // visible in the static snapshot, with a "Thinking" header above.
-        await testCase.waitForText('Thinking', 5000);
-        await testCase.waitForText('Thinking step three.', 5000);
       } catch (e) {
         console.log('FAILED snapshot:\n' + testCase.getSnapshotFormatted());
         const store = await testCase.getStore();
@@ -176,12 +171,15 @@ describe('Chat Command', () => {
       }
 
       const snapshot = testCase.getSnapshot().join('\n');
-      expect(snapshot).toContain('Thinking step one.');
-      expect(snapshot).toContain('Thinking step three.');
+      // Replayed thinking lands in the collapsed static buffer: a header
+      // ("Thinking..." or "Thought for Ns...") with the reasoning body hidden.
+      expect(snapshot).toMatch(/Thought for \d+s|Thinking/);
+      expect(snapshot).not.toContain('Thinking step one.');
+      expect(snapshot).not.toContain('Thinking step three.');
 
-      // The Model message should have its `thinking` field populated by the
-      // replayed AgentThoughtChunk. (Empty/missing would imply the chunk was
-      // dropped on the way through `log_entry_to_session_updates`.)
+      // ...but the Model message still has its `thinking` field populated by
+      // the replayed AgentThoughtChunk, proving the chunk survived
+      // `log_entry_to_session_updates`.
       const store = await testCase.getStore();
       const modelMsg = store.messages.find(
         (m): m is typeof m & { role: 'model' } =>

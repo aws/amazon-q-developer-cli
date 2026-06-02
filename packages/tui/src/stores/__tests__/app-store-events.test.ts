@@ -1115,3 +1115,34 @@ describe('clearCommandInput', () => {
     expect(store.getState().commandShadowText).toBeNull();
   });
 });
+
+describe('Stream event handler — thinkingMs', () => {
+  it('persists thinkingMs on the think→tool-call path', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.Thought,
+      id: 'th-1',
+      content: { type: ContentType.Text, text: 'reasoning' },
+    });
+    // Let the 16ms thinking flush fire so pendingContentFlush is null,
+    // mirroring the real think→tool-call timing.
+    await new Promise((r) => setTimeout(r, 30));
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-think',
+      name: 'fs_read',
+      kind: 'read',
+      args: { path: '/tmp/x.ts' },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const model = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model);
+    expect(model).toBeDefined();
+    expect(typeof (model as any).thinkingMs).toBe('number');
+    expect((model as any).thinkingMs).toBeGreaterThanOrEqual(0);
+  });
+});

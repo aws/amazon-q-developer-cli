@@ -22,6 +22,11 @@ export interface UseExpandableOutputOptions {
   isStatic?: boolean;
   /** Unit label for hidden items (e.g., "lines", "files", "entries"). Defaults to "more" */
   unit?: string;
+  /**
+   * Force the output fully expanded (like `autoExpand`): always open and not
+   * registered as Ctrl+O-toggleable. Used by thinking's `expanded` mode.
+   */
+  forceExpanded?: boolean;
 }
 
 export interface UseExpandableOutputResult {
@@ -50,6 +55,7 @@ export function useExpandableOutput({
   previewCount,
   isStatic = false,
   unit = 'more',
+  forceExpanded = false,
 }: UseExpandableOutputOptions): UseExpandableOutputResult {
   const statusBarContext = useStatusBar();
   const { requestRemeasure } = statusBarContext ?? {
@@ -70,7 +76,7 @@ export function useExpandableOutput({
 
   // When the auto-expand setting is on, always show full output inline —
   // no truncation, no ctrl+o hints, no alternate read-only view.
-  const autoExpand = useStore(
+  const autoExpandSetting = useStore(
     activeStore,
     (state) =>
       (
@@ -79,6 +85,8 @@ export function useExpandableOutput({
         }
       ).settings?.[Settings.CHAT_AUTO_EXPAND_TOOL_OUTPUT] === true
   );
+  // `forceExpanded` (thinking's `expanded` mode) behaves identically.
+  const autoExpand = autoExpandSetting || forceExpanded;
 
   // Snapshot the expanded state so it's preserved when transitioning to static.
   // While active, the ref tracks the live store value.

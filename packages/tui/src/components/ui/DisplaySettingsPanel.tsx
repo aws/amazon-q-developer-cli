@@ -11,7 +11,8 @@ import {
   useAllowAsciiArt,
   useAllowAnimations,
   useAllowIcons,
-  useShowThinking,
+  useThinkingMode,
+  type ThinkingMode,
 } from '../../hooks/useGlyphs.js';
 import { useAppStore } from '../../stores/app-store.js';
 
@@ -21,7 +22,11 @@ interface ToggleItem {
   description: string;
   defaultValue: boolean;
   inverted?: boolean;
+  /** When set, the item cycles through these string values instead of on/off. */
+  cycle?: string[];
 }
+
+const THINKING_MODES: ThinkingMode[] = ['collapsed', 'expanded', 'off'];
 
 const ITEMS: ToggleItem[] = [
   {
@@ -46,8 +51,9 @@ const ITEMS: ToggleItem[] = [
     key: Settings.CHAT_SHOW_THINKING,
     label: 'Show thinking',
     description:
-      'When on: display model reasoning/thinking content. When off: reasoning is hidden',
+      'collapsed: header only (ctrl+o to view) · expanded: always show · off: hidden',
     defaultValue: true,
+    cycle: THINKING_MODES,
   },
   {
     key: Settings.CHAT_TERMINAL_TITLE,
@@ -73,19 +79,21 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const dimText = getColor('secondary');
   const brandText = getColor('primary');
 
-  const [index, setIndex] = useState(0);
-  const [values, setValues] = useState(() =>
-    Object.fromEntries(
-      ITEMS.map((item) => [
-        item.key,
-        readBoolSetting(item.key, item.defaultValue),
-      ])
-    )
-  );
   const { setAllowAsciiArt } = useAllowAsciiArt();
   const { setAllowAnimations } = useAllowAnimations();
   const { setAllowIcons } = useAllowIcons();
-  const { setShowThinking } = useShowThinking();
+  const { thinkingMode, setThinkingMode } = useThinkingMode();
+  const [index, setIndex] = useState(0);
+  const [values, setValues] = useState<Record<string, boolean | string>>(() =>
+    Object.fromEntries(
+      ITEMS.map((item) => [
+        item.key,
+        item.cycle
+          ? thinkingMode
+          : readBoolSetting(item.key, item.defaultValue),
+      ])
+    )
+  );
   const kiro = useAppStore((state) => state.kiro);
   const fromSettings = useAppStore((state) => state.settingsReturnOnEscape);
   const setTerminalTitleEnabled = useAppStore(
@@ -94,6 +102,18 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
 
   const toggle = useCallback(
     (key: string) => {
+      const item = ITEMS.find((it) => it.key === key)!;
+      if (item.cycle) {
+        const cur = String(values[key]);
+        const next =
+          item.cycle[(item.cycle.indexOf(cur) + 1) % item.cycle.length]!;
+        kiro.setSetting(key, next).catch(() => {});
+        setValues((prev) => ({ ...prev, [key]: next }));
+        if (key === Settings.CHAT_SHOW_THINKING) {
+          setThinkingMode(next as ThinkingMode);
+        }
+        return;
+      }
       const newVal = !values[key];
       // Persist via ACP backend (locked read-modify-write)
       kiro.setSetting(key, newVal).catch(() => {});
@@ -106,8 +126,6 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         setAllowAnimations(newVal);
       } else if (key === Settings.CHAT_ICONS) {
         setAllowIcons(newVal);
-      } else if (key === Settings.CHAT_SHOW_THINKING) {
-        setShowThinking(newVal);
       } else if (key === Settings.CHAT_TERMINAL_TITLE) {
         setTerminalTitleEnabled(newVal);
       }
@@ -118,7 +136,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       setAllowAsciiArt,
       setAllowAnimations,
       setAllowIcons,
-      setShowThinking,
+      setThinkingMode,
       setTerminalTitleEnabled,
     ]
   );
@@ -153,8 +171,11 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         {ITEMS.map((item, i) => {
           const active = i === index;
           const rawVal = values[item.key];
-          const displayVal = item.inverted ? !rawVal : rawVal;
-          const val = displayVal ? 'on' : 'off';
+          const val = item.cycle
+            ? String(rawVal)
+            : (item.inverted ? !rawVal : rawVal)
+              ? 'on'
+              : 'off';
           return (
             <Box key={item.key} flexDirection="row">
               {active ? (
@@ -168,7 +189,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
                   {active ? selectedLabel(item.label) : label(item.label)}
                 </Text>
               </Box>
-              <Box width={5}>
+              <Box width={11}>
                 <Text>{brandText(val)}</Text>
               </Box>
               <Text>{dimText(item.description)}</Text>

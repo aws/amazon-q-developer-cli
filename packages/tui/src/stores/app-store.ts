@@ -373,6 +373,8 @@ export type MessageType =
       role: MessageRole.Model;
       content: string;
       thinking?: string;
+      /** Wall-clock duration spent reasoning, in ms (set once reasoning ends). */
+      thinkingMs?: number;
       agentName?: string;
       shellOutput?: boolean;
       standalone?: boolean;
@@ -1768,6 +1770,11 @@ export const createAppStore = (props: AppStoreProps) => {
       let isBuffering = false;
       let bufferedContent = '';
       let bufferedThinking = '';
+      // Reasoning timing: timestamp of the first Thought for the current model
+      // message, and the duration once reasoning ends (first text Content or a
+      // ToolCall). Drives the "Thought for Ns" header.
+      let thinkingStart: number | null = null;
+      let thinkingMs: number | null = null;
 
       // Batching: accumulate content chunks and flush to the store
       // on a timer so Ink's render loop isn't starved by rapid-fire
@@ -1821,6 +1828,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 ...msg,
                 content: bufferedContent,
                 thinking: bufferedThinking || msg.thinking,
+                thinkingMs: thinkingMs ?? msg.thinkingMs,
               };
               return { messages };
             }
@@ -1843,6 +1851,7 @@ export const createAppStore = (props: AppStoreProps) => {
               role: MessageRole.Model,
               content: bufferedContent,
               thinking: bufferedThinking || lastMsg.thinking,
+              thinkingMs: thinkingMs ?? lastMsg.thinkingMs,
               agentName: lastMsg.agentName ?? state.currentAgent?.name,
             };
             return { messages };
@@ -1856,6 +1865,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   role: MessageRole.Model,
                   content: bufferedContent,
                   thinking: bufferedThinking || undefined,
+                  thinkingMs: thinkingMs ?? undefined,
                   agentName: state.currentAgent?.name,
                 },
               ],
@@ -1896,6 +1906,8 @@ export const createAppStore = (props: AppStoreProps) => {
             bufferedContent = '';
             bufferedThinking = '';
             lastContentEventId = null;
+            thinkingStart = null;
+            thinkingMs = null;
 
             if (event.content.type === 'text') {
               const text = event.content.text;
@@ -1916,6 +1928,10 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.Content:
             if (event.content.type === 'text') {
               const text = event.content.text;
+              // First text after reasoning ends the thinking phase.
+              if (thinkingStart !== null && thinkingMs === null) {
+                thinkingMs = Date.now() - thinkingStart;
+              }
               bufferedContent += text;
               lastContentEventId = event.id;
 
@@ -1931,6 +1947,7 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.Thought:
             // Thinking content — tracked separately for distinct rendering
             if (event.content.type === 'text') {
+              if (thinkingStart === null) thinkingStart = Date.now();
               bufferedThinking += event.content.text;
               lastContentEventId = event.id;
 
@@ -1942,16 +1959,25 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             break;
           case AgentEventType.ToolCall:
+            // A tool call also ends the thinking phase.
+            if (thinkingStart !== null && thinkingMs === null) {
+              thinkingMs = Date.now() - thinkingStart;
+            }
             if (isBuffering && bufferedContent) {
               commitBufferedContent();
               isBuffering = false;
             }
-            // Flush any pending batched content before adding tool message
+            // Flush buffered content before adding the tool message. We flush
+            // unconditionally (not just when a timer is pending): on the common
+            // think→tool-call path the thinking text's 16ms timer has already
+            // fired, so the just-computed thinkingMs would otherwise be reset
+            // away before reaching the model message. flushContentToStore()
+            // no-ops when nothing is buffered.
             if (pendingContentFlush) {
               clearTimeout(pendingContentFlush);
               pendingContentFlush = null;
-              flushContentToStore();
             }
+            flushContentToStore();
             // Report tool use to cmux sidebar
             syncCmuxStatus('tool-use', event.name);
             // Reset buffer so the next Model message after this tool
@@ -1959,6 +1985,8 @@ export const createAppStore = (props: AppStoreProps) => {
             bufferedContent = '';
             bufferedThinking = '';
             lastContentEventId = null;
+            thinkingStart = null;
+            thinkingMs = null;
 
             set((state) => {
               const existingIndex = state.messages.findIndex(

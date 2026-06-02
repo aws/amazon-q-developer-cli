@@ -27,7 +27,7 @@ import { trimStaticItems } from '../../utils/trim-static-items.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
-import { useShowThinking } from '../../hooks/useGlyphs.js';
+import { useThinkingMode } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
 
@@ -87,7 +87,7 @@ const StaticMessage = React.memo(function StaticMessage({
   prevRole?: MessageRole;
   mainAgentName?: string;
 }) {
-  const { showThinking: SHOW_THINKING } = useShowThinking();
+  const { thinkingMode } = useThinkingMode();
   if (message.role === MessageRole.User) {
     return (
       <Message
@@ -119,7 +119,9 @@ const StaticMessage = React.memo(function StaticMessage({
   }
   if (message.role === MessageRole.Model) {
     const thinkingText =
-      SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+      thinkingMode !== 'off' && 'thinking' in message
+        ? message.thinking
+        : undefined;
     // Skip messages whose only content is hidden thinking — otherwise we'd
     // render an empty wrapping Box and leave a stray blank row in the
     // scrollback when `chat.showThinking` is off.
@@ -133,6 +135,10 @@ const StaticMessage = React.memo(function StaticMessage({
         {thinkingText && (
           <ThinkingDisplay
             text={thinkingText}
+            mode={thinkingMode}
+            thinkingMs={
+              'thinkingMs' in message ? message.thinkingMs : undefined
+            }
             isStatic
             barColor={agentBarColor}
           />
@@ -174,7 +180,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
-  const { showThinking: SHOW_THINKING } = useShowThinking();
+  const { thinkingMode } = useThinkingMode();
   const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
 
   // Find the last message that isn't a subagent tool call (those are hidden in rendering)
@@ -239,7 +245,9 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           );
         }
         const thinkingText =
-          SHOW_THINKING && 'thinking' in message ? message.thinking : undefined;
+          thinkingMode !== 'off' && 'thinking' in message
+            ? message.thinking
+            : undefined;
         // Skip messages whose only content is hidden thinking — otherwise we'd
         // render an empty wrapping Box and leave a stray blank row in the
         // streaming scrollback when `chat.showThinking` is off.
@@ -294,7 +302,14 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             marginTop={needsModelSpacing(prevRole) ? 1 : 0}
           >
             {thinkingText && (
-              <ThinkingDisplay text={thinkingText} barColor={agentBarColor} />
+              <ThinkingDisplay
+                text={thinkingText}
+                mode={thinkingMode}
+                thinkingMs={
+                  'thinkingMs' in message ? message.thinkingMs : undefined
+                }
+                barColor={agentBarColor}
+              />
             )}
             {inner}
           </Box>

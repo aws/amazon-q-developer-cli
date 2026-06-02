@@ -86,9 +86,9 @@ describe('chat.showThinking setting', () => {
     expect(exitCode).toBe(0);
   }, 30000);
 
-  it('renders <ThinkingDisplay> with reasoning text when chat.showThinking=true', async () => {
+  it('renders <ThinkingDisplay> collapsed (header only) when chat.showThinking=true', async () => {
     testCase = await E2ETestCase.builder()
-      .withTestName('show-thinking-enabled')
+      .withTestName('show-thinking-collapsed')
       .withTerminal({ width: 120, height: 40 })
       .withGlobalSettings({ 'chat.showThinking': true })
       .launch();
@@ -121,10 +121,62 @@ describe('chat.showThinking setting', () => {
     await testCase.pressEnter();
 
     await testCase.waitForText('Final answer.', 15000);
-    // With 3 short lines (well under the PREVIEW_LINES tail of 4), all of
-    // them should be visible in the static snapshot under a "Thinking"
-    // header.
-    await testCase.waitForText('Thinking', 5000);
+    // Legacy `true` maps to the collapsed mode: a header + "ctrl+o to view"
+    // hint, but the reasoning body stays hidden until ctrl+o.
+    await testCase.waitForText('ctrl+o to view', 5000);
+
+    const snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).not.toContain('Reasoning step one.');
+    expect(snapshot).not.toContain('Reasoning step three.');
+
+    // ctrl+o expands the full reasoning stream.
+    await testCase.sendKeys([0x0f]);
+    await testCase.sleepMs(300);
+    const expanded = testCase.getSnapshot().join('\n');
+    expect(expanded).toContain('Reasoning step one.');
+    expect(expanded).toContain('Reasoning step three.');
+
+    await testCase.pressCtrlCTwice();
+    const exitCode = await testCase.expectExit();
+    expect(exitCode).toBe(0);
+  }, 30000);
+
+  it('renders reasoning inline when chat.showThinking=expanded', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTestName('show-thinking-expanded')
+      .withTerminal({ width: 120, height: 40 })
+      .withGlobalSettings({ 'chat.showThinking': 'expanded' })
+      .launch();
+
+    await testCase.waitForText('ask a question', 15000);
+    await testCase.getSessionId();
+
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'ReasoningEvent',
+          data: {
+            text:
+              'Reasoning step one.\n' +
+              'Reasoning step two.\n' +
+              'Reasoning step three.',
+          },
+        },
+      },
+      {
+        kind: 'event',
+        data: { kind: 'AssistantResponseEvent', data: { content: 'Final answer.' } },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    await testCase.sendKeys('hello');
+    await testCase.sleepMs(100);
+    await testCase.pressEnter();
+
+    await testCase.waitForText('Final answer.', 15000);
+    // expanded mode shows the full stream inline without any ctrl+o press.
     await testCase.waitForText('Reasoning step three.', 5000);
 
     const snapshot = testCase.getSnapshot().join('\n');

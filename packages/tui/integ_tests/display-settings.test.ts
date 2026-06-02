@@ -72,11 +72,11 @@ describe('Display settings panel', () => {
     expect(snap).toContain('ASCII art');
     expect(snap).toContain('Icons');
     expect(snap).toContain('Show thinking');
-    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on, Show thinking on
+    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on, Show thinking expanded
     expect(snap).toMatch(/Animations\s+on/);
     expect(snap).toMatch(/ASCII art\s+on/);
     expect(snap).toMatch(/Icons\s+on/);
-    expect(snap).toMatch(/Show thinking\s+on/);
+    expect(snap).toMatch(/Show thinking\s+expanded/);
   }, 30000);
 
   it('toggling ASCII art updates UI', async () => {
@@ -151,7 +151,7 @@ describe('Display settings panel', () => {
     await testCase.sleepMs(300);
 
     snap = testCase.getSnapshot().join('\n');
-    expect(snap).toContain('When on: display model reasoning');
+    expect(snap).toContain('collapsed: header only');
   }, 30000);
 
   it('respects pre-existing settings on open', async () => {
@@ -193,9 +193,9 @@ describe('Display settings panel', () => {
     await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
-    // Verify the toggle changed in the UI (on -> off)
+    // Verify the cycle advanced in the UI (collapsed -> expanded)
     const snap = testCase.getSnapshot().join('\n');
-    expect(snap).toMatch(/Show thinking\s+off/);
+    expect(snap).toMatch(/Show thinking\s+expanded/);
   }, 30000);
 
   it('respects pre-existing showThinking=false setting on open', async () => {

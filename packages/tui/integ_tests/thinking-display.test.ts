@@ -3,13 +3,17 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 
 /**
- * These tests exercise the `<ThinkingDisplay>` component (rendering, tail
- * truncation, ctrl+o expand/collapse). Rendering is gated by
- * `chat.showThinking` (default `true`), so each test explicitly sets it via
- * `withGlobalSettings({ 'chat.showThinking': true })` to be resilient
- * against future default changes.
+ * Exercises the redesigned `<ThinkingDisplay>`:
+ *   - collapsed by default — only a header + "ctrl+o for details" hint, the
+ *     reasoning body is hidden.
+ *   - ctrl+o expands the full stream (shared with tool outputs) and collapses
+ *     it again — ctrl+o is a toggle in collapsed mode.
+ *   - once a turn is flushed to the static (history) buffer it shows just the
+ *     "Thought for Ns" hint, frozen: no body, no ctrl+o affordance.
  *
- * The setting itself is exercised by `e2e_tests/show-thinking-setting.test.ts`.
+ * The `chat.showThinking` mode (collapsed/expanded/off) is set explicitly via
+ * `withGlobalSettings` so these are resilient to default changes. The setting
+ * gate itself is covered by `e2e_tests/show-thinking-setting.test.ts`.
  */
 describe('Thinking display', () => {
   let testCase: TestCase | null = null;
@@ -21,24 +25,24 @@ describe('Thinking display', () => {
     }
   });
 
-  it('stores thinking text on model message', async () => {
+  const REASONING = Array.from(
+    { length: 6 },
+    (_, i) => `Reasoning step ${i + 1}.`
+  ).join('\n');
+
+  it('stores thinking text on the model message', async () => {
     testCase = await TestCase.builder()
-      .withGlobalSettings({ 'chat.showThinking': true })
+      .withGlobalSettings({ 'chat.showThinking': 'collapsed' })
       .withTestName('thinking-store')
       .withTimeout(15000)
       .launch();
 
     await testCase.waitForVisibleText('ask a question');
 
-    // Queue thinking + content events before sending the prompt so they're
-    // dispatched when MockSessionClient.prompt() processes the queue.
     await testCase.mockSessionUpdate({
       type: AgentEventType.Thought,
       id: 'thought-1',
-      content: {
-        type: ContentType.Text,
-        text: 'Let me reason about this.',
-      },
+      content: { type: ContentType.Text, text: 'Let me reason about this.' },
     });
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
@@ -46,11 +50,9 @@ describe('Thinking display', () => {
       content: { type: ContentType.Text, text: 'Here is my answer.' },
     });
 
-    // Send the user message — prompt() will drain the event queue
     await testCase.sendKeys('hello\r');
     await testCase.sleepMs(1000);
 
-    // Verify the store has a model message with both content and thinking
     const store = await testCase.getStore();
     const modelMsg = store.messages.find((m) => m.role === 'model');
     expect(modelMsg).toBeDefined();
@@ -58,205 +60,135 @@ describe('Thinking display', () => {
     expect((modelMsg as Record<string, unknown>).thinking).toBe(
       'Let me reason about this.'
     );
+    // Duration is captured once content follows the thought.
+    expect(
+      typeof (modelMsg as Record<string, unknown>).thinkingMs
+    ).toBe('number');
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
     await testCase.expectExit();
   }, 30000);
 
-  it('renders thinking text in terminal output', async () => {
+  it('collapses by default: header + hint shown, reasoning body hidden', async () => {
     testCase = await TestCase.builder()
-      .withGlobalSettings({ 'chat.showThinking': true })
-      .withTestName('thinking-renders')
+      .withGlobalSettings({ 'chat.showThinking': 'collapsed' })
+      .withTestName('thinking-collapsed-default')
       .withTimeout(15000)
       .launch();
 
     await testCase.waitForVisibleText('ask a question');
 
-    // Queue thinking + content
     await testCase.mockSessionUpdate({
       type: AgentEventType.Thought,
-      id: 'thought-2',
-      content: {
-        type: ContentType.Text,
-        text: 'Analyzing the request carefully.',
-      },
+      id: 'thought-collapsed',
+      content: { type: ContentType.Text, text: REASONING },
     });
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
-      id: 'content-2',
-      content: { type: ContentType.Text, text: 'Done.' },
-    });
-
-    await testCase.sendKeys('hello\r');
-    await testCase.sleepMs(500);
-
-    // The thinking text should be visible in the terminal output.
-    const snapshot = testCase.getSnapshot();
-    const hasThinking = snapshot.some((line) =>
-      line.includes('Analyzing the request')
-    );
-    expect(hasThinking).toBe(true);
-
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
-
-  it('long thinking shows tail and ctrl+o hint after the turn ends', async () => {
-    testCase = await TestCase.builder()
-      .withGlobalSettings({ 'chat.showThinking': true })
-      .withTestName('thinking-tail-hint')
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question');
-
-    // 10-line thinking trace; only the last 4 should be visible when collapsed.
-    const lines = Array.from(
-      { length: 10 },
-      (_, i) => `Reasoning step ${i + 1}.`
-    );
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Thought,
-      id: 'thought-tail',
-      content: { type: ContentType.Text, text: lines.join('\n') },
-    });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-tail',
+      id: 'content-collapsed',
       content: { type: ContentType.Text, text: 'All done.' },
     });
 
     await testCase.sendKeys('hello\r');
     await testCase.sleepMs(500);
 
-    const snapshot = testCase.getSnapshot();
-    const flatten = snapshot.join('\n');
-
-    // Tail: the last 4 lines must be present.
-    for (const tailLine of lines.slice(-4)) {
-      expect(flatten).toContain(tailLine);
-    }
-    // Earlier lines must be hidden.
-    for (const hiddenLine of lines.slice(0, -4)) {
-      expect(flatten).not.toContain(hiddenLine);
-    }
-    // ctrl+o hint must be visible since the turn is no longer streaming.
-    expect(flatten).toContain('ctrl+o to toggle');
+    const flatten = testCase.getSnapshot().join('\n');
+    // Completed header + collapse hint, but no reasoning body.
+    expect(flatten).toContain('Thought for');
+    expect(flatten).toContain('ctrl+o to view');
+    expect(flatten).not.toContain('Reasoning step 1.');
+    expect(flatten).not.toContain('Reasoning step 6.');
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
     await testCase.expectExit();
   }, 30000);
 
-  it('ctrl+o toggles between collapsed tail and expanded full thinking', async () => {
+  it('ctrl+o expands the full stream, then collapses it again', async () => {
     testCase = await TestCase.builder()
-      .withGlobalSettings({ 'chat.showThinking': true })
-      .withTestName('thinking-ctrl-o-expand')
+      .withGlobalSettings({ 'chat.showThinking': 'collapsed' })
+      .withTestName('thinking-ctrl-o-toggle')
       .withTimeout(15000)
       .launch();
 
     await testCase.waitForVisibleText('ask a question');
 
-    const lines = Array.from(
-      { length: 10 },
-      (_, i) => `Reasoning step ${i + 1}.`
-    );
     await testCase.mockSessionUpdate({
       type: AgentEventType.Thought,
-      id: 'thought-expand',
-      content: { type: ContentType.Text, text: lines.join('\n') },
+      id: 'thought-toggle',
+      content: { type: ContentType.Text, text: REASONING },
     });
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
-      id: 'content-expand',
+      id: 'content-toggle',
       content: { type: ContentType.Text, text: 'All done.' },
     });
 
     await testCase.sendKeys('hello\r');
     await testCase.sleepMs(500);
 
-    // Initial collapsed state: tail visible, earlier lines hidden, top
-    // hint with the "ctrl+o to toggle" suffix.
+    // Collapsed: body hidden.
     let flatten = testCase.getSnapshot().join('\n');
     expect(flatten).not.toContain('Reasoning step 1.');
-    expect(flatten).toContain('Reasoning step 10.');
-    expect(flatten).toContain('lines above');
-    expect(flatten).toContain('ctrl+o to toggle');
+    expect(flatten).toContain('ctrl+o to view');
 
-    // Press ctrl+o (0x0f) to expand.
+    // ctrl+o (0x0f) → expanded: every line visible, hint flips to collapse.
     await testCase.sendKeys([0x0f]);
     await testCase.sleepMs(200);
-
-    // All 10 lines should now be visible.
     flatten = testCase.getSnapshot().join('\n');
-    for (const line of lines) {
-      expect(flatten).toContain(line);
+    for (let i = 1; i <= 6; i++) {
+      expect(flatten).toContain(`Reasoning step ${i}.`);
     }
-    // The "lines above" hint disappears when expanded — there's nothing
-    // above the visible body anymore, so the count would be 0. (Different
-    // from Read/Grep, whose head-truncation hint stays visible as a
-    // "ctrl+o to collapse" affordance.)
-    expect(flatten).not.toContain('lines above');
+    expect(flatten).toContain('ctrl+o to collapse details');
 
-    // Press ctrl+o again to collapse — confirms ctrl+o is a toggle, not a
-    // one-way expand.
+    // ctrl+o again → collapsed: body hidden, hint flips back.
     await testCase.sendKeys([0x0f]);
     await testCase.sleepMs(200);
-
     flatten = testCase.getSnapshot().join('\n');
     expect(flatten).not.toContain('Reasoning step 1.');
     expect(flatten).not.toContain('Reasoning step 6.');
-    expect(flatten).toContain('Reasoning step 7.');
-    expect(flatten).toContain('Reasoning step 10.');
-    // Hint reappears on collapse.
-    expect(flatten).toContain('lines above');
-    expect(flatten).toContain('ctrl+o to toggle');
+    expect(flatten).toContain('ctrl+o to view');
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
     await testCase.expectExit();
   }, 30000);
 
-  it('preserves paragraph breaks and trims leading empty in the tail', async () => {
+  it('static (history) buffer shows only the "Thought for Ns" hint, frozen', async () => {
     testCase = await TestCase.builder()
-      .withGlobalSettings({ 'chat.showThinking': true })
-      .withTestName('thinking-paragraphed')
+      .withGlobalSettings({ 'chat.showThinking': 'collapsed' })
+      .withTestName('thinking-static-hint')
       .withTimeout(15000)
       .launch();
 
     await testCase.waitForVisibleText('ask a question');
 
-    // Thinking with paragraph breaks. The slice(-4) lands on
-    //   ["", "Para C.", "", "Para D."]
-    // — leading empty must be trimmed; internal empty must be preserved.
-    const text = ['Para A.', '', 'Para B.', '', 'Para C.', '', 'Para D.'].join(
-      '\n'
-    );
+    // Turn 1: thinking + content.
     await testCase.mockSessionUpdate({
       type: AgentEventType.Thought,
-      id: 'thought-paragraph',
-      content: { type: ContentType.Text, text },
+      id: 'thought-static',
+      content: { type: ContentType.Text, text: REASONING },
     });
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
-      id: 'content-paragraph',
-      content: { type: ContentType.Text, text: 'All done.' },
+      id: 'content-static',
+      content: { type: ContentType.Text, text: 'First answer.' },
     });
-
     await testCase.sendKeys('hello\r');
-    await testCase.sleepMs(500);
+    await testCase.waitForVisibleText('First answer.');
 
-    const snapshot = testCase.getSnapshot();
-    const flatten = snapshot.join('\n');
+    // A second prompt completes turn 1, flushing it to <Static>. We only need
+    // the new user message to register — turn 1 becomes a completed turn as
+    // soon as a newer user message exists.
+    await testCase.sendKeys('again\r');
+    await testCase.waitForVisibleText('again');
+    await testCase.sleepMs(300);
 
-    // Tail of the visible body — Para C and Para D must be present.
-    expect(flatten).toContain('Para C.');
-    expect(flatten).toContain('Para D.');
-    // Earlier paragraphs must be hidden behind the "lines above" hint.
-    expect(flatten).not.toContain('Para A.');
-    expect(flatten).not.toContain('Para B.');
-    // Top-hint shape: "above" makes direction explicit; "ctrl+o to toggle"
-    // matches the wording the rest of the app uses.
-    expect(flatten).toContain('lines above');
-    expect(flatten).toContain('ctrl+o to toggle');
+    const flatten = testCase.getSnapshot().join('\n');
+    // Historical thinking is just a frozen hint: no body, no ctrl+o affordance.
+    expect(flatten).toContain('Thought for');
+    expect(flatten).not.toContain('Reasoning step 1.');
+    expect(flatten).not.toContain('Reasoning step 6.');
+    expect(flatten).not.toContain('ctrl+o to view');
+    expect(flatten).not.toContain('ctrl+o to collapse details');
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
     await testCase.expectExit();

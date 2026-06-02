@@ -2,9 +2,8 @@ import React from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 
-/** Prefix icon (downward-and-rightward pipe) */
-const PREFIX = '╰ ';
 const LEFT_MARGIN = 2;
 
 export interface ToolMetaProps {
@@ -16,6 +15,7 @@ export const ToolMeta = React.memo(function ToolMeta({
   params,
 }: ToolMetaProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   if (!params || params.length === 0) return null;
 
@@ -24,7 +24,7 @@ export const ToolMeta = React.memo(function ToolMeta({
   return (
     <Box marginLeft={LEFT_MARGIN}>
       <Text wrap="wrap">
-        {color(PREFIX)}
+        {color(`${glyphs.cornerBottomLeftRound} `)}
         {color(params.join(', '))}
       </Text>
     </Box>

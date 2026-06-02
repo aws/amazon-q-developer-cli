@@ -2,22 +2,25 @@ import React, { useMemo } from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
-import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
-
-/** Number of trailing lines shown in the collapsed view. */
-const PREVIEW_LINES = 4;
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
+import type { ThinkingMode } from '../../../hooks/useGlyphs.js';
 
 export interface ThinkingDisplayProps {
   /** Reasoning/thinking text emitted by the agent. */
   text: string;
+  /** Display mode. `off` is handled by the caller (this never renders then). */
+  mode?: ThinkingMode;
   /**
-   * True when this turn has been flushed to scrollback. The expansion state
-   * is then frozen via the hook's snapshot logic, so reopening history
-   * shows whatever the user had at the time of flush. The "(ctrl+o to
-   * toggle)" suffix is also dropped from the hint in this state, since
-   * pressing ctrl+o no longer affects this block.
+   * Duration spent reasoning, in ms. When set, the block is "done": it shows
+   * "Thought for Ns" instead of the live "Thinking..." header.
+   */
+  thinkingMs?: number;
+  /**
+   * True when this turn has been flushed to scrollback. Expansion state is
+   * frozen via the hook's snapshot logic, and the ctrl+o hint is dropped.
    */
   isStatic?: boolean;
   /** Optional bar color override (defaults to the active agent's color). */
@@ -25,108 +28,76 @@ export interface ThinkingDisplayProps {
 }
 
 /**
- * Renders the agent's streaming reasoning ("thinking") text.
+ * Renders the agent's reasoning ("thinking") as a single collapsible block.
  *
- * Visual shape (collapsed, after streaming):
- *   ● Thinking
- *     ...+6 lines above (ctrl+o to toggle)
- *     Third paragraph still visible.
+ *   collapsed (default):  ⋮ Thinking... (esc to cancel · ctrl+o to view)
+ *   expanded (ctrl+o):    ⋮ Thinking... (esc to cancel · ctrl+o to collapse details)
+ *                           <full reasoning stream>
+ *   done:                 ● Thought for 3s... (ctrl+o to view)
  *
- *     Final paragraph.
- *
- * Notes:
- *   - We tail-truncate (show the most-recent lines), so the elision hint
- *     sits *above* the body — that's the direction where the hidden
- *     content actually lives. This is intentionally different from
- *     head-truncating tools like Read/Grep, which place their hint below.
- *   - Paragraph breaks (`\n\n`) are preserved as blank lines within the
- *     body. Leading empty lines from a paragraph-break landing at the slice
- *     boundary are trimmed so the body never opens with a blank row.
- *   - Expansion shares the global `toolOutputsExpanded` flag with tool
- *     outputs (ctrl+o toggles all collapsible content at once). The flag
- *     applies during streaming too — pressing ctrl+o while reasoning is
- *     still arriving expands the block immediately, the same way it does
- *     for streaming tool outputs.
- *   - In scrollback (`isStatic=true`), expansion state is frozen at flush
- *     and the hint drops the "(ctrl+o to toggle)" suffix.
+ * Expansion shares the global `toolOutputsExpanded` flag with tool outputs, so
+ * one ctrl+o toggles both. In `expanded` mode the stream is always shown and
+ * ctrl+o is a noop on thinking (handled via `forceExpanded`).
  */
 export const ThinkingDisplay = React.memo(function ThinkingDisplay({
   text,
+  mode = 'collapsed',
+  thinkingMs,
   isStatic = false,
   barColor,
 }: ThinkingDisplayProps) {
   const { getColor } = useTheme();
   const dim = getColor('secondary');
+  const keybindings = useKeybindings();
+  const glyphs = useGlyphs();
 
-  // Trim outer whitespace and split. Keep internal empty strings —
-  // they represent paragraph boundaries the model emitted on purpose
-  // and we want to render them as blank rows in both views.
   const lines = useMemo(() => {
     const trimmed = text.trim();
     return trimmed === '' ? [] : trimmed.split('\n');
   }, [text]);
 
-  // We use the hook for two things only:
-  //   1. `expanded` — subscription to the global toolOutputsExpanded flag
-  //   2. side effects: registering hasExpandableToolOutputs (so ctrl+o is
-  //      bound app-wide) and requestRemeasure() on expand/collapse.
-  // The hook's own `expandHint`/`hiddenCount` ignore our leading-empty
-  // trim, so we compute those locally below.
+  // previewCount 0: any line makes the block expandable (registers ctrl+o).
+  // forceExpanded in `expanded` mode → always open, never registered (noop).
   const { expanded } = useExpandableOutput({
     totalItems: lines.length,
-    previewCount: PREVIEW_LINES,
+    previewCount: 0,
     isStatic,
-    unit: 'lines',
+    forceExpanded: mode === 'expanded',
   });
-
-  // Streaming no longer forces a collapsed view: ctrl+o needs to take
-  // effect immediately on the thinking block, the same way it does on
-  // streaming tool outputs (e.g. Shell). If the user expands mid-stream,
-  // subsequent flushes simply append more lines below.
-  const visibleLines = useMemo(() => {
-    if (expanded) return lines;
-    let tail = lines.slice(-PREVIEW_LINES);
-    while (tail.length > 0 && tail[0] === '') {
-      tail = tail.slice(1);
-    }
-    return tail;
-  }, [expanded, lines]);
-
-  // Honest hidden count: total minus what we actually render. If the slice
-  // started on paragraph-break empties, those are reflected here as hidden
-  // — the user can ctrl+o to see them in context.
-  const hiddenAbove = expanded ? 0 : lines.length - visibleLines.length;
-
-  // Hint sits *above* the body since we tail-truncate. "above" makes the
-  // direction explicit. In active state, surface the keybinding; in static
-  // (scrollback) state, the expansion ref is frozen — pressing ctrl+o
-  // won't change this block — so we omit the suffix to avoid suggesting
-  // an action that no longer works.
-  //
-  // The hint shows during streaming too: as the model emits more lines
-  // beyond the visible tail, the count ticks up (".+5 above" → "+6 above"
-  // → ...) which gives the user a clear signal that earlier reasoning has
-  // scrolled out of view, even while the tail is still moving.
-  const topHint =
-    hiddenAbove > 0
-      ? isStatic
-        ? `...+${hiddenAbove} lines above`
-        : `...+${hiddenAbove} lines above (ctrl+o to toggle)`
-      : '';
 
   if (lines.length === 0) return null;
 
-  // Status `success` -> dot + bar both render via theme's `success` entry,
-  // which has a `truecolor` field (no `named` fallback), so dot and bar
-  // are guaranteed to render as the same colour regardless of terminal
-  // palette. Same green as finished tools — visually consistent with the
-  // rest of the chat surface.
+  const done = thinkingMs != null;
+  const title = done
+    ? `Thought for ${Math.max(1, Math.ceil(thinkingMs / 1000))}s...`
+    : 'Thinking...';
+
+  // Hint parts: "esc to cancel" only while actively reasoning; the ctrl+o
+  // toggle only when it actually does something (collapsed mode, non-static).
+  const hintParts: string[] = [];
+  if (!done && !isStatic) {
+    hintParts.push(`${keybindings.label('cancelStream')} to cancel`);
+  }
+  if (mode === 'collapsed' && !isStatic) {
+    hintParts.push(expanded ? 'ctrl+o to collapse details' : 'ctrl+o to view');
+  }
+  const hint = hintParts.length > 0 ? ` (${hintParts.join(' · ')})` : '';
+
   return (
-    <StatusBar status="success" barColor={barColor}>
+    <StatusBar status={done ? 'success' : 'thinking'} barColor={barColor}>
       <Box flexDirection="column">
-        <StatusInfo title="Thinking" />
-        {topHint !== '' && <Text>{dim(topHint)}</Text>}
-        <Text>{dim(visibleLines.join('\n'))}</Text>
+        <Text>
+          {dim(title)}
+          {dim(hint)}
+        </Text>
+        {expanded && (
+          <Box flexDirection="row" marginLeft={2}>
+            <Text>{dim(`${glyphs.cornerBottomLeftRound} `)}</Text>
+            <Box flexGrow={1} flexShrink={1}>
+              <Text>{dim(lines.join('\n'))}</Text>
+            </Box>
+          </Box>
+        )}
       </Box>
     </StatusBar>
   );
