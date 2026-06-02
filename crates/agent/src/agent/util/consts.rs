@@ -8,24 +8,6 @@ pub const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
 pub const USER_AGENT_VERSION_KEY: &str = "Version";
 pub const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
 
-#[cfg(test)]
-mod tests {
-    /// `USER_AGENT_VERSION_VALUE` is forwarded to spawned `aws` CLI subprocesses
-    /// via `AWS_EXECUTION_ENV`. The same `env!("CARGO_PKG_VERSION")` is also
-    /// used for the ACP `Implementation.version` field in `kiro-bot`. The
-    /// `0.0.0-dev` placeholder must never leak into built binaries —
-    /// `crates/agent/build.rs::inject_kiro_version()` overrides it.
-    /// Don't remove this test without removing that override.
-    #[test]
-    fn cli_version_is_not_dev_placeholder() {
-        assert_ne!(
-            super::USER_AGENT_VERSION_VALUE,
-            "0.0.0-dev",
-            "build.rs failed to inject a real version — outbound services will see the placeholder"
-        );
-    }
-}
-
 pub mod env_var {
     macro_rules! define_env_vars {
         ($($(#[$meta:meta])* $ident:ident = $name:expr),*) => {

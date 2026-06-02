@@ -6,7 +6,6 @@ authors.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Bot runtime for Kiro CLI — manages ACP-backed agent instances with pluggable frontends (Slack, cron, CLI)"
-build = "build.rs"
 
 [[bin]]
 name = "kiro-bot"
