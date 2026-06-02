@@ -1,0 +1,5 @@
+error[E0599]: no method named `assume_write_once` found for reference `&ReadOnlyView` in the current scope
+  --> tests/compile_fail/read_view_calls_assume_write.rs:16:18
+   |
+16 |     let _ = view.assume_write_once().await;
+   |                  ^^^^^^^^^^^^^^^^^ method not found in `&ReadOnlyView`

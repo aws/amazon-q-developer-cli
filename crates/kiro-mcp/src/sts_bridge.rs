@@ -69,10 +69,12 @@ const READ_HARD_RECYCLE: Duration = Duration::from_secs(50 * 60);
 const STS_MIN_DURATION_SECS: u64 = 900;
 
 /// Service used to derive a default session name when the operator did not
-/// provide one. Surfaces in CloudTrail as `botoSessionName=kiro-taskei-mcp-...`
+/// provide one. Surfaces in CloudTrail as `botoSessionName=kiro-mcp-...`
 /// so an auditor can attribute writes to this binary without parsing IAM
-/// roles.
-const SESSION_NAME_PREFIX: &str = "kiro-taskei-mcp";
+/// roles. (Phase 1c shipped this as `kiro-taskei-mcp-...`; renamed in
+/// 1c-bundle alongside the binary rename. CloudTrail queries pinned to
+/// the old prefix should be updated.)
+const SESSION_NAME_PREFIX: &str = "kiro-mcp";
 
 /// Errors specific to the STS bridge. SigV4 / signing errors surface from
 /// [`crate::sigv4_client::SigV4Error`]; this enum exists because cred

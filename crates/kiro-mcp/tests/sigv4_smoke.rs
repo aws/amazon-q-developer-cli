@@ -33,7 +33,7 @@ use hyper::{
     Response,
 };
 use hyper_util::rt::TokioIo;
-use kiro_taskei_mcp::sigv4_client::SigV4HttpClient;
+use kiro_mcp::sigv4_client::SigV4HttpClient;
 use tokio::net::TcpListener;
 
 #[derive(Default, Clone)]

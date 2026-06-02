@@ -1,28 +1,34 @@
-//! kiro-taskei-mcp — MCP stdio server backed by Amazon Taskei.
+//! Top-level CLI entry point for the bundled `kiro-mcp` shim.
 //!
-//! Phase 1c: the initialize probe now routes through the STS bridge. With
-//! both `--read-role-arn` and `--write-role-arn` unset (the Phase-0
-//! reality, where Taskei accepts the kiro-bot ECS task role directly), the
-//! bridge is a no-op pass-through and the call signs with the same base
-//! creds Phase 1b used. When a read role is configured, the read path
-//! goes through a cached `AssumeRoleProvider`. When `--scope=write` and a
-//! write role is configured, the binary builds a one-shot signed client
-//! from a per-call `AssumeRole` snapshot. No MCP stdio server yet — that
+//! Lives on the lib side (rather than in `main.rs`) so the two
+//! `[[bin]]` targets — `kiro-mcp` (canonical) and `kiro-taskei-mcp`
+//! (deprecated alias kept for one release; see plan §1c-bundle) — can
+//! both reduce to a 3-line shim that calls [`run_cli`]. Cargo refuses
+//! to share a single `main.rs` between two `[[bin]]` entries cleanly,
+//! and duplicating the file would just double the maintenance surface
+//! during the alias's lifetime.
+//!
+//! Phase 1c (recap): the initialize probe routes through the STS
+//! bridge. With both `--read-role-arn` and `--write-role-arn` unset
+//! (the Phase-0 reality, where Taskei accepts the kiro-bot ECS task
+//! role directly), the bridge is a no-op pass-through and the call
+//! signs with the same base creds Phase 1b used. When a read role is
+//! configured, the read path goes through a cached
+//! `AssumeRoleProvider`. When `--scope=write` and a write role is
+//! configured, the binary builds a one-shot signed client from a
+//! per-call `AssumeRole` snapshot. No MCP stdio server yet — that
 //! lands in Phase 1d once the rmcp transport bridge is wired in.
-//!
-//! Credentials note: this binary takes NO --aws-profile flag. At runtime it
-//! uses the AWS default provider chain — task role in ECS, profile from
-//! the ambient env locally (e.g. AWS_PROFILE=kiro-bot).
 
 use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
-use kiro_taskei_mcp::sigv4_client::{
+
+use crate::sigv4_client::{
     SigV4Error,
     SigV4HttpClient,
 };
-use kiro_taskei_mcp::sts_bridge::{
+use crate::sts_bridge::{
     StsBridge,
     StsBridgeConfig,
     WriteMode,
@@ -30,10 +36,10 @@ use kiro_taskei_mcp::sts_bridge::{
 };
 
 #[derive(Parser, Debug, Clone, Copy, PartialEq, Eq)]
-enum Scope {
-    /// Read-only: only Taskei read tools (get/list rooms, get/list tasks) are
-    /// exposed. This is the default and the surface kiro-help launches at
-    /// startup.
+pub enum Scope {
+    /// Read-only: only Taskei read tools (get/list rooms, get/list tasks)
+    /// are exposed. This is the default and the surface kiro-help launches
+    /// at startup.
     Read,
     /// Write-capable: read tools plus create/update task. Bot launches a
     /// distinct write instance behind the reaction-approval gate.
@@ -52,44 +58,77 @@ impl std::str::FromStr for Scope {
     }
 }
 
+/// Tool families the bundled shim is permitted to expose. Phase
+/// 1c-bundle only exposes `taskei`; `knowledge` and `github` migrate in
+/// via a follow-up consolidation plan (open question §6). Surfaced as
+/// a clap arg now so the shape is stable before Phase 1d's rmcp proxy
+/// lands — agent.json entries authored against this CLI today won't
+/// need to change when later families are folded in.
+#[derive(Parser, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolFamily {
+    Taskei,
+}
+
+impl std::str::FromStr for ToolFamily {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "taskei" => Ok(ToolFamily::Taskei),
+            other => Err(format!("unknown tool family `{other}` (known: taskei)")),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
-#[command(name = "kiro-taskei-mcp", version, about)]
-struct Args {
+#[command(name = "kiro-mcp", version, about)]
+pub struct Args {
     /// AWS region the Taskei endpoint lives in. Used to derive the default
     /// endpoint and to scope the SigV4 signing region.
     #[arg(long, env = "AWS_REGION", default_value = "us-east-1")]
-    region: String,
+    pub region: String,
 
     /// Override the Taskei endpoint URL. When unset, derived from --region.
     #[arg(long, env = "KIRO_TASKEI_ENDPOINT")]
-    endpoint: Option<String>,
+    pub endpoint: Option<String>,
 
     /// `read` exposes only read tools; `write` adds create/update task.
     #[arg(long, default_value = "read")]
-    scope: Scope,
+    pub scope: Scope,
 
     /// IAM role ARN to assume via STS for read calls. When unset, signs
     /// with the ambient identity from the default provider chain.
     #[arg(long, env = "KIRO_TASKEI_READ_ROLE_ARN")]
-    read_role_arn: Option<String>,
+    pub read_role_arn: Option<String>,
 
     /// IAM role ARN to assume via STS for write calls. Only used when
     /// --scope=write. Kept distinct from --read-role-arn so the read path
     /// cannot escalate.
     #[arg(long, env = "KIRO_TASKEI_WRITE_ROLE_ARN")]
-    write_role_arn: Option<String>,
+    pub write_role_arn: Option<String>,
 
     /// Comma-separated allowlist of Taskei room IDs the server is permitted
     /// to touch. Empty / unset means "no fence at this layer" — Phase 1d
     /// will treat unset as deny-by-default for write scope.
     #[arg(long, env = "KIRO_TASKEI_ALLOW_ROOMS", value_delimiter = ',')]
-    allow_rooms: Vec<String>,
+    pub allow_rooms: Vec<String>,
+
+    /// Comma-separated list of tool families to expose. Phase 1c-bundle
+    /// only honors `taskei`; the arg shape is stable so future families
+    /// don't change the agent.json contract.
+    #[arg(
+        long,
+        env = "KIRO_MCP_ENABLED_FAMILIES",
+        value_delimiter = ',',
+        default_value = "taskei"
+    )]
+    pub enabled_families: Vec<ToolFamily>,
 }
 
 fn default_endpoint(region: &str) -> String {
     // Pattern observed in Phase 0 smoke: regional sub-domains under
-    // service.mcp.taskei.amazon.dev. IAD/PDX/DUB are the only Taskei MCP
-    // regions today; for any other region, --endpoint is required.
+    // service.mcp.taskei.amazon.dev. IAD/PDX/DUB are the only Taskei
+    // MCP regions today; for any other region, --endpoint is required.
     match region {
         "us-east-1" => "https://iad.prod.service.mcp.taskei.amazon.dev/mcp".into(),
         "us-west-2" => "https://pdx.prod.service.mcp.taskei.amazon.dev/mcp".into(),
@@ -98,37 +137,60 @@ fn default_endpoint(region: &str) -> String {
     }
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Top-level entry point used by both `[[bin]]` targets.
+pub async fn run_cli() -> ExitCode {
     init_tracing();
 
     let args = Args::parse();
     let endpoint = args.endpoint.clone().unwrap_or_else(|| default_endpoint(&args.region));
 
     let bridge_cfg = StsBridgeConfig::new(args.read_role_arn.clone(), args.write_role_arn.clone());
+
+    // argv[0] is the name the shell resolved on $PATH. With the Phase
+    // 1c-bundle alias, the same `run_cli()` is reachable as either
+    // `kiro-mcp` (canonical) or `kiro-taskei-mcp` (deprecated alias,
+    // removed in Phase 2). Surface which name was invoked in the audit
+    // log so an operator can see at a glance whether anything is still
+    // pinning the old name post-rollout.
+    let invoked_as = std::env::args().next().unwrap_or_else(|| "kiro-mcp".to_string());
+    let invoked_alias = invoked_as.contains("kiro-taskei-mcp");
+
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
+        invoked_as = %invoked_as,
+        invoked_via_legacy_alias = invoked_alias,
         region = %args.region,
         endpoint = %endpoint,
         scope = ?args.scope,
         read_role_arn = ?args.read_role_arn,
         write_role_arn = ?args.write_role_arn,
         allow_rooms = ?args.allow_rooms,
+        enabled_families = ?args.enabled_families,
         sts_bridge_no_op = bridge_cfg.is_no_op(),
-        "kiro-taskei-mcp v{} starting (Phase 1c — STS bridge + signed initialize probe)",
+        "kiro-mcp v{} starting (Phase 1c-bundle — bundled shim, signed initialize probe)",
         env!("CARGO_PKG_VERSION"),
     );
+
+    if invoked_alias {
+        // Structured warning so a CloudWatch query can confirm the alias
+        // is unused before Phase 2 removes it.
+        tracing::warn!(
+            target: "taskei_audit",
+            invoked_as = %invoked_as,
+            "invoked under deprecated `kiro-taskei-mcp` alias; this binary will be removed in Phase 2 — switch agent.json / scripts to `kiro-mcp`",
+        );
+    }
 
     match run(&args.region, &endpoint, args.scope, bridge_cfg).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            // Paging-severity audit line on the dedicated target so log-search
-            // alarms can fire without false positives from regular tracing
-            // noise.
+            // Paging-severity audit line on the dedicated target so
+            // log-search alarms can fire without false positives from
+            // regular tracing noise.
             tracing::error!(
                 target: "taskei_audit",
                 error = %e,
-                "kiro-taskei-mcp exiting non-zero",
+                "kiro-mcp exiting non-zero",
             );
             ExitCode::FAILURE
         },
@@ -142,8 +204,9 @@ async fn run(region: &str, endpoint: &str, scope: Scope, bridge_cfg: StsBridgeCo
 
     let client = match scope {
         Scope::Read => {
-            // Read-tool probe: cached read-role provider (or base creds if
-            // no read role is configured). One client, reused across calls.
+            // Read-tool probe: cached read-role provider (or base creds
+            // if no read role is configured). One client, reused across
+            // calls.
             let provider = bridge
                 .read_credentials_provider()
                 .map_err(|e| anyhow::anyhow!("read provider: {e}"))?;
@@ -193,7 +256,7 @@ async fn run(region: &str, endpoint: &str, scope: Scope, bridge_cfg: StsBridgeCo
             "protocolVersion": "2024-11-05",
             "capabilities": {},
             "clientInfo": {
-                "name": "kiro-taskei-mcp",
+                "name": "kiro-mcp",
                 "version": env!("CARGO_PKG_VERSION"),
             }
         }
@@ -202,8 +265,9 @@ async fn run(region: &str, endpoint: &str, scope: Scope, bridge_cfg: StsBridgeCo
     match client.post_json(endpoint, body).await {
         Ok(resp) => {
             let status = resp.status();
-            // Read the body so the audit line includes a real outcome before
-            // we drop the response. Bounded — initialize replies are tiny.
+            // Read the body so the audit line includes a real outcome
+            // before we drop the response. Bounded — initialize replies
+            // are tiny.
             let text = resp.text().await.unwrap_or_default();
             tracing::info!(
                 status = %status,
@@ -216,8 +280,8 @@ async fn run(region: &str, endpoint: &str, scope: Scope, bridge_cfg: StsBridgeCo
             Ok(())
         },
         Err(SigV4Error::CredentialFailure(msg)) => {
-            // Already audit-logged inside the client; surface as a regular
-            // error for the process exit path.
+            // Already audit-logged inside the client; surface as a
+            // regular error for the process exit path.
             anyhow::bail!("fail-closed on credentials: {msg}");
         },
         Err(e) => Err(e.into()),

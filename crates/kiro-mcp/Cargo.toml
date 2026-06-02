@@ -1,18 +1,28 @@
 [package]
-name = "kiro-taskei-mcp"
+name = "kiro-mcp"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "MCP stdio server backed by Amazon Taskei (SigV4 + STS). Phase 1c: SigV4 client + STS AssumeRole bridge with cached read-role creds and per-call write-role assumption (no-op when both role ARNs are unset). Rmcp server lands in 1d."
+description = "Bundled MCP stdio shim for kiro-bot — currently hosts the Taskei tool family; knowledge / github migrate in via a follow-up consolidation plan. Phase 1c-bundle: rename + families/<x>/{read,write}/ scaffolding + read/write boundary lint."
 
+# Primary binary. Phase 1c-bundle introduces the bundled name.
 [[bin]]
-name = "kiro-taskei-mcp"
+name = "kiro-mcp"
 path = "src/main.rs"
 
+# Deprecated alias kept for one release so any in-flight kiro-bot
+# agent.json or local script still resolving `kiro-taskei-mcp` keeps
+# working until Phase 2's `kiro-help.json` switch lands. Removed in
+# Phase 2. Both this and the canonical `kiro-mcp` binary reduce to a
+# 3-line shim that calls `kiro_mcp::cli::run_cli`.
+[[bin]]
+name = "kiro-taskei-mcp"
+path = "src/bin/kiro-taskei-mcp.rs"
+
 [lib]
-name = "kiro_taskei_mcp"
+name = "kiro_mcp"
 path = "src/lib.rs"
 
 [dependencies]
@@ -38,3 +48,4 @@ hyper = { workspace = true, features = ["server", "http1"] }
 hyper-util = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net"] }
 http-body-util = "0.1"
+trybuild = "1"
