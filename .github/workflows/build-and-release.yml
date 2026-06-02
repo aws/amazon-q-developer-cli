@@ -14,6 +14,7 @@ on:
           - rc
           - stable
           - nightly
+          - feature
       dry_run:
         description: "Dry run (compute version but don't build)"
         type: boolean
@@ -96,6 +97,17 @@ jobs:
                 exit 1
               fi
               ;;
+            feature)
+              if [[ ! "$BRANCH" == feature/* ]]; then
+                echo "❌ Feature builds must run from a feature/* branch. Got: $BRANCH"
+                exit 1
+              fi
+              FEATURE_PART="${BRANCH#feature/}"
+              if [[ ! "$FEATURE_PART" =~ ^[a-zA-Z0-9-]+$ ]]; then
+                echo "❌ Feature branch name must contain only letters, numbers, and hyphens. Got: $FEATURE_PART"
+                exit 1
+              fi
+              ;;
           esac
 
           case "$MODE" in
@@ -123,6 +135,23 @@ jobs:
               # Derive version from branch name: release/2.5.0 → 2.5.0
               BASE_VERSION="${BRANCH#release/}"
               NEW_VERSION="$BASE_VERSION"
+              ;;
+            feature)
+              # Use latest stable + branch name + counter: feature/fix-foo → 2.5.1-fix-foo.3
+              LATEST_STABLE=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+              BASE_VERSION="${LATEST_STABLE#v}"
+              [[ -z "$BASE_VERSION" ]] && BASE_VERSION="0.0.0"
+              FEATURE_NAME="${BRANCH#feature/}"
+              # Sanitize: only allow lowercase alphanumeric and hyphens
+              FEATURE_NAME=$(echo "$FEATURE_NAME" | sed 's|[^a-zA-Z0-9-]|-|g; s|-\+|-|g; s|^-\|-$||g' | tr '[:upper:]' '[:lower:]')
+              LAST_FEATURE=$(git tag --list "v${BASE_VERSION}-${FEATURE_NAME}.*" --sort=-version:refname | head -1)
+              if [[ -z "$LAST_FEATURE" ]]; then
+                FEATURE_NUM=1
+              else
+                FEATURE_NUM=$(echo "$LAST_FEATURE" | grep -oE '\.[0-9]+$' | sed 's/\.//')
+                FEATURE_NUM=$((FEATURE_NUM + 1))
+              fi
+              NEW_VERSION="${BASE_VERSION}-${FEATURE_NAME}.${FEATURE_NUM}"
               ;;
           esac
 
@@ -177,14 +206,21 @@ jobs:
           # Determine channel (downstream builds use this for KAS bundling and autocomplete routing)
           if [[ "$VERSION" == *"-nightly."* ]]; then
             CHANNEL="nightly"
+          elif [[ "${{ github.ref_name }}" == feature/* ]]; then
+            CHANNEL="${{ github.ref_name }}"
+            CHANNEL="${CHANNEL#feature/}"
           else
             CHANNEL="stable"
           fi
 
           RELEASE_TYPE="${CHANNEL}-tag-driven"
 
-          # Environment: always gamma + prod (autocomplete repo handles beta/prod routing)
-          ENVIRONMENT='["gamma", "prod"]'
+          # Environment: only rc/stable need prod; nightly and feature build to gamma only
+          if [[ "$CHANNEL" == "stable" ]]; then
+            ENVIRONMENT='["gamma", "prod"]'
+          else
+            ENVIRONMENT='["gamma"]'
+          fi
 
           BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
           COMMIT_SHA=$(git rev-parse HEAD)
@@ -192,6 +228,8 @@ jobs:
           # Derive branch from tag
           if [[ "$VERSION" == *"-nightly."* ]]; then
             BRANCH_NAME="main"
+          elif [[ "${{ github.ref_name }}" == feature/* ]]; then
+            BRANCH_NAME="${{ github.ref_name }}"
           else
             BASE_VERSION=$(echo "$VERSION" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
             if git ls-remote --heads origin "release/$BASE_VERSION" | grep -q .; then
@@ -301,7 +339,19 @@ jobs:
           github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
           script: |
             const channel = '${{ needs.prepare.outputs.channel }}';
-            const releaseQuality = channel === 'nightly' ? 'nightly' : 'beta';
+            let releaseQuality;
+            if (channel === 'nightly') {
+              releaseQuality = 'nightly';
+            } else if (channel === 'stable') {
+              releaseQuality = 'beta';
+            } else {
+              // Feature branch — use channel name directly
+              if (!/^[a-z0-9-]+$/.test(channel)) {
+                core.setFailed(`Invalid feature channel name: ${channel}`);
+                return;
+              }
+              releaseQuality = channel;
+            }
 
             const inputs = {
               release_quality: releaseQuality,
