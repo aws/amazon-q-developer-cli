@@ -488,6 +488,13 @@ struct StreamParseState {
     ///
     /// Once an error has occurred, no new events can be received
     errored: bool,
+    /// Whether the stream ever carried any content event (text delta, thinking delta, or
+    /// tool-use start). If this stays false through end-of-stream, the response is empty
+    /// in the literal "nothing on the wire" sense and is safe to silently retry. If any
+    /// content event was seen, even one later dropped during finalization (e.g. orphan
+    /// thinking blocks), the user already saw something and the response must not be
+    /// retried.
+    received_content_event: bool,
 }
 
 impl StreamParseState {
@@ -511,6 +518,7 @@ impl StreamParseState {
             request_attempts: None,
             ended_time: None,
             errored: false,
+            received_content_event: false,
         }
     }
 
@@ -537,7 +545,7 @@ impl StreamParseState {
             }
 
             self.ended_time = Some(self.ended_time.unwrap_or(Instant::now()));
-            self.errored = self.errored || !self.invalid_tool_uses.is_empty();
+            self.errored = self.errored || !self.invalid_tool_uses.is_empty() || self.is_empty_response();
             let result = self.make_result();
             self.message_id = result.as_ref().map(|r| r.id.clone()).ok().flatten();
             buf.push(AgentLoopEventKind::ResponseStreamEnd {
@@ -586,6 +594,7 @@ impl StreamParseState {
                 },
 
                 StreamEvent::ContentBlockStart(ev) => {
+                    self.received_content_event = true;
                     if let Some(start) = ev.content_block_start {
                         match start {
                             types::ContentBlockStart::ToolUse(v) => {
@@ -602,36 +611,39 @@ impl StreamParseState {
                     }
                 },
 
-                StreamEvent::ContentBlockDelta(ev) => match ev.delta {
-                    types::ContentBlockDelta::Text(text) => {
-                        self.assistant_text.push_str(&text);
-                        buf.push(AgentLoopEventKind::AssistantText(text));
-                    },
-                    types::ContentBlockDelta::ToolUse(ev) => {
-                        debug_assert!(self.parsing_tool_use.is_some());
-                        match self.parsing_tool_use.as_mut() {
-                            Some((_, _, buf)) => {
-                                buf.push_str(&ev.input);
-                            },
-                            None => {
-                                warn!(?ev, "received a tool use delta with no corresponding tool use");
-                            },
-                        }
-                    },
-                    types::ContentBlockDelta::Reasoning(text) => {
-                        if let Some(thinking_buf) = self.parsing_thinking.as_mut() {
-                            thinking_buf.push_str(&text);
-                            buf.push(AgentLoopEventKind::ThinkingText(text));
-                        }
-                    },
-                    types::ContentBlockDelta::ReasoningSignature {
-                        signature,
-                        redacted_content,
-                    } => {
-                        self.pending_signature = signature;
-                        self.pending_redacted_content = redacted_content;
-                    },
-                    types::ContentBlockDelta::Document => (),
+                StreamEvent::ContentBlockDelta(ev) => {
+                    self.received_content_event = true;
+                    match ev.delta {
+                        types::ContentBlockDelta::Text(text) => {
+                            self.assistant_text.push_str(&text);
+                            buf.push(AgentLoopEventKind::AssistantText(text));
+                        },
+                        types::ContentBlockDelta::ToolUse(ev) => {
+                            debug_assert!(self.parsing_tool_use.is_some());
+                            match self.parsing_tool_use.as_mut() {
+                                Some((_, _, buf)) => {
+                                    buf.push_str(&ev.input);
+                                },
+                                None => {
+                                    warn!(?ev, "received a tool use delta with no corresponding tool use");
+                                },
+                            }
+                        },
+                        types::ContentBlockDelta::Reasoning(text) => {
+                            if let Some(thinking_buf) = self.parsing_thinking.as_mut() {
+                                thinking_buf.push_str(&text);
+                                buf.push(AgentLoopEventKind::ThinkingText(text));
+                            }
+                        },
+                        types::ContentBlockDelta::ReasoningSignature {
+                            signature,
+                            redacted_content,
+                        } => {
+                            self.pending_signature = signature;
+                            self.pending_redacted_content = redacted_content;
+                        },
+                        types::ContentBlockDelta::Document => (),
+                    }
                 },
 
                 StreamEvent::ContentBlockStop(_) => {
@@ -763,6 +775,12 @@ impl StreamParseState {
         }
     }
 
+    /// Whether the stream completed cleanly without ever carrying any content event.
+    /// Safe to retry because nothing was rendered to the client.
+    fn is_empty_response(&self) -> bool {
+        self.message_stop.is_some() && self.stream_err.is_none() && !self.received_content_event
+    }
+
     /// Create the final result value from parsing the model response stream
     fn make_result(&self) -> Result<Message, LoopError> {
         if let Some(err) = self.stream_err.as_ref() {
@@ -773,6 +791,8 @@ impl StreamParseState {
                 valid_tools: self.tool_uses.clone(),
                 assistant_text: self.assistant_text.clone(),
             })
+        } else if self.is_empty_response() {
+            Err(LoopError::EmptyResponse)
         } else {
             debug_assert!(
                 self.message_stop.is_some(),
@@ -1248,6 +1268,35 @@ mod tests {
             thinking_blocks.is_empty(),
             "orphan thinking block (no signature, no redacted_content) should be dropped \
              at parse time so it cannot poison conversation history; got: {thinking_blocks:?}"
+        );
+    }
+
+    /// Empty stream: messageStart -> messageStop with no content events in between. Must
+    /// produce LoopError::EmptyResponse so the agent layer can retry.
+    #[test]
+    fn empty_stream_produces_empty_response_error() {
+        let result = run_stream(vec![message_start(), message_stop()]);
+        assert!(
+            matches!(result, Err(LoopError::EmptyResponse)),
+            "stream with no content events should produce EmptyResponse, got: {result:?}"
+        );
+    }
+
+    /// A stream that delivered content events to the client must NOT be classified as
+    /// EmptyResponse, even if the content was later dropped (e.g. orphan thinking blocks).
+    /// Retrying after the user already saw deltas would double-render content.
+    #[test]
+    fn orphan_thinking_is_not_empty_response() {
+        let result = run_stream(vec![
+            message_start(),
+            thinking_start(),
+            thinking_delta("Let me think..."),
+            block_stop(),
+            message_stop(),
+        ]);
+        assert!(
+            result.is_ok(),
+            "stream that streamed thinking deltas must not be EmptyResponse, got: {result:?}"
         );
     }
 

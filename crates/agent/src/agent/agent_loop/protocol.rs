@@ -186,6 +186,16 @@ pub enum LoopError {
         /// Tool uses that were successfully parsed before the invalid ones
         valid_tools: Vec<ToolUseBlock>,
     },
+    /// The response stream completed cleanly but produced no content (no text, no tool
+    /// uses, no thinking blocks).
+    ///
+    /// # Context
+    ///
+    /// This is the client-side fingerprint of Bedrock's `stopReason=content_filtered`
+    /// outcome: HTTP 200, MeteringEvent + MetadataEvent only, no AssistantResponseEvent or
+    /// ToolUseEvent.
+    #[error("Kiro failed to generate a response")]
+    EmptyResponse,
     /// Errors associated with the underlying response stream.
     ///
     /// Most errors will be sourced from here.

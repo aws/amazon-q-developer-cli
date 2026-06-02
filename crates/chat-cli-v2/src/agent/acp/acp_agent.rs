@@ -1440,10 +1440,9 @@ impl AcpSession {
             // reloads MCP servers internally; the host no longer pre-rewrites.
             if self.pending_prompt_response.is_none()
                 && let Some(registry) = self.pending_mcp_registry.take()
+                && let Err(e) = self.agent.refresh_mcp_registry(registry).await
             {
-                if let Err(e) = self.agent.refresh_mcp_registry(registry).await {
-                    warn!(%e, "Failed to apply pending MCP registry refresh");
-                }
+                warn!(%e, "Failed to apply pending MCP registry refresh");
             }
 
             tokio::select! {

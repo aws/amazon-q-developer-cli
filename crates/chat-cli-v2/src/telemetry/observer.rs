@@ -102,6 +102,8 @@ pub const REASON_VALIDATION_ERROR: &str = "ValidationError";
 pub const REASON_INVALID_MODEL_ID: &str = "InvalidModelId";
 /// Reason: model produced invalid JSON for tool use.
 pub const REASON_INVALID_JSON: &str = "InvalidJson";
+/// Reason: model returned a clean stream with no content.
+pub const REASON_EMPTY_RESPONSE: &str = "EmptyResponse";
 
 // ---------------------------------------------------------------------------
 // AppType / AcpClientInfo
@@ -464,6 +466,12 @@ impl TelemetryObserver {
                 TelemetryResult::Failed,
                 Some(REASON_INVALID_JSON.to_string()),
                 Some("Model produced invalid JSON".to_string()),
+                None,
+            ),
+            Err(LoopError::EmptyResponse) => (
+                TelemetryResult::Failed,
+                Some(REASON_EMPTY_RESPONSE.to_string()),
+                Some("Model returned an empty response".to_string()),
                 None,
             ),
         };

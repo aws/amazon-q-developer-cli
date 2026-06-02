@@ -341,7 +341,7 @@ impl ApiClient {
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
-                this.set_mock_output(serde_json::from_str(fs.read_to_string(json).await.unwrap().as_str()).unwrap());
+                apply_mock_chat_response(&mut this, fs, &json).await;
             }
 
             return Ok(this);
@@ -385,7 +385,7 @@ impl ApiClient {
             ProfileResolver::new(profile)
         };
 
-        Ok(Self {
+        let mut this = Self {
             client,
             telemetry_client,
             streaming_client,
@@ -393,7 +393,13 @@ impl ApiClient {
             resolve_profile,
             model_cache: Arc::new(RwLock::new(None)),
             auth_mode,
-        })
+        };
+
+        if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
+            apply_mock_chat_response(&mut this, fs, &json).await;
+        }
+
+        Ok(this)
     }
 
     /// Returns the profile ARN, delegating all resolution logic to `resolve_profile`.
@@ -674,6 +680,13 @@ impl ApiClient {
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
+        if let Some(client) = &self.mock_client {
+            let mut new_events = client.lock().next().unwrap_or_default().clone();
+            new_events.reverse();
+
+            return Ok(SendMessageOutput::Mock(new_events));
+        }
+
         if let Some(client) = &self.streaming_client {
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
                 .set_conversation_id(conversation_id)
@@ -722,11 +735,6 @@ impl ApiClient {
                     .set_status_code(status_code))
                 },
             }
-        } else if let Some(client) = &self.mock_client {
-            let mut new_events = client.lock().next().unwrap_or_default().clone();
-            new_events.reverse();
-
-            Ok(SendMessageOutput::Mock(new_events))
         } else {
             unreachable!("One of the clients must be created by this point");
         }
@@ -754,6 +762,13 @@ impl ApiClient {
         }
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
+    }
+
+    /// For test assertions: how many mock response turns remain unconsumed. `None` if
+    /// `set_mock_output` was never called.
+    #[cfg(test)]
+    pub fn remaining_mock_responses(&self) -> Option<usize> {
+        self.mock_client.as_ref().map(|c| c.lock().len())
     }
 
     /// Method to be used to reconstruct the client in the Os struct after auth changes.
@@ -894,6 +909,41 @@ impl ApiClient {
 
         serde_json::from_str(&content_text).map_err(|e| ApiClientError::Other(format!("Failed to parse result: {e}")))
     }
+}
+
+/// Loads a JSON file at `path` and applies it as a mock response sequence on `client`.
+/// Logs and returns without modifying `client` on read or parse failure - intended for
+/// developer/test use via the `KIRO_MOCK_CHAT_RESPONSE` env var, where a misconfigured
+/// path should not crash the binary.
+async fn apply_mock_chat_response(client: &mut ApiClient, fs: &Fs, path: &str) {
+    let body = match fs.read_to_string(path).await {
+        Ok(s) => s,
+        Err(err) => {
+            error!(?err, %path, "failed to read KIRO_MOCK_CHAT_RESPONSE file; skipping mock");
+            return;
+        },
+    };
+    let json: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(err) => {
+            error!(?err, %path, "failed to parse KIRO_MOCK_CHAT_RESPONSE as JSON; skipping mock");
+            return;
+        },
+    };
+    let Some(outer) = json.as_array() else {
+        error!(%path, "KIRO_MOCK_CHAT_RESPONSE must be a JSON array of arrays of strings or objects; skipping mock");
+        return;
+    };
+    let shape_ok = outer.iter().all(|inner| {
+        inner
+            .as_array()
+            .is_some_and(|events| events.iter().all(|e| e.is_string() || e.is_object()))
+    });
+    if !shape_ok {
+        error!(%path, "KIRO_MOCK_CHAT_RESPONSE must be a JSON array of arrays of strings or objects; skipping mock");
+        return;
+    }
+    client.set_mock_output(json);
 }
 
 fn classify_error_kind<R>(

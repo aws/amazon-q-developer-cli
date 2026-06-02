@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Surface empty responses as an error after retrying"
+}

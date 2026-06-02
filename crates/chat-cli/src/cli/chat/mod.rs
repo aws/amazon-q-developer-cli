@@ -1509,12 +1509,13 @@ impl ChatSession {
             ChatState::HandleResponseStream {
                 state,
                 is_compaction_retry,
+                empty_response_retried,
             } => {
                 let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
                 let request_metadata_clone = Arc::clone(&request_metadata);
 
                 tokio::select! {
-                    res = self.handle_response(os, state, request_metadata_clone, is_compaction_retry, false) => res,
+                    res = self.handle_response(os, state, request_metadata_clone, is_compaction_retry, false, empty_response_retried) => res,
                     Ok(_) = ctrl_c_stream.recv() => {
                         debug!(?request_metadata, "ctrlc received");
                         // Wait for handle_response to finish handling the ctrlc.
@@ -2042,6 +2043,9 @@ pub enum ChatState {
     HandleResponseStream {
         state: crate::api_client::model::ConversationState,
         is_compaction_retry: bool,
+        /// Whether this request is a retry after a previous empty response. Set on the first
+        /// retry; if the retry also returns empty, the chat loop hard-fails instead of looping.
+        empty_response_retried: bool,
     },
     /// Compact the chat history.
     CompactHistory {
@@ -2869,6 +2873,7 @@ impl ChatSession {
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
                 is_compaction_retry: true,
+                empty_response_retried: false,
             })
         } else {
             // Otherwise, return back to the prompt for any pending tool uses.
@@ -3677,6 +3682,7 @@ impl ChatSession {
         Ok(ChatState::HandleResponseStream {
             state: conv_state,
             is_compaction_retry: false,
+            empty_response_retried: false,
         })
     }
 
@@ -4259,6 +4265,7 @@ impl ChatSession {
                 .as_sendable_conversation_state(os, &mut self.stderr, false)
                 .await?,
             is_compaction_retry: false,
+            empty_response_retried: false,
         });
     }
 
@@ -4271,18 +4278,19 @@ impl ChatSession {
     /// * `request_metadata_lock` - Updated with the [RequestMetadata] once it has been received
     ///   (either though a successful request, or on an error).
     ///
-    /// ## Overflow Retry Parameters
+    /// ## Retry Parameters
     ///
-    /// These parameters track state across recursive retries when handling context window overflow
-    /// after compaction:
+    /// These parameters track state across recursive retries:
     ///
     /// * `is_compaction_retry` - Whether this request is a retry after history compaction
     ///   completed. When true and we still get overflow, we attempt to truncate the user message
     ///   before failing.
-    ///
     /// * `is_prompt_truncated` - Whether the user message has already been truncated in a previous
     ///   retry attempt. When true and we still get overflow, we fail with `PromptTooLong` error
     ///   since truncation didn't help.
+    /// * `empty_response_retried` - Whether this request is already a retry after a previous empty
+    ///   response. When true and we get another empty response, the error is surfaced to the user
+    ///   instead of retrying again.
     async fn handle_response(
         &mut self,
         os: &mut Os,
@@ -4290,6 +4298,7 @@ impl ChatSession {
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
         is_compaction_retry: bool,
         is_prompt_truncated: bool,
+        empty_response_retried: bool,
     ) -> Result<ChatState, ChatError> {
         let rx = self
             .send_message(os, state.clone(), request_metadata_lock.clone(), None)
@@ -4321,6 +4330,7 @@ impl ChatSession {
                     request_metadata_lock,
                     is_compaction_retry,
                     true,
+                    empty_response_retried,
                 ))
                 .await;
             },
@@ -4502,6 +4512,7 @@ impl ChatSession {
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
                                 is_compaction_retry: false,
+                                empty_response_retried: false,
                             });
                         },
                         RecvErrorKind::UnexpectedToolUseEos {
@@ -4541,6 +4552,7 @@ impl ChatSession {
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
                                 is_compaction_retry: false,
+                                empty_response_retried: false,
                             });
                         },
                         RecvErrorKind::ToolValidationError {
@@ -4591,6 +4603,38 @@ impl ChatSession {
                                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                                     .await?,
                                 is_compaction_retry: false,
+                                empty_response_retried: false,
+                            });
+                        },
+                        RecvErrorKind::EmptyResponse if !empty_response_retried => {
+                            // Bedrock returned a clean stream with no content. Retry the same request once. The pending
+                            // user message stays in the conversation because no assistant message was pushed;
+                            // `as_sendable_conversation_state` resends it verbatim.
+                            warn!(
+                                ?recv_error.request_metadata.request_id,
+                                "empty response from model - retrying once with the same request"
+                            );
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+                            self.send_tool_use_telemetry(os).await;
+                            if self.interactive {
+                                queue!(self.stderr, cursor::Hide)?;
+                                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+                            }
+                            return Ok(ChatState::HandleResponseStream {
+                                state: self
+                                    .conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?,
+                                is_compaction_retry,
+                                empty_response_retried: true,
                             });
                         },
                         _ => {
@@ -4962,6 +5006,7 @@ impl ChatSession {
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
                 is_compaction_retry: false,
+                empty_response_retried: false,
             });
         }
 
@@ -5036,6 +5081,7 @@ impl ChatSession {
                     .as_sendable_conversation_state(os, &mut self.stderr, false)
                     .await?,
                 is_compaction_retry: false,
+                empty_response_retried: false,
             });
         }
 
@@ -5073,6 +5119,7 @@ impl ChatSession {
                 .as_sendable_conversation_state(os, &mut self.stderr, true)
                 .await?,
             is_compaction_retry: false,
+            empty_response_retried: false,
         })
     }
 
@@ -5765,6 +5812,111 @@ mod tests {
         .unwrap();
 
         assert_eq!(os.fs.read_to_string("/file.txt").await.unwrap(), "Hello, world!\n");
+    }
+
+    /// The model returns an empty stream on the first request, then a normal response on
+    /// the silent retry. The session should complete successfully, the assistant message in
+    /// history should be the retry's content, and exactly two mock responses should be
+    /// consumed for the single prompt (retry happens exactly once).
+    #[tokio::test]
+    async fn test_empty_response_retry_success() {
+        let mut os = Os::new().await.unwrap();
+        os.client
+            .set_mock_output(serde_json::json!([[], ["Sorry about that. Here's a real answer."],]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let mut session = ChatSession::new(
+            &mut os,
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec!["hello".to_string(), "exit".to_string()]),
+            None,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        session.spawn(&mut os).await.unwrap();
+
+        let history = session.conversation.history();
+        assert_eq!(history.len(), 1, "expected one user/assistant pair after retry");
+        let assistant_content = history[0].assistant.content();
+        assert!(
+            assistant_content.contains("Here's a real answer"),
+            "assistant content should be from the retry, got {assistant_content:?}"
+        );
+        assert_eq!(
+            os.client.remaining_mock_responses(),
+            Some(0),
+            "both mock responses (empty + recovery) should be consumed"
+        );
+    }
+
+    /// Two consecutive empty streams hard-fails the turn. The session continues to the next
+    /// prompt without panicking, no assistant message is recorded for the failed turn, and
+    /// exactly two mock responses are consumed for the failed turn (retry happens exactly
+    /// once).
+    #[tokio::test]
+    async fn test_empty_response_retry_failure() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([[], []]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+        let mut session = ChatSession::new(
+            &mut os,
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec!["hello".to_string(), "exit".to_string()]),
+            None,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        session.spawn(&mut os).await.unwrap();
+
+        let history = session.conversation.history();
+        assert_eq!(
+            history.len(),
+            0,
+            "failed turn should not produce a history entry; got: {:?}",
+            history
+                .iter()
+                .map(|h| (
+                    h.user.prompt().unwrap_or("").to_string(),
+                    h.assistant.content().to_string()
+                ))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            os.client.remaining_mock_responses(),
+            Some(0),
+            "both mock responses (empty + empty) should be consumed for the failed turn"
+        );
     }
 
     #[tokio::test]
@@ -7165,8 +7317,11 @@ mod compact_tests {
         let history = session.conversation.history();
         assert_eq!(history.len(), 2, "Should keep exactly 2 messages");
 
+        // Excluded messages get truncated to a per-pair budget so a `contains(&msgN)` check
+        // on the full repeated string fails. The messages are built from unique single
+        // characters; check the leading char.
         let prompts: Vec<_> = history.iter().map(|h| h.user.prompt().unwrap_or_default()).collect();
-        assert!(prompts[0].contains(&msg2), "Should keep msg2");
-        assert!(prompts[1].contains(&msg3), "Should keep msg3");
+        assert!(prompts[0].starts_with('b'), "Should keep msg2");
+        assert!(prompts[1].starts_with('c'), "Should keep msg3");
     }
 }

@@ -97,10 +97,10 @@ fn should_use_data_dir(kiro_subpath: &str) -> bool {
 /// Honors `KIRO_DATA_DIR` when set, allowing enterprise IT to redirect
 /// runtime assets (bun, tui.js, node) to a whitelisted location.
 fn data_dir() -> Result<PathBuf> {
-    if let Ok(dir) = std::env::var(KIRO_DATA_DIR) {
-        if !dir.trim().is_empty() {
-            return Ok(PathBuf::from(dir));
-        }
+    if let Ok(dir) = std::env::var(KIRO_DATA_DIR)
+        && !dir.trim().is_empty()
+    {
+        return Ok(PathBuf::from(dir));
     }
     Ok(dirs::data_local_dir()
         .ok_or(DirectoryError::NoHomeDirectory)?

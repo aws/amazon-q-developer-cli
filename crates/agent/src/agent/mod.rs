@@ -1703,6 +1703,7 @@ impl Agent {
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
+                empty_response_retried: false,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -1904,6 +1905,7 @@ impl Agent {
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
+                        empty_response_retried: false,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -1935,7 +1937,41 @@ impl Agent {
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
+                        empty_response_retried: false,
                         pending_user_message: Some(retry_pending),
+                    };
+                    self.send_request(args).await?;
+                }
+            },
+            LoopError::EmptyResponse => {
+                // The model returned a clean stream with no content. Retry the same request
+                // once. If the retry also returns empty, surface the error to the user
+                // instead of looping.
+                let already_retried = matches!(&self.execution_state.active_state, ActiveState::ExecutingRequest {
+                    empty_response_retried: true,
+                    ..
+                },);
+                if already_retried {
+                    warn!("empty response on retry - entering error state");
+                    self.enter_error_state(err.clone().into()).await;
+                } else {
+                    let pending = match &self.execution_state.active_state {
+                        ActiveState::ExecutingRequest {
+                            pending_user_message: Some(p),
+                            ..
+                        } => p.clone(),
+                        _ => {
+                            error!("empty response with no pending user message - entering error state");
+                            self.enter_error_state(err.clone().into()).await;
+                            return Ok(());
+                        },
+                    };
+                    warn!("empty response from model - retrying once with the same request");
+                    let args = self.format_request(&pending).await;
+                    self.execution_state.active_state = ActiveState::ExecutingRequest {
+                        compaction_retry: None,
+                        empty_response_retried: true,
+                        pending_user_message: Some(pending),
                     };
                     self.send_request(args).await?;
                 }
@@ -1979,6 +2015,7 @@ impl Agent {
                     let args = self.format_request(&retry_pending).await;
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
+                        empty_response_retried: false,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -2034,6 +2071,7 @@ impl Agent {
                                 compaction_retry: Some(CompactionRetry {
                                     is_prompt_truncated: true,
                                 }),
+                                empty_response_retried: false,
                                 pending_user_message: Some(truncated_pending),
                             })
                             .await;
@@ -2146,6 +2184,7 @@ impl Agent {
             .expect("first agent loop request should never fail");
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
+            empty_response_retried: false,
             pending_user_message: Some(pending),
         })
         .await;
@@ -2314,6 +2353,7 @@ impl Agent {
                         let pending_request = self.format_request(&pending).await;
                         self.set_active_state(ActiveState::ExecutingRequest {
                             compaction_retry: Some(CompactionRetry::default()),
+                            empty_response_retried: false,
                             pending_user_message: Some(pending),
                         })
                         .await;
@@ -2403,6 +2443,7 @@ impl Agent {
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
+                empty_response_retried: false,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -2469,6 +2510,7 @@ impl Agent {
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
+                empty_response_retried: false,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -2773,6 +2815,7 @@ impl Agent {
                     self.send_request(args).await?;
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
+                        empty_response_retried: false,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -2812,6 +2855,7 @@ impl Agent {
                     self.send_request(args).await?;
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
+                        empty_response_retried: false,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -3329,6 +3373,7 @@ impl Agent {
         self.send_request(args).await?;
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
+            empty_response_retried: false,
             pending_user_message: Some(pending),
         })
         .await;
@@ -4053,6 +4098,11 @@ pub enum ActiveState {
         /// truncation.
         #[serde(default)]
         compaction_retry: Option<CompactionRetry>,
+        /// Whether this request is a retry after a previous empty response. Set on the first
+        /// retry; if the retry also returns empty, the agent enters the error state instead of
+        /// retrying again.
+        #[serde(default)]
+        empty_response_retried: bool,
         /// User message that triggered this request, to be appended to the event log only after
         /// receiving a successful assistant response. This ensures we don't persist user messages
         /// that fail (e.g., due to ContextWindowOverflow) and need to be retried or truncated.

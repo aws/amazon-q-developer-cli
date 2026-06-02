@@ -1,0 +1,12 @@
+// Tests that two consecutive empty responses produce a hard failure (no infinite retries).
+// Flow: prompt -> empty -> retry -> empty again -> agent emits Stop(Error(EmptyResponse))
+
+// Response 1: empty
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"empty-response-1","statusCode":null}}}}
+
+// Response 2: also empty - hard fail
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:32.000000Z","requestEndTime":"2025-10-23T21:04:33.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"empty-response-2","statusCode":null}}}}

@@ -1375,6 +1375,116 @@ async fn test_invalid_json_preserves_valid_tool_uses() {
     );
 }
 
+/// Tests that an empty response (messageStart + messageStop + metadata, no
+/// text/tools/thinking) triggers exactly one retry. When the retry succeeds, the agent
+/// completes normally.
+#[tokio::test]
+async fn test_empty_response_retry_success() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("empty response retry success")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/empty_response_retry_success.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected exactly 2 requests (original + retry), got {}",
+        requests.len()
+    );
+
+    // The retry must resend the same conversation: no synthetic placeholder, no nudge text,
+    // no extra messages. Compare structurally (Message lacks PartialEq).
+    let original = requests[0].messages();
+    let retry = requests[1].messages();
+    assert_eq!(
+        original.len(),
+        retry.len(),
+        "retry should have the same number of messages as the original"
+    );
+    for (i, (a, b)) in original.iter().zip(retry.iter()).enumerate() {
+        assert_eq!(a.role, b.role, "message {} role mismatch", i);
+        assert_eq!(a.text(), b.text(), "message {} text mismatch", i);
+    }
+
+    // Final stop reason should be EndTurn (not Error)
+    let stop = test
+        .agent_events()
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            AgentEvent::Stop(reason) => Some(reason.clone()),
+            _ => None,
+        })
+        .expect("agent should emit a Stop event");
+    assert!(
+        matches!(stop, agent::protocol::AgentStopReason::EndTurn),
+        "expected EndTurn, got {:?}",
+        stop
+    );
+}
+
+/// Tests that two consecutive empty responses produce a hard failure with
+/// AgentStopReason::Error wrapping LoopError::EmptyResponse. No third request.
+#[tokio::test]
+async fn test_empty_response_retry_failure() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("empty response retry failure")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/empty_response_retry_failure.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected exactly 2 requests (original + 1 retry, then hard fail), got {}",
+        requests.len()
+    );
+
+    // Final stop reason should be Error(AgentLoopError(EmptyResponse))
+    let stop = test
+        .agent_events()
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            AgentEvent::Stop(reason) => Some(reason.clone()),
+            _ => None,
+        })
+        .expect("agent should emit a Stop event");
+    match stop {
+        agent::protocol::AgentStopReason::Error(agent::protocol::AgentError::AgentLoopError(
+            agent::agent_loop::protocol::LoopError::EmptyResponse,
+        )) => (),
+        other => panic!("expected Stop(Error(AgentLoopError(EmptyResponse))), got {:?}", other),
+    }
+}
+
 /// Tests that switch_to_execution ends the turn without sending tool results
 /// back to the LLM, so the caller can swap agents and inject the plan.
 #[tokio::test]

@@ -1,0 +1,13 @@
+// Tests one-shot retry on empty model responses.
+// Flow: prompt -> empty response -> agent retries same request -> success
+
+// Response 1: empty - messageStart, messageStop, metadata only. No text, no tools, no thinking.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"empty-response-1","statusCode":null}}}}
+
+// Response 2: retry succeeds with normal content
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello! I can help with that."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:32.000000Z","requestEndTime":"2025-10-23T21:04:33.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"retry-success","statusCode":null}}}}

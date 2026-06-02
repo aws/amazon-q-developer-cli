@@ -91,6 +91,7 @@ impl RecvError {
             RecvErrorKind::UnexpectedToolUseEos { .. } => None,
             RecvErrorKind::Cancelled => None,
             RecvErrorKind::ToolValidationError { .. } => None,
+            RecvErrorKind::EmptyResponse => None,
         }
     }
 }
@@ -104,6 +105,7 @@ impl ReasonCode for RecvError {
             RecvErrorKind::UnexpectedToolUseEos { .. } => "RecvErrorUnexpectedToolUseEos".to_string(),
             RecvErrorKind::Cancelled => "Interrupted".to_string(),
             RecvErrorKind::ToolValidationError { .. } => "RecvErrorToolValidation".to_string(),
+            RecvErrorKind::EmptyResponse => "RecvErrorEmptyResponse".to_string(),
         }
     }
 }
@@ -160,6 +162,17 @@ pub enum RecvErrorKind {
         message: Box<AssistantMessage>,
         error_message: String,
     },
+    /// The response stream completed cleanly but produced no content events (no assistant text,
+    /// tool use, or thinking).
+    ///
+    /// # Context
+    ///
+    /// This is the client-side fingerprint of Bedrock's `stopReason=content_filtered` outcome:
+    /// HTTP 200, MeteringEvent + MetadataEvent only, no `AssistantResponseEvent` or
+    /// `ToolUseEvent` or `ReasoningEvent`. Surfaced as an error so the chat loop can retry the
+    /// request.
+    #[error("Kiro failed to generate a response")]
+    EmptyResponse,
 }
 
 /// Represents a response stream from a call to the SendMessage API.
@@ -318,6 +331,9 @@ struct ResponseParser {
     thinking_signature: Option<String>,
     /// Redacted content from the last reasoning event.
     thinking_redacted_content: Option<Vec<u8>>,
+    /// Whether the stream ever carried any content event (assistant text, tool use, or
+    /// thinking).
+    received_content_event: bool,
 
     request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
     cancel_token: CancellationToken,
@@ -369,6 +385,7 @@ impl ResponseParser {
             thinking_text: String::new(),
             thinking_signature: None,
             thinking_redacted_content: None,
+            received_content_event: false,
             request_start_time,
             request_start_time_sys,
             received_response_size: 0,
@@ -420,6 +437,7 @@ impl ResponseParser {
             // Cloning to bypass borrowchecker stuff.
             let content = content.clone();
             self.next().await?;
+            self.received_content_event = true;
             match self.peek().await? {
                 Some(ChatResponseStream::CodeReferenceEvent(_)) => (),
                 _ => {
@@ -433,6 +451,7 @@ impl ResponseParser {
             match self.next().await {
                 Ok(Some(output)) => match output {
                     ChatResponseStream::AssistantResponseEvent { content } => {
+                        self.received_content_event = true;
                         self.assistant_text.push_str(&content);
                         return Ok(ResponseEvent::AssistantText(content));
                     },
@@ -445,6 +464,7 @@ impl ResponseParser {
                         input,
                         stop,
                     } => {
+                        self.received_content_event = true;
                         self.parsing_tool_use = Some(PendingToolUse {
                             id: tool_use_id.clone(),
                             name: name.clone(),
@@ -458,6 +478,7 @@ impl ResponseParser {
                         signature,
                         redacted_content,
                     } => {
+                        self.received_content_event = true;
                         // Only accumulate the first thinking block. Once a signature
                         // arrives the block is sealed — ignore subsequent blocks so
                         // the text and signature stay paired.
@@ -481,6 +502,12 @@ impl ResponseParser {
                     },
                 },
                 Ok(None) => {
+                    if !self.received_content_event {
+                        let request_metadata = self.make_metadata(None);
+                        *self.request_metadata.lock().await = Some(request_metadata.clone());
+                        self.ended = true;
+                        return Err(self.error(RecvErrorKind::EmptyResponse));
+                    }
                     let message_id = Some(self.message_id.clone());
                     let content = std::mem::take(&mut self.assistant_text);
                     let thinking = self.take_thinking();
@@ -1032,6 +1059,143 @@ mod tests {
                 assert_eq!(tool_use.args["thought"], "Let me think about this.");
             },
             other => panic!("expected ToolUse, got {other:?}"),
+        }
+    }
+
+    /// A clean stream end with no content events on the wire. The parser must surface this
+    /// as `RecvErrorKind::EmptyResponse` so the chat loop can retry the request.
+    #[tokio::test]
+    async fn test_response_parser_empty_stream_produces_empty_response_error() {
+        let mock = SendMessageOutput::Mock(vec![]);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        let result = parser.recv().await;
+        assert!(
+            matches!(
+                result,
+                Err(RecvError {
+                    source: RecvErrorKind::EmptyResponse,
+                    ..
+                })
+            ),
+            "expected RecvErrorKind::EmptyResponse, got {result:?}"
+        );
+    }
+
+    /// A stream that delivered any assistant text must complete normally, not as
+    /// `EmptyResponse`. Retrying after the user already saw deltas would double-render content.
+    #[tokio::test]
+    async fn test_response_parser_text_response_is_not_empty() {
+        let events = vec![ChatResponseStream::AssistantResponseEvent {
+            content: "hello".to_string(),
+        }];
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        let first = parser.recv().await;
+        assert!(
+            matches!(first, Ok(ResponseEvent::AssistantText(ref s)) if s == "hello"),
+            "expected AssistantText(\"hello\"), got {first:?}"
+        );
+        let end = parser.recv().await;
+        assert!(
+            matches!(end, Ok(ResponseEvent::EndStream { .. })),
+            "expected EndStream after content, got {end:?}"
+        );
+    }
+
+    /// A stream that delivered only thinking content must complete normally, not as
+    /// `EmptyResponse`. Even though orphan-thinking blocks are dropped at finalization, the
+    /// model did emit content on the wire and a retry would compound the wasted call.
+    #[tokio::test]
+    async fn test_response_parser_thinking_only_response_is_not_empty() {
+        let events = vec![ChatResponseStream::ReasoningEvent {
+            text: Some("let me think...".to_string()),
+            signature: None,
+            redacted_content: None,
+        }];
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        // Drain until EndStream; assert we never see EmptyResponse.
+        loop {
+            match parser.recv().await {
+                Ok(ResponseEvent::EndStream { .. }) => break,
+                Ok(_) => continue,
+                Err(err) => panic!("unexpected error from thinking-only stream: {err:?}"),
+            }
+        }
+    }
+
+    /// `AssistantResponseEvent` immediately followed by `CodeReferenceEvent` is the
+    /// code-attribution-suppressed shape: the parser drops the assistant text but the model
+    /// did emit content on the wire. Must complete normally, not as `EmptyResponse`.
+    #[tokio::test]
+    async fn test_response_parser_code_reference_suppression_is_not_empty() {
+        // SendMessageOutput::Mock pops from the end, so the wire order is the reverse of
+        // this vec: AssistantResponseEvent first, then CodeReferenceEvent. That sequence
+        // hits the peek-discard branch in `recv` (assistant event followed by code-ref)
+        // which is the path the regression fix targets.
+        let mut events = vec![
+            ChatResponseStream::AssistantResponseEvent {
+                content: "this would be code".to_string(),
+            },
+            ChatResponseStream::CodeReferenceEvent(()),
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        loop {
+            match parser.recv().await {
+                Ok(ResponseEvent::EndStream { .. }) => break,
+                Ok(_) => continue,
+                Err(err) => panic!("unexpected error from code-attribution-suppressed stream: {err:?}"),
+            }
         }
     }
 }
