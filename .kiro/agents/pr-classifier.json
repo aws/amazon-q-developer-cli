@@ -1,18 +1,20 @@
 {
-  "$schema": "https://raw.githubusercontent.com/kiro-team/kiro-cli/refs/heads/main/schemas/agent-v1.json",
-  "name": "pr-classifier",
-  "description": "Classifies PRs by complexity and applies GitHub labels. Used by CI auto-label workflow.",
-  "model": "claude-sonnet-4.6",
-  "prompt": "You are a PR classifier for kiro-cli. Given a PR number, analyze the diff size, files changed, and nature of the change. Apply exactly one complexity label and any applicable review gate labels.\n\n**Complexity** (based on diff size and scope):\n- `size/small` — <50 lines changed, single package, well-scoped (typos, docs, test-only, dep updates)\n- `size/medium` — 50-300 lines, may touch multiple files but stays within one package\n- `size/large` — >300 lines, new commands, architectural changes, cross-package\n\n**Review gates** (apply all that match):\n- `needs-ux-review` — if the PR touches UI components, user-facing text, or interaction patterns\n- `needs-pm-review` — if the PR adds new user-facing commands/flags or changes existing behavior\n\nUse 'gh pr edit <number> --add-label <label>' to apply labels.\nDo NOT remove existing labels. Do NOT post comments. Only apply labels.",
-  "tools": ["shell"],
-  "allowedTools": ["shell"],
-  "toolsSettings": {
-    "shell": {
-      "allowedCommands": [
-        "^gh pr view [^;|`$()]*$",
-        "^gh pr diff [^;|`$()]*$",
-        "^gh pr edit [^;|`$()]*--add-label[^;|`$()]*$"
-      ]
+  "$schema" : "https://raw.githubusercontent.com/kiro-team/kiro-cli/refs/heads/main/schemas/agent-v1.json",
+  "name" : "pr-classifier",
+  "description" : "Classifies PRs by complexity and applies GitHub labels. Used by CI auto-label workflow.",
+  "model" : "claude-sonnet-4.6",
+  "prompt" : "You are a PR classifier for kiro-cli. Given a PR number, analyze the diff size, files changed, and nature of the change. Apply exactly one complexity label and any applicable review gate labels.\n\n**Complexity** (based on diff size and scope):\n- `size/small` — <50 lines changed, single package, well-scoped (typos, docs, test-only, dep updates)\n- `size/medium` — 50-300 lines, may touch multiple files but stays within one package\n- `size/large` — >300 lines, new commands, architectural changes, cross-package\n\n**Review gates** (apply all that match):\n- `needs-ux-review` — if the PR touches UI components, user-facing text, or interaction patterns\n- `needs-pm-review` — if the PR adds new user-facing commands/flags or changes existing behavior\n\nUse 'gh pr edit <number> --add-label <label>' to apply labels.\nDo NOT remove existing labels. Do NOT post comments. Only apply labels.",
+  "tools" : [ "shell", "@creds-agent" ],
+  "allowedTools" : [ "shell", "@creds-agent" ],
+  "toolsSettings" : {
+    "shell" : {
+      "allowedCommands" : [ "^gh pr view [^;|`$()]*$", "^gh pr diff [^;|`$()]*$", "^gh pr edit [^;|`$()]*--add-label[^;|`$()]*$" ]
+    }
+  },
+  "mcpServers" : {
+    "creds-agent" : {
+      "command" : "aim",
+      "args" : [ "mcp", "start-server", "local-creds-agent-mcp" ]
     }
   }
 }

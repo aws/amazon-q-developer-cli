@@ -1,77 +1,28 @@
 {
-  "name": "oncall",
-  "description": "Kiro CLI oncall agent for ticket investigation, debugging, and operational tasks",
-  "model": "claude-opus-4.7",
-  "prompt": "file://resources/ONCALL_PROMPT.md",
-  "welcomeMessage": "Hi! I'm the Oncall agent. Here's what I can help with:\n\n**Prompts:**\n• `@pr-triage` — classify open PRs, check dependabot status, apply labels, get a prioritized action list\n• `@pr-report` — generate a full classified markdown report of all open PRs\n• `@triage` — review active Sev-2 tickets and recommend what to work on\n\n**Workflows:**\n• `@changelog` — propose changelog entries for recent changes\n• `@docs` — update autodocs for code changes\n\nScripts are in `scripts/` — see `scripts/classify_prs.py` for PR classification.",
-  "tools": [
-    "@builder-mcp/TicketingReadActions",
-    "@builder-mcp/TicketingWriteActions",
-    "@builder-mcp/ReadInternalWebsites",
-    "@builder-mcp/InternalCodeSearch",
-    "@builder-mcp/InternalSearch",
-    "@builder-mcp/QuipEditor",
-    "read",
-    "write",
-    "shell",
-    "grep",
-    "glob",
-    "code",
-    "introspect",
-    "knowledge",
-    "subagent",
-    "@builder-mcp/sim_add_comment",
-    "@builder-mcp/sim_update_issue",
-    "@builder-mcp/sim_get_issue",
-    "@builder-mcp/sim_search_issues"
-  ],
-  "allowedTools": [
-    "read",
-    "write",
-    "shell",
-    "grep",
-    "glob",
-    "code",
-    "introspect",
-    "knowledge",
-    "@builder-mcp/TicketingReadActions",
-    "@builder-mcp/TicketingWriteActions",
-    "@builder-mcp/ReadInternalWebsites",
-    "@builder-mcp/InternalCodeSearch",
-    "@builder-mcp/InternalSearch",
-    "@builder-mcp/QuipEditor",
-    "@builder-mcp/sim_add_comment",
-    "@builder-mcp/sim_update_issue",
-    "@builder-mcp/sim_get_issue",
-    "@builder-mcp/sim_search_issues"
-  ],
-  "toolsSettings": {
-    "shell": {
-      "allowedCommands": [
-        "^gh pr view[^&;|]*$",
-        "^gh pr list[^&;|]*$",
-        "^gh pr diff[^&;|]*$",
-        "^gh issue view[^&;|]*$"
-      ]
+  "name" : "oncall",
+  "description" : "Kiro CLI oncall agent for ticket investigation, debugging, and operational tasks",
+  "model" : "claude-opus-4.7",
+  "prompt" : "file://resources/ONCALL_PROMPT.md",
+  "welcomeMessage" : "Hi! I'm the Oncall agent. Here's what I can help with:\n\n**Prompts:**\n• `@pr-triage` — classify open PRs, check dependabot status, apply labels, get a prioritized action list\n• `@pr-report` — generate a full classified markdown report of all open PRs\n• `@triage` — review active Sev-2 tickets and recommend what to work on\n\n**Workflows:**\n• `@changelog` — propose changelog entries for recent changes\n• `@docs` — update autodocs for code changes\n\nScripts are in `scripts/` — see `scripts/classify_prs.py` for PR classification.",
+  "tools" : [ "@builder-mcp/TicketingReadActions", "@builder-mcp/TicketingWriteActions", "@builder-mcp/ReadInternalWebsites", "@builder-mcp/InternalCodeSearch", "@builder-mcp/InternalSearch", "@builder-mcp/QuipEditor", "read", "write", "shell", "grep", "glob", "code", "introspect", "knowledge", "subagent", "@builder-mcp/sim_add_comment", "@builder-mcp/sim_update_issue", "@builder-mcp/sim_get_issue", "@builder-mcp/sim_search_issues", "@creds-agent" ],
+  "allowedTools" : [ "read", "write", "shell", "grep", "glob", "code", "introspect", "knowledge", "@builder-mcp/TicketingReadActions", "@builder-mcp/TicketingWriteActions", "@builder-mcp/ReadInternalWebsites", "@builder-mcp/InternalCodeSearch", "@builder-mcp/InternalSearch", "@builder-mcp/QuipEditor", "@builder-mcp/sim_add_comment", "@builder-mcp/sim_update_issue", "@builder-mcp/sim_get_issue", "@builder-mcp/sim_search_issues", "@creds-agent" ],
+  "toolsSettings" : {
+    "shell" : {
+      "allowedCommands" : [ "^gh pr view[^&;|]*$", "^gh pr list[^&;|]*$", "^gh pr diff[^&;|]*$", "^gh issue view[^&;|]*$" ]
     },
-    "subagent": {
-      "trustedAgents": [
-        "kiro-research-agent"
-      ],
-      "availableAgents": [
-        "kiro-research-agent"
-      ]
+    "subagent" : {
+      "trustedAgents" : [ "kiro-research-agent" ],
+      "availableAgents" : [ "kiro-research-agent" ]
     }
   },
-  "resources": [
-    "skill://autodocs/README.md",
-    "file://AGENTS.md",
-    "file://README.md",
-    "skill://docs/oncall/*.md"
-  ],
-  "mcpServers": {
-    "builder-mcp": {
-      "command": "builder-mcp"
+  "resources" : [ "skill://autodocs/README.md", "file://AGENTS.md", "file://README.md", "skill://docs/oncall/*.md" ],
+  "mcpServers" : {
+    "builder-mcp" : {
+      "command" : "builder-mcp"
+    },
+    "creds-agent" : {
+      "command" : "aim",
+      "args" : [ "mcp", "start-server", "local-creds-agent-mcp" ]
     }
   }
 }
