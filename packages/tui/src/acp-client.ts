@@ -51,6 +51,36 @@ import { readClipboardImage } from './utils/clipboard-image';
 
 const TUI_VERSION: string = packageJson.version;
 
+/**
+ * Strip the `@serverName/` prefix from KAS MCP tool titles.
+ * KAS sends titles like "@test-mock/echo"; V2 sends just "echo".
+ */
+export function stripMcpTitlePrefix(
+  title: string | undefined
+): string | undefined {
+  if (!title) return title;
+  const match = title.match(/^@[^/]+\/(.+)$/);
+  return match ? match[1] : title;
+}
+
+/**
+ * Unwrap KAS MCP output envelope to match V2 format.
+ * KAS sends: `{ response: "...", imageBase64Urls: [] }`
+ * V2 sends:  `{ content: [{ type: "text", text: "..." }] }`
+ */
+export function unwrapKasMcpOutput(raw: unknown): unknown {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    'response' in raw &&
+    'imageBase64Urls' in raw
+  ) {
+    const envelope = raw as { response: string; imageBase64Urls: string[] };
+    return { content: [{ type: 'text', text: envelope.response }] };
+  }
+  return raw;
+}
+
 export type AcpSessionUpdate = acp.SessionNotification['update'];
 
 const EXT_METHODS = {
@@ -746,7 +776,7 @@ abstract class BaseAcpClient implements SessionClient {
       const event: AgentStreamEvent = {
         type: AgentEventType.ToolCall,
         id: chunk.toolCallId,
-        name: chunk.title,
+        name: stripMcpTitlePrefix(chunk.title) || chunk.title,
         kind: chunk.kind,
         args: {},
         sessionId: isSubagentEvent ? sessionId : undefined,
@@ -850,7 +880,7 @@ abstract class BaseAcpClient implements SessionClient {
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
-          name: update.title || 'unknown',
+          name: stripMcpTitlePrefix(update.title) || 'unknown',
           kind: update.kind ?? undefined,
           args: (update.rawInput as Record<string, unknown>) ?? {},
           toolContent: toolContent.length > 0 ? toolContent : undefined,
@@ -871,7 +901,10 @@ abstract class BaseAcpClient implements SessionClient {
           return {
             type: AgentEventType.ToolCallFinished,
             id: update.toolCallId,
-            result: { status: 'success', output: update.rawOutput },
+            result: {
+              status: 'success',
+              output: unwrapKasMcpOutput(update.rawOutput),
+            },
             toolContent: diffContent.length > 0 ? diffContent : undefined,
           };
         }
@@ -883,7 +916,7 @@ abstract class BaseAcpClient implements SessionClient {
             this.broadcastStreamEvent({
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
-              name: update.title || 'unknown',
+              name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
             });
