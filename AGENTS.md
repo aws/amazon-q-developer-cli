@@ -161,10 +161,16 @@ The `agent` crate is a reusable agent execution engine extracted from `chat_cli`
 
 ### Development Commands
 
-Run from `packages/tui`:
+First-time setup (from repo root):
 
 ```bash
-bun install
+bun install          # auth + install all workspace packages
+bun run build        # builds twinki → tui in dependency order
+```
+
+Then run from `packages/tui`:
+
+```bash
 bun run dev                    # Builds rust binary + launches TUI with hot-reload
 bun run dev --skip-rust-build  # Skip rust binary rebuild
 

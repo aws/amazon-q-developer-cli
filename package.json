@@ -2,7 +2,8 @@
   "name": "kiro-cli-chat",
   "private": true,
   "scripts": {
-    "preinstall": "bash ./scripts/ensure-codeartifact-auth.sh"
+    "preinstall": "bash ./scripts/ensure-codeartifact-auth.sh",
+    "build": "bun run --filter twinki-monorepo build && bun run --filter '@kiro/tui' build"
   },
   "workspaces": [
     "packages/*",
