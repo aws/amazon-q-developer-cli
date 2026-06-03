@@ -71,7 +71,7 @@ pub fn detect(data: &[u8]) -> Result<DetectedFormat, String> {
     if data.starts_with(&ZIP_MAGIC_BYTES) {
         return detect_zip(data);
     }
-    detect_json(data)
+    detect_json(data).map_err(|e| format!("File is not a valid zip archive or recognized session JSON: {e}"))
 }
 
 /// Decide between [`DetectedFormat::KasZip`] and

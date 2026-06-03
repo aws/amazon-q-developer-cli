@@ -193,9 +193,10 @@ describe('Display settings panel', () => {
     await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
-    // Verify the cycle advanced in the UI (collapsed -> expanded)
+    // Verify the cycle advanced in the UI: default 'expanded' -> 'off'
+    // (cycle order is ['collapsed', 'expanded', 'off']).
     const snap = testCase.getSnapshot().join('\n');
-    expect(snap).toMatch(/Show thinking\s+expanded/);
+    expect(snap).toMatch(/Show thinking\s+off/);
   }, 30000);
 
   it('respects pre-existing showThinking=false setting on open', async () => {

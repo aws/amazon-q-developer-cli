@@ -58,17 +58,9 @@ describe('Cross-engine /chat picker: V2 wins over KAS', () => {
   it('shows V2 + KAS entries merged, picks V2 (most recent), converts on selection', async () => {
     // KAS-side entry that pre-dates the V2 fixture's captured
     // updated_at by a year. Returned by the binary's
-    // --list-sessions path via the test mock env var so the listing
-    // covers V1+V2+KAS without an actual KAS spawn.
+    // --list-sessions path via the harness's mock-KAS hook so the
+    // listing covers V1+V2+KAS without an actual KAS spawn.
     const olderKasUpdatedAt = '2025-01-01T00:00:00.000Z';
-    const kasMock = JSON.stringify([
-      {
-        sessionId: 'sess-stale-kas-1',
-        cwd: kiroHome,
-        title: 'Stale KAS session',
-        updatedAt: olderKasUpdatedAt,
-      },
-    ]);
 
     tc = new AcpTestCase({
       testName: 'chat-picker-cross-engine',
@@ -76,8 +68,15 @@ describe('Cross-engine /chat picker: V2 wins over KAS', () => {
       extraEnv: {
         KIRO_CHAT_CLI_BIN: REAL_BIN,
         KIRO_HOME: kiroHome,
-        KIRO_TEST_MOCK_KAS_SESSIONS: kasMock,
       },
+      mockKasSessionListResult: [
+        {
+          sessionId: 'sess-stale-kas-1',
+          cwd: kiroHome,
+          title: 'Stale KAS session',
+          updatedAt: olderKasUpdatedAt,
+        },
+      ],
     });
 
     // The boot path issues `session/new` since there's no `--resume*`

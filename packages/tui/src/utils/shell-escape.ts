@@ -239,10 +239,12 @@ export function executeShellEscapeStreaming(
   const cols = process.stdout.columns || 80;
   const rows = process.stdout.rows || 24;
 
+  let bytesReceived = 0;
   const terminal = new Bun.Terminal({
     cols,
     rows,
     data(_term, data) {
+      bytesReceived += data.byteLength;
       onData(new TextDecoder().decode(data));
     },
   });
@@ -258,7 +260,17 @@ export function executeShellEscapeStreaming(
       (exitCode) => ({ exitCode }) as ShellEscapeResult,
       (err) => ({ exitCode: 1, error: String(err) }) as ShellEscapeResult
     )
-    .finally(() => {
+    .finally(async () => {
+      // After the child exits, additional PTY output may still be in flight
+      // through Bun's data() callback. Closing the terminal immediately can
+      // drop those final chunks, leaving the message empty for short
+      // fast-completing commands. Wait until bytesReceived is stable for
+      // one event-loop tick before closing.
+      let prev = -1;
+      while (bytesReceived !== prev) {
+        prev = bytesReceived;
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      }
       terminal.close();
     });
 

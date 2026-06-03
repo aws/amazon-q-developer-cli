@@ -147,7 +147,7 @@ describe('dispatcher KAS intercept', () => {
     expect(ctx._spies.showAlert).not.toHaveBeenCalled();
   });
 
-  it("agentEngine='rust' + /context add: V2 dispatcher pipeline runs (no kas-handler intercept)", async () => {
+  it("agentEngine='v2' + /context add: V2 dispatcher pipeline runs (no kas-handler intercept)", async () => {
     const exec = mock(() =>
       Promise.resolve({ success: true, message: '', data: undefined })
     );
@@ -155,7 +155,7 @@ describe('dispatcher KAS intercept', () => {
       slashCommands: [CONTEXT_CMD],
       kiro: { sessionId: 'cur', executeCommand: exec } as any,
     });
-    ctx.agentEngine = 'rust';
+    ctx.agentEngine = 'v2';
     await dispatch(CONTEXT_CMD, 'add foo.ts', ctx);
 
     // V2 dispatcher path: still ends up calling executeCommand, but via

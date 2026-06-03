@@ -494,8 +494,8 @@ describe('Tool Messages', () => {
 
     const parsed = JSON.parse((toolMsg as any).content);
     expect(parsed.command).toBe('create');
-    expect(parsed.newStr).toContain('print("playing game")');
-    expect(parsed.newStr).toContain('return score');
+    expect(parsed.content).toContain('print("playing game")');
+    expect(parsed.content).toContain('return score');
 
     // Verify locations exist (start_line = 1 for create)
     if ('locations' in toolMsg!) {

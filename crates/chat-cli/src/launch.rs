@@ -126,7 +126,13 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
     cmd.env("KIRO_CHAT_CLI_BIN", &current_exe);
 
     // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
+    // The parent directory is normally created by extract_tui_assets_if_needed when
+    // assets are extracted, but in test mode (KIRO_TEST_TUI_JS_PATH set) the
+    // extraction path is skipped, so the data dir must be created here.
     let feed_path = crate::util::paths::feed_json_path()?;
+    if let Some(parent) = feed_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
     cmd.env("KIRO_FEED_FILE", &feed_path);
     if let Some(ref force_color) = force_color {
