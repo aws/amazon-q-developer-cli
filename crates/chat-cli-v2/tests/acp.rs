@@ -3636,3 +3636,45 @@ async fn effort_persists_for_multiple_models_in_one_session() {
         "opus-4.6 effort should be 'high'"
     );
 }
+
+/// Verifies that /goal command sets a goal and returns success.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_set_and_status() {
+    // /goal is gated behind the `goal` rollout (nightly+internal in
+    // production). The harness sets KIRO_TEST_MODE on the subprocess
+    // which makes Rollout::init enable all features unconditionally.
+    let (_harness, client, session_id, _) = AcpTestHarnessBuilder::new("goal_set_and_status")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Set a goal
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({
+                "command": "goal",
+                "args": { "value": "\"implement pagination with passing tests\" --max 3" }
+            }),
+        )
+        .await
+        .expect("execute_command for goal failed");
+    assert!(result.success, "goal set should succeed: {}", result.message);
+    assert!(
+        result.message.contains("goal set"),
+        "message should confirm goal set: {}",
+        result.message
+    );
+
+    // Clear
+    let clear_result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "goal", "args": { "value": "clear" } }),
+        )
+        .await
+        .expect("execute_command for goal clear failed");
+    assert!(clear_result.success);
+}

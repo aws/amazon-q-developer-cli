@@ -112,6 +112,8 @@ pub struct SessionStateV1 {
     pub permissions: RuntimePermissions,
     #[serde(default)]
     pub agent_name: Option<String>,
+    #[serde(default)]
+    pub goal: Option<crate::agent::acp::goal::GoalSnapshot>,
 }
 
 impl SessionState {
@@ -125,6 +127,7 @@ impl SessionState {
             rts_model_state,
             permissions,
             agent_name: None,
+            goal: None,
         })
     }
 
@@ -159,6 +162,20 @@ impl SessionState {
     pub fn set_agent_name(&mut self, name: String) {
         match self {
             Self::V1(v1) => v1.agent_name = Some(name),
+            Self::Unknown => {},
+        }
+    }
+
+    pub fn goal(&self) -> Option<&crate::agent::acp::goal::GoalSnapshot> {
+        match self {
+            Self::V1(v1) => v1.goal.as_ref(),
+            Self::Unknown => None,
+        }
+    }
+
+    pub fn set_goal(&mut self, goal: Option<crate::agent::acp::goal::GoalSnapshot>) {
+        match self {
+            Self::V1(v1) => v1.goal = goal,
             Self::Unknown => {},
         }
     }
@@ -557,6 +574,7 @@ impl SessionDb {
                 },
                 permissions: RuntimePermissions::default(),
                 agent_name: None,
+                goal: None,
             });
         }
 

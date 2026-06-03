@@ -12,6 +12,7 @@ use strum::{
 
 use super::definitions::metrics::{
     CodewhispererterminalRecordUserTurnCompletion,
+    KirocliGoalCompleted,
     KirocliSubagentInvocation,
     KirocliVoiceInput,
 };
@@ -51,6 +52,7 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalUserInputId,
     CodewhispererterminalUtteranceId,
     KirocliAppType,
+    KirocliGoalTerminalState,
     KirocliVoiceBackend,
     KirocliVoiceInputMethod,
 };
@@ -719,6 +721,32 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::GoalCompleted {
+                conversation_id,
+                terminal_state,
+                iterations,
+                max_iterations,
+                duration_sec,
+            } => {
+                let goal_state = match terminal_state.as_str() {
+                    "completed" => KirocliGoalTerminalState::Completed,
+                    "exhausted" => KirocliGoalTerminalState::Exhausted,
+                    _ => KirocliGoalTerminalState::Cancelled,
+                };
+                Some(
+                    KirocliGoalCompleted {
+                        create_time: self.created_time,
+                        value: None,
+                        amazonq_conversation_id: conversation_id.map(Into::into),
+                        credential_start_url: self.credential_start_url.map(Into::into),
+                        kirocli_goal_terminal_state: goal_state,
+                        kirocli_goal_iterations: iterations.into(),
+                        kirocli_goal_max_iterations: max_iterations.into(),
+                        kirocli_goal_duration_sec: duration_sec.into(),
+                    }
+                    .into_metric_datum(),
+                )
+            },
         }
     }
 }
@@ -983,6 +1011,13 @@ pub enum EventType {
         to_mode: String,
         source: crate::agent::acp::schema::ModeChangeSource,
         session_id: Option<String>,
+    },
+    GoalCompleted {
+        conversation_id: Option<String>,
+        terminal_state: String,
+        iterations: i64,
+        max_iterations: i64,
+        duration_sec: i64,
     },
 }
 

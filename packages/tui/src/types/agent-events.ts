@@ -38,6 +38,7 @@ export enum AgentEventType {
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
   HooksUpdate = 'hooks_update',
+  GoalStatus = 'goal_status',
 }
 
 export enum ContentType {
@@ -348,6 +349,15 @@ export interface HooksUpdateEvent {
   }>;
 }
 
+export interface GoalStatusEvent {
+  type: AgentEventType.GoalStatus;
+  state: string;
+  iteration: number;
+  maxIterations: number;
+  message?: string;
+  elapsedSecs?: number;
+}
+
 export interface MetadataEvent {
   type: AgentEventType.Metadata;
   totalTokens?: number;
@@ -480,4 +490,5 @@ export type AgentStreamEvent =
   | McpGovernanceDisabledEvent
   | KasCommandsDiscoveredEvent
   | EffortUpdateEvent
-  | HooksUpdateEvent;
+  | HooksUpdateEvent
+  | GoalStatusEvent;

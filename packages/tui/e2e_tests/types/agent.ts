@@ -211,6 +211,11 @@ export interface FeedbackArgs {
 	feedbackType?: string;
 }
 
+/** Arguments for /goal command */
+export interface GoalArgs {
+	subcommand?: string;
+}
+
 /** Arguments for /guide command */
 export interface GuideArgs {
 	/** Optional question to ask the guide agent */
@@ -662,5 +667,7 @@ export type TuiCommand =
 	/** Show request stats for debugging slow turns */
 	| { command: "stats", args: StatsArgs }
 	/** Set thinking effort for this session */
-	| { command: "effort", args: EffortArgs };
+	| { command: "effort", args: EffortArgs }
+	/** Set a goal with validation criteria for iterative completion */
+	| { command: "goal", args: GoalArgs };
 

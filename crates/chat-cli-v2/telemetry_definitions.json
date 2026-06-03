@@ -372,6 +372,27 @@
       "description": "Whether voice input was auto-submitted without user review"
     },
     {
+      "name": "kirocli_goalIterations",
+      "type": "int",
+      "description": "Number of iterations the goal loop ran before reaching a terminal state"
+    },
+    {
+      "name": "kirocli_goalMaxIterations",
+      "type": "int",
+      "description": "The --max value the user requested for the goal (configured iteration cap)"
+    },
+    {
+      "name": "kirocli_goalTerminalState",
+      "type": "string",
+      "allowedValues": ["completed", "exhausted", "cancelled"],
+      "description": "How the goal loop ended: completed (agent called goal-complete), exhausted (hit --max), cancelled (user cleared)"
+    },
+    {
+      "name": "kirocli_goalDurationSec",
+      "type": "int",
+      "description": "Wall-clock duration from goal start to terminal transition, in seconds"
+    },
+    {
       "name": "kirocli_appType",
       "type": "string",
       "allowedValues": ["V1", "V2", "ACP"],
@@ -868,6 +889,19 @@
         { "type": "codewhispererterminal_modeFromAgent" },
         { "type": "codewhispererterminal_modeToAgent" },
         { "type": "codewhispererterminal_modeChangeSource" }
+      ]
+    },
+    {
+      "name": "kirocli_goalCompleted",
+      "description": "Emitted when a goal loop reaches a terminal state (completed, exhausted, or cancelled)",
+      "passive": false,
+      "metadata": [
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "kirocli_goalTerminalState", "required": true },
+        { "type": "kirocli_goalIterations", "required": true },
+        { "type": "kirocli_goalMaxIterations", "required": true },
+        { "type": "kirocli_goalDurationSec", "required": true }
       ]
     }
   ]

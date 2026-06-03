@@ -80,6 +80,8 @@ export function createMockCommandContext(
     setShowRewindExplorer: spy('setShowRewindExplorer') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,
+    setShowGoalPanel: spy('setShowGoalPanel') as any,
+    setGoalStatus: spy('setGoalStatus') as any,
     setShowStatsPanel: spy('setShowStatsPanel') as any,
     setShowHooksPanel: spy('setShowHooksPanel') as any,
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,

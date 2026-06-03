@@ -8,6 +8,7 @@ pub mod compact;
 pub mod context;
 pub mod effort;
 pub mod exit;
+pub mod goal;
 pub mod guide;
 pub mod help;
 pub mod hooks;
@@ -148,6 +149,7 @@ pub struct CommandContext<'a> {
     pub legacy_session_exporter: &'a Arc<dyn crate::agent::session::legacy_compat::LegacySessionExporter>,
     pub session_injected_mcp_servers: &'a [(String, ::agent::agent_config::definitions::McpServerConfig)],
     pub request_stats: &'a RequestStats,
+    pub goal_controller: Option<&'a super::goal::GoalController>,
 }
 /// Execute a slash command by dispatching to the appropriate module
 pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {
@@ -191,6 +193,13 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         },
         #[cfg(not(feature = "voice"))]
         TuiCommand::Voice(_) => CommandResult::error("Voice mode is not supported on this platform"),
+        TuiCommand::Goal(ref args) => {
+            if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal) {
+                goal::execute(args, ctx).await
+            } else {
+                CommandResult::error("/goal is not available in this build")
+            }
+        },
     }
 }
 

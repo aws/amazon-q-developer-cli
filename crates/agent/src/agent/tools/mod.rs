@@ -5,6 +5,7 @@ pub mod execute_cmd;
 pub mod fs_read;
 pub mod fs_write;
 pub mod glob;
+pub mod goal;
 pub mod grep;
 pub mod introspect;
 pub mod knowledge;
@@ -44,6 +45,7 @@ use fs_write::{
     FsWriteState,
 };
 use glob::Glob;
+use goal::GoalTool;
 use grep::Grep;
 use introspect::Introspect;
 pub use knowledge::{
@@ -190,6 +192,8 @@ pub enum BuiltInToolName {
     ToolSearch,
     #[strum(serialize = "task", serialize = "todo_list", serialize = "todo")]
     Task,
+    #[strum(serialize = "goal")]
+    Goal,
 }
 
 impl BuiltInToolName {
@@ -212,6 +216,7 @@ impl BuiltInToolName {
             BuiltInToolName::Knowledge => Knowledge::aliases(),
             BuiltInToolName::ToolSearch => ToolSearch::aliases(),
             BuiltInToolName::Task => TaskTool::aliases(),
+            BuiltInToolName::Goal => GoalTool::aliases(),
         }
     }
 }
@@ -397,6 +402,7 @@ pub enum BuiltInTool {
     SwitchToExecution(SwitchToExecution),
     ToolSearch(ToolSearch),
     Task(TaskTool),
+    Goal(GoalTool),
 }
 
 impl BuiltInTool {
@@ -453,6 +459,9 @@ impl BuiltInTool {
             BuiltInToolName::Task => serde_json::from_value::<TaskTool>(args)
                 .map(Self::Task)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Goal => serde_json::from_value::<GoalTool>(args)
+                .map(Self::Goal)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -484,6 +493,7 @@ impl BuiltInTool {
             BuiltInToolName::Knowledge => generate_tool_spec_from_trait::<Knowledge>(),
             BuiltInToolName::ToolSearch => generate_tool_spec_from_trait::<ToolSearch>(),
             BuiltInToolName::Task => generate_tool_spec_from_trait::<TaskTool>(),
+            BuiltInToolName::Goal => generate_tool_spec_from_trait::<GoalTool>(),
         }
     }
 
@@ -516,6 +526,7 @@ impl BuiltInTool {
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution,
             BuiltInTool::ToolSearch(_) => BuiltInToolName::ToolSearch,
             BuiltInTool::Task(_) => BuiltInToolName::Task,
+            BuiltInTool::Goal(_) => BuiltInToolName::Goal,
         }
     }
 
@@ -539,6 +550,7 @@ impl BuiltInTool {
             BuiltInTool::SwitchToExecution(_) => BuiltInToolName::SwitchToExecution.into(),
             BuiltInTool::ToolSearch(_) => BuiltInToolName::ToolSearch.into(),
             BuiltInTool::Task(_) => BuiltInToolName::Task.into(),
+            BuiltInTool::Goal(_) => BuiltInToolName::Goal.into(),
         }
     }
 
@@ -562,6 +574,7 @@ impl BuiltInTool {
             BuiltInTool::SwitchToExecution(_) => SwitchToExecution::aliases(),
             BuiltInTool::ToolSearch(_) => ToolSearch::aliases(),
             BuiltInTool::Task(_) => TaskTool::aliases(),
+            BuiltInTool::Goal(_) => GoalTool::aliases(),
         }
     }
 }

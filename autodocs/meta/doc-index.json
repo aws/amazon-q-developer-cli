@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-27T11:50:34.863810",
-  "total_docs": 114,
+  "generated_at": "2026-05-29T18:13:43.694968",
+  "total_docs": 116,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -86,6 +86,7 @@
       "slash-commands/context.md",
       "slash-commands/editor.md",
       "slash-commands/experiment.md",
+      "slash-commands/goal.md",
       "slash-commands/help.md",
       "slash-commands/hooks.md",
       "slash-commands/issue.md",
@@ -113,6 +114,7 @@
       "tools/code.md",
       "tools/delegate.md",
       "tools/glob.md",
+      "tools/goal.md",
       "tools/grep.md",
       "tools/introspect.md",
       "tools/knowledge.md",
@@ -1690,6 +1692,29 @@
       "status": "validated"
     },
     {
+      "path": "slash-commands/goal.md",
+      "file": "goal.md",
+      "title": "/goal",
+      "description": "Set a goal with validation criteria for iterative agent completion",
+      "category": "slash_command",
+      "keywords": [
+        "goal",
+        "iterate",
+        "loop",
+        "validation",
+        "criteria",
+        "complete",
+        "autonomous",
+        "agent"
+      ],
+      "related": [
+        "compact",
+        "effort"
+      ],
+      "validated": "2026-05-29",
+      "status": "validated"
+    },
+    {
       "path": "slash-commands/help.md",
       "file": "help.md",
       "title": "/help",
@@ -2196,6 +2221,28 @@
         "shell"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "tools/goal.md",
+      "file": "goal.md",
+      "title": "goal",
+      "description": "Built-in tool for signaling goal completion or checking progress",
+      "category": "tool",
+      "keywords": [
+        "goal",
+        "complete",
+        "status",
+        "iteration",
+        "loop",
+        "verification",
+        "evidence"
+      ],
+      "related": [
+        "use-subagent",
+        "todo-list"
+      ],
+      "validated": "2026-05-29",
       "status": "validated"
     },
     {

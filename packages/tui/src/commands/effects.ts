@@ -88,6 +88,7 @@ type EffectName =
   | 'copyToClipboard'
   | 'openRawView'
   | 'showThemeMenu'
+  | 'showGoalPanel'
   | 'showSettingsMenu'
   | 'showTuiPanel'
   | 'showChangelogPanel'
@@ -132,6 +133,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
+  goal: 'showGoalPanel',
   rewind: 'rewindAction',
   title: 'updateTitle',
 };
@@ -302,6 +304,36 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.setShowToolsPanel(true, data.tools);
     }
     // Subcommands (trust-all, reset) return no tools data — let dispatcher show the alert
+  },
+
+  showGoalPanel: (result, ctx) => {
+    const data = result?.data as
+      | {
+          goal_action?: string;
+          label?: string;
+          definition?: { max_iterations?: number };
+        }
+      | undefined;
+    if (data?.goal_action === 'set') {
+      // Inline slash path: server holds pending_prompt_response and injects
+      // the prompt server-side (same as /skills). TUI is already in streaming
+      // mode from its session/prompt call. Just update goal status for the panel.
+      ctx.setShowGoalPanel(false);
+      const maxIterations = data.definition?.max_iterations ?? 5;
+      ctx.setGoalStatus({
+        state: 'active',
+        iteration: 0,
+        maxIterations,
+        message: data.label,
+        startedAt: Date.now(),
+      });
+      return;
+    }
+    if (data?.goal_action === 'clear') {
+      ctx.setGoalStatus(null);
+      return;
+    }
+    ctx.setShowGoalPanel(true);
   },
 
   showStatsPanel: (result, ctx, _cmd, args) => {

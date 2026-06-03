@@ -87,6 +87,9 @@ pub enum AgentEvent {
     /// Summary of a subagent's execution
     SubagentSummary(Summary),
 
+    /// Agent invoked the goal tool (complete, status, create, clear)
+    GoalAction(crate::agent::tools::goal::GoalTool),
+
     /// A log entry was appended to the conversation event log
     LogEntryAppended {
         /// The log entry that was appended

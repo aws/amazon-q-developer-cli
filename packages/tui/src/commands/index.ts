@@ -45,6 +45,19 @@ export async function executeCommand(
     return false;
   }
 
+  // /goal with a description (set case) must flow through sendMessage so the
+  // TUI enters streaming mode. The server's slash router handles it like /skills.
+  // Only /goal (bare) and /goal clear go through the command system.
+  if (cmd.name.toLowerCase() === '/goal') {
+    const trimmedArgs = args?.trim() ?? '';
+    const isSubcommand = !trimmedArgs || trimmedArgs === 'clear';
+    if (!isSubcommand) {
+      // Send as a regular prompt — server slash router intercepts /goal text
+      await ctx.sendMessage(input);
+      return true;
+    }
+  }
+
   await dispatch(cmd, args, ctx);
   return true;
 }

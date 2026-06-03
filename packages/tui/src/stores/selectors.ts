@@ -164,6 +164,7 @@ export const useUIState = () =>
       mcpRegistryServers: state.mcpRegistryServers,
       mcpMode: state.mcpMode,
       showToolsPanel: state.showToolsPanel,
+      showGoalPanel: state.showGoalPanel,
       toolsList: state.toolsList,
       showStatsPanel: state.showStatsPanel,
       statsList: state.statsList,
@@ -204,6 +205,7 @@ export const useUIActions = () =>
       setShowRewindExplorer: state.setShowRewindExplorer,
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,
+      setShowGoalPanel: state.setShowGoalPanel,
       setShowStatsPanel: state.setShowStatsPanel,
       setShowHooksPanel: state.setShowHooksPanel,
       setShowKeybindingsPanel: state.setShowKeybindingsPanel,
@@ -238,6 +240,7 @@ export const useContextState = () =>
       currentAgent: state.currentAgent,
       previousAgentName: state.previousAgentName,
       codeIntelligenceActive: state.codeIntelligenceActive,
+      goalStatus: state.goalStatus,
     }))
   );
 

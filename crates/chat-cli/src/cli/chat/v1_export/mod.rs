@@ -235,6 +235,7 @@ fn write_v1_session(
             },
             permissions: RuntimePermissions::default().with_cwd(cwd),
             agent_name: None,
+            goal: None,
         }),
     };
 

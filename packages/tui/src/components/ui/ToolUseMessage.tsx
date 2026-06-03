@@ -369,6 +369,33 @@ const ToolUseContent = React.memo(function ToolUseContent({
     );
   }
 
+  // Goal tool — compact one-liner showing command result
+  if (name === 'goal') {
+    const labels: Record<string, string> = {
+      complete: '✓ Goal complete',
+      status: 'Goal status',
+    };
+    let label = 'Goal';
+    let detail: string | null = null;
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.command && labels[parsed.command]) {
+        label = labels[parsed.command]!;
+      }
+      // Show relevant detail per action
+      if (parsed.summary) detail = parsed.summary;
+      else if (parsed.description) detail = parsed.description;
+    } catch {
+      /* ignore */
+    }
+    return (
+      <>
+        <StatusInfo title={label} />
+        {detail && <ToolMeta params={[detail]} />}
+      </>
+    );
+  }
+
   // Task tool — show a compact one-liner since the Activity Tray surfaces task state
   if (TASK_TOOL_NAMES.has(name)) {
     const labels: Record<string, string> = {

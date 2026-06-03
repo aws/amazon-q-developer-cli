@@ -69,6 +69,8 @@ pub enum TuiCommand {
     Stats(StatsArgs),
     /// Set thinking effort for this session
     Effort(EffortArgs),
+    /// Set a goal with validation criteria for iterative completion
+    Goal(GoalArgs),
 }
 
 /// Arguments for /help command
@@ -291,6 +293,15 @@ pub struct EffortArgs {
     pub level: Option<String>,
 }
 
+/// Arguments for /goal command
+#[typeshare]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalArgs {
+    #[serde(alias = "value", default, skip_serializing_if = "Option::is_none")]
+    pub subcommand: Option<String>,
+}
+
 impl TuiCommand {
     /// Command name with leading slash
     pub fn name(&self) -> &'static str {
@@ -319,6 +330,7 @@ impl TuiCommand {
             TuiCommand::Rewind(_) => "/rewind",
             TuiCommand::Stats(_) => "/stats",
             TuiCommand::Effort(_) => "/effort",
+            TuiCommand::Goal(_) => "/goal",
         }
     }
 
@@ -349,6 +361,7 @@ impl TuiCommand {
             TuiCommand::Rewind(_) => "Rewind conversation to a previous turn (forks into a new session)",
             TuiCommand::Stats(_) => "Show request IDs and timings for debugging slow turns",
             TuiCommand::Effort(_) => "Set thinking effort for this session",
+            TuiCommand::Goal(_) => "Set a goal with validation criteria for iterative completion",
         }
     }
 
@@ -381,6 +394,7 @@ impl TuiCommand {
             TuiCommand::Rewind(_) => "/rewind",
             TuiCommand::Stats(_) => "/stats [N|save <filename>]",
             TuiCommand::Effort(_) => "/effort [level]",
+            TuiCommand::Goal(_) => "/goal [description --validate criteria --agent name --max N] | clear",
         }
     }
 
@@ -396,6 +410,7 @@ impl TuiCommand {
             TuiCommand::Code(_) => vec!["status", "init", "logs", "overview", "summary"],
             TuiCommand::Voice(_) => vec!["start", "stop", "status"],
             TuiCommand::Mcp(_) => vec!["list", "add", "remove"],
+            TuiCommand::Goal(_) => vec!["clear"],
             _ => vec![],
         }
     }
@@ -415,6 +430,7 @@ impl TuiCommand {
             TuiCommand::Tools(_) => vec![("trust", "<name>"), ("untrust", "<name>")],
             TuiCommand::Chat(_) => vec![("save", "[--force] <path>"), ("load", "<path>"), ("new", "[prompt]")],
             TuiCommand::Mcp(_) => vec![("add", "<server-name>"), ("remove", "<server-name>")],
+            TuiCommand::Goal(_) => vec![],
             _ => vec![],
         }
     }
@@ -529,6 +545,11 @@ impl TuiCommand {
                 meta.insert("searchable".into(), false.into());
                 Some(meta)
             },
+            TuiCommand::Goal(_) => {
+                let mut meta = serde_json::Map::new();
+                meta.insert("inputType".into(), "panel".into());
+                Some(meta)
+            },
         };
 
         // Attach subcommands to meta so the TUI can offer a sub-command dropdown
@@ -582,6 +603,7 @@ impl TuiCommand {
             TuiCommand::Rewind(RewindArgs::default()),
             TuiCommand::Stats(StatsArgs::default()),
             TuiCommand::Effort(EffortArgs::default()),
+            TuiCommand::Goal(GoalArgs::default()),
         ];
         commands.sort_by_key(|cmd| cmd.name());
         commands
@@ -660,6 +682,9 @@ impl TuiCommand {
             },
             "effort" => Some(Self::Effort(EffortArgs {
                 level: (!args.is_empty()).then(|| args.to_string()),
+            })),
+            "goal" => Some(Self::Goal(GoalArgs {
+                subcommand: (!args.is_empty()).then(|| args.to_string()),
             })),
             _ => None,
         }

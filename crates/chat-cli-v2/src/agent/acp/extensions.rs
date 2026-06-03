@@ -44,6 +44,20 @@ pub mod methods {
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
     /// Session update extension notification (e.g. tool_call_chunk)
     pub const SESSION_UPDATE: &str = "_kiro.dev/session/update";
+    /// Goal loop status notification
+    pub const GOAL_STATUS: &str = "_kiro.dev/goal/status";
+}
+
+/// Goal loop status notification payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalStatusNotification {
+    pub state: String,
+    pub iteration: u32,
+    pub max_iterations: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub elapsed_secs: u64,
 }
 
 /// Status of a backgrounded subagent.

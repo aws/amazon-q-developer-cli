@@ -1,0 +1,56 @@
+---
+doc_meta:
+  validated: 2026-06-01
+  commit: 598173c4d
+  status: validated
+  testable_headless: true
+  category: slash_command
+  title: /goal
+  description: Set a goal with validation criteria for iterative agent completion
+  keywords: [goal, iterate, loop, validation, criteria, complete, autonomous, agent]
+  related: [compact, spawn, effort]
+---
+
+# /goal
+
+Set a goal for iterative autonomous completion.
+
+## Overview
+
+The `/goal` command starts a goal-driven loop where the agent works autonomously toward a stated objective. The agent iterates — taking actions, verifying progress, and re-attempting with different strategies — until it can prove all success criteria are met or the iteration limit is reached.
+
+**Availability**: Internal nightly builds only (rollout-gated).
+
+## Usage
+
+```
+/goal <description> [--max <N>]
+/goal clear
+```
+
+- `description` — What you want accomplished (max 4,000 characters)
+- `--max <N>` — Maximum iterations before stopping (default: 5, ceiling: 50)
+- `clear` — Cancel the active goal
+
+## Examples
+
+```
+/goal implement pagination for the /users endpoint
+/goal fix all failing tests in the auth module --max 15
+/goal clear
+```
+
+## Goal States
+
+| State | Icon | Meaning |
+|-------|------|---------|
+| Active | ⟳ | Agent is working toward the goal |
+| Completed | ✓ | All criteria verified with cited evidence |
+| Exhausted | ✗ | Max iterations reached without completion |
+
+## Troubleshooting
+
+- **"No active goal"** — No goal is set. Use `/goal <description>` first.
+- **"Goal description is too long"** — Keep under 4,000 characters.
+- **"--max exceeds the 50 iteration ceiling"** — Use `--max 50` or lower.
+- **Goal exhausted** — Increase `--max`, simplify the goal, or break into sub-goals.

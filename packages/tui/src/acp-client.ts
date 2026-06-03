@@ -78,6 +78,7 @@ const EXT_METHODS = {
   MESSAGE_SEND: 'message/send',
   AGENT_SWITCHED: 'kiro.dev/agent/switched',
   SESSION_UPDATE: 'kiro.dev/session/update',
+  GOAL_STATUS: 'kiro.dev/goal/status',
 } as const;
 
 /** Subset of ACP's SessionModeState that we cache client-side.  Used for the
@@ -555,6 +556,7 @@ abstract class BaseAcpClient implements SessionClient {
     [EXT_METHODS.INBOX_NOTIFICATION]: (p) => this.handleInboxNotification(p),
     [EXT_METHODS.AGENT_SWITCHED]: (p) => this.handleAgentSwitched(p),
     [EXT_METHODS.SESSION_UPDATE]: (p) => this.handleExtSessionUpdate(p),
+    [EXT_METHODS.GOAL_STATUS]: (p) => this.handleGoalStatus(p),
   };
 
   private handleCommandsAdvertising(params: Record<string, unknown>) {
@@ -767,6 +769,25 @@ abstract class BaseAcpClient implements SessionClient {
         message: warning.message,
       });
     }
+  }
+
+  private handleGoalStatus(params: Record<string, unknown>) {
+    const { state, iteration, maxIterations, message, elapsedSecs } =
+      params as {
+        state: string;
+        iteration: number;
+        maxIterations: number;
+        message?: string;
+        elapsedSecs?: number;
+      };
+    this.broadcastStreamEvent({
+      type: AgentEventType.GoalStatus,
+      state,
+      iteration,
+      maxIterations,
+      message,
+      elapsedSecs,
+    });
   }
 
   // ── Shared session update → event conversion ──

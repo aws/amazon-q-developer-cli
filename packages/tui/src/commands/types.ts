@@ -98,6 +98,18 @@ export interface CommandContext {
   ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Show/hide goal panel */
+  setShowGoalPanel: (show: boolean) => void;
+  setGoalStatus: (
+    status: {
+      state: string;
+      iteration: number;
+      maxIterations: number;
+      message?: string;
+      elapsedSecs?: number;
+      startedAt?: number;
+    } | null
+  ) => void;
   /** Show/hide stats panel */
   setShowStatsPanel: (
     show: boolean,

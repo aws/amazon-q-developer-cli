@@ -567,6 +567,16 @@ interface BaseAppActions {
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentEffort: (effort: string | null) => void;
+  setGoalStatus: (
+    status: {
+      state: string;
+      iteration: number;
+      maxIterations: number;
+      message?: string;
+      elapsedSecs?: number;
+      startedAt?: number;
+    } | null
+  ) => void;
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string } | null,
     options?: { suppressWelcome?: boolean }
@@ -674,6 +684,7 @@ interface BaseAppActions {
     registryServers?: McpServerInfo[]
   ) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  setShowGoalPanel: (show: boolean) => void;
   setShowStatsPanel: (
     show: boolean,
     stats?: RequestStat[],
@@ -929,6 +940,14 @@ export interface AppState {
   currentAgent: { name: string } | null;
   previousAgentName: string | null;
   settings: Record<string, unknown> | null;
+  goalStatus: {
+    state: string;
+    iteration: number;
+    maxIterations: number;
+    message?: string;
+    elapsedSecs?: number;
+    startedAt?: number;
+  } | null;
 
   // Command UI state
   activeCommand: ActiveCommand | null;
@@ -1011,6 +1030,7 @@ export interface AppState {
   mcpMode: string;
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
+  showGoalPanel: boolean;
   showStatsPanel: boolean;
   statsList: RequestStat[];
   statsSummary: StatsSummary | null;
@@ -1261,6 +1281,8 @@ function buildCommandContext(
     setShowRewindExplorer: state.setShowRewindExplorer,
     setShowMcpPanel: state.setShowMcpPanel,
     setShowToolsPanel: state.setShowToolsPanel,
+    setShowGoalPanel: state.setShowGoalPanel,
+    setGoalStatus: state.setGoalStatus,
     setShowStatsPanel: state.setShowStatsPanel,
     setShowHooksPanel: state.setShowHooksPanel,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
@@ -1438,6 +1460,7 @@ export const createAppStore = (props: AppStoreProps) => {
     currentAgent: null,
     previousAgentName: null,
     settings: null,
+    goalStatus: null,
 
     activeCommand: null,
     commandInputValue: '',
@@ -1497,6 +1520,7 @@ export const createAppStore = (props: AppStoreProps) => {
     initErrors: [],
     mcpMode: 'list',
     showToolsPanel: false,
+    showGoalPanel: false,
     toolsList: [],
     showStatsPanel: false,
     statsList: [],
@@ -2161,6 +2185,24 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.EffortUpdate:
             get().setCurrentEffort(event.effort);
             break;
+          case AgentEventType.GoalStatus:
+            if (event.state === 'cleared') {
+              get().setGoalStatus(null);
+            } else {
+              const prev = get().goalStatus;
+              get().setGoalStatus({
+                state: event.state,
+                iteration: event.iteration,
+                maxIterations: event.maxIterations,
+                message: event.message ?? prev?.message,
+                elapsedSecs: event.elapsedSecs,
+                startedAt: prev?.startedAt,
+              });
+              if (event.state === 'completed' || event.state === 'exhausted') {
+                setTimeout(() => get().setGoalStatus(null), 3000);
+              }
+            }
+            break;
           case AgentEventType.Metadata:
             if (
               event.inputTokens !== undefined ||
@@ -2498,6 +2540,7 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
+    setGoalStatus: (goalStatus) => set({ goalStatus }),
     setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
       // The artifact-generation card belongs to the spec workflow's
@@ -3500,6 +3543,9 @@ export const createAppStore = (props: AppStoreProps) => {
     setShowToolsPanel: (show, tools = []) => {
       set({ showToolsPanel: show, toolsList: tools });
     },
+    setShowGoalPanel: (show) => {
+      set({ showGoalPanel: show });
+    },
     setShowStatsPanel: (show, stats = [], summary = null) => {
       set({ showStatsPanel: show, statsList: stats, statsSummary: summary });
     },
@@ -4086,14 +4132,57 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       state.resetExitSequence();
 
-      // Queue if processing or not yet initialized — but always allow /quit and /exit through
+      // Queue if processing or not yet initialized — but always allow /quit and /exit through.
       if (state.isProcessing || !state.isInitialized) {
         const lower = trimmed.toLowerCase();
+        // Collapse internal whitespace so e.g. "/goal  clear" matches "/goal clear".
+        const normalized = lower.replace(/\s+/g, ' ');
+
         if (lower === '/quit' || lower === '/exit') {
           state.clearInput();
           state.kiro.close();
           state.onExit?.();
           process.exit(0);
+        }
+
+        // Whitelist for non-interactive backend commands that are safe during processing.
+        // These don't queue input on the agent — they execute immediately on the backend
+        // because they're either read-only or required as escape hatches (e.g. /goal clear
+        // to stop a runaway goal loop).
+        const runWhileProcessing = async (
+          backendArg: string,
+          errorContext: string,
+          optimisticUiUpdate?: () => void
+        ) => {
+          state.clearInput();
+          optimisticUiUpdate?.();
+          try {
+            await state.kiro.executeCommand({
+              command: 'goal',
+              args: { subcommand: backendArg },
+            });
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            state.showTransientAlert({
+              message: `${errorContext}: ${reason}`,
+              status: 'warning',
+              autoHideMs: 4000,
+            });
+          }
+        };
+
+        if (normalized === '/goal clear') {
+          // Required escape hatch: user must be able to abort runaway goal loops.
+          // Update TUI optimistically; backend notification will reconcile on next event.
+          await runWhileProcessing('clear', 'Failed to clear goal', () =>
+            state.setGoalStatus(null)
+          );
+          return;
+        }
+        if (normalized === '/goal status') {
+          // Read-only; no UI side effects.
+          await runWhileProcessing('status', 'Failed to read goal status');
+          return;
         }
         // TODO: support queuing non-interactive slash commands (e.g. /clear, /compact)
         //       that don't require UI interaction to complete

@@ -95,6 +95,9 @@ export class CommandHistory {
   add(command: string): void {
     const trimmed = command.trim();
     if (!trimmed) return;
+    // Avoid consecutive duplicates (e.g. /goal set flows through both
+    // the command registry and sendMessage)
+    if (this.history[this.history.length - 1] === trimmed) return;
 
     this.history = [...this.history, trimmed].slice(-MAX_HISTORY_SIZE);
     this.currentIndex = -1;

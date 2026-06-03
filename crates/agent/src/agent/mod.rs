@@ -3,6 +3,7 @@ pub mod agent_loop;
 pub mod compact;
 pub mod consts;
 pub mod event_log;
+pub mod goal;
 pub mod mcp;
 pub mod permissions;
 pub mod prompts;
@@ -3029,6 +3030,7 @@ impl Agent {
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::Summary(_) => Ok(()),
+                BuiltInTool::Goal(_) => Ok(()),
                 BuiltInTool::UseAws(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::WebFetch(_) => Ok(()),
                 BuiltInTool::WebSearch(_) => Ok(()),
@@ -3164,6 +3166,10 @@ impl Agent {
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::Summary(t) => {
+                    let result_tx = self.agent_event_tx.clone();
+                    Box::pin(async move { t.execute(result_tx).await })
+                },
+                BuiltInTool::Goal(t) => {
                     let result_tx = self.agent_event_tx.clone();
                     Box::pin(async move { t.execute(result_tx).await })
                 },

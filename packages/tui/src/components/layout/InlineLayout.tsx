@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
@@ -22,6 +22,7 @@ import { TuiPanel } from '../ui/TuiPanel';
 import { ChangelogPanel } from '../ui/ChangelogPanel';
 import { McpPanel } from '../ui/McpPanel';
 import { ToolsPanel } from '../ui/ToolsPanel';
+import { GoalPanel } from '../ui/GoalPanel';
 import { StatsPanel } from '../ui/StatsPanel';
 import { HooksPanel } from '../ui/HooksPanel';
 import { KeybindingsPanel } from '../ui/KeybindingsPanel';
@@ -212,6 +213,7 @@ export const InlineLayout: React.FC = () => {
     mcpRegistryServers,
     mcpMode,
     showToolsPanel,
+    showGoalPanel,
     toolsList,
     showStatsPanel,
     statsList,
@@ -240,6 +242,7 @@ export const InlineLayout: React.FC = () => {
     setShowRewindExplorer,
     setShowMcpPanel,
     setShowToolsPanel,
+    setShowGoalPanel,
     setShowStatsPanel,
     setShowHooksPanel,
     setShowKeybindingsPanel,
@@ -259,6 +262,7 @@ export const InlineLayout: React.FC = () => {
     currentAgent,
     previousAgentName,
     codeIntelligenceActive,
+    goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
   const promptHint = useAppStore((state) => state.promptHint);
@@ -282,6 +286,19 @@ export const InlineLayout: React.FC = () => {
   const submitSurvey = useAppStore((s) => s.submitSurvey);
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
+
+  // Tick every 60s while a goal is active so the elapsed time chip updates.
+  const [, setGoalTick] = useState(0);
+  useEffect(() => {
+    if (
+      !goalStatus ||
+      goalStatus.state === 'completed' ||
+      goalStatus.state === 'exhausted'
+    )
+      return;
+    const id = setInterval(() => setGoalTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [goalStatus]);
 
   // Detect if pending approval is from a crew subagent (not the main session)
   const isCrewApproval = !!(
@@ -321,7 +338,7 @@ export const InlineLayout: React.FC = () => {
     }))
   );
 
-  const [gitBranch, setGitBranch] = useState(() => getGitBranch());
+  const [gitBranch, _setGitBranch] = useState(() => getGitBranch());
 
   // Handle Ctrl+O to toggle tool output expansion
   const announcement = useAppStore((s) => s.announcement);
@@ -698,6 +715,48 @@ export const InlineLayout: React.FC = () => {
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
       codeIntelligenceActive && <Text>{getColor('primary')('λ')}</Text>,
+      goalStatus &&
+        (() => {
+          const icon =
+            goalStatus.state === 'paused'
+              ? '⏸'
+              : goalStatus.state === 'completed'
+                ? '✓'
+                : goalStatus.state === 'exhausted'
+                  ? '✗'
+                  : '⟳';
+          const label =
+            goalStatus.state === 'paused'
+              ? 'Paused'
+              : goalStatus.state === 'completed'
+                ? 'Done'
+                : goalStatus.state === 'exhausted'
+                  ? 'Exhausted'
+                  : `Active [${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
+          const secs = goalStatus.startedAt
+            ? Math.floor((Date.now() - goalStatus.startedAt) / 1000)
+            : (goalStatus.elapsedSecs ?? 0);
+          const elapsed =
+            secs > 0
+              ? secs >= 3600
+                ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`
+                : secs >= 60
+                  ? `${Math.floor(secs / 60)}m`
+                  : `${secs}s`
+              : '';
+          return (
+            <Chip
+              value={`${icon} Goal ${label}${elapsed ? ` · ${elapsed}` : ''}`}
+              color={
+                goalStatus.state === 'completed'
+                  ? ChipColor.SUCCESS
+                  : goalStatus.state === 'exhausted'
+                    ? ChipColor.ERROR
+                    : ChipColor.SECONDARY
+              }
+            />
+          );
+        })(),
     ];
 
     const secondaryItems = [
@@ -728,6 +787,7 @@ export const InlineLayout: React.FC = () => {
     gitBranch,
     currentModel,
     currentEffort,
+    goalStatus,
     getColor,
   ]);
 
@@ -816,7 +876,6 @@ export const InlineLayout: React.FC = () => {
       approvalMode,
       cancelApproval,
       handleUserInput,
-      setGitBranch,
     ]
   );
 
@@ -922,6 +981,7 @@ export const InlineLayout: React.FC = () => {
               showRewindExplorer ||
               showMcpPanel ||
               showToolsPanel ||
+              showGoalPanel ||
               showStatsPanel ||
               showHooksPanel ||
               showKeybindingsPanel ||
@@ -1093,6 +1153,9 @@ export const InlineLayout: React.FC = () => {
             )}
             {showToolsPanel && (
               <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+            )}
+            {showGoalPanel && (
+              <GoalPanel onClose={() => setShowGoalPanel(false)} />
             )}
             {showStatsPanel && (
               <StatsPanel

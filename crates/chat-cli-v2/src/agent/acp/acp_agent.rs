@@ -284,6 +284,11 @@ pub enum AcpSessionRequest {
     RefreshMcpRegistry {
         registry: Box<dyn agent::mcp::McpRegistry>,
     },
+    /// Background goal re-injection task failed after retries.
+    GoalReinjectionFailed {
+        tool_call_id: String,
+        error: String,
+    },
 }
 
 #[derive(Debug)]
@@ -933,7 +938,8 @@ impl<'a> AcpSessionBuilder<'a> {
         let (tx, rx) = mpsc::channel(32);
         let (ready_tx, ready_rx) = oneshot::channel();
         let subagent_info = self.subagent_info.clone();
-        let session = AcpSession::with_builder(os, rx, self).await?;
+        let self_tx = tx.clone();
+        let session = AcpSession::with_builder(os, rx, self_tx, self).await?;
         let initial_model_id = session.rts_state.model_id();
         tokio::spawn(async move { session.main_loop(ready_tx).await });
 
@@ -995,6 +1001,11 @@ struct AcpSession {
     mcp_enabled: bool,
     /// In-memory ring buffer of per-request metadata for `/stats`.
     request_stats: super::request_stats::RequestStats,
+    /// Active goal loop controller. None if no goal is set.
+    goal_controller: Option<super::goal::GoalController>,
+    /// Sender back to self — used by background tasks (goal re-injection)
+    /// to notify the actor of async outcomes without blocking the event loop.
+    self_tx: mpsc::Sender<AcpSessionRequest>,
 }
 
 impl AcpSession {
@@ -1073,6 +1084,7 @@ impl AcpSession {
             legacy_session_exporter: &self.legacy_session_exporter,
             session_injected_mcp_servers: &self.session_injected_mcp_servers,
             request_stats: &self.request_stats,
+            goal_controller: self.goal_controller.as_ref(),
         }
     }
 
@@ -1086,6 +1098,7 @@ impl AcpSession {
                     snapshot.permissions,
                 );
                 state.set_agent_name(self.current_agent_name.clone());
+                state.set_goal(self.goal_controller.as_ref().map(|c| c.to_snapshot()));
                 if let Err(e) = self.session_db.update_state(state) {
                     warn!("Failed to persist session state: {}", e);
                 }
@@ -1094,6 +1107,252 @@ impl AcpSession {
                 error!("Failed to get agent snapshot for session persistence: {}", e);
             },
         }
+    }
+
+    /// Evaluate goal completion on EndTurn.
+    /// After EndTurn: if goal is active, re-inject prompt directly.
+    /// Agent is already Idle when EndTurn fires (set_active_state(Idle) happens before broadcast).
+    ///
+    /// Note: previously this early-released to the user when the agent ended a turn without
+    /// using any tools, on the theory that the agent was asking for clarification. That was
+    /// too eager — agents often emit text-only intermediate replies that aren't questions.
+    /// We now always count it as an iteration and re-inject the nudge. A future LLM-judge
+    /// will replace this with a principled completion check.
+    async fn evaluate_goal_on_end_turn(&mut self) {
+        let Some(ref mut goal_ctrl) = self.goal_controller else {
+            return;
+        };
+
+        goal_ctrl.iteration += 1;
+
+        if goal_ctrl.iteration >= goal_ctrl.definition.max_iterations {
+            goal_ctrl.mark_exhausted(format!(
+                "Max iterations ({}) reached",
+                goal_ctrl.definition.max_iterations
+            ));
+            self.send_goal_status_notification();
+            self.emit_goal_telemetry("exhausted");
+            self.release_goal_response().await;
+            return;
+        }
+
+        let iteration = goal_ctrl.iteration;
+        let max_iterations = goal_ctrl.definition.max_iterations;
+        let description = goal_ctrl.definition.description.clone();
+
+        let prompt = goal_ctrl.build_prompt(iteration + 1);
+
+        self.send_goal_status_notification();
+
+        let tool_call_id = format!("goal-iter-{}", iteration);
+        let goal_content: ToolCallContent = ContentBlock::Text(TextContent::new(description.clone())).into();
+        let _ = self.send_session_notification(SessionUpdate::ToolCall(
+            ToolCall::new(
+                ToolCallId::new(tool_call_id.clone()),
+                format!("⟳ Goal iteration {}/{}", iteration + 1, max_iterations),
+            )
+            .kind(ToolKind::Other)
+            .status(ToolCallStatus::Pending)
+            .content(vec![goal_content]),
+        ));
+
+        tracing::info!("Goal: re-injecting iteration {}/{}", iteration, max_iterations);
+
+        // The agent sets ActiveState::Idle before broadcasting EndTurn, but the
+        // broadcast is buffered. By the time we process EndTurn here, the agent's
+        // internal channel may not have drained yet. Retry with backoff in a
+        // background task so we don't block the actor's event loop.
+        let agent = self.agent.clone();
+        let self_tx = self.self_tx.clone();
+        let tool_call_id_clone = tool_call_id.clone();
+        tokio::spawn(async move {
+            let mut last_err = None;
+            for attempt in 0..5u64 {
+                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
+                match agent
+                    .send_prompt(agent::protocol::SendPromptArgs {
+                        content: vec![agent::protocol::ContentChunk::Text(prompt.clone())],
+                        should_continue_turn: None,
+                    })
+                    .await
+                {
+                    Ok(()) => {
+                        last_err = None;
+                        break;
+                    },
+                    Err(e) => {
+                        tracing::warn!("Goal re-injection attempt {} failed: {e:?}", attempt + 1);
+                        last_err = Some(e);
+                    },
+                }
+            }
+            if let Some(e) = last_err {
+                tracing::error!("Goal re-injection failed after retries: {e:?}");
+                // Notify the actor to handle the failure. Use self_tx to send
+                // a GoalReinjectionFailed message back without blocking.
+                let _ = self_tx
+                    .send(AcpSessionRequest::GoalReinjectionFailed {
+                        tool_call_id: tool_call_id_clone,
+                        error: format!("{e:?}"),
+                    })
+                    .await;
+            }
+        });
+
+        // Mark tool call as completed optimistically — the background task
+        // will send GoalReinjectionFailed if it actually fails.
+        let _ = self.send_session_notification(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            ToolCallId::new(tool_call_id),
+            ToolCallUpdateFields::new().status(ToolCallStatus::Completed),
+        )));
+    }
+
+    /// Release pending_prompt_response back to TUI (goal done/exhausted/error).
+    async fn release_goal_response(&mut self) {
+        if let Some(respond_to) = self.pending_prompt_response.take() {
+            self.persist_session_state().await;
+            let respond_to = respond_to.into_inner();
+            let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
+        }
+    }
+
+    /// Handle the agent calling the `goal` built-in tool.
+    async fn handle_goal_action(&mut self, action: agent::tools::goal::GoalTool) {
+        use agent::tools::goal::GoalTool;
+        match action {
+            GoalTool::Complete { .. } => {
+                if let Some(ref mut ctrl) = self.goal_controller {
+                    ctrl.state = super::goal::GoalState::Completed;
+                    self.send_goal_status_notification();
+                    self.emit_goal_telemetry("completed");
+                }
+                // Don't release here — let EndTurn fire naturally, which will see
+                // goal is no longer WaitingForTurn and release the response.
+            },
+        }
+    }
+
+    /// If the command result is a goal-set, initialize the controller, hold the
+    /// prompt response (so the TUI stays in streaming mode), and spawn the first
+    /// iteration. Otherwise respond immediately with EndTurn.
+    fn handle_goal_or_respond(
+        &mut self,
+        result: agent::tui_commands::CommandResult,
+        request_cx: Responder<PromptResponse>,
+    ) {
+        let is_goal_set = result.success
+            && result
+                .data
+                .as_ref()
+                .is_some_and(|d| d.get("goal_action").and_then(|a| a.as_str()) == Some("set"));
+
+        if is_goal_set
+            && let Some(ref data) = result.data
+            && let Some(def) = data.get("definition")
+            && let Ok(definition) = serde_json::from_value::<agent::goal::GoalDefinition>(def.clone())
+        {
+            let ctrl = super::goal::GoalController::new(definition);
+            let goal_prompt = ctrl.build_prompt(1);
+            self.goal_controller = Some(ctrl);
+            self.send_goal_status_notification();
+            self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
+            let agent = self.agent.clone();
+            tokio::spawn(async move {
+                if let Err(e) = agent
+                    .send_prompt(SendPromptArgs {
+                        content: vec![agent::protocol::ContentChunk::Text(goal_prompt)],
+                        should_continue_turn: None,
+                    })
+                    .await
+                {
+                    tracing::error!("Goal initial send_prompt failed: {e:?}");
+                }
+            });
+            return;
+        }
+
+        // Non-goal-set or parse failure: respond immediately
+        if let Err(e) = request_cx.respond(PromptResponse::new(StopReason::EndTurn)) {
+            error!("Failed to respond to slash command: {e}");
+        }
+    }
+
+    /// On EndTurn, decide whether to re-inject the goal prompt for another
+    /// iteration or release the pending prompt response back to the TUI.
+    async fn handle_end_turn_goal_or_respond(&mut self, md: &agent::agent_loop::protocol::UserTurnMetadata) {
+        let goal_should_continue = self.goal_controller.as_ref().is_some_and(|c| c.should_continue());
+        let was_cancelled = matches!(
+            md.end_reason,
+            agent::agent_loop::protocol::LoopEndReason::Cancelled
+                | agent::agent_loop::protocol::LoopEndReason::ToolUseRejected
+        );
+
+        if goal_should_continue && !was_cancelled {
+            // Keep pending_prompt_response held — the re-injected prompt
+            // triggers another turn whose EndTurn will eventually respond.
+            self.evaluate_goal_on_end_turn().await;
+        } else {
+            // Goal complete, exhausted, or normal non-goal turn — release to TUI.
+            if let Some(respond_to) = self.pending_prompt_response.take() {
+                self.persist_session_state().await;
+                let respond_to = respond_to.into_inner();
+                let stop_reason = match md.end_reason {
+                    agent::agent_loop::protocol::LoopEndReason::UserTurnEnd => StopReason::EndTurn,
+                    agent::agent_loop::protocol::LoopEndReason::ToolUseRejected => StopReason::Refusal,
+                    agent::agent_loop::protocol::LoopEndReason::Cancelled => StopReason::Cancelled,
+                    _ => StopReason::EndTurn,
+                };
+                let _ = respond_to.respond(PromptResponse::new(stop_reason));
+            }
+        }
+    }
+
+    fn send_goal_status_notification(&self) {
+        let Some(ref ctrl) = self.goal_controller else { return };
+        let (state, message) = match &ctrl.state {
+            super::goal::GoalState::WaitingForTurn => ("active", ctrl.definition.description.clone()),
+            super::goal::GoalState::Completed => {
+                ("completed", format!("Goal achieved in {} iterations", ctrl.iteration))
+            },
+            super::goal::GoalState::Exhausted { reason } => ("exhausted", reason.clone()),
+        };
+        let elapsed = (chrono::Utc::now() - ctrl.started_at).num_seconds().max(0) as u64;
+        let _ = self.send_ext_notification(
+            super::extensions::methods::GOAL_STATUS,
+            super::extensions::GoalStatusNotification {
+                state: state.to_string(),
+                iteration: ctrl.iteration,
+                max_iterations: ctrl.definition.max_iterations,
+                message: Some(message),
+                elapsed_secs: elapsed,
+            },
+        );
+    }
+
+    /// Emit a `kirocli_goalCompleted` telemetry event when a goal reaches a
+    /// terminal state. Reads iteration count, definition flags, and duration
+    /// from `self.goal_controller`. Caller passes the terminal label
+    /// ("completed" | "exhausted" | "cancelled").
+    ///
+    /// Must be called BEFORE `self.goal_controller` is cleared/replaced so
+    /// the read sees the final state.
+    ///
+    /// Gated by the `goal` rollout — no-op if the feature is not enabled.
+    fn emit_goal_telemetry(&self, terminal_state: &str) {
+        if !crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal) {
+            return;
+        }
+        let Some(ref ctrl) = self.goal_controller else {
+            return;
+        };
+        let duration_sec = (chrono::Utc::now() - ctrl.started_at).num_seconds().max(0);
+        let _ = self.os.telemetry.send_goal_completed(
+            Some(self.session_id_str.clone()),
+            terminal_state.to_string(),
+            ctrl.iteration as i64,
+            ctrl.definition.max_iterations as i64,
+            duration_sec,
+        );
     }
 
     /// Extract metadata from a completed response stream and push to the ring buffer.
@@ -1130,6 +1389,7 @@ impl AcpSession {
     async fn with_builder(
         os: Os,
         request_rx: mpsc::Receiver<AcpSessionRequest>,
+        self_tx: mpsc::Sender<AcpSessionRequest>,
         mut builder: AcpSessionBuilder<'_>,
     ) -> eyre::Result<Self> {
         let session_id_str = builder
@@ -1148,6 +1408,7 @@ impl AcpSession {
         let mut saved_model_id: Option<String> = None;
         let mut saved_additional_fields: Option<crate::cli::chat::legacy::additional_fields::AdditionalModelFields> =
             None;
+        let mut saved_goal: Option<super::goal::GoalSnapshot> = None;
 
         let (session_db, snapshot) = if builder.load {
             // Load existing session
@@ -1160,6 +1421,7 @@ impl AcpSession {
                 .rts_model_state()
                 .and_then(|s| s.model_info.as_ref().map(|m| m.model_id.clone()));
             saved_additional_fields = state.rts_model_state().and_then(|s| s.additional_fields.clone());
+            saved_goal = state.goal().cloned();
 
             let conversation_id = Uuid::parse_str(&session_id_str)
                 .map_err(|_e| eyre::eyre!("Invalid session ID '{}': must be a valid UUID", session_id_str))?;
@@ -1249,6 +1511,11 @@ impl AcpSession {
         {
             warn!("--effort: {}", e);
         }
+
+        // Restore goal from loaded session. The restored goal stays in WaitingForTurn
+        // and will re-engage on the next user prompt — initialize() emits a status
+        // notification so the user is aware they have an active goal.
+        let restored_goal = saved_goal.map(super::goal::GoalController::from_snapshot);
 
         let snapshot = {
             let mut s = snapshot;
@@ -1392,6 +1659,8 @@ impl AcpSession {
             session_injected_mcp_servers: builder.session_injected_mcp_servers,
             mcp_enabled: builder.mcp_enabled,
             request_stats: Default::default(),
+            goal_controller: restored_goal,
+            self_tx,
         })
     }
 
@@ -1399,6 +1668,12 @@ impl AcpSession {
         // Emit historical notifications for loaded sessions
         if let Err(e) = self.emit_historical_notifications().await {
             warn!("Failed to emit historical notifications: {}", e);
+        }
+
+        // If a goal was restored from session, surface it so the user knows it's still
+        // active. Otherwise the goal would silently re-engage on the next user prompt.
+        if self.goal_controller.is_some() {
+            self.send_goal_status_notification();
         }
 
         // Wait for agent to finish initialization
@@ -1658,20 +1933,17 @@ impl AcpSession {
                             }
 
                             // Send result message as a text chunk so the TUI displays it
-                            if !result.message.is_empty()
-                                && let Err(e) = self.send_session_notification(SessionUpdate::AgentMessageChunk(
-                                    SacpContentChunk::new(ContentBlock::Text(TextContent::new(result.message))),
-                                ))
-                            {
-                                error!(?e, "send_session_notification failed (slash command result)");
+                            if !result.message.is_empty() {
+                                let _ = self.send_session_notification(SessionUpdate::AgentMessageChunk(
+                                    SacpContentChunk::new(ContentBlock::Text(TextContent::new(format!(
+                                        "{}\n",
+                                        result.message
+                                    )))),
+                                ));
                             }
 
-                            // Respond directly — slash commands don't go through the agent loop
-                            // so EndTurn never fires. Commands that also call send_prompt (e.g.
-                            // /plan) will have their agent turn run in the background independently.
-                            if let Err(e) = request_cx.respond(PromptResponse::new(StopReason::EndTurn)) {
-                                error!("Failed to respond to slash command: {e}");
-                            }
+                            // Set up goal controller or respond immediately.
+                            self.handle_goal_or_respond(result, request_cx);
                         },
                         slash_router::SlashRoute::Prompt { name, args, original } => {
                             self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
@@ -1933,6 +2205,33 @@ impl AcpSession {
                 }
 
                 let create_succeeded = is_agent_create && result.success;
+
+                // Handle goal actions from /goal command
+                if result.success
+                    && let Some(ref data) = result.data
+                    && let Some(action) = data.get("goal_action").and_then(|a| a.as_str())
+                {
+                    if action == "clear" {
+                        // Emit telemetry BEFORE clearing the controller so we can
+                        // read iteration count / definition from it.
+                        self.emit_goal_telemetry("cancelled");
+                        self.goal_controller = None;
+                        // Send cleared notification explicitly (controller is None so send_goal_status_notification
+                        // would no-op)
+                        let _ = self.send_ext_notification(
+                            super::extensions::methods::GOAL_STATUS,
+                            super::extensions::GoalStatusNotification {
+                                state: "cleared".to_string(),
+                                iteration: 0,
+                                max_iterations: 0,
+                                message: None,
+                                elapsed_secs: 0,
+                            },
+                        );
+                    }
+                    self.send_goal_status_notification();
+                }
+
                 let _ = respond_to.send(result);
 
                 // Persist state after commands (captures effort, model changes, etc.)
@@ -2083,6 +2382,19 @@ impl AcpSession {
             AcpSessionRequest::RefreshMcpRegistry { registry } => {
                 self.pending_mcp_registry = Some(registry);
             },
+            AcpSessionRequest::GoalReinjectionFailed { tool_call_id, error } => {
+                tracing::error!("Goal re-injection failed: {error}");
+                let _ = self.send_session_notification(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                    ToolCallId::new(tool_call_id),
+                    ToolCallUpdateFields::new().status(ToolCallStatus::Failed),
+                )));
+                if let Some(ref mut ctrl) = self.goal_controller {
+                    ctrl.mark_exhausted(format!("Re-injection failed: {error}"));
+                }
+                self.send_goal_status_notification();
+                self.emit_goal_telemetry("reinjection_failed");
+                self.release_goal_response().await;
+            },
         }
     }
 
@@ -2195,18 +2507,7 @@ impl AcpSession {
                 let has_pending_swap = self.pending_swap.is_some();
 
                 if !has_pending_swap {
-                    // Normal EndTurn — respond to the TUI to end the turn
-                    if let Some(respond_to) = self.pending_prompt_response.take() {
-                        self.persist_session_state().await;
-                        let respond_to = respond_to.into_inner();
-                        let stop_reason = match md.end_reason {
-                            agent::agent_loop::protocol::LoopEndReason::UserTurnEnd => StopReason::EndTurn,
-                            agent::agent_loop::protocol::LoopEndReason::ToolUseRejected => StopReason::Refusal,
-                            agent::agent_loop::protocol::LoopEndReason::Cancelled => StopReason::Cancelled,
-                            _ => StopReason::EndTurn,
-                        };
-                        let _ = respond_to.respond(PromptResponse::new(stop_reason));
-                    }
+                    self.handle_end_turn_goal_or_respond(&md).await;
                 }
                 // Execute pending swap from switch_to_execution (agent is idle after end_current_turn)
                 if let Some(agent_config) = self.pending_swap.take() {
@@ -2427,6 +2728,10 @@ impl AcpSession {
                 }
             },
             AgentEvent::Stop(AgentStopReason::EndTurn) => {
+                // Don't release if goal loop is active — EndTurn handler manages it
+                if self.goal_controller.as_ref().is_some_and(|c| c.should_continue()) {
+                    return;
+                }
                 // Resolve the pending prompt response if it hasn't been resolved yet.
                 if let Some(respond_to) = self.pending_prompt_response.take() {
                     warn!("Resolving pending prompt via Stop(EndTurn) — no EndTurn event was received");
@@ -2456,6 +2761,9 @@ impl AcpSession {
                         }
                     });
                 }
+            },
+            AgentEvent::GoalAction(action) => {
+                self.handle_goal_action(action).await;
             },
             _ => {
                 // Other events that don't need processing
@@ -2547,6 +2855,10 @@ async fn advertise_commands_and_prompts_to_client(
             // Hide /voice from command list when rollout is not enabled
             if cmd.name() == "/voice" {
                 return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice);
+            }
+            // Hide /goal from command list when rollout is not enabled
+            if cmd.name() == "/goal" {
+                return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal);
             }
             true
         })
@@ -3050,6 +3362,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::Knowledge => ToolKind::Other,
             BuiltInToolName::ToolSearch => ToolKind::Search,
             BuiltInToolName::Task => ToolKind::Other,
+            BuiltInToolName::Goal => ToolKind::Other,
         }
     } else {
         ToolKind::Other
@@ -3161,6 +3474,12 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                     TaskTool::Add { .. } => "Adding tasks".to_string(),
                     TaskTool::Remove { .. } => "Removing tasks".to_string(),
                     TaskTool::List { .. } => "Listing tasks".to_string(),
+                }
+            },
+            BuiltInTool::Goal(g) => {
+                use agent::tools::goal::GoalTool;
+                match g {
+                    GoalTool::Complete { .. } => "Goal complete".to_string(),
                 }
             },
         },

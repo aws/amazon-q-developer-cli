@@ -586,6 +586,32 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    /// Emit a `kirocli_goalCompleted` event when a goal loop reaches a
+    /// terminal state (the agent calls goal-complete, the iteration cap is
+    /// hit, or the user clears the goal).
+    ///
+    /// Used to track average iterations to completion and the breakdown of
+    /// terminal states. Gated by the `goal` rollout — only emitted in
+    /// nightly builds where the feature is enabled.
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_goal_completed(
+        &self,
+        conversation_id: Option<String>,
+        terminal_state: String,
+        iterations: i64,
+        max_iterations: i64,
+        duration_sec: i64,
+    ) -> Result<(), TelemetryError> {
+        let telemetry_event = Event::new(EventType::GoalCompleted {
+            conversation_id,
+            terminal_state,
+            iterations,
+            max_iterations,
+            duration_sec,
+        });
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn send_process_health_snapshot(
         &self,

@@ -4,6 +4,7 @@ mod acp_provider;
 pub mod command_handler;
 pub mod commands;
 pub mod extensions;
+pub mod goal;
 pub mod mcp_conversion;
 mod mcp_prompts;
 pub mod orchestration;
