@@ -32,7 +32,7 @@ jobs:
         with:
           ref: ${{ steps.pr.outputs.sha }}
           fetch-depth: 0
-          token: ${{ secrets.KIRO_BOT_PAT }}
+          token: ${{ secrets.KIRO_WORKFLOWS_PAT }}
 
       - name: Detect changed paths
         id: paths
@@ -85,7 +85,7 @@ jobs:
             echo "No formatting changes needed."
           fi
 
-      # KIRO_BOT_PAT push re-triggers PR workflows so required checks run on the new commit.
+      # KIRO_WORKFLOWS_PAT push re-triggers PR workflows so required checks run on the new commit.
       # Bot workflows skip via the github.actor check above, preventing loops.
       - name: Commit and push
         if: steps.diff.outputs.has_changes == 'true'
