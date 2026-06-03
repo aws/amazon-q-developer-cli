@@ -37,7 +37,7 @@ describe('kas-commands', () => {
       const { createAppStore } = await import('../stores/app-store');
 
       const mockKiro = {} as InstanceType<typeof Kiro>;
-      const store = createAppStore({ kiro: mockKiro, agentEngine: 'rust' });
+      const store = createAppStore({ kiro: mockKiro, agentEngine: 'v2' });
       const state = store.getState();
 
       const specInStatic = state.slashCommands.find(

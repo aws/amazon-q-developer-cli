@@ -30,11 +30,13 @@ function createFakeSession(opts: {
   updatedAt: string;
   userPrompt?: string;
 }) {
+  const prompt = opts.userPrompt ?? 'hello from test';
   const metadata = {
     session_id: opts.sessionId,
     cwd: opts.cwd,
     created_at: opts.updatedAt,
     updated_at: opts.updatedAt,
+    title: prompt,
     session_state: {
       version: 'v1',
       conversation_metadata: { total_turns: 1 },
@@ -53,7 +55,6 @@ function createFakeSession(opts: {
   );
 
   // Write a minimal JSONL event log with one Prompt entry
-  const prompt = opts.userPrompt ?? 'hello from test';
   const logEntry = {
     version: 'v1',
     kind: 'Prompt',
@@ -122,11 +123,14 @@ describe('--resume', () => {
       .withTimeout(15000)
       .launch();
 
-    // Wait for the TUI to initialize
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    // Verify the store picked up the correct session ID
-    const store = await testCase.getStore();
+    // Wait for the resolved session to land in the store. The TUI shells
+    // out to `kiro-cli chat --list-sessions` before createSession runs, so
+    // the input bar can render before sessionId is set - waitForStore avoids
+    // that race.
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'new-session-bbb',
+      10000
+    );
     expect(store.sessionId).toBe('new-session-bbb');
 
     // Exit cleanly
@@ -148,7 +152,10 @@ describe('--resume', () => {
     await testCase.waitForVisibleText('ask a question', 10000);
 
     // Should fall back to a new session (mock returns 'mock-session-id')
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'mock-session-id',
+      10000
+    );
     expect(store.sessionId).toBe('mock-session-id');
 
     await testCase.pressCtrlCTwice();
@@ -175,7 +182,10 @@ describe('--resume', () => {
     await testCase.waitForVisibleText('ask a question', 10000);
 
     // No matching session → falls back to new session
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'mock-session-id',
+      10000
+    );
     expect(store.sessionId).toBe('mock-session-id');
 
     await testCase.pressCtrlCTwice();
@@ -222,9 +232,10 @@ describe('--resume-picker', () => {
 
     // Now wait for IPC to connect (Ink starts after picker completes)
     await testCase.waitForReady();
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'picker-session-2',
+      10000
+    );
     expect(store.sessionId).toBe('picker-session-2');
 
     await testCase.pressCtrlCTwice();
@@ -263,9 +274,10 @@ describe('--resume-picker', () => {
     await testCase.pressEnter();
 
     await testCase.waitForReady();
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'arrow-session-1',
+      10000
+    );
     expect(store.sessionId).toBe('arrow-session-1');
 
     await testCase.pressCtrlCTwice();
@@ -296,9 +308,10 @@ describe('--resume-picker', () => {
 
     // Falls through to a new session rather than exiting (matches V1 picker).
     await testCase.waitForReady();
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'mock-session-id',
+      10000
+    );
     expect(store.sessionId).toBe('mock-session-id');
 
     await testCase.pressCtrlCTwice();
@@ -356,7 +369,10 @@ describe('--resume-picker', () => {
     // No sessions → picker skipped, goes straight to TUI
     await testCase.waitForVisibleText('ask a question', 10000);
 
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'mock-session-id',
+      10000
+    );
     expect(store.sessionId).toBe('mock-session-id');
 
     await testCase.pressCtrlCTwice();
@@ -393,7 +409,10 @@ describe('--resume-id', () => {
     await testCase.waitForVisibleText('ask a question', 10000);
 
     // Should resume the specific session, not the most recent one
-    const store = await testCase.getStore();
+    const store = await testCase.waitForStore(
+      (s) => s.sessionId === 'target-session-old',
+      10000
+    );
     expect(store.sessionId).toBe('target-session-old');
 
     await testCase.pressCtrlCTwice();

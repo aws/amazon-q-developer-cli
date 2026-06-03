@@ -798,6 +798,7 @@ async fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCod
             SessionSourceArg::V2 => SessionSource::V2,
             SessionSourceArg::V3 => SessionSource::Kas,
         }),
+        args.format,
         os,
     )
     .await

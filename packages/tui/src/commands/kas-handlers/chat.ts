@@ -1,11 +1,17 @@
 import { extractRpcErrorMessage } from '../../utils/error-handling';
-import { formatRelativeTime } from '../../utils/sessions';
 import { truncateToRecentTurns } from '../../utils/replay-history';
 import { logger } from '../../utils/logger';
 import {
   exportSession as runExportSession,
   importSession as runImportSession,
 } from '../../utils/session-archive-cli';
+import { listAllSessions } from '../../utils/list-all-sessions-cli';
+import { ensureSession } from '../../utils/ensure-session-cli';
+import {
+  isResumableSource,
+  isActiveEngineSource,
+} from '../../utils/cross-engine-session-id';
+import { formatRelativeTime } from '../../utils/sessions';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -46,32 +52,34 @@ async function showSessionPicker(
   ctx: CommandContext,
   cmd: KasCommand
 ): Promise<void> {
-  try {
-    ctx.setLoadingMessage('Loading chat options...');
-    const { sessions } = await ctx.kiro.listSessions(process.cwd());
-    ctx.setLoadingMessage(null);
-    const currentSessionId = ctx.kiro.sessionId;
-    const options = sessions
-      .filter((s) => s.sessionId !== currentSessionId)
-      .filter((s) => s.title != null)
-      .map((s) => ({
-        value: s.sessionId,
-        label: `${s.title!} (${s.sessionId.slice(0, 8)})`,
-        description: s.updatedAt ? formatRelativeTime(s.updatedAt) : undefined,
-      }));
-    if (options.length === 0) {
-      ctx.showAlert('No previous sessions found', 'error', 3000);
-      return;
-    }
-    ctx.setActiveCommand({ command: cmd, options });
-  } catch (err) {
-    ctx.setLoadingMessage(null);
-    ctx.showAlert(
-      extractRpcErrorMessage(err, 'Failed to list sessions'),
-      'error',
-      3000
-    );
+  ctx.setLoadingMessage('Loading chat options...');
+  const listing = await listAllSessions();
+  ctx.setLoadingMessage(null);
+  if (!listing.ok) {
+    ctx.showAlert(`Failed to list sessions: ${listing.error}`, 'error', 3000);
+    return;
   }
+  const currentSessionId = ctx.kiro.sessionId;
+  // Active engine is always KAS here: this handler runs only when the
+  // dispatcher's KAS intercept fires.
+  const activeIsKas = true;
+  const options = listing.sessions
+    .filter((s) => s.sessionId !== currentSessionId)
+    .filter((s) => isResumableSource(s.source, activeIsKas))
+    .map((s) => {
+      const native = isActiveEngineSource(s.source, activeIsKas);
+      const sourceTag = native ? '' : ` (${s.source})`;
+      return {
+        value: s.sessionId,
+        label: `${s.title} (${s.sessionId.slice(0, 8)})${sourceTag}`,
+        description: formatRelativeTime(s.updatedAt),
+      };
+    });
+  if (options.length === 0) {
+    ctx.showAlert('No previous sessions found', 'error', 3000);
+    return;
+  }
+  ctx.setActiveCommand({ command: cmd, options });
 }
 
 async function startNewSession(
@@ -109,9 +117,25 @@ async function startNewSession(
 
 async function loadExistingSession(
   ctx: CommandContext,
-  sessionId: string,
+  inputId: string,
   options?: { systemMessage?: string }
 ): Promise<void> {
+  // Always route through ensure-session with `auto` source: native
+  // ids resolve via a fast filesystem probe; non-native ids
+  // (e.g. picking a V2 session in KAS mode) trigger conversion.
+  ctx.setLoadingMessage(`Resolving session ${inputId}...`);
+  const ensured = await ensureSession({
+    sourceFormat: 'auto',
+    sourceSessionId: inputId,
+    targetFormat: 'kas',
+    cwd: process.cwd(),
+  });
+  ctx.setLoadingMessage(null);
+  if (!ensured.ok) {
+    ctx.showAlert(`Failed to load session: ${ensured.error}`, 'error', 5000);
+    return;
+  }
+  const sessionId = ensured.sessionId;
   ctx.clearUIState();
   ctx.setLoadingMessage(`Loading session ${sessionId}...`);
   // Buffer history events during load via direct onUpdate subscriber, then

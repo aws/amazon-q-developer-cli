@@ -54,6 +54,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PtyManager } from '../src/test-utils/shared/pty-manager';
+import { resolveChatCliBin } from '../src/utils/chat-cli-bin';
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -81,7 +82,7 @@ fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 // Default: run TUI from source via bun so local changes are picked up.
 // --system: use the system kiro-cli binary instead.
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const CARGO_BIN = path.join(REPO_ROOT, 'target/debug/chat_cli');
+const CARGO_BIN = resolveChatCliBin();
 
 
 function buildKasServer(repoRoot: string): string {

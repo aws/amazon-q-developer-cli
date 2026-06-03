@@ -27,6 +27,7 @@ use crate::os::{
 use crate::util::consts::env_var::{
     KIRO_DATA_DIR,
     KIRO_HOME,
+    KIRO_TEST_DB_PATH,
 };
 
 #[derive(Debug, Error)]
@@ -651,7 +652,11 @@ impl<'a> GlobalPaths<'a> {
     }
 
     /// Static method for database path that doesn't require Os (to avoid circular dependency)
+    /// Can be overridden via `KIRO_TEST_DB_PATH` env var for testing.
     pub fn database_path_static() -> Result<PathBuf> {
+        if let Ok(test_path) = std::env::var(KIRO_TEST_DB_PATH) {
+            return Ok(PathBuf::from(test_path));
+        }
         Ok(dirs::data_local_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("kiro-cli")

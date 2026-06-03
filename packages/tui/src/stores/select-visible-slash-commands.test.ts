@@ -41,8 +41,8 @@ describe('selectVisibleSlashCommands', () => {
     expect(visible.find((c) => c.name === '/kas-prompt')).toBeDefined();
   });
 
-  it("returns slashCommands plus prompt/skill/steering projections in 'rust' mode", () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+  it("returns slashCommands plus prompt/skill/steering projections in 'v2' mode", () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     const result = selectVisibleSlashCommands(store.getState());
     // Empty slices: result is just the seeded host commands.
     expect(result).toEqual([...store.getState().slashCommands]);
@@ -56,7 +56,7 @@ describe('selectVisibleSlashCommands', () => {
   });
 
   it('merges prompts, skills, and steering into the visible list', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setPrompts([
       {
         name: 'research',
@@ -96,7 +96,7 @@ describe('selectVisibleSlashCommands', () => {
   });
 
   it('does NOT duplicate prompts/skills/steering into AppState.slashCommands', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setPrompts([
       {
         name: 'research',
@@ -122,7 +122,7 @@ describe('selectVisibleSlashCommands', () => {
   });
 
   it('renders skill descriptions', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setSkills([
       {
         name: 'with-description',
@@ -146,7 +146,7 @@ describe('selectVisibleSlashCommands', () => {
     // can have a workspace skill or prompt named `plan`. Without dedup
     // the merged list contains two `/plan` entries which causes a React
     // duplicate-key warning in the autocomplete menu.
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store
       .getState()
       .setSlashCommands([
@@ -165,7 +165,7 @@ describe('selectVisibleSlashCommands', () => {
   });
 
   it('dedupes prompts vs skills with the same name; prompt wins', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'rust' });
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store
       .getState()
       .setPrompts([

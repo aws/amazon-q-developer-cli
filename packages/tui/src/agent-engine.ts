@@ -1,4 +1,4 @@
-export type AgentEngine = 'rust' | 'kas';
+export type AgentEngine = 'v2' | 'kas';
 
 /**
  * Resolves the active agent engine from the environment. Read in places
@@ -7,5 +7,5 @@ export type AgentEngine = 'rust' | 'kas';
  * `useAppStore.getState().agentEngine`.
  */
 export function resolveAgentEngine(): AgentEngine {
-  return process.env.KIRO_AGENT_ENGINE === 'kas' ? 'kas' : 'rust';
+  return process.env.KIRO_AGENT_ENGINE === 'kas' ? 'kas' : 'v2';
 }

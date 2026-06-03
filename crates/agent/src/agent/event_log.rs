@@ -69,9 +69,9 @@ pub enum LogEntryV1 {
         strategy: CompactStrategy,
         messages_snapshot: Vec<Message>,
     },
-    /// Reset conversation to a previous point
+    /// Unused. Never exists in any prior production sessions implementation.
     ResetTo { target_index: usize },
-    /// Cancels the last user prompt (removes the last user message from history)
+    /// Unused. Never exists in any prior production sessions implementation.
     CancelledPrompt,
     /// Clear conversation - fresh start within same session
     Clear,

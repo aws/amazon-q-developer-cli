@@ -18,11 +18,11 @@ pub enum SessionArchiveError {
 }
 
 impl SessionArchiveError {
-    pub(super) fn msg(s: impl Into<String>) -> Self {
+    pub fn msg(s: impl Into<String>) -> Self {
         Self::Message(s.into())
     }
 
-    pub(super) fn io(context: impl Into<String>, source: std::io::Error) -> Self {
+    pub fn io(context: impl Into<String>, source: std::io::Error) -> Self {
         Self::Io {
             context: context.into(),
             source,

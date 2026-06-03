@@ -8,6 +8,7 @@ import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
 import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
+import { resolveChatCliBin } from '../utils/chat-cli-bin';
 
 export interface TestCaseOptions {
   args?: string[];
@@ -17,6 +18,13 @@ export interface TestCaseOptions {
   testName?: string;
   /** Extra environment variables merged into the spawned process env. */
   extraEnv?: Record<string, string>;
+  /**
+   * Working directory the TUI process is spawned in. The TUI calls
+   * `process.cwd()` to bucket sessions and pass workspace paths to
+   * the agent, so a controlled cwd lets a test exercise the same
+   * paths a real shell would. Defaults to the test runner's cwd.
+   */
+  cwd?: string;
   /**
    * User settings written to a sandboxed `$KIRO_HOME/settings/cli.json`
    * before launch. Set via {@link TestCaseBuilder.withGlobalSettings}.
@@ -97,13 +105,18 @@ export class TestCase {
     this.ptyManager = new PtyManager({
       width: this.options.terminalSize!.width,
       height: this.options.terminalSize!.height,
-      cwd: process.cwd(), // TODO - use temp dir instead
+      cwd: this.options.cwd ?? process.cwd(),
       env: {
         KIRO_TEST_MODE: 'true',
         KIRO_MOCK_ACP: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
         KIRO_AGENT_PATH: 'mock-agent-path',
+        // Default to the locally-resolved chat_cli (env -> CARGO_TARGET_DIR
+        // -> repo target/debug). Tests that explicitly set
+        // KIRO_CHAT_CLI_BIN via extraEnv (e.g. stubbed binaries) override
+        // this. Production launchers always set the env var explicitly.
+        KIRO_CHAT_CLI_BIN: resolveChatCliBin(),
         ...sandboxEnv,
         ...options.extraEnv,
       },
@@ -168,9 +181,13 @@ export class TestCase {
   }
 
   private spawnTui(): void {
+    // Absolute path so the spawn works regardless of `options.cwd`.
+    // `__dirname` resolves to `packages/tui/src/test-utils`; the TUI
+    // entrypoint sits two levels up at `packages/tui/src/index.tsx`.
+    const tuiEntry = path.resolve(__dirname, '..', 'index.tsx');
     this.ptyManager.spawn('bun', [
       'run',
-      'src/index.tsx',
+      tuiEntry,
       ...(this.options.args || []),
     ]);
 
@@ -328,6 +345,32 @@ export class TestCase {
   }
 
   /**
+   * Polls the TUI's Zustand store until `predicate(state)` returns
+   * truthy or `timeoutMs` elapses. Resolves with the matching state.
+   * Throws on timeout. Useful for waiting on async TUI state changes
+   * (e.g. session id appearing after `kiro.createSession` resolves)
+   * without hand-rolling a polling loop.
+   */
+  async waitForStore(
+    predicate: (state: AppState) => boolean,
+    timeoutMs = 30_000,
+    pollIntervalMs = 100
+  ): Promise<AppState> {
+    const deadline = Date.now() + timeoutMs;
+    let state = await this.getStore();
+    while (!predicate(state)) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `waitForStore timed out after ${timeoutMs}ms waiting for predicate`
+        );
+      }
+      await this.sleepMs(pollIntervalMs);
+      state = await this.getStore();
+    }
+    return state;
+  }
+
+  /**
    * Returns a formatted snapshot of the terminal screen with a border.
    */
   getSnapshotFormatted(): string {
@@ -405,7 +448,7 @@ export class TestCase {
    * expect(exitCode).toBe(0);
    * ```
    */
-  async expectExit(): Promise<number> {
+  async expectExit(timeoutMs?: number): Promise<number> {
     // Save HTML snapshot before exit
     try {
       fs.writeFileSync(this.paths.snapshotHtmlFile, this.getSnapshotHtml());
@@ -413,7 +456,7 @@ export class TestCase {
       /* ignore if terminal already closed */
     }
 
-    return this.ptyManager.expectExit();
+    return this.ptyManager.expectExit(timeoutMs);
   }
 
   /**

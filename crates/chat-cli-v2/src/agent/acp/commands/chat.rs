@@ -34,57 +34,6 @@ use crate::agent::session::{
 };
 
 const TITLE_NOT_AVAILABLE: &str = "<title not available>";
-const ZIP_MAGIC_BYTES: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
-
-/// The on-disk format detected when loading a session file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DetectedFormat {
-    /// `kiro-session-export-v1` JSON
-    Kiro,
-    /// Zip archive with `session_metadata.json` + `conversation_log.jsonl`
-    Zip,
-    /// V1 `ConversationState` JSON (legacy CLI format)
-    Legacy,
-    /// Bare `SessionData` JSON (companion `.jsonl` may exist alongside)
-    SessionDataOnly,
-}
-
-impl DetectedFormat {
-    /// Detect the format of a file at `path`.
-    /// Order: zip magic bytes → JSON probing (KiroV1 → Legacy → SessionDataOnly).
-    pub fn detect(data: &[u8]) -> Result<Self, String> {
-        // 1. Zip by magic bytes (PK\x03\x04)
-        if data.starts_with(&ZIP_MAGIC_BYTES) {
-            return if ZipArchive::new(Cursor::new(data)).is_ok() {
-                Ok(Self::Zip)
-            } else {
-                Err("File has zip magic bytes but is not a valid zip archive".into())
-            };
-        }
-
-        // 2. JSON probing
-        let text =
-            std::str::from_utf8(data).map_err(|e| format!("File is not valid UTF-8 text or a zip archive: {e}"))?;
-        let value: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-
-        // KiroV1: has `"format": "kiro-session-export-v1"`
-        if value.get("format").and_then(|v| v.as_str()) == Some("kiro-session-export-v1") {
-            return Ok(Self::Kiro);
-        }
-
-        // Legacy V1: has `conversation_id` field (ConversationState)
-        if value.get("conversation_id").is_some() {
-            return Ok(Self::Legacy);
-        }
-
-        // SessionDataOnly: has `session_id` field
-        if value.get("session_id").is_some() {
-            return Ok(Self::SessionDataOnly);
-        }
-
-        Err("Unrecognized session file format".into())
-    }
-}
 
 /// Versioned export envelope, tagged by `"format"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +163,8 @@ async fn load_session(path_str: &str, ctx: &CommandContext<'_>) -> CommandResult
 }
 
 /// Load a session from a file path. Tries the path as-is, then with .zip/.json
-/// extensions. Uses `DetectedFormat` to dispatch to the right loader.
+/// extensions. Funnels every recognized format through the unified
+/// [`crate::agent::kas::import_session`] entry point.
 fn load_session_impl(
     input_path: &Path,
     sessions_dir: &Path,
@@ -222,32 +172,21 @@ fn load_session_impl(
     v1_exporter: &Arc<dyn LegacySessionExporter>,
 ) -> Result<String, String> {
     debug!(?input_path, ?sessions_dir, "loading session");
-    let (data, resolved_path) = read_path_with_optional_extension(input_path)?;
+    let (_data, resolved_path) = read_path_with_optional_extension(input_path)?;
 
-    let format = DetectedFormat::detect(&data)?;
-    debug!(?resolved_path, ?format, data_len = data.len(), "detected format");
-
-    let abs_path = resolved_path.to_string_lossy().into_owned();
-
-    // Legacy exports directly via the exporter (different write path)
-    if format == DetectedFormat::Legacy {
-        let content = std::str::from_utf8(&data).map_err(|e| e.to_string())?;
-        let new_id = uuid::Uuid::new_v4().to_string();
-        v1_exporter
-            .try_export_from_json(content, &new_id, cwd, sessions_dir, Some(input_path))
-            .map_err(|e| format!("Failed to import legacy session: {e}"))?;
-        return Ok(new_id);
-    }
-
-    let (session_data, log_content) = match format {
-        DetectedFormat::Kiro => load_from_kiro(&data)?,
-        DetectedFormat::Zip => load_from_zip(&data)?,
-        DetectedFormat::SessionDataOnly => load_from_standalone_session_data(&data, &resolved_path)?,
-        DetectedFormat::Legacy => unreachable!(),
-    };
-
-    let new_id = uuid::Uuid::new_v4().to_string();
-    write_imported_session(sessions_dir, &new_id, &session_data, &log_content, &abs_path)
+    let kas_sessions_root = crate::agent::kas::default_kas_sessions_root().map_err(|e| e.to_string())?;
+    let result = crate::agent::kas::import_session(
+        crate::agent::kas::ImportSessionOptions {
+            kas_sessions_root,
+            v2_sessions_dir: sessions_dir.to_path_buf(),
+            archive_path: resolved_path,
+            workspace_paths: vec![cwd.to_string_lossy().into_owned()],
+        },
+        crate::agent::kas::ImportTarget::V2,
+        v1_exporter,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(result.session_id)
 }
 
 /// Try to read a file, falling back to `.zip` then `.json` extensions if the
@@ -290,7 +229,7 @@ fn entries_to_jsonl(entries: &[LogEntry]) -> String {
     out
 }
 
-fn load_from_kiro(data: &[u8]) -> Result<(SessionData, String), String> {
+pub(crate) fn load_from_kiro(data: &[u8]) -> Result<(SessionData, String), String> {
     let export: ExportFormat = serde_json::from_slice(data).map_err(|e| format!("Failed to parse export file: {e}"))?;
     match export {
         ExportFormat::KiroV1(v1) => Ok((v1.metadata, entries_to_jsonl(&v1.log_entries))),
@@ -298,7 +237,7 @@ fn load_from_kiro(data: &[u8]) -> Result<(SessionData, String), String> {
     }
 }
 
-fn load_from_zip(data: &[u8]) -> Result<(SessionData, String), String> {
+pub(crate) fn load_from_zip(data: &[u8]) -> Result<(SessionData, String), String> {
     let mut archive = ZipArchive::new(Cursor::new(data)).map_err(|e| e.to_string())?;
 
     let mut metadata_str = String::new();
@@ -317,15 +256,8 @@ fn load_from_zip(data: &[u8]) -> Result<(SessionData, String), String> {
     Ok((session_data, log))
 }
 
-fn load_from_standalone_session_data(data: &[u8], resolved_path: &Path) -> Result<(SessionData, String), String> {
-    let content = std::str::from_utf8(data).map_err(|e| e.to_string())?;
-    let session_data: SessionData = serde_json::from_str(content).map_err(|e| e.to_string())?;
-    let log_content = std::fs::read_to_string(resolved_path.with_extension("jsonl")).unwrap_or_default();
-    Ok((session_data, log_content))
-}
-
 /// Write imported session files with a new session ID.
-fn write_imported_session(
+pub(crate) fn write_imported_session(
     sessions_dir: &Path,
     new_session_id: &str,
     original: &SessionData,
@@ -430,6 +362,10 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
+    use crate::agent::kas::file_detection::{
+        DetectedFormat,
+        detect as detect_session_file,
+    };
     use crate::agent::session::legacy_compat::NoOpLegacySessionExporter;
     use crate::agent::session::{
         SessionCreatedReason,
@@ -467,7 +403,7 @@ mod tests {
         "history": []
     }"#;
 
-    const SESSION_DATA_STR: &str = r#"{
+    const V2_SESSION_DATA_STR: &str = r#"{
         "session_id": "test-session-id",
         "cwd": "/tmp/test",
         "created_at": "2026-01-01T00:00:00Z",
@@ -496,26 +432,25 @@ mod tests {
 
     #[test]
     fn test_detect_format() {
-        let zip_data = save_as_zip(SESSION_DATA_STR.as_bytes(), b"").unwrap();
+        let zip_data = save_as_zip(V2_SESSION_DATA_STR.as_bytes(), b"").unwrap();
 
         // Successful detection
         assert_eq!(
-            DetectedFormat::detect(KIRO_STR.as_bytes()).unwrap(),
-            DetectedFormat::Kiro
+            detect_session_file(KIRO_STR.as_bytes()).unwrap(),
+            DetectedFormat::KiroV1Json
         );
-        assert_eq!(DetectedFormat::detect(&zip_data).unwrap(), DetectedFormat::Zip);
+        assert_eq!(detect_session_file(&zip_data).unwrap(), DetectedFormat::V2Zip);
         assert_eq!(
-            DetectedFormat::detect(LEGACY_STR.as_bytes()).unwrap(),
-            DetectedFormat::Legacy
-        );
-        assert_eq!(
-            DetectedFormat::detect(SESSION_DATA_STR.as_bytes()).unwrap(),
-            DetectedFormat::SessionDataOnly
+            detect_session_file(LEGACY_STR.as_bytes()).unwrap(),
+            DetectedFormat::LegacyV1
         );
 
         // Error cases
-        assert!(DetectedFormat::detect(br#"{"random":true}"#).is_err());
-        assert!(DetectedFormat::detect(b"not a zip").is_err());
+        assert!(detect_session_file(br#"{"random":true}"#).is_err());
+        assert!(detect_session_file(b"not a zip").is_err());
+        // Bare V2 SessionData JSON (only `session_id`) is not a
+        // recognized format.
+        assert!(detect_session_file(V2_SESSION_DATA_STR.as_bytes()).is_err());
     }
 
     fn make_jsonl(entries: &[serde_json::Value]) -> String {
@@ -552,7 +487,7 @@ mod tests {
 
         // Verify saved file is Kiro format
         let saved = std::fs::read(&saved_path).unwrap();
-        assert_eq!(DetectedFormat::detect(&saved).unwrap(), DetectedFormat::Kiro);
+        assert_eq!(detect_session_file(&saved).unwrap(), DetectedFormat::KiroV1Json);
 
         // Load into fresh sessions dir
         let import_sessions = dir.path().join("import_sessions");
@@ -586,25 +521,5 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(metadata_path(&sessions_dir, &new_id)).unwrap()).unwrap();
         assert_eq!(imported.session_id, new_id);
         assert!(imported.imported_from.is_some());
-    }
-
-    #[test]
-    fn load_session_data_with_companion_jsonl() {
-        let dir = tempfile::tempdir().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        std::fs::create_dir_all(&sessions_dir).unwrap();
-
-        let json_path = dir.path().join("my-session.json");
-        let jsonl_path = dir.path().join("my-session.jsonl");
-        std::fs::write(&json_path, SESSION_DATA_STR).unwrap();
-        std::fs::write(&jsonl_path, r#"{"version":"v1","kind":"Clear"}"#).unwrap();
-
-        let new_id = load_session_impl(&json_path, &sessions_dir, Path::new("/tmp"), &noop_exporter()).unwrap();
-        assert!(
-            !std::fs::read_to_string(log_path(&sessions_dir, &new_id))
-                .unwrap()
-                .is_empty(),
-            "companion .jsonl should be loaded"
-        );
     }
 }

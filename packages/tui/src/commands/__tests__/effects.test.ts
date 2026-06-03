@@ -874,13 +874,6 @@ describe('/reply effect', () => {
 
 // --- Additional coverage for uncovered effects ---
 
-const chatCmd: SlashCommand = {
-  name: '/chat',
-  description: '',
-  source: 'backend' as const,
-  meta: {},
-};
-
 const statsCmd: SlashCommand = {
   name: '/stats',
   description: '',
@@ -1089,100 +1082,27 @@ describe('showToolsPanel effect', () => {
 });
 
 describe('newSession effect', () => {
-  it('calls newSession and sets session on success', async () => {
-    const mockNewSession = mock(() =>
-      Promise.resolve({
-        sessionId: 'new-1',
-        currentModel: { id: 'claude', name: 'Claude' },
-        currentAgent: { name: 'kiro' },
-      })
-    );
-    const ctx = createMockCommandContext({
-      kiro: { newSession: mockNewSession } as any,
-    });
-    runEffect(chatCmd, { success: true, message: '', data: {} }, ctx, 'new');
-    await new Promise((r) => setTimeout(r, 10));
-    expect(ctx._spies.clearUIState).toHaveBeenCalled();
-    expect(ctx._spies.setSessionId).toHaveBeenCalledWith('new-1');
-    expect(ctx._spies.setCurrentModel).toHaveBeenCalledWith({
-      id: 'claude',
-      name: 'Claude',
-    });
-    expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({ name: 'kiro' });
-  });
-
-  it('sends prompt after new session when args contain text', async () => {
-    const mockNewSession = mock(() => Promise.resolve({ sessionId: 'new-2' }));
-    const ctx = createMockCommandContext({
-      kiro: { newSession: mockNewSession } as any,
-    });
-    runEffect(
-      chatCmd,
-      { success: true, message: '', data: {} },
-      ctx,
-      'new hello world'
-    );
-    await new Promise((r) => setTimeout(r, 10));
-    expect(ctx._spies.sendMessage).toHaveBeenCalledWith('hello world');
-  });
-
-  it('shows error alert on newSession failure', async () => {
-    const mockNewSession = mock(() => Promise.reject(new Error('auth failed')));
-    const ctx = createMockCommandContext({
-      kiro: { newSession: mockNewSession } as any,
-    });
-    runEffect(chatCmd, { success: true, message: '', data: {} }, ctx, 'new');
-    await new Promise((r) => setTimeout(r, 10));
-    expect(ctx._spies.setLoadingMessage).toHaveBeenCalledWith(null);
-    expect(ctx._spies.showAlert).toHaveBeenCalled();
-  });
+  // The dedicated `newSession` effect was removed when /chat was
+  // intercepted before the dispatcher's effect pipeline. /chat new
+  // is now handled by v2-handlers/chat.ts and kas-handlers/chat.ts
+  // calling `ctx.kiro.newSession()` directly; coverage lives in
+  // those handlers' test files.
+  it.skip('removed - see v2-handlers/chat tests', () => {});
 });
 
-describe('loadSession effect', () => {
-  it('handles /chat save subcommand', () => {
-    const ctx = createMockCommandContext();
-    const result = { success: true, message: 'Session saved', data: {} };
-    runEffect(chatCmd, result, ctx, 'save');
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Session saved',
-      'success',
-      5000
-    );
-  });
+describe('loadSession effect (rewind switch path)', () => {
+  // /chat is owned by v2-handlers/chat.ts and kas-handlers/chat.ts;
+  // they call ensure-session + ctx.kiro.loadSession directly. The
+  // loadSession effect is only reached via `rewindAction` which
+  // hands it a synthetic `{switchSession, sessionId}` payload.
+  const rewindCmd: SlashCommand = {
+    name: '/rewind',
+    description: 'Rewind',
+    source: 'local' as const,
+    meta: { local: true },
+  };
 
-  it('handles /chat load with sessionId in result', () => {
-    const mockLoadSession = mock(() =>
-      Promise.resolve({ sessionId: 'imported-1' })
-    );
-    const ctx = createMockCommandContext({
-      kiro: {
-        loadSession: mockLoadSession,
-        onUpdate: mock(() => () => {}),
-      } as any,
-    });
-    const result = {
-      success: true,
-      message: '',
-      data: { sessionId: 'imported-1' },
-    };
-    runEffect(chatCmd, result, ctx, 'load /tmp/session.json');
-    // loadSession triggers async flow — just verify it started
-    expect(ctx._spies.clearUIState).toHaveBeenCalled();
-    expect(ctx._spies.setLoadingMessage).toHaveBeenCalled();
-  });
-
-  it('shows error for failed /chat load', () => {
-    const ctx = createMockCommandContext();
-    const result = { success: false, message: 'File not found', data: {} };
-    runEffect(chatCmd, result, ctx, 'load /tmp/missing.json');
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'File not found',
-      'error',
-      5000
-    );
-  });
-
-  it('handles switchSession flag from /rewind', () => {
+  it('handles switchSession flag from /rewind', async () => {
     const mockLoadSession = mock(() =>
       Promise.resolve({ sessionId: 'forked-1' })
     );
@@ -1201,7 +1121,8 @@ describe('loadSession effect', () => {
         resetMessagesBeforeReplay: true,
       },
     };
-    runEffect(chatCmd, result, ctx, '');
+    runEffect(rewindCmd, result, ctx, '');
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(ctx._spies.resetMessages).toHaveBeenCalled();
     expect(ctx._spies.setLoadingMessage).toHaveBeenCalled();
   });
@@ -1213,7 +1134,7 @@ describe('loadSession effect', () => {
       message: 'Rewind failed',
       data: { switchSession: true, sessionId: 'x' },
     };
-    runEffect(chatCmd, result, ctx, '');
+    runEffect(rewindCmd, result, ctx, '');
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
       'Rewind failed',
       'error',
@@ -1363,26 +1284,9 @@ describe('switchToGuideAgent effect', () => {
   });
 });
 
-describe('loadSession effect', () => {
-  const chatCmd: SlashCommand = {
-    name: '/chat',
-    description: 'Load session',
-    source: 'local' as const,
-    meta: { local: true },
-  };
-
-  it('shows error when load command fails', () => {
-    const ctx = createMockCommandContext();
-    runEffect(
-      chatCmd,
-      { success: false, message: 'Import failed' },
-      ctx,
-      'load /tmp/file.json'
-    );
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Import failed',
-      'error',
-      5000
-    );
-  });
+describe('loadSession effect (legacy /chat dispatch - removed)', () => {
+  // /chat is now intercepted in the dispatcher and never reaches
+  // `runEffect`. Save / load / load-error coverage moved to
+  // v2-handlers/chat.ts and kas-handlers/chat.ts test files.
+  it.skip('removed - see v2-handlers/chat tests', () => {});
 });

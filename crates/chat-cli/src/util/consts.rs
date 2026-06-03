@@ -159,6 +159,21 @@ pub mod env_var {
         /// Used for E2E tests
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
 
+        /// Test-only injection of KAS-side session entries for the
+        /// merged listing (`chat --list-sessions`). When set, the value
+        /// MUST parse as a JSON array of `SessionInfoEntry` and is used
+        /// in place of spawning a real KAS child. Malformed values panic
+        /// so the test setup failure surfaces loudly. Production callers
+        /// MUST NOT set this.
+        KIRO_TEST_MOCK_KAS_SESSIONS = "KIRO_TEST_MOCK_KAS_SESSIONS",
+
+        /// Overrides the SQLite database path for the V1 (classic)
+        /// conversation store. Tests point this at a sandbox file so
+        /// the binary reads/writes V1 conversations there instead of
+        /// the developer's real `data.sqlite3`. Mirrors the env var
+        /// honored in `chat-cli-v2`.
+        KIRO_TEST_DB_PATH = "KIRO_TEST_DB_PATH",
+
         /// Overrides the directory used for user-level Kiro config data.
         /// When set, this replaces `$HOME/.kiro` as the root for global
         /// Kiro paths (agents, prompts, settings, steering, sessions, etc.).

@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from 'bun:test';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import {
+  chmodSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -38,26 +45,55 @@ interface ScriptedBinary {
   cleanup: () => void;
 }
 
+interface ScriptedBinaryOptions {
+  /** JSON emitted on stdout for any non-special subcommand. */
+  defaultJson: string;
+  /** Exit status for the default branch. */
+  defaultExitCode?: number;
+  /**
+   * When true, requests of the form
+   * `chat _ ensure-session --source-session-id <id> ...` short-circuit
+   * to `{"success": true, "sessionId": "<id>"}` with exit 0. Used by
+   * tests that need the import / picker flow's auto-format probe to
+   * succeed without standing up real KAS storage.
+   */
+  ensureSessionPassthrough?: boolean;
+  /**
+   * JSON emitted on stdout when the binary is invoked with
+   * `chat --list-sessions ...`. Lets a single stub serve both the
+   * picker's listing fetch and the per-selection ensure-session
+   * round-trip.
+   */
+  listSessionsJson?: string;
+}
+
 /**
- * Writes a tiny POSIX shell script that emulates the JSON-on-stdout
- * contract of `kiro-cli chat _ export-session` / `import-session`:
- * prints exactly one JSON line, exits with the matching status. Used
- * as a stub for `KIRO_CHAT_CLI_BIN` so this integ suite can exercise
- * the TUI's spawn + parse + alert chain without depending on a freshly
- * built `target/debug/chat_cli`.
+ * Writes a tiny POSIX shell script (or `.cmd` on Windows) that
+ * emulates the JSON-on-stdout contract of the `kiro-cli chat _` family.
+ *
+ * The chat-command integ suite uses this stub via `KIRO_CHAT_CLI_BIN`
+ * so it can drive the TUI's spawn + parse + alert chain without
+ * depending on a freshly built `target/debug/chat_cli`.
  *
  * The real binary's contract is locked in by
- * `e2e_tests/session-archive.test.ts`, and the argv shape the TUI
- * builds is locked in by the unit tests for `session-archive-cli`,
- * so the integ-level concern is purely the TUI side of the seam.
- *
- * The stub ignores all args - argv assertions are not the integ
- * test's job.
+ * `e2e_tests/session-archive.test.ts`; the argv shape the TUI builds
+ * is locked in by the unit tests for `session-archive-cli` and
+ * `ensure-session-cli`. The integ-level concern is purely the TUI
+ * side of the seam.
  */
 function writeScriptedBinary(
-  jsonOutput: string,
-  exitCode: number = 0
+  optsOrJson: ScriptedBinaryOptions | string,
+  exitCodeArg: number = 0
 ): ScriptedBinary {
+  const opts: ScriptedBinaryOptions =
+    typeof optsOrJson === 'string'
+      ? { defaultJson: optsOrJson, defaultExitCode: exitCodeArg }
+      : optsOrJson;
+  const defaultJson = opts.defaultJson;
+  const defaultExit = opts.defaultExitCode ?? 0;
+  const ensurePassthrough = opts.ensureSessionPassthrough === true;
+  const listSessionsJson = opts.listSessionsJson;
+
   const dir = mkdtempSync(join(tmpdir(), 'kiro-acp-integ-stub-bin-'));
   const isWindows = platform() === 'win32';
 
@@ -66,24 +102,95 @@ function writeScriptedBinary(
 
   if (isWindows) {
     binPath = join(dir, 'chat_cli.cmd');
+    const jsonPath = join(dir, 'output.json');
+    writeFileSync(jsonPath, defaultJson);
+    const listingPath = listSessionsJson
+      ? join(dir, 'list-sessions.json')
+      : null;
+    if (listingPath) writeFileSync(listingPath, listSessionsJson!);
     // cmd's `echo` doesn't honor backslash escaping, and metacharacter
     // escapes mangle the JSON. Write the JSON byte-for-byte to a sibling
-    // file and `type` it.
-    const jsonPath = join(dir, 'output.json');
-    writeFileSync(jsonPath, jsonOutput);
-    // %~dp0 expands to the directory the .cmd lives in (with trailing \).
-    script =
-      `@echo off\r\n` +
-      `type "%~dp0output.json"\r\n` +
-      `exit /b ${exitCode}\r\n`;
+    // file and `type` it. The branched script walks %* looking for
+    // `ensure-session` / `--list-sessions` / the matching
+    // `--source-session-id` value.
+    if (ensurePassthrough || listingPath) {
+      script =
+        `@echo off\r\n` +
+        `set "FOUND_ENSURE="\r\n` +
+        `set "FOUND_LIST="\r\n` +
+        `set "SSID="\r\n` +
+        `:loop\r\n` +
+        `if "%~1"=="" goto :default\r\n` +
+        `if "%~1"=="ensure-session" set "FOUND_ENSURE=1"\r\n` +
+        `if "%~1"=="--list-sessions" set "FOUND_LIST=1"\r\n` +
+        `if "%~1"=="--source-session-id" set "SSID=%~2"\r\n` +
+        `shift\r\n` +
+        `goto :loop\r\n` +
+        `:default\r\n` +
+        (listingPath
+          ? `if defined FOUND_LIST (\r\n` +
+            `  type "%~dp0list-sessions.json"\r\n` +
+            `  exit /b 0\r\n` +
+            `)\r\n`
+          : '') +
+        (ensurePassthrough
+          ? `if defined FOUND_ENSURE if defined SSID (\r\n` +
+            `  echo {"success": true, "sessionId": "%SSID%"}\r\n` +
+            `  exit /b 0\r\n` +
+            `)\r\n`
+          : '') +
+        `type "%~dp0output.json"\r\n` +
+        `exit /b ${defaultExit}\r\n`;
+    } else {
+      script =
+        `@echo off\r\n` +
+        `type "%~dp0output.json"\r\n` +
+        `exit /b ${defaultExit}\r\n`;
+    }
   } else {
     binPath = join(dir, 'chat_cli');
-    script =
-      `#!/usr/bin/env bash\n` +
-      `cat <<'__KIRO_STUB_EOF__'\n` +
-      `${jsonOutput}\n` +
-      `__KIRO_STUB_EOF__\n` +
-      `exit ${exitCode}\n`;
+    const listingPath = listSessionsJson
+      ? join(dir, 'list-sessions.json')
+      : null;
+    if (listingPath) writeFileSync(listingPath, listSessionsJson!);
+    if (ensurePassthrough || listingPath) {
+      script =
+        `#!/usr/bin/env bash\n` +
+        `found_ensure=0\n` +
+        `found_list=0\n` +
+        `ssid=""\n` +
+        `while [[ $# -gt 0 ]]; do\n` +
+        `  case "$1" in\n` +
+        `    "ensure-session") found_ensure=1 ;;\n` +
+        `    "--source-session-id") ssid="$2"; shift ;;\n` +
+        `    "--list-sessions") found_list=1 ;;\n` +
+        `  esac\n` +
+        `  shift\n` +
+        `done\n` +
+        (listingPath
+          ? `if [[ $found_list -eq 1 ]]; then\n` +
+            `  cat "${listingPath}"\n` +
+            `  exit 0\n` +
+            `fi\n`
+          : '') +
+        (ensurePassthrough
+          ? `if [[ $found_ensure -eq 1 && -n "$ssid" ]]; then\n` +
+            `  printf '{"success": true, "sessionId": "%s"}\\n' "$ssid"\n` +
+            `  exit 0\n` +
+            `fi\n`
+          : '') +
+        `cat <<'__KIRO_STUB_EOF__'\n` +
+        `${defaultJson}\n` +
+        `__KIRO_STUB_EOF__\n` +
+        `exit ${defaultExit}\n`;
+    } else {
+      script =
+        `#!/usr/bin/env bash\n` +
+        `cat <<'__KIRO_STUB_EOF__'\n` +
+        `${defaultJson}\n` +
+        `__KIRO_STUB_EOF__\n` +
+        `exit ${defaultExit}\n`;
+    }
   }
 
   writeFileSync(binPath, script);
@@ -97,6 +204,14 @@ function writeScriptedBinary(
 describe('/chat command', () => {
   let tc: AcpTestCase | null = null;
   let stub: ScriptedBinary | null = null;
+  let kiroHome: string | null = null;
+
+  // Path to the built chat_cli binary. Tests that drive --list-sessions
+  // through the real Rust merge surface use REAL_BIN; tests that only
+  // need the JSON-on-stdout import/export contract use a stub. The
+  // tui-integ workflow builds chat_cli before running this suite, so
+  // resolution at describe time is the canonical contract.
+  const REAL_BIN = requireChatCliBin();
 
   afterEach(async () => {
     if (tc) {
@@ -106,6 +221,10 @@ describe('/chat command', () => {
     if (stub) {
       stub.cleanup();
       stub = null;
+    }
+    if (kiroHome) {
+      rmSync(kiroHome, { recursive: true, force: true });
+      kiroHome = null;
     }
   });
 
@@ -129,26 +248,31 @@ describe('/chat command', () => {
     expect(snapshot).not.toContain('/help');
   }, 30000);
 
-  it("typing '/chat' + Enter renders sessions returned by session/list", async () => {
-    tc = new AcpTestCase({ testName: 'chat-command-session-picker' });
-    setupHandshake(tc);
-
-    tc.mock.on('session/list', () => ({
-      sessions: [
+  it("typing '/chat' + Enter renders sessions returned by --list-sessions", async () => {
+    kiroHome = realpathSync(mkdtempSync(join(tmpdir(), 'kiro-chat-list-')));
+    tc = new AcpTestCase({
+      testName: 'chat-command-session-picker',
+      cwd: kiroHome,
+      mockKasSessionListResult: [
         {
           sessionId: 'sess-aaaa-1111',
-          cwd: process.cwd(),
+          cwd: kiroHome,
           title: 'Refactor the dispatcher',
           updatedAt: new Date(Date.now() - 60_000).toISOString(),
         },
         {
           sessionId: 'sess-bbbb-2222',
-          cwd: process.cwd(),
+          cwd: kiroHome,
           title: 'Fix login flow bug',
           updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
         },
       ],
-    }));
+      extraEnv: {
+        KIRO_CHAT_CLI_BIN: REAL_BIN,
+        KIRO_HOME: kiroHome,
+      },
+    });
+    setupHandshake(tc);
 
     await tc.launch();
     await tc.mock.awaitConnection();
@@ -166,9 +290,6 @@ describe('/chat command', () => {
 
     await tc.waitForVisibleText('Refactor the dispatcher', 5000);
     await tc.waitForVisibleText('Fix login flow bug', 5000);
-
-    const listReqs = tc.mock.receivedRequests('session/list');
-    expect(listReqs.length).toBeGreaterThanOrEqual(1);
 
     const snapshot = tc.getSnapshotFormatted();
     expect(snapshot).toContain('Refactor the dispatcher');
@@ -228,10 +349,11 @@ describe('/chat command', () => {
   it("'/chat load <path>' calls session/load with basename and replays history on success", async () => {
     const importedSessionId = 'sess_imported-from-archive-1';
     const importedPath = `/sessions/abc123/${importedSessionId}`;
-    stub = writeScriptedBinary(
-      JSON.stringify({ success: true, path: importedPath }),
-      0
-    );
+    stub = writeScriptedBinary({
+      defaultJson: JSON.stringify({ success: true, path: importedPath }),
+      defaultExitCode: 0,
+      ensureSessionPassthrough: true,
+    });
     // Real archive file the handler can stat; the stub binary ignores
     // argv and emits canned JSON, so contents don't matter.
     const archiveDir = mkdtempSync(join(tmpdir(), 'kiro-integ-archive-'));
@@ -314,30 +436,45 @@ describe('/chat command', () => {
   }, 30000);
 
   it('selecting a session from the /chat picker renders streamed history', async () => {
-    tc = new AcpTestCase({
-      testName: 'chat-command-picker-replays-history',
-    });
-    setupHandshake(tc);
-
+    kiroHome = realpathSync(
+      mkdtempSync(join(tmpdir(), 'kiro-chat-pick-load-'))
+    );
     const targetSessionId = 'sess-picker-load-1234';
     const otherSessionId = 'sess-picker-other-5678';
-
-    tc.mock.on('session/list', () => ({
-      sessions: [
-        {
-          sessionId: targetSessionId,
-          cwd: process.cwd(),
-          title: 'Pick me to load',
-          updatedAt: new Date(Date.now() - 60_000).toISOString(),
-        },
-        {
-          sessionId: otherSessionId,
-          cwd: process.cwd(),
-          title: 'Some other session',
-          updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
-        },
-      ],
-    }));
+    const listingJson = JSON.stringify([
+      {
+        cwd: kiroHome,
+        sessions: [
+          {
+            sessionId: targetSessionId,
+            source: 'v3',
+            title: 'Pick me to load',
+            updatedAt: new Date(Date.now() - 60_000).toISOString(),
+          },
+          {
+            sessionId: otherSessionId,
+            source: 'v3',
+            title: 'Some other session',
+            updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
+          },
+        ],
+      },
+    ]);
+    stub = writeScriptedBinary({
+      defaultJson: '{"success": false, "error": "unhandled subcommand"}',
+      defaultExitCode: 1,
+      listSessionsJson: listingJson,
+      ensureSessionPassthrough: true,
+    });
+    tc = new AcpTestCase({
+      testName: 'chat-command-picker-replays-history',
+      cwd: kiroHome,
+      extraEnv: {
+        KIRO_CHAT_CLI_BIN: stub.binPath,
+        KIRO_HOME: kiroHome,
+      },
+    });
+    setupHandshake(tc);
 
     tc.mock.on('session/load', async (params) => {
       const req = params as { sessionId: string };

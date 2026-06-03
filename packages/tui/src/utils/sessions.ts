@@ -11,7 +11,7 @@ import { join, resolve } from 'path';
 import { logger } from './logger.js';
 import { kiroHomePath } from './kiro-home.js';
 
-export interface SessionEntry {
+export interface V2SessionFsEntry {
   sessionId: string;
   cwd: string;
   createdAt: string;
@@ -35,7 +35,7 @@ function canonicalize(p: string): string {
 /**
  * List all sessions for the given working directory, sorted by most recent first.
  */
-export function listSessionsForCwd(cwd: string): SessionEntry[] {
+export function listSessionsForCwd(cwd: string): V2SessionFsEntry[] {
   const sessionsDir = getSessionsDir();
   const canonicalCwd = canonicalize(cwd);
 
@@ -46,7 +46,7 @@ export function listSessionsForCwd(cwd: string): SessionEntry[] {
     return [];
   }
 
-  const sessions: SessionEntry[] = [];
+  const sessions: V2SessionFsEntry[] = [];
 
   for (const file of files) {
     try {
@@ -170,7 +170,7 @@ export function formatRelativeTime(dateStr: string): string {
  * Truncates to terminal width to prevent line wrapping which breaks picker redraw.
  * Format: "{relative_time} | {summary} | {count} msgs"
  */
-export function formatSessionEntry(entry: SessionEntry): string {
+export function formatSessionEntry(entry: V2SessionFsEntry): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';

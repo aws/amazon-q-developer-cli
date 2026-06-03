@@ -18,6 +18,13 @@ import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { cmuxCleanup } from './utils/cmux.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
+import { ensureSession } from './utils/ensure-session-cli';
+import {
+  isResumableSource,
+  isActiveEngineSource,
+  sourceFormatFor,
+} from './utils/cross-engine-session-id';
+import { listAllSessions } from './utils/list-all-sessions-cli';
 import { resolveAgentEngine } from './agent-engine';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
@@ -499,18 +506,67 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // resumePickerSessionId) because the interactive picker can't coexist
       // with Twinki's terminal input.
       let resolvedSessionId: string | undefined = resumePickerSessionId;
-      if (!resolvedSessionId && cliArgs.resumeId) {
-        resolvedSessionId = cliArgs.resumeId;
-      }
       if (!resolvedSessionId && cliArgs.resume) {
-        // --resume: resume the most recent session for this cwd.
-        const { sessions } = await kiro.listSessions(process.cwd());
-        if (sessions.length > 0) {
-          resolvedSessionId = sessions[0]!.sessionId;
-        } else {
+        // --resume: pick the most-recent session for this cwd across
+        // V1 + V2 + KAS via the binary's merged --list-sessions
+        // surface. Cross-engine winners are routed through
+        // ensure-session before session/load so the id the active
+        // engine receives is always one it owns.
+        const listing = await listAllSessions();
+        if (!listing.ok || listing.sessions.length === 0) {
+          if (!listing.ok) {
+            logger.warn(
+              `Failed to list sessions for --resume: ${listing.error}`
+            );
+          }
           process.stderr.write(
             'No saved sessions found for this directory. Starting new session.\n'
           );
+        } else {
+          const activeEngine = resolveAgentEngine();
+          const activeIsKas = activeEngine === 'kas';
+          // The merged listing is already sorted recent-first.
+          // Take the first row whose source has an implemented
+          // import path into the active engine; this avoids
+          // shelling out to ensure-session with a (KAS, V2) pair
+          // the binary rejects.
+          const winner =
+            listing.sessions.find((s) =>
+              isResumableSource(s.source, activeIsKas)
+            ) ?? null;
+          if (!winner) {
+            // Every entry's source is unsupported in the active
+            // engine (today: KAS-only sessions while running rust).
+            // Fall through to a fresh session rather than triggering
+            // a guaranteed `ensure-session` failure.
+            process.stderr.write(
+              'No resumable sessions found for this directory in the active engine. Starting new session.\n'
+            );
+          } else if (isActiveEngineSource(winner.source, activeIsKas)) {
+            // Native source: the id is already one the active engine
+            // owns; skip the ensure-session round-trip.
+            resolvedSessionId = winner.sessionId;
+          } else {
+            const ensured = await ensureSession({
+              sourceFormat: sourceFormatFor(winner.source),
+              sourceSessionId: winner.sessionId,
+              targetFormat: activeEngine,
+              cwd: process.cwd(),
+            });
+            if (ensured.ok) {
+              resolvedSessionId = ensured.sessionId;
+            } else {
+              logger.warn(
+                `Failed to convert most-recent session for --resume: ${ensured.error}`
+              );
+              appStore
+                .getState()
+                .setAgentError(
+                  `Could not resume most-recent session: ${ensured.error}`,
+                  'Starting a new session instead.'
+                );
+            }
+          }
         }
       }
 
@@ -604,28 +660,96 @@ const startInitialization = (resumePickerSessionId?: string) => {
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
   // Handle --resume-picker before Twinki renders: the interactive picker needs
-  // raw terminal access that can't coexist with Twinki's input handling. We
-  // start the ACP backend, list sessions, run the picker, then pass the
-  // resolved ID into startInitialization.
+  // raw terminal access that can't coexist with Twinki's input handling.
+  // If --resume-picker is passed, list all sessions, run the picker, then
+  // pass the resolved session ID into startInitialization.
   let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
     wireUpHandlers();
     await kiro.initialize(agentPath, acpArgs, { initialAgent: cliArgs.agent });
-    const { sessions } = await kiro.listSessions(process.cwd());
-    if (sessions.length > 0) {
-      // Returns undefined if user pressed Esc; we fall through to a new
-      // session (matching the V1 Rust picker). Ctrl+C exits the process
-      // from inside the picker.
-      resumePickerSessionId = await pickSessionFromEntries(sessions);
-    } else {
+    const listing = await listAllSessions();
+    if (!listing.ok) {
+      logger.warn(
+        `Failed to list sessions for --resume-picker: ${listing.error}`
+      );
+      process.stderr.write(
+        'Failed to list sessions for this directory. Starting new session.\n'
+      );
+    } else if (listing.sessions.length === 0) {
       process.stderr.write(
         'No saved sessions found for this directory. Starting new session.\n'
       );
+    } else {
+      const activeEngine = resolveAgentEngine();
+      const activeIsKas = activeEngine === 'kas';
+      // Drop entries whose source has no implemented import path into
+      // the active engine (today: KAS source -> V2 target); selecting
+      // one would always fail at ensure-session time.
+      const resumable = listing.sessions.filter((s) =>
+        isResumableSource(s.source, activeIsKas)
+      );
+      // Returns undefined if user pressed Esc; we fall through to a new
+      // session (matching the V1 Rust picker). Ctrl+C exits the process
+      // from inside the picker.
+      const picked = await pickSessionFromEntries(resumable);
+      if (picked) {
+        if (isActiveEngineSource(picked.source, activeIsKas)) {
+          resumePickerSessionId = picked.sessionId;
+        } else {
+          const ensured = await ensureSession({
+            sourceFormat: sourceFormatFor(picked.source),
+            sourceSessionId: picked.sessionId,
+            targetFormat: activeEngine,
+            cwd: process.cwd(),
+          });
+          if (ensured.ok) {
+            resumePickerSessionId = ensured.sessionId;
+          } else {
+            logger.warn(
+              `Failed to convert picked session for --resume-picker: ${ensured.error}`
+            );
+            process.stderr.write(
+              `Could not load picked session: ${ensured.error}. Starting new session.\n`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Resolve --resume-id before render. If ensure-session can't find
+  // the id we still continue to a fresh session so the user isn't
+  // stuck at a hard stop, but we surface the failure both as a
+  // logger.warn and as an in-app error banner so the user knows
+  // their resume target wasn't honored.
+  if (!resumePickerSessionId && cliArgs.resumeId) {
+    const ensured = await ensureSession({
+      sourceFormat: 'auto',
+      sourceSessionId: cliArgs.resumeId,
+      targetFormat: resolveAgentEngine(),
+      cwd: process.cwd(),
+    });
+    if (ensured.ok) {
+      resumePickerSessionId = ensured.sessionId;
+    } else {
+      logger.warn(
+        `Failed to resolve session for --resume-id: ${ensured.error}`
+      );
+      const detail =
+        ensured.code === 'SESSION_NOT_FOUND'
+          ? `Failed to find session with id ${cliArgs.resumeId}`
+          : `Failed to resume session ${cliArgs.resumeId}: ${ensured.error}`;
+      appStore
+        .getState()
+        .setAgentError(detail, 'Starting a new session instead.');
     }
   }
 
   // Start initialization (non-blocking for the UI).
-  // --resume and --resume-id are resolved inside startInitialization via session/list.
+  // --resume is resolved inside startInitialization via session/list;
+  // --resume-id is pre-resolved above to surface ensure-session
+  // outcomes (success path or error banner) before the agent
+  // handshake.
   startInitialization(resumePickerSessionId);
 
   // Handle non-interactive mode: bail early if no input provided

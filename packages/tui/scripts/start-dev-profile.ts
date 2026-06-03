@@ -2,9 +2,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
+import { resolveChatCliBin } from "../src/utils/chat-cli-bin";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
-const CARGO_BIN = resolve(REPO_ROOT, "target/debug/chat_cli");
+const CARGO_BIN = resolveChatCliBin();
 const PROFILES_DIR = resolve(import.meta.dir, "../profiles");
 const ENTRY_FILE = resolve(import.meta.dir, "../src/index.tsx");
 

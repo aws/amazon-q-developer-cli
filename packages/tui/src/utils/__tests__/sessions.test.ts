@@ -8,7 +8,7 @@ import {
   formatRelativeTime,
   formatSessionEntry,
 } from '../sessions.js';
-import type { SessionEntry } from '../sessions.js';
+import type { V2SessionFsEntry } from '../sessions.js';
 
 let testDir: string;
 let savedEnv: NodeJS.ProcessEnv;
@@ -83,7 +83,7 @@ describe('sessions', () => {
 
   describe('formatSessionEntry', () => {
     it('formats entry with messages', () => {
-      const entry: SessionEntry = {
+      const entry: V2SessionFsEntry = {
         sessionId: 'abc',
         cwd: '/tmp',
         createdAt: new Date().toISOString(),
@@ -96,7 +96,7 @@ describe('sessions', () => {
     });
 
     it('omits msgs suffix when msgCount is 0', () => {
-      const entry: SessionEntry = {
+      const entry: V2SessionFsEntry = {
         sessionId: 'abc',
         cwd: '/tmp',
         createdAt: new Date().toISOString(),
@@ -117,7 +117,7 @@ describe('sessions', () => {
           writable: true,
           configurable: true,
         });
-        const entry: SessionEntry = {
+        const entry: V2SessionFsEntry = {
           sessionId: 'abc',
           cwd: '/tmp',
           createdAt: new Date().toISOString(),
@@ -141,7 +141,7 @@ describe('sessions', () => {
     });
 
     it('shows unknown when updatedAt is empty', () => {
-      const entry: SessionEntry = {
+      const entry: V2SessionFsEntry = {
         sessionId: 'abc',
         cwd: '/tmp',
         createdAt: '',

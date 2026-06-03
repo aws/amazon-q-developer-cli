@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+import argparse
+import random
+import string
+
+DEFAULT_SIZE = 500_000
+MAX_SIZE = 1_000_000
+CHUNK_SIZE = 100
+WRAP_WIDTH = 80
+CHARS = string.ascii_letters + string.digits
+
+LOREM = (
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
+    "tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim "
+    "veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea "
+    "commodo consequat. Duis aute irure dolor in reprehenderit in voluptate "
+    "velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint "
+    "occaecat cupidatat non proident, sunt in culpa qui officia deserunt "
+    "mollit anim id est laborum."
+)
+
+
+def generate_random_file(filename: str, total_size: int):
+    """Generate a file with random characters, newline every 99 chars."""
+    num_chunks, remaining = divmod(total_size, CHUNK_SIZE)
+
+    with open(filename, "w") as f:
+        for _ in range(num_chunks):
+            f.write("".join(random.choices(CHARS, k=CHUNK_SIZE - 1)))
+            f.write("\n")
+        if remaining:
+            f.write("".join(random.choices(CHARS, k=remaining)))
+
+    print(f"Created '{filename}' ({total_size} bytes)")
+
+
+def generate_lorem_file(filename: str, total_size: int):
+    """Generate a file with lorem ipsum text, wrapped near WRAP_WIDTH."""
+    words = LOREM.split()
+    written = 0
+    line_len = 0
+    i = 0
+
+    with open(filename, "w") as f:
+        while written < total_size:
+            word = words[i % len(words)]
+            i += 1
+            sep = "" if line_len == 0 else " "
+            piece = sep + word
+            remaining = total_size - written
+
+            if len(piece) >= remaining:
+                f.write(piece[:remaining])
+                written += remaining
+                break
+
+            if line_len + len(piece) > WRAP_WIDTH and line_len > 0:
+                f.write("\n")
+                written += 1
+                line_len = 0
+                if written >= total_size:
+                    break
+                piece = word
+
+            f.write(piece)
+            written += len(piece)
+            line_len += len(piece)
+
+    print(f"Created '{filename}' ({total_size} bytes)")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate a file with random characters")
+    parser.add_argument("filename", help="Output filename")
+    parser.add_argument("size", nargs="?", type=int, default=DEFAULT_SIZE, help=f"File size in bytes (default: {DEFAULT_SIZE})")
+    parser.add_argument("-f", "--force", action="store_true", help=f"Allow sizes over {MAX_SIZE} bytes")
+    parser.add_argument("--lorem", action="store_true", help="Generate lorem ipsum text instead of random characters")
+    args = parser.parse_args()
+
+    if args.size > MAX_SIZE and not args.force:
+        parser.error(f"size {args.size} exceeds {MAX_SIZE}. Use -f/--force to override.")
+
+    generator = generate_lorem_file if args.lorem else generate_random_file
+    generator(args.filename, args.size)

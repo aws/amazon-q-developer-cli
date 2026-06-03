@@ -309,7 +309,8 @@ pub struct ChatArgs {
     /// List available models and exit.
     #[arg(long)]
     pub list_models: bool,
-    /// Output format for list commands (used with --list-models).
+    /// Output format for list commands (used with `--list-models`
+    /// and `--list-sessions`).
     #[arg(long, short, value_enum, default_value_t)]
     pub format: crate::cli::OutputFormat,
     /// Delete a saved chat session by ID.

@@ -46,9 +46,21 @@ import type {
 } from '../../src/test-utils/shared/pty-manager';
 import type { TestPaths } from '../../src/test-utils/shared/test-paths';
 import { TestCase, type TestCaseOptions } from '../../src/test-utils/TestCase';
+import type { SessionInfoEntry } from '../../src/types/session-client';
 import { AcpMockServer } from './AcpMockServer';
 
-export type AcpTestCaseOptions = TestCaseOptions;
+export interface AcpTestCaseOptions extends TestCaseOptions {
+  /**
+   * Test-only KAS-side session listing. The spawned Rust binary's
+   * merged `chat --list-sessions` always uses these entries instead of
+   * spawning a real KAS child - this harness is KAS-only mock and a
+   * real KAS spawn would defeat the test isolation. Forwarded to the
+   * binary via the `KIRO_TEST_MOCK_KAS_SESSIONS` env var (see
+   * `crates/chat-cli/src/util/consts.rs`). Defaults to `[]`; tests
+   * that need cross-engine `/chat` picker rows pass entries here.
+   */
+  mockKasSessionListResult?: SessionInfoEntry[];
+}
 
 export class AcpTestCase {
   public readonly mock: AcpMockServer;
@@ -59,10 +71,11 @@ export class AcpTestCase {
     this.mockSocketDir = mkdtempSync(join(tmpdir(), 'kiro-acp-mock-'));
     const mockSocketPath = join(this.mockSocketDir, 'acp.sock');
     this.mock = new AcpMockServer(mockSocketPath);
+    const { mockKasSessionListResult, extraEnv, ...rest } = options;
     this.inner = new TestCase({
-      ...options,
+      ...rest,
       extraEnv: {
-        ...options.extraEnv,
+        ...extraEnv,
         // Turn off MockSessionClient (base TestCase's default mock path)
         // so the real `createAcpClient()` branch runs.
         KIRO_MOCK_ACP: '',
@@ -70,6 +83,13 @@ export class AcpTestCase {
         KIRO_AGENT_ENGINE: 'kas',
         // Route the KAS transport at our mock socket instead of spawning KAS.
         KIRO_ACP_MOCK_SOCKET: mockSocketPath,
+        // Always hand the Rust binary a pre-built KAS session listing
+        // so its `chat --list-sessions` merge never spawns a real KAS
+        // child (this harness is KAS-only mock; spawning would defeat
+        // the test isolation). Defaults to an empty list.
+        KIRO_TEST_MOCK_KAS_SESSIONS: JSON.stringify(
+          mockKasSessionListResult ?? []
+        ),
       },
     });
   }
@@ -149,6 +169,17 @@ export class AcpTestCase {
   waitForVisibleText(text: string, timeout?: number): Promise<void> {
     return this.inner.waitForVisibleText(text, timeout);
   }
+  /**
+   * Polls the TUI's Zustand store until `predicate(state)` returns
+   * truthy. See {@link TestCase.waitForStore}.
+   */
+  waitForStore(
+    predicate: (state: AppState) => boolean,
+    timeoutMs?: number,
+    pollIntervalMs?: number
+  ): Promise<AppState> {
+    return this.inner.waitForStore(predicate, timeoutMs, pollIntervalMs);
+  }
   getSnapshotFormatted(): string {
     return this.inner.getSnapshotFormatted();
   }
@@ -183,8 +214,8 @@ export class AcpTestCase {
   getOutputCleaned(): string {
     return this.inner.getOutputCleaned();
   }
-  expectExit(): Promise<number> {
-    return this.inner.expectExit();
+  expectExit(timeoutMs?: number): Promise<number> {
+    return this.inner.expectExit(timeoutMs);
   }
   getTestPaths(): TestPaths {
     return this.inner.getTestPaths();

@@ -19,6 +19,7 @@
  * with `JSON.parse(stdout)` without disambiguating streams.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { requireChatCliBin } from '../src/utils/chat-cli-bin';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -35,7 +36,7 @@ import { join, resolve, basename } from 'node:path';
 import { PersistedMessageSchema, SessionMetadataSchema, type SessionMetadata } from '@kiro/acp-type-covenant';
 import { computeWorkspaceHash } from '@kiro/agent';
 
-const BIN = resolve(__dirname, '../../../target/debug/chat_cli');
+const BIN = requireChatCliBin();
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 

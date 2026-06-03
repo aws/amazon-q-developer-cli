@@ -28,3 +28,4 @@ braket = "braket" # AWS Braket quantum computing service
 nd = "nd" # ndjson (newline-delimited JSON)
 hel = "hel" # used in test data
 isues = "isues" # intentional typo in agent-configuration.md example
+unparseable = "unparseable" # valid word in LLM dictionary

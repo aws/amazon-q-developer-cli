@@ -39,6 +39,7 @@ import type {
   GetAccessTokenResponse,
 } from '@kiro/acp-type-covenant';
 
+import { requireChatCliBinFromEnv } from '../utils/chat-cli-bin';
 /**
  * Method name for the agent->client extension. Matches the typed entry
  * in `@kiro/acp-type-covenant/client-capabilities/index.ts`. Centralised
@@ -89,11 +90,6 @@ const DEFAULT_SPAWNER: AsyncSpawner = async (cmd, args) => {
   };
 };
 
-function resolveBinary(): string | null {
-  const fromEnv = process.env.KIRO_CHAT_CLI_BIN;
-  return fromEnv && fromEnv.length > 0 ? fromEnv : null;
-}
-
 /**
  * Extract the last non-empty stdout line and parse as JSON. The Rust
  * subcommand prints exactly one JSON line as its contract, but may emit
@@ -121,12 +117,7 @@ async function runGetKasToken(
   _request: GetAccessTokenRequest,
   spawner: AsyncSpawner
 ): Promise<GetAccessTokenResponse> {
-  const bin = resolveBinary();
-  if (!bin) {
-    throw new Error(
-      'KIRO_CHAT_CLI_BIN is not set; cannot locate kiro-cli for auth callback'
-    );
-  }
+  const bin = requireChatCliBinFromEnv();
 
   // KAS sends `{}` for `_kiro/auth/getAccessToken`; the wire contract has
   // no hints to forward to the host. The argv is fixed.

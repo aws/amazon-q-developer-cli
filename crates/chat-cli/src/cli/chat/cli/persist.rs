@@ -1,5 +1,6 @@
 use std::process::ExitCode;
 
+use chat_cli_v2::agent::acp::schema::SessionInfoEntry;
 use chat_cli_v2::agent::session::kas::{
     KasAcpSessionClient,
     KasSessionClient,
@@ -22,6 +23,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::consts::env_var::KIRO_TEST_MOCK_KAS_SESSIONS;
 use crate::util::paths;
 
 /// Display entry for chat session selection
@@ -378,7 +380,7 @@ fn format_timestamp(timestamp_ms: i64) -> String {
 
 /// A unified session entry from V1 (SQLite), V2 (filesystem), or KAS (ACP).
 #[derive(Debug)]
-struct SessionEntry {
+pub(crate) struct SessionEntry {
     session_id: String,
     summary: String,
     /// `None` for sources that don't track it (e.g. KAS's `session/list`).
@@ -417,6 +419,71 @@ impl std::fmt::Display for SessionSource {
             Self::V1 => f.write_str("classic"),
             Self::V2 => f.write_str("v2"),
             Self::Kas => f.write_str("v3"),
+        }
+    }
+}
+
+impl serde::Serialize for SessionSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+/// JSON envelope for `--list-sessions --format json`. The outer wrapper
+/// is an array carrying one entry per cwd. Today the listing is always
+/// scoped to the current cwd, so the array is single-element; the
+/// shape leaves room for a future `--all-cwds` flag without a breaking
+/// rename.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct SessionListingJson<'a> {
+    pub cwd: String,
+    pub sessions: Vec<SessionEntryJson<'a>>,
+}
+
+/// Per-session JSON shape, matching the camelCase fields used on
+/// KAS's own `session/list` response so a TUI consumer reads both
+/// surfaces with one parser.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionEntryJson<'a> {
+    pub session_id: &'a str,
+    pub source: SessionSource,
+    pub title: &'a str,
+    /// RFC3339 timestamp built from the entry's stored epoch millis.
+    /// An entry with a zero or unparseable timestamp serializes as
+    /// the Unix epoch; this matches the ordering behavior (oldest
+    /// possible) and is unambiguous on round-trip.
+    pub updated_at: String,
+    /// Omitted when the source did not report a count (KAS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<usize>,
+}
+
+impl<'a> SessionListingJson<'a> {
+    /// Build the envelope from raw entries, canonicalizing `cwd` so
+    /// the JSON output is symlink-stable. Falls back to the
+    /// unresolved path if canonicalization fails.
+    pub fn from_entries(cwd: &std::path::Path, entries: &'a [SessionEntry]) -> Self {
+        let canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+        let sessions = entries.iter().map(SessionEntryJson::from_entry).collect();
+        Self {
+            cwd: canonical.display().to_string(),
+            sessions,
+        }
+    }
+}
+
+impl<'a> SessionEntryJson<'a> {
+    fn from_entry(e: &'a SessionEntry) -> Self {
+        let updated_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(e.updated_at_ms)
+            .unwrap_or_default()
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        Self {
+            session_id: &e.session_id,
+            source: e.source,
+            title: &e.summary,
+            updated_at,
+            message_count: e.msg_count,
         }
     }
 }
@@ -510,10 +577,16 @@ fn delete_any_session_impl(
 ///
 /// V1 (SQLite) and V2 (~/.kiro/sessions/cli/) sessions are always included.
 /// KAS sessions are included when [`is_kas_enabled`] returns true.
+///
+/// `format` selects the output renderer for `--list-sessions`:
+/// - [`OutputFormat::Plain`] writes a human-readable table to stderr (the historical default).
+/// - [`OutputFormat::Json`] / [`OutputFormat::JsonPretty`] write a single JSON value to stdout in
+///   the [`SessionListingJson`] envelope, intended for the TUI to consume via `KIRO_CHAT_CLI_BIN`.
 pub async fn handle_list_delete_session_flags(
     list_sessions: bool,
     delete_session: Option<&str>,
     delete_source: Option<SessionSource>,
+    format: crate::cli::OutputFormat,
     os: &Os,
 ) -> Option<ExitCode> {
     if list_sessions {
@@ -525,9 +598,31 @@ pub async fn handle_list_delete_session_flags(
             },
         };
         let entries = collect_sessions(os, &cwd).await;
-        if let Err(e) = render_session_entries(&mut std::io::stderr(), &cwd.display().to_string(), &entries) {
-            eprintln!("Error: {e:#}");
-            return Some(ExitCode::FAILURE);
+        match format {
+            crate::cli::OutputFormat::Plain => {
+                if let Err(e) = render_session_entries(&mut std::io::stderr(), &cwd.display().to_string(), &entries) {
+                    eprintln!("Error: {e:#}");
+                    return Some(ExitCode::FAILURE);
+                }
+            },
+            crate::cli::OutputFormat::Json | crate::cli::OutputFormat::JsonPretty => {
+                let envelope = SessionListingJson::from_entries(&cwd, &entries);
+                // Top-level shape is an array of `{cwd, sessions}` so a
+                // future `--all-cwds` flag can extend the listing without
+                // a breaking rename. Today the array is single-element.
+                let listing = vec![envelope];
+                let out = match format {
+                    crate::cli::OutputFormat::JsonPretty => serde_json::to_string_pretty(&listing),
+                    _ => serde_json::to_string(&listing),
+                };
+                match out {
+                    Ok(s) => println!("{s}"),
+                    Err(e) => {
+                        eprintln!("Error: {e:#}");
+                        return Some(ExitCode::FAILURE);
+                    },
+                }
+            },
         }
         return Some(ExitCode::SUCCESS);
     }
@@ -543,12 +638,25 @@ pub async fn handle_list_delete_session_flags(
 /// launch failures are logged via `tracing::warn` and do not abort the listing.
 async fn collect_sessions(os: &Os, cwd: &std::path::Path) -> Vec<SessionEntry> {
     let mut entries = collect_all_sessions(&os.database, cwd);
-    match with_kas_session_client(os, |client| async move { collect_kas_sessions(&client, cwd).await }).await {
+    match collect_kas_via_mock_or_spawn(os, cwd).await {
         Ok(mut kas) => entries.append(&mut kas),
         Err(e) => tracing::warn!("KAS sessions unavailable: {e:#}"),
     }
     entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
     entries
+}
+
+/// Returns mocked KAS entries when `KIRO_TEST_MOCK_KAS_SESSIONS` is
+/// set, otherwise spawns a real KAS child and queries `session/list`.
+/// A malformed mock value panics rather than silently degrading - the
+/// only callers are tests, and silent fallback would hide setup bugs.
+async fn collect_kas_via_mock_or_spawn(os: &Os, cwd: &std::path::Path) -> Result<Vec<SessionEntry>> {
+    if let Ok(raw) = std::env::var(KIRO_TEST_MOCK_KAS_SESSIONS) {
+        let mocked: Vec<SessionInfoEntry> = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("{KIRO_TEST_MOCK_KAS_SESSIONS} is not valid JSON: {e}"));
+        return Ok(mocked.into_iter().map(SessionEntry::from).collect());
+    }
+    with_kas_session_client(os, |client| async move { collect_kas_sessions(&client, cwd).await }).await
 }
 
 /// Run a closure against a freshly-spawned KAS session client. Handles the
@@ -1393,5 +1501,73 @@ mod kas_tests {
         let client = KasMockSessionClient::new().with_list_err("rpc timeout");
         let err = collect_kas_sessions(&client, Path::new("/tmp")).await.unwrap_err();
         assert!(format!("{err:#}").contains("rpc timeout"));
+    }
+
+    /// Pins the `--list-sessions --format json` envelope shape. The
+    /// TUI consumes this output via `KIRO_CHAT_CLI_BIN` and any
+    /// silent rename in the field set will break the picker without
+    /// a clear error.
+    #[test]
+    fn session_listing_json_shape() {
+        let cwd = std::env::current_dir().unwrap();
+        let entries = vec![
+            SessionEntry {
+                session_id: "v2-session-1".to_string(),
+                summary: "Fix auth bug".to_string(),
+                msg_count: Some(7),
+                updated_at_ms: 1_700_000_000_000,
+                source: SessionSource::V2,
+            },
+            SessionEntry {
+                session_id: "kas-session-2".to_string(),
+                summary: "(no title)".to_string(),
+                msg_count: None,
+                updated_at_ms: 1_700_000_001_000,
+                source: SessionSource::Kas,
+            },
+        ];
+        let json = SessionListingJson::from_entries(&cwd, &entries);
+        let parsed: serde_json::Value = serde_json::from_str(&serde_json::to_string(&json).unwrap()).unwrap();
+        assert!(parsed.get("cwd").and_then(|v| v.as_str()).is_some());
+        let sessions = parsed.get("sessions").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(sessions.len(), 2);
+
+        // V2 entry pins every field name and the RFC3339 millis-precision format.
+        let v2 = &sessions[0];
+        assert_eq!(v2.get("sessionId").and_then(|v| v.as_str()), Some("v2-session-1"));
+        assert_eq!(v2.get("source").and_then(|v| v.as_str()), Some("v2"));
+        assert_eq!(v2.get("title").and_then(|v| v.as_str()), Some("Fix auth bug"));
+        assert_eq!(v2.get("messageCount").and_then(|v| v.as_u64()), Some(7));
+        assert_eq!(
+            v2.get("updatedAt").and_then(|v| v.as_str()),
+            Some("2023-11-14T22:13:20.000Z")
+        );
+
+        // KAS entry: source serializes as "v3" (matching Display) and
+        // messageCount is omitted entirely (not null) when absent.
+        let kas = &sessions[1];
+        assert_eq!(kas.get("source").and_then(|v| v.as_str()), Some("v3"));
+        assert!(
+            kas.get("messageCount").is_none(),
+            "messageCount must be omitted when None"
+        );
+    }
+
+    #[test]
+    fn session_listing_json_canonicalizes_cwd() {
+        let entries: Vec<SessionEntry> = vec![];
+        // `/tmp` is a symlink to `/private/tmp` on macOS - canonicalize
+        // resolves it. On Linux the path is already canonical and the
+        // assertion still holds (canonical of `/tmp` == `/tmp`).
+        let canonical = std::fs::canonicalize("/tmp").unwrap();
+        let json = SessionListingJson::from_entries(Path::new("/tmp"), &entries);
+        assert_eq!(json.cwd, canonical.display().to_string());
+    }
+
+    #[test]
+    fn session_source_serializes_via_display() {
+        assert_eq!(serde_json::to_string(&SessionSource::V1).unwrap(), "\"classic\"");
+        assert_eq!(serde_json::to_string(&SessionSource::V2).unwrap(), "\"v2\"");
+        assert_eq!(serde_json::to_string(&SessionSource::Kas).unwrap(), "\"v3\"");
     }
 }

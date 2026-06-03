@@ -2,6 +2,7 @@ import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { ListAllSessionsResult } from '../../../utils/list-all-sessions-cli';
 
 // Mock the session-archive-cli helper at module load. The handler under
 // test calls these to shell out to `kiro-cli chat _ export-session` /
@@ -19,6 +20,48 @@ mock.module('../../../utils/session-archive-cli', () => ({
     mockImportSession(...(args as Parameters<typeof mockImportSession>)),
 }));
 
+// Mock listAllSessions so the picker tests don't need a real binary.
+// The merged listing is the contract the handler consumes; the
+// spawn-and-parse contract is exercised by
+// `utils/__tests__/list-all-sessions-cli.test.ts` and the real binary
+// surface is exercised by `acp_integ_tests/chat-command.test.ts`.
+const mockListAllSessions = mock<() => Promise<ListAllSessionsResult>>(() =>
+  Promise.resolve({ ok: false, error: 'not stubbed' })
+);
+mock.module('../../../utils/list-all-sessions-cli', () => ({
+  listAllSessions: () => mockListAllSessions(),
+}));
+
+// Mock ensureSession so bare-id load tests don't spawn a real binary.
+// The handler routes every load through ensure-session with
+// `sourceFormat: 'auto'` (native ids resolve via fast filesystem
+// probe; cross-engine ids trigger conversion). The spawn-and-parse
+// contract is covered by `utils/__tests__/ensure-session-cli.test.ts`.
+const mockEnsureSession = mock<
+  (
+    input: import('../../../utils/ensure-session-cli').EnsureSessionInput
+  ) => Promise<import('../../../utils/ensure-session-cli').EnsureSessionResult>
+>((input) =>
+  Promise.resolve({
+    ok: true,
+    sessionId: input.sourceSessionId,
+    converted: false,
+  })
+);
+mock.module('../../../utils/ensure-session-cli', () => ({
+  ensureSession: (input: unknown) =>
+    mockEnsureSession(
+      input as import('../../../utils/ensure-session-cli').EnsureSessionInput
+    ),
+}));
+
+// Mock resolveAgentEngine so picker option encoding can be exercised
+// in either active-engine direction without leaking process env state.
+const mockResolveAgentEngine = mock<() => 'kas' | 'v2'>(() => 'kas');
+mock.module('../../../agent-engine', () => ({
+  resolveAgentEngine: () => mockResolveAgentEngine(),
+}));
+
 import { handleChat } from '../chat';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
@@ -33,28 +76,27 @@ const CHAT_CMD: KasCommand = {
 describe('handleChat (KAS-mode dispatch)', () => {
   describe('list (no args)', () => {
     it('opens picker with sessions excluding the current one', async () => {
-      const sessions = [
-        {
-          sessionId: 'aaaa1111',
-          cwd: '/x',
-          title: 'Other',
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          sessionId: 'bbbb2222',
-          cwd: '/x',
-          title: 'Current',
-          updatedAt: new Date().toISOString(),
-        },
-      ];
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'aaaa1111',
+            source: 'v3',
+            title: 'Other',
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            sessionId: 'bbbb2222',
+            source: 'v3',
+            title: 'Current',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
       const ctx = createMockCommandContext({
         kasCommands: [CHAT_CMD],
-        kiro: {
-          sessionId: 'bbbb2222',
-          listSessions: mock(() =>
-            Promise.resolve({ sessions, nextCursor: undefined })
-          ),
-        } as any,
+        kiro: { sessionId: 'bbbb2222' } as any,
       });
       await handleChat(CHAT_CMD, '', ctx);
       const setActive = ctx._spies.setActiveCommand as any;
@@ -64,14 +106,14 @@ describe('handleChat (KAS-mode dispatch)', () => {
     });
 
     it('alerts when no other sessions exist', async () => {
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [],
+      });
       const ctx = createMockCommandContext({
         kasCommands: [CHAT_CMD],
-        kiro: {
-          sessionId: 'cur',
-          listSessions: mock(() =>
-            Promise.resolve({ sessions: [], nextCursor: undefined })
-          ),
-        } as any,
+        kiro: { sessionId: 'cur' } as any,
       });
       await handleChat(CHAT_CMD, '', ctx);
       const showAlert = ctx._spies.showAlert as any;
@@ -82,17 +124,19 @@ describe('handleChat (KAS-mode dispatch)', () => {
       );
     });
 
-    it('alerts on listSessions failure', async () => {
+    it('alerts on listAllSessions failure', async () => {
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: false,
+        error: 'boom',
+      });
       const ctx = createMockCommandContext({
         kasCommands: [CHAT_CMD],
-        kiro: {
-          sessionId: 'cur',
-          listSessions: mock(() => Promise.reject(new Error('boom'))),
-        } as any,
+        kiro: { sessionId: 'cur' } as any,
       });
       await handleChat(CHAT_CMD, '', ctx);
       const showAlert = ctx._spies.showAlert as any;
       expect(showAlert).toHaveBeenCalled();
+      expect(showAlert.mock.calls[0][0]).toContain('boom');
       expect(showAlert.mock.calls[0][1]).toBe('error');
     });
   });

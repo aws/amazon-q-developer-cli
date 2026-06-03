@@ -4,21 +4,10 @@ import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const TUI_ROOT = resolve(import.meta.dir, "..");
-const INK_ROOT = resolve(import.meta.dir, "../../ink");
 
 const skipRustBuild = process.argv.includes("--skip-rust-build");
 
-function buildInk(): boolean {
-  console.log("Building ink...");
-  const result = spawnSync("bun", ["run", "build"], { cwd: INK_ROOT, stdio: "inherit" });
-  return result.status === 0;
-}
-
 function buildTui(): boolean {
-  if (!buildInk()) {
-    console.error("ink build failed");
-    return false;
-  }
   console.log("Building TUI...");
   const result = spawnSync("bun", ["run", "build"], { 
     cwd: TUI_ROOT, 
@@ -34,11 +23,14 @@ function runTests() {
     process.exit(1);
   }
 
-  // Pass through extra args (e.g. specific test file, -t "test name")
+  // Pass through extra args (e.g. specific test file, -t "test name").
+  // When a file/dir argument is passed, run just that path; otherwise
+  // run the whole e2e_tests directory.
   const extraArgs = process.argv.slice(2).filter(a => a !== "--skip-rust-build");
+  const hasPathArg = extraArgs.some(a => !a.startsWith("-") && (a.includes("/") || a.endsWith(".ts")));
 
   console.log("Running E2E tests...");
-  const testArgs = ["test", "./e2e_tests/", ...extraArgs];
+  const testArgs = hasPathArg ? ["test", ...extraArgs] : ["test", "./e2e_tests/", ...extraArgs];
   const test = spawn("bun", testArgs, { cwd: TUI_ROOT, stdio: "inherit" });
   test.on("exit", (code) => process.exit(code ?? 0));
 }

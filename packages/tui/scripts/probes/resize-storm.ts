@@ -17,6 +17,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { PtyManager } from '../../src/test-utils/shared/pty-manager';
+import { resolveChatCliBin } from '../../src/utils/chat-cli-bin';
 
 const PROBE_NAME = 'resize-storm';
 const PLATFORM = process.env.KIRO_PROBE_PLATFORM ?? (process.platform === 'darwin' ? 'macos' : process.platform);
@@ -128,8 +129,10 @@ async function main() {
   const started = Date.now();
   let findingsEmitted = 0;
 
-  // Resolve binary and TUI JS path
-  const binaryPath = process.env.CHAT_CLI_BIN ?? 'target/debug/chat_cli';
+  // Resolve binary and TUI JS path. Honors CHAT_CLI_BIN as a probe-
+  // specific override; otherwise delegates to the shared resolver
+  // (KIRO_CHAT_CLI_BIN / CARGO_TARGET_DIR / repo-root target).
+  const binaryPath = process.env.CHAT_CLI_BIN ?? resolveChatCliBin();
   const tuiJsPath = process.env.KIRO_TEST_TUI_JS_PATH ?? join(process.cwd(), 'packages/tui/dist/tui.js');
 
   console.log(`[${PROBE_NAME}] binary=${binaryPath} tui_js=${tuiJsPath}`);

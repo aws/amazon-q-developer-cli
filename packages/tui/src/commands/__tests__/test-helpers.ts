@@ -59,7 +59,7 @@ export function createMockCommandContext(
 
   return {
     kiro: { ...defaultKiro, ...opts.kiro } as any,
-    agentEngine: 'rust',
+    agentEngine: 'v2',
     slashCommands: opts.slashCommands ?? [],
     kasCommands: opts.kasCommands ?? [],
     prompts: opts.prompts ?? [],

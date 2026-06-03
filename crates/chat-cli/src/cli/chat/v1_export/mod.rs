@@ -74,7 +74,7 @@ impl LegacySessionExporter for LegacySessionExporterImpl {
         let convos = self
             .database
             .list_conversations_by_path(cwd)
-            .map_err(|e| LegacyExportError {
+            .map_err(|e| LegacyExportError::Other {
                 message: "failed to list V1 conversations".into(),
                 source: Some(Box::new(e)),
             })?;
@@ -136,7 +136,7 @@ impl LegacySessionExporter for LegacySessionExporterImpl {
 
         // Acquire a session lock to prevent concurrent exports
         let _lock = chat_cli_v2::agent::session::acquire_lock(sessions_dir, conversation_id).map_err(|e| {
-            LegacyExportError {
+            LegacyExportError::Other {
                 message: format!("failed to acquire lock for session {conversation_id}"),
                 source: Some(Box::new(e)),
             }
@@ -150,13 +150,12 @@ impl LegacySessionExporter for LegacySessionExporterImpl {
         let (cwd, state) = self
             .database
             .get_conversation_by_id_with_cwd(conversation_id)
-            .map_err(|e| LegacyExportError {
+            .map_err(|e| LegacyExportError::Other {
                 message: format!("failed to read V1 conversation {conversation_id}"),
                 source: Some(Box::new(e)),
             })?
-            .ok_or_else(|| LegacyExportError {
-                message: format!("V1 conversation not found: {conversation_id}"),
-                source: None,
+            .ok_or_else(|| LegacyExportError::NotFound {
+                conversation_id: conversation_id.to_string(),
             })?;
 
         write_v1_session(&state, conversation_id, &cwd, sessions_dir, None)
@@ -170,7 +169,7 @@ impl LegacySessionExporter for LegacySessionExporterImpl {
         sessions_dir: &Path,
         imported_from: Option<&Path>,
     ) -> Result<(), LegacyExportError> {
-        let state: ConversationState = serde_json::from_str(json_content).map_err(|e| LegacyExportError {
+        let state: ConversationState = serde_json::from_str(json_content).map_err(|e| LegacyExportError::Other {
             message: "failed to deserialize as V1 ConversationState".into(),
             source: Some(Box::new(e)),
         })?;
@@ -179,11 +178,12 @@ impl LegacySessionExporter for LegacySessionExporterImpl {
             return Ok(());
         }
 
-        let _lock =
-            chat_cli_v2::agent::session::acquire_lock(sessions_dir, session_id).map_err(|e| LegacyExportError {
+        let _lock = chat_cli_v2::agent::session::acquire_lock(sessions_dir, session_id).map_err(|e| {
+            LegacyExportError::Other {
                 message: format!("failed to acquire lock for session {session_id}"),
                 source: Some(Box::new(e)),
-            })?;
+            }
+        })?;
 
         if chat_cli_v2::agent::session::session_exists(sessions_dir, session_id) {
             return Ok(());
@@ -238,38 +238,38 @@ fn write_v1_session(
         }),
     };
 
-    fs::create_dir_all(sessions_dir).map_err(|e| LegacyExportError {
+    fs::create_dir_all(sessions_dir).map_err(|e| LegacyExportError::Other {
         message: format!("failed to create sessions directory {}", sessions_dir.display()),
         source: Some(Box::new(e)),
     })?;
 
     let log_path = sessions_dir.join(format!("{conversation_id}.jsonl"));
     let meta_path = sessions_dir.join(format!("{conversation_id}.json"));
-    let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| LegacyExportError {
+    let meta_content = serde_json::to_string_pretty(&session_data).map_err(|e| LegacyExportError::Other {
         message: "failed to serialize session metadata".into(),
         source: Some(Box::new(e)),
     })?;
 
     let mut created_files: Vec<&Path> = Vec::new();
     let result = (|| -> Result<(), LegacyExportError> {
-        let mut log_file = fs::File::create(&log_path).map_err(|e| LegacyExportError {
+        let mut log_file = fs::File::create(&log_path).map_err(|e| LegacyExportError::Other {
             message: format!("failed to create log file {}", log_path.display()),
             source: Some(Box::new(e)),
         })?;
         created_files.push(&log_path);
 
         for entry in &log_entries {
-            let line = serde_json::to_string(entry).map_err(|e| LegacyExportError {
+            let line = serde_json::to_string(entry).map_err(|e| LegacyExportError::Other {
                 message: "failed to serialize log entry".into(),
                 source: Some(Box::new(e)),
             })?;
-            writeln!(log_file, "{line}").map_err(|e| LegacyExportError {
+            writeln!(log_file, "{line}").map_err(|e| LegacyExportError::Other {
                 message: "failed to write log entry".into(),
                 source: Some(Box::new(e)),
             })?;
         }
 
-        fs::write(&meta_path, &meta_content).map_err(|e| LegacyExportError {
+        fs::write(&meta_path, &meta_content).map_err(|e| LegacyExportError::Other {
             message: format!("failed to write session metadata {}", meta_path.display()),
             source: Some(Box::new(e)),
         })?;

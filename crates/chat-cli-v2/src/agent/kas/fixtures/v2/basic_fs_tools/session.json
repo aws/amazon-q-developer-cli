@@ -1,0 +1,129 @@
+{
+  "session_id": "8e247382-c779-440f-b1db-ed9bad1afaee",
+  "cwd": ".",
+  "created_at": "2026-05-27T18:15:02.173294Z",
+  "updated_at": "2026-05-27T18:15:27.453653Z",
+  "title": "Do these six steps in order. Do NOT use the todo_list or task tool. Do NOT use a subagent. Use only file write, file read, shell execute, grep, and...",
+  "session_created_reason": "subagent",
+  "session_state": {
+    "version": "v1",
+    "conversation_metadata": {
+      "user_turn_metadatas": [
+        {
+          "loop_id": {
+            "agent_id": {
+              "name": "kiro_default",
+              "parent_id": null,
+              "rand": null
+            },
+            "rand": 1390405047
+          },
+          "result": {
+            "Ok": {
+              "id": "2d1a663c-1348-4e20-9f12-7eeec7d42b9a",
+              "role": "assistant",
+              "content": [
+                {
+                  "kind": "text",
+                  "data": "All six steps done:\n\n1. **Wrote** `notes.md` with \"kiro fixture notes\".\n2. **Read** it back — confirmed content.\n3. **Wrote** `greet.sh` that echoes \"hello fixture\".\n4. **Ran** `greet.sh` — output: `hello fixture`.\n5. **Grep** for \"fixture\" — found matches in both `greet.sh` and `notes.md`.\n6. **Glob** for `*.sh` — found `greet.sh`."
+                }
+              ],
+              "meta": {
+                "timestamp": 1779905727
+              }
+            }
+          },
+          "message_ids": [
+            "b3d8e715-b134-4154-b723-85ef68984536",
+            "0a65ffaf-51c1-4c22-b802-d6efddaef4db",
+            "b517f0d9-c9b6-47f3-9ace-0904d6d0aab6",
+            "87152500-a430-4921-b8cd-51af6e198e31",
+            "82bd5342-1b36-44ff-b2de-bef2eeadcd08",
+            "c31beaee-1d23-4cfb-a2ef-e88679d20926",
+            "b09de464-4506-4db4-9979-a0a8fa2346b8",
+            "0b94bf53-376a-4106-9178-7bd4d359efb2",
+            "f568a731-f973-46c8-a299-a0ddc0e00273",
+            "9fd5d5a1-3ed1-4ade-8706-b254c57d8c6f",
+            "a5aeb70f-e108-4929-848c-addcb993778b",
+            "f4357c87-658a-4c70-a2e3-8d55430be5f3",
+            "bf8e88c5-0a46-473a-b5ec-2948b8e691f4",
+            "496c00f3-2e90-47cb-98d4-d6526a552d06"
+          ],
+          "total_request_count": 7,
+          "number_of_cycles": 6,
+          "builtin_tool_uses": 6,
+          "turn_duration": {
+            "secs": 23,
+            "nanos": 950463917
+          },
+          "end_reason": "UserTurnEnd",
+          "end_timestamp": "2026-05-27T18:15:27.451690Z",
+          "input_token_count": 0,
+          "output_token_count": 0,
+          "context_usage_percentage": 4.5783,
+          "metering_usage": [
+            {
+              "value": 0.15641289336650083,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.09113406766169155,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.0930567071310116,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.09252766285240464,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.09109197761194028,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.09409466368159206,
+              "unit": "credit",
+              "unitPlural": "credits"
+            },
+            {
+              "value": 0.09301443101160861,
+              "unit": "credit",
+              "unitPlural": "credits"
+            }
+          ]
+        }
+      ],
+      "user_turn_start_request": null,
+      "last_request": null
+    },
+    "rts_model_state": {
+      "conversation_id": "8e247382-c779-440f-b1db-ed9bad1afaee",
+      "model_info": {
+        "model_id": "auto",
+        "context_window_tokens": 200000
+      },
+      "context_usage_percentage": 4.5783
+    },
+    "permissions": {
+      "filesystem": {
+        "allowed_read_paths": [
+          "/private/var/folders/zn/6bkhzvmx4lvf3mgr7qqr2x940000gq/T/kiro-fixture-fs-tools-XXXX.W9fNVpVZqh"
+        ],
+        "allowed_write_paths": [],
+        "denied_read_paths": [],
+        "denied_write_paths": []
+      },
+      "trusted_tools": [],
+      "denied_tools": [],
+      "allowed_commands": []
+    },
+    "agent_name": "kiro_default"
+  }
+}

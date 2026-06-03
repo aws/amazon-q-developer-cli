@@ -1,13 +1,18 @@
 /**
+/**
  * Interactive session picker for --resume-picker.
  *
  * Runs before React/Ink takes over the terminal, using raw stdin
  * to let the user arrow-key through sessions and press Enter to select.
  */
 
-import { listSessionsForCwd, formatSessionEntry } from './sessions.js';
-import type { SessionEntry } from './sessions.js';
-import type { SessionInfoEntry } from '../types/session-client.js';
+import {
+  listSessionsForCwd,
+  formatSessionEntry,
+  formatRelativeTime,
+} from './sessions.js';
+import type { V2SessionFsEntry } from './sessions.js';
+import type { SessionEntry } from './list-all-sessions-cli.js';
 
 /**
  * Show an interactive session picker and return the selected session ID.
@@ -38,7 +43,7 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
       printMenu(sessions, selectedIndex);
     };
 
-    const printMenu = (entries: SessionEntry[], selected: number) => {
+    const printMenu = (entries: V2SessionFsEntry[], selected: number) => {
       process.stderr.write('Select a chat session to resume:\n');
 
       const visibleCount = Math.min(entries.length, maxVisible);
@@ -121,30 +126,44 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
 }
 
 /**
- * Show an interactive session picker from ACP session/list entries.
+ * Render one merged-listing entry as a single line for the picker:
+ *   "{relative_time} | {title} | {count} msgs"
+ * Truncates to terminal width to prevent line wrapping which breaks
+ * the picker's redraw.
+ */
+function formatMergedEntry(entry: SessionEntry): string {
+  const timestamp = entry.updatedAt
+    ? formatRelativeTime(entry.updatedAt)
+    : 'unknown';
+  const title = entry.title || '(no title)';
+  const line =
+    entry.messageCount && entry.messageCount > 0
+      ? `${timestamp} | ${title} | ${entry.messageCount} msgs`
+      : `${timestamp} | ${title}`;
+  const maxLen = (process.stderr.columns || 80) - 4;
+  if (line.length > maxLen) {
+    return line.slice(0, maxLen - 3) + '...';
+  }
+  return line;
+}
+
+/**
+ * Show an interactive session picker for cross-engine merged listing
+ * entries and return the selected entry.
  *
- * Returns undefined if no sessions exist or the user dismisses the picker
- * with Escape — caller should fall through to start a new session.
- * Ctrl+C exits the process.
+ * Returns undefined if `entries` is empty or the user dismisses the
+ * picker with Escape — caller should fall through to start a new
+ * session. Ctrl+C exits the process.
  */
 export async function pickSessionFromEntries(
-  entries: SessionInfoEntry[]
-): Promise<string | undefined> {
-  // Convert to SessionEntry format for reuse of formatSessionEntry
-  const sessions: SessionEntry[] = entries.map((e) => ({
-    sessionId: e.sessionId,
-    cwd: e.cwd,
-    createdAt: '',
-    updatedAt: e.updatedAt ?? '',
-    msgCount: e.messageCount ?? 0,
-    summary: e.title ?? '(no title)',
-  }));
-  if (sessions.length === 0) {
+  entries: SessionEntry[]
+): Promise<SessionEntry | undefined> {
+  if (entries.length === 0) {
     process.stderr.write('No saved sessions found for this directory.\n');
     return undefined;
   }
 
-  return new Promise<string | undefined>((resolve) => {
+  return new Promise<SessionEntry | undefined>((resolve) => {
     let selectedIndex = 0;
 
     const termRows = process.stderr.rows || 24;
@@ -152,14 +171,14 @@ export async function pickSessionFromEntries(
     let scrollOffset = 0;
 
     const render = () => {
-      const visibleCount = Math.min(sessions.length, maxVisible);
+      const visibleCount = Math.min(entries.length, maxVisible);
       const totalLines = visibleCount + 2;
       process.stderr.write(`\x1b[${totalLines}A\x1b[J`);
       process.stderr.write('Select a chat session to resume:\n');
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
         const prefix = i === selectedIndex ? '\x1b[36m❯\x1b[0m ' : '  ';
-        const text = formatSessionEntry(sessions[i]!);
+        const text = formatMergedEntry(entries[i]!);
         const styled = i === selectedIndex ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);
       }
@@ -167,13 +186,13 @@ export async function pickSessionFromEntries(
     };
 
     const updateScroll = () => {
-      const visibleCount = Math.min(sessions.length, maxVisible);
+      const visibleCount = Math.min(entries.length, maxVisible);
       if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
       else if (selectedIndex >= scrollOffset + visibleCount)
         scrollOffset = selectedIndex - visibleCount + 1;
     };
 
-    const initialVisible = Math.min(sessions.length, maxVisible);
+    const initialVisible = Math.min(entries.length, maxVisible);
     for (let i = 0; i < initialVisible + 2; i++) process.stderr.write('\n');
     render();
 
@@ -197,7 +216,7 @@ export async function pickSessionFromEntries(
       }
       if (key === '\r' || key === '\n') {
         cleanup();
-        resolve(sessions[selectedIndex]!.sessionId);
+        resolve(entries[selectedIndex]!);
         return;
       }
       if (key === '\x1b[A' || key === 'k') {
@@ -205,7 +224,7 @@ export async function pickSessionFromEntries(
         updateScroll();
         render();
       } else if (key === '\x1b[B' || key === 'j') {
-        selectedIndex = Math.min(sessions.length - 1, selectedIndex + 1);
+        selectedIndex = Math.min(entries.length - 1, selectedIndex + 1);
         updateScroll();
         render();
       }

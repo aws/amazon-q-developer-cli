@@ -16,12 +16,12 @@ afterAll(() => {
 });
 
 describe('AppState.agentEngine', () => {
-  it("defaults to 'rust' when KIRO_AGENT_ENGINE is unset", () => {
+  it("defaults to 'v2' when KIRO_AGENT_ENGINE is unset", () => {
     const prev = process.env.KIRO_AGENT_ENGINE;
     delete process.env.KIRO_AGENT_ENGINE;
     try {
       const store = createAppStore({ kiro: new Kiro() });
-      expect(store.getState().agentEngine).toBe('rust');
+      expect(store.getState().agentEngine).toBe('v2');
     } finally {
       if (prev !== undefined) process.env.KIRO_AGENT_ENGINE = prev;
     }
@@ -45,9 +45,9 @@ describe('AppState.agentEngine', () => {
     try {
       const store = createAppStore({
         kiro: new Kiro(),
-        agentEngine: 'rust',
+        agentEngine: 'v2',
       });
-      expect(store.getState().agentEngine).toBe('rust');
+      expect(store.getState().agentEngine).toBe('v2');
     } finally {
       if (prev === undefined) delete process.env.KIRO_AGENT_ENGINE;
       else process.env.KIRO_AGENT_ENGINE = prev;
@@ -64,10 +64,10 @@ describe('AppState.kasCommands', () => {
     expect(store.getState().kasCommands).toEqual([...KAS_COMMANDS]);
   });
 
-  it("initializes to [] when engine is 'rust'", () => {
+  it("initializes to [] when engine is 'v2'", () => {
     const store = createAppStore({
       kiro: new Kiro(),
-      agentEngine: 'rust',
+      agentEngine: 'v2',
     });
     expect(store.getState().kasCommands).toEqual([]);
   });

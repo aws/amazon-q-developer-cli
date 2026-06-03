@@ -13,6 +13,7 @@ import type { AppState } from '../src/stores/app-store';
 import { PtyManager, TerminalSnapshot } from '../src/test-utils/shared/pty-manager';
 import type { CellAttributes } from '../src/test-utils/shared/pty-manager';
 import { createTestDir, type TestPaths } from '../src/test-utils/shared/test-paths';
+import { requireChatCliBin } from '../src/utils/chat-cli-bin';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
 import type { MockStreamItem } from './types/chat-cli';
 import { AcpTestHelper } from './AcpTestHelper';
@@ -91,7 +92,7 @@ export class E2ETestCase {
       fs.writeFileSync(target, file.content);
     }
 
-    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
+    const chatPath = requireChatCliBin();
     const tuiJsPath = path.join(__dirname, '../dist/tui.js');
 
     this.sandboxEnv = {
@@ -165,7 +166,7 @@ export class E2ETestCase {
     ]);
 
     // Spawn the real CLI
-    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
+    const chatPath = requireChatCliBin();
     this.ptyManager.spawn(chatPath, ['chat', ...(this.options.extraCliArgs ?? [])]);
 
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);

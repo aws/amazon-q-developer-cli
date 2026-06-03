@@ -10,13 +10,7 @@
 
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
-import { logger } from '../utils/logger.js';
-import { type AgentStreamEvent } from '../types/agent-events.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
-import {
-  truncateToRecentTurns,
-  MAX_DISPLAY_TURNS,
-} from '../utils/truncate-history.js';
 import type {
   HookInfo,
   KnowledgeEntry,
@@ -28,6 +22,7 @@ import type { AvailableCommand } from '../types/commands.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
 import {
   describeSpecDocuments,
@@ -83,7 +78,6 @@ type EffectName =
   | 'quit'
   | 'pasteImage'
   | 'promptEditor'
-  | 'newSession'
   | 'loadSession'
   | 'replyEditor'
   | 'showCodePanel'
@@ -126,7 +120,6 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   knowledge: 'showKnowledgePanel',
   paste: 'pasteImage',
   editor: 'promptEditor',
-  chat: 'loadSession',
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
@@ -518,46 +511,12 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
   },
 
-  newSession: (_result, ctx, _cmd, args) => {
-    const prompt = args === 'new' ? null : args.slice(4).trim() || null;
-    ctx.clearUIState();
-    ctx.resetMessages();
-    ctx.setLoadingMessage('Starting new conversation...');
-    ctx.kiro
-      .newSession()
-      .then((session) => {
-        logger.debug('[chat] newSession resolved', {
-          sessionId: session.sessionId,
-        });
-        ctx.setLoadingMessage(null);
-        ctx.setSessionId(session.sessionId);
-        if (session.currentModel) ctx.setCurrentModel(session.currentModel);
-        if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
-        ctx.showAlert(
-          'New conversation started. Use /chat to switch back.',
-          'success',
-          3000
-        );
-        if (prompt) ctx.sendMessage(prompt);
-      })
-      .catch((err: unknown) => {
-        logger.error('[chat] newSession failed', {
-          err: JSON.stringify(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        });
-        ctx.setLoadingMessage(null);
-        const message = extractRpcErrorMessage(
-          err,
-          'Failed to start new conversation'
-        );
-        ctx.showAlert(message, 'error', 5000);
-      });
-    return true;
-  },
-
-  loadSession: (_result, ctx, _cmd, args) => {
-    // /rewind <idx> — backend cloned the session, now auto-load the new one.
-    // Detect via the switchSession flag so we don't collide with /chat semantics.
+  loadSession: (_result, ctx, _cmd, _args) => {
+    // Only invoked by `rewindAction` after the backend clones the
+    // session: it calls `effectHandlers.loadSession` directly with a
+    // synthetic `CommandResult` carrying `{switchSession, sessionId}`.
+    // /chat is owned by the v2-handlers / kas-handlers chat handlers
+    // and never reaches this effect.
     const resultData = _result?.data as
       | {
           sessionId?: string;
@@ -566,106 +525,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           resetMessagesBeforeReplay?: boolean;
         }
       | undefined;
-    const suppressAgentWelcome = resultData?.suppressAgentWelcome === true;
-    const resetMessagesBeforeReplay =
-      resultData?.resetMessagesBeforeReplay === true;
-    if (resultData?.switchSession && resultData.sessionId) {
-      if (!_result?.success) {
-        if (_result?.message) ctx.showAlert(_result.message, 'error', 5000);
-        return true;
-      }
-      args = resultData.sessionId;
-    }
-
-    if (!args) return;
-
-    // /chat save — show result and done
-    if (/^save\b/.test(args)) {
-      if (_result?.message) {
-        ctx.showAlert(
-          _result.message,
-          _result.success ? 'success' : 'error',
-          5000
-        );
-      }
+    if (!resultData?.switchSession || !resultData.sessionId) {
       return true;
     }
-
-    // /chat load <path> — backend imported the file, now auto-load the new session
-    if (/^load\b/.test(args)) {
-      const data = _result?.data as { sessionId?: string } | undefined;
-      if (!_result?.success || !data?.sessionId) {
-        if (_result?.message) {
-          ctx.showAlert(_result.message, 'error', 5000);
-        }
-        return true;
-      }
-      // Fall through to the session-load logic below with the imported session ID
-      args = data.sessionId;
+    if (!_result?.success) {
+      if (_result?.message) ctx.showAlert(_result.message, 'error', 5000);
+      return true;
     }
-
-    // /chat <sessionId> — load an existing session
-    const sessionId = args;
-    ctx.clearUIState();
-    if (resetMessagesBeforeReplay) {
-      // /rewind-only: drop the previous session's live messages so the
-      // forked session's replayed history doesn't stack on top of them
-      // (and more importantly, so stale turns from the old session don't
-      // appear to be part of the forked session's context).
-      ctx.resetMessages();
-    }
-    ctx.setLoadingMessage(`Loading session ${sessionId}...`);
-
-    // Buffer history events during load via direct onUpdate subscriber
-    const buffered: AgentStreamEvent[] = [];
-
-    ctx.kiro
-      .loadSession(sessionId, (e) => buffered.push(e))
-      .then((session) => {
-        logger.debug('[chat] loadSession resolved', {
-          sessionId,
-          bufferedCount: buffered.length,
-        });
-        // Add a visual delimiter before replaying history
-        ctx.addSystemMessage(`Loaded session ${sessionId}`, true);
-        // Replay buffered history into the message store, capped to recent turns
-        if (buffered.length > 0) {
-          const { events, omittedTurns } = truncateToRecentTurns(
-            buffered,
-            MAX_DISPLAY_TURNS
-          );
-          if (omittedTurns > 0) {
-            ctx.addSystemMessage(
-              `⋯ ${omittedTurns} earlier turn${omittedTurns === 1 ? '' : 's'} not shown`,
-              true
-            );
-          }
-          const handler = ctx.createStreamEventHandler();
-          for (const e of events) handler(e);
-          (handler as any).flush?.();
-        }
-        ctx.setLoadingMessage(null);
-        ctx.setSessionId(sessionId);
-        if (session.currentModel) ctx.setCurrentModel(session.currentModel);
-        if (session.currentAgent)
-          ctx.setCurrentAgent(session.currentAgent, {
-            suppressWelcome: suppressAgentWelcome,
-          });
-        ctx.showAlert('Session loaded', 'success', 3000);
-      })
-      .catch((err: unknown) => {
-        logger.error('[chat] loadSession failed', {
-          sessionId,
-          err: JSON.stringify(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        });
-        ctx.setLoadingMessage(null);
-        // Previously did `String((err as any).data)` which produces
-        // "[object Object]" when `data` is structured (e.g. KAS auth errors).
-        // Use the shared extractor that understands ACP's RequestError shape.
-        const message = extractRpcErrorMessage(err, 'Failed to load session');
-        ctx.showAlert(message, 'error', 5000);
-      });
+    runSessionLoad(resultData.sessionId, ctx, {
+      resetMessagesBeforeReplay: resultData.resetMessagesBeforeReplay === true,
+      suppressAgentWelcome: resultData.suppressAgentWelcome === true,
+    });
+    return true;
   },
 
   switchSession: (_result, ctx, _cmd, args) => {
@@ -1442,6 +1313,7 @@ export function copyToSystemClipboard(text: string): boolean {
 
   return false;
 }
+
 /**
  * Run effect for a command.
  * Returns true if the effect handled its own messaging (suppresses dispatcher step 4).
@@ -1453,11 +1325,7 @@ export function runEffect(
   args: string
 ): boolean {
   const cmdName = cmd.name.replace(/^\//, '');
-  let effectName = commandEffects[cmdName as CommandName];
-  // Route /chat new [prompt] to the dedicated newSession handler
-  if (cmdName === 'chat' && (args === 'new' || args.startsWith('new '))) {
-    effectName = 'newSession';
-  }
+  const effectName = commandEffects[cmdName as CommandName];
   if (effectName) {
     return effectHandlers[effectName]?.(result, ctx, cmd, args) === true;
   }

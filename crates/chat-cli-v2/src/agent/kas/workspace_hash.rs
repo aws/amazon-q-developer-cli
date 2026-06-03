@@ -54,7 +54,7 @@ pub(crate) fn normalize_path(file_path: &str) -> String {
 /// Empty input -> the special `_global` bucket. Any non-empty input is
 /// normalized per-path, sorted (so order does not matter), joined with
 /// NUL bytes, SHA-256'd, and truncated to the first 16 hex chars.
-pub(crate) fn compute_workspace_hash(workspace_paths: &[String]) -> String {
+pub fn compute_workspace_hash(workspace_paths: &[String]) -> String {
     if workspace_paths.is_empty() {
         return GLOBAL_WORKSPACE_HASH.to_string();
     }

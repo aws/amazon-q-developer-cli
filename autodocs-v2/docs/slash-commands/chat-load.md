@@ -38,7 +38,6 @@ The `/chat load` command imports a conversation from a saved session file. Suppo
 | Kiro | `kiro-session-export-v1` JSON (created by `/chat save`) |
 | Zip | Archive containing `session_metadata.json` + `conversation_log.jsonl` |
 | Legacy | V1 `ConversationState` JSON from older CLI versions |
-| SessionDataOnly | Bare `SessionData` JSON with optional companion `.jsonl` file |
 
 ## How It Works
 

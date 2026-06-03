@@ -658,7 +658,15 @@ impl SessionManager {
             } => {
                 let config = *boxed_config;
 
-                // If loading an existing session that doesn't exist as V2, try exporting from V1
+                // If loading an existing session that doesn't exist as V2, try exporting from V1.
+                //
+                // TODO: route this through `chat _ ensure-session
+                // --target-format v2` so the conversion lives in one
+                // place. The host (TUI / autocomplete / external ACP
+                // client) would call `ensure-session` before
+                // `session/load`, and this lazy fallback can be
+                // deleted once every known caller is confirmed to do
+                // so.
                 if config.load
                     && let Ok(sessions_dir) = crate::util::paths::sessions_dir()
                     && !crate::agent::session::session_exists(&sessions_dir, &config.session_id)

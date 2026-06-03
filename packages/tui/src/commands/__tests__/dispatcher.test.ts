@@ -1,4 +1,17 @@
 import { describe, it, expect, mock, afterAll, spyOn } from 'bun:test';
+import type { ListAllSessionsResult } from '../../utils/list-all-sessions-cli';
+
+const listAllSessionsMock = mock<() => Promise<ListAllSessionsResult>>(() =>
+  Promise.resolve({ ok: false, error: 'not stubbed' })
+);
+mock.module('../../utils/list-all-sessions-cli', () => ({
+  listAllSessions: () => listAllSessionsMock(),
+}));
+
+const resolveAgentEngineMock = mock<() => 'kas' | 'v2'>(() => 'v2');
+mock.module('../../agent-engine', () => ({
+  resolveAgentEngine: () => resolveAgentEngineMock(),
+}));
 
 // Prevent /editor effect from spawning a real $EDITOR subprocess during tests.
 const mockSpawnSync = mock(() => ({ status: 1 }));
@@ -239,34 +252,12 @@ describe('dispatch - additional coverage', () => {
     });
   });
 
-  describe('/chat options fetched via kiro.listSessions', () => {
-    it('formats sessions with relative time', async () => {
-      const ctx = createMockCommandContext();
-      (ctx.kiro as any).listSessions = mock(() =>
-        Promise.resolve({
-          sessions: [
-            {
-              sessionId: 'abc12345-def',
-              title: 'My Chat',
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-        })
-      );
-      (ctx.kiro as any).sessionId = 'current-session';
-
-      const cmd = makeCmd({
-        name: '/chat',
-        meta: { inputType: 'selection', local: true },
-      });
-      await dispatch(cmd, '', ctx);
-
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      expect(call[0].options).toHaveLength(1);
-      expect(call[0].options[0].label).toContain('My Chat');
-      expect(call[0].options[0].value).toBe('abc12345-def');
-    });
+  describe('/chat options fetched via merged --list-sessions', () => {
+    // /chat option formatting moved into v2-handlers/chat.ts and
+    // kas-handlers/chat.ts. Coverage lives in those handlers' test
+    // files; the dispatcher's routing of /chat is exercised by
+    // kas-intercept.test.ts.
+    it.skip('see v2-handlers/chat tests + kas-intercept.test.ts', () => {});
   });
 
   describe('selection with no options', () => {

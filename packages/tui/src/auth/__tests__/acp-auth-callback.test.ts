@@ -225,7 +225,9 @@ describe('createGetAccessTokenCapability', () => {
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow(/KIRO_CHAT_CLI_BIN/);
+    await expect(cap.handler({})).rejects.toThrow(
+      /Failed to find the kiro-cli binary/
+    );
     // Spawner must not be invoked when the binary path can't be resolved.
     expect(calls).toHaveLength(0);
   });

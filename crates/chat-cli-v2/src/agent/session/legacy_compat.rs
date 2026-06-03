@@ -25,11 +25,21 @@ use chrono::{
 
 /// Error from a V1 export operation.
 #[derive(Debug, thiserror::Error)]
-#[error("{message}")]
-pub struct LegacyExportError {
-    pub message: String,
-    #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+pub enum LegacyExportError {
+    /// The V1 conversation does not exist in the source store.
+    /// Discriminated separately so callers can map this to a
+    /// not-found response without string-matching the message.
+    #[error("V1 conversation not found: {conversation_id}")]
+    NotFound { conversation_id: String },
+
+    /// Any other failure during export (I/O, lock acquisition,
+    /// serialization, etc.).
+    #[error("{message}")]
+    Other {
+        message: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }
 
 /// Lightweight V1 session info for listing in the V2 session picker.
@@ -100,7 +110,7 @@ impl LegacySessionExporter for NoOpLegacySessionExporter {
         _sessions_dir: &Path,
         _imported_from: Option<&Path>,
     ) -> Result<(), LegacyExportError> {
-        Err(LegacyExportError {
+        Err(LegacyExportError::Other {
             message: "V1 export not available".into(),
             source: None,
         })

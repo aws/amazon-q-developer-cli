@@ -14,6 +14,7 @@ import * as fs from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Writable, Readable } from 'node:stream';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
+import { requireChatCliBin } from '../src/utils/chat-cli-bin';
 import type { MockStreamItem } from './types/chat-cli';
 
 export interface AcpTestHelperOptions {
@@ -58,7 +59,7 @@ export class AcpTestHelper {
       });
     });
 
-    const chatPath = path.join(__dirname, '../../../target/debug/chat_cli');
+    const chatPath = requireChatCliBin();
 
     // Reuse the sandbox env but override IPC socket and log paths
     const proc = spawn(chatPath, ['acp'], {

@@ -8,16 +8,12 @@
  */
 
 import type { CommandContext } from './types.js';
-import type {
-  AvailableCommand,
-  TuiCommand,
-  CommandOption,
-} from '../types/commands.js';
+import type { AvailableCommand, TuiCommand } from '../types/commands.js';
 import { runEffect } from './effects.js';
 import { kasHandlers } from './kas-handlers/index.js';
+import { handleChat as handleV2Chat } from './v2-handlers/chat.js';
 import { isKasCommand } from '../kas-commands.js';
 import { startPTTRecording } from './voice-helper.js';
-import { formatRelativeTime } from '../utils/sessions.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 
 export interface DispatchOptions {
@@ -51,6 +47,14 @@ export async function dispatch(
       await handler(cmd, args, ctx, options);
       return;
     }
+  }
+
+  // V2 /chat intercept: a parallel handler owns the full /chat flow
+  // (picker, save/load delegation, new, ensure-session conversion)
+  // when the active engine is V2. Mirrors the KAS intercept above.
+  if (cmd.name === '/chat') {
+    await handleV2Chat(cmd, args, ctx, options);
+    return;
   }
 
   // Handle prompt, skill, and steering commands - send as regular message,
@@ -129,21 +133,10 @@ export async function dispatch(
     if (inputType === 'selection') {
       try {
         ctx.setLoadingMessage(`Loading ${cmdName} options...`);
-        // TODO - dispatch flow needs to be thought through more, coupling slash commands
-        // all within the same dispatch flow doesn't seem right.
-        //
-        // /chat -> use listSessions API, fallback to extension method
-        const options =
-          cmdName === 'chat'
-            ? await fetchChatOptions(ctx)
-            : (await ctx.kiro.getCommandOptions(cmd.name, '')).options;
+        const { options } = await ctx.kiro.getCommandOptions(cmd.name, '');
         ctx.setLoadingMessage(null);
         if (options.length > 0) {
           ctx.setActiveCommand({ command: cmd, options });
-          return;
-        }
-        if (cmdName === 'chat') {
-          ctx.showAlert('No previous sessions found', 'error', 3000);
           return;
         }
         if (cmdName === 'effort') {
@@ -163,11 +156,9 @@ export async function dispatch(
       ctx.setActiveCommand({ command: cmd, options: [] });
     }
   }
-  // 2. Execute backend (skip for local commands, but /chat subcommands go to backend)
-  const isChatSubcommand =
-    cmdName === 'chat' && args && /^(save|load)\b/.test(args);
+  // 2. Execute backend (skip for local commands).
   let result = null;
-  if (!isLocal || isChatSubcommand) {
+  if (!isLocal) {
     // Show loading for agent swap
     const isSubcommand =
       args === 'create' ||
@@ -207,17 +198,4 @@ export async function dispatch(
   ) {
     ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
   }
-}
-
-async function fetchChatOptions(ctx: CommandContext): Promise<CommandOption[]> {
-  const { sessions } = await ctx.kiro.listSessions(process.cwd());
-  const currentSessionId = ctx.kiro.sessionId;
-  return sessions
-    .filter((s) => s.sessionId !== currentSessionId)
-    .filter((s) => s.title != null)
-    .map((s) => ({
-      value: s.sessionId,
-      label: `${s.title!} (${s.sessionId.slice(0, 8)})`,
-      description: s.updatedAt ? formatRelativeTime(s.updatedAt) : undefined,
-    }));
 }
