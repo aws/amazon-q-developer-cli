@@ -55,7 +55,7 @@ The agent will:
 If you prefer not to use the agent:
 
 1. Check [existing issues](https://github.com/kiro-team/kiro-cli/issues) for duplicates
-2. Create a [Taskei issue](https://taskei.amazon.dev/rooms/0205a00e-4757-425d-bde0-e06884dce83e) describing the problem or feature
+2. Create a [Taskei issue](https://taskei.amazon.dev/tasks/create?template=8283add4-5d01-45c9-8007-fc1cef12f838) describing the problem or feature
 3. Wait for acknowledgment on non-trivial changes (see [Proposals](#proposals-non-trivial-changes))
 4. Then open your PR
 
