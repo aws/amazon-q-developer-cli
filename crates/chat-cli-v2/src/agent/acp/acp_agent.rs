@@ -1932,8 +1932,15 @@ impl AcpSession {
                                 }
                             }
 
-                            // Send result message as a text chunk so the TUI displays it
-                            if !result.message.is_empty() {
+                            // Don't send result.message as AgentMessageChunk for goal-set:
+                            // it would merge with the agent's streaming output. The goal
+                            // status notification already surfaces the set confirmation.
+                            let is_goal_set = result.success
+                                && result
+                                    .data
+                                    .as_ref()
+                                    .is_some_and(|d| d.get("goal_action").and_then(|a| a.as_str()) == Some("set"));
+                            if !result.message.is_empty() && !is_goal_set {
                                 let _ = self.send_session_notification(SessionUpdate::AgentMessageChunk(
                                     SacpContentChunk::new(ContentBlock::Text(TextContent::new(format!(
                                         "{}\n",

@@ -761,6 +761,7 @@ mod tests {
             },
             permissions: RuntimePermissions::default(),
             agent_name: Some(name.to_string()),
+            goal: None,
         })
     }
 
