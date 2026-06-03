@@ -73,20 +73,29 @@ pub async fn list_all_available_profiles(
     list_profiles_from_endpoints(env, fs, database, &Endpoint::all()).await
 }
 
+/// Decide which endpoints to query when listing profiles.
+/// Priority: `api.cps.service` override → custom `api.codewhisperer.service` → region fan-out.
+/// A CPS override is a single global endpoint, so it collapses the fan-out to one query.
+fn resolve_profile_endpoints(database: &Database, endpoints: &[Endpoint]) -> Vec<Endpoint> {
+    if let Some(cps) = super::parse_endpoint_setting(database, crate::database::settings::Setting::ApiCpsService) {
+        debug!(endpoint = ?cps, "Using CPS endpoint override");
+        return vec![cps];
+    }
+    let configured = Endpoint::configured_value(database);
+    if Endpoint::is_custom(&configured) {
+        debug!(endpoint = ?configured, "Using custom endpoint");
+        return vec![configured];
+    }
+    endpoints.to_vec()
+}
+
 async fn list_profiles_from_endpoints(
     env: &Env,
     fs: &Fs,
     database: &mut Database,
     endpoints: &[Endpoint],
 ) -> Result<Vec<AuthProfile>, ApiClientError> {
-    // Check if custom endpoint is configured
-    let configured = Endpoint::configured_value(database);
-    let endpoints = if Endpoint::is_custom(&configured) {
-        debug!(endpoint = ?configured, "Using custom endpoint");
-        vec![configured]
-    } else {
-        endpoints.to_vec()
-    };
+    let endpoints = resolve_profile_endpoints(database, endpoints);
 
     let mut profiles = vec![];
     for endpoint in endpoints {
@@ -164,5 +173,32 @@ mod tests {
         let client = ApiClient::new(&env, &fs, &mut database, None).await.unwrap();
         // Should return an error (no real API key), not panic
         let _ = client.get_profile_for_api_key().await;
+    }
+
+    #[tokio::test]
+    async fn resolve_endpoints_uses_cps_override_when_set() {
+        let mut database = Database::new_default().await.unwrap();
+        database
+            .settings
+            .set(
+                crate::database::settings::Setting::ApiCpsService,
+                serde_json::json!({ "endpoint": "http://localhost:8844", "region": "us-west-2" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let fanout = vec![Endpoint::DEFAULT_ENDPOINT, Endpoint::FRA_ENDPOINT];
+        let resolved = resolve_profile_endpoints(&database, &fanout);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].url(), "http://localhost:8844");
+        assert_eq!(resolved[0].region(), &Region::new("us-west-2"));
+    }
+
+    #[tokio::test]
+    async fn resolve_endpoints_falls_back_to_fanout_without_override() {
+        let database = Database::new_default().await.unwrap();
+        let fanout = vec![Endpoint::DEFAULT_ENDPOINT, Endpoint::FRA_ENDPOINT];
+        assert_eq!(resolve_profile_endpoints(&database, &fanout), fanout);
     }
 }
