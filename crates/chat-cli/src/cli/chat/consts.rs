@@ -20,3 +20,15 @@ pub const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";
 pub const USER_AGENT_APP_NAME: &str = "AmazonQ-For-CLI";
 pub const USER_AGENT_VERSION_KEY: &str = "Version";
 pub const USER_AGENT_VERSION_VALUE: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    /// `USER_AGENT_VERSION_VALUE` is sent to KRS as the `appVersion` header,
+    /// which gates "thinking" on `>= 2.4.0`. The `0.0.0-dev` placeholder must
+    /// never leak into a built binary — `build.rs` maps it to `99.99.99-dev`
+    /// for local dev. Don't remove without removing that map.
+    #[test]
+    fn cli_version_is_not_dev_placeholder() {
+        assert_ne!(super::USER_AGENT_VERSION_VALUE, "0.0.0-dev");
+    }
+}

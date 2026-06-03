@@ -49,11 +49,32 @@ pub const KIRO_ACP_CLIENT_NAME: &str = "kiro-tui";
 
 #[cfg(test)]
 mod tests {
+    /// `env!("CARGO_PKG_VERSION")` flows outbound to KRS as the `appVersion`
+    /// header, which gates "thinking" on `>= 2.4.0`. The `0.0.0-dev`
+    /// placeholder must never leak into a built binary — `build.rs` maps it to
+    /// `99.99.99-dev` for local dev. Don't remove without removing that map.
+    #[test]
+    fn cli_version_is_not_dev_placeholder() {
+        assert_ne!(env!("CARGO_PKG_VERSION"), "0.0.0-dev");
+    }
+
+    /// Source-level guard: the workspace `Cargo.toml` and `package.json` must
+    /// ship the same placeholder so the tag-driven release bumps them together.
+    /// Reads the raw `Cargo.toml` version, not `env!("CARGO_PKG_VERSION")`,
+    /// which `build.rs` rewrites to `99.99.99-dev` for local dev.
     #[test]
     fn tui_package_json_version_matches_cargo_version() {
-        let cargo_version = env!("CARGO_PKG_VERSION");
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let pkg_json_path = std::path::Path::new(manifest_dir).join("../../packages/tui/package.json");
+        let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let cargo_toml =
+            std::fs::read_to_string(workspace_root.join("Cargo.toml")).expect("failed to read workspace Cargo.toml");
+        let cargo_version = cargo_toml
+            .lines()
+            .skip_while(|l| !l.starts_with("[workspace.package]"))
+            .find_map(|l| l.strip_prefix("version = "))
+            .map(|v| v.trim().trim_matches('"'))
+            .expect("missing [workspace.package] version in Cargo.toml");
+
+        let pkg_json_path = workspace_root.join("packages/tui/package.json");
         let pkg_json: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(&pkg_json_path)
                 .unwrap_or_else(|e| panic!("failed to read {}: {e}", pkg_json_path.display())),

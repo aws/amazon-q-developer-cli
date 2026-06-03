@@ -479,11 +479,19 @@ fn embed_bun_and_tui() {
 
 /// When `KIRO_VERSION` env var is set, override `CARGO_PKG_VERSION` so all
 /// `env!("CARGO_PKG_VERSION")` callsites report the release version.
+///
+/// Otherwise, when `Cargo.toml` still carries the `0.0.0-dev` placeholder
+/// (local dev — CI replaces it via `KIRO_VERSION` and/or sed), default to
+/// `99.99.99-dev`. KRS gates "thinking" on `appVersion >= 2.4.0`, so a
+/// `0.0.0-dev` build would silently disable thinking on every dev session.
+/// The placeholder check ensures a real sed'd version is never clobbered.
 fn inject_kiro_version() {
     println!("cargo:rerun-if-env-changed=KIRO_VERSION");
     if let Ok(version) = std::env::var("KIRO_VERSION")
         && !version.is_empty()
     {
         println!("cargo:rustc-env=CARGO_PKG_VERSION={version}");
+    } else if matches!(std::env::var("CARGO_PKG_VERSION").as_deref(), Ok("0.0.0-dev")) {
+        println!("cargo:rustc-env=CARGO_PKG_VERSION=99.99.99-dev");
     }
 }
