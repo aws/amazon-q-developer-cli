@@ -42,7 +42,15 @@ import type {
   TuiCommand,
 } from './types/commands';
 import type { ListSessionsResponse } from './types/session-client';
-import type { HookInfo, McpServerInfo } from './stores/app-store';
+import type {
+  HookInfo,
+  McpServerInfo,
+  ContextBreakdownData,
+} from './stores/app-store';
+import type {
+  KasContextShowResponse,
+  KasContextMutationResponse,
+} from './types/session-client';
 
 import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
@@ -2137,19 +2145,6 @@ export class KasAcpClient extends BaseAcpClient {
         });
         return { success: true, message: 'Compacting conversation...' };
       }
-      case 'context': {
-        if (this.cachedBreakdown) {
-          return {
-            success: true,
-            message: '',
-            data: { breakdown: this.cachedBreakdown, initialExpanded: true },
-          };
-        }
-        return {
-          success: true,
-          message: 'Context breakdown not yet available. Try again shortly.',
-        };
-      }
       case 'code': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -2447,6 +2442,84 @@ export class KasAcpClient extends BaseAcpClient {
       success: true,
       message: data?.message ?? '',
     };
+  }
+
+  /**
+   * Routes /context subcommands (show/add/remove/clear) to the agent's
+   * `_kiro/session/context` ACP ext method.
+   *
+   * Each public method below is a 1:1 typed wrapper over a single
+   * `callExtMethod('_kiro/session/context', { subcommand, ... })` call —
+   * no parsing, no flag handling, no aliases. All of that lives in
+   * `kas-handlers/context.ts` so this client stays a thin
+   * type-safe wrapper.
+   *
+   * The wire shape mirrors the (forthcoming) typed `ContextParams` in
+   * `@kiro/acp-type-covenant`: a discriminated union on `subcommand`.
+   * See the inline TODO in `types/session-client.ts` for the bump-then-
+   * import follow-up.
+   */
+  async contextShow(): Promise<KasContextShowResponse> {
+    const result = await this.callExtMethod('_kiro/session/context', {
+      subcommand: 'show',
+    });
+    if (!result.success) {
+      // RPC-level failure — surface as an exception so the handler's
+      // try/catch path runs and shows a clean error alert.
+      throw new Error(result.message || '/context show failed');
+    }
+    const data = result.data as KasContextShowResponse | undefined;
+    return { entries: data?.entries ?? [], message: data?.message };
+  }
+
+  async contextAdd(
+    path: string,
+    opts?: { force?: boolean }
+  ): Promise<KasContextMutationResponse> {
+    const params: Record<string, unknown> = {
+      subcommand: 'add',
+      path,
+    };
+    if (opts?.force) params.force = true;
+    return this.contextMutation(params);
+  }
+
+  async contextRemove(path: string): Promise<KasContextMutationResponse> {
+    return this.contextMutation({ subcommand: 'remove', path });
+  }
+
+  async contextClear(): Promise<KasContextMutationResponse> {
+    return this.contextMutation({ subcommand: 'clear' });
+  }
+
+  /**
+   * Shared dispatch for add/remove/clear.  The agent encodes its own
+   * domain-level success/failure inside the response payload (e.g. add
+   * reports `success: false` for "path not found"), distinct from the
+   * RPC-level success of the call. Surface the inner flag so the
+   * handler can pick the right alert tone.
+   */
+  private async contextMutation(
+    params: Record<string, unknown>
+  ): Promise<KasContextMutationResponse> {
+    const result = await this.callExtMethod('_kiro/session/context', params);
+    if (!result.success) {
+      throw new Error(result.message || `/context ${params.subcommand} failed`);
+    }
+    const data = result.data as KasContextMutationResponse | undefined;
+    return {
+      success: data?.success !== false,
+      message: data?.message,
+    };
+  }
+
+  /**
+   * Latest context-usage breakdown pushed via session_info_update, or
+   * null if none has arrived yet. The /context handler uses this to
+   * open the panel from cache without a round-trip.
+   */
+  getCachedContextBreakdown(): ContextBreakdownData | null {
+    return (this.cachedBreakdown as ContextBreakdownData | null) ?? null;
   }
 
   private async executeCode(subcommand: string): Promise<CommandResult> {

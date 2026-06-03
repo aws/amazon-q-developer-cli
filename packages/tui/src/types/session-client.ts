@@ -6,6 +6,7 @@ import type {
   SpecResolveSessionResponse,
 } from '@kiro/acp-type-covenant';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
+import type { ContextBreakdownData } from '../stores/app-store';
 import type { AgentStreamEvent } from './agent-events';
 import type {
   CommandOptionsResponse,
@@ -13,6 +14,48 @@ import type {
   TuiCommand,
 } from './commands';
 import type { ModeChangedNotification } from './generated/chat-cli';
+
+// ── KAS /context wire shapes ──────────────────────────────────────────
+// TODO: Replace these inline definitions with the typed `ContextParams`
+// / `ContextResponse` exports from `@kiro/acp-type-covenant` once the
+// kiro-agent PR (https://github.com/kiro-team/kiro-agent/pull/844) lands
+// and the package is bumped past 0.3.11.
+
+/**
+ * One entry in the agent's attached-files list returned by
+ * `_kiro/session/context show` when no breakdown has been pushed yet.
+ */
+export interface KasContextEntry {
+  path: string;
+  category?: string;
+  /**
+   * False when the path no longer resolves on disk — the handler
+   * surfaces these with a ⚠ glyph and downgrades the alert tone.
+   */
+  matched?: boolean;
+}
+
+/**
+ * Response payload for the `show` subcommand.  Either populated with the
+ * agent's attached-files list, or empty (the handler then renders a soft
+ * "no context attached" warning).
+ */
+export interface KasContextShowResponse {
+  entries?: KasContextEntry[];
+  message?: string;
+}
+
+/**
+ * Response payload for `add` / `remove` / `clear` subcommands.
+ *
+ * `success` here is the agent's *domain-level* success (e.g. add reports
+ * `success: false` for "path not found"). Distinct from JSON-RPC success
+ * — RPC failures throw and never reach this shape.
+ */
+export interface KasContextMutationResponse {
+  success?: boolean;
+  message?: string;
+}
 
 /**
  * Light abstraction over the Agent Client Protocol (ACP) for interacting with the Kiro CLI agent.
@@ -221,6 +264,29 @@ export interface SessionClient {
    * Fire-and-forget — implementations should not throw.
    */
   sendModeChanged?(payload: ModeChangedNotification): void;
+
+  // ── KAS /context ext methods ───────────────────────────────────────
+  // Each method maps 1:1 to a `_kiro/session/context` call with the
+  // matching `subcommand`. Implemented only by engines that support the
+  // ext method (currently KAS); the `Kiro` wrapper checks for presence
+  // and throws "Context management is not supported" when absent.
+
+  contextShow?(): Promise<KasContextShowResponse>;
+  contextAdd?(
+    path: string,
+    opts?: { force?: boolean }
+  ): Promise<KasContextMutationResponse>;
+  contextRemove?(path: string): Promise<KasContextMutationResponse>;
+  contextClear?(): Promise<KasContextMutationResponse>;
+
+  /**
+   * Latest context-usage breakdown pushed via `session_info_update`
+   * notifications, or `null` if none has been pushed yet.
+   *
+   * Used by the /context handler to short-circuit the panel open without
+   * a round-trip to the agent. KAS-only.
+   */
+  getCachedContextBreakdown?(): ContextBreakdownData | null;
 }
 
 /**

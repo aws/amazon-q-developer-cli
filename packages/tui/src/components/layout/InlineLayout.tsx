@@ -501,6 +501,15 @@ export const InlineLayout: React.FC = () => {
 
   const handleTabFromUsage = useCallback(async () => {
     try {
+      // KAS: prefer the typed cached breakdown — no round-trip required.
+      const cached = kiro.getCachedContextBreakdown();
+      if (cached) {
+        setShowContextBreakdown(true, cached);
+        setShowUsagePanel(false);
+        return;
+      }
+      // V2 Rust: fall back to the engine-specific executeCommand path,
+      // which returns the breakdown inline.
       const result = await kiro.executeCommand({
         command: 'context',
         args: {},

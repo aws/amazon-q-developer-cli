@@ -4,6 +4,7 @@ import type { DispatchOptions } from '../dispatcher';
 import { KasCommandName } from '../../kas-commands';
 import { handleChat } from './chat';
 import { handleCompact } from './compact';
+import { handleContext } from './context';
 import { handleHooks } from './hooks';
 import { handlePrompts } from './prompts';
 
@@ -26,6 +27,7 @@ export type KasHandler = (
 export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Chat]: handleChat,
   [KasCommandName.Compact]: handleCompact,
+  [KasCommandName.Context]: handleContext,
   [KasCommandName.Hooks]: handleHooks,
   [KasCommandName.Prompts]: handlePrompts,
 };

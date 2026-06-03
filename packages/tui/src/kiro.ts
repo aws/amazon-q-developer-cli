@@ -13,8 +13,11 @@ import type { ProcessHealthSnapshot } from './utils/process-health-collector';
 import type {
   SessionClient,
   ListSessionsResponse,
+  KasContextShowResponse,
+  KasContextMutationResponse,
 } from './types/session-client';
 import type { ModeChangedNotification } from './types/generated/chat-cli';
+import type { ContextBreakdownData } from './stores/app-store';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -224,6 +227,72 @@ export class Kiro {
       );
     }
     return this.sessionClient.invokeSpec(request);
+  }
+
+  // ── KAS /context ext methods ─────────────────────────────────────────
+  // Each method below is a KAS-only thin wrapper around the matching
+  // `SessionClient.context*` typed method. Throws "Context management
+  // not supported" when the underlying session client doesn't expose the
+  // ext method (i.e. V1/V2-Rust engines).
+
+  async contextShow(): Promise<KasContextShowResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.contextShow) {
+      throw new Error(
+        'Context management is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.contextShow();
+  }
+
+  async contextAdd(
+    path: string,
+    opts?: { force?: boolean }
+  ): Promise<KasContextMutationResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.contextAdd) {
+      throw new Error(
+        'Context management is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.contextAdd(path, opts);
+  }
+
+  async contextRemove(path: string): Promise<KasContextMutationResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.contextRemove) {
+      throw new Error(
+        'Context management is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.contextRemove(path);
+  }
+
+  async contextClear(): Promise<KasContextMutationResponse> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.contextClear) {
+      throw new Error(
+        'Context management is not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.contextClear();
+  }
+
+  /**
+   * Latest context-usage breakdown pushed via `session_info_update`,
+   * or `null` if the underlying session client doesn't expose one
+   * (V1/V2-Rust) or hasn't received one yet (KAS, pre-first-event).
+   */
+  getCachedContextBreakdown(): ContextBreakdownData | null {
+    return this.sessionClient?.getCachedContextBreakdown?.() ?? null;
   }
 
   async sendMessage(sessionId: string, content: string): Promise<void> {

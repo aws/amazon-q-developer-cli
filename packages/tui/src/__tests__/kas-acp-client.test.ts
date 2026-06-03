@@ -1362,38 +1362,186 @@ describe('KasAcpClient', () => {
     });
   });
 
-  // ── /context command ──
+  // ── /context typed methods ──
+  // These tests assert the wire shape sent to `_kiro/session/context`.
+  // All slash-command parsing (subcommand normalize, rm alias, --force,
+  // unquote) lives in the kas-handler — see kas-handlers/__tests__/context.test.ts
+  // for that coverage.
 
-  describe('context command', () => {
-    it('returns cached breakdown when available', async () => {
+  describe('context typed methods', () => {
+    it('contextShow(): calls _kiro/session/context with subcommand=show and returns entries', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        entries: [{ path: 'foo.ts', matched: true }],
+      });
       const client = new KasAcpClient();
       await client.initialize();
       await client.newSession();
-      // Simulate receiving a push notification with breakdown
-      (client as any).cachedBreakdown = {
-        contextFiles: { tokens: 100, percent: 5 },
-      };
 
-      const result = await client.executeCommand({
-        command: 'context',
-      } as any);
+      const result = await client.contextShow();
 
-      expect(result.success).toBe(true);
-      expect((result.data as any).breakdown).toBeDefined();
-      expect((result.data as any).initialExpanded).toBe(true);
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/session/context',
+        expect.objectContaining({ subcommand: 'show' })
+      );
+      expect(result.entries).toEqual([{ path: 'foo.ts', matched: true }]);
     });
 
-    it('returns loading message when no breakdown is cached yet', async () => {
+    it('contextShow(): defaults missing entries to []', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({});
       const client = new KasAcpClient();
       await client.initialize();
       await client.newSession();
 
-      const result = await client.executeCommand({
-        command: 'context',
-      } as any);
+      const result = await client.contextShow();
 
+      expect(result.entries).toEqual([]);
+    });
+
+    it('contextAdd(): calls with subcommand=add + path, omits force when not set', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: true,
+        message: "Added 'foo.ts' to context",
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const result = await client.contextAdd('foo.ts');
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/session/context',
+        expect.objectContaining({ subcommand: 'add', path: 'foo.ts' })
+      );
+      // When force is not set, the wire payload must not carry the key —
+      // assert the absence so the agent never sees `force: false`.
+      const params = (mockKiroSendExtMethod as any).mock.calls[0][1];
+      expect('force' in params).toBe(false);
       expect(result.success).toBe(true);
-      expect(result.message).toContain('not yet available');
+      expect(result.message).toContain('Added');
+    });
+
+    it('contextAdd(): forwards force=true when opts.force', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: true,
+        message: "Added 'tool-output.json' to context",
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await client.contextAdd('tool-output.json', { force: true });
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/session/context',
+        expect.objectContaining({
+          subcommand: 'add',
+          path: 'tool-output.json',
+          force: true,
+        })
+      );
+    });
+
+    it('contextAdd(): omits force when opts.force is false', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: true,
+        message: 'ok',
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await client.contextAdd('foo.ts', { force: false });
+
+      const params = (mockKiroSendExtMethod as any).mock.calls[0][1];
+      expect('force' in params).toBe(false);
+    });
+
+    it('contextRemove(): calls with subcommand=remove + path', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: true,
+        message: "Removed 'foo.ts' from context",
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await client.contextRemove('foo.ts');
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/session/context',
+        expect.objectContaining({ subcommand: 'remove', path: 'foo.ts' })
+      );
+    });
+
+    it('contextClear(): calls with subcommand=clear and no path', async () => {
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: true,
+        message: 'Cleared 2 context entries',
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const result = await client.contextClear();
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/session/context',
+        expect.objectContaining({ subcommand: 'clear' })
+      );
+      const params = (mockKiroSendExtMethod as any).mock.calls[0][1];
+      expect('path' in params).toBe(false);
+      expect(result.message).toContain('Cleared');
+    });
+
+    it('mutations: surface inner success=false (path-not-found) on the typed return', async () => {
+      // The agent encodes domain-level success/failure inside the response
+      // payload, distinct from RPC-level success. The typed wrapper has to
+      // propagate that flag so the handler picks the right alert tone.
+      mockKiroSendExtMethod.mockResolvedValueOnce({
+        success: false,
+        message: 'Path not found: ghost.ts',
+      });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const result = await client.contextAdd('ghost.ts');
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Path not found');
+    });
+
+    it('contextShow(): RPC-level failure throws so the handler hits the catch path', async () => {
+      // sendExtMethod rejecting models the JSON-RPC layer error path
+      // (transport failure, method-not-found, etc.). callExtMethod
+      // captures it as success:false; the typed wrapper escalates it
+      // to an exception so the handler can show a clean error alert.
+      mockKiroSendExtMethod.mockRejectedValueOnce(
+        new Error('method not found')
+      );
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      await expect(client.contextShow()).rejects.toThrow('method not found');
+    });
+
+    it('getCachedContextBreakdown(): null until session_info_update populates it', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      expect(client.getCachedContextBreakdown()).toBeNull();
+    });
+
+    it('getCachedContextBreakdown(): returns the cached breakdown once set', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const breakdown = { contextFiles: { tokens: 100, percent: 5 } };
+      (client as any).cachedBreakdown = breakdown;
+
+      expect(client.getCachedContextBreakdown()).toBe(breakdown);
     });
   });
 
