@@ -85,8 +85,10 @@ export const SESSION_FEEDBACK_SURVEY: SurveyDefinition = {
   aperture: { category: 'KiroCLI', name: 'SessionFeedback', version: '1.0.0' },
   title: 'Research question',
   notificationMessage: 'How did Kiro do?',
-  sampleRate: 0.05,
-  cooldownDays: 90,
+  // 100% sample, 30-day cooldown — session pulse is independent of the
+  // plan/implement pair.
+  sampleRate: 1.0,
+  cooldownDays: 30,
   questions: [
     {
       id: 'experience',
@@ -179,7 +181,7 @@ export const IMPLEMENT_PLAN_SURVEY: SurveyDefinition = {
   title: 'Implementation feedback',
   notificationMessage: 'How was the implementation?',
   sampleRate: 1.0, // Only shown if plan-quality was shown — no independent sampling.
-  cooldownDays: 90, // Shared cooldown with all surveys.
+  cooldownDays: 90, // Shared cooldown with PLAN_QUALITY_SURVEY only (plan/implement pair).
   questions: [
     {
       id: 'implementation_quality',

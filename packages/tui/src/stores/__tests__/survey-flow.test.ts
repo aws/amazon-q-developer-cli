@@ -337,8 +337,12 @@ describe('Survey flow integration', () => {
     const { loadSurveyState } = await import('../../utils/survey-state.js');
     const planState = loadSurveyState('plan-quality');
     const implState = loadSurveyState('implement-plan');
+    const sessionState = loadSurveyState('session-feedback');
     expect(planState.lastCompletedAt).not.toBeNull();
     expect(implState.lastCompletedAt).not.toBeNull();
+    // session-feedback must remain untouched (would fail under old
+    // shared-mark-everything behavior).
+    expect(sessionState.lastCompletedAt).toBeNull();
   });
 
   it('dismissing implement-plan survey sets cooldown for both', async () => {
@@ -358,27 +362,113 @@ describe('Survey flow integration', () => {
     const { loadSurveyState } = await import('../../utils/survey-state.js');
     const planState = loadSurveyState('plan-quality');
     const implState = loadSurveyState('implement-plan');
+    const sessionState = loadSurveyState('session-feedback');
     expect(planState.lastShownAt).not.toBeNull();
     expect(implState.lastShownAt).not.toBeNull();
     expect(planState.dismissCount).toBeGreaterThan(0);
     expect(implState.dismissCount).toBeGreaterThan(0);
+    // session-feedback must remain untouched (would fail under old
+    // shared-mark-everything behavior).
+    expect(sessionState.lastShownAt).toBeNull();
+    expect(sessionState.dismissCount).toBe(0);
   });
 
-  it('submitting any survey sets shared 90-day cooldown for all surveys', async () => {
+  it('submitting session-feedback does NOT set cooldown for plan/implement', async () => {
     const store = makeStore();
     // Submit session feedback
     store.setState({ showSurveyPanel: true, activeSurvey: null });
     store.getState().submitSurvey({ experience: 'Good' });
     await new Promise((r) => setTimeout(r, 50));
 
-    // All surveys should have lastCompletedAt set (shared cooldown)
+    // session-feedback uses its own 30-day cooldown — plan/implement should
+    // be untouched (they share a separate 90-day cooldown with each other).
     const { loadSurveyState } = await import('../../utils/survey-state.js');
     const sessionState = loadSurveyState('session-feedback');
     const planState = loadSurveyState('plan-quality');
     const implState = loadSurveyState('implement-plan');
     expect(sessionState.lastCompletedAt).not.toBeNull();
-    expect(planState.lastCompletedAt).not.toBeNull();
-    expect(implState.lastCompletedAt).not.toBeNull();
+    expect(planState.lastCompletedAt).toBeNull();
+    expect(implState.lastCompletedAt).toBeNull();
+  });
+
+  it('submitting plan/implement does NOT set cooldown for session-feedback', async () => {
+    const store = makeStore();
+    // Trigger and open plan survey, then submit
+    store.getState().setCurrentAgent({ name: 'kiro_planner' });
+    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    await new Promise((r) => setTimeout(r, 10));
+    store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
+    store.getState().submitSurvey({ plan_quality: 'Very well' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const { loadSurveyState } = await import('../../utils/survey-state.js');
+    const sessionState = loadSurveyState('session-feedback');
+    expect(sessionState.lastCompletedAt).toBeNull();
+  });
+
+  it('dismissing session-feedback does NOT mark plan/implement cooldown', async () => {
+    const store = makeStore();
+    // Trigger session-feedback prompt
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    expect(store.getState().surveyPrompt?.survey.id).toBe('session-feedback');
+
+    store.getState().dismissSurveyPrompt();
+
+    const { loadSurveyState } = await import('../../utils/survey-state.js');
+    const sessionState = loadSurveyState('session-feedback');
+    const planState = loadSurveyState('plan-quality');
+    const implState = loadSurveyState('implement-plan');
+    expect(sessionState.dismissCount).toBeGreaterThan(0);
+    expect(sessionState.lastShownAt).not.toBeNull();
+    // plan/implement must remain untouched
+    expect(planState.dismissCount).toBe(0);
+    expect(implState.dismissCount).toBe(0);
+    expect(planState.lastShownAt).toBeNull();
+    expect(implState.lastShownAt).toBeNull();
+  });
+
+  it('typing-to-dismiss on session-feedback does NOT mark plan/implement', async () => {
+    const store = makeStore();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    expect(store.getState().surveyPrompt?.survey.id).toBe('session-feedback');
+
+    await store.getState().handleUserInput('hello');
+
+    const { loadSurveyState } = await import('../../utils/survey-state.js');
+    const sessionState = loadSurveyState('session-feedback');
+    const planState = loadSurveyState('plan-quality');
+    const implState = loadSurveyState('implement-plan');
+    // session-feedback should be marked dismissed (catches a regression
+    // where the typing-handler no-ops for session-feedback).
+    expect(sessionState.dismissCount).toBeGreaterThan(0);
+    expect(planState.dismissCount).toBe(0);
+    expect(implState.dismissCount).toBe(0);
+  });
+
+  it('typing-to-dismiss on plan-quality marks both plan and implement', async () => {
+    const store = makeStore();
+    // Show plan-quality prompt via planner handoff
+    store.getState().setCurrentAgent({ name: 'kiro_planner' });
+    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().surveyPrompt?.survey.id).toBe('plan-quality');
+
+    await store.getState().handleUserInput('hello');
+
+    const { loadSurveyState } = await import('../../utils/survey-state.js');
+    const sessionState = loadSurveyState('session-feedback');
+    const planState = loadSurveyState('plan-quality');
+    const implState = loadSurveyState('implement-plan');
+    // Both plan and implement should be marked
+    expect(planState.dismissCount).toBeGreaterThan(0);
+    expect(implState.dismissCount).toBeGreaterThan(0);
+    // session-feedback must remain untouched
+    expect(sessionState.dismissCount).toBe(0);
+    expect(sessionState.lastShownAt).toBeNull();
   });
 
   it('implementation survey replaces plan survey when tasks all complete', async () => {
@@ -452,5 +542,94 @@ describe('Survey flow integration', () => {
     // Implementation survey should replace the plan survey
     expect(store.getState().surveyPrompt).not.toBeNull();
     expect(store.getState().surveyPrompt!.survey.id).toBe('implement-plan');
+  });
+
+  // ─── Show-decision integration tests (cross-survey silencing) ────────────
+
+  it('session-feedback submit does not silence plan survey', async () => {
+    const store = makeStore();
+
+    // Submit session-feedback survey (defaults activeSurvey to session).
+    store.setState({ showSurveyPanel: true, sessionId: 'sess-123' });
+    store.getState().submitSurvey({ experience: 'Good' });
+    await new Promise((r) => setTimeout(r, 50));
+    // Submit shows a "Thanks" toast that would auto-hide; simulate that.
+    store.getState().dismissTransientAlert();
+
+    // Plan trigger conditions: planner handoff to non-planner agent.
+    store.getState().setCurrentAgent({ name: 'kiro_planner' });
+    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Plan survey IS shown despite session having just been submitted.
+    expect(store.getState().surveyPrompt?.survey.id).toBe('plan-quality');
+  });
+
+  it('plan submit silences implement but not session', async () => {
+    const store = makeStore();
+
+    // Trigger and submit plan survey.
+    store.getState().setCurrentAgent({ name: 'kiro_planner' });
+    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().surveyPrompt?.survey.id).toBe('plan-quality');
+    store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
+    store.getState().submitSurvey({ plan_quality: 'Very well' });
+    await new Promise((r) => setTimeout(r, 50));
+    // Submit shows a "Thanks" toast that would auto-hide; simulate that.
+    store.getState().dismissTransientAlert();
+
+    // Session-feedback path should still fire: 3 turns past threshold sets
+    // the surveyPrompt to session-feedback.
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    expect(store.getState().surveyPrompt?.survey.id).toBe('session-feedback');
+  });
+
+  // ─── Implement-silencing invariant ───────────────────────────────────────
+
+  it('implement is silenced indirectly via plan 90d cooldown (not pair-marking)', async () => {
+    // Force plan's cooldown to remain in effect across "sessions". The test
+    // setup pins the global cooldown to 0; a per-survey override takes
+    // precedence in getCooldownDays().
+    const prevPlanCooldown = process.env.KIRO_SURVEY_COOLDOWN_DAYS_PLAN_QUALITY;
+    process.env.KIRO_SURVEY_COOLDOWN_DAYS_PLAN_QUALITY = '90';
+    try {
+      // Session 1: trigger and submit plan.
+      const store1 = makeStore();
+      store1.getState().setCurrentAgent({ name: 'kiro_planner' });
+      store1.getState().setCurrentAgent({ name: 'kiro_default' });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(store1.getState().surveyPrompt?.survey.id).toBe('plan-quality');
+      store1.getState().openSurveyPanel(store1.getState().surveyPrompt!.survey);
+      store1.getState().submitSurvey({ plan_quality: 'Very well' });
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Session 2: new store, planSurveyShownThisSession resets to false.
+      // Persisted plan-quality cooldown carries over via KIRO_HOME.
+      const store2 = makeStore();
+      expect(store2.getState().planSurveyShownThisSession).toBe(false);
+
+      // Try to trigger plan via planner handoff — blocked by 90d cooldown.
+      store2.getState().setCurrentAgent({ name: 'kiro_planner' });
+      store2.getState().setCurrentAgent({ name: 'kiro_default' });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(store2.getState().planSurveyShownThisSession).toBe(false);
+      expect(store2.getState().surveyPrompt).toBeNull();
+
+      // Implement is silenced indirectly via plan's 90d cooldown blocking
+      // planSurveyShownThisSession from being set; if pair-marking is
+      // removed, this test catches it (it locks in the gating invariant
+      // that triggerImplementPlanSurvey relies on planSurveyShownThisSession,
+      // not implement's own cooldown).
+      store2.getState().triggerImplementPlanSurvey();
+      expect(store2.getState().surveyPrompt).toBeNull();
+    } finally {
+      if (prevPlanCooldown === undefined)
+        delete process.env.KIRO_SURVEY_COOLDOWN_DAYS_PLAN_QUALITY;
+      else
+        process.env.KIRO_SURVEY_COOLDOWN_DAYS_PLAN_QUALITY = prevPlanCooldown;
+    }
   });
 });

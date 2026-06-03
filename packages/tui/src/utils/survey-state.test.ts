@@ -93,7 +93,7 @@ describe('survey-state', () => {
       () => 0.01
     );
     expect(first.eligible).toBe(true);
-    expect(first.state.sampledAtRate).toBe(0.05);
+    expect(first.state.sampledAtRate).toBe(1.0);
     // Second call with same rate returns cached value (no re-roll)
     const second = resolveEligibility(
       SESSION_FEEDBACK_SURVEY,
@@ -115,14 +115,14 @@ describe('survey-state', () => {
   });
 
   test('resolveEligibility re-rolls when sample rate changes', () => {
-    // First roll at 5% — user is eligible (rng returns 0.01)
+    // First roll at 100% — user is eligible (rng returns 0.01)
     const first = resolveEligibility(
       SESSION_FEEDBACK_SURVEY,
       loadSurveyState('session-feedback'),
       () => 0.01
     );
     expect(first.eligible).toBe(true);
-    expect(first.state.sampledAtRate).toBe(0.05);
+    expect(first.state.sampledAtRate).toBe(1.0);
 
     // Simulate rate change to 1% by using a custom survey with lower rate
     const lowRateSurvey = { ...SESSION_FEEDBACK_SURVEY, sampleRate: 0.01 };
@@ -160,7 +160,7 @@ describe('survey-state', () => {
       lastCompletedAt: null,
       dismissCount: 1,
     });
-    // 90-day cooldown — 2 days ago is too recent
+    // 30-day cooldown — 2 days ago is too recent
     expect(
       shouldShowSurvey(
         SESSION_FEEDBACK_SURVEY,
@@ -169,8 +169,8 @@ describe('survey-state', () => {
       )
     ).toBe(false);
 
-    // 91 days ago — should be eligible
-    const oldShown = now - 91 * 24 * 60 * 60 * 1000;
+    // 31 days ago — just past the 30-day boundary
+    const oldShown = now - 31 * 24 * 60 * 60 * 1000;
     saveSurveyState('session-feedback', {
       eligible: true,
       lastShownAt: oldShown,
