@@ -286,6 +286,12 @@ export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
       : '/settings – theme – custom';
   const closeHintLabel =
     screen.type === 'wizard' || fromSettings ? 'to go back' : 'to cancel';
+  // The diff step is the user's final confirmation — Enter applies
+  // the theme and closes the overlay rather than advancing. Other
+  // screens are pure selection (Auto/Dark/Light/Custom rows, or the
+  // colour pickers in earlier wizard steps), so 'to select' fits.
+  const isFinalStep = screen.type === 'wizard' && screen.step === 'diff';
+  const enterLabel = isFinalStep ? 'to apply and close' : 'to select';
 
   const menuItems: MenuItem[] = rows.map((r) => ({
     label: r.label,
@@ -301,7 +307,7 @@ export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
         <Text>
           {primary('↑↓')} {dim('to navigate')}
           {dim(' · ')}
-          {primary('↵')} {dim('to select')}
+          {primary('↵')} {dim(enterLabel)}
         </Text>
       }
     >

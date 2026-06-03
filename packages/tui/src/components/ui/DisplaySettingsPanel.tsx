@@ -160,6 +160,8 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
           {brandText('↑↓')} {dimText('to select')}
           {dimText(' · ')}
           {brandText('←→')} {dimText('to toggle')}
+          {dimText(' · ')}
+          {brandText('↵')} {dimText('to apply and close')}
         </Text>
       }
     >

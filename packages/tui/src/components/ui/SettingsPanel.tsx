@@ -267,6 +267,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
       rows={rows}
       searchable={false}
       closeHintLabel={isTop ? 'to cancel' : 'to go back'}
+      keyHints={
+        isTop
+          ? undefined // Use Explorer's defaults: navigate · select.
+          : [
+              // History rows apply immediately and dismiss the
+              // overlay — surface that in the footer rather than
+              // the generic "select".
+              { key: '↑↓', label: 'to navigate' },
+              { key: '↵', label: 'to apply and close' },
+            ]
+      }
       onSelect={handleSelect}
       onClose={handleEsc}
     />
