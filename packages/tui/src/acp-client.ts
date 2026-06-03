@@ -1832,32 +1832,34 @@ export class KasAcpClient extends BaseAcpClient {
       this.handleMcpStatusNotification(params);
     });
 
-    // Route _kiro.dev/* notifications to the same handlers used by the Rust backend path.
-    // The BaseAcpClient.extNotification() callback strips the leading '_', so we do the same.
-    this.kiroClient.onExtNotification('_kiro.dev/agent/not_found', (params) => {
-      this.handleAgentNotFound(params);
-      // KAS doesn't send current_mode_update after fallback, so update the cached mode here
-      const fallback = params.fallbackAgent as string | undefined;
-      if (fallback) {
-        this.modesState = { ...this.modesState, currentModeId: fallback };
-      }
-    });
+    // Route KAS _kiro/* notifications to the same handlers used by the Rust backend path.
     this.kiroClient.onExtNotification(
-      '_kiro.dev/agent/config_error',
+      '_kiro/customAgent/not_found',
+      (params) => {
+        this.handleAgentNotFound(params);
+        // KAS doesn't send current_mode_update after fallback, so update the cached mode here
+        const fallback = params.fallbackAgent as string | undefined;
+        if (fallback) {
+          this.modesState = { ...this.modesState, currentModeId: fallback };
+        }
+      }
+    );
+    this.kiroClient.onExtNotification(
+      '_kiro/customAgent/config_error',
       (params) => {
         this.handleAgentConfigError(params);
       }
     );
+    this.kiroClient.onExtNotification('_kiro/error/rate_limit', (params) => {
+      this.handleRateLimitError(params);
+    });
     this.kiroClient.onExtNotification(
-      '_kiro.dev/error/rate_limit',
+      '_kiro/mcp/governance_disabled',
       (params) => {
-        this.handleRateLimitError(params);
-      }
-    );
-    this.kiroClient.onExtNotification(
-      '_kiro.dev/mcp/governance_disabled',
-      (params) => {
-        this.handleMcpGovernanceDisabled(params);
+        // Transform KAS reason enum to the apiFailure boolean the handler expects
+        const reason = params.reason as string | undefined;
+        const apiFailure = reason === 'api_failure' || reason === 'no_endpoint';
+        this.handleMcpGovernanceDisabled({ ...params, apiFailure });
       }
     );
 

@@ -144,8 +144,11 @@ const MockKiroClient = class {
     return { dispose: mockPermissionRequestDispose };
   });
   onExtNotification = mock((_method: string, _handler: any) => {
+    if (!this._extNotifHandlers) this._extNotifHandlers = {};
+    this._extNotifHandlers[_method] = _handler;
     return { dispose: mock(() => {}) };
   });
+  _extNotifHandlers: Record<string, any> = {};
   constructor(config: any) {
     capturedKiroClientConfig = config;
   }
@@ -2537,6 +2540,89 @@ describe('MCP OAuth flow', () => {
     expect((result.data as any).servers[0]).toMatchObject({
       name: 'github-mcp',
       status: 'auth-required',
+    });
+  });
+
+  describe('KAS _kiro/* notification registration', () => {
+    it('registers handlers for _kiro/customAgent/not_found', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      expect(kc._extNotifHandlers['_kiro/customAgent/not_found']).toBeDefined();
+    });
+
+    it('registers handlers for _kiro/customAgent/config_error', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      expect(
+        kc._extNotifHandlers['_kiro/customAgent/config_error']
+      ).toBeDefined();
+    });
+
+    it('registers handlers for _kiro/error/rate_limit', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      expect(kc._extNotifHandlers['_kiro/error/rate_limit']).toBeDefined();
+    });
+
+    it('registers handlers for _kiro/mcp/governance_disabled', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      expect(
+        kc._extNotifHandlers['_kiro/mcp/governance_disabled']
+      ).toBeDefined();
+    });
+
+    it('governance handler transforms reason=api_failure to apiFailure=true', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/mcp/governance_disabled']({
+        sessionId: 'test',
+        reason: 'api_failure',
+      });
+      const gov = events.find((e) => e.type === 'mcp_governance_disabled');
+      expect(gov).toBeDefined();
+      expect(gov.apiFailure).toBe(true);
+    });
+
+    it('governance handler transforms reason=admin_disabled to apiFailure=false', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/mcp/governance_disabled']({
+        sessionId: 'test',
+        reason: 'admin_disabled',
+      });
+      const gov = events.find((e) => e.type === 'mcp_governance_disabled');
+      expect(gov).toBeDefined();
+      expect(gov.apiFailure).toBe(false);
+    });
+
+    it('agent not_found handler updates cached mode to fallback', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      kc._extNotifHandlers['_kiro/customAgent/not_found']({
+        sessionId: 'test',
+        requestedAgent: 'missing-agent',
+        fallbackAgent: 'vibe',
+      });
+      expect((client as any).modesState.currentModeId).toBe('vibe');
     });
   });
 });
