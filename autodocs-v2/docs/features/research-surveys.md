@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [survey, feedback, rating, research, telemetry, ctrl+y]
   related: [telemetry-privacy-settings, planning-agent]
-  validated: 2026-05-11
-  commit: 65011fb52
+  validated: 2026-06-03
+  commit: f7872cada
   status: validated
   testable_headless: false
 ---
@@ -29,8 +29,8 @@ Appears after completing several conversation turns. Asks about your overall exp
 
 **Trigger**: After 3 completed assistant turns  
 **Questions**: Experience rating, optional feedback, optional email for follow-up  
-**Sampling**: 5% of users  
-**Cooldown**: 90 days between prompts
+**Sampling**: 100% of users  
+**Cooldown**: 30 days between prompts (independent of other surveys)
 
 ### Plan Quality
 
@@ -39,7 +39,7 @@ Appears after the planning agent hands off to execution. Asks how well the plan 
 **Trigger**: When switching from planner to execution agent  
 **Questions**: Plan quality rating, optional feedback  
 **Sampling**: 10% of users  
-**Cooldown**: 30 days between prompts
+**Cooldown**: 90 days between prompts (shared with Implementation Quality survey)
 
 ### Implementation Quality
 
@@ -47,7 +47,8 @@ Appears after all plan tasks complete. Asks about the quality of the implementat
 
 **Trigger**: When all plan tasks are marked complete  
 **Questions**: Implementation rating, optional feedback, optional email  
-**Sampling**: Only shown if plan quality survey was shown in the same session
+**Sampling**: Only shown if plan quality survey was shown in the same session  
+**Cooldown**: 90 days between prompts (shared with Plan Quality survey)
 
 ## Interacting with Surveys
 
@@ -174,7 +175,7 @@ Survey responses are sent to AWS's internal feedback service (Aperture). The dat
 
 **Eligibility**: Determined once per survey via random sampling at the configured rate. Result is cached—you're either in the sample or not for the lifetime of your installation.
 
-**Cooldown**: Starts when the prompt is shown (not when answered). Dismissing or answering both trigger the cooldown.
+**Cooldown**: Starts when the prompt is shown (not when answered). Dismissing or answering both trigger the cooldown. Session Feedback has its own 30-day cooldown, while Plan Quality and Implementation Quality share a 90-day cooldown with each other.
 
 **Rate Limiting**: The feedback service limits submissions to 100 requests per 5 minutes per IP. If rate-limited, you'll see a warning but no data is lost.
 
