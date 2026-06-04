@@ -233,3 +233,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  rust-deny-required:
+    name: "Rust: Deny (required)"
+    if: always()
+    needs: [check-paths, cargo-deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.rust-changed }}" != "true" ]]; then
+            echo "Rust files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.cargo-deny.result }}" != "success" ]]; then
+            echo "::error::cargo deny failed"
+            exit 1
+          fi
+
+  rust-fmt-required:
+    name: "Rust: Fmt (required)"
+    if: always()
+    needs: [check-paths, cargo-fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.rust-changed }}" != "true" ]]; then
+            echo "Rust files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.cargo-fmt.result }}" != "success" ]]; then
+            echo "::error::cargo fmt failed"
+            exit 1
+          fi
+
+  rust-coverage-required:
+    name: "Rust: Coverage (required)"
+    if: always()
+    needs: [check-paths, cargo-coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.rust-changed }}" != "true" ]]; then
+            echo "Rust files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.cargo-coverage.result }}" != "success" ]]; then
+            echo "::error::Coverage floor check failed"
+            exit 1
+          fi
