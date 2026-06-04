@@ -3533,7 +3533,29 @@ fn get_tool_content_impl(tool: &Tool, provider: &impl SystemProvider) -> Vec<Too
                 // StrReplace: old_text/new_text are the replacement snippet, not full file content.
                 // The Diff path is still resolved to absolute so the TUI can locate the file.
                 FsWrite::StrReplace(str_replace) => (Some(str_replace.old_str.clone()), str_replace.new_str.clone()),
-                FsWrite::Insert(_) => return vec![],
+                FsWrite::Insert(insert) => {
+                    let old = std::fs::read_to_string(&abs_path).unwrap_or_default();
+                    let mut new_content = old.clone();
+                    if let Some(line) = insert.insert_line {
+                        let line = line.clamp(0, new_content.lines().count() as u32);
+                        let mut i = 0;
+                        for l in syntect::util::LinesWithEndings::from(&new_content).take(line as usize) {
+                            i += l.len();
+                        }
+                        i = i.min(new_content.len());
+                        let mut text = insert.content.clone();
+                        if !text.ends_with('\n') {
+                            text.push('\n');
+                        }
+                        new_content.insert_str(i, &text);
+                    } else {
+                        if !new_content.ends_with('\n') {
+                            new_content.push('\n');
+                        }
+                        new_content.push_str(&insert.content);
+                    }
+                    (Some(old), new_content)
+                },
             };
 
             vec![ToolCallContent::Diff(Diff::new(abs_path, new_text).old_text(old_text))]
@@ -4425,7 +4447,7 @@ mod get_tool_content_tests {
 
     /// Insert variant must return no content (empty Vec).
     #[test]
-    fn test_insert_returns_empty_content() {
+    fn test_insert_produces_diff_content() {
         let provider = TestProvider::new();
         let fs_write: FsWrite = serde_json::from_value(serde_json::json!({
             "command": "insert",
@@ -4441,7 +4463,14 @@ mod get_tool_content_tests {
         };
         let result = get_tool_content_impl(&tool, &provider);
 
-        assert!(result.is_empty(), "Insert should produce no ToolCallContent");
+        assert_eq!(result.len(), 1, "Insert should produce one ToolCallContent::Diff");
+        match &result[0] {
+            ToolCallContent::Diff(diff) => {
+                assert_eq!(diff.old_text, Some(String::new()));
+                assert!(diff.new_text.contains("inserted line"));
+            },
+            _ => panic!("expected Diff"),
+        }
     }
 
     /// Non-FileWrite variant (e.g., FileRead) must return an empty Vec.

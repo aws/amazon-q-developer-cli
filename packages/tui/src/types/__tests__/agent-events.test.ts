@@ -5,16 +5,24 @@ describe('resolveToolId', () => {
   it('resolves write tools', () => {
     expect(resolveToolId('fs_write')).toBe('write');
     expect(resolveToolId('write')).toBe('write');
+    expect(resolveToolId('str_replace')).toBe('write');
+    expect(resolveToolId('fs_append')).toBe('write');
+    expect(resolveToolId('delete_file')).toBe('write');
   });
 
   it('resolves read tools', () => {
     expect(resolveToolId('fs_read')).toBe('read');
     expect(resolveToolId('read')).toBe('read');
+    expect(resolveToolId('read_file')).toBe('read');
+    expect(resolveToolId('read_files')).toBe('read');
+    expect(resolveToolId('list_directory')).toBe('read');
   });
 
   it('resolves shell tools', () => {
     expect(resolveToolId('execute_bash')).toBe('shell');
     expect(resolveToolId('shell')).toBe('shell');
+    expect(resolveToolId('control_bash_process')).toBe('shell');
+    expect(resolveToolId('control_pwsh_process')).toBe('shell');
   });
 
   it('resolves web_search tools', () => {

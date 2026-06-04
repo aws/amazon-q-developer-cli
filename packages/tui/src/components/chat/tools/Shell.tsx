@@ -149,6 +149,10 @@ export const Shell = React.memo(function Shell({
             code = parseInt(match[1], 10);
           }
         }
+      } else if ('exitCode' in obj && typeof obj.exitCode === 'number') {
+        code = obj.exitCode;
+      } else if ('code' in obj && typeof obj.code === 'number') {
+        code = obj.code;
       }
 
       let outputStr: string | null = null;
@@ -158,6 +162,12 @@ export const Shell = React.memo(function Shell({
         obj.stdout.trim()
       ) {
         outputStr = obj.stdout;
+      } else if (
+        'output' in obj &&
+        typeof obj.output === 'string' &&
+        obj.output.trim()
+      ) {
+        outputStr = obj.output;
       } else if (
         'stderr' in obj &&
         typeof obj.stderr === 'string' &&

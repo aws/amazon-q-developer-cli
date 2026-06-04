@@ -58,15 +58,33 @@ export enum ToolCallStatus {
 export const WRITE_TOOL_NAMES: Set<string> = new Set([
   ToolNameAlias.FsWrite,
   ToolNameAlias.Write,
+  'str_replace',
+  'fs_append',
+  'delete_file',
+  'Write File',
+  'Replace in File',
+  'Append to File',
+  'Delete File',
 ]);
 export const READ_TOOL_NAMES: Set<string> = new Set([
   ToolNameAlias.FsRead,
   ToolNameAlias.Read,
+  'read_file',
+  'read_files',
+  'list_directory',
+  'Read File',
+  'Read Files',
+  'List Directory',
 ]);
 export const SHELL_TOOL_NAMES: Set<string> = new Set([
   ToolNameAlias.ExecuteBash,
   ToolNameAlias.ExecuteCmd,
   ToolNameAlias.Shell,
+  'control_bash_process',
+  'control_pwsh_process',
+  'run_command',
+  'Run Command',
+  'Control Process',
 ]);
 export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set([
   'web_search',
@@ -75,14 +93,26 @@ export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set([
 export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set([
   'web_fetch',
   'Fetching web content',
+  'Fetch URL',
 ]);
-export const GREP_TOOL_NAMES: Set<string> = new Set(['grep', 'grep_search']);
-export const GLOB_TOOL_NAMES: Set<string> = new Set(['glob', 'file_search']);
+export const GREP_TOOL_NAMES: Set<string> = new Set([
+  'grep',
+  'grep_search',
+  'Grep Search',
+]);
+export const GLOB_TOOL_NAMES: Set<string> = new Set([
+  'glob',
+  'file_search',
+  'File Search',
+]);
 // TODO: Remove LS_TOOL_NAMES and IMAGE_READ_TOOL_NAMES once enough time has passed that users
 // are unlikely to load saved conversations containing old ls/imageRead tool calls.
 // These tools are now part of the unified fs_read tool (mode: "Directory" / "Image").
 export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
-export const CODE_TOOL_NAMES: Set<string> = new Set(['code']);
+export const CODE_TOOL_NAMES: Set<string> = new Set([
+  'code',
+  'Code Intelligence',
+]);
 export const IMAGE_READ_TOOL_NAMES: Set<string> = new Set([
   ToolNameAlias.ImageRead,
   'imageRead',
@@ -91,12 +121,20 @@ export const SESSION_TOOL_NAMES: Set<string> = new Set([
   'session_management',
   'subagent',
   'agent_crew',
+  'invoke_sub_agent',
+  'subagent_response',
+  'Invoke Agent',
+  'Subagent Response',
 ]);
-export const INTROSPECT_TOOL_NAMES: Set<string> = new Set(['introspect']);
+export const INTROSPECT_TOOL_NAMES: Set<string> = new Set([
+  'introspect',
+  'Introspect',
+]);
 export const TASK_TOOL_NAMES: Set<string> = new Set([
   'task',
   'todo_list',
   'todo',
+  'Task List',
 ]);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */

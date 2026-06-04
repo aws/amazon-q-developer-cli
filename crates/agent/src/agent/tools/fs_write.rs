@@ -331,8 +331,8 @@ impl StrReplace {
 #[serde(rename_all = "camelCase")]
 pub struct Insert {
     path: String,
-    content: String,
-    insert_line: Option<u32>,
+    pub content: String,
+    pub insert_line: Option<u32>,
     /// Starting line number (1-indexed), computed during validation
     #[serde(skip)]
     pub start_line: Option<u32>,
