@@ -3678,3 +3678,53 @@ async fn goal_set_and_status() {
         .expect("execute_command for goal clear failed");
     assert!(clear_result.success);
 }
+
+/// Regression test for the goal race condition where an error after goal(complete)
+/// tool execution (e.g., content-filtered follow-up response) previously caused:
+/// 1. "Kiro failed to generate a response" surfaced to user (even though goal succeeded)
+/// 2. Ghost re-injection task spawning "Agent is not idle" errors
+///
+/// The fix ensures that when goal(complete) already fired, a subsequent error on the
+/// model's follow-up response is suppressed — the goal completed successfully.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_complete_with_thinking_suppresses_followup_error() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_complete_with_thinking_suppresses_followup_error")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Push mock responses BEFORE sending the prompt so they're queued when the agent
+    // calls send_message:
+    // 1. First response: thinking + text + goal(complete) tool call
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/goal_complete_with_thinking.jsonl")
+        .await;
+    // 2. Second response (after tool result): empty — triggers EmptyResponse error
+    harness.push_mock_response(&session_id.0, Some(vec![])).await;
+    harness.push_mock_response(&session_id.0, None).await;
+    // 3. Third response: empty retry (agent retries empty responses once)
+    harness.push_mock_response(&session_id.0, Some(vec![])).await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Send "/goal sup" as a prompt. The ACP parses this as a slash command, sets up
+    // the goal controller, holds the prompt response, and injects the first prompt
+    // to the model (which will consume mock response #1 above).
+    //
+    // With the fix: goal(complete) fires from mock response #1, then the empty
+    // follow-up (mock #2/#3) triggers enter_error_state → Stop(Error). Since the
+    // goal is already Completed, the error is suppressed and the prompt resolves
+    // successfully.
+    //
+    // Without the fix: Stop(Error) surfaces "Kiro failed to generate a response"
+    // as an error to the caller, and the subsequent EndTurn spawns a ghost
+    // re-injection task.
+    let result = client.prompt_text(session_id.clone(), "/goal sup").await;
+    assert!(
+        result.is_ok(),
+        "prompt should succeed (goal completed before error), got: {:?}",
+        result.err()
+    );
+}

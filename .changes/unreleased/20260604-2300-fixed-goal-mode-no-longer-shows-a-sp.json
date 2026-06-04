@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Goal mode no longer shows a spurious error when the model's follow-up response fails after the goal already completed"
+}

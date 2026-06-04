@@ -1,0 +1,7 @@
+// Response 1: thinking block + text + goal(complete) tool call
+{"kind":"event","data":{"kind":"ReasoningEvent","data":{"text":"The user said sup. This is trivial, completing.","signature":null,"redacted_content":null}}}
+{"kind":"event","data":{"kind":"ReasoningEvent","data":{"text":null,"signature":"sig-goal-test-123","redacted_content":null}}}
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Goal complete."}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_goal_001","name":"goal","input":null,"stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_goal_001","name":"goal","input":"{\"command\": \"complete\", \"summary\": \"Responded to greeting\"}","stop":null}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_goal_001","name":"goal","input":null,"stop":true}}}

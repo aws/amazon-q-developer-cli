@@ -2580,10 +2580,32 @@ impl AcpSession {
                     }
                 }
 
-                // Send error response directly to the client - this ends the turn so we take() it
-                if let Some(respond_to) = self.pending_prompt_response.take() {
+                // Handle goal state before releasing the response:
+                // - If goal already completed (agent called goal(complete) tool before the error), suppress the
+                //   error and release normally — the goal succeeded.
+                // - If goal is still active (WaitingForTurn), mark it exhausted so the subsequent EndTurn (emitted
+                //   by end_current_turn) doesn't spawn a ghost re-injection task after the user already received
+                //   the error.
+                let goal_already_completed = self
+                    .goal_controller
+                    .as_ref()
+                    .is_some_and(|c| c.state == super::goal::GoalState::Completed);
+
+                if let Some(ref mut ctrl) = self.goal_controller
+                    && ctrl.should_continue()
+                {
+                    ctrl.mark_exhausted(format!("Agent error: {}", agent_error));
+                    self.send_goal_status_notification();
+                    self.emit_goal_telemetry("error");
+                }
+
+                if goal_already_completed {
+                    // Goal already completed — the error is from the model's follow-up
+                    // response after tool_result. Release gracefully instead of surfacing
+                    // a confusing error to the user.
+                    self.release_goal_response().await;
+                } else if let Some(respond_to) = self.pending_prompt_response.take() {
                     let respond_to = respond_to.into_inner();
-                    // Include the actual error message for better user feedback
                     let error_message = format!("{}", agent_error);
                     let _ = respond_to.respond_with_error(sacp::util::internal_error(error_message));
                 }
