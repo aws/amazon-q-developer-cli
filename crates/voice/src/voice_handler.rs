@@ -2,6 +2,7 @@ use std::io::{
     self,
     Write,
 };
+use std::sync::Arc;
 use std::time::{
     Duration,
     Instant,
@@ -10,7 +11,10 @@ use std::time::{
 use eyre::Result;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tracing::error;
+use tracing::{
+    error,
+    info,
+};
 
 use super::provider::TranscriptionProvider;
 use super::providers::local_whisper::LocalWhisperProvider;
@@ -395,6 +399,7 @@ impl VoiceHandler {
         max_session_time: Option<u64>,
     ) -> Result<Self> {
         // Remote server mode: no local audio capture needed
+
         if let TranscriptionBackend::RemoteServer { ref url } = backend {
             let provider = RemoteServerProvider::with_options(url, model_size.clone(), language)
                 .map_err(|e| eyre::eyre!("Failed to create remote voice provider: {}", e))?;
@@ -677,6 +682,17 @@ impl VoiceHandler {
     /// Like `listen_headless` but sends real-time activity levels (0–10) to `activity_tx`.
     /// Used by the SSE streaming endpoint so the remote client can show a volume bar.
     pub async fn listen_headless_with_activity(&mut self, activity_tx: mpsc::Sender<u8>) -> Result<Option<String>> {
+        self.listen_headless_with_activity_and_stop(activity_tx, Arc::new(tokio::sync::Notify::new()))
+            .await
+    }
+
+    /// Like `listen_headless_with_activity` but also accepts an external stop signal.
+    /// When the stop signal fires, recording ends immediately and transcription begins.
+    pub async fn listen_headless_with_activity_and_stop(
+        &mut self,
+        activity_tx: mpsc::Sender<u8>,
+        stop_signal: Arc<tokio::sync::Notify>,
+    ) -> Result<Option<String>> {
         let audio_capture = self
             .audio_capture
             .as_ref()
@@ -688,27 +704,38 @@ impl VoiceHandler {
         let mut audio_buffer = Vec::new();
         let recording_start = Instant::now();
         let mut last_voice_time = Instant::now();
+        let mut last_voice_byte_offset: usize = 0;
         let mut level: u8 = 0;
 
-        while let Some(chunk) = audio_rx.recv().await {
-            audio_buffer.extend_from_slice(&chunk);
-            let is_speech = self
-                .vad
-                .as_mut()
-                .map_or_else(|| compute_db(&chunk) > VOICE_THRESHOLD_DB, |v| v.is_speech(&chunk));
-            if is_speech {
-                last_voice_time = Instant::now();
-                level = 8;
-            } else {
-                level = level.saturating_sub(1);
-            }
-            let _ = activity_tx.try_send(level);
-            let past_grace = recording_start.elapsed() >= INITIAL_GRACE_PERIOD;
-            if past_grace && last_voice_time.elapsed() >= self.silence_timeout && !audio_buffer.is_empty() {
-                break;
-            }
-            if recording_start.elapsed() >= self.max_session_time {
-                break;
+        loop {
+            tokio::select! {
+                chunk = audio_rx.recv() => {
+                    let Some(chunk) = chunk else { break };
+                    audio_buffer.extend_from_slice(&chunk);
+                    let is_speech = self
+                        .vad
+                        .as_mut()
+                        .map_or_else(|| compute_db(&chunk) > VOICE_THRESHOLD_DB, |v| v.is_speech(&chunk));
+                    if is_speech {
+                        last_voice_time = Instant::now();
+                        last_voice_byte_offset = audio_buffer.len();
+                        level = 8;
+                    } else {
+                        level = level.saturating_sub(1);
+                    }
+                    let _ = activity_tx.try_send(level);
+                    let past_grace = recording_start.elapsed() >= INITIAL_GRACE_PERIOD;
+                    if past_grace && last_voice_time.elapsed() >= self.silence_timeout && !audio_buffer.is_empty() {
+                        break;
+                    }
+                    if recording_start.elapsed() >= self.max_session_time {
+                        break;
+                    }
+                }
+                _ = stop_signal.notified() => {
+                    info!("Recording stopped by external signal");
+                    break;
+                }
             }
         }
 
@@ -717,7 +744,17 @@ impl VoiceHandler {
             return Ok(None);
         }
 
-        match self.process_batch_audio(&audio_buffer).await {
+        // Trim trailing silence: only transcribe up to last speech + 500ms padding.
+        let bytes_per_ms = (16_000usize * 2) / 1000; // 16kHz, 2 bytes per i16 sample
+        let padding_bytes = 500 * bytes_per_ms;
+        let trim_end = (last_voice_byte_offset + padding_bytes).min(audio_buffer.len());
+        let trimmed = if last_voice_byte_offset > 0 && trim_end < audio_buffer.len() {
+            &audio_buffer[..trim_end]
+        } else {
+            &audio_buffer
+        };
+
+        match self.process_batch_audio(trimmed).await {
             Ok(transcript) if !transcript.trim().is_empty() => Ok(Some(transcript)),
             Ok(_) => Ok(None),
             Err(e) => {
@@ -727,6 +764,7 @@ impl VoiceHandler {
         }
     }
 
+    /// Full streaming mode: sends activity levels AND partial transcriptions.
     /// Record and transcribe without a TTY — auto-stops on silence only.
     /// Used by the HTTP voice server where there is no terminal attached.
     pub async fn listen_headless(&mut self) -> Result<Option<String>> {

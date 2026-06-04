@@ -10,8 +10,9 @@
  *   {"type":"level","value":5}
  *   {"type":"text","value":"hello world"}
  *
- * If local voice capture fails (e.g., no microphone on a cloud desktop),
- * falls back to a remote voice server if configured via voice.serverUrl.
+ * If a remote voice server URL is configured (KIRO_VOICE_SERVER_URL), the
+ * local binary is skipped entirely and the TUI streams from the remote
+ * server's /voice/record/stream SSE endpoint instead.
  */
 
 import { spawn } from 'child_process';
@@ -33,149 +34,10 @@ function getBinaryPath(): string {
   return path;
 }
 
-/**
- * Try to record via a remote voice server.
- */
-async function tryRemoteVoiceServer(serverUrl: string): Promise<string | null> {
-  const url = `${serverUrl.replace(/\/$/, '')}/voice/record`;
-  logger.debug('[voice] trying remote voice server:', url);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-    signal: AbortSignal.timeout(120_000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Voice server returned ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    text?: string;
-    error?: string;
-  };
-  if (data.error) {
-    throw new Error(data.error);
-  }
-  return data.text?.trim() || null;
-}
-
 export interface VoiceHelperCallbacks {
   onLevel?: (level: number) => void;
   onStatus?: (status: string) => void;
   onPartial?: (text: string) => void;
-}
-
-/**
- * Spawn the voice helper process and return transcribed text.
- * Returns null if no speech was detected or user cancelled.
- * Falls back to remote voice server if local capture fails and serverUrl is set.
- */
-export function spawnVoiceHelper(
-  remoteServerUrl?: string,
-  callbacks?: VoiceHelperCallbacks
-): Promise<string | null> {
-  return new Promise((resolve, reject) => {
-    const binary = getBinaryPath();
-    logger.debug('[voice] spawning voice helper:', binary, 'voice');
-
-    const child = spawn(binary, ['voice'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    child.stderr?.on('data', (data: Buffer) => {
-      logger.debug('[voice] stderr:', data.toString().trimEnd());
-    });
-
-    let stdout = '';
-    let finalText: string | null = null;
-    let settled = false;
-
-    child.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
-
-      // Parse JSON lines
-      const lines = stdout.split('\n');
-      stdout = lines.pop() ?? ''; // Keep incomplete last line in buffer
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const event = JSON.parse(trimmed) as {
-            type: string;
-            value: unknown;
-          };
-          switch (event.type) {
-            case 'level':
-              callbacks?.onLevel?.(event.value as number);
-              break;
-            case 'status':
-              callbacks?.onStatus?.(event.value as string);
-              break;
-            case 'partial':
-              if (event.value) callbacks?.onPartial?.(event.value as string);
-              break;
-            case 'text':
-              finalText = (event.value as string | null) ?? null;
-              break;
-          }
-        } catch {
-          logger.debug('[voice] ignoring non-JSON stdout line:', trimmed);
-        }
-      }
-    });
-
-    child.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      logger.debug('[voice] helper error:', err.message);
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        reject(
-          new Error(
-            `Voice binary "${binary}" not found. Check KIRO_CLI_PATH or reinstall kiro-cli.`
-          )
-        );
-        return;
-      }
-      if (remoteServerUrl) {
-        logger.debug('[voice] falling back to remote voice server');
-        tryRemoteVoiceServer(remoteServerUrl).then(resolve).catch(reject);
-      } else {
-        reject(new Error(`Voice helper failed: ${err.message}`));
-      }
-    });
-
-    child.on('close', (code) => {
-      if (settled) return;
-      settled = true;
-      logger.debug('[voice] helper exited with code:', code);
-      // Process any remaining data in buffer
-      if (stdout.trim()) {
-        try {
-          const event = JSON.parse(stdout.trim()) as {
-            type: string;
-            value: unknown;
-          };
-          if (event.type === 'text') {
-            finalText = (event.value as string | null) ?? null;
-          }
-        } catch {
-          logger.debug('[voice] ignoring non-JSON stdout line:', stdout.trim());
-        }
-      }
-
-      if (code === 0 && finalText) {
-        resolve(finalText);
-      } else if (code !== 0 && remoteServerUrl) {
-        logger.debug('[voice] local voice failed, trying remote server');
-        tryRemoteVoiceServer(remoteServerUrl).then(resolve).catch(reject);
-      } else {
-        resolve(null);
-      }
-    });
-  });
 }
 
 export interface PTTSession {
@@ -188,15 +50,152 @@ export interface PTTSession {
 }
 
 /**
+ * Stream from the remote voice server's /voice/record/stream SSE endpoint.
+ * Fires callbacks for activity levels and returns final text.
+ */
+function startRemoteRecording(
+  serverUrl: string,
+  callbacks?: VoiceHelperCallbacks
+): PTTSession {
+  let resolveText: ((t: string | null) => void) | null = null;
+  let rejectText: ((e: Error) => void) | null = null;
+  const textPromise = new Promise<string | null>((res, rej) => {
+    resolveText = res;
+    rejectText = rej;
+  });
+
+  const abortController = new AbortController();
+  let settled = false;
+
+  const url = `${serverUrl.replace(/\/$/, '')}/voice/record/stream`;
+  logger.debug('[voice] connecting to remote voice server SSE:', url);
+
+  // Signal recording started immediately
+  callbacks?.onStatus?.('recording');
+
+  (async () => {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Voice server returned ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Voice server returned no body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const json = line.slice(6).trim();
+          if (!json) continue;
+
+          try {
+            const event = JSON.parse(json) as {
+              type: string;
+              level?: number;
+              text?: string | null;
+              message?: string;
+            };
+
+            switch (event.type) {
+              case 'activity':
+                if (event.level !== undefined) {
+                  callbacks?.onLevel?.(event.level);
+                }
+                break;
+              case 'done':
+                if (!settled) {
+                  settled = true;
+                  resolveText!(event.text?.trim() || null);
+                }
+                return;
+              case 'error':
+                if (!settled) {
+                  settled = true;
+                  rejectText!(new Error(event.message ?? 'Remote voice error'));
+                }
+                return;
+            }
+          } catch {
+            logger.debug('[voice] ignoring non-JSON SSE line:', json);
+          }
+        }
+      }
+
+      // Stream ended without done/error event
+      if (!settled) {
+        settled = true;
+        resolveText!(null);
+      }
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        if (abortController.signal.aborted) {
+          resolveText!(null);
+        } else {
+          const msg =
+            err instanceof Error &&
+            (err.message.includes('ECONNREFUSED') ||
+              err.message.includes('socket') ||
+              err.message.includes('connect'))
+              ? 'Voice server not reachable. Run `kiro-cli voice-cloud-setup <hostname>` on your local machine first.'
+              : err instanceof Error
+                ? err.message
+                : 'Remote voice failed';
+          rejectText!(new Error(msg));
+        }
+      }
+    }
+  })();
+
+  const stop = () => {
+    const stopUrl = `${serverUrl.replace(/\/$/, '')}/voice/record/stop`;
+    fetch(stopUrl, { method: 'POST' }).catch(() => {});
+  };
+
+  const cancel = () => {
+    logger.debug('[voice] remote cancel — aborting connection');
+    abortController.abort();
+  };
+
+  return { stop, cancel, text: textPromise };
+}
+
+/**
  * Push-to-talk: start recording immediately.
  * Call `session.stop()` to end recording and get the transcription.
- * The binary's stdin is piped so we can send Enter to stop it programmatically.
+ *
+ * When remoteServerUrl is set, skips local binary entirely and streams
+ * from the remote voice server.
  */
 export function startPTTRecording(
   remoteServerUrl?: string,
   callbacks?: VoiceHelperCallbacks,
   ptt = true
 ): PTTSession {
+  // When a remote server is configured, use it directly — skip local binary
+  if (remoteServerUrl) {
+    return startRemoteRecording(remoteServerUrl, callbacks);
+  }
+
   const binary = getBinaryPath();
   const args = ptt ? ['voice', '--ptt'] : ['voice'];
   logger.debug('[voice] spawning voice helper:', binary, args);
@@ -265,13 +264,7 @@ export function startPTTRecording(
       );
       return;
     }
-    if (remoteServerUrl) {
-      tryRemoteVoiceServer(remoteServerUrl)
-        .then(resolveText!)
-        .catch(rejectText!);
-    } else {
-      rejectText!(new Error(`Voice helper failed: ${err.message}`));
-    }
+    rejectText!(new Error(`Voice helper failed: ${err.message}`));
   });
 
   child.on('close', (code) => {
@@ -293,10 +286,6 @@ export function startPTTRecording(
 
     if (code === 0 && finalText) {
       resolveText!(finalText);
-    } else if (code !== 0 && remoteServerUrl) {
-      tryRemoteVoiceServer(remoteServerUrl)
-        .then(resolveText!)
-        .catch(rejectText!);
     } else {
       resolveText!(null);
     }
@@ -322,4 +311,16 @@ export function startPTTRecording(
   };
 
   return { stop, cancel, text: textPromise };
+}
+
+/**
+ * Spawn the voice helper process and return transcribed text.
+ * Returns null if no speech was detected or user cancelled.
+ */
+export function spawnVoiceHelper(
+  remoteServerUrl?: string,
+  callbacks?: VoiceHelperCallbacks
+): Promise<string | null> {
+  const session = startPTTRecording(remoteServerUrl, callbacks, false);
+  return session.text;
 }

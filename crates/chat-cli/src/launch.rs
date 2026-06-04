@@ -119,6 +119,16 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
     // and Whisper transcription.
     cmd.env("KIRO_CLI_PATH", &current_exe);
 
+    // Propagate voice.serverUrl setting so the TUI uses a remote voice server
+    // (cloud desktop scenario) instead of spawning the local voice binary.
+    if let Some(url) = os
+        .database
+        .settings
+        .get_string(crate::database::settings::Setting::VoiceServerUrl)
+    {
+        cmd.env("KIRO_VOICE_SERVER_URL", &url);
+    }
+
     // Path to chat_cli itself, so the TUI can invoke its headless
     // `chat _ export-session` / `chat _ import-session` subcommands
     // for /chat save and /chat load. Engine-agnostic: both V2 and KAS

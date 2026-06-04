@@ -37,6 +37,14 @@ export async function executeCommand(
     return false;
   }
 
+  // Voice command: always handle client-side when remote voice server is configured,
+  // even if the backend doesn't advertise /voice (rollout gate may block it).
+  if (name === 'voice' && process.env.KIRO_VOICE_SERVER_URL) {
+    const syntheticCmd = { name: '/voice', meta: {} } as any;
+    await dispatch(syntheticCmd, args, ctx);
+    return true;
+  }
+
   const cmd =
     findCommand(ctx.kasCommands, name) ?? findCommand(ctx.slashCommands, name);
   if (!cmd) {

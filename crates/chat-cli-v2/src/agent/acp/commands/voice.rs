@@ -99,7 +99,7 @@ pub async fn execute(args: &VoiceArgs, ctx: &CommandContext<'_>) -> CommandResul
                             "No microphone found: {e}\n\
                                  On macOS: press Fn twice for dictation\n\
                                  On Windows: press Win+H for dictation\n\
-                                 For cloud desktops: set voice.serverUrl in settings"
+                                 For cloud desktops: run `kiro-cli voice-cloud-setup <your-desktop-host>` from a machine with a microphone"
                         ));
                     },
                 },
@@ -118,7 +118,7 @@ pub async fn execute(args: &VoiceArgs, ctx: &CommandContext<'_>) -> CommandResul
                         "No microphone found: {e}\n\
                          On macOS: press Fn twice for dictation\n\
                          On Windows: press Win+H for dictation\n\
-                         For cloud desktops: set voice.serverUrl in settings"
+                         For cloud desktops: run `kiro-cli voice-cloud-setup <your-desktop-host>` from a machine with a microphone"
                     ));
                 },
             };

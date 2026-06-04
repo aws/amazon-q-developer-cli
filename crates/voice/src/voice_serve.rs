@@ -30,6 +30,7 @@ use serde::{
 use tokio::net::TcpListener;
 use tokio::sync::{
     Mutex,
+    Notify,
     mpsc,
 };
 use tokio_stream::StreamExt;
@@ -142,7 +143,12 @@ async fn parse_record_request(req: Request<Incoming>) -> Result<RecordRequest, R
     Ok(req)
 }
 
-async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result<Response<DynBody>, hyper::Error> {
+struct ServerState {
+    recording_lock: Mutex<()>,
+    stop_signal: Arc<Notify>,
+}
+
+async fn handle_request(req: Request<Incoming>, state: Arc<ServerState>) -> Result<Response<DynBody>, hyper::Error> {
     if req.method() == Method::OPTIONS {
         return Ok(json_response(StatusCode::OK, serde_json::json!({})));
     }
@@ -151,6 +157,12 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
     let method = req.method().clone();
 
     match (method, path.as_str()) {
+        (Method::POST, "/voice/record/stop") => {
+            info!("Stop signal received");
+            state.stop_signal.notify_waiters();
+            Ok(json_response(StatusCode::OK, serde_json::json!({"status": "stopped"})))
+        },
+
         (Method::GET, "/voice/status") => {
             let mic_available = super::audio_capture::request_microphone_permission().is_ok();
             Ok(json_response(StatusCode::OK, StatusResponse {
@@ -162,7 +174,7 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
 
         (Method::POST, "/voice/record") => {
             // Serialize mic access — only one recording at a time
-            let _guard = state.lock().await;
+            let _guard = state.recording_lock.lock().await;
 
             let record_req = match parse_record_request(req).await {
                 Ok(r) => r,
@@ -235,7 +247,7 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
             // Serialize mic access — only one recording at a time.
             // We hold the guard through setup and drop before returning the SSE response;
             // the spawned OS thread inherits the active recording session.
-            let guard = state.lock().await;
+            let guard = state.recording_lock.lock().await;
 
             let record_req = match parse_record_request(req).await {
                 Ok(r) => r,
@@ -247,7 +259,7 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
             let (sse_tx, sse_rx) = mpsc::channel::<String>(200);
             let (activity_tx, mut activity_rx) = mpsc::channel::<u8>(200);
 
-            // Forward activity levels to SSE channel (both are Send)
+            // Forward activity levels to SSE channel
             let sse_activity = sse_tx.clone();
             tokio::spawn(async move {
                 while let Some(level) = activity_rx.recv().await {
@@ -265,6 +277,7 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
             let model_size = record_req.model_size.unwrap_or_else(|| "base".to_string());
             let context_hint = record_req.context_hint;
             let language = record_req.language;
+            let stop_signal = state.stop_signal.clone();
             let rt = tokio::runtime::Handle::current();
 
             std::thread::spawn(move || {
@@ -279,13 +292,18 @@ async fn handle_request(req: Request<Incoming>, state: Arc<Mutex<()>>) -> Result
                     )
                     .await
                     {
-                        Ok(mut handler) => match handler.listen_headless_with_activity(activity_tx).await {
-                            Ok(text) => {
-                                let _ = sse_tx.send(sse_event(SseEvent::Done { text })).await;
-                            },
-                            Err(e) => {
-                                let _ = sse_tx.send(sse_event(SseEvent::Error { message: e.to_string() })).await;
-                            },
+                        Ok(mut handler) => {
+                            match handler
+                                .listen_headless_with_activity_and_stop(activity_tx, stop_signal)
+                                .await
+                            {
+                                Ok(text) => {
+                                    let _ = sse_tx.send(sse_event(SseEvent::Done { text })).await;
+                                },
+                                Err(e) => {
+                                    let _ = sse_tx.send(sse_event(SseEvent::Error { message: e.to_string() })).await;
+                                },
+                            }
                         },
                         Err(e) => {
                             let _ = sse_tx
@@ -331,10 +349,14 @@ pub async fn run_voice_server(bind: &str, port: u16) -> Result<ExitCode> {
     eprintln!("  GET  /voice/status         - Check server status");
     eprintln!("  POST /voice/record         - Record and transcribe");
     eprintln!("  POST /voice/record/stream  - Record with real-time activity (SSE)");
+    eprintln!("  POST /voice/record/stop    - Stop active recording");
     eprintln!();
     eprintln!("Press Ctrl+C to stop.");
 
-    let state = Arc::new(Mutex::new(()));
+    let state = Arc::new(ServerState {
+        recording_lock: Mutex::new(()),
+        stop_signal: Arc::new(Notify::new()),
+    });
 
     loop {
         let (stream, remote_addr) = listener.accept().await?;

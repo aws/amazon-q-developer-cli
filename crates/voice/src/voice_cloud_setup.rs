@@ -175,38 +175,46 @@ pub async fn run_voice_cloud_setup(
     // ── Phase 2: Configure voice.serverUrl on cloud desktop ──────────────────
     print_step(&mut stderr, 2, total_steps, "Configuring cloud desktop...");
 
-    // Try to configure via remote kiro-cli binary
+    // Detect remote OS: if `uname` succeeds it's Unix, otherwise assume Windows.
+    let is_windows = ssh_batch(host, identity, "uname").await.is_err();
+
+    // Detect kiro-cli binary on the remote.
     let remote_bin_path = if let Some(bin) = remote_bin {
         bin.to_string()
+    } else if is_windows {
+        let detect_cmd = "where.exe kiro-cli-chat 2>NUL || where.exe kiro-cli 2>NUL || echo NOTFOUND";
+        ssh_batch(host, identity, detect_cmd)
+            .await
+            .unwrap_or_else(|_| "NOTFOUND".into())
     } else {
-        let detect_cmd = "which kiro-cli 2>/dev/null || which chat_cli_v2 2>/dev/null || (test -x target/release/chat_cli_v2 && echo target/release/chat_cli_v2) || echo NOTFOUND";
+        let detect_cmd =
+            "bash -lc 'command -v kiro-cli-chat 2>/dev/null || command -v kiro-cli 2>/dev/null || echo NOTFOUND'";
         ssh_batch(host, identity, detect_cmd)
             .await
             .unwrap_or_else(|_| "NOTFOUND".into())
     };
 
-    // Validate remote_bin_path contains no shell metacharacters
-    if remote_bin_path.contains([';', '|', '&', '$', '`', '\'', '"', '\\', '\n', '\r']) {
+    // Validate remote_bin_path contains no shell metacharacters (Unix) or suspicious chars (Windows)
+    let invalid_chars: &[char] = if is_windows {
+        &[';', '|', '&', '`', '\'', '"', '\n', '\r']
+    } else {
+        &[';', '|', '&', '$', '`', '\'', '"', '\\', '\n', '\r']
+    };
+    if remote_bin_path.contains(invalid_chars) {
         print_fail(&mut stderr, "Detected unsafe characters in remote binary path");
         return Ok(ExitCode::FAILURE);
     }
 
-    if remote_bin_path != "NOTFOUND" && !remote_bin_path.is_empty() {
+    // Use the detected binary to write settings — it knows its own settings path.
+    let configured = if remote_bin_path != "NOTFOUND" && !remote_bin_path.is_empty() {
         let settings_cmd = format!("{remote_bin_path} settings voice.serverUrl http://localhost:{port}");
-        match ssh_batch(host, identity, &settings_cmd).await {
-            Ok(_) => print_ok(&mut stderr, "voice.serverUrl set"),
-            Err(_) => {
-                execute!(
-                    stderr,
-                    SetForegroundColor(Color::Yellow),
-                    style::Print("\u{26a0}"),
-                    SetForegroundColor(Color::Reset),
-                    style::Print(" manual config needed\n")
-                )
-                .ok();
-                eprintln!("  Run on {host}: {remote_bin_path} settings voice.serverUrl http://localhost:{port}");
-            },
-        }
+        ssh_batch(host, identity, &settings_cmd).await.is_ok()
+    } else {
+        false
+    };
+
+    if configured {
+        print_ok(&mut stderr, "voice.serverUrl set");
     } else {
         execute!(
             stderr,
@@ -230,6 +238,18 @@ pub async fn run_voice_cloud_setup(
 
     // ── Phase 4: SSH Reverse Tunnel (foreground) ─────────────────────────────
     print_step(&mut stderr, 4, total_steps, "Opening SSH tunnel...");
+
+    // Free any stale port forward from a previous session
+    if is_windows {
+        let kill_cmd = format!(
+            "FOR /F \"tokens=5\" %P IN ('netstat -ano ^| findstr :{port} ^| findstr LISTENING') DO taskkill /F /PID %P 2>NUL & exit /b 0"
+        );
+        let _ = ssh_batch(host, identity, &kill_cmd).await;
+    } else {
+        let kill_cmd = format!("fuser -k {port}/tcp 2>/dev/null; true");
+        let _ = ssh_batch(host, identity, &kill_cmd).await;
+    }
+
     print_ok(&mut stderr, "");
 
     eprintln!();
