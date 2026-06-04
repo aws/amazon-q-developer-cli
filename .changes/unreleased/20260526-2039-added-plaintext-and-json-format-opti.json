@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Plaintext and JSON format options for `/transcript` (`/transcript plain`, `/transcript json`)"
-}

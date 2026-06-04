@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "`/transcript save` to export conversations as markdown, plaintext, or JSON files"
-}

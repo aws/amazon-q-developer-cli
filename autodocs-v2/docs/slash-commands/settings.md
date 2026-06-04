@@ -3,10 +3,10 @@ doc_meta:
   title: /settings
   description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux]
-  related: [theme]
-  validated: 2026-05-26
-  commit: 2c5d9fe91
+  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title]
+  related: [theme, title]
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: false
 ---
@@ -43,13 +43,14 @@ You can also jump directly to a subcommand:
 
 ### display
 
-Opens a toggle panel for three display accessibility settings. Use ↑↓ to navigate, ←→ to toggle, Enter to apply and close, Esc to go back.
+Opens a toggle panel for display settings. Use ↑↓ to navigate, ←→ to toggle, Enter to apply and close, Esc to go back.
 
 | Setting | Key | Default | Effect |
 |---------|-----|---------|--------|
 | Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
 | ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
 | Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
+| Terminal title | `chat.terminalTitle` | off | When on, updates the terminal window title with session info via OSC 0 sequences |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
 

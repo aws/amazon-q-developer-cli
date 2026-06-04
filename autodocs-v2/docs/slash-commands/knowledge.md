@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 727bdf89
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: false
   category: slash_command
@@ -53,11 +53,13 @@ Alias: `/knowledge rm`
 
 ### update
 
-Re-index an existing entry.
+Re-index one or all knowledge base entries.
 
 ```
-/knowledge update <path>
+/knowledge update [path]
 ```
+
+Without arguments, updates all knowledge bases at once. With a path, updates only that entry.
 
 ### clear
 

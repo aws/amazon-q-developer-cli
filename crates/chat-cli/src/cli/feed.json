@@ -12,6 +12,86 @@
     },
     {
       "type": "release",
+      "date": "2026-06-04",
+      "version": "2.6.0",
+      "title": "Version 2.6.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support `/knowledge update` with no arguments to update all knowledge bases at once"
+        },
+        {
+          "type": "added",
+          "description": "`/title` command to set, clear, or show the terminal window title. Titles auto-derive from session topic or workspace path. Enable via `chat.terminalTitle` setting or `/settings display`."
+        },
+        {
+          "type": "added",
+          "description": "`--effort` flag for `kiro-cli chat` to set the initial effort level (low, medium, high, xhigh, max) for a session"
+        },
+        {
+          "type": "added",
+          "description": "`/transcript save` to export conversations as markdown, plaintext, or JSON. The `--plain` and `--json` flags also switch the rendered format inline."
+        },
+        {
+          "type": "changed",
+          "description": "Wrap URLs in hyperlinks so they remain clickable across line wraps"
+        },
+        {
+          "type": "changed",
+          "description": "`/model` and `/effort` now persist preferences automatically — no need for `/model set-current-as-default`"
+        },
+        {
+          "type": "changed",
+          "description": "`/settings display` panel now closes entirely on Enter, updated footer hints to match new keybindings"
+        },
+        {
+          "type": "changed",
+          "description": "`/transcript` now opens the pager at the bottom so the most recent messages are visible first"
+        },
+        {
+          "type": "fixed",
+          "description": "`/code init` now warns when required language servers are missing from PATH"
+        },
+        {
+          "type": "fixed",
+          "description": "V2 agent directory listings now exclude `.git`, `node_modules`, and build directories by default"
+        },
+        {
+          "type": "fixed",
+          "description": "`toolsSettings.web_fetch.trusted` and `toolsSettings.web_fetch.blocked` URL patterns are now enforced in V2 mode"
+        },
+        {
+          "type": "fixed",
+          "description": "`/effort` and `--effort` now apply to models that declare effort under `reasoning.effort` (e.g. GPT-5.1)"
+        },
+        {
+          "type": "fixed",
+          "description": "Code blocks and blockquotes in markdown now respect the configured wrap mode instead of always wrapping"
+        },
+        {
+          "type": "fixed",
+          "description": "`mcp.json` env, header, and timeout overrides for registry-type MCP server entries now flow to the launched server"
+        },
+        {
+          "type": "fixed",
+          "description": "Personal MCP servers defined in `mcp.json` now load alongside registry-managed servers when the registry is active"
+        },
+        {
+          "type": "fixed",
+          "description": "Tab path completion now works after prompt invocations (e.g. `/agent-sop:pdd` `./path`)"
+        },
+        {
+          "type": "fixed",
+          "description": "Double cursor appearing in tmux and zellij when autocomplete menu is open"
+        },
+        {
+          "type": "fixed",
+          "description": "Surface empty responses as an error after retrying"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-06-01",
       "version": "2.5.1",
       "title": "Version 2.5.1",
@@ -34,11 +114,11 @@
         },
         {
           "type": "added",
-          "description": "Prompt history (Up/Down arrow) is now per-session by default. Configure via `/settings` \u2192 history to switch between session and global modes"
+          "description": "Prompt history (Up/Down arrow) is now per-session by default. Configure via `/settings` → history to switch between session and global modes"
         },
         {
           "type": "added",
-          "description": "Subagent pipelines now support review loops \u2014 a reviewer stage can send work back to an implementer for revisions automatically"
+          "description": "Subagent pipelines now support review loops — a reviewer stage can send work back to an implementer for revisions automatically"
         },
         {
           "type": "added",
@@ -50,11 +130,11 @@
         },
         {
           "type": "changed",
-          "description": "Faster message rendering during streaming \u2014 messages now update incrementally instead of reconstructing the full conversation on each chunk"
+          "description": "Faster message rendering during streaming — messages now update incrementally instead of reconstructing the full conversation on each chunk"
         },
         {
           "type": "changed",
-          "description": "Faster shell command output rendering \u2014 long-running commands no longer cause increasing lag as output grows"
+          "description": "Faster shell command output rendering — long-running commands no longer cause increasing lag as output grows"
         },
         {
           "type": "changed",
@@ -66,11 +146,11 @@
         },
         {
           "type": "changed",
-          "description": "Screen reader support in menus \u2014 cursor now tracks the selected item, and `/model` marks the current model with `[active]`"
+          "description": "Screen reader support in menus — cursor now tracks the selected item, and `/model` marks the current model with `[active]`"
         },
         {
           "type": "changed",
-          "description": "What's New popup shows only new features by default \u2014 press ctrl+o to reveal all changes"
+          "description": "What's New popup shows only new features by default — press ctrl+o to reveal all changes"
         },
         {
           "type": "changed",
@@ -150,7 +230,7 @@
         },
         {
           "type": "changed",
-          "description": "Reduced workspace initialization time by 88% (652ms \u2192 76ms) by moving file watching setup to background"
+          "description": "Reduced workspace initialization time by 88% (652ms → 76ms) by moving file watching setup to background"
         },
         {
           "type": "fixed",
@@ -198,7 +278,7 @@
         },
         {
           "type": "added",
-          "description": "Added `/settings` \u2014 a menu to configure your theme and view keyboard shortcuts. Run `/settings theme` to customize colors, or `/settings keybindings` to see the current shortcuts. `/theme` still works as before."
+          "description": "Added `/settings` — a menu to configure your theme and view keyboard shortcuts. Run `/settings theme` to customize colors, or `/settings keybindings` to see the current shortcuts. `/theme` still works as before."
         },
         {
           "type": "added",
@@ -338,7 +418,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output \u2014 long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
+          "description": "Added `chat.disableWrap` setting to disable word-wrapping in chat output — long lines soft-wrap visually but stay as a single logical line for clean copy-paste."
         },
         {
           "type": "fixed",
@@ -526,7 +606,7 @@
         },
         {
           "type": "added",
-          "description": "Headless mode. Run Kiro CLI programmatically with an API key \u2014 full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
+          "description": "Headless mode. Run Kiro CLI programmatically with an API key — full access to all tools and agents, now scriptable. Get your access key from https://kiro.dev/"
         },
         {
           "type": "changed",
@@ -858,7 +938,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays\u2014try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
+          "description": "A refreshed UX (experimental) with live unified status, omnipresent input, and contextual overlays—try it with kiro-cli --tui. Learn more and share your feedback: https://kiro.dev/docs/cli/experimental/tui/"
         },
         {
           "type": "added",

@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "/model and /effort now persist preferences automatically — no need for /model set-current-as-default"
-}

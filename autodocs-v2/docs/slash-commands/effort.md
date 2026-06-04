@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-26
-  commit: 38cca90e6
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: true
   category: slash_command
@@ -17,7 +17,7 @@ Set reasoning effort level for the current model.
 
 ## Overview
 
-The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and persist for the session duration.
+The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and are automatically saved as your per-model default for future sessions.
 
 ## Usage
 
@@ -66,8 +66,10 @@ Available effort levels: low, medium, high, xhigh
 
 **Output**:
 ```
-Effort set to low
+Effort set to low (saved for Claude Opus 4.7)
 ```
+
+The effort level is automatically persisted as a per-model default in your settings.
 
 ### Example 3: Model Without Effort Support
 
@@ -153,5 +155,4 @@ Workspace-level settings (`.kiro/settings/cli.json`) override global settings, s
 ## Limitations
 
 - Not all models support effort configuration
-- Changes are session-scoped; use settings file for persistent defaults
 - Available levels are determined by the model's schema

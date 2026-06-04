@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Add `/title` command to set, clear, or show the terminal window title. Titles auto-derive from session topic or workspace path. Enable via `chat.terminalTitle` setting or `/settings display`."
-}

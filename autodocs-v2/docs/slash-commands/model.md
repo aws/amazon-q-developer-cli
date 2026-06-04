@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: c4ad3238
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: true
   category: slash_command
@@ -17,7 +17,7 @@ Select AI model for current conversation session.
 
 ## Overview
 
-The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and persist for session duration.
+The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and are automatically saved as your default for future sessions.
 
 ## Usage
 
@@ -54,7 +54,7 @@ Supports partial matching and is case-insensitive.
 
 ### set-current-as-default
 
-Save the current session's model as the default for new sessions.
+Save the current session's model as the default for new sessions. This is generally unnecessary since `/model` now auto-persists your selection, but remains available for explicit control.
 
 ```
 /model set-current-as-default
@@ -88,8 +88,10 @@ Shows current model, rate multipliers, and descriptions.
 
 **Output**:
 ```
- Using claude-sonnet-4
+ Using claude-sonnet-4 (saved as default)
 ```
+
+The model is automatically persisted as your default for new sessions.
 
 ### Example 3: Model Not Found with Suggestion
 
@@ -170,7 +172,6 @@ Run `/model` without arguments to see the interactive picker with all available 
 ## Limitations
 
 - Interactive picker not available in headless mode (use direct selection instead)
-- Changes apply to current session only (unless resumed)
 - Available models depend on region
 
 ## Troubleshooting
@@ -193,4 +194,4 @@ Run `/model` without arguments to see the interactive picker with all available 
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
-**Persistence**: Model selection persists for session. When resuming, the saved model is restored.
+**Persistence**: Model selection is automatically saved as your default. When resuming, the saved model is restored.

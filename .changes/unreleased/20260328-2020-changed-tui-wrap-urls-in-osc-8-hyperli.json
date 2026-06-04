@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "(TUI) Wrap URLs in OSC 8 hyperlinks so they remain clickable across line wraps"
-}

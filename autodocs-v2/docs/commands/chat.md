@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-29
-  commit: 32a300b94
+  validated: 2026-06-04
+  commit: fde97d540
   status: validated
   testable_headless: true
   category: command
@@ -256,7 +256,7 @@ Use `--no-interactive` for automation and scripts:
 
 **Agent Resolution**: Local agents (`.kiro/agents/`) take precedence over global (`~/.kiro/agents/`).
 
-**Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`. When resuming a session with `--resume`, the model active when the session was saved is restored (unless overridden with `--model`).
+**Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`, which automatically saves your choice as the default for future sessions. When resuming a session with `--resume`, the model active when the session was saved is restored (unless overridden with `--model`).
 
 **Tool Trust**: 
 - `--trust-all-tools`: Bypasses all tool approval prompts

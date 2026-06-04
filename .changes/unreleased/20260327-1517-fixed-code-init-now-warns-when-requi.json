@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "/code init now warns when required language servers are missing from PATH"
-}

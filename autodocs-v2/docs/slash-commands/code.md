@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-06-04
+  commit: fde97d540
   status: validated
   testable_headless: false
   category: slash_command
@@ -39,7 +39,7 @@ Initialize code intelligence in workspace.
 /code init
 ```
 
-Detects languages, creates lsp.json, starts servers. If already initialized, displays "Workspace already initialized".
+Detects languages, creates lsp.json, starts servers. If already initialized, displays "Workspace already initialized". Warns when required language servers are missing from PATH so you know what to install.
 
 ### status
 
@@ -183,9 +183,9 @@ I'll help you create comprehensive documentation. Please provide:
 
 ### Issue: Language Server Not Starting
 
-**Symptom**: Server shows "not initialized" in status  
-**Cause**: Language server not installed  
-**Solution**: Install required language server (see code tool docs for install commands)
+**Symptom**: Server shows "not initialized" in status, or `/code init` warns about missing servers  
+**Cause**: Language server not installed or not on PATH  
+**Solution**: Install the required language server and ensure it's on your PATH. `/code init` will warn you which servers are missing.
 
 ### Issue: Slow Initialization
 
