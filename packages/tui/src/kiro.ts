@@ -888,7 +888,14 @@ export class Kiro {
     if (!this.sessionClient) return;
     await this.sessionClient.cancel();
     if (this.pendingPrompt) {
-      await this.pendingPrompt;
+      // Race against a timeout so we don't hang forever if KAS never responds.
+      let timer: ReturnType<typeof setTimeout>;
+      await Promise.race([
+        this.pendingPrompt,
+        new Promise<void>((r) => {
+          timer = setTimeout(r, 5000);
+        }),
+      ]).finally(() => clearTimeout(timer!));
       this.pendingPrompt = null;
     }
   }
