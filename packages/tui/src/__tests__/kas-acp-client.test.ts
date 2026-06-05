@@ -177,7 +177,47 @@ mock.module('../utils/logger', () => ({
   },
 }));
 
+// --- Mock cli-settings (via HOME override to avoid mock.module leaking) ---
+import { mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+let testSettingsDir: string;
+let originalHome: string | undefined;
+
+function setupTestHome() {
+  testSettingsDir = join(
+    tmpdir(),
+    `kas-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+  mkdirSync(join(testSettingsDir, '.kiro', 'settings'), { recursive: true });
+  writeFileSync(
+    join(testSettingsDir, '.kiro', 'settings', 'cli.json'),
+    '{}',
+    'utf-8'
+  );
+  originalHome = process.env.HOME;
+  process.env.HOME = testSettingsDir;
+}
+
+function teardownTestHome() {
+  if (originalHome !== undefined) process.env.HOME = originalHome;
+  else delete process.env.HOME;
+}
+
+function testCliJsonPath() {
+  return join(testSettingsDir, '.kiro', 'settings', 'cli.json');
+}
+
+function writeTestCliJson(data: Record<string, unknown>) {
+  writeFileSync(testCliJsonPath(), JSON.stringify(data), 'utf-8');
+}
+
+function readTestCliJson(): Record<string, unknown> {
+  return JSON.parse(readFileSync(testCliJsonPath(), 'utf-8'));
+}
 afterAll(() => {
+  teardownTestHome();
   mock.restore();
 });
 
@@ -199,6 +239,7 @@ function freshMocks() {
   capturedKiroClientConfig = null;
   mockSessionUpdateDispose.mockClear();
   mockPermissionRequestDispose.mockClear();
+  setupTestHome();
   mockSpawn.mockImplementation((_cmd: string, _args: string[], _opts: any) => {
     mockProcess = {
       stdin: createMockStdin(),
@@ -937,10 +978,40 @@ describe('KasAcpClient', () => {
 
   // ── Stub methods ──
 
-  it('listSettings returns empty object', async () => {
+  it('listSettings returns settings from cli.json', async () => {
+    writeTestCliJson({ 'chat.theme': 'dark', 'voice.autoSubmit': true });
     const client = new KasAcpClient();
     const result = await client.listSettings();
-    expect(result).toEqual({});
+    expect(result).toEqual({ 'chat.theme': 'dark', 'voice.autoSubmit': true });
+  });
+
+  it('setSetting merges key into existing settings and writes', async () => {
+    writeTestCliJson({ 'chat.theme': 'dark' });
+    const client = new KasAcpClient();
+    await client.setSetting('voice.autoSubmit', true);
+    expect(readTestCliJson()).toEqual({
+      'chat.theme': 'dark',
+      'voice.autoSubmit': true,
+    });
+  });
+
+  it('newSession() applies initialModel via setSessionConfigOption(model)', async () => {
+    const client = new KasAcpClient({ initialModel: 'claude-opus-4.6' });
+    await client.newSession();
+    const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'model'
+    );
+    expect(modeCalls).toHaveLength(1);
+    expect(modeCalls[0][0].value).toBe('claude-opus-4.6');
+  });
+
+  it('newSession() does not set model config when initialModel is absent', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const modelCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'model'
+    );
+    expect(modelCalls).toHaveLength(0);
   });
 
   it('spawnSession returns empty sessionId', async () => {
@@ -2365,6 +2436,41 @@ describe('KasAcpClient — executeCommand branches', () => {
     } as any);
     expect(result.success).toBe(false);
     expect(result.message).toBe('rate limited');
+  });
+
+  it('GIVEN session with active model WHEN /model set-current-as-default THEN persists to cli.json', async () => {
+    await client.initialize();
+    await client.newSession();
+    (client as any).modelOptions = [
+      { value: 'm1', name: 'Model 1' },
+      { value: 'm2', name: 'Model 2' },
+    ];
+    (client as any).currentModelId = 'm1';
+    const result = await client.executeCommand({
+      command: 'model',
+      args: { value: 'set-current-as-default' },
+    } as any);
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('Model 1');
+    const saved = JSON.parse(
+      readFileSync(
+        join(testSettingsDir, '.kiro', 'settings', 'cli.json'),
+        'utf-8'
+      )
+    );
+    expect(saved['chat.defaultModel']).toBe('m1');
+  });
+
+  it('GIVEN no active model WHEN /model set-current-as-default THEN returns error', async () => {
+    await client.initialize();
+    await client.newSession();
+    (client as any).currentModelId = undefined;
+    const result = await client.executeCommand({
+      command: 'model',
+      args: { value: 'set-current-as-default' },
+    } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('No model is currently active');
   });
 
   it('GIVEN session WHEN /usage called THEN forwards to ext method', async () => {

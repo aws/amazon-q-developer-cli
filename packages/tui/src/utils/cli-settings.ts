@@ -1,5 +1,12 @@
 import { join } from 'path';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  renameSync,
+  unlinkSync,
+} from 'fs';
 import { logger } from './logger.js';
 import { kiroHomePath } from './kiro-home.js';
 
@@ -21,29 +28,84 @@ function settingsPath(): string {
   return kiroHomePath('settings', 'cli.json');
 }
 
+/**
+ * Returns the parsed cli.json object, or `{}` if the file is missing.
+ * Throws on parse/read errors to allow callers to distinguish
+ * "no settings file" from "corrupt/unreadable file".
+ */
+function readCliSettingsStrict(): Record<string, unknown> {
+  const p = settingsPath();
+  if (!existsSync(p)) return {};
+  const raw = JSON.parse(readFileSync(p, 'utf-8'));
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
 /** Returns the parsed cli.json object, or `{}` on any error. */
 export function readCliSettings(): Record<string, unknown> {
   try {
-    const p = settingsPath();
-    if (!existsSync(p)) return {};
-    const raw = JSON.parse(readFileSync(p, 'utf-8'));
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      return raw as Record<string, unknown>;
-    }
+    return readCliSettingsStrict();
   } catch (err) {
     logger.warn('[cli-settings] failed to read cli.json:', err);
   }
   return {};
 }
 
-/** Overwrites cli.json with the provided settings object. */
+/**
+ * In-process write queue ensuring concurrent async callers within the same
+ * process don't interleave read-modify-write cycles.
+ */
+let writeQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Overwrites cli.json with the provided settings object.
+ * Uses atomic write (temp + rename) to prevent corruption if the process
+ * crashes mid-write. NOT cross-process safe; concurrent Rust/KAS writers
+ * to the same file may still result in last-write-wins.
+ */
 export function writeCliSettings(settings: Record<string, unknown>): void {
   const p = settingsPath();
   const dir = join(p, '..');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(p, JSON.stringify(settings, null, 2), 'utf-8');
+  const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(settings, null, 2), 'utf-8');
+    renameSync(tmp, p);
+  } catch (err) {
+    // Clean up orphaned temp file on failure
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    } catch {
+      /* best-effort */
+    }
+    throw err;
+  }
+}
+
+/**
+ * Async read-modify-write helper that serializes updates within the process
+ * and uses atomic file replacement. Prefer this over manual
+ * readCliSettings + writeCliSettings when updating a single key.
+ *
+ * Refuses to overwrite if the settings file exists but is corrupt/unreadable
+ * (prevents wiping valid settings due to transient I/O errors).
+ */
+export async function updateCliSetting(
+  key: string,
+  value: unknown
+): Promise<void> {
+  const next = writeQueue.then(() => {
+    const settings = readCliSettingsStrict();
+    settings[key] = value;
+    writeCliSettings(settings);
+  });
+  // Prevent queue poisoning: chain always resolves so future calls proceed
+  writeQueue = next.catch(() => {});
+  await next;
 }
 
 /** Read a boolean setting with a fallback when the key is missing or malformed. */
@@ -56,4 +118,10 @@ export function readBoolSetting(key: string, fallback = false): boolean {
 export function readStringSetting(key: string, fallback: string): string {
   const val = readCliSettings()[key];
   return typeof val === 'string' ? val : fallback;
+}
+
+/** Read a string setting, returning undefined when absent or empty. */
+export function readOptionalStringSetting(key: string): string | undefined {
+  const val = readCliSettings()[key];
+  return typeof val === 'string' && val !== '' ? val : undefined;
 }

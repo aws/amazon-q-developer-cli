@@ -359,7 +359,7 @@ export class Kiro {
   async initialize(
     agentPath: string,
     extraAcpArgs: string[] = [],
-    kasOptions?: { initialAgent?: string }
+    kasOptions?: { initialAgent?: string; initialModel?: string }
   ): Promise<void> {
     logger.debug('[kiro] initialize() called');
 

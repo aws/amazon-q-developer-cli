@@ -16,6 +16,7 @@ import {
   isTelemetryEnabled,
 } from './utils/telemetry-identity';
 import { buildKasSettings } from './utils/kas-settings';
+import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -1618,6 +1619,13 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialAgent?: string;
 
   /**
+   * Default model to apply on the next `newSession`, sourced from
+   * `chat.defaultModel` in cli.json.  Only used when `--model` was not
+   * passed on the CLI (so an explicit flag always takes precedence).
+   */
+  private readonly initialModel?: string;
+
+  /**
    * Construct a KAS ACP client.
    *
    * Default (no options): spawn the KAS subprocess and wire its stdio as
@@ -1637,10 +1645,15 @@ export class KasAcpClient extends BaseAcpClient {
    * never need to inject a different one, and accepting it without a
    * stream would silently ignore it.
    */
-  constructor(options?: { stream?: Stream; initialAgent?: string }) {
+  constructor(options?: {
+    stream?: Stream;
+    initialAgent?: string;
+    initialModel?: string;
+  }) {
     if (options?.stream) {
       super(createNullAgentProcess());
       this.initialAgent = options.initialAgent;
+      this.initialModel = options.initialModel;
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
@@ -1700,6 +1713,7 @@ export class KasAcpClient extends BaseAcpClient {
     );
     super(toAgentProcess(proc));
     this.initialAgent = options?.initialAgent;
+    this.initialModel = options?.initialModel;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
@@ -2034,18 +2048,47 @@ export class KasAcpClient extends BaseAcpClient {
       }
     }
 
-    this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
-    this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
-    this.broadcastEffortFromConfigOptions(
-      (r as { configOptions?: unknown }).configOptions
-    );
+    if (this.initialModel) {
+      try {
+        const modelResp = await this.kiroClient.setSessionConfigOption({
+          sessionId: sid,
+          configId: 'model',
+          value: this.initialModel,
+        });
+        this.refreshModelCache(
+          (modelResp as { configOptions?: unknown }).configOptions
+        );
+        this.refreshEffortCache(
+          (modelResp as { configOptions?: unknown }).configOptions
+        );
+        this.broadcastEffortFromConfigOptions(
+          (modelResp as { configOptions?: unknown }).configOptions
+        );
+      } catch (e) {
+        logger.debug('Failed to set default model:', e);
+      }
+    }
+
+    if (!this.initialModel) {
+      this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+      this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
+      this.broadcastEffortFromConfigOptions(
+        (r as { configOptions?: unknown }).configOptions
+      );
+    }
+
+    const currentModelEntry = this.currentModelId
+      ? this.modelOptions.find((m) => m.value === this.currentModelId)
+      : undefined;
+    const currentModel = currentModelEntry
+      ? { id: currentModelEntry.value, name: currentModelEntry.name }
+      : (extractModelFromConfigOptions(
+          (r as { configOptions?: unknown }).configOptions
+        ) ?? extractModel(r.models));
 
     return {
       sessionId: sid,
-      currentModel:
-        extractModelFromConfigOptions(
-          (r as { configOptions?: unknown }).configOptions
-        ) ?? extractModel(r.models),
+      currentModel,
       // TODO: Remove cast once @kiro/client adds `modes` to NewSessionResponse
       currentAgent: extractCurrentAgent(this.modesState),
     };
@@ -2196,6 +2239,19 @@ export class KasAcpClient extends BaseAcpClient {
               this.modelOptions.length === 0
                 ? 'No models available'
                 : 'Usage: /model <model-id>',
+          };
+        }
+        if (modelId === 'set-current-as-default') {
+          if (!this.currentModelId) {
+            return { success: false, message: 'No model is currently active' };
+          }
+          await updateCliSetting('chat.defaultModel', this.currentModelId);
+          const name =
+            this.modelOptions.find((m) => m.value === this.currentModelId)
+              ?.name ?? this.currentModelId;
+          return {
+            success: true,
+            message: `Saved ${name} as default model`,
           };
         }
         return this.executeModelSwap(modelId);
@@ -3198,10 +3254,12 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   async listSettings(): Promise<Record<string, unknown>> {
-    return {};
+    return readCliSettings();
   }
 
-  async setSetting(_key: string, _value: unknown): Promise<void> {}
+  async setSetting(key: string, value: unknown): Promise<void> {
+    await updateCliSetting(key, value);
+  }
 
   async terminateSession(_sessionId: string): Promise<void> {}
 
@@ -3373,7 +3431,7 @@ export function executePaste(): CommandResult {
 export function createAcpClient(
   agentPath: string,
   extraAcpArgs: string[] = [],
-  kasOptions?: { initialAgent?: string }
+  kasOptions?: { initialAgent?: string; initialModel?: string }
 ): SessionClient {
   if (resolveAgentEngine() === 'kas') {
     // Test-only: inject an in-process mock transport when the harness set

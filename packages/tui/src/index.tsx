@@ -32,7 +32,11 @@ import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
 import type { AgentStreamEvent } from './types/agent-events';
 import { truncateToRecentTurns } from './utils/truncate-history';
-import { readBoolSetting, readStringSetting } from './utils/cli-settings';
+import {
+  readBoolSetting,
+  readStringSetting,
+  readOptionalStringSetting,
+} from './utils/cli-settings';
 import { Settings } from './constants/settings';
 import { CommandHistory } from './utils/command-history';
 import { GlyphsProvider } from './hooks/useGlyphs';
@@ -481,7 +485,13 @@ const startInitialization = (resumePickerSessionId?: string) => {
   });
 
   initPromise = kiro
-    .initialize(agentPath, acpArgs, { initialAgent: cliArgs.agent })
+    .initialize(agentPath, acpArgs, {
+      // CLI flag > cli.json setting > undefined (let agent pick default)
+      initialAgent:
+        cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
+      initialModel:
+        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+    })
     .then(async () => {
       const backendSettings = kiro.settings;
       appStore.setState({
@@ -666,7 +676,12 @@ const startApp = async () => {
   let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
     wireUpHandlers();
-    await kiro.initialize(agentPath, acpArgs, { initialAgent: cliArgs.agent });
+    await kiro.initialize(agentPath, acpArgs, {
+      initialAgent:
+        cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
+      initialModel:
+        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+    });
     const listing = await listAllSessions();
     if (!listing.ok) {
       logger.warn(

@@ -5,7 +5,9 @@ import { tmpdir } from 'os';
 import {
   readCliSettings,
   readBoolSetting,
+  readOptionalStringSetting,
   writeCliSettings,
+  updateCliSetting,
 } from '../cli-settings.js';
 
 let testDir: string;
@@ -122,6 +124,82 @@ describe('cli-settings', () => {
     it('round-trips with readCliSettings', () => {
       writeCliSettings({ a: 1, b: 'two', c: true });
       expect(readCliSettings()).toEqual({ a: 1, b: 'two', c: true });
+    });
+  });
+
+  describe('updateCliSetting', () => {
+    it('creates file and sets key when cli.json does not exist', async () => {
+      await updateCliSetting('chat.defaultModel', 'opus');
+      expect(readCliSettings()).toEqual({ 'chat.defaultModel': 'opus' });
+    });
+
+    it('merges key into existing settings', async () => {
+      writeCliJson({ 'chat.theme': 'dark', 'chat.compact': true });
+      await updateCliSetting('chat.defaultModel', 'sonnet');
+      expect(readCliSettings()).toEqual({
+        'chat.theme': 'dark',
+        'chat.compact': true,
+        'chat.defaultModel': 'sonnet',
+      });
+    });
+
+    it('overwrites existing key', async () => {
+      writeCliJson({ 'chat.defaultModel': 'old' });
+      await updateCliSetting('chat.defaultModel', 'new');
+      expect(readCliSettings()).toEqual({ 'chat.defaultModel': 'new' });
+    });
+
+    it('serializes concurrent calls (no lost updates)', async () => {
+      writeCliJson({});
+      await Promise.all([
+        updateCliSetting('a', 1),
+        updateCliSetting('b', 2),
+        updateCliSetting('c', 3),
+      ]);
+      const result = readCliSettings();
+      expect(result.a).toBe(1);
+      expect(result.b).toBe(2);
+      expect(result.c).toBe(3);
+    });
+
+    it('rejects on corrupt file without wiping', async () => {
+      const dir = join(testDir, '.kiro', 'settings');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(cliJsonPath(), 'corrupt{{{', 'utf-8');
+      await expect(updateCliSetting('key', 'val')).rejects.toThrow();
+      expect(readFileSync(cliJsonPath(), 'utf-8')).toBe('corrupt{{{');
+    });
+
+    it('recovers after a failed write (queue not poisoned)', async () => {
+      const dir = join(testDir, '.kiro', 'settings');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(cliJsonPath(), 'corrupt', 'utf-8');
+      await updateCliSetting('a', 1).catch(() => {});
+      writeCliJson({ existing: true });
+      await updateCliSetting('b', 2);
+      expect(readCliSettings()).toEqual({ existing: true, b: 2 });
+    });
+  });
+
+  describe('readOptionalStringSetting', () => {
+    it('returns undefined when key is missing', () => {
+      writeCliJson({});
+      expect(readOptionalStringSetting('nope')).toBeUndefined();
+    });
+
+    it('returns the string when non-empty', () => {
+      writeCliJson({ name: 'hello' });
+      expect(readOptionalStringSetting('name')).toBe('hello');
+    });
+
+    it('returns undefined for empty string', () => {
+      writeCliJson({ name: '' });
+      expect(readOptionalStringSetting('name')).toBeUndefined();
+    });
+
+    it('returns undefined for non-string value', () => {
+      writeCliJson({ name: 42 });
+      expect(readOptionalStringSetting('name')).toBeUndefined();
     });
   });
 });
