@@ -2568,7 +2568,29 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
-    setGoalStatus: (goalStatus) => set({ goalStatus }),
+    setGoalStatus: (goalStatus) => {
+      const prev = get().goalStatus;
+      if (goalStatus && goalStatus.state === 'active' && !prev) {
+        const rawDesc = goalStatus.message ?? 'Goal started';
+        const desc =
+          rawDesc.length > 80 ? rawDesc.slice(0, 77) + '...' : rawDesc;
+        const maxIter = goalStatus.maxIterations ?? 5;
+        set((s) => ({
+          goalStatus,
+          messages: [
+            ...s.messages,
+            {
+              id: generateMessageId(),
+              role: MessageRole.System,
+              content: `⟳ Goal: "${desc}" · ${maxIter} iteration${maxIter === 1 ? '' : 's'} max`,
+              success: true,
+            },
+          ],
+        }));
+      } else {
+        set({ goalStatus });
+      }
+    },
     setCurrentAgent: (agent, options) => {
       const prevAgent = get().currentAgent;
       // The artifact-generation card belongs to the spec workflow's

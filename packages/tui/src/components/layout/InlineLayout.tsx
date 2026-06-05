@@ -76,6 +76,7 @@ import {
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
+import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor } from '../../utils/agentColors.js';
@@ -93,9 +94,24 @@ function getPlaceholder(opts: {
   isProcessing: boolean;
   queuedMessages: string[];
   agentName: string | undefined;
+  goalStatus?: {
+    state: string;
+    iteration: number;
+    maxIterations: number;
+    message?: string;
+  } | null;
+  cancelLabel?: string;
 }): string {
   if (opts.editingQueueIndex != null) {
     return `Editing queued message ${opts.editingQueueIndex + 1} · esc to cancel`;
+  }
+  if (opts.goalStatus && opts.goalStatus.state === 'active') {
+    const desc =
+      opts.goalStatus.message && opts.goalStatus.message.length > 50
+        ? opts.goalStatus.message.slice(0, 47) + '...'
+        : (opts.goalStatus.message ?? 'Running');
+    const cancel = opts.cancelLabel ?? 'Ctrl+C';
+    return `Goal Active: ${desc} · Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} · ${cancel} to pause`;
   }
   if (opts.pendingApproval || opts.isProcessing) {
     return opts.queuedMessages.length > 0
@@ -192,6 +208,7 @@ export const InlineLayout: React.FC = () => {
   } = useProcessingState();
   const { cancelApproval, approvalMode } = useApprovalState();
   const globalPaused = useAnimationPaused();
+  const keybindings = useKeybindings();
   const trustAllToolsAccepted = useAppStore(
     (state) => state.trustAllToolsConfirmed
   );
@@ -1026,6 +1043,8 @@ export const InlineLayout: React.FC = () => {
               isProcessing,
               queuedMessages,
               agentName: currentAgent?.name,
+              goalStatus,
+              cancelLabel: keybindings.label('cancelStream'),
             })}
             hint={
               promptHint ||

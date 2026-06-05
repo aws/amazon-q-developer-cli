@@ -256,4 +256,124 @@ describe('/goal command', () => {
     await testCase.sendKeys([0x03, 0x03]);
     await testCase.expectExit();
   }, 30000);
+
+  it('shows system message in scrollback when goal starts', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('goal-start-system-message')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.sleepMs(500);
+
+    const cmd = '/goal fix the login bug --max 3';
+    for (const char of cmd) {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(30);
+    }
+    await testCase.sendKeys('\r');
+
+    // Wait for the goal system message to appear on screen
+    await testCase.waitForText('Goal:', 10000);
+
+    // Push a partial response (don't close stream yet — keeps TUI responsive)
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'working on it' },
+        },
+      },
+    ]);
+    await testCase.sleepMs(500);
+
+    // Verify system message appeared in store messages
+    const store = await testCase.getStore();
+    const systemMessages = store.messages.filter(
+      (m: any) => m.role === 'system'
+    );
+    expect(systemMessages.length).toBeGreaterThan(0);
+    const goalMsg = systemMessages.find((m: any) =>
+      m.content.includes('Goal:')
+    );
+    expect(goalMsg).toBeDefined();
+    expect(goalMsg!.content).toContain('fix the login bug');
+    expect(goalMsg!.content).toContain('3 iterations max');
+
+    // Clear the goal WHILE the stream is still open (TUI is still responsive).
+    // This prevents iteration 2 from firing when we close the stream.
+    for (const char of '/goal clear') {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(20);
+    }
+    await testCase.sendKeys('\r');
+    await testCase.sleepMs(500);
+
+    // Now close the stream — goal is already cleared so no iteration 2.
+    await testCase.pushSendMessageResponse(null);
+    await testCase.sleepMs(500);
+
+    await testCase.sendKeys([0x03]);
+    await testCase.sleepMs(500);
+    await testCase.sendKeys([0x03]);
+    await testCase.expectExit(15000);
+  }, 45000);
+
+  it('shows goal status in prompt bar placeholder while active', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('goal-placeholder-status')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.sleepMs(500);
+
+    const cmd = '/goal deploy to staging --max 5';
+    for (const char of cmd) {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(30);
+    }
+    await testCase.sendKeys('\r');
+
+    // Wait for the goal to actually activate before checking store
+    await testCase.waitForText('Goal:', 10000);
+
+    // Verify goal status is set in the store
+    const store = await testCase.getStore();
+    expect(store.goalStatus).not.toBeNull();
+    expect(store.goalStatus?.state).toBe('active');
+    expect(store.goalStatus?.maxIterations).toBe(5);
+    expect(store.goalStatus?.message).toContain('deploy to staging');
+
+    // Push partial response (don't close stream yet — keeps TUI responsive)
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: 'deploying' },
+        },
+      },
+    ]);
+    await testCase.sleepMs(500);
+
+    // Clear the goal WHILE the stream is still open (TUI is still responsive).
+    // This prevents iteration 2 from firing when we close the stream.
+    for (const char of '/goal clear') {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(20);
+    }
+    await testCase.sendKeys('\r');
+    await testCase.sleepMs(500);
+
+    // Now close the stream — goal is already cleared so no iteration 2.
+    await testCase.pushSendMessageResponse(null);
+    await testCase.sleepMs(500);
+
+    await testCase.sendKeys([0x03]);
+    await testCase.sleepMs(500);
+    await testCase.sendKeys([0x03]);
+    await testCase.expectExit(15000);
+  }, 45000);
 });

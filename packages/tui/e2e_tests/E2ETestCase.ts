@@ -453,8 +453,8 @@ export class E2ETestCase {
     throw new Error('Timeout waiting for TUI to become idle');
   }
 
-  expectExit(): Promise<number> {
-    return this.ptyManager.expectExit();
+  expectExit(timeout_ms?: number): Promise<number> {
+    return this.ptyManager.expectExit(timeout_ms);
   }
 
   /**
