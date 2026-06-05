@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-01
-  commit: 598173c4d
+  validated: 2026-06-05
+  commit: f6df040ba
   status: validated
   testable_headless: true
   category: slash_command
@@ -39,6 +39,22 @@ The `/goal` command starts a goal-driven loop where the agent works autonomously
 /goal fix all failing tests in the auth module --max 15
 /goal clear
 ```
+
+## Goal Status Indicators
+
+When a goal starts, a system message appears in the conversation:
+
+```
+⟳ Goal: "fix all failing tests in the auth module" · 15 iterations max
+```
+
+While a goal is active, the input placeholder shows current progress:
+
+```
+Goal Active: fix all failing tests... · Iteration 1/15 · Ctrl+C to pause
+```
+
+Long goal descriptions are truncated to 50 characters in the placeholder.
 
 ## Goal States
 
