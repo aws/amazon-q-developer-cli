@@ -110,7 +110,8 @@ fn data_dir() -> Result<PathBuf> {
 
 /// Path to extracted Bun executable
 pub fn bun_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("bun"))
+    let name = if cfg!(windows) { "bun.exe" } else { "bun" };
+    Ok(data_dir()?.join(name))
 }
 
 /// Path to sha256 of the extracted Bun executable
@@ -135,7 +136,8 @@ pub fn feed_json_path() -> Result<PathBuf> {
 
 /// Path to extracted Node.js executable (for KAS agent)
 pub fn node_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("node"))
+    let name = if cfg!(windows) { "node.exe" } else { "node" };
+    Ok(data_dir()?.join(name))
 }
 
 /// Path to sha256 of the extracted Node.js executable
