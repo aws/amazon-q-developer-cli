@@ -1548,6 +1548,18 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 
 // ─── KAS ACP client ──────────────────────────────────────────────────
 
+/** Map TUI-facing mode names to KAS wire names. */
+function toKasModeId(tuiModeId: string): string {
+  if (tuiModeId === 'kiro_planner') return 'quick-plan';
+  return tuiModeId;
+}
+
+/** Map KAS wire mode names back to TUI-facing names. */
+function fromKasModeId(kasModeId: string): string {
+  if (kasModeId === 'quick-plan') return 'kiro_planner';
+  return kasModeId;
+}
+
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
@@ -1686,8 +1698,13 @@ export class KasAcpClient extends BaseAcpClient {
     const modes = response?.modes;
     if (!modes) return;
     this.modesState = {
-      availableModes: modes.availableModes ?? [],
-      currentModeId: modes.currentModeId,
+      availableModes: (modes.availableModes ?? []).map((m) => ({
+        ...m,
+        id: fromKasModeId(m.id),
+      })),
+      currentModeId: modes.currentModeId
+        ? fromKasModeId(modes.currentModeId)
+        : modes.currentModeId,
     };
   }
 
@@ -1725,7 +1742,9 @@ export class KasAcpClient extends BaseAcpClient {
         // spec-mode workflow handoff) silently update the cache but leave
         // the header chip and welcome banner stale.
         if (update.sessionUpdate === 'current_mode_update') {
-          const newModeId = (update as { currentModeId: string }).currentModeId;
+          const newModeId = fromKasModeId(
+            (update as { currentModeId: string }).currentModeId
+          );
           const previousModeId = this.modesState.currentModeId;
           this.modesState = { ...this.modesState, currentModeId: newModeId };
           // Broadcast only on an actual change so we don't emit a
@@ -1840,7 +1859,10 @@ export class KasAcpClient extends BaseAcpClient {
         // KAS doesn't send current_mode_update after fallback, so update the cached mode here
         const fallback = params.fallbackAgent as string | undefined;
         if (fallback) {
-          this.modesState = { ...this.modesState, currentModeId: fallback };
+          this.modesState = {
+            ...this.modesState,
+            currentModeId: fromKasModeId(fallback),
+          };
         }
       }
     );
@@ -1921,7 +1943,7 @@ export class KasAcpClient extends BaseAcpClient {
         const modeResp = await this.kiroClient.setSessionConfigOption({
           sessionId: sid,
           configId: 'mode',
-          value: initialMode,
+          value: toKasModeId(initialMode),
         });
         // Read the actual mode from the response (may differ if KAS fell back)
         this.refreshModeFromConfigOptions(
@@ -2233,7 +2255,7 @@ export class KasAcpClient extends BaseAcpClient {
       await this.kiroClient.setSessionConfigOption({
         sessionId: this.sessionId,
         configId: 'mode',
-        value: agentName,
+        value: toKasModeId(agentName),
       });
       return {
         success: true,
@@ -2681,7 +2703,7 @@ export class KasAcpClient extends BaseAcpClient {
       ?.currentValue;
     this.modesState = {
       ...this.modesState,
-      currentModeId: actual ?? requestedMode,
+      currentModeId: fromKasModeId(actual ?? requestedMode),
     };
   }
 
@@ -2819,12 +2841,12 @@ export class KasAcpClient extends BaseAcpClient {
 
   /** /plan — switch to quick-plan mode, optionally send trailing prompt */
   private async executePlan(prompt?: string): Promise<CommandResult> {
-    const result = await this.executeAgentSwap('quick-plan');
+    const result = await this.executeAgentSwap('kiro_planner');
     if (!result.success) return result;
     return {
       success: true,
       message: result.message,
-      data: { agent: { name: 'quick-plan' }, ...(prompt && { prompt }) },
+      data: { agent: { name: 'kiro_planner' }, ...(prompt && { prompt }) },
     };
   }
 
@@ -2946,7 +2968,7 @@ export class KasAcpClient extends BaseAcpClient {
       await this.kiroClient.setSessionConfigOption({
         sessionId: this.sessionId,
         configId: 'mode',
-        value: modeId,
+        value: toKasModeId(modeId),
       });
     } catch (e) {
       logger.debug('Failed to set mode:', e);

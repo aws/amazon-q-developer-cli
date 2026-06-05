@@ -75,7 +75,7 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     expect(modeReqs).toHaveLength(1);
     const params = modeReqs[0]!.params as SetConfigOptionParams;
     expect(params.sessionId).toBe('test-session-1');
-    expect(params.value).toBe('kiro_planner');
+    expect(params.value).toBe('quick-plan');
   });
 
   it('does not send mode config option when --agent is absent', async () => {

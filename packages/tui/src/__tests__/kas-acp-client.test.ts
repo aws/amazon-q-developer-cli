@@ -282,7 +282,7 @@ describe('KasAcpClient', () => {
     expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
       expect.objectContaining({
         configId: 'mode',
-        value: 'kiro_planner',
+        value: 'quick-plan',
         sessionId: 'kas-session-1',
       })
     );
@@ -313,7 +313,7 @@ describe('KasAcpClient', () => {
         ([req]: any[]) => req?.configId === 'mode'
       );
       expect(modeCalls.length).toBe(1);
-      expect(modeCalls[0][0].value).toBe('kiro_planner');
+      expect(modeCalls[0][0].value).toBe('quick-plan');
     } finally {
       if (prev === undefined) delete process.env.KIRO_MODE;
       else process.env.KIRO_MODE = prev;
