@@ -3021,6 +3021,30 @@ async fn advertise_commands_and_prompts_to_client(
     client_cx.send_notification(notification)
 }
 
+/// Attach MCP tool behavior annotations to the `_meta` map of a
+/// `RequestPermissionRequest`.
+///
+/// ACP v1 (agent-client-protocol-schema 0.11) does not carry MCP tool
+/// behavior annotations on `ToolCallUpdateFields` natively — its `Annotations`
+/// type is for content-display priorities, not behavior. We surface the
+/// behavior hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+/// `openWorldHint`) via the documented `_meta` extension point so kiro-bot's
+/// approval gate can read them.
+///
+/// TODO(acp-typed-annotations): when ACP grows a typed annotations field on
+/// `ToolCallUpdateFields` (or `ToolCall`), populate that field directly and
+/// delete this helper plus the matching `_meta` reader on the kiro-bot side
+/// (`engine::acp::read_mcp_read_only_hint`).
+fn attach_mcp_annotations(
+    meta: &mut serde_json::Map<String, serde_json::Value>,
+    annotations: &agent::tools::mcp::McpToolAnnotations,
+) {
+    meta.insert(
+        "mcpAnnotations".into(),
+        serde_json::to_value(annotations).unwrap_or(serde_json::Value::Null),
+    );
+}
+
 async fn handle_approval_request(
     req: ApprovalRequest,
     client_cx: ConnectionTo<sacp::Client>,
@@ -3068,13 +3092,30 @@ async fn handle_approval_request(
         options,
     );
 
-    // Attach granular trust options via _meta so the TUI can offer path/command-level trust
+    // Build a single _meta map and merge in any per-feature payloads. ACP v1
+    // does not carry MCP tool behavior annotations or granular trust options
+    // natively, so both ride via the documented `_meta` extension point.
+    // When the protocol grows typed fields for either, drop the corresponding
+    // helper below and switch.
+    let mut meta = serde_json::Map::new();
+
+    // MCP tool annotations (readOnlyHint / destructiveHint / idempotentHint /
+    // openWorldHint) — only attach for MCP tools that actually carry hints.
+    if let AgentToolKind::Mcp(mcp_tool) = &req.tool.kind
+        && let Some(ann) = &mcp_tool.annotations
+    {
+        attach_mcp_annotations(&mut meta, ann);
+    }
+
+    // Granular trust options (path/command-level) so the TUI can offer them.
     if !req.trust_options.is_empty() {
-        let mut meta = serde_json::Map::new();
         meta.insert(
             "trustOptions".into(),
             serde_json::to_value(&req.trust_options).unwrap_or_default(),
         );
+    }
+
+    if !meta.is_empty() {
         permission_request = permission_request.meta(meta);
     }
 

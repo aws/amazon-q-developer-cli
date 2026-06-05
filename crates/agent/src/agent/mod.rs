@@ -3045,7 +3045,32 @@ impl Agent {
                 BuiltInTool::ToolSearch(_) => Ok(()),
                 BuiltInTool::Task(_) => Ok(()),
             },
-            ToolKind::Mcp(_) => Ok(()),
+            ToolKind::Mcp(mcp_tool) => {
+                // Phase 2 (kiro-bot Taskei integration): populate `annotations`
+                // from the MCP catalog so ACP clients can read `readOnlyHint`
+                // via `RequestPermissionRequest._meta.mcpAnnotations`. Lookup
+                // failure is non-fatal — annotations are advisory hints, not
+                // contract data, so we log-and-continue rather than reject the
+                // tool.
+                match self
+                    .mcp_manager_handle
+                    .get_tool_annotations(mcp_tool.server_name.clone(), mcp_tool.tool_name.clone())
+                    .await
+                {
+                    Ok(annotations) => {
+                        mcp_tool.annotations = annotations;
+                    },
+                    Err(err) => {
+                        warn!(
+                            server_name = %mcp_tool.server_name,
+                            tool_name = %mcp_tool.tool_name,
+                            ?err,
+                            "failed to fetch MCP tool annotations; continuing without hints"
+                        );
+                    },
+                }
+                Ok(())
+            },
         }
     }
 

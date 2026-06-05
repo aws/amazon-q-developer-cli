@@ -217,7 +217,7 @@ mod tests {
             "prompt must require citations on retrieved answers"
         );
         assert!(
-            prompt.contains("Never invent doc paths, file paths, or issue numbers"),
+            prompt.contains("Never invent doc paths, file paths, issue numbers, or Taskei task IDs"),
             "prompt must keep the no-fabrication rule"
         );
         assert!(

@@ -52,6 +52,7 @@ use super::oauth_util::{
 use super::types::Prompt;
 use crate::agent::agent_config::definitions::McpServerConfig;
 use crate::agent::agent_loop::types::ToolSpec;
+use crate::agent::tools::mcp::McpToolAnnotations;
 use crate::agent::util::expand_env_vars;
 use crate::agent::util::path::expand_path;
 use crate::agent_config::definitions::RemoteMcpServerConfig;
@@ -190,20 +191,24 @@ impl McpService {
                 debug!(?server_name, ?info, "peer info found");
 
                 // Fetch tools, if we can
-                let (tools, list_tools_duration) = if info.capabilities.tools.is_some() {
+                let (tools, tool_annotations, list_tools_duration) = if info.capabilities.tools.is_some() {
                     let start_time = Instant::now();
                     match service.list_all_tools().await {
-                        Ok(tools) => (
-                            Some(tools.into_iter().map(Into::into).collect()),
-                            Some(start_time.elapsed()),
-                        ),
+                        Ok(rmcp_tools) => {
+                            let annotations = extract_tool_annotations(&rmcp_tools);
+                            (
+                                Some(rmcp_tools.into_iter().map(Into::into).collect()),
+                                Some(annotations),
+                                Some(start_time.elapsed()),
+                            )
+                        },
                         Err(err) => {
                             error!(?err, "failed to list tools during server initialization");
-                            (None, None)
+                            (None, None, None)
                         },
                     }
                 } else {
-                    (None, None)
+                    (None, None, None)
                 };
 
                 // Fetch prompts, if we can
@@ -226,6 +231,7 @@ impl McpService {
                 LaunchMetadata {
                     serve_time_taken,
                     tools,
+                    tool_annotations,
                     list_tools_duration,
                     prompts,
                     list_prompts_duration,
@@ -236,6 +242,7 @@ impl McpService {
                 LaunchMetadata {
                     serve_time_taken,
                     tools: None,
+                    tool_annotations: None,
                     list_tools_duration: None,
                     prompts: None,
                     list_prompts_duration: None,
@@ -342,9 +349,28 @@ impl rmcp::Service<RoleClient> for McpService {
 pub struct LaunchMetadata {
     pub serve_time_taken: Duration,
     pub tools: Option<Vec<ToolSpec>>,
+    /// Per-tool MCP annotations indexed by tool name. Populated alongside
+    /// `tools`. Only tools that the gateway emitted annotations for appear
+    /// here; lookups MUST treat absence as "no hints", not "false".
+    pub tool_annotations: Option<HashMap<String, McpToolAnnotations>>,
     pub list_tools_duration: Option<Duration>,
     pub prompts: Option<Vec<Prompt>>,
     pub list_prompts_duration: Option<Duration>,
+}
+
+/// Extract a `tool-name → annotations` map from the rmcp tool list.
+///
+/// Tools whose annotations are entirely empty are dropped — there's
+/// no point storing structurally-empty entries.
+fn extract_tool_annotations(tools: &[RmcpTool]) -> HashMap<String, McpToolAnnotations> {
+    tools
+        .iter()
+        .filter_map(|t| {
+            let ann = t.annotations.as_ref()?;
+            let ours: McpToolAnnotations = ann.into();
+            ours.or_none().map(|a| (t.name.to_string(), a))
+        })
+        .collect()
 }
 
 /// Decorates the method passed in with retry logic, but only if the [RunningService] has an
@@ -698,6 +724,7 @@ mod tests {
         let m = LaunchMetadata {
             serve_time_taken: Duration::from_secs(1),
             tools: None,
+            tool_annotations: None,
             list_tools_duration: None,
             prompts: None,
             list_prompts_duration: None,
@@ -711,6 +738,7 @@ mod tests {
         let m = LaunchMetadata {
             serve_time_taken: Duration::from_millis(500),
             tools: Some(vec![]),
+            tool_annotations: Some(HashMap::new()),
             list_tools_duration: Some(Duration::from_millis(100)),
             prompts: Some(vec![]),
             list_prompts_duration: Some(Duration::from_millis(50)),
@@ -724,11 +752,66 @@ mod tests {
         let m = LaunchMetadata {
             serve_time_taken: Duration::from_secs(1),
             tools: None,
+            tool_annotations: None,
             list_tools_duration: None,
             prompts: None,
             list_prompts_duration: None,
         };
         let m2 = m.clone();
         assert_eq!(m.serve_time_taken, m2.serve_time_taken);
+    }
+
+    #[test]
+    fn test_extract_tool_annotations_filters_empty() {
+        use std::sync::Arc;
+
+        use rmcp::model::ToolAnnotations as RmcpToolAnnotations;
+        use serde_json::Map;
+
+        let with_hint = RmcpTool {
+            name: "read_only_tool".into(),
+            description: None,
+            input_schema: Arc::new(Map::new()),
+            output_schema: None,
+            annotations: Some(RmcpToolAnnotations {
+                read_only_hint: Some(true),
+                ..Default::default()
+            }),
+            title: None,
+            icons: None,
+            execution: None,
+            meta: None,
+        };
+        let title_only = RmcpTool {
+            name: "no_hint_tool".into(),
+            description: None,
+            input_schema: Arc::new(Map::new()),
+            output_schema: None,
+            annotations: Some(RmcpToolAnnotations {
+                title: Some("display only".into()),
+                ..Default::default()
+            }),
+            title: None,
+            icons: None,
+            execution: None,
+            meta: None,
+        };
+        let no_annotations = RmcpTool {
+            name: "bare_tool".into(),
+            description: None,
+            input_schema: Arc::new(Map::new()),
+            output_schema: None,
+            annotations: None,
+            title: None,
+            icons: None,
+            execution: None,
+            meta: None,
+        };
+
+        let map = extract_tool_annotations(&[with_hint, title_only, no_annotations]);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("read_only_tool").and_then(|a| a.read_only_hint), Some(true));
+        assert!(!map.contains_key("no_hint_tool"));
+        assert!(!map.contains_key("bare_tool"));
     }
 }

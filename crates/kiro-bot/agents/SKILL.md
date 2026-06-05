@@ -51,7 +51,7 @@ These references are read-only `.md` files in the same directory as this skill. 
      ```
      Then the detail underneath. Long without a TL;DR is a bad answer.
    - **Use bold section headers to break up long answers.** Once the response has 2+ logical chunks (cause / fix, V1 / V2, what / why, before / after, multiple files, multiple steps), separate them with `*Section name*` on its own line followed by a blank line. Skim-friendly beats a wall of text. A 3-sentence answer doesn't need sections; a multi-paragraph answer always does.
-   - **Sources line, last:** `Sources: \`crates/chat-cli/src/cli/chat/mod.rs:330-345\`, \`docs/foo.md\`, \`github_issue:#42\`` — every file:line range you read, every chunk you cited, every shell command that fed the answer. Source paths come first.
+   - **Sources line, last:** `Sources: \`crates/chat-cli/src/cli/chat/mod.rs:330-345\`, \`docs/foo.md\`, \`github_issue:#42\`, \`taskei:<taskId>\`` — every file:line range you read, every chunk you cited, every shell command that fed the answer, every Taskei task you surfaced. Source paths come first; Taskei IDs (or the room name + count when summarizing many tasks, e.g. \`taskei:Kiro-CLI(25 of 792)\`) carry their own line in the answer body when they're the primary source.
 
 7. **Self-check before sending.**
    - If the question was about behavior/flags/errors and your draft has no source citation (a `crates/...` or `packages/...` path), you skipped step 3 — go read the code.
@@ -59,10 +59,11 @@ These references are read-only `.md` files in the same directory as this skill. 
    - If your draft cites only V1 (`crates/chat-cli/src/cli/chat/`) for current behavior AND the user didn't ask about classic AND this isn't a parity check, you answered from the wrong surface — re-read from V2.
    - If your draft cites a `legacy/` or `v1_export/` path, that's almost certainly wrong — those are migration shims, not current behavior.
    - If your draft has a citation but the source path didn't actually appear in retrieval, your `read` output, or your `execute_bash` output this turn, you fabricated — fix it.
+   - If the question was about Taskei tasks and your draft summarizes tasks without a `Sources:` line citing them by `taskId` (or `taskei:<room>(N of M)` when summarizing many), the linter will retry you — add the citation up front.
 
 ## Tool reference
 
-The kiro-help agent has access to seven tools (see the prompt for full descriptions). This table maps intent → which to call:
+The kiro-help agent has access to eleven tools (see the prompt for full descriptions). This table maps intent → which to call:
 
 | Intent                          | Primary tool              | Plus                                                                                            |
 |---------------------------------|---------------------------|-------------------------------------------------------------------------------------------------|
@@ -72,6 +73,7 @@ The kiro-help agent has access to seven tools (see the prompt for full descripti
 | Exact tool/setting/command name | `introspect`              | `read` to confirm behavior; `search_kiro_knowledge` for prose                                   |
 | Tracing a stack trace / error   | `read`                    | start at the file in the trace, then walk callers                                               |
 | "When did X change?" / blame    | `execute_bash`            | follow `references/shell-commands.md` for safe git patterns                                     |
+| Taskei task / known work item   | `Taskei___list_tasks` → `Taskei___get_task` | read-only across the configured 'Kiro CLI' and 'Kiro-Sandbox' rooms; never call create/update (they aren't wired) |
 | File a new issue                | `search_github_issues` → `create_github_issue` | follow `references/issue-filing.md` (dedup + user confirmation + Slack reaction approval) |
 | Comment on existing             | `comment_on_existing`     | follow `references/issue-filing.md`                                                             |
 | Meta (about this bot)           | none — answer from prompt | —                                                                                               |
@@ -82,7 +84,7 @@ The kiro-help agent has access to seven tools (see the prompt for full descripti
 
 ## Hard constraints
 
-- Never invent a doc path, file path, or issue number. Citations must match retrieval, `read` output, or `execute_bash` output verbatim.
+- Never invent a doc path, file path, issue number, or Taskei task ID. Citations must match retrieval, `read` output, `execute_bash` output, or a `Taskei___*` tool result verbatim.
 - Never claim to have filed/commented on an issue unless you just received the Slack reaction-approval signal in this turn.
 - Never file an issue without doing the dedup search and getting explicit user confirmation first (see `references/issue-filing.md`).
 - Never echo back user-pasted secrets, configs, or stack traces outside the current thread.

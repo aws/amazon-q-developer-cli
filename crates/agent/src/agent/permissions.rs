@@ -918,6 +918,7 @@ mod tests {
             server_name: "test_server".to_string(),
             tool_name: "test_tool".to_string(),
             params: None,
+            annotations: None,
         });
         let result = evaluate_tool_permission(&perms, &allowed_tools, &settings, &mcp_tool, &provider);
         assert!(matches!(result, Ok(PermissionEvalResult::Allow)));

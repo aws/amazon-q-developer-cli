@@ -145,6 +145,7 @@ use types::Prompt;
 
 use super::agent_loop::types::ToolSpec;
 use super::consts::DEFAULT_MCP_CREDENTIAL_PATH;
+use super::tools::mcp::McpToolAnnotations;
 use super::util::path::expand_path;
 use super::util::providers::RealProvider;
 use super::util::request_channel::{
@@ -214,6 +215,29 @@ impl McpManagerHandle {
             .unwrap_or(Err(McpManagerError::Channel))?
         {
             McpManagerResponse::ToolSpecs(v) => Ok(v),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    /// Look up MCP annotations for a single tool. Returns `Ok(None)` if the
+    /// server isn't initialized, the tool doesn't exist, or the gateway
+    /// emitted no annotations for it. The agent uses this to populate
+    /// `McpTool.annotations` after `Tool::parse`; permissioning policy MUST
+    /// treat `Ok(None)` as "no hints", not "false".
+    pub async fn get_tool_annotations(
+        &self,
+        server_name: String,
+        tool_name: String,
+    ) -> Result<Option<McpToolAnnotations>, McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::GetToolAnnotations { server_name, tool_name })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::ToolAnnotations(v) => Ok(v),
             other => Err(McpManagerError::Custom(format!(
                 "received unexpected response: {other:?}"
             ))),
@@ -413,6 +437,20 @@ impl McpManager {
                 },
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
+            McpManagerRequest::GetToolAnnotations { server_name, tool_name } => match self.servers.get(&server_name) {
+                Some(handle) => Ok(McpManagerResponse::ToolAnnotations(
+                    handle.get_tool_annotations(tool_name).await?,
+                )),
+                // Mirror `GetToolSpecs` semantics: failures and not-initialized states get
+                // surfaced; the agent's caller decides whether to fall through to "no hints".
+                None if self.failed_servers.contains(&server_name) => {
+                    Err(McpManagerError::ServerFailed { name: server_name })
+                },
+                None if self.initializing_servers.contains_key(&server_name) => {
+                    Err(McpManagerError::ServerCurrentlyInitializing { name: server_name })
+                },
+                None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
+            },
             McpManagerRequest::GetPrompts { server_name } => match self.servers.get(&server_name) {
                 Some(handle) => Ok(McpManagerResponse::Prompts(handle.get_prompts().await?)),
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
@@ -520,6 +558,10 @@ pub enum McpManagerRequest {
     GetToolSpecs {
         server_name: String,
     },
+    GetToolAnnotations {
+        server_name: String,
+        tool_name: String,
+    },
     GetPrompts {
         server_name: String,
     },
@@ -541,6 +583,7 @@ pub enum McpManagerRequest {
 pub enum McpManagerResponse {
     LaunchServer(oneshot::Receiver<LaunchServerResult>),
     ToolSpecs(Vec<ToolSpec>),
+    ToolAnnotations(Option<McpToolAnnotations>),
     Prompts(Vec<Prompt>),
     Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),

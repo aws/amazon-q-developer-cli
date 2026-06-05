@@ -208,6 +208,23 @@ struct AcpClient {
     current_conv: Rc<RefCell<(String, Option<String>, String)>>,
 }
 
+/// Read `mcpAnnotations.readOnlyHint` from the ACP request's `_meta`
+/// extension.
+///
+/// ACP v1 (agent-client-protocol-schema 0.6) does not surface MCP tool
+/// behavior annotations on `ToolCallUpdateFields` natively — its
+/// `Annotations` type is for content-display priorities, not behavior. The
+/// agent side surfaces the hint via the documented `_meta` extension point;
+/// see `chat_cli_v2::agent::acp::acp_agent::attach_mcp_annotations` for the
+/// matching writer.
+///
+/// TODO(acp-typed-annotations): when ACP grows a typed annotations field on
+/// `ToolCallUpdateFields` (or `ToolCall`), swap this body to read the typed
+/// field and delete the writer named above.
+fn read_only_hint_from_meta(meta: Option<&serde_json::Value>) -> Option<bool> {
+    meta?.get("mcpAnnotations")?.get("readOnlyHint")?.as_bool()
+}
+
 #[async_trait::async_trait(?Send)]
 impl acp::Client for AcpClient {
     async fn request_permission(
@@ -228,6 +245,16 @@ impl acp::Client for AcpClient {
             outcome: acp::RequestPermissionOutcome::Selected { option_id: id },
             meta: None,
         };
+
+        // Phase 2: auto-approve MCP tools whose readOnlyHint is true,
+        // regardless of the configured approval_policy. Cache miss / no
+        // _meta / non-MCP tools fall through to the existing policy
+        // (defense-in-depth). The plan's "second layer" against annotation
+        // drift is the agent's allowedTools list in agent.json, NOT this
+        // gate.
+        if read_only_hint_from_meta(args.meta.as_ref()) == Some(true) {
+            return Ok(selected(first_option.clone()));
+        }
 
         match self.approval_policy {
             ApprovalPolicy::Deny => Ok(cancelled()),
@@ -827,4 +854,164 @@ pub fn spawn_acp_thread(
         });
     });
     acp_info
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use acp::Client as _;
+    use serde_json::json;
+
+    use super::*;
+
+    /// Build a minimal `AcpClient` suitable for testing the
+    /// `request_permission` decision path without spawning a real ACP child
+    /// process.
+    fn make_test_client(approval_policy: ApprovalPolicy) -> AcpClient {
+        AcpClient {
+            chunks: Rc::new(RefCell::new(Vec::new())),
+            progress: Rc::new(RefCell::new(None)),
+            mcp_ready_count: Rc::new(RefCell::new(0)),
+            mcp_notify: Rc::new(tokio::sync::Notify::new()),
+            acp_info: Arc::new(Mutex::new(AcpInfo::default())),
+            approval_policy,
+            // `Ask` policy without an approval_tx falls through to Cancelled —
+            // which is exactly the "fall-through" behaviour we want to assert
+            // against in the negative tests.
+            approval_tx: None,
+            current_conv: Rc::new(RefCell::new((String::new(), None, String::new()))),
+        }
+    }
+
+    /// Build a `RequestPermissionRequest` with one permission option
+    /// (`allow_once`) and an optional `_meta` payload.
+    fn make_permission_request(meta: Option<serde_json::Value>) -> acp::RequestPermissionRequest {
+        acp::RequestPermissionRequest {
+            session_id: acp::SessionId("test-session".into()),
+            tool_call: acp::ToolCallUpdate {
+                id: acp::ToolCallId("tc-1".into()),
+                fields: acp::ToolCallUpdateFields {
+                    title: Some("Test tool".to_string()),
+                    ..Default::default()
+                },
+                meta: None,
+            },
+            options: vec![acp::PermissionOption {
+                id: acp::PermissionOptionId("allow_once".into()),
+                name: "Allow once".into(),
+                kind: acp::PermissionOptionKind::AllowOnce,
+                meta: None,
+            }],
+            meta,
+        }
+    }
+
+    fn run<F: std::future::Future>(fut: F) -> F::Output {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let local = tokio::task::LocalSet::new();
+        local.block_on(&runtime, fut)
+    }
+
+    #[test]
+    fn read_only_hint_helper_extracts_true() {
+        let meta = json!({ "mcpAnnotations": { "readOnlyHint": true } });
+        assert_eq!(read_only_hint_from_meta(Some(&meta)), Some(true));
+    }
+
+    #[test]
+    fn read_only_hint_helper_extracts_false() {
+        let meta = json!({ "mcpAnnotations": { "readOnlyHint": false } });
+        assert_eq!(read_only_hint_from_meta(Some(&meta)), Some(false));
+    }
+
+    #[test]
+    fn read_only_hint_helper_returns_none_when_meta_missing() {
+        assert_eq!(read_only_hint_from_meta(None), None);
+    }
+
+    #[test]
+    fn read_only_hint_helper_returns_none_when_mcp_annotations_absent() {
+        let meta = json!({ "trustOptions": [] });
+        assert_eq!(read_only_hint_from_meta(Some(&meta)), None);
+    }
+
+    #[test]
+    fn read_only_hint_helper_returns_none_when_field_not_bool() {
+        let meta = json!({ "mcpAnnotations": { "readOnlyHint": "yes" } });
+        assert_eq!(read_only_hint_from_meta(Some(&meta)), None);
+    }
+
+    #[test]
+    fn request_permission_auto_approves_when_read_only_hint_true() {
+        // Even under Deny policy, readOnlyHint=true wins. This is the strongest
+        // assertion of the gate's intent.
+        let client = make_test_client(ApprovalPolicy::Deny);
+        let req = make_permission_request(Some(json!({
+            "mcpAnnotations": { "readOnlyHint": true }
+        })));
+
+        let resp = run(client.request_permission(req)).expect("request_permission ok");
+        match resp.outcome {
+            acp::RequestPermissionOutcome::Selected { option_id } => {
+                assert_eq!(option_id.0.as_ref(), "allow_once");
+            },
+            other => panic!("expected Selected(allow_once), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn request_permission_falls_through_to_policy_when_hint_false() {
+        // Hint=false → Deny policy continues to deny.
+        let client = make_test_client(ApprovalPolicy::Deny);
+        let req = make_permission_request(Some(json!({
+            "mcpAnnotations": { "readOnlyHint": false }
+        })));
+
+        let resp = run(client.request_permission(req)).expect("request_permission ok");
+        assert!(
+            matches!(resp.outcome, acp::RequestPermissionOutcome::Cancelled),
+            "expected Cancelled (Deny policy fall-through), got {:?}",
+            resp.outcome
+        );
+    }
+
+    #[test]
+    fn request_permission_falls_through_to_policy_when_no_meta() {
+        // No _meta at all → fall through to policy. Approve policy selects
+        // the first option.
+        let client = make_test_client(ApprovalPolicy::Approve);
+        let req = make_permission_request(None);
+
+        let resp = run(client.request_permission(req)).expect("request_permission ok");
+        match resp.outcome {
+            acp::RequestPermissionOutcome::Selected { option_id } => {
+                assert_eq!(option_id.0.as_ref(), "allow_once");
+            },
+            other => panic!("expected Selected(allow_once), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn request_permission_falls_through_to_policy_when_non_mcp_tool() {
+        // Non-MCP tools won't have mcpAnnotations in _meta. Even if other
+        // _meta keys are present (e.g. trustOptions), readOnlyHint lookup
+        // returns None and we fall through to policy — Deny here.
+        let client = make_test_client(ApprovalPolicy::Deny);
+        let req = make_permission_request(Some(json!({
+            "trustOptions": [{ "kind": "path", "label": "scope to /tmp", "scope": "/tmp" }]
+        })));
+
+        let resp = run(client.request_permission(req)).expect("request_permission ok");
+        assert!(
+            matches!(resp.outcome, acp::RequestPermissionOutcome::Cancelled),
+            "expected Cancelled (no mcpAnnotations → Deny policy), got {:?}",
+            resp.outcome
+        );
+    }
 }

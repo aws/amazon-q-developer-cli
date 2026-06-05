@@ -61,6 +61,10 @@ fn reply_has_citation(reply: &str) -> bool {
     // The skill's worked example anchors on the literal "Sources:" line; that's
     // the dominant shape. Also accept inline `docs/...` and `github_issue:`
     // mentions because the model occasionally goes prose instead of a list.
+    // `taskei:` covers the Taskei tool result shape (Phase 2): when a reply
+    // is built from `Taskei___list_tasks` / `Taskei___get_task` output, the
+    // skill teaches the model to cite by `taskei:<taskId>` or
+    // `taskei:<room>(N of M)` for summary-of-many shapes.
     let needles = [
         "Sources:",
         "Source:",
@@ -68,6 +72,7 @@ fn reply_has_citation(reply: &str) -> bool {
         "autodocs/",
         "github_issue:",
         "github.com/kiro-team/kiro-cli/issues/",
+        "taskei:",
     ];
     needles.iter().any(|n| reply.contains(n))
 }
@@ -133,5 +138,23 @@ mod tests {
     fn github_issue_link_counts_as_citation() {
         let reply = "Known issue — see github_issue:42";
         assert_eq!(check("is this a known kiro-cli bug?", reply), RetrievalCheck::Cited,);
+    }
+
+    #[test]
+    fn taskei_task_id_counts_as_citation() {
+        // Phase 2: Taskei tool results are a valid source. The skill teaches
+        // the model to cite by `taskei:<taskId>` when surfacing tasks.
+        let reply = "There are 3 open kiro-cli tasks. Sources: taskei:abc-123, taskei:def-456";
+        assert_eq!(check("any open kiro-cli tasks?", reply), RetrievalCheck::Cited,);
+    }
+
+    #[test]
+    fn taskei_room_summary_counts_as_citation() {
+        // Summary-of-many shape from `Taskei___list_tasks` over a busy room.
+        let reply = "792 open tasks. Top 25 by recency: ... | Sources: taskei:Kiro-CLI(25 of 792)";
+        assert_eq!(
+            check("what tasks are open in the kiro-cli taskei room?", reply),
+            RetrievalCheck::Cited,
+        );
     }
 }

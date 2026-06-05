@@ -32,6 +32,7 @@ use super::service::{
 use super::types::Prompt;
 use crate::agent::agent_config::definitions::McpServerConfig;
 use crate::agent::agent_loop::types::ToolSpec;
+use crate::agent::tools::mcp::McpToolAnnotations;
 use crate::agent::util::request_channel::{
     RequestReceiver,
     RequestSender,
@@ -62,6 +63,25 @@ impl McpServerActorHandle {
             .unwrap_or(Err(McpServerActorError::Channel))?
         {
             McpServerActorResponse::Tools(tool_specs) => Ok(tool_specs),
+            other => Err(McpServerActorError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    /// Look up annotations for a single tool by name. Returns `Ok(None)` if
+    /// the tool exists but has no annotations, or the tool name is unknown.
+    pub async fn get_tool_annotations(
+        &self,
+        tool_name: String,
+    ) -> Result<Option<McpToolAnnotations>, McpServerActorError> {
+        match self
+            .sender
+            .send_recv(McpServerActorRequest::GetToolAnnotations { tool_name })
+            .await
+            .unwrap_or(Err(McpServerActorError::Channel))?
+        {
+            McpServerActorResponse::ToolAnnotations(ann) => Ok(ann),
             other => Err(McpServerActorError::Custom(format!(
                 "received unexpected response: {other:?}"
             ))),
@@ -131,6 +151,9 @@ impl McpServerActorHandle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerActorRequest {
     GetTools,
+    GetToolAnnotations {
+        tool_name: String,
+    },
     GetPrompts,
     GetPrompt {
         name: String,
@@ -146,6 +169,7 @@ pub enum McpServerActorRequest {
 #[derive(Debug)]
 enum McpServerActorResponse {
     Tools(Vec<ToolSpec>),
+    ToolAnnotations(Option<McpToolAnnotations>),
     Prompts(Vec<Prompt>),
     Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
@@ -210,6 +234,9 @@ pub struct McpServerActor {
     _config: McpServerConfig,
     /// Tools
     tools: Vec<ToolSpec>,
+    /// MCP tool annotations indexed by tool name. Populated alongside
+    /// `tools`; refreshed on `ToolListChanged`. See [`McpToolAnnotations`].
+    tool_annotations: HashMap<String, McpToolAnnotations>,
     /// Prompts
     prompts: Vec<Prompt>,
     /// Handle to an MCP server
@@ -263,6 +290,7 @@ impl McpServerActor {
                     server_name: server_name.clone(),
                     _config: config,
                     tools: launch_md.tools.unwrap_or_default(),
+                    tool_annotations: launch_md.tool_annotations.unwrap_or_default(),
                     prompts: launch_md.prompts.unwrap_or_default(),
                     service_handle,
                     req_rx,
@@ -326,6 +354,9 @@ impl McpServerActor {
         debug!(?self.server_name, ?req, "MCP actor received new request");
         match req {
             McpServerActorRequest::GetTools => Ok(McpServerActorResponse::Tools(self.tools.clone())),
+            McpServerActorRequest::GetToolAnnotations { tool_name } => Ok(McpServerActorResponse::ToolAnnotations(
+                self.tool_annotations.get(&tool_name).cloned(),
+            )),
             McpServerActorRequest::GetPrompts => Ok(McpServerActorResponse::Prompts(self.prompts.clone())),
             McpServerActorRequest::GetPrompt { name, arguments } => {
                 if self.service_handle.is_transport_closed() {
@@ -413,6 +444,16 @@ impl McpServerActor {
         match msg {
             McpMessage::Tools(res) => match res {
                 Ok(tools) => {
+                    // Refresh annotations alongside tools so a ToolListChanged
+                    // notification doesn't leave the annotation cache stale.
+                    self.tool_annotations = tools
+                        .iter()
+                        .filter_map(|t| {
+                            let ann = t.annotations.as_ref()?;
+                            let ours: McpToolAnnotations = ann.into();
+                            ours.or_none().map(|a| (t.name.to_string(), a))
+                        })
+                        .collect();
                     self.tools = tools.into_iter().map(Into::into).collect();
                     let _ = self
                         .event_tx

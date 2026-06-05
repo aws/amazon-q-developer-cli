@@ -253,6 +253,10 @@ impl Tool {
                     tool_name: tool_name.clone(),
                     server_name: server_name.clone(),
                     params: Some(params.clone()),
+                    // Annotations are populated post-parse from the MCP catalog
+                    // (see `Agent::populate_mcp_annotations`); `Tool::parse` is
+                    // a static fn with no catalog handle.
+                    annotations: None,
                 }),
                 None => {
                     return Err(ToolParseErrorKind::InvalidArgs(format!(

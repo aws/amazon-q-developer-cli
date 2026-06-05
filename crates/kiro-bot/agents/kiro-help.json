@@ -17,6 +17,15 @@
       "command": "kiro-github-mcp",
       "args": ["--scope", "write"],
       "env": {}
+    },
+    "kiro-mcp": {
+      "command": "kiro-mcp",
+      "args": ["--enabled-families", "taskei"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "TASKEI_ENDPOINT": "https://iad.prod.service.mcp.taskei.amazon.dev/mcp",
+        "TASKEI_ALLOW_ROOMS": "7c221a81-7ca7-436c-8f05-a7278949341b,4ac982ae-1285-44e0-af12-8d3662da5935"
+      }
     }
   },
   "tools": [
@@ -26,11 +35,19 @@
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
     "@kiro-github-write/create_github_issue",
-    "@kiro-github-write/comment_on_existing"
+    "@kiro-github-write/comment_on_existing",
+    "@kiro-mcp/Taskei___list_tasks",
+    "@kiro-mcp/Taskei___get_task",
+    "@kiro-mcp/Taskei___get_room",
+    "@kiro-mcp/Taskei___list_room_resource"
   ],
   "allowedTools": [
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
+    "@kiro-mcp/Taskei___list_tasks",
+    "@kiro-mcp/Taskei___get_task",
+    "@kiro-mcp/Taskei___get_room",
+    "@kiro-mcp/Taskei___list_room_resource",
     "introspect",
     "read"
   ],
