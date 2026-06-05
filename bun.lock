@@ -29,8 +29,8 @@
       "version": "0.0.0-dev",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.19.0",
-        "@kiro/acp-type-covenant": "0.3.45",
-        "@kiro/client": "0.3.45",
+        "@kiro/acp-type-covenant": "0.3.69",
+        "@kiro/client": "0.3.69",
         "@types/diff": "^8.0.0",
         "ansi-escapes": "^7.3.0",
         "chalk": "^5.6.2",
@@ -48,7 +48,7 @@
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@kiro/agent": "0.3.47",
+        "@kiro/agent": "0.3.69",
         "@types/bun": "^1.3.11",
         "@types/node": "^22.19.15",
         "@types/react": "^19.2.14",
@@ -433,15 +433,15 @@
 
     "@js-sdsl/ordered-map": ["@js-sdsl/ordered-map@4.4.2", "", {}, "sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw=="],
 
-    "@kiro/acp-type-covenant": ["@kiro/acp-type-covenant@0.3.45", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/acp-type-covenant/-/acp-type-covenant-0.3.45.tgz", { "dependencies": { "@kiro/context-providers": "0.3.45", "zod": "^3.23.8" } }, "sha512-eJEn8ZlCRX5ABSVIQSXFQchiFndxRtxseB6FyuhPsiQlIWIMk7RMXzT/R4o2xLM1qBRb68k3CC7+glHCgqt8TQ=="],
+    "@kiro/acp-type-covenant": ["@kiro/acp-type-covenant@0.3.69", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/acp-type-covenant/-/acp-type-covenant-0.3.69.tgz", { "dependencies": { "@kiro/context-providers": "0.3.69", "zod": "^3.23.8" } }, "sha512-0lCww3br7BCesEj/YUVOGATykXB/3nXfLdJlk5kViPRvPt8bynA5Dpbea3QcD0rrCkGTUYpSTzuJ7fcbBhjB5w=="],
 
-    "@kiro/agent": ["@kiro/agent@0.3.47", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/agent/-/agent-0.3.47.tgz", { "dependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@amzn/kiro-control-plane-bearer-client": "^1.0.0", "@aws/codewhisperer-streaming-client": "^1.0.43", "@cedar-policy/cedar-wasm": "^4.9.1", "@huggingface/transformers": "^3.4.1", "@kiro/sandbox-proxy": "0.3.47", "@langchain/aws": "^1.3.7", "@langchain/core": "^1.1.45", "@langchain/langgraph": "^1.3.0", "@modelcontextprotocol/sdk": "^1.25.2", "@mozilla/readability": "^0.6.0", "@opentelemetry/api": "^1.9.1", "@opentelemetry/context-async-hooks": "^2.7.0", "@opentelemetry/core": "^2.7.0", "@opentelemetry/exporter-metrics-otlp-http": "^0.217.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/id-generator-aws-xray": "^2.1.0", "@opentelemetry/propagator-aws-xray": "^2.2.0", "@opentelemetry/resources": "^2.7.0", "@opentelemetry/sdk-metrics": "^2.7.0", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.0", "@opentelemetry/semantic-conventions": "^1.28.0", "@smithy/types": "^4.14.1", "@smithy/util-retry": "^4.3.1", "@unit-mesh/treesitter-artifacts": "^1.7.7", "@vscode/ripgrep": "^1.17.1", "async-sema": "^3.1.1", "axios": "^1.16.0", "axios-retry": "^4.5.0", "chokidar": "^5.0.0", "comment-json": "^5.0.0", "dedent": "^1.7.2", "gray-matter": "^4.0.3", "html-escaper": "^3.0.3", "https-proxy-agent": "^7.0.6", "ignore": "^7.0.5", "minimatch": "^10.2.5", "mustache": "^4.2.0", "proper-lockfile": "^4.1.2", "schema-stream": "^3.2.2", "tslib": "^2.3.1", "uuid": "^14.0.0", "vscode-jsonrpc": "^8.2.1", "vscode-languageserver-types": "3.17.5", "vscode-uri": "^3.1.0", "web-tree-sitter": "0.26.8", "ws": "^8.20.0", "yaml": "^2.8.3", "zod": "^3.23.8" }, "optionalDependencies": { "z3-solver": "^4.16.0" }, "peerDependencies": { "@kiro/acp-type-covenant": "0.3.47", "@kiro/context-providers": "0.3.47" }, "bin": { "kiro-agent": "dist/server/acp-server.js" } }, "sha512-fQ2t6nQcBG6xaC7uyQz6Mka/qR3voCXPnuMpn6Q9jeSHeY7FKBd5OK96nYgQj3n7GE4ygLRlTuCaASaqIVTwPQ=="],
+    "@kiro/agent": ["@kiro/agent@0.3.69", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/agent/-/agent-0.3.69.tgz", { "dependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@amzn/kiro-control-plane-bearer-client": "^1.0.0", "@aws/codewhisperer-streaming-client": "^1.0.43", "@cedar-policy/cedar-wasm": "^4.9.1", "@huggingface/transformers": "^3.4.1", "@kiro/sandbox-proxy": "0.3.69", "@langchain/aws": "^1.3.7", "@langchain/core": "^1.1.45", "@langchain/langgraph": "^1.3.0", "@modelcontextprotocol/sdk": "^1.25.2", "@mozilla/readability": "^0.6.0", "@opentelemetry/api": "^1.9.1", "@opentelemetry/context-async-hooks": "^2.7.0", "@opentelemetry/core": "^2.7.0", "@opentelemetry/exporter-metrics-otlp-http": "^0.217.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/id-generator-aws-xray": "^2.1.0", "@opentelemetry/propagator-aws-xray": "^2.2.0", "@opentelemetry/resources": "^2.7.0", "@opentelemetry/sdk-metrics": "^2.7.0", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.0", "@opentelemetry/semantic-conventions": "^1.28.0", "@smithy/types": "^4.14.1", "@smithy/util-retry": "^4.3.1", "@unit-mesh/treesitter-artifacts": "^1.7.7", "@vscode/ripgrep": "^1.17.1", "async-sema": "^3.1.1", "axios": "^1.16.0", "axios-retry": "^4.5.0", "chokidar": "^5.0.0", "comment-json": "^5.0.0", "dedent": "^1.7.2", "gray-matter": "^4.0.3", "html-escaper": "^3.0.3", "https-proxy-agent": "^7.0.6", "ignore": "^7.0.5", "minimatch": "^10.2.5", "mustache": "^4.2.0", "proper-lockfile": "^4.1.2", "schema-stream": "^3.2.2", "socks-proxy-agent": "^8.0.5", "tslib": "^2.3.1", "uuid": "^14.0.0", "vscode-jsonrpc": "^8.2.1", "vscode-languageserver-types": "3.17.5", "vscode-uri": "^3.1.0", "web-tree-sitter": "0.26.8", "ws": "^8.20.0", "yaml": "^2.8.3", "zod": "^3.23.8" }, "optionalDependencies": { "z3-solver": "^4.16.0" }, "peerDependencies": { "@kiro/acp-type-covenant": "0.3.69", "@kiro/context-providers": "0.3.69" }, "bin": { "kiro-agent": "dist/server/acp-server.js" } }, "sha512-N4dnjMhCPldNC+w14A4ctiWDOdrDipjxzI/2ONg1HvgdSQZB2b2yQu3rlOCciOuThpgQqtwjMvk3yDxMkyXuAw=="],
 
-    "@kiro/client": ["@kiro/client@0.3.45", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/client/-/client-0.3.45.tgz", { "peerDependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@kiro/acp-type-covenant": "0.3.45" } }, "sha512-W9q7DQzgE53dawfkipHugxE2gc3X26TYNNe42J6wxwjFe7Fdz1tV6Ooi/vafDQzahhTVIgWo0lsfGEMwHBMAwg=="],
+    "@kiro/client": ["@kiro/client@0.3.69", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/client/-/client-0.3.69.tgz", { "peerDependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@kiro/acp-type-covenant": "0.3.69" } }, "sha512-oqeBgmtGtmC2NdAe+8EGyRl2D2AzYqBnXvXF28pLtUkWdjUmqrqtzmeVDZ1SUUiqb13PGZH3tfqlBK0b4AX3Tg=="],
 
-    "@kiro/context-providers": ["@kiro/context-providers@0.3.45", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/context-providers/-/context-providers-0.3.45.tgz", { "dependencies": { "vscode-uri": "^3.1.0" } }, "sha512-3QpPsywKcw1k6At4yW/LV5h+HWIZzcD/KxcjJ0ZP5wcl0bs/FOc4eHItpwawV8xCSzxg5omCmNJzUdpbBrXfOA=="],
+    "@kiro/context-providers": ["@kiro/context-providers@0.3.69", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/context-providers/-/context-providers-0.3.69.tgz", { "dependencies": { "vscode-uri": "^3.1.0" } }, "sha512-wclODYBOkSdpooPlasbHooepy6+mUBbXQpC3kVsk2QL5Bop14kV3gi0cqJT2FqAqTZanyHfhTe2mEyHDZfBKpg=="],
 
-    "@kiro/sandbox-proxy": ["@kiro/sandbox-proxy@0.3.47", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/sandbox-proxy/-/sandbox-proxy-0.3.47.tgz", { "bin": { "kiro-proxy": "dist/cli.js" } }, "sha512-uZSVFWkGyu/KnT4/Gf7aRquJA+tILYTg0kvlve+3xhtIdGQpztiJnxWfOGYh3aJKldSLMOXOsAVKG2X1JlPFKA=="],
+    "@kiro/sandbox-proxy": ["@kiro/sandbox-proxy@0.3.69", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/sandbox-proxy/-/sandbox-proxy-0.3.69.tgz", { "bin": { "kiro-proxy": "dist/cli.js" } }, "sha512-uOldzGfwbIyBU60T8yFH/4xO0sUYfxmr0nzaLhXzF+Oq9Kmkp1+ViopJAvJaiDkmWao+ki0M6SJju8IbG1HbCw=="],
 
     "@kiro/tui": ["@kiro/tui@workspace:packages/tui"],
 
@@ -1398,6 +1398,12 @@
     "siginfo": ["siginfo@2.0.0", "", {}, "sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g=="],
 
     "signal-exit": ["signal-exit@3.0.7", "", {}, "sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ=="],
+
+    "smart-buffer": ["smart-buffer@4.2.0", "", {}, "sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg=="],
+
+    "socks": ["socks@2.8.9", "", { "dependencies": { "ip-address": "^10.1.1", "smart-buffer": "^4.2.0" } }, "sha512-LJhUYUvItdQ0LkJTmPeaEObWXAqFyfmP85x0tch/ez9cahmhlBBLbIqDFnvBnUJGagb0JbIQrkBs1wJ+yRYpEw=="],
+
+    "socks-proxy-agent": ["socks-proxy-agent@8.0.5", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "^4.3.4", "socks": "^2.8.3" } }, "sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw=="],
 
     "source-map-js": ["source-map-js@1.2.1", "", {}, "sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA=="],
 
