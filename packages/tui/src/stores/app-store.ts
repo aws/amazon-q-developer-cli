@@ -1393,6 +1393,12 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
       {
+        name: '/quit',
+        description: 'Quit the application',
+        source: 'local' as const,
+        meta: { local: true },
+      },
+      {
         name: '/exit',
         description: 'Quit the application',
         source: 'local' as const,

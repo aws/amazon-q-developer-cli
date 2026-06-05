@@ -51,6 +51,7 @@ describe('selectVisibleSlashCommands', () => {
   it('keeps host-side commands like /exit and /settings reachable in KAS mode', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
     const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/quit')).toBeDefined();
     expect(visible.find((c) => c.name === '/exit')).toBeDefined();
     expect(visible.find((c) => c.name === '/settings')).toBeDefined();
   });
