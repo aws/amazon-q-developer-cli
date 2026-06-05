@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Bundled MCP stdio shim for kiro-bot — currently hosts the Taskei tool family; knowledge / github migrate in via a follow-up consolidation plan. Phase 1c-bundle: rename + families/<x>/{read,write}/ scaffolding + read/write boundary lint."
+description = "Bundled MCP stdio shim for kiro-bot — currently hosts the Taskei tool family; knowledge / github migrate in via a follow-up consolidation plan. Phase 1d: rmcp ServerHandler proxying to the SigV4-signed Taskei gateway with per-tool readOnlyHint annotations and a startup tools/list schema-pin."
 
 # Primary binary. Phase 1c-bundle introduces the bundled name.
 [[bin]]
@@ -21,21 +21,36 @@ path = "src/main.rs"
 name = "kiro-taskei-mcp"
 path = "src/bin/kiro-taskei-mcp.rs"
 
+# Operator/dev probe — captures the live gateway tools/list response into
+# `src/families/taskei/fixtures/taskei-tools.json` for the runtime
+# schema-pin assertion. Not shipped in the kiro-bot OCI image; ignored
+# by the release workflow's per-package build list.
+[[bin]]
+name = "dump-taskei-tools"
+path = "src/bin/dump-taskei-tools.rs"
+
 [lib]
 name = "kiro_mcp"
 path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+async-trait.workspace = true
 aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-sigv4 = "1.4"
 aws-smithy-runtime-api.workspace = true
 clap = { workspace = true, features = ["env"] }
+hex.workspace = true
 http = "1"
 reqwest = { workspace = true }
+# Phase 1d adds rmcp's server + stdio transport so kiro-help can dispatch
+# Taskei tools over the bundled shim. `rmcp` itself is the workspace
+# dep; we just opt into the right feature subset.
+rmcp = { workspace = true, features = ["server", "transport-io"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true

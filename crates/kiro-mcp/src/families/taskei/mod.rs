@@ -13,5 +13,12 @@
 //!   handles `addComment`). These take the full [`crate::sts_bridge::StsBridge`] so they can call
 //!   `assume_write_once()` per invocation.
 
+pub mod mcp_proxy;
 pub mod read;
+pub mod schema_pin;
+pub mod tools;
 pub mod write;
+
+mod server;
+
+pub use server::TaskeiServer;

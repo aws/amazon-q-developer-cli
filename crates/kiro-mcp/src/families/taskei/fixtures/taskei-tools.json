@@ -1,0 +1,40 @@
+{
+  "protocolVersion": "2025-06-18",
+  "tools": {
+    "Taskei___create_task": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "f51d42fb14afedfd30569ec49d04b4e42be3308cb04562725badb0fbb968652f"
+    },
+    "Taskei___get_room": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "d5749c516553d07abe2963b8e35efa48fc536912ed59ee7b2f06c0da98553aba"
+    },
+    "Taskei___get_task": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "b3a92a3f20664c81a34d6e59e379d3cd482719edc097981ae59c443aa6ca746f"
+    },
+    "Taskei___list_room_resource": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "2c4a6fcf629fc72796e38d844e75de32f0ce5b883974fe3b288b5c31bbb5c441"
+    },
+    "Taskei___list_tasks": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "f803463fc2090c0c8e9815bf11a433facbc02d77815d6cf583d8a0edd51917e9"
+    },
+    "Taskei___update_task": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "38895ec9e6f3e1dcb9c87bdd815b399778ce44119353d5334f1d308eec194937"
+    },
+    "x_amz_bedrock_agentcore_search": {
+      "readOnlyHint": null,
+      "destructiveHint": null,
+      "inputSchemaSha256": "1dc63095e8672403bbe40fa26719d175e695c0167f6daad6b9655f6506491f01"
+    }
+  }
+}

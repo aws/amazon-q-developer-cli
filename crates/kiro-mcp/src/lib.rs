@@ -1,10 +1,11 @@
 //! Bundled MCP stdio shim for kiro-bot.
 //!
-//! Phase 1c-bundle landed the rename from `kiro-taskei-mcp` to `kiro-mcp`
-//! plus the `families/` module scaffolding called for in plan §2 / §317. The
-//! library target stays exposed (now as `kiro_mcp`) so integration tests
-//! under `tests/` can drive the SigV4 client + STS bridge against
-//! localhost mocks without re-implementing them.
+//! Phase 1d wires up rmcp's `ServerHandler` so kiro-help can dispatch
+//! Taskei tools over a single bundled process. Phase 1c-bundle laid down
+//! the `families/` scaffolding the handler hangs off of; Phase 1d fills
+//! it in with a SigV4-signed JSON-RPC proxy to the IAD Taskei gateway,
+//! per-tool `readOnlyHint` annotations, and a startup `tools/list`
+//! schema-pin assertion that fails closed on gateway drift.
 //!
 //! Module layout:
 //!
@@ -15,9 +16,14 @@
 //!   migrate in via a follow-up consolidation plan (§5 open question 6). Each family splits into
 //!   `read/` and `write/` submodules: `read/` modules hold a [`sts_bridge::ReadOnlyView`] and
 //!   cannot import `sts_bridge::StsBridge::assume_write_once`. The compile-fail trybuild fixture
-//!   under `tests/compile_fail/` asserts that boundary; see [`families`] docs for the rationale.
+//!   under `tests/compile_fail/` asserts that boundary.
+//! - [`cli`] — the top-level CLI entry point shared by both `[[bin]]` targets (canonical `kiro-mcp`
+//!   and the deprecated `kiro-taskei-mcp` alias).
+//! - [`dumper`] — dev/operator probe used to refresh the Taskei `tools/list` schema-pin fixture
+//!   from the live gateway. Not part of the runtime path.
 
 pub mod cli;
+pub mod dumper;
 pub mod families;
 pub mod sigv4_client;
 pub mod sts_bridge;
