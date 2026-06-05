@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-27
-  commit: fada18425
+  validated: 2026-06-05
+  commit: ff1606efa
   status: validated
   testable_headless: true
   category: setting

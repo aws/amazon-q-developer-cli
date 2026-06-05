@@ -204,6 +204,8 @@ pub enum Setting {
     ChatHasSeenLogo,
     #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
     ChatShowThinking,
+    #[strum(message = "Show dynamic title in terminal tab (boolean, default: false)")]
+    ChatTerminalTitle,
     #[cfg(feature = "voice")]
     #[strum(message = "Voice input language (string)")]
     VoiceLanguage,
@@ -363,6 +365,7 @@ impl AsRef<str> for Setting {
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
+            Self::ChatTerminalTitle => "chat.terminalTitle",
             #[cfg(feature = "voice")]
             Self::VoiceLanguage => "voice.language",
             #[cfg(feature = "voice")]
@@ -462,6 +465,7 @@ impl TryFrom<&str> for Setting {
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
+            "chat.terminalTitle" => Ok(Self::ChatTerminalTitle),
             #[cfg(feature = "voice")]
             "voice.language" => Ok(Self::VoiceLanguage),
             #[cfg(feature = "voice")]
