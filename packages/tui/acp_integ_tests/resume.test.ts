@@ -140,7 +140,7 @@ function setupHandshake(
       sessionId: newSessionId,
       modes: {
         currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
+        availableModes: [{ id: 'vibe', name: 'Default' }],
       },
     };
   });
@@ -151,7 +151,7 @@ function setupHandshake(
       return {
         modes: {
           currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Vibe' }],
+          availableModes: [{ id: 'vibe', name: 'Default' }],
         },
       };
     }

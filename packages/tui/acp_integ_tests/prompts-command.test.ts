@@ -42,7 +42,7 @@ describe('/prompts command', () => {
       sessionId: 'test-session-1',
       modes: {
         currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
+        availableModes: [{ id: 'vibe', name: 'Default' }],
       },
     }));
 

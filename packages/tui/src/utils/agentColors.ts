@@ -2,6 +2,17 @@ import { getTerminalChalkColor } from './colorUtils.js';
 
 export const DEFAULT_AGENT_NAME = 'kiro_default';
 
+/** Agent names that represent the default/built-in agent across engines. */
+const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set([
+  'kiro_default', // V2 engine
+  'vibe', // KAS engine
+]);
+
+/** Whether the given agent name is the default built-in agent. */
+export function isDefaultAgent(name: string): boolean {
+  return DEFAULT_AGENT_NAMES.has(name);
+}
+
 // 20-color palette for agent names with 256-color fallbacks
 // - Avoids red, white, yellow (warning), magenta/purple (brand), bright green (success)
 const AGENT_COLORS: Array<{ truecolor: string; color256: number }> = [
@@ -46,7 +57,7 @@ export function getAgentColor(
   name: string,
   getColor: (colorPath: string) => any
 ): ReturnType<typeof getTerminalChalkColor> {
-  if (name === DEFAULT_AGENT_NAME) {
+  if (isDefaultAgent(name)) {
     return getColor('brand');
   }
   const color = AGENT_COLORS[hashString(name) % AGENT_COLORS.length]!;

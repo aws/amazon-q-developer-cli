@@ -33,7 +33,7 @@ function setupHandshake(
     sessionId,
     modes: {
       currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Vibe' }],
+      availableModes: [{ id: 'vibe', name: 'Default' }],
     },
   }));
 
@@ -380,7 +380,7 @@ describe('/chat command', () => {
       return {
         modes: {
           currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Vibe' }],
+          availableModes: [{ id: 'vibe', name: 'Default' }],
         },
       };
     });
@@ -497,7 +497,7 @@ describe('/chat command', () => {
       return {
         modes: {
           currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Vibe' }],
+          availableModes: [{ id: 'vibe', name: 'Default' }],
         },
       };
     });

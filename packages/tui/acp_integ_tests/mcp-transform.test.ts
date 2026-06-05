@@ -25,7 +25,7 @@ function setupHandshake(tc: AcpTestCase, sessionId = 'test-session-1'): void {
     sessionId,
     modes: {
       currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Vibe' }],
+      availableModes: [{ id: 'vibe', name: 'Default' }],
     },
   }));
   tc.mock.on('session/set_config_option', () => ({}));

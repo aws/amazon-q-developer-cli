@@ -53,7 +53,7 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
       modes: {
         currentModeId: 'vibe',
         availableModes: [
-          { id: 'vibe', name: 'Vibe' },
+          { id: 'vibe', name: 'Default' },
           { id: 'kiro_planner', name: 'Planner' },
         ],
       },
@@ -93,7 +93,7 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
       sessionId: 'test-session-2',
       modes: {
         currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
+        availableModes: [{ id: 'vibe', name: 'Default' }],
       },
     }));
 

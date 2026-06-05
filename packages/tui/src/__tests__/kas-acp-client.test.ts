@@ -439,7 +439,7 @@ describe('KasAcpClient', () => {
         availableModes: [
           {
             id: 'vibe',
-            name: 'Vibe',
+            name: 'Default',
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -681,7 +681,7 @@ describe('KasAcpClient', () => {
         availableModes: [
           {
             id: 'vibe',
-            name: 'Vibe',
+            name: 'Default',
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -720,7 +720,7 @@ describe('KasAcpClient', () => {
     expect(result.options).toEqual([
       {
         value: 'vibe',
-        label: 'Vibe',
+        label: 'Default',
         description: '[active] General coding assistance',
         group: 'Bundled',
       },
@@ -761,7 +761,7 @@ describe('KasAcpClient', () => {
         availableModes: [
           {
             id: 'vibe',
-            name: 'Vibe',
+            name: 'Default',
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -803,7 +803,7 @@ describe('KasAcpClient', () => {
         availableModes: [
           {
             id: 'vibe',
-            name: 'Vibe',
+            name: 'Default',
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -851,7 +851,7 @@ describe('KasAcpClient', () => {
         availableModes: [
           {
             id: 'vibe',
-            name: 'Vibe',
+            name: 'Default',
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1870,7 +1870,7 @@ describe('KasAcpClient', () => {
           name: 'Mode',
           category: 'mode',
           currentValue: 'vibe',
-          options: [{ value: 'vibe', name: 'Vibe' }],
+          options: [{ value: 'vibe', name: 'Default' }],
         },
       ],
     } as any);
@@ -1974,7 +1974,7 @@ describe('KasAcpClient', () => {
             name: 'Mode',
             category: 'mode',
             currentValue: 'vibe',
-            options: [{ value: 'vibe', name: 'Vibe' }],
+            options: [{ value: 'vibe', name: 'Default' }],
           },
         ],
       },

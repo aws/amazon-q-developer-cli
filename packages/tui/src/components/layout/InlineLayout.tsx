@@ -79,7 +79,7 @@ import { useKeypress } from '../../hooks/useKeypress';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
-import { getAgentColor } from '../../utils/agentColors.js';
+import { getAgentColor, isDefaultAgent } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
 const TRIGGER_RULES = [
@@ -725,7 +725,7 @@ export const InlineLayout: React.FC = () => {
           )}
           <Chip
             value={
-              currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name
+              isDefaultAgent(currentAgent.name) ? 'Kiro' : currentAgent.name
             }
             color={getAgentColor(currentAgent.name, getColor)}
           />
@@ -825,9 +825,7 @@ export const InlineLayout: React.FC = () => {
     const primaryItems = [
       currentAgent && (
         <Chip
-          value={
-            currentAgent.name === 'kiro_default' ? 'Kiro' : currentAgent.name
-          }
+          value={isDefaultAgent(currentAgent.name) ? 'Kiro' : currentAgent.name}
           color={mutedColor}
         />
       ),

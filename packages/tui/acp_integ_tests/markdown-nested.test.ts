@@ -44,7 +44,7 @@ beforeAll(async () => {
     sessionId: SESSION_ID,
     modes: {
       currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Vibe' }],
+      availableModes: [{ id: 'vibe', name: 'Default' }],
     },
   }));
   tc.mock.on('session/set_config_option', () => ({}));
