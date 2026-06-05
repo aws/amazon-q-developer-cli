@@ -1919,6 +1919,75 @@ describe('KasAcpClient', () => {
     expect(commandsEvent.commands[0].name).toBe('help');
   });
 
+  it('available_commands_update filters out agent-type commands (handled via modes cache)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help', _meta: {} },
+          {
+            name: 'vibe',
+            description: 'General coding',
+            _meta: { kiro: { type: 'agent' } },
+          },
+          {
+            name: 'research',
+            description: 'Deep research agent',
+            _meta: { kiro: { type: 'agent' } },
+          },
+        ],
+      },
+    });
+
+    const commandsEvent = events.find((e) => e.type === 'commands_update');
+    expect(commandsEvent.commands).toHaveLength(1);
+    expect(commandsEvent.commands[0].name).toBe('help');
+  });
+
+  it('available_commands_update filters out commands matching cached modes even without kiro type', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          { id: 'vibe', name: 'Vibe', description: 'General coding' },
+          { id: 'research', name: 'Research', description: 'Deep research' },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help', _meta: {} },
+          { name: 'vibe', description: 'General coding', _meta: {} },
+          { name: 'research', description: 'Deep research', _meta: {} },
+        ],
+      },
+    });
+
+    const commandsEvent = events.find((e) => e.type === 'commands_update');
+    expect(commandsEvent.commands).toHaveLength(1);
+    expect(commandsEvent.commands[0].name).toBe('help');
+  });
+
   it('available_commands_update with no prompt-type commands broadcasts an empty PromptsUpdate', async () => {
     const client = new KasAcpClient();
     await client.newSession();

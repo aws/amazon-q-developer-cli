@@ -1095,6 +1095,11 @@ abstract class BaseAcpClient implements SessionClient {
               });
               break;
             }
+            case 'agent':
+            case 'mode':
+              // Agents/modes are handled via the modes cache (session/new
+              // response), not as slash commands. Drop them here.
+              break;
             default:
               otherCommands.push(cmd);
           }
@@ -1860,6 +1865,23 @@ export class KasAcpClient extends BaseAcpClient {
         return this.handlePermissionRequest(request);
       }),
     ];
+  }
+
+  /** Override to filter out commands that match cached modes (agents).
+   *  KAS may send agents in available_commands_update without a recognized
+   *  _meta.kiro.type; cross-referencing with the modes cache catches them. */
+  protected override convertAcpUpdateToEvent(
+    update: AcpSessionUpdate
+  ): AgentStreamEvent | null {
+    const event = super.convertAcpUpdateToEvent(update);
+    if (
+      event?.type === AgentEventType.CommandsUpdate &&
+      this.modesState.availableModes.length > 0
+    ) {
+      const modeIds = new Set(this.modesState.availableModes.map((m) => m.id));
+      event.commands = event.commands.filter((cmd) => !modeIds.has(cmd.name));
+    }
+    return event;
   }
 
   /**
