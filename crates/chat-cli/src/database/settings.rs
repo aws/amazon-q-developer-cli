@@ -221,7 +221,6 @@ pub enum Setting {
     #[cfg(feature = "voice")]
     #[strum(message = "Maximum voice session time in seconds (number)")]
     VoiceMaxSessionTime,
-    #[cfg(feature = "voice")]
     #[strum(message = "Voice server URL for remote transcription (string)")]
     VoiceServerUrl,
     #[cfg(feature = "voice")]
@@ -376,7 +375,6 @@ impl AsRef<str> for Setting {
             Self::VoicePartialPause => "voice.partialPause",
             #[cfg(feature = "voice")]
             Self::VoiceMaxSessionTime => "voice.maxSessionTime",
-            #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
             Self::VoiceSeenWelcome => "voice.seenWelcome",
@@ -476,7 +474,6 @@ impl TryFrom<&str> for Setting {
             "voice.partialPause" => Ok(Self::VoicePartialPause),
             #[cfg(feature = "voice")]
             "voice.maxSessionTime" => Ok(Self::VoiceMaxSessionTime),
-            #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]
             "voice.seenWelcome" => Ok(Self::VoiceSeenWelcome),

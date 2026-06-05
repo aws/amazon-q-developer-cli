@@ -5,10 +5,10 @@ pub fn glibc_version() -> Option<(u32, u32)> {
     let text = String::from_utf8_lossy(&output.stdout);
     let first_line = text.lines().next().unwrap_or("");
     for token in first_line.rsplit(' ') {
-        if let Some((major, minor)) = token.split_once('.') {
-            if let (Ok(maj), Ok(min)) = (major.parse::<u32>(), minor.parse::<u32>()) {
-                return Some((maj, min));
-            }
+        if let Some((major, minor)) = token.split_once('.')
+            && let (Ok(maj), Ok(min)) = (major.parse::<u32>(), minor.parse::<u32>())
+        {
+            return Some((maj, min));
         }
     }
     None

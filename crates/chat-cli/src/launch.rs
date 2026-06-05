@@ -122,7 +122,6 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
     // Propagate voice.serverUrl setting so the TUI uses a remote voice server
     // (cloud desktop scenario) instead of spawning the local voice binary.
-    #[cfg(feature = "voice")]
     if let Some(url) = os
         .database
         .settings
