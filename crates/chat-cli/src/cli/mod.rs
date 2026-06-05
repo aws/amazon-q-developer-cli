@@ -690,6 +690,10 @@ pub(crate) enum KasStdio {
 /// clients connecting to a `KasStdio::Inherit` spawn (e.g. `kiro-cli acp`)
 /// MUST implement the same callback themselves.
 pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio::process::Child> {
+    if !crate::util::platform::can_run_kas() {
+        bail!("The Kiro agent engine (KAS) is not supported on this system.");
+    }
+
     let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
         (PathBuf::from("node"), PathBuf::from(kas_server_path))
     } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {

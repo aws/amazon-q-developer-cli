@@ -10,6 +10,7 @@ pub use chat_cli_v2::launch_options::{
 use eyre::{
     Context as _,
     Result,
+    bail,
 };
 use tracing::{
     debug,
@@ -161,6 +162,10 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
     match agent_engine {
         AgentEngine::Kas => {
+            if !crate::util::platform::can_run_kas() {
+                bail!("The Kiro agent engine (KAS) is not supported on this system.");
+            }
+
             // Resolve user identity for KAS telemetry (not needed for Rust engine)
             if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
                 && let Some(info) = output.user_info()
