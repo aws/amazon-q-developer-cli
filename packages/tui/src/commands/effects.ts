@@ -65,6 +65,7 @@ type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
 /** Effect names - semantic actions the TUI can perform */
 type EffectName =
   | 'updateModel'
+  | 'updateEffort'
   | 'updateAgent'
   | 'showContextPanel'
   | 'showHelpPanel'
@@ -106,6 +107,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   feedback: 'showFeedbackUrl',
   help: 'showHelpPanel',
   model: 'updateModel',
+  effort: 'updateEffort',
   agent: 'updateAgent',
   plan: 'switchToPlanMode',
   context: 'showContextPanel',
@@ -148,6 +150,16 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
+    }
+  },
+
+  updateEffort: (result, ctx) => {
+    // KAS /effort: the executeCommand result carries the validated level
+    // under data.effort. Mirror the updateModel pattern and push it to the
+    // store's currentEffort slot (drives the prompt-bar chip).
+    const data = result?.data as { effort?: string } | undefined;
+    if (data?.effort) {
+      ctx.setCurrentEffort(data.effort);
     }
   },
 

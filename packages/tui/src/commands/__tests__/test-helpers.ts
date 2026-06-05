@@ -69,6 +69,7 @@ export function createMockCommandContext(
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
+    setCurrentEffort: spy('setCurrentEffort') as any,
     setCurrentAgent: spy('setCurrentAgent') as any,
     currentAgent: opts.currentAgent ?? null,
     setContextUsage: spy('setContextUsage') as any,

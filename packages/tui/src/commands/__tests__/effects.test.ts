@@ -556,6 +556,36 @@ describe('/model effect', () => {
   });
 });
 
+describe('/effort effect', () => {
+  it('calls setCurrentEffort when effort data is present', () => {
+    const cmd: SlashCommand = {
+      name: '/effort',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = { success: true, message: '', data: { effort: 'xhigh' } };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx._spies.setCurrentEffort!).toHaveBeenCalledWith('xhigh');
+  });
+
+  it('does not call setCurrentEffort when effort data is absent', () => {
+    const cmd: SlashCommand = {
+      name: '/effort',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = { success: false, message: 'not available', data: {} };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx._spies.setCurrentEffort!).not.toHaveBeenCalled();
+  });
+});
+
 describe('/agent effect', () => {
   it('calls setCurrentAgent when agent data (not path) is present', () => {
     const cmd: SlashCommand = {

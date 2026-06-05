@@ -12,6 +12,7 @@ export enum KasCommandName {
   Chat = '/chat',
   Clear = '/clear',
   Model = '/model',
+  Effort = '/effort',
   Reply = '/reply',
   Paste = '/paste',
   Prompts = '/prompts',
@@ -87,6 +88,14 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Model,
     description: 'List or switch models',
+    meta: {
+      inputType: 'selection',
+      hint: '',
+    },
+  },
+  {
+    name: KasCommandName.Effort,
+    description: 'List or set the reasoning effort level',
     meta: {
       inputType: 'selection',
       hint: '',

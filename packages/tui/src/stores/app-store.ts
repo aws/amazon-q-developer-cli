@@ -1272,6 +1272,7 @@ function buildCommandContext(
     setLoadingMessage: state.setLoadingMessage,
     setActiveCommand: state.setActiveCommand,
     setCurrentModel: state.setCurrentModel,
+    setCurrentEffort: state.setCurrentEffort,
     setCurrentAgent: state.setCurrentAgent,
     currentAgent: state.currentAgent,
     setContextUsage: state.setContextUsage,

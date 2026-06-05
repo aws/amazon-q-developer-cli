@@ -56,6 +56,7 @@ import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
 import { readClipboardImage } from './utils/clipboard-image';
+import { formatEffort } from './utils/string';
 
 const TUI_VERSION: string = packageJson.version;
 
@@ -394,12 +395,50 @@ function extractModelFromConfigOptions(
  * prompt-bar chip renders uniformly.
  */
 function extractEffortFromConfigOptions(configOptions: unknown): string | null {
-  if (!Array.isArray(configOptions)) return null;
+  const effortOpt = findEffortConfigOption(configOptions);
+  return effortOpt?.currentValue ?? null;
+}
+
+/** A flat effort-level option as advertised by KAS (`{ value, name }`). */
+interface EffortOption {
+  value: string;
+  name: string;
+}
+
+/**
+ * Find the `id: 'effortLevel'` select entry in a KAS configOptions array,
+ * returning its `currentValue` and the (flat) list of available levels.
+ *
+ * Mirrors `findModelConfigOption`: it keys off `id` (not `category`) since
+ * the effort option is identified by `id: 'effortLevel'`. Grouped options
+ * are not emitted by KAS today and yield an empty list. Returns undefined
+ * when no effortLevel entry is present (e.g. the active model declares no
+ * thought-level schema) so callers can clear cached state.
+ */
+function findEffortConfigOption(
+  configOptions: unknown
+): { currentValue?: string; options: EffortOption[] } | undefined {
+  if (!Array.isArray(configOptions)) return undefined;
   for (const opt of configOptions as Array<Record<string, unknown>>) {
     if (opt.id !== 'effortLevel' || opt.type !== 'select') continue;
-    return typeof opt.currentValue === 'string' ? opt.currentValue : null;
+    const raw = Array.isArray(opt.options) ? opt.options : [];
+    const options = raw
+      .filter((o: any): o is Record<string, unknown> => {
+        return (
+          typeof o === 'object' &&
+          o !== null &&
+          typeof (o as any).value === 'string' &&
+          typeof (o as any).name === 'string'
+        );
+      })
+      .map((o: any) => ({ value: o.value as string, name: o.name as string }));
+    return {
+      currentValue:
+        typeof opt.currentValue === 'string' ? opt.currentValue : undefined,
+      options,
+    };
   }
-  return null;
+  return undefined;
 }
 
 // ─── Prompt types ────────────────────────────────────────────────────
@@ -1722,6 +1761,20 @@ export class KasAcpClient extends BaseAcpClient {
   private modelOptions: ModelOption[] = [];
   /** ID of the currently selected model, or undefined if no model config. */
   private currentModelId?: string;
+  /**
+   * Cached effort-level options from the most recent session/new,
+   * session/load, or session/set_config_option response. Populated from
+   * the `id: 'effortLevel'` entry in the ACP Session Config Options list.
+   *
+   * Used by:
+   *   - getCommandOptions('/effort') — powers the selection menu
+   *   - executeCommand('effort') — validates the level + resolves the label
+   *
+   * Empty when the active model declares no effortLevels schema.
+   */
+  private effortOptions: EffortOption[] = [];
+  /** Currently selected effort level, or undefined when none is advertised. */
+  private currentEffortLevel?: string;
   /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
   private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
@@ -1787,6 +1840,10 @@ export class KasAcpClient extends BaseAcpClient {
           const configOptions = (update as { configOptions?: unknown })
             .configOptions;
           this.refreshModelCache(configOptions);
+          // Keep the /effort menu cache fresh too: an autonomous model
+          // switch can change (or remove) the advertised effort levels, so
+          // the next time the user opens /effort it reflects the new model.
+          this.refreshEffortCache(configOptions);
           // Effort, unlike model, propagates to the app store directly from
           // here. KAS exposes `effortLevel` as a session config option, and
           // the only path back to the UI for autonomous changes (e.g. the
@@ -1956,6 +2013,7 @@ export class KasAcpClient extends BaseAcpClient {
     }
 
     this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+    this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
     this.broadcastEffortFromConfigOptions(
       (r as { configOptions?: unknown }).configOptions
     );
@@ -1991,6 +2049,7 @@ export class KasAcpClient extends BaseAcpClient {
 
     this.captureModes(r as { modes?: CachedModesState | null | undefined });
     this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+    this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
     this.broadcastEffortFromConfigOptions(
       (r as { configOptions?: unknown }).configOptions
     );
@@ -2118,6 +2177,26 @@ export class KasAcpClient extends BaseAcpClient {
           };
         }
         return this.executeModelSwap(modelId);
+      }
+      case 'effort': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const level = args?.value ?? '';
+        if (!level) {
+          // Bare `/effort` reaches here only when getCommandOptions
+          // returned no options (model has no effortLevels schema) and the
+          // dispatcher fell through to execute. Surface the V2-style
+          // descriptive guidance rather than a generic failure.
+          return {
+            success: false,
+            message:
+              this.effortOptions.length === 0
+                ? 'Effort is not available on the current model. Select a model that supports effort levels.'
+                : 'Usage: /effort <level>',
+          };
+        }
+        return this.executeEffortChange(level);
       }
       case 'reply':
         return { success: true, message: '' };
@@ -2293,6 +2372,7 @@ export class KasAcpClient extends BaseAcpClient {
       const configOptions = (response as { configOptions?: unknown })
         .configOptions;
       this.refreshModelCache(configOptions);
+      this.refreshEffortCache(configOptions);
       this.broadcastEffortFromConfigOptions(configOptions);
       const model = extractModelFromConfigOptions(configOptions);
       // Validate the switch landed on the requested id. If KAS rejected
@@ -2313,6 +2393,70 @@ export class KasAcpClient extends BaseAcpClient {
       return {
         success: false,
         message: e instanceof Error ? e.message : 'Failed to switch model',
+      };
+    }
+  }
+
+  /**
+   * /effort — set the reasoning effort level via the ACP-standard
+   * `session/set_config_option` with `configId: 'effortLevel'`. Mirrors
+   * `executeModelSwap`: KAS returns the full configOptions state in the
+   * response, which we use to refresh the local cache and validate the
+   * write landed.
+   *
+   * The success message is locked to `"Effort set to {Level}"` (display-
+   * cased via `formatEffort`, e.g. `xhigh → xHigh`). Unlike V2's
+   * `/effort`, we deliberately omit the `" (saved for {model})"` suffix:
+   * that suffix exists in V2 only because V2 persists a per-model default
+   * to the client-side `ChatModelDefaults` setting. KAS persists
+   * `effortLevel` to its own session metadata server-side and this feature
+   * does no client-side persistence, so there is nothing "saved" from the
+   * TUI's perspective.
+   */
+  private async executeEffortChange(level: string): Promise<CommandResult> {
+    if (!this.sessionId)
+      return { success: false, message: 'No active session' };
+    if (this.effortOptions.length === 0) {
+      return {
+        success: false,
+        message:
+          'Effort is not available on the current model. Select a model that supports effort levels.',
+      };
+    }
+    try {
+      const response = await this.kiroClient.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId: 'effortLevel',
+        value: level,
+      });
+      const configOptions = (response as { configOptions?: unknown })
+        .configOptions;
+      this.refreshEffortCache(configOptions);
+      // Note: unlike the autonomous `config_option_update` path, we do NOT
+      // call `broadcastEffortFromConfigOptions` here. Propagation of a
+      // user-initiated `/effort` to the store happens through the
+      // `updateEffort` effect handler (reads `data.effort` from this
+      // result) — matching how `/model` propagates via `updateModel`. A
+      // broadcast here would double-fire `setCurrentEffort` for the same
+      // action; keeping a single path makes the data flow unambiguous.
+      // Validate the write landed on the requested level. KAS silently
+      // ignores invalid values, leaving currentValue unchanged — surface a
+      // clear error rather than reporting a false success.
+      if (this.currentEffortLevel !== level) {
+        return {
+          success: false,
+          message: `Effort '${level}' not available`,
+        };
+      }
+      return {
+        success: true,
+        message: `Effort set to ${formatEffort(level)}`,
+        data: { effort: level },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to set effort',
       };
     }
   }
@@ -2686,6 +2830,27 @@ export class KasAcpClient extends BaseAcpClient {
     this.currentModelId = modelOpt.currentValue;
   }
 
+  /**
+   * Refresh the cached effort-level options + current level from a KAS
+   * configOptions array (returned by session/new, session/load,
+   * session/set_config_option, or pushed via `config_option_update`).
+   *
+   * Mirrors `refreshModelCache`. When the array contains no
+   * `id: 'effortLevel'` entry (e.g. the active model declares no
+   * thought-level schema), the cache is cleared so `/effort` surfaces a
+   * descriptive "not available" error rather than stale levels.
+   */
+  private refreshEffortCache(configOptions: unknown): void {
+    const effortOpt = findEffortConfigOption(configOptions);
+    if (!effortOpt) {
+      this.effortOptions = [];
+      this.currentEffortLevel = undefined;
+      return;
+    }
+    this.effortOptions = effortOpt.options;
+    this.currentEffortLevel = effortOpt.currentValue;
+  }
+
   /** Update cached currentModeId from a setSessionConfigOption response.
    *  Falls back to `requestedMode` if the response doesn't contain mode info. */
   private refreshModeFromConfigOptions(
@@ -2950,6 +3115,23 @@ export class KasAcpClient extends BaseAcpClient {
                   ? `[active] ${desc}`
                   : '[active]'
                 : desc,
+            };
+          }),
+        };
+      }
+      case 'effort': {
+        // Served from the local cache populated by session/new,
+        // session/load, session/set_config_option, and config_option_update
+        // responses — same flow as `model` above. Empty when the active
+        // model declares no effortLevels schema.
+        if (this.effortOptions.length === 0) return { options: [] };
+        return {
+          options: this.effortOptions.map((o) => {
+            const isActive = o.value === this.currentEffortLevel;
+            return {
+              value: o.value,
+              label: o.name,
+              description: isActive ? '[active]' : '',
             };
           }),
         };

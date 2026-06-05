@@ -60,6 +60,8 @@ export interface CommandContext {
   setActiveCommand: (cmd: ActiveCommand | null) => void;
   /** Update current model in store */
   setCurrentModel: (model: { id: string; name: string }) => void;
+  /** Update current reasoning effort level in store (KAS /effort). */
+  setCurrentEffort: (effort: string | null) => void;
   /** Update current agent in store */
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string },

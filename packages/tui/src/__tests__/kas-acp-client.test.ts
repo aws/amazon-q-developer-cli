@@ -1187,6 +1187,251 @@ describe('KasAcpClient', () => {
     expect(activeEntry?.value).toBe('gpt-5');
   });
 
+  // ── /effort command ──
+
+  /**
+   * Seed a newSession response that mirrors what KAS returns for a model
+   * with an effortLevels schema: a SessionConfigOption list containing an
+   * `id: 'effortLevel'` entry with currentValue + options.
+   */
+  function seedSessionWithEffort(opts: {
+    currentValue: string;
+    levels: Array<{ value: string; name: string }>;
+  }): void {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-effort',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: opts.currentValue,
+          options: opts.levels,
+        },
+      ],
+    } as any);
+  }
+
+  it('getCommandOptions("/effort") returns cached levels with [active] marking', async () => {
+    seedSessionWithEffort({
+      currentValue: 'high',
+      levels: [
+        { value: 'low', name: 'Low' },
+        { value: 'medium', name: 'Medium' },
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xHigh' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/effort', '');
+    expect(result.options.length).toBe(4);
+    expect(result.options[0]).toEqual({
+      value: 'low',
+      label: 'Low',
+      description: '',
+    });
+    expect(result.options[2]).toEqual({
+      value: 'high',
+      label: 'High',
+      description: '[active]',
+    });
+  });
+
+  it('getCommandOptions("/effort") returns empty when model has no effort schema', async () => {
+    // Default mock returns no configOptions → no effort cache
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.getCommandOptions('/effort', '');
+    expect(result.options).toEqual([]);
+  });
+
+  it('loadSession populates the effort cache from configOptions', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'kas-loaded-effort',
+      models: null,
+      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'medium',
+          options: [
+            { value: 'low', name: 'Low' },
+            { value: 'medium', name: 'Medium' },
+            { value: 'high', name: 'High' },
+          ],
+        },
+      ],
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('kas-loaded-effort');
+
+    const result = await client.getCommandOptions('/effort', '');
+    expect(result.options.length).toBe(3);
+    const activeEntry = result.options.find((o: any) =>
+      o.description?.startsWith('[active]')
+    );
+    expect(activeEntry?.value).toBe('medium');
+  });
+
+  it('executeCommand("effort") sets the level via setSessionConfigOption and refreshes cache', async () => {
+    seedSessionWithEffort({
+      currentValue: 'high',
+      levels: [
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xHigh' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // KAS returns the full configOptions state reflecting the new level
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'xhigh',
+          options: [
+            { value: 'high', name: 'High' },
+            { value: 'xhigh', name: 'xHigh' },
+          ],
+        },
+      ],
+    } as any);
+
+    mockKiroSetSessionConfigOption.mockClear();
+    const result = await client.executeCommand({
+      command: 'effort',
+      args: { value: 'xhigh' },
+    } as any);
+
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'kas-session-effort',
+      configId: 'effortLevel',
+      value: 'xhigh',
+    });
+    expect(result.success).toBe(true);
+    // Message locked to "Effort set to {Level}" (display-cased), no suffix.
+    expect(result.message).toBe('Effort set to xHigh');
+    expect(result.data).toEqual({ effort: 'xhigh' });
+
+    // Cache should now mark xhigh as active
+    const options = await client.getCommandOptions('/effort', '');
+    const activeEntry = options.options.find((o: any) =>
+      o.description?.startsWith('[active]')
+    );
+    expect(activeEntry?.value).toBe('xhigh');
+  });
+
+  it('executeCommand("effort") without a value and no effort schema returns descriptive error', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const result = await client.executeCommand({ command: 'effort' } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('not available');
+  });
+
+  it('executeCommand("effort") without a value but with a schema returns usage error', async () => {
+    seedSessionWithEffort({
+      currentValue: 'high',
+      levels: [
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xHigh' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.executeCommand({ command: 'effort' } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Usage');
+  });
+
+  it('executeCommand("effort") returns error when KAS rejects (currentValue unchanged)', async () => {
+    seedSessionWithEffort({
+      currentValue: 'high',
+      levels: [
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xHigh' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // KAS ignores an unknown level, leaving the selection unchanged.
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'high',
+          options: [
+            { value: 'high', name: 'High' },
+            { value: 'xhigh', name: 'xHigh' },
+          ],
+        },
+      ],
+    } as any);
+
+    const result = await client.executeCommand({
+      command: 'effort',
+      args: { value: 'nonexistent' },
+    } as any);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("'nonexistent' not available");
+  });
+
+  it('config_option_update session notification refreshes the effort cache', async () => {
+    seedSessionWithEffort({
+      currentValue: 'high',
+      levels: [
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xHigh' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    // KAS autonomously changes effort (e.g. after a model switch)
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-effort',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            name: 'Effort',
+            category: 'thought_level',
+            currentValue: 'xhigh',
+            options: [
+              { value: 'high', name: 'High' },
+              { value: 'xhigh', name: 'xHigh' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const options = await client.getCommandOptions('/effort', '');
+    const activeEntry = options.options.find((o: any) =>
+      o.description?.startsWith('[active]')
+    );
+    expect(activeEntry?.value).toBe('xhigh');
+  });
+
   // ── /knowledge command ──
 
   describe('knowledge command', () => {
