@@ -1,21 +1,21 @@
 ---
 doc_meta:
-  validated: 2026-06-13
-  commit: ed1d467b6
+  validated: 2026-06-06
+  commit: 925dfcd04
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
-  related: [help, theme, spawn, feedback]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
+  related: [help, theme, spawn, feedback, lite-mode]
 ---
 
 ## Overview
 
-Kiro CLI has two interfaces: the new TUI (default) and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, while classic mode is the original Rust-based experience.
+Kiro CLI has three interfaces: the new TUI (default), lite mode, and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, lite mode is a minimal append-only chat that lives in your scrollback, and classic mode is the original Rust-based experience.
 
-Switch to classic mode anytime with `kiro-cli --classic`.
+Switch to classic mode anytime with `kiro-cli --classic`. Switch to lite mode with `kiro-cli chat --lite` or `/lite` mid-session (requires the Lite rollout). See [Lite Mode](lite-mode.md) for full details.
 
 ## What's New in the TUI
 
@@ -141,6 +141,7 @@ Sessions saved in the TUI can be loaded in classic mode and vice versa via `/cha
 
 ## Related
 
+- [Lite Mode](lite-mode.md) — The minimal append-only chat interface
 - [/help](../slash-commands/help.md) — Command reference panel
 - [/guide](../slash-commands/guide.md) — Conversational help
 - [/theme](../slash-commands/theme.md) — Theme customization
