@@ -1237,21 +1237,26 @@ export interface AppState {
   mcpRegistryServers: McpServerInfo[];
   pendingOAuthServers: Map<string, string>; // serverName → oauthUrl
   initErrors: InitError[];
-  /** Per-MCP server init status for connecting screen */
+  /**
+   * Per-MCP server init status. Feeds the boot indicator's aggregate
+   * "Loading N/M MCP server(s)" row (selectBootIndicatorPhase) — individual
+   * servers are no longer surfaced; failures route to a transient alert and
+   * `/mcp` shows full per-server detail. Only `status` and `startTime` are
+   * read (the indicator derives elapsed from `startTime` itself).
+   */
   mcpInitStatus: Map<
     string,
     {
       status: 'loading' | 'ready' | 'failed';
       startTime: number;
-      elapsed?: number;
-      error?: string;
     }
   >;
   /**
    * Pre-MCP boot stages (agent process spawn, ACP initialize handshake,
-   * session create). Lite mode renders these above the per-MCP status list
-   * so the user sees progress through the otherwise-opaque "connecting"
-   * window. Order matters — Map iteration order is insertion order.
+   * session create). These take priority over the MCP aggregate in the boot
+   * indicator (selectBootIndicatorPhase) so the user sees progress through
+   * the otherwise-opaque "connecting" window. Order matters — Map iteration
+   * order is insertion order.
    */
   bootProgress: Map<
     string,
@@ -1858,16 +1863,6 @@ export const createAppStore = (props: AppStoreProps) => {
           'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
         source: 'local' as const,
         meta: { local: true, liteOnly: true },
-      },
-      {
-        // Backward-compat alias for /verbosity. Hidden from autocomplete so the
-        // canonical name is what surfaces in the menu, but typing /verbose
-        // still routes through the same dispatcher branch.
-        name: '/verbose',
-        description:
-          'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
-        source: 'local' as const,
-        meta: { local: true, liteOnly: true, hidden: true },
       },
       {
         name: '/changelog',
@@ -3047,19 +3042,15 @@ export const createAppStore = (props: AppStoreProps) => {
                   error: event.error,
                 },
               ];
-              // Track MCP init status. elapsed is only meaningful if we saw
-              // the loading transition ourselves; otherwise leave undefined.
+              // Track MCP init status for the boot indicator's aggregate
+              // count. Failure detail is carried by `initErrors` (above) and
+              // the transient alert below — the per-server entry only needs
+              // status + startTime.
               const mcpStatus = new Map(get().mcpInitStatus);
               const prev = mcpStatus.get(event.serverName);
-              const elapsed =
-                prev?.status === 'loading'
-                  ? Date.now() - prev.startTime
-                  : undefined;
               mcpStatus.set(event.serverName, {
                 status: 'failed',
                 startTime: prev?.startTime ?? Date.now(),
-                elapsed,
-                error: event.error,
               });
               set({ initErrors: updated, mcpInitStatus: mcpStatus });
               const message = summarizeInitErrors(updated);
@@ -3086,14 +3077,9 @@ export const createAppStore = (props: AppStoreProps) => {
               set((state) => {
                 const mcpStatus = new Map(state.mcpInitStatus);
                 const prev = mcpStatus.get(event.serverName);
-                const elapsed =
-                  prev?.status === 'loading'
-                    ? Date.now() - prev.startTime
-                    : undefined;
                 mcpStatus.set(event.serverName, {
                   status: 'ready',
                   startTime: prev?.startTime ?? Date.now(),
-                  elapsed,
                 });
                 if (!state.pendingOAuthServers.has(event.serverName))
                   return { mcpInitStatus: mcpStatus };
