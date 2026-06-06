@@ -246,7 +246,9 @@ describe('Message queue', () => {
       // there so any future code path or test reading from it sees the
       // consistent state.
       const input = store.getState().input;
-      expect(input.lines).toEqual(['/help notes I started writing while waiting']);
+      expect(input.lines).toEqual([
+        '/help notes I started writing while waiting',
+      ]);
       expect(input.cursorCol).toBe(43);
     });
 
