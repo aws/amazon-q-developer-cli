@@ -15,3 +15,11 @@ export const HIDE_CURSOR = '\x1b[?25l';
 
 // Screen clear (preserves scrollback)
 export const CLEAR_SCREEN = '\x1b[2J';
+
+// Kitty keyboard protocol — CSI u disambiguation. Push flags=1
+// (disambiguate) so terminals that support the protocol report
+// Shift+Enter, Ctrl+I-vs-Tab, etc. as distinct sequences. Pop on exit
+// to restore the legacy keyboard. No-op on terminals that don't support
+// the protocol (the bytes are silently ignored).
+export const ENABLE_KITTY_KEYBOARD = '\x1b[>1u';
+export const DISABLE_KITTY_KEYBOARD = '\x1b[<u';
