@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagent summary is no longer lost when cancellation arrives after the model produced it but before execution"
+}

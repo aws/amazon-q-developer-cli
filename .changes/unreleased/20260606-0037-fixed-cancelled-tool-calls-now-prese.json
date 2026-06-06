@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Cancelled tool calls now preserve any partial output already streamed"
+}

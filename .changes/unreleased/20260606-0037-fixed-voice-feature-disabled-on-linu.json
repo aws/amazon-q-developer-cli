@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Voice feature disabled on Linux where audio dependencies are unavailable"
+}

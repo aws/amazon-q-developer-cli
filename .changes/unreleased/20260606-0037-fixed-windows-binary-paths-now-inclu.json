@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Windows binary paths now include the required exe extension for node and bun"
+}
