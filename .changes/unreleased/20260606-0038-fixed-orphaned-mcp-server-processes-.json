@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Orphaned MCP server processes no longer accumulate after agent crashes or restarts"
+}

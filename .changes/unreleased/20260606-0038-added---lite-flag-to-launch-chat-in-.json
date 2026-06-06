@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`--lite` flag to launch chat in a streamlined lite UI mode (internal and nightly only)"
+}
