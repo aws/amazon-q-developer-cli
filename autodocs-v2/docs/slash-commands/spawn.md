@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [spawn, session, parallel, agent, task, background]
   related: [subagent, agent-swap]
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-06-06
+  commit: 80052afab
   status: validated
   testable_headless: false
 ---

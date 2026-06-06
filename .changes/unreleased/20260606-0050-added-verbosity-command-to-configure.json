@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/verbosity` command to configure lite-mode tool output rendering with density presets and filters"
+}

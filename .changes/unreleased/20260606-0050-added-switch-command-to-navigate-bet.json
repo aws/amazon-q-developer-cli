@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/switch` command to navigate between spawned agent sessions or return to main chat"
+}

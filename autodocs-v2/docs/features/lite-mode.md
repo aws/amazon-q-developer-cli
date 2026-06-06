@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
   related: [classic-vs-tui, settings]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-06
+  commit: 80052afab
   status: validated
   testable_headless: true
 ---

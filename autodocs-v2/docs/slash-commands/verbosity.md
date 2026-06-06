@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [verbosity, verbose, density, filter, tools, output, minimal, lean, full, lite, rendering]
   related: [lite, settings, lite-mode]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-06
+  commit: 80052afab
   status: validated
   testable_headless: false
 ---

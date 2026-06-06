@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Lite mode — a lightweight, scrollback-friendly chat interface with configurable tool output density (`/lite`, `--lite`)"
+}
