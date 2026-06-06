@@ -6,8 +6,8 @@ doc_meta:
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
-  description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
+  description: Differences between classic mode (V1), the new TUI, and lite mode, including what changed, what's new, and how to switch
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite, ui mode]
   related: [help, theme, spawn, feedback]
 ---
 
@@ -134,6 +134,16 @@ Classic mode supported `chat.diffTool` with delta, difft, meld, VS Code, and icd
 kiro-cli --classic
 kiro-cli chat --legacy-mode
 ```
+
+### Use Lite Mode (Internal/Nightly Only)
+
+Lite mode is a streamlined, classic-style UI that runs within the TUI framework. It provides a simpler chat experience without the full panel-based interface.
+
+```bash
+kiro-cli chat --lite
+```
+
+Lite mode is currently gated to internal and nightly users. The default UI mode at startup can be configured with the `chat.ui.mode` setting (values: `tui`, `lite`). You can also toggle between TUI and lite mid-session via `/settings display`.
 
 ### Session Compatibility
 

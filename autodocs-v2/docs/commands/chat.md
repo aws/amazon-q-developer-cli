@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-04
-  commit: fde97d540
+  validated: 2026-06-06
+  commit: 0dfcbc4ea
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
-  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker, lite]
+  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes, classic-vs-tui]
 ---
 
 # kiro-cli chat
@@ -109,6 +109,7 @@ kiro-cli chat --resume-picker
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
+| `--lite` | | flag | Use the lite (classic-style) UI instead of the full TUI (internal/nightly only) |
 | `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
