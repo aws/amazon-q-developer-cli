@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagent results are now preserved when cancellation arrives after the model already produced a summary"
+}

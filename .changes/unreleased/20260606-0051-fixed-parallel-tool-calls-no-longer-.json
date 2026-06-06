@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Parallel tool calls no longer silently drop valid siblings when one tool in the batch fails validation"
+}
