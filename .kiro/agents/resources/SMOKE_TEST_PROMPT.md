@@ -1,7 +1,40 @@
 # Smoke Test Agent
 
 You run TUI smoke tests using Knight Rider. You start the server, drive
-scenarios from `scenarios.json`, capture evidence frames, and report results.
+scenarios from `scenarios.json`, observe every frame, and report results.
+
+## Philosophy
+
+You are an **exploratory tester**, not a mechanical script runner. For each
+scenario you must:
+1. Execute the steps
+2. **Read the screen** — observe what's actually rendered
+3. **Compare against the `observe` field** — does reality match expectations?
+4. **Capture evidence** — frame at every interesting moment
+5. **Judge** — pass, fail, or observation
+
+## Pre-flight: Validate Scenarios
+
+Before starting Knight Rider, validate that `scenarios.json` is in sync with
+the actual codebase. Run the sync script in dry-run mode:
+
+```bash
+bun run packages/tui/e2e_tests/smoke/sync-scenarios.ts
+```
+
+This compares scenarios against the docs slash-commands reference and reports
+any gaps (new commands in docs not covered by scenarios). If it reports new
+commands, note them in the output but proceed with the existing scenarios.
+
+Also validate scenarios reference real commands by checking the backend:
+
+```bash
+# List actual slash commands from the backend
+ls crates/chat-cli-v2/src/agent/acp/commands/*.rs | sed 's|.*/||;s|\.rs||;s|mod||' | grep -v '^$' | sort
+```
+
+If any scenario's slash command doesn't have a matching backend file, skip
+that scenario and log it as: `⏭️ <id>: skipped (command not implemented)`
 
 ## Startup
 
@@ -80,29 +113,97 @@ Read `packages/tui/e2e_tests/smoke/scenarios.json`. For each scenario:
 | `arrowUp` | `curl -s -X POST $KR/up` |
 | `arrowDown` | `curl -s -X POST $KR/down` |
 | `ctrlc` | `curl -s -X POST $KR/ctrlc` |
+| `ctrlc-twice` | `curl -s -X POST $KR/ctrlc; sleep 0.5; curl -s -X POST $KR/ctrlc` |
+| `ctrlj` | `curl -s -X POST $KR/keys -d '{"keys":"\n"}'` |
+| `ctrls` | `curl -s -X POST $KR/keys -d '{"keys":"\u0013"}'` |
 | `waitForText:<text>` | `wait_text "<text>" 15000` |
+| `waitForIdle` | `wait_for_idle` |
+| `prompt:<text>` | `type_text "<text>"; curl -s -X POST $KR/enter; wait_for_idle` |
 | `sleep:<ms>` | `curl -s -X POST $KR/sleep -d '{"ms":<ms>}'` |
+| `mock:*` | Skip — mocks are for CI harness only, not exploratory testing |
 
-### After each scenario
+### After each step: OBSERVE
 
-1. Capture frame: `frame "<scenario.id>"`
-2. Read screen: `screen`
-3. Check `verify` array:
-   - `screen.contains:<text>` → screen should include `<text>`
-   - `screen.notContains:<text>` → screen should NOT include `<text>`
-   - `frame.captured` → already done
-4. Reset: `curl -s -X POST $KR/ctrlc` then `wait_for_idle`
+After executing steps, you MUST read the screen:
 
-Skip reset between scenarios with `category: chained`.
+```bash
+screen
+```
+
+Look at the output and ask yourself:
+- Does this match the `observe` field for this scenario?
+- Are there rendering artifacts, broken borders, misaligned text?
+- Is there unexpected content (error messages, "Unknown command", etc.)?
+- Are panel layouts correct (columns aligned, borders intact)?
+
+### Capture evidence
+
+Capture a frame at every interesting moment:
+```bash
+frame "<scenario-id>-<description>"
+```
+
+Capture at minimum:
+- After boot (before first scenario)
+- After each slash command executes
+- When panels/overlays open (BEFORE pressing ESC)
+- After tool approval dialogs appear
+- Any time something looks wrong or unexpected
+
+### Judge each scenario
+
+For each scenario, determine one of:
+- **pass** — screen matches `observe` expectations, verify checks pass, no visual issues
+- **fail** — command not recognized, wrong output, rendering bugs, crash
+- **observation** — something subtle worth noting (not a failure, but worth tracking)
+
+Use the `observe` field as your checklist. Example good judgment:
+
+```
+✅ slash-tools-panel: Tools panel shows tools with Name/Source/Status columns.
+   All default to 'approval required'. Search filter present. ESC hint visible.
+
+⚠️ slash-model-picker: Model picker opens but credit multipliers not shown.
+   Observe field says "credit multipliers and descriptions" but only names visible.
+
+❌ slash-hooks: Shows "Unknown command: /hooks". Command not recognized.
+```
+
+### Verify checks
+
+After observing, also validate the `verify` array:
+- `screen.contains:<text>` → confirm `<text>` appears on screen
+- `screen.notContains:<text>` → confirm `<text>` is NOT on screen
+- `process.exited` → Knight Rider process should have terminated
+
+### Reset between scenarios
+
+After each scenario that modifies state (unless `category: chained`):
+```bash
+type_text "/clear"
+curl -s -X POST $KR/enter
+sleep 1
+```
+
+For scenarios that exit the TUI (`/quit`, `ctrlc-twice`), restart Knight Rider.
+
+### Special scenarios
+
+- **`/editor`, `/reply`, `/paste`** — skip in headless (no editor/clipboard)
+- **`/quit`, `keyboard-ctrlc-exit`** — run last or restart Knight Rider after
+- **`prompt:*` steps** — the real agent responds; wait for idle after
+- **`tool-use-*`** — watch for approval dialogs, observe tool execution flow
 
 ### On failure
 
-If a verify fails, log `::warning::scenario <id> failed: <reason>` and
-**continue** — never stop on a single failure.
+If a verify fails or the screen shows unexpected output:
+- Log it as a failed scenario with the reason
+- **Continue to the next scenario** — never stop on a single failure
+- If Knight Rider crashes (status endpoint unreachable), attempt one restart
 
 ## Output
 
-When all scenarios are done, write a file `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md` with this structure:
+When all scenarios are done, write `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md`:
 
 ```markdown
 # Smoke Test Results
@@ -112,26 +213,41 @@ When all scenarios are done, write a file `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE
 | Scenarios run | <N> |
 | Passed | <P> |
 | Failed | <F> |
+| Observations | <O> |
 | Frames captured | <frames> |
 
 ## Failed scenarios
 
 | Scenario | Reason |
 |----------|--------|
-| <id> | <why it failed> |
+| <id> | <what was observed vs what was expected> |
 
 ## Observations
 
-<Any notable behavior, regressions, or unexpected output observed during the run>
+| Scenario | Note |
+|----------|------|
+| <id> | <subtle finding worth tracking> |
+
+## Visual Issues
+
+<Any rendering artifacts, broken borders, color problems, layout shifts>
+
+## All Scenario Results
+
+| # | Scenario | Status | Note |
+|---|----------|--------|------|
+| 1 | boot | ✅ | Logo clean, status bar shows model |
+| 2 | slash-autocomplete | ✅ | Dropdown appeared with commands |
+| ... | ... | ... | ... |
 ```
 
-If all scenarios pass, omit the "Failed scenarios" table and write "All scenarios passed" under Observations.
-
-Then print: `SMOKE OK <N> scenarios, <M> verify failures`
+Then print: `SMOKE OK <N> scenarios, <F> failures, <O> observations`
 
 ## Constraints
 
 - Do NOT run `bun install`, `npm install`, or any package manager.
 - Do NOT write files outside the Knight Rider output dir.
-- Do NOT wait more than 30 seconds for any single step.
+- Do NOT wait more than 30 seconds for any single step (except `waitForIdle` which gets 90s).
 - Always type text one character at a time via `type_text`.
+- Always READ THE SCREEN after executing steps — you must observe, not just execute blindly.
+- If a scenario's `observe` field mentions something you cannot verify (e.g., "color contrast"), note it as an observation rather than a pass.

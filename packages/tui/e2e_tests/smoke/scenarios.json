@@ -10,8 +10,12 @@
       "category": "basic",
       "description": "TUI launches and shows the prompt input",
       "docRef": "/docs/cli/chat",
-      "steps": ["waitForText:ask a question"],
-      "verify": ["screen.contains:ask a question"],
+      "steps": [
+        "waitForText:ask a question"
+      ],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "Kiro logo renders cleanly, welcome message visible, status bar shows agent name + model + cwd, prompt input ready with placeholder text"
     },
     {
@@ -20,8 +24,12 @@
       "category": "slash-commands",
       "description": "Typing / shows autocomplete with available commands",
       "docRef": "/docs/cli/reference/slash-commands",
-      "steps": ["type:/"],
-      "verify": ["screen.contains:/clear"],
+      "steps": [
+        "type:/"
+      ],
+      "verify": [
+        "screen.contains:/clear"
+      ],
       "observe": "Dropdown appears below input, shows command names with descriptions, (+N more) count at bottom, no visual glitches in the dropdown border"
     },
     {
@@ -30,9 +38,14 @@
       "category": "slash-commands",
       "description": "Show available commands panel",
       "docRef": "/docs/cli/reference/slash-commands#help",
-      "steps": ["type:/help", "enter"],
-      "verify": ["screen.contains:/<COMMAND>"],
-      "observe": "Help panel opens with all commands listed, subcommands shown with ⌙ prefix, search filter at top, ESC to close hint at bottom, scrollable with ↓ more indicator"
+      "steps": [
+        "type:/help",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:/<COMMAND>"
+      ],
+      "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator"
     },
     {
       "id": "slash-help-legacy",
@@ -40,8 +53,13 @@
       "category": "slash-commands",
       "description": "Show classic help text",
       "docRef": "/docs/cli/reference/slash-commands#help",
-      "steps": ["type:/help --legacy", "enter"],
-      "verify": ["screen.contains:help"],
+      "steps": [
+        "type:/help --legacy",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:help"
+      ],
       "observe": "Classic help text renders inline (not in a panel), lists commands with descriptions"
     },
     {
@@ -50,8 +68,13 @@
       "category": "slash-commands",
       "description": "Clear conversation history",
       "docRef": "/docs/cli/reference/slash-commands#clear",
-      "steps": ["type:/clear", "enter"],
-      "verify": ["screen.contains:ask a question"],
+      "steps": [
+        "type:/clear",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "Conversation messages disappear, prompt returns to initial state, no error message"
     },
     {
@@ -60,9 +83,14 @@
       "category": "slash-commands",
       "description": "Open interactive model picker",
       "docRef": "/docs/cli/reference/slash-commands#model",
-      "steps": ["type:/model", "enter"],
-      "verify": ["screen.contains:auto"],
-      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (❯ marker), search filter at top, ESC to cancel"
+      "steps": [
+        "type:/model",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:auto"
+      ],
+      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (\u276f marker), search filter at top, ESC to cancel"
     },
     {
       "id": "slash-model-select",
@@ -70,8 +98,13 @@
       "category": "slash-commands",
       "description": "Select a model by typing its name",
       "docRef": "/docs/cli/reference/slash-commands#model",
-      "steps": ["type:/model claude-sonnet-4", "enter"],
-      "verify": ["screen.contains:sonnet"],
+      "steps": [
+        "type:/model claude-sonnet-4",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:sonnet"
+      ],
       "observe": "Model switches, status bar updates to show new model name"
     },
     {
@@ -80,8 +113,13 @@
       "category": "slash-commands",
       "description": "Open agent picker to browse available agents",
       "docRef": "/docs/cli/reference/slash-commands#agent",
-      "steps": ["type:/agent", "enter"],
-      "verify": ["screen.contains:agent"],
+      "steps": [
+        "type:/agent",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:agent"
+      ],
       "observe": "Agent picker shows all agents (built-in + global + workspace), descriptions visible, search filter at top"
     },
     {
@@ -90,8 +128,13 @@
       "category": "slash-commands",
       "description": "Swap to a different agent at runtime",
       "docRef": "/docs/cli/reference/slash-commands#agent",
-      "steps": ["type:/agent swap kiro_planner", "enter"],
-      "verify": ["screen.contains:plan"],
+      "steps": [
+        "type:/agent swap kiro_planner",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:plan"
+      ],
       "observe": "Agent swaps to kiro_planner, status bar updates to show [plan] prefix. Use Shift+Tab to return to previous agent."
     },
     {
@@ -100,8 +143,13 @@
       "category": "slash-commands",
       "description": "Display context rule configuration and matched files",
       "docRef": "/docs/cli/reference/slash-commands#context",
-      "steps": ["type:/context show", "enter"],
-      "verify": ["screen.contains:context"],
+      "steps": [
+        "type:/context show",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:context"
+      ],
       "observe": "Context panel shows active agent name, file rules with token percentages, session rules section, tips at bottom, Tab to switch to /usage"
     },
     {
@@ -110,8 +158,13 @@
       "category": "slash-commands",
       "description": "Add a context rule",
       "docRef": "/docs/cli/reference/slash-commands#context",
-      "steps": ["type:/context add package.json", "enter"],
-      "verify": ["screen.contains:context"],
+      "steps": [
+        "type:/context add package.json",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:context"
+      ],
       "observe": "Confirmation that rule was added, /context show should now list the new rule"
     },
     {
@@ -120,8 +173,13 @@
       "category": "slash-commands",
       "description": "Remove a context rule",
       "docRef": "/docs/cli/reference/slash-commands#context",
-      "steps": ["type:/context remove package.json", "enter"],
-      "verify": ["screen.contains:context"],
+      "steps": [
+        "type:/context remove package.json",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:context"
+      ],
       "observe": "Confirmation that rule was removed"
     },
     {
@@ -130,8 +188,13 @@
       "category": "slash-commands",
       "description": "Remove all context rules",
       "docRef": "/docs/cli/reference/slash-commands#context",
-      "steps": ["type:/context clear", "enter"],
-      "verify": ["screen.contains:context"],
+      "steps": [
+        "type:/context clear",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:context"
+      ],
       "observe": "All session rules cleared, /context show should show empty session rules"
     },
     {
@@ -140,8 +203,13 @@
       "category": "slash-commands",
       "description": "View tools and permissions panel",
       "docRef": "/docs/cli/reference/slash-commands#tools",
-      "steps": ["type:/tools", "enter"],
-      "verify": ["screen.contains:built-in"],
+      "steps": [
+        "type:/tools",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:built-in"
+      ],
       "observe": "Tools panel shows all tools with Name, Source, Status, Description columns. All default to 'approval required'. Search filter at top. ESC to close."
     },
     {
@@ -150,8 +218,13 @@
       "category": "slash-commands",
       "description": "Trust a specific tool for the session",
       "docRef": "/docs/cli/reference/slash-commands#tools",
-      "steps": ["type:/tools trust read", "enter"],
-      "verify": ["screen.contains:trusted"],
+      "steps": [
+        "type:/tools trust read",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:trusted"
+      ],
       "observe": "Confirmation message 'read now trusted', /tools panel should show read as Trusted"
     },
     {
@@ -160,8 +233,13 @@
       "category": "slash-commands",
       "description": "Revert a tool to per-request confirmation",
       "docRef": "/docs/cli/reference/slash-commands#tools",
-      "steps": ["type:/tools untrust read", "enter"],
-      "verify": ["screen.contains:untrust"],
+      "steps": [
+        "type:/tools untrust read",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:untrust"
+      ],
       "observe": "Confirmation that read is back to per-request, /tools panel should show approval required"
     },
     {
@@ -170,8 +248,13 @@
       "category": "slash-commands",
       "description": "Trust all tools for the session",
       "docRef": "/docs/cli/reference/slash-commands#tools",
-      "steps": ["type:/tools trust-all", "enter"],
-      "verify": ["screen.contains:trust"],
+      "steps": [
+        "type:/tools trust-all",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:trust"
+      ],
       "observe": "All tools trusted, /tools panel should show all as Trusted"
     },
     {
@@ -180,8 +263,13 @@
       "category": "slash-commands",
       "description": "Reset all tools to default permissions",
       "docRef": "/docs/cli/reference/slash-commands#tools",
-      "steps": ["type:/tools reset", "enter"],
-      "verify": ["screen.contains:reset"],
+      "steps": [
+        "type:/tools reset",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:reset"
+      ],
       "observe": "All tools back to default, /tools panel should show approval required"
     },
     {
@@ -190,9 +278,14 @@
       "category": "slash-commands",
       "description": "View MCP servers panel",
       "docRef": "/docs/cli/reference/slash-commands#mcp",
-      "steps": ["type:/mcp", "enter"],
-      "verify": ["screen.contains:configured"],
-      "observe": "MCP panel shows configured servers with Name, Status (● running), Details (tool count). Search filter at top."
+      "steps": [
+        "type:/mcp",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:configured"
+      ],
+      "observe": "MCP panel shows configured servers with Name, Status (\u25cf running), Details (tool count). Search filter at top."
     },
     {
       "id": "slash-compact",
@@ -200,8 +293,13 @@
       "category": "slash-commands",
       "description": "Summarize conversation to free context",
       "docRef": "/docs/cli/reference/slash-commands#compact",
-      "steps": ["type:/compact", "enter"],
-      "verify": ["screen.contains:compact"],
+      "steps": [
+        "type:/compact",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:compact"
+      ],
       "observe": "On empty conversation: 'Conversation too short to compact'. After conversation: shows compaction summary with token savings."
     },
     {
@@ -210,8 +308,13 @@
       "category": "slash-commands",
       "description": "Start a fresh conversation",
       "docRef": "/docs/cli/reference/slash-commands#chat",
-      "steps": ["type:/chat new", "enter"],
-      "verify": ["screen.contains:ask a question"],
+      "steps": [
+        "type:/chat new",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "Conversation resets, messages cleared, new session ID assigned, prompt ready"
     },
     {
@@ -220,8 +323,13 @@
       "category": "slash-commands",
       "description": "Start fresh conversation with an initial prompt",
       "docRef": "/docs/cli/reference/slash-commands#chat",
-      "steps": ["type:/chat new what is 2+2", "enter"],
-      "verify": ["screen.contains:Kiro"],
+      "steps": [
+        "type:/chat new what is 2+2",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:Kiro"
+      ],
       "observe": "New session starts AND the initial prompt is sent immediately, agent responds"
     },
     {
@@ -230,8 +338,13 @@
       "category": "slash-commands",
       "description": "Resume a previous session (backend command)",
       "docRef": "/docs/cli/reference/slash-commands#chat",
-      "steps": ["type:/chat resume", "enter"],
-      "verify": ["screen.contains:session"],
+      "steps": [
+        "type:/chat resume",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:session"
+      ],
       "observe": "KNOWN GAP: TUI interprets 'resume' as a session name, not a subcommand. Session picker is accessed via --resume-picker CLI flag. May show 'Session not found: resume'."
     },
     {
@@ -240,8 +353,13 @@
       "category": "slash-commands",
       "description": "Show billing and credits",
       "docRef": "/docs/cli/reference/slash-commands#usage",
-      "steps": ["type:/usage", "enter"],
-      "verify": ["screen.contains:Credits"],
+      "steps": [
+        "type:/usage",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:Credits"
+      ],
       "observe": "Usage panel shows credits bar, plan info, overage status, estimated cost. Tab to switch to /context."
     },
     {
@@ -250,8 +368,13 @@
       "category": "slash-commands",
       "description": "View context hooks",
       "docRef": "/docs/cli/reference/slash-commands#hooks",
-      "steps": ["type:/hooks", "enter"],
-      "verify": ["screen.contains:hooks"],
+      "steps": [
+        "type:/hooks",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:hooks"
+      ],
       "observe": "Hooks panel shows configured hooks count. If none: 'No hooks configured'."
     },
     {
@@ -260,9 +383,14 @@
       "category": "slash-commands",
       "description": "Show LSP server status",
       "docRef": "/docs/cli/reference/slash-commands#code",
-      "steps": ["type:/code status", "enter"],
-      "verify": ["screen.contains:Workspace"],
-      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (● running, ○ not_installed, ○ available)"
+      "steps": [
+        "type:/code status",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:Workspace"
+      ],
+      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (\u25cf running, \u25cb not_installed, \u25cb available)"
     },
     {
       "id": "slash-code-overview",
@@ -270,19 +398,14 @@
       "category": "slash-commands",
       "description": "Get workspace structure overview",
       "docRef": "/docs/cli/reference/slash-commands#code",
-      "steps": ["type:/code overview", "enter"],
-      "verify": ["screen.contains:overview"],
+      "steps": [
+        "type:/code overview",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:overview"
+      ],
       "observe": "Workspace overview renders with directory tree and file descriptions"
-    },
-    {
-      "id": "slash-changelog",
-      "name": "/changelog command",
-      "category": "slash-commands",
-      "description": "View CLI changelog",
-      "docRef": "/docs/cli/reference/slash-commands#changelog",
-      "steps": ["type:/changelog", "enter"],
-      "verify": ["screen.contains:changelog"],
-      "observe": "KNOWN ISSUE: May show 'Unknown command' in some builds. If working: shows recent version changes."
     },
     {
       "id": "slash-quit",
@@ -290,8 +413,13 @@
       "category": "slash-commands",
       "description": "Exit the interactive chat session",
       "docRef": "/docs/cli/reference/slash-commands#quit",
-      "steps": ["type:/quit", "enter"],
-      "verify": ["process.exited"],
+      "steps": [
+        "type:/quit",
+        "enter"
+      ],
+      "verify": [
+        "process.exited"
+      ],
       "observe": "TUI exits cleanly, no error output. Run this last or restart Knight Rider after."
     },
     {
@@ -300,8 +428,13 @@
       "category": "slash-commands",
       "description": "Save current session to a file",
       "docRef": "/docs/cli/reference/slash-commands#save",
-      "steps": ["type:/chat save /tmp/kiro-smoke-test.json", "enter"],
-      "verify": ["screen.contains:save"],
+      "steps": [
+        "type:/chat save /tmp/kiro-smoke-test.json",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:save"
+      ],
       "observe": "Confirmation that session was saved to the specified path"
     },
     {
@@ -310,8 +443,13 @@
       "category": "slash-commands",
       "description": "Load a previously saved conversation",
       "docRef": "/docs/cli/reference/slash-commands#load",
-      "steps": ["type:/chat load /tmp/kiro-smoke-test.json", "enter"],
-      "verify": ["screen.contains:load"],
+      "steps": [
+        "type:/chat load /tmp/kiro-smoke-test.json",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:load"
+      ],
       "observe": "Session loaded from file, previous messages restored in conversation"
     },
     {
@@ -320,9 +458,14 @@
       "category": "slash-commands",
       "description": "Open editor to compose prompt",
       "docRef": "/docs/cli/reference/slash-commands#editor",
-      "steps": ["type:/editor", "enter"],
-      "verify": ["screen.contains:editor"],
-      "observe": "SKIP in headless — opens $EDITOR. Verify command is recognized (no 'Unknown command')."
+      "steps": [
+        "type:/editor",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:editor"
+      ],
+      "observe": "SKIP in headless \u2014 opens $EDITOR. Verify command is recognized (no 'Unknown command')."
     },
     {
       "id": "slash-reply",
@@ -330,19 +473,14 @@
       "category": "slash-commands",
       "description": "Open editor with last assistant message",
       "docRef": "/docs/cli/reference/slash-commands#reply",
-      "steps": ["type:/reply", "enter"],
-      "verify": ["screen.contains:reply"],
-      "observe": "SKIP in headless — opens $EDITOR. Verify command is recognized."
-    },
-    {
-      "id": "slash-checkpoint-list",
-      "name": "/checkpoint list",
-      "category": "slash-commands",
-      "description": "List available checkpoints",
-      "docRef": "/docs/cli/reference/slash-commands#checkpoint",
-      "steps": ["type:/checkpoint list", "enter"],
-      "verify": ["screen.contains:checkpoint"],
-      "observe": "Shows checkpoint list or 'no checkpoints' message. Experimental feature — may need enablement."
+      "steps": [
+        "type:/reply",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:reply"
+      ],
+      "observe": "SKIP in headless \u2014 opens $EDITOR. Verify command is recognized."
     },
     {
       "id": "slash-plan",
@@ -350,8 +488,13 @@
       "category": "slash-commands",
       "description": "Switch to Plan agent",
       "docRef": "/docs/cli/reference/slash-commands#plan",
-      "steps": ["type:/plan", "enter"],
-      "verify": ["screen.contains:plan"],
+      "steps": [
+        "type:/plan",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:plan"
+      ],
       "observe": "Agent switches to kiro_planner, status bar updates. Use Shift+Tab to return."
     },
     {
@@ -360,8 +503,13 @@
       "category": "slash-commands",
       "description": "List knowledge base entries",
       "docRef": "/docs/cli/reference/slash-commands#knowledge",
-      "steps": ["type:/knowledge show", "enter"],
-      "verify": ["screen.contains:knowledge"],
+      "steps": [
+        "type:/knowledge show",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:knowledge"
+      ],
       "observe": "Shows knowledge base entries or empty state. Experimental feature."
     },
     {
@@ -370,9 +518,14 @@
       "category": "slash-commands",
       "description": "Paste image from clipboard",
       "docRef": "/docs/cli/reference/slash-commands#paste",
-      "steps": ["type:/paste", "enter"],
-      "verify": ["screen.contains:paste"],
-      "observe": "SKIP in headless — needs clipboard. Verify command is recognized."
+      "steps": [
+        "type:/paste",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:paste"
+      ],
+      "observe": "SKIP in headless \u2014 needs clipboard. Verify command is recognized."
     },
     {
       "id": "slash-prompts-list",
@@ -380,39 +533,14 @@
       "category": "slash-commands",
       "description": "List available prompts",
       "docRef": "/docs/cli/reference/slash-commands#prompts",
-      "steps": ["type:/prompts list", "enter"],
-      "verify": ["screen.contains:Kiro"],
+      "steps": [
+        "type:/prompts list",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:Kiro"
+      ],
       "observe": "Shows available prompts from MCP servers, or empty state if none configured"
-    },
-    {
-      "id": "slash-experiment",
-      "name": "/experiment command",
-      "category": "slash-commands",
-      "description": "Toggle experimental features",
-      "docRef": "/docs/cli/reference/slash-commands#experiment",
-      "steps": ["type:/experiment", "enter"],
-      "verify": ["screen.contains:experiment"],
-      "observe": "Shows list of experimental features with toggle state"
-    },
-    {
-      "id": "slash-tangent",
-      "name": "/tangent command",
-      "category": "slash-commands",
-      "description": "Enter tangent mode",
-      "docRef": "/docs/cli/reference/slash-commands#tangent",
-      "steps": ["type:/tangent", "enter"],
-      "verify": ["screen.contains:tangent"],
-      "observe": "Tangent mode activates (if enabled), status bar may show tangent indicator. Ctrl+T shortcut."
-    },
-    {
-      "id": "slash-todos",
-      "name": "/todos command",
-      "category": "slash-commands",
-      "description": "View todo list",
-      "docRef": "/docs/cli/reference/slash-commands#todos",
-      "steps": ["type:/todos", "enter"],
-      "verify": ["screen.contains:todo"],
-      "observe": "Shows todo list or empty state. Experimental feature."
     },
     {
       "id": "slash-issue",
@@ -420,29 +548,14 @@
       "category": "slash-commands",
       "description": "Create GitHub issue or feature request",
       "docRef": "/docs/cli/reference/slash-commands#issue",
-      "steps": ["type:/issue", "enter"],
-      "verify": ["screen.contains:issue"],
+      "steps": [
+        "type:/issue",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:issue"
+      ],
       "observe": "Opens issue creation workflow or shows instructions"
-    },
-    {
-      "id": "slash-logdump",
-      "name": "/logdump command",
-      "category": "slash-commands",
-      "description": "Create log archive for troubleshooting",
-      "docRef": "/docs/cli/reference/slash-commands#logdump",
-      "steps": ["type:/logdump", "enter"],
-      "verify": ["screen.contains:log"],
-      "observe": "Creates zip file with logs, shows path to created archive"
-    },
-    {
-      "id": "slash-copy",
-      "name": "/copy command",
-      "category": "slash-commands",
-      "description": "Copy last response to clipboard",
-      "docRef": "/docs/cli/reference/slash-commands",
-      "steps": ["type:/copy", "enter"],
-      "verify": ["screen.contains:copy"],
-      "observe": "Copies last assistant response to clipboard, shows confirmation. May fail in headless without clipboard."
     },
     {
       "id": "tool-use-read",
@@ -450,9 +563,14 @@
       "category": "tool-use",
       "description": "Agent uses read tool to list directory",
       "docRef": "/docs/cli/chat/permissions",
-      "steps": ["prompt:list the files in the current directory", "waitForIdle"],
-      "verify": ["screen.contains:Read"],
-      "observe": "Read tool indicator appears (◔ Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom"
+      "steps": [
+        "prompt:list the files in the current directory",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:Read"
+      ],
+      "observe": "Read tool indicator appears (\u25d4 Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom"
     },
     {
       "id": "tool-use-shell",
@@ -460,8 +578,13 @@
       "category": "tool-use",
       "description": "Agent uses shell tool",
       "docRef": "/docs/cli/chat/permissions",
-      "steps": ["prompt:run echo hello world using the shell", "waitForText:requires approval"],
-      "verify": ["screen.contains:requires approval"],
+      "steps": [
+        "prompt:run echo hello world using the shell",
+        "waitForText:requires approval"
+      ],
+      "verify": [
+        "screen.contains:requires approval"
+      ],
       "observe": "Shell tool shows approval dialog with command preview, trust tier picker (Full command / Partial / Base / Entire Tool)"
     },
     {
@@ -470,8 +593,13 @@
       "category": "tool-use",
       "description": "Agent uses write tool, shows diff and approval",
       "docRef": "/docs/cli/chat/permissions",
-      "steps": ["prompt:create a file called /tmp/kiro-smoke.txt with the text hello", "waitForText:requires approval"],
-      "verify": ["screen.contains:requires approval"],
+      "steps": [
+        "prompt:create a file called /tmp/kiro-smoke.txt with the text hello",
+        "waitForText:requires approval"
+      ],
+      "verify": [
+        "screen.contains:requires approval"
+      ],
       "observe": "Write tool shows approval dialog with file path, diff preview showing new content, approve/deny options"
     },
     {
@@ -480,8 +608,13 @@
       "category": "tool-use",
       "description": "Ctrl+C cancels in-progress request",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["prompt:explain quantum computing in extreme detail", "ctrlc"],
-      "verify": ["screen.contains:Cancelled"],
+      "steps": [
+        "prompt:explain quantum computing in extreme detail",
+        "ctrlc"
+      ],
+      "verify": [
+        "screen.contains:Cancelled"
+      ],
       "observe": "Streaming stops, 'Cancelled streaming' message appears, prompt returns to ready state, no state desync"
     },
     {
@@ -490,8 +623,14 @@
       "category": "tool-use",
       "description": "After cancelling, a new prompt can be sent",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["prompt:explain quantum computing", "ctrlc", "prompt:what is 1+1"],
-      "verify": ["screen.contains:ask a question"],
+      "steps": [
+        "prompt:explain quantum computing",
+        "ctrlc",
+        "prompt:what is 1+1"
+      ],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "Second prompt is accepted and processed normally, no 'Prompt already in progress' error"
     },
     {
@@ -500,8 +639,15 @@
       "category": "conversation",
       "description": "Send a prompt, get response, send follow-up",
       "docRef": "/docs/cli/chat",
-      "steps": ["prompt:what is the capital of France?", "waitForIdle", "prompt:and what about Germany?", "waitForIdle"],
-      "verify": ["screen.contains:Berlin"],
+      "steps": [
+        "prompt:what is the capital of France?",
+        "waitForIdle",
+        "prompt:and what about Germany?",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:Berlin"
+      ],
       "observe": "First response mentions Paris, second response mentions Berlin. Agent maintains context from first question. Both messages visible in conversation history."
     },
     {
@@ -510,8 +656,15 @@
       "category": "conversation",
       "description": "Agent remembers context from earlier in conversation",
       "docRef": "/docs/cli/chat",
-      "steps": ["prompt:my name is SmokeTest", "waitForIdle", "prompt:what is my name?", "waitForIdle"],
-      "verify": ["screen.contains:SmokeTest"],
+      "steps": [
+        "prompt:my name is SmokeTest",
+        "waitForIdle",
+        "prompt:what is my name?",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:SmokeTest"
+      ],
       "observe": "Agent remembers the name from the first message and uses it in the second response"
     },
     {
@@ -520,8 +673,17 @@
       "category": "conversation",
       "description": "/clear resets context, new conversation starts fresh",
       "docRef": "/docs/cli/reference/slash-commands#clear",
-      "steps": ["prompt:remember the code word is ALPHA", "waitForIdle", "type:/clear", "enter", "prompt:what is the code word?", "waitForIdle"],
-      "verify": ["screen.contains:ask a question"],
+      "steps": [
+        "prompt:remember the code word is ALPHA",
+        "waitForIdle",
+        "type:/clear",
+        "enter",
+        "prompt:what is the code word?",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "After /clear, agent should NOT know the code word. Response should indicate it doesn't have that context."
     },
     {
@@ -530,8 +692,13 @@
       "category": "conversation",
       "description": "Agent generates a long response with streaming",
       "docRef": "/docs/cli/chat",
-      "steps": ["prompt:list 10 programming languages with a one-sentence description of each", "waitForIdle"],
-      "verify": ["screen.contains:Python"],
+      "steps": [
+        "prompt:list 10 programming languages with a one-sentence description of each",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:Python"
+      ],
       "observe": "Response streams in progressively, scroll works, all 10 languages visible (may need scrolling), credits shown at end"
     },
     {
@@ -540,18 +707,30 @@
       "category": "conversation",
       "description": "Agent response with code blocks and formatting",
       "docRef": "/docs/cli/chat",
-      "steps": ["prompt:show me a hello world in python with a code block", "waitForIdle"],
-      "verify": ["screen.contains:print"],
+      "steps": [
+        "prompt:show me a hello world in python with a code block",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:print"
+      ],
       "observe": "Code block renders with syntax highlighting, proper indentation, language label visible. Markdown bold/italic renders correctly."
     },
     {
       "id": "permissions-trust-flow",
-      "name": "Trust → use → untrust → re-approve flow",
+      "name": "Trust \u2192 use \u2192 untrust \u2192 re-approve flow",
       "category": "permissions",
       "description": "Full trust lifecycle for a tool",
       "docRef": "/docs/cli/chat/permissions",
-      "steps": ["type:/tools trust shell", "enter", "type:/tools untrust shell", "enter"],
-      "verify": ["screen.contains:untrust"],
+      "steps": [
+        "type:/tools trust shell",
+        "enter",
+        "type:/tools untrust shell",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:untrust"
+      ],
       "observe": "Trust: 'shell now trusted'. Untrust: shell reverts to per-request. Full lifecycle works without errors."
     },
     {
@@ -560,8 +739,15 @@
       "category": "permissions",
       "description": "Trust all tools then reset to defaults",
       "docRef": "/docs/cli/chat/permissions",
-      "steps": ["type:/tools trust-all", "enter", "type:/tools reset", "enter"],
-      "verify": ["screen.contains:reset"],
+      "steps": [
+        "type:/tools trust-all",
+        "enter",
+        "type:/tools reset",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:reset"
+      ],
       "observe": "Trust-all: all tools trusted. Reset: all tools back to approval required. No stale state."
     },
     {
@@ -570,8 +756,13 @@
       "category": "subagents",
       "description": "Ask agent to use a subagent for a task",
       "docRef": "/docs/cli/chat/subagents",
-      "steps": ["prompt:use a subagent to list the files in /tmp", "waitForIdle"],
-      "verify": ["screen.contains:Kiro"],
+      "steps": [
+        "prompt:use a subagent to list the files in /tmp",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:Kiro"
+      ],
       "observe": "Subagent spawns with progress indicator, live status updates visible, results returned to main agent. May show subagent approval dialog."
     },
     {
@@ -580,8 +771,12 @@
       "category": "keyboard",
       "description": "Double Ctrl+C exits the TUI",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["ctrlc-twice"],
-      "verify": ["process.exited"],
+      "steps": [
+        "ctrlc-twice"
+      ],
+      "verify": [
+        "process.exited"
+      ],
       "observe": "First Ctrl+C may show cancel hint, second exits cleanly. Run last or restart Knight Rider after."
     },
     {
@@ -590,8 +785,14 @@
       "category": "keyboard",
       "description": "Up arrow recalls previous input",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["prompt:hello world", "waitForIdle", "arrowUp"],
-      "verify": ["screen.contains:hello"],
+      "steps": [
+        "prompt:hello world",
+        "waitForIdle",
+        "arrowUp"
+      ],
+      "verify": [
+        "screen.contains:hello"
+      ],
       "observe": "Previous input 'hello world' appears in the prompt input field after pressing up arrow"
     },
     {
@@ -600,8 +801,14 @@
       "category": "keyboard",
       "description": "Ctrl+J inserts newline for multi-line prompt",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["type:line one", "ctrlj", "type:line two"],
-      "verify": ["screen.contains:line"],
+      "steps": [
+        "type:line one",
+        "ctrlj",
+        "type:line two"
+      ],
+      "verify": [
+        "screen.contains:line"
+      ],
       "observe": "Input field expands to show two lines, cursor on second line. Both lines visible in the prompt area."
     },
     {
@@ -610,8 +817,12 @@
       "category": "keyboard",
       "description": "Ctrl+S opens fuzzy search for commands and context files",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
-      "steps": ["ctrls"],
-      "verify": ["screen.contains:search"],
+      "steps": [
+        "ctrls"
+      ],
+      "verify": [
+        "screen.contains:search"
+      ],
       "observe": "Fuzzy search overlay opens, can type to filter commands and context files, Tab to select multiple"
     }
   ]
