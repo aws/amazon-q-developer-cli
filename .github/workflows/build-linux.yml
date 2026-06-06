@@ -101,9 +101,9 @@ jobs:
       - name: Install Python dependencies
         run: python3 -m pip install -r scripts/requirements.txt
 
-      - name: Install system dependencies (voice requires ALSA on native gnu)
+      - name: Install system dependencies
         if: "!matrix.musl && !matrix.cross_target"
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libclang-dev libssl-dev pkg-config cmake
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libssl-dev pkg-config cmake
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
