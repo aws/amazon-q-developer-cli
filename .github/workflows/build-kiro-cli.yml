@@ -223,25 +223,6 @@ jobs:
         id: get-version
         run: |
           VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          # On insider-auto builds (push to main / lite-ui channel) the bump
-          # step above is skipped, so Cargo.toml still reads "0.0.0-dev" — the
-          # placeholder introduced by the tag-driven release scheme (#2570).
-          # Inject the latest stable release tag instead so the resulting
-          # binary advertises a real semver in its user-agent. Without this,
-          # backend services that gate behavior on the user-agent's
-          # `appVersion` token (e.g. reasoning-event emission) reject the
-          # request as if it came from an unreleased build.
-          if [[ "$VERSION" == "0.0.0-dev" ]]; then
-            git fetch --tags --quiet origin
-            LATEST_STABLE=$(git tag --list 'v*' --sort=-v:refname \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | sed 's/^v//')
-            if [[ -n "$LATEST_STABLE" ]]; then
-              echo "Overriding placeholder version with latest stable tag: $LATEST_STABLE"
-              VERSION="$LATEST_STABLE"
-            else
-              echo "WARNING: no stable tag found, falling back to $VERSION"
-            fi
-          fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create Git Tag
