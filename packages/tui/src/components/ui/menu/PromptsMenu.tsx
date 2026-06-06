@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Box } from './../../../renderer.js';
 import { Menu } from './Menu.js';
 import { PromptDetails } from './PromptDetails.js';
@@ -31,6 +31,15 @@ export const PromptsMenu: React.FC<PromptsMenuProps> = ({
   const [promptDetail, setPromptDetail] = useState<
     (typeof slashCommands)[number] | null
   >(null);
+  // Mirror picker→detail state into the store so LiteLayout's always-armed
+  // Esc handler can skip its setActiveCommand(null) branch — without this,
+  // pressing Esc in detail view fires both PromptDetails.onBack (correct)
+  // and the layout's panel-close (drops the user out of /prompts entirely).
+  const setPromptDetailOpen = useAppStore((s) => s.setPromptDetailOpen);
+  useEffect(() => {
+    setPromptDetailOpen(promptDetail != null);
+    return () => setPromptDetailOpen(false);
+  }, [promptDetail, setPromptDetailOpen]);
 
   const executeOption = useCallback(
     (label: string, fallbackValue?: string) => {

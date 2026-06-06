@@ -20,6 +20,7 @@ import {
   unescapeShellPath,
   stripNonPrintable,
 } from '../../../utils/index.js';
+import { computeInputSpans } from '../../../utils/input-syntax.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
@@ -72,6 +73,12 @@ import {
   exitSearch,
   abortSearch,
 } from '../../../utils/reverse-search.js';
+import {
+  navigateQueueUp,
+  navigateQueueDown,
+  commitQueueRestore,
+  type QueueRestoreState,
+} from '../../../utils/queue-navigation.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
 // editing logic. For now we import just the KillRing utility.
@@ -114,6 +121,13 @@ export interface PromptInputProps {
   triggerRules?: TriggerRule[];
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
+  /**
+   * When true, arrow keys (↑↓←→) are forwarded to whatever component owns
+   * the focus instead of editing the input or navigating history. Used by
+   * lite mode's subagent panel so the user can scroll/cycle while the
+   * input stays mounted for typing.
+   */
+  suppressArrows?: boolean;
 }
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
@@ -162,6 +176,7 @@ export const PromptInput = React.memo(function PromptInput({
   triggerRules = [],
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
+  suppressArrows = false,
 }: PromptInputProps) {
   const {
     activeTrigger,
@@ -215,6 +230,28 @@ export const PromptInput = React.memo(function PromptInput({
   useEffect(() => {
     return () => setStoreReverseSearchActive(false);
   }, [setStoreReverseSearchActive]);
+
+  // Queue-aware ↑/↓ navigation (lite mode only). Pressing ↑ in an empty
+  // input pulls the most recent queued message back into the buffer for
+  // editing; ↑↑ pages older. The slot stays in the queue at its original
+  // index, so Kiro processes the edited message in its original order.
+  // See utils/queue-navigation.ts for the state machine.
+  const queueRestoreRef = useRef<QueueRestoreState | null>(null);
+  const isLiteMode = useAppStore((state) => state.uiMode === 'lite');
+  const queuedMessagesRef = useRef<readonly string[]>([]);
+  queuedMessagesRef.current = useAppStore((state) => state.queuedMessages);
+  const replaceQueuedMessage = useAppStore(
+    (state) => state.replaceQueuedMessage
+  );
+  // Lite mode mirrors queue-restore state into the store so the layout can
+  // render an "editing queued #N" header above the input. The store is the
+  // single source of truth for editing-state visibility — keeping it in sync
+  // with queueRestoreRef means `replaceQueuedMessage` (which already clears
+  // editingQueueIndex) and external sites that flip the index also win.
+  const setEditingQueueIndex = useAppStore(
+    (state) => state.setEditingQueueIndex
+  );
+  const removeQueuedMessage = useAppStore((state) => state.removeQueuedMessage);
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -282,20 +319,65 @@ export const PromptInput = React.memo(function PromptInput({
     [getUserPromptColor]
   );
   const brandColor = useMemo(() => getColor('brand'), [getColor]);
+  const linkColor = useMemo(() => getColor('link'), [getColor]);
   const isShellEscape = useMemo(
     () => getVisibleText(segments).startsWith('!'),
     [segments]
+  );
+  // Build a stable Set of known slash command names so the input-syntax
+  // pass only colorizes recognized commands. Without this, any leading
+  // `/word` (including paths like `/tmp/foo`) gets the command color and
+  // the rest renders as path color — the eye reads the line as two-toned
+  // even though it's a single token. Memoized on the command list so we
+  // don't rebuild the Set on every keystroke.
+  const knownSlashNames = useMemo(
+    () => new Set(slashCommands.map((c) => c.name)),
+    [slashCommands]
+  );
+  // Apply lightweight token coloring (slash command / URLs) on top of the
+  // primary color so the user's eye separates "what is this" tokens from
+  // prose without changing the buffer's underlying styling. Path tokens
+  // (`/tmp/foo`, `./src/bar`) render as primary color — coloring them as
+  // info/cyan made the line two-toned in light themes where cyan is hard
+  // to read against the surface, and the bracket-around-the-path file
+  // attachment chip already disambiguates real attachments from typed
+  // paths. The highlighter is a no-op fast path when no span matches.
+  const stylePromptText = useCallback(
+    (text: string): string => {
+      if (!text) return '';
+      const spans = computeInputSpans(text, knownSlashNames).filter(
+        (s) => s.kind !== 'path'
+      );
+      if (spans.length === 0) return primaryColor(text);
+      const out: string[] = [];
+      let i = 0;
+      for (const span of spans) {
+        if (span.start > i) out.push(primaryColor(text.slice(i, span.start)));
+        const tokenText = text.slice(span.start, span.end);
+        if (span.kind === 'slash') {
+          out.push(brandColor(tokenText));
+        } else if (span.kind === 'url') {
+          // Underline so URLs read as links even when the theme link
+          // color matches surrounding text.
+          out.push(chalk.underline(linkColor(tokenText)));
+        }
+        i = span.end;
+      }
+      if (i < text.length) out.push(primaryColor(text.slice(i)));
+      return out.join('');
+    },
+    [primaryColor, brandColor, linkColor, knownSlashNames]
   );
   const styleInputText = useCallback(
     (text: string, isFirstSegment: boolean) => {
       if (isShellEscape && isFirstSegment && text.length > 0) {
         if (text.startsWith('!')) {
-          return brandColor('!') + primaryColor(text.slice(1));
+          return brandColor('!') + stylePromptText(text.slice(1));
         }
       }
-      return primaryColor(text);
+      return stylePromptText(text);
     },
-    [isShellEscape, brandColor, primaryColor]
+    [isShellEscape, brandColor, stylePromptText]
   );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
@@ -800,6 +882,41 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
+      // Esc while in queue restore mode: abandon the edit, exit restore.
+      // The slot is untouched in queuedMessages, so the original message
+      // stays in line. Don't `return` if not in restore — let the LiteLayout
+      // handler take over (cancel/etc).
+      if (key.escape && queueRestoreRef.current) {
+        queueRestoreRef.current = null;
+        setEditingQueueIndex(null);
+        const newSegs: Segment[] = [{ type: 'text', value: '' }];
+        setSegments(newSegs);
+        setCursor(0);
+        syncToStore(newSegs);
+        return;
+      }
+
+      // Ctrl+X while editing a queued slot: drop the queued message entirely.
+      // Faster than "clear the buffer + Enter" (which triggers the empty-edit
+      // delete path) and works even if the user has typed new content. Only
+      // fires while restore is active so it doesn't shadow Ctrl+X in the
+      // normal compose buffer (which has no behavior today and is reserved).
+      if (key.ctrl && userInput === 'x' && queueRestoreRef.current) {
+        const restore = queueRestoreRef.current;
+        queueRestoreRef.current = null;
+        setEditingQueueIndex(null);
+        // Translate the restore index against the current queue snapshot —
+        // processQueue may have shifted slots while the user was editing.
+        if (restore.index < queuedMessagesRef.current.length) {
+          removeQueuedMessage(restore.index);
+        }
+        const newSegs: Segment[] = [{ type: 'text', value: '' }];
+        setSegments(newSegs);
+        setCursor(0);
+        syncToStore(newSegs);
+        return;
+      }
+
       // Clear path completion candidates on any key except Tab
       if (!key.tab) {
         setPathCandidates([]);
@@ -809,12 +926,25 @@ export const PromptInput = React.memo(function PromptInput({
       const prevYank = lastYankRef.current;
       lastYankRef.current = null;
 
-      // Check if slash command menu is visible (has matching commands)
+      // Check if slash command menu is visible (has matching commands).
+      // Mirrors CommandMenu's own visibility check so PromptInput defers
+      // navigation keys (Tab, Up/Down, Enter) to the menu while it's
+      // mounted. Crucially this is NOT gated on !isProcessing — the menu
+      // stays mounted during agent streaming so the user can autocomplete
+      // a slash command into the queue, and PromptInput must back off in
+      // sync so its own Enter/Tab handlers don't compete with the menu's.
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
           ? slashCommands.some(
               (cmd) =>
                 !cmd.meta?.hidden &&
+                // Mirror CommandMenu's liteOnly filter so PromptInput doesn't
+                // claim Enter/Tab for menu items the user can't actually see
+                // (modern TUI hides /verbosity, /tui, etc.). Without this,
+                // typing a liteOnly command name in TUI mode swallows Enter
+                // because slashMenuVisible is true but the rendered menu is
+                // empty — the keystroke goes nowhere.
+                (isLiteMode || !cmd.meta?.liteOnly) &&
                 cmd.name
                   .slice(1)
                   .toLowerCase()
@@ -834,6 +964,40 @@ export const PromptInput = React.memo(function PromptInput({
           // Stop active /voice recording
           voiceStop();
         } else {
+          // Queue restore mode: Enter commits the edited text back into the
+          // queue at its original slot so message order is preserved. Falls
+          // back to a normal submit if the slot drained while editing.
+          // If the edited text is empty (whitespace-only), delete the slot
+          // entirely instead of leaving an empty queued message — Enter on
+          // an emptied edit reads as "discard this queued message".
+          const restore = queueRestoreRef.current;
+          if (restore) {
+            const content = buildContent(segments);
+            queueRestoreRef.current = null;
+            setEditingQueueIndex(null);
+            const result = commitQueueRestore(
+              restore,
+              content,
+              queuedMessagesRef.current
+            );
+            if (result.kind === 'replace') {
+              if (result.text.trim()) {
+                replaceQueuedMessage(result.index, result.text);
+              } else {
+                removeQueuedMessage(result.index);
+              }
+              clearAll();
+              return;
+            }
+            // Fallback: slot drained or shifted — send as fresh message.
+            if (result.text.trim()) {
+              clearAll();
+              onSubmit(result.text);
+            } else {
+              clearAll();
+            }
+            return;
+          }
           // When processing, dismiss menus and submit directly (for queuing
           // or slash command rejection — the menus aren't useful here).
           if (isProcessing) {
@@ -959,6 +1123,12 @@ export const PromptInput = React.memo(function PromptInput({
           applyEdit(deleteForward(segments, cursor));
         }
       } else if (key.leftArrow) {
+        // suppressArrows only blocks unmodified ↑/↓ — horizontal arrows
+        // remain available so the user can still move the input cursor while
+        // a parent handler claims arrows for navigation. Shift+← may still
+        // be claimed by the parent (e.g. lite's subagent panel cycle binding)
+        // — bail in that case so we don't fight over the keystroke.
+        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         if (key.ctrl || key.meta) {
           // Ctrl+Left or Cmd+Left - move word backward
@@ -967,6 +1137,7 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.max(0, cursor - 1));
         }
       } else if (key.rightArrow) {
+        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         // Accept shadow text when cursor is at end of input
         if (commandShadowText && cursor === totalWidth(segments)) {
@@ -985,6 +1156,7 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.min(totalWidth(segments), cursor + 1));
         }
       } else if (key.upArrow) {
+        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
@@ -997,6 +1169,41 @@ export const PromptInput = React.memo(function PromptInput({
             setCursor(newPos);
             return;
           }
+        }
+        // Lite mode: ↑ first walks back through queued messages (Claude
+        // Code parity). When the user steps past the oldest queued entry
+        // we exit restore mode AND continue into CommandHistory on the
+        // same keypress — that way ↑↑↑↑ pages cleanly from queue tail
+        // through to history without a phantom no-op press in between.
+        if (isLiteMode) {
+          const result = navigateQueueUp(
+            queueRestoreRef.current,
+            getVisibleText(segments),
+            queuedMessagesRef.current
+          );
+          if (result.kind === 'queue') {
+            if (result.replace) {
+              replaceQueuedMessage(result.replace.index, result.replace.text);
+            }
+            queueRestoreRef.current = result.state;
+            setEditingQueueIndex(result.state ? result.state.index : null);
+            // state === null means we just walked past the oldest entry —
+            // fall through to CommandHistory below so this single keypress
+            // produces a useful navigation.
+            if (result.state != null) {
+              suppressNextTriggerRef.current = true;
+              setPromptHint(null);
+              const newSegs: Segment[] = [
+                { type: 'text', value: result.loadText },
+              ];
+              setSegments(newSegs);
+              setCursor(result.loadText.length);
+              syncToStore(newSegs);
+              inputMetrics.markStateUpdate();
+              return;
+            }
+          }
+          // 'history' / 'noop' / queue-exit — fall through to CommandHistory
         }
         // Single-line or already on first line: navigate history
         const currentText = buildContent(segments);
@@ -1014,6 +1221,7 @@ export const PromptInput = React.memo(function PromptInput({
           syncToStore(newSegs);
         }
       } else if (key.downArrow) {
+        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
@@ -1024,6 +1232,32 @@ export const PromptInput = React.memo(function PromptInput({
           if (newPos !== null) {
             inputMetrics.markStateUpdate();
             setCursor(newPos);
+            return;
+          }
+        }
+        // Lite mode: ↓ walks forward through queue restore mode, mirroring
+        // ↑. When not in restore mode, falls through to history.
+        if (isLiteMode && queueRestoreRef.current != null) {
+          const result = navigateQueueDown(
+            queueRestoreRef.current,
+            getVisibleText(segments),
+            queuedMessagesRef.current
+          );
+          if (result.kind === 'queue') {
+            if (result.replace) {
+              replaceQueuedMessage(result.replace.index, result.replace.text);
+            }
+            queueRestoreRef.current = result.state;
+            setEditingQueueIndex(result.state ? result.state.index : null);
+            suppressNextTriggerRef.current = true;
+            setPromptHint(null);
+            const newSegs: Segment[] = [
+              { type: 'text', value: result.loadText },
+            ];
+            setSegments(newSegs);
+            setCursor(result.loadText.length);
+            syncToStore(newSegs);
+            inputMetrics.markStateUpdate();
             return;
           }
         }

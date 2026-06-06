@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { Box, useMouse, CURSOR_MARKER } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
@@ -42,8 +48,31 @@ export interface MenuProps {
   showFooterHints?: boolean;
   /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
   preserveLabelColors?: boolean;
+  /**
+   * Action wording rendered after the close-menu key in the footer (e.g.
+   * `to cancel`, `to close`, `← back`). Default `to cancel`. The leading
+   * separator is the prop's responsibility — `← back` has none, `to close`
+   * has a leading space.
+   */
+  closeMenuActionLabel?: string;
+  /**
+   * Initial cursor row when the menu mounts. Defaults to 0. Clamped to
+   * `0..items.length-1`. Caller is responsible for re-keying the Menu
+   * (e.g. `key={activeCommand}`) when the menu identity changes — initial
+   * index only takes effect on mount.
+   */
+  initialIndex?: number;
   /** Static title shown above the menu items (rendered regardless of searchable). */
   title?: string;
+  /**
+   * Lite-mode-only opt-in for the symmetric arrow-shortcut bindings:
+   * right→Enter when no onRightArrow handler is set, left→Esc when not
+   * searchable. Kept off by default so modern-TUI menus (/agent, /model,
+   * etc.) preserve their existing behavior. Set true via the active
+   * command's `meta.liteOnly` so /verbosity and /verbose pick it up
+   * without affecting other surfaces.
+   */
+  liteOnly?: boolean;
 }
 
 import { fuzzyScore } from '../../../utils/fuzzyScore.js';
@@ -63,9 +92,16 @@ export const Menu = React.memo(function Menu({
   searchPlaceholder = 'type to search',
   showFooterHints,
   preserveLabelColors = false,
+  closeMenuActionLabel = 'to cancel',
+  initialIndex,
   title,
+  liteOnly = false,
 }: MenuProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    if (initialIndex == null) return 0;
+    const max = Math.max(0, items.length - 1);
+    return Math.min(Math.max(0, initialIndex), max);
+  });
   const [searchText, setSearchText] = useState('');
   const { getColor } = useTheme();
   const { width: terminalWidth } = useTerminalSize();
@@ -93,8 +129,16 @@ export const Menu = React.memo(function Menu({
     return scored.map((s) => s.item);
   }, [items, searchText, searchable]);
 
-  // Reset selection when filter changes
+  // Reset selection when filter changes. Skip the first run so initialIndex
+  // (applied by useState above) survives mount — otherwise the cursor always
+  // snaps to row 0 on mount, defeating ESC-back navigation that wants to
+  // restore the parent's row.
+  const didMountSearchResetRef = useRef(false);
   useEffect(() => {
+    if (!didMountSearchResetRef.current) {
+      didMountSearchResetRef.current = true;
+      return;
+    }
     setSelectedIndex(0);
   }, [searchText]);
 
@@ -165,8 +209,14 @@ export const Menu = React.memo(function Menu({
   }, [selectedIndex, onHighlight, displayItems]);
 
   useKeypress((input, key) => {
-    // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation)
-    if (key.upArrow || (key.ctrl && input === 'p')) {
+    // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation).
+    // In liteOnly menus, Ctrl+P is reserved as the /verbosity preview
+    // arm chord (CommandMenu's keypress handler claims it). Falling
+    // through to plain up-arrow navigation would shadow the preview
+    // toggle so the user could never open the inline preview pane.
+    // Plain ↑ still works for navigation in those menus; only the chord
+    // is yielded.
+    if (key.upArrow || (!liteOnly && key.ctrl && input === 'p')) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow || (key.ctrl && input === 'n')) {
       setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
@@ -182,6 +232,27 @@ export const Menu = React.memo(function Menu({
     } else if (key.rightArrow && onRightArrow) {
       const selectedItem = displayItems[selectedIndex];
       if (selectedItem) onRightArrow(selectedItem);
+    } else if (
+      liteOnly &&
+      key.rightArrow &&
+      !onRightArrow &&
+      selectedIndex >= 0
+    ) {
+      // Right arrow as Enter when the menu didn't claim the right arrow
+      // for a drill-in handler. Lets users commit a selection without
+      // moving fingers off the arrow cluster — paired with left = Esc
+      // below, both navigation directions become arrows. Lite menus only:
+      // ungating this in modern TUI auto-responds to ApprovalRequest
+      // dropdowns (which render Menu without liteOnly and rely on their
+      // own useKeypress for arrow drill-in).
+      const selectedItem = displayItems[selectedIndex];
+      if (selectedItem) onSelect(selectedItem);
+    } else if (liteOnly && key.leftArrow && onEscape && !searchable) {
+      // Left arrow as Esc — symmetric with right = Enter. Suppressed in
+      // searchable menus because left/right are needed to navigate the
+      // search input cursor (handled implicitly by the input field).
+      // Lite menus only — see right-arrow branch above for rationale.
+      onEscape();
     } else if (!searchable) {
       // Reserved for future use
     } else if (searchable && key.ctrl && input) {
@@ -310,7 +381,7 @@ export const Menu = React.memo(function Menu({
           <Box paddingX={1}>
             <Text>
               {brandText(keybindings.label('closeMenu').toUpperCase())}{' '}
-              {dimText('to cancel')}
+              {dimText(closeMenuActionLabel)}
               {dimText(' · ')}
               {brandText('↑↓')} {dimText('to navigate')}
               {onRightArrow ? (

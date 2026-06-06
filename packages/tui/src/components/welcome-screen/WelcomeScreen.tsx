@@ -59,15 +59,11 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         paddingX={2}
       >
         {agentEngine !== 'kas' ? (
-          <>
-            <Text>
-              {primary('An early release of ')}
-              {brand('Kiro CLI V3')}
-              {primary(' is now available! Try it out: ')}
-              {brand('kiro-cli --v3')}
-            </Text>
-            {whatsNewBody}
-          </>
+          <Text>
+            {primary('Welcome to the new Kiro CLI UX! ')}
+            {brand('/feedback')}
+            {primary(' for thoughts.')}
+          </Text>
         ) : (
           <>
             <Text>

@@ -6,6 +6,7 @@ import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
 import type { StatusType } from '../../../types/componentTypes.js';
+import { useAppStore } from '../../../stores/app-store.js';
 
 export enum MessageType {
   DEVELOPER = 'developer',
@@ -28,6 +29,12 @@ export const Message = React.memo(function Message({
   barColor,
 }: MessageProps) {
   const { wrapDisabled } = useTheme();
+  // Lite mode also drops chrome, but the decision is read live from the
+  // store so a /tui ↔ /lite swap restores StatusBar chrome on rows rendered
+  // after the swap — without retroactively reflowing rows already in
+  // <Static>. Reading the store here on each render keeps the cost flat
+  // (one selector call) and means new TUI rows match a cold-start TUI.
+  const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
   const messageStatus: StatusType = status || 'active';
 
   // Under wrapDisabled:
@@ -37,8 +44,9 @@ export const Message = React.memo(function Message({
   //     there is no leading whitespace or colored bar column. Keeps the
   //     output clean in scrollback AND avoids layout-shift between live and
   //     static forms.
-  const useOverflow = wrapDisabled;
-  const skipStatusBar = wrapDisabled;
+  const dropChrome = wrapDisabled || isLiteUi;
+  const useOverflow = dropChrome;
+  const skipStatusBar = dropChrome;
 
   if (skipStatusBar) {
     return (

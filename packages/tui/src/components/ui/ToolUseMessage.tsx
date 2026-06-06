@@ -52,6 +52,7 @@ import {
   collapsedToolPreview,
   shouldCollapseToolCard,
 } from '../../utils/collapsed-tool-view.js';
+import { useAppStore } from '../../stores/app-store.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -88,6 +89,9 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   }) {
     const { getColor, wrapDisabled } = useTheme();
     const glyphs = useGlyphs();
+    // Lite mode also drops chrome, but read live from the store so a swap
+    // back to TUI restores the StatusBar bar on subsequent rows.
+    const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
     const keybindings = useKeybindings();
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
@@ -105,8 +109,8 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     // Under wrapDisabled, drop the StatusBar chrome (vertical colored bar +
     // margin) entirely, both in live and static contexts. This keeps layout
     // identical across live/static transitions and produces clean copy-paste
-    // output with no leading whitespace.
-    const skipStatusBar = wrapDisabled;
+    // output with no leading whitespace. Lite mode does the same.
+    const skipStatusBar = wrapDisabled || isLiteUi;
 
     const inner = (
       <>
@@ -248,13 +252,30 @@ const FullToolContent = React.memo(function FullToolContent({
   }, [status, isFinished, requestRemeasure]);
 
   if (status === ToolUseStatus.Rejected || result?.status === 'cancelled') {
+    const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
     try {
       const parsed = JSON.parse(content);
-      const path = parsed.path || parsed.command || 'file';
-      const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
-      return <StatusInfo title={label} target={path} />;
+      // Session tools (subagent, agent_crew, session_management) carry no
+      // path/command; surface the user-meaningful field instead so the
+      // cancelled chip reads "Cancelled <task>" not "Cancelled file".
+      let target: string;
+      if (SESSION_TOOL_NAMES.has(name)) {
+        const task =
+          typeof parsed.task === 'string'
+            ? parsed.task
+            : typeof parsed.target === 'string'
+              ? parsed.target
+              : typeof parsed.name === 'string'
+                ? parsed.name
+                : null;
+        target = task
+          ? `"${task.slice(0, 40)}${task.length > 40 ? '…' : ''}"`
+          : name;
+      } else {
+        target = parsed.path || parsed.command || 'file';
+      }
+      return <StatusInfo title={label} target={target} />;
     } catch {
-      const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
       return <StatusInfo title={label} target={name} />;
     }
   }

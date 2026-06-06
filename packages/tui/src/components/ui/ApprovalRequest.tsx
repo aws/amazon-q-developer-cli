@@ -30,11 +30,11 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     pendingApproval,
     approvalMode: mode,
     respondToApproval,
-    cancelApproval,
     setApprovalMode,
     sessionId: mainSessionId,
     sessions,
   } = useApprovalState();
+  const cancelMessage = useAppStore((state) => state.cancelMessage);
   const { messages } = useConversationState();
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -228,7 +228,12 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       setPage('default');
       setFocusedIndex(0);
     } else {
-      cancelApproval();
+      // Top-level Esc/leftArrow: interrupt the agent in addition to
+      // cancelling this approval. cancelMessage() calls cancelApproval()
+      // internally, so this also clears the pending approval and any
+      // queued ones — and aborts the agent's current turn so the user
+      // gets the prompt back to type a new instruction.
+      cancelMessage();
     }
   };
 

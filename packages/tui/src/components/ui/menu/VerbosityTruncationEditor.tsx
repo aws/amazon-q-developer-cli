@@ -1,0 +1,238 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box } from '../../../renderer.js';
+import { Text } from '../text/Text.js';
+import { Divider } from '../divider/Divider.js';
+import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useTheme } from '../../../hooks/useThemeContext.js';
+import { renderVerbosityPreview } from '../../../lite/render.js';
+import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
+
+const MAX_CAP = 99999;
+
+/**
+ * Asymmetric step function for arrow-key adjustment. Bigger steps when the
+ * value is bigger so holding the arrow feels exponential without explicit
+ * velocity tracking — terminal autorepeat fires repeated keypresses, each
+ * one consults the current value to pick its own step size.
+ */
+function nextUp(v: number): number {
+  let n: number;
+  if (v < 5) n = v + 1;
+  else if (v < 50) n = v + 5;
+  else if (v < 200) n = v + 25;
+  else if (v < 1000) n = v + 100;
+  else n = v + 500;
+  return Math.min(MAX_CAP, n);
+}
+
+function nextDown(v: number): number {
+  if (v <= 5) return Math.max(0, v - 1);
+  if (v <= 50) return v - 5;
+  if (v <= 200) return v - 25;
+  if (v <= 1000) return v - 100;
+  return v - 500;
+}
+
+/**
+ * Numeric editor for the truncation cap. Renders a single value chevron
+ * (`◀  N  ▶`) plus a live preview pane below that reflects the in-progress
+ * value.
+ *
+ * Keys:
+ *   Esc       — discard draft, return to truncation submenu (caller).
+ *   Enter     — commit draft (caller persists via setVerboseConfig).
+ *   ←         — step down (asymmetric — small steps near 0, big near max).
+ *   →         — step up. From `null` (unlimited), starts at 5.
+ *   digit     — append in digit-mode, replace otherwise. Clamp at MAX_CAP.
+ *               `0` alone collapses to `null` (unlimited).
+ *   Backspace — drop last digit; on 0 or 1 digit go to `null`.
+ *   u         — toggle to `null` (unlimited).
+ */
+export type TruncationEditorField =
+  | 'argsLines'
+  | 'argsChars'
+  | 'outputLines'
+  | 'outputChars';
+
+export const VerbosityTruncationEditor: React.FC<{
+  which: TruncationEditorField;
+  onCommit: (value: number | null) => void;
+  onCancel: () => void;
+}> = ({ which, onCommit, onCancel }) => {
+  const { getColor } = useTheme();
+  const dim = useMemo(() => getColor('secondary'), [getColor]);
+
+  // Seed from saved config so the editor opens on the current value.
+  const initial = useMemo(() => {
+    const display = getVerboseDisplay();
+    switch (which) {
+      case 'argsLines':
+        return display.argsMaxLines;
+      case 'argsChars':
+        return display.argsMaxChars;
+      case 'outputLines':
+        return display.outputMaxLines;
+      case 'outputChars':
+        return display.outputMaxChars;
+    }
+  }, [which]);
+
+  const [value, setValue] = useState<number | null>(initial);
+  // True once the user has typed a digit since open/last-arrow. Controls
+  // append-vs-replace on the next digit so typing "123" produces 123, not 3.
+  const [digitMode, setDigitMode] = useState(false);
+
+  // Blink for the value chevron — drives a 500ms toggle. Same trick as the
+  // Menu search input cursor.
+  const [blink, setBlink] = useState(true);
+  useEffect(() => {
+    const id = setInterval(() => setBlink((b) => !b), 500);
+    return () => clearInterval(id);
+  }, []);
+
+  // Stash latest committed-on-Enter so the closure passed to useKeypress
+  // (which captures state by ref) sees the current value without resubscribing
+  // every render.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const digitModeRef = useRef(digitMode);
+  digitModeRef.current = digitMode;
+
+  useKeypress((input, key) => {
+    if (key.escape) {
+      onCancel();
+      return;
+    }
+    if (key.return) {
+      onCommit(valueRef.current);
+      return;
+    }
+    if (key.leftArrow) {
+      const cur = valueRef.current ?? 5;
+      const next = nextDown(cur);
+      setValue(next === 0 ? null : next);
+      setDigitMode(false);
+      return;
+    }
+    if (key.rightArrow) {
+      const cur = valueRef.current ?? 5;
+      // From null we start at 5 (matches the original "5 lines" preset).
+      const next = valueRef.current == null ? 5 : nextUp(cur);
+      setValue(next);
+      setDigitMode(false);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      const cur = valueRef.current;
+      if (cur == null) return;
+      const s = String(cur);
+      if (s.length <= 1) {
+        setValue(null);
+        setDigitMode(false);
+      } else {
+        const next = parseInt(s.slice(0, -1), 10);
+        setValue(Number.isFinite(next) && next > 0 ? next : null);
+        setDigitMode(true);
+      }
+      return;
+    }
+    if (input === 'u' || input === 'U') {
+      setValue(null);
+      setDigitMode(false);
+      return;
+    }
+    // Digit input — append in digitMode, replace otherwise. `0` alone
+    // collapses to `null` so the user can type a full unlimited from any
+    // state without arrowing down through every step.
+    if (/^[0-9]$/.test(input)) {
+      const d = parseInt(input, 10);
+      if (digitModeRef.current && valueRef.current != null) {
+        const next = valueRef.current * 10 + d;
+        setValue(Math.min(MAX_CAP, next));
+      } else {
+        setValue(d === 0 ? null : d);
+      }
+      setDigitMode(true);
+      return;
+    }
+  });
+
+  // Display string for the value chevron. `null` shows `unlimited`;
+  // numeric values show as-is, padded so the chevrons don't jiggle.
+  const valueText = value == null ? 'unlimited' : String(value);
+
+  // Build the live preview using the in-progress draft. We pass a display
+  // override so the preview renders the cap the user is editing, not the
+  // saved one.
+  const display = useMemo(() => {
+    const base = getVerboseDisplay();
+    switch (which) {
+      case 'argsLines':
+        return { ...base, argsMaxLines: value };
+      case 'argsChars':
+        return { ...base, argsMaxChars: value };
+      case 'outputLines':
+        return { ...base, outputMaxLines: value };
+      case 'outputChars':
+        return { ...base, outputMaxChars: value };
+    }
+  }, [which, value]);
+
+  const filters = useMemo(() => getVerboseConfig().filters, []);
+
+  // Both args caps share the args fixture; both output caps share the output
+  // fixture. The cap unit (lines vs chars) is reflected in the heading.
+  const previewKey =
+    which === 'argsLines' || which === 'argsChars'
+      ? 'truncation:args'
+      : 'truncation:output';
+  const previewText = useMemo(
+    () => renderVerbosityPreview(previewKey, display, filters),
+    [previewKey, display, filters]
+  );
+
+  const heading = (() => {
+    switch (which) {
+      case 'argsLines':
+        return 'Tool args · lines';
+      case 'argsChars':
+        return 'Tool args · chars per value';
+      case 'outputLines':
+        return 'Tool output · lines';
+      case 'outputChars':
+        return 'Tool output · chars per line';
+    }
+  })();
+
+  return (
+    <Box flexDirection="column">
+      <Box paddingX={1} flexDirection="column">
+        <Text>{heading}</Text>
+        <Box height={1} />
+        <Box>
+          <Text>{dim('  ')}</Text>
+          <Text>
+            {blink ? (
+              <Text inverse>{` ◀  ${valueText}  ▶ `}</Text>
+            ) : (
+              <Text>{` ◀  ${valueText}  ▶ `}</Text>
+            )}
+          </Text>
+        </Box>
+        <Box height={1} />
+        <Text>
+          {dim(
+            '  ←/→ adjust · digits to set · backspace to drop · u for unlimited · ↵ commit · esc back'
+          )}
+        </Text>
+      </Box>
+      <Box flexDirection="column" marginTop={1}>
+        <Divider />
+        <Box paddingX={1} flexDirection="column">
+          <Text>{dim('Preview')}</Text>
+          <Text>{previewText}</Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
