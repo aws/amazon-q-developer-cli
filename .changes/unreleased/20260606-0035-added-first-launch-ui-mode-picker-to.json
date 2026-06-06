@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "First-launch UI mode picker to choose between Full TUI and Lite as the default interface"
+}

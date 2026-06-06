@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Lite UI mode — a minimal, append-only chat interface with `/lite` and `/tui` commands to switch modes mid-session"
+}
