@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-06-06
-  commit: 925dfcd04
+  commit: fcddc2183
   status: validated
   testable_headless: false
   category: feature

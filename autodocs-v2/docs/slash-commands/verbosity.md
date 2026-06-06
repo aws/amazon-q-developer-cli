@@ -6,7 +6,7 @@ doc_meta:
   keywords: [verbosity, verbose, density, filters, tools, output, minimal, lean, full, truncation, lite]
   related: [settings, lite-mode]
   validated: 2026-06-06
-  commit: 925dfcd04
+  commit: fcddc2183
   status: validated
   testable_headless: false
 ---

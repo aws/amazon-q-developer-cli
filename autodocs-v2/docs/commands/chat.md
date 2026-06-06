@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-04
-  commit: fde97d540
+  validated: 2026-06-06
+  commit: fcddc2183
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
-  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker, lite]
+  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes, lite-mode]
 ---
 
 # kiro-cli chat
@@ -93,6 +93,14 @@ kiro-cli chat --resume-picker
 
 **What this does**: Shows interactive picker to select conversation to resume.
 
+#### Use Case 9: Start in Lite Mode
+
+```bash
+kiro-cli chat --lite
+```
+
+**What this does**: Launches in the minimal append-only lite UI instead of the full TUI. Requires the Lite rollout to be enabled.
+
 ## Options
 
 | Option | Short | Type | Description |
@@ -109,6 +117,7 @@ kiro-cli chat --resume-picker
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
+| `--lite` | | flag | Launch in lite (minimal append-only) UI mode |
 | `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |

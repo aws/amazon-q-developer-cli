@@ -6,7 +6,7 @@ doc_meta:
   keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, verbosity, display, ui-mode]
   related: [theme, title, verbosity, lite-mode]
   validated: 2026-06-06
-  commit: 925dfcd04
+  commit: fcddc2183
   status: validated
   testable_headless: false
 ---
