@@ -5,12 +5,17 @@
  * When the API returns a ValidationException with a message like
  * "Image exceeds maximum allowed size of 3.75MB", the user should see that
  * message in the transient alert — not "IMAGE_SIZE_EXCEEDED".
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe('Validation error message propagation', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('Validation error message propagation ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -21,8 +26,8 @@ describe('Validation error message propagation', () => {
   });
 
   it('surfaces service message for IMAGE_SIZE_EXCEEDED validation error', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('validation-error-image-size')
+    testCase = await builder()
+      .withTestName(`validation-error-image-size-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);

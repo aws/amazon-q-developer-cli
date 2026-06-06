@@ -3,6 +3,8 @@
  *
  * When keypresses arrive faster than React can re-render, the PromptInput
  * handler reads stale segments/cursor from the closure and drops characters.
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -22,7 +24,10 @@ async function typeAndCheck(
   return store.commandInputValue;
 }
 
-describe('Fast Typing (P404854010)', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('Fast Typing (P404854010) ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -33,8 +38,8 @@ describe('Fast Typing (P404854010)', () => {
   });
 
   it('10ms between chars — no dropped characters', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('fast-type-10ms')
+    testCase = await builder()
+      .withTestName(`fast-type-10ms-${mode}`)
       .withTimeout(30000)
       .launch();
     await testCase.waitForText('ask a question', 10000);
@@ -46,8 +51,8 @@ describe('Fast Typing (P404854010)', () => {
   }, 60000);
 
   it('5ms between chars — no dropped characters', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('fast-type-5ms')
+    testCase = await builder()
+      .withTestName(`fast-type-5ms-${mode}`)
       .withTimeout(30000)
       .launch();
     await testCase.waitForText('ask a question', 10000);

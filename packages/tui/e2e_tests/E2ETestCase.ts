@@ -529,6 +529,16 @@ export class E2ETestCase {
   }
 
   /**
+   * Returns cell attributes for every line containing `text` (top-to-bottom).
+   * Used by tests that compare older scrollback rows against newer live-region
+   * rows — e.g. /theme reflow assertions where the old row's color must stay
+   * frozen and the new row's color must update.
+   */
+  findAllTextCells(text: string): CellAttributes[][] {
+    return this.ptyManager.findAllTextCells(text);
+  }
+
+  /**
    * Waits for the TUI to finish processing (isProcessing becomes false).
    */
   async waitForIdle(timeout = 30000): Promise<void> {
@@ -642,6 +652,20 @@ export class E2ETestCaseBuilder {
   withEnv(env: Record<string, string>): E2ETestCaseBuilder {
     this.options.extraEnv = { ...this.options.extraEnv, ...env };
     return this;
+  }
+
+  /**
+   * Launches the CLI in lite mode by setting KIRO_UI_MODE=lite.
+   *
+   * Also sets KIRO_LITE_ROLLOUT_ENABLED=1 — without it, resolveUiMode()
+   * (index.tsx) silently falls back to 'tui' under the rollout gate
+   * added in commit e4077111c.
+   */
+  withLite(): E2ETestCaseBuilder {
+    return this.withEnv({
+      KIRO_UI_MODE: 'lite',
+      KIRO_LITE_ROLLOUT_ENABLED: '1',
+    });
   }
 
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {

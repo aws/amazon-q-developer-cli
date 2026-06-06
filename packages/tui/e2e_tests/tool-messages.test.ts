@@ -11,6 +11,8 @@
  * response streams:
  *   1. Tool use events (+ optional assistant text)
  *   2. Final assistant response after tool execution
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -19,7 +21,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-describe('Tool Messages', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('Tool Messages ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
   let tempDir: string = '';
 
@@ -35,8 +40,8 @@ describe('Tool Messages', () => {
   });
 
   it('renders shell tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('shell-tool-message')
+    testCase = await builder()
+      .withTestName(`shell-tool-message-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -77,21 +82,22 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Shell', 10000);
+    const shellLabel = mode === 'tui' ? 'Shell' : 'execute_bash';
+    await testCase.waitForText(shellLabel, 10000);
     await testCase.waitForText('Command executed', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Shell'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(shellLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
       true
     );
   }, 30000);
 
   it('renders read tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('read-tool-message')
+    testCase = await builder()
+      .withTestName(`read-tool-message-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -132,19 +138,20 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Read', 10000);
+    const readLabel = mode === 'tui' ? 'Read' : 'fs_read';
+    await testCase.waitForText(readLabel, 10000);
     await testCase.waitForText('File contents', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Read'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(readLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('File contents'))).toBe(true);
   }, 30000);
 
   it('renders write tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('write-tool-message')
+    testCase = await builder()
+      .withTestName(`write-tool-message-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -189,19 +196,20 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Write', 10000);
+    const writeLabel = mode === 'tui' ? 'Write' : 'fs_write';
+    await testCase.waitForText(writeLabel, 10000);
     await testCase.waitForText('File created', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Write'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(writeLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('File created'))).toBe(true);
   }, 30000);
 
   it('renders multiple tool calls in sequence', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('multiple-tool-calls')
+    testCase = await builder()
+      .withTestName(`multiple-tool-calls-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -254,19 +262,20 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tools to finish and assistant response to render
-    await testCase.waitForText('Read', 10000);
+    const readLabel = mode === 'tui' ? 'Read' : 'fs_read';
+    await testCase.waitForText(readLabel, 10000);
     await testCase.waitForText('Version bumped', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Read'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(readLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('Version bumped'))).toBe(true);
   }, 30000);
 
   it('renders grep tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('grep-tool-message')
+    testCase = await builder()
+      .withTestName(`grep-tool-message-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -307,19 +316,20 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Grep', 10000);
+    const grepLabel = mode === 'tui' ? 'Grep' : 'grep';
+    await testCase.waitForText(grepLabel, 10000);
     await testCase.waitForText('Found useState', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Grep'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(grepLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('Found useState'))).toBe(true);
   }, 30000);
 
   it('renders glob tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('glob-tool-message')
+    testCase = await builder()
+      .withTestName(`glob-tool-message-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -360,13 +370,14 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Glob', 10000);
+    const globLabel = mode === 'tui' ? 'Glob' : 'glob';
+    await testCase.waitForText(globLabel, 10000);
     await testCase.waitForText('Found 15', 10000);
 
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    expect(snapshot.some((line) => line.includes('Glob'))).toBe(true);
+    expect(snapshot.some((line) => line.includes(globLabel))).toBe(true);
     expect(snapshot.some((line) => line.includes('TypeScript files'))).toBe(
       true
     );
@@ -388,8 +399,8 @@ describe('Tool Messages', () => {
       '    main()',
     ].join('\n'));
 
-    testCase = await E2ETestCase.builder()
-      .withTestName('write-str-replace')
+    testCase = await builder()
+      .withTestName(`write-str-replace-${mode}`)
       .withTerminal({ width: 120, height: 40 })
       .launch();
 
@@ -426,11 +437,15 @@ describe('Tool Messages', () => {
     await testCase.pressEnter();
 
     // Wait for the approval dialog — ToolCall event has been fully processed by then
-    await testCase.waitForText('requires approval', 15000);
+    // TUI shows "requires approval"; Lite shows "needs approval"
+    const approvalText = mode === 'tui' ? 'requires approval' : 'needs approval';
+    await testCase.waitForText(approvalText, 15000);
 
     // Verify the snapshot shows the correct line number in the diff summary
     const snapshot = testCase.getSnapshot();
-    expect(snapshot.some((line) => line.includes('at L5'))).toBe(true);
+    if (mode === 'tui') {
+      expect(snapshot.some((line) => line.includes('at L5'))).toBe(true);
+    }
 
     // Verify the store has correct locations and diff content
     const store = await testCase.getStore();
@@ -451,8 +466,8 @@ describe('Tool Messages', () => {
     const filePath = path.join(tempDir, 'game.py');
     fs.writeFileSync(filePath, 'def play():\n    print("playing")\n    return True\n');
 
-    testCase = await E2ETestCase.builder()
-      .withTestName('write-create-overwrite')
+    testCase = await builder()
+      .withTestName(`write-create-overwrite-${mode}`)
       .withTerminal({ width: 120, height: 40 })
       .launch();
 
@@ -485,7 +500,9 @@ describe('Tool Messages', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    await testCase.waitForText('requires approval', 15000);
+    // TUI shows "requires approval"; Lite shows "needs approval"
+    const approvalText = mode === 'tui' ? 'requires approval' : 'needs approval';
+    await testCase.waitForText(approvalText, 15000);
 
     // Verify the store has the tool message with correct content
     const store = await testCase.getStore();

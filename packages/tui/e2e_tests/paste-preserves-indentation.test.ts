@@ -20,6 +20,8 @@
  *   2. The submitted content is not empty / not trimmed.
  * Byte-exact round-trip is covered by the colocated unit tests in
  * PromptInput.test.ts.
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -29,7 +31,10 @@ import { E2ETestCase } from './E2ETestCase';
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
 
-describe('Paste preserves indentation', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('Paste preserves indentation ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -40,8 +45,8 @@ describe('Paste preserves indentation', () => {
   });
 
   it('preserves runs of consecutive spaces in pasted aligned content', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('paste-ws-indent-align')
+    testCase = await builder()
+      .withTestName(`paste-ws-indent-align-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -88,8 +93,8 @@ describe('Paste preserves indentation', () => {
   }, 30000);
 
   it('preserves indentation in pasted multi-line code (consecutive spaces survive)', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('paste-ws-indent-code')
+    testCase = await builder()
+      .withTestName(`paste-ws-indent-code-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -142,8 +147,8 @@ describe('Paste preserves indentation', () => {
   }, 30000);
 
   it('does not submit a whitespace-only paste (empty-submit guard still holds)', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('paste-ws-empty')
+    testCase = await builder()
+      .withTestName(`paste-ws-empty-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);

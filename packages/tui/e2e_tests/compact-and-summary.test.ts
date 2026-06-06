@@ -1,11 +1,16 @@
 /**
  * E2E tests for /compact command and summary system message rendering.
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe('/compact and summary', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('/compact and summary ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -18,9 +23,9 @@ describe('/compact and summary', () => {
   });
 
   it('executes /compact and shows compacting loading state', async () => {
-    testCase = await E2ETestCase.builder()
+    testCase = await builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName('slash-command-compact')
+      .withTestName(`slash-command-compact-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -80,9 +85,9 @@ describe('/compact and summary', () => {
 
   // Windows: compaction response + summary rendering exceeds timeout in CI
   it.skipIf(process.platform === 'win32')('renders summary system message after compaction completes', async () => {
-    testCase = await E2ETestCase.builder()
+    testCase = await builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName('compact-summary')
+      .withTestName(`compact-summary-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -190,9 +195,9 @@ describe('/compact and summary', () => {
   }, 90000);
 
   it('shows alert on /compact failure', async () => {
-    testCase = await E2ETestCase.builder()
+    testCase = await builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName('slash-command-compact-fail')
+      .withTestName(`slash-command-compact-fail-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);

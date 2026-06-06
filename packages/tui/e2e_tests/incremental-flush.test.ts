@@ -7,12 +7,17 @@
  * 3. Completed turns show all messages (no content loss on turn transition)
  * 4. Dividers appear correctly between turns
  * 5. Parallel tool calls don't cause content to disappear
+ *
+ * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe('Incremental Static Flushing', () => {
+describe.each([
+  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
+  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
+])('Incremental Static Flushing ($mode)', ({ mode, builder }) => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -27,8 +32,8 @@ describe('Incremental Static Flushing', () => {
    * messages accumulate in the active turn.
    */
   it('preserves all tool uses when more than 2 tool calls occur', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-many-tools')
+    testCase = await builder()
+      .withTestName(`flush-many-tools-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -58,7 +63,16 @@ describe('Incremental Static Flushing', () => {
 
     // All 4 Read tool uses must be visible — none lost to flushing
     const readLines = snapshot.filter(line => line.includes('Read'));
-    expect(readLines.length).toBeGreaterThanOrEqual(4);
+    if (mode === 'tui') {
+      expect(readLines.length).toBeGreaterThanOrEqual(4);
+    } else {
+      // Lite renders tool calls as compact one-line (e.g. "⠋ fs_read package.json")
+      // Verify all 4 file paths appear somewhere in the snapshot
+      expect(snapshot.some(line => line.includes('package.json'))).toBe(true);
+      expect(snapshot.some(line => line.includes('tsconfig.json'))).toBe(true);
+      expect(snapshot.some(line => line.includes('bunfig.toml'))).toBe(true);
+      expect(snapshot.some(line => line.includes('AGENTS.md'))).toBe(true);
+    }
     expect(snapshot.some(line => line.includes('Read all 4 files'))).toBe(true);
   }, 30000);
 
@@ -66,8 +80,8 @@ describe('Incremental Static Flushing', () => {
    * LLM text between tool calls must be preserved in correct order.
    */
   it('preserves LLM text between tool calls in correct order', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-llm-between-tools')
+    testCase = await builder()
+      .withTestName(`flush-llm-between-tools-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -95,7 +109,12 @@ describe('Incremental Static Flushing', () => {
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
     expect(snapshot.some(line => line.includes('Found some files'))).toBe(true);
-    expect(snapshot.some(line => line.includes('Read') || line.includes('Glob'))).toBe(true);
+    if (mode === 'tui') {
+      expect(snapshot.some(line => line.includes('Read') || line.includes('Glob'))).toBe(true);
+    } else {
+      // Lite renders tool calls with raw names (e.g. "fs_read FAILED")
+      expect(snapshot.some(line => line.includes('fs_read') || line.includes('glob'))).toBe(true);
+    }
     expect(snapshot.some(line => line.includes('All done'))).toBe(true);
 
     // Verify order: "Found some files" must appear before "All done"
@@ -109,8 +128,8 @@ describe('Incremental Static Flushing', () => {
    * turn must appear in the completed (static) turn.
    */
   it('no content loss on turn completion with many tool calls', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-turn-completion')
+    testCase = await builder()
+      .withTestName(`flush-turn-completion-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -160,8 +179,8 @@ describe('Incremental Static Flushing', () => {
    * Write tool followed by shell tool — regression for "Write disappears".
    */
   it('write tool result is not lost when followed by another tool', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-write-then-shell')
+    testCase = await builder()
+      .withTestName(`flush-write-then-shell-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -188,8 +207,14 @@ describe('Incremental Static Flushing', () => {
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
     // Write must be visible — this was the core regression
-    expect(snapshot.some(line => line.includes('Write'))).toBe(true);
-    expect(snapshot.some(line => line.includes('Shell'))).toBe(true);
+    if (mode === 'tui') {
+      expect(snapshot.some(line => line.includes('Write'))).toBe(true);
+      expect(snapshot.some(line => line.includes('Shell'))).toBe(true);
+    } else {
+      // Lite mode renders tool calls with raw names (e.g. "fs_write", "execute_bash")
+      expect(snapshot.some(line => line.includes('fs_write'))).toBe(true);
+      expect(snapshot.some(line => line.includes('execute_bash'))).toBe(true);
+    }
     expect(snapshot.some(line => line.includes('File written and verified'))).toBe(true);
   }, 30000);
 
@@ -197,8 +222,8 @@ describe('Incremental Static Flushing', () => {
    * Dividers must appear between turns and have correct full-terminal width.
    */
   it('dividers appear between turns', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-dividers')
+    testCase = await builder()
+      .withTestName(`flush-dividers-${mode}`)
       .withTerminal({ width: 80, height: 30 })
       .launch();
 
@@ -230,25 +255,40 @@ describe('Incremental Static Flushing', () => {
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // Count divider lines (lines that are mostly '─' characters)
-    const dividerLines = snapshot.filter(line => {
-      const stripped = line.trim();
-      return stripped.length > 10 && /^[─\-─]+$/.test(stripped.replace(/\s/g, ''));
-    });
-    expect(dividerLines.length).toBeGreaterThanOrEqual(2);
+    if (mode === 'tui') {
+      // Count divider lines (lines that are mostly '─' characters)
+      const dividerLines = snapshot.filter(line => {
+        const stripped = line.trim();
+        return stripped.length > 10 && /^[─\-─]+$/.test(stripped.replace(/\s/g, ''));
+      });
+      expect(dividerLines.length).toBeGreaterThanOrEqual(2);
 
-    // Dividers should span most of the terminal width (80 cols)
-    dividerLines.forEach(line => {
-      expect(line.length).toBeGreaterThan(40);
-    });
+      // Dividers should span most of the terminal width (80 cols)
+      dividerLines.forEach(line => {
+        expect(line.length).toBeGreaterThan(40);
+      });
+    } else {
+      // Lite mode uses blank-line separators between turns, not '─' divider chars.
+      expect(snapshot.some(line => line.includes('First response'))).toBe(true);
+      expect(snapshot.some(line => line.includes('Second response'))).toBe(true);
+      // Verify there's visual separation: at least one blank line between the
+      // first response and the user's second message
+      const firstRespIdx = snapshot.findIndex(line => line.includes('First response'));
+      const secondUserIdx = snapshot.findIndex((line, i) => i > firstRespIdx && line.includes('again'));
+      if (secondUserIdx > firstRespIdx + 1) {
+        const between = snapshot.slice(firstRespIdx + 1, secondUserIdx);
+        const hasBlank = between.some(line => line.trim() === '');
+        expect(hasBlank).toBe(true);
+      }
+    }
   }, 30000);
 
   /**
    * Long run: 8 sequential tool calls — stress test for flushing.
    */
   it('handles long run of 8 sequential tool calls without content loss', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-long-run')
+    testCase = await builder()
+      .withTestName(`flush-long-run-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -279,23 +319,29 @@ describe('Incremental Static Flushing', () => {
     const snapshot = testCase.getSnapshot();
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    const readLines = snapshot.filter(line => line.includes('Read'));
-    // All 8 reads + final response line
-    expect(readLines.length).toBeGreaterThanOrEqual(8);
-    expect(snapshot.some(line => line.includes('Read all 8 files successfully'))).toBe(true);
-
     // Verify store has all 8 tool messages
     const store = await testCase.getStore();
     const toolMsgs = store.messages.filter(m => m.role === 'tool_use');
     expect(toolMsgs.length).toBe(8);
+
+    const readLines = snapshot.filter(line => line.includes('Read'));
+    if (mode === 'tui') {
+      // All 8 reads + final response line
+      expect(readLines.length).toBeGreaterThanOrEqual(8);
+    } else {
+      // Lite renders tool calls compactly — verify key files visible in output
+      const fileHits = files.filter(f => snapshot.some(line => line.includes(f)));
+      expect(fileHits.length).toBeGreaterThanOrEqual(4);
+    }
+    expect(snapshot.some(line => line.includes('Read all 8 files successfully'))).toBe(true);
   }, 45000);
 
   /**
    * User message must appear before tool uses in the rendered output.
    */
   it('user message appears before tool uses in correct order', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('flush-message-order')
+    testCase = await builder()
+      .withTestName(`flush-message-order-${mode}`)
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -322,7 +368,9 @@ describe('Incremental Static Flushing', () => {
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
     const userMsgIdx = snapshot.findIndex(line => line.includes('check configs'));
-    const firstReadIdx = snapshot.findIndex(line => line.includes('Read'));
+    // TUI renders tool cards with friendly name "Read"; lite uses raw name "fs_read"
+    const toolSearchTerm = mode === 'tui' ? 'Read' : 'fs_read';
+    const firstReadIdx = snapshot.findIndex(line => line.includes(toolSearchTerm));
     const finalMsgIdx = snapshot.findIndex(line => line.includes('Files read'));
 
     expect(userMsgIdx).toBeGreaterThanOrEqual(0);
