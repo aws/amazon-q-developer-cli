@@ -353,13 +353,7 @@ describe('validateTokens', () => {
       'read',
       'subagent',
     ]);
-    expect(accepted).toEqual([
-      'all',
-      'shell',
-      'mcp',
-      'read',
-      'subagent',
-    ]);
+    expect(accepted).toEqual(['all', 'shell', 'mcp', 'read', 'subagent']);
     expect(unknown).toEqual([]);
   });
 
@@ -522,7 +516,6 @@ describe('VERBOSE_CATEGORIES', () => {
     );
   });
 });
-
 
 describe('cli.json mirror — write path', () => {
   beforeEach(() => {
