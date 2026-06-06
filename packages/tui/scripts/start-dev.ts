@@ -90,7 +90,7 @@ function startTUI() {
   // Forward any extra CLI args (e.g. --agent <name>) to the TUI process.
   // Use absolute path to entry file so the caller's cwd is preserved.
   const entryFile = resolve(import.meta.dir, "../src/index.tsx");
-  const bunProcess = spawn(PINNED_BUN, ["--watch", entryFile, ...tuiArgs], {
+  const bunProcess = spawn(PINNED_BUN, [entryFile, ...tuiArgs], {
     stdio: "inherit",
     env: {
       ...process.env,

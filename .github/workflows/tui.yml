@@ -129,6 +129,51 @@ jobs:
         run: bun run test:run
         working-directory: packages/twinki
 
+  # Lite UI coverage — produces a distinct percentage scoped to the lite UI
+  # files (packages/tui/src/lite/** and packages/tui/src/components/layout/lite/**)
+  # so the team can track progress against the 90% goal independently of the
+  # package-wide number measured by tui-test. Report-only today; the script
+  # always exits 0 so this job won't block PRs while we ramp tests up.
+  # See packages/tui/docs/COVERAGE.md "Lite UI Coverage" for scope rationale.
+  tui-lite-coverage:
+    name: Lite UI Coverage
+    needs: check-paths
+    if: needs.check-paths.outputs.tui-changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+      - uses: ./.github/actions/codeartifact-login
+      - name: Install dependencies
+        run: bun install
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - name: Compute lite UI coverage
+        # Two-runner script: vitest covers the bulk of lite, plus a focused
+        # `bun test` pass for verbose.test.ts (which uses bun-test specific
+        # lifecycle). Filtered + merged lcov produces the distinct percentage.
+        # Job summary picks up the markdown table emitted via
+        # GITHUB_STEP_SUMMARY inside the script.
+        run: bash scripts/lite-coverage.sh
+        working-directory: packages/tui
+      - name: Upload lite coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lite-coverage-lcov
+          path: |
+            packages/tui/coverage/lite/lcov.info
+            packages/tui/coverage/lite/merged-lcov.info
+            packages/tui/coverage/lite/coverage-summary.json
+          retention-days: 14
+
   tui-integ:
     name: Integration Tests (${{ matrix.os }})
     needs: check-paths

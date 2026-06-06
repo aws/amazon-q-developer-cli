@@ -30,7 +30,9 @@ function runTests() {
   const hasPathArg = extraArgs.some(a => !a.startsWith("-") && (a.includes("/") || a.endsWith(".ts")));
 
   console.log("Running E2E tests...");
-  const testArgs = hasPathArg ? ["test", ...extraArgs] : ["test", "./e2e_tests/", ...extraArgs];
+  const testArgs = hasPathArg
+    ? ["test", "--max-concurrency=1", ...extraArgs]
+    : ["test", "--max-concurrency=1", "./e2e_tests/", ...extraArgs];
   const test = spawn("bun", testArgs, { cwd: TUI_ROOT, stdio: "inherit" });
   test.on("exit", (code) => process.exit(code ?? 0));
 }
