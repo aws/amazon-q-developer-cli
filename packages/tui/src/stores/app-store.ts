@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Kiro } from '../kiro';
 import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes';
+import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
@@ -224,8 +225,10 @@ export interface OpenArtifactView {
 import {
   executeCommand,
   executeCommandWithArg,
+  isKnownSlashCommandToken,
   type CommandContext,
 } from '../commands/index.js';
+import { buildSettingsActiveCommand } from '../commands/settings-subcommands.js';
 import {
   loadArtifactSummary,
   type ArtifactKind,
@@ -259,11 +262,11 @@ import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
 import {
-  InterruptMode,
-  DEFAULT_INTERRUPT_MODE,
-  parseInterruptMode,
-} from '../constants/interrupt-mode.js';
-import { readBoolSetting, readStringSetting } from '../utils/cli-settings.js';
+  readBoolSetting,
+  readStringSetting,
+  readCliSettings,
+  writeCliSettings,
+} from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
   playNotification,
@@ -377,8 +380,6 @@ export type MessageType =
       role: MessageRole.User;
       content: string;
       agentName?: string;
-      contextPercent?: number;
-      kasMessageId?: string;
     }
   | {
       id: string;
@@ -398,6 +399,19 @@ export type MessageType =
       kind?: ToolKind;
       content: string;
       /**
+       * Model-supplied `__tool_use_purpose` (the per-tool "why") preserved
+       * verbatim from the agent's `rawInput`. Captured at the ACP boundary
+       * BEFORE the synthesis below rebuilds `content` for edit-kind tools
+       * (the rebuild drops `__tool_use_purpose` because the synthesis
+       * enumerates a small fixed field list). Lite TUI surfaces this in
+       * the purple reasoning slot via {@link extractToolReasoning}; the
+       * modern TUI's `<Tool>` already excludes `__tool_use_purpose` from
+       * its params display (see `utils/tool-params.ts` BASE_EXCLUDED), so
+       * carrying the purpose on a sibling field keeps modern-TUI rendering
+       * byte-identical while restoring lite's reasoning surface.
+       */
+      purpose?: string;
+      /**
        * Structured diff produced by an edit-kind tool, when known.
        * Carried separately from `content` so renderers don't have to
        * parse a JSON-encoded blob to find the diff text.
@@ -411,8 +425,26 @@ export type MessageType =
       liveOutput?: string[];
       /** True when this tool call originated from a subagent session (event.sessionId set). */
       isSubagentTool?: boolean;
+      startTime?: number;
+      finishTime?: number;
     }
-  | { id: string; role: MessageRole.System; content: string; success: boolean };
+  | {
+      id: string;
+      role: MessageRole.System;
+      content: string;
+      success: boolean;
+    };
+
+/**
+ * A conversation "turn" groups a user message with all of the AI-side messages
+ * (model responses, tool uses, system notes) that followed it before the next
+ * user message. Shared between `ConversationView` and `SessionOutput`.
+ */
+export interface ConversationTurn {
+  userMessage: MessageType;
+  aiMessages: MessageType[];
+  isActive: boolean;
+}
 
 /**
  * A conversation "turn" groups a user message with all of the AI-side messages
@@ -432,6 +464,21 @@ export interface SlashCommand extends AvailableCommand {
 export interface ActiveCommand {
   command: AvailableCommand;
   options: CommandOption[];
+  /**
+   * Cursor row to highlight when the menu opens. Defaults to 0.
+   * Used by submenu navigation (e.g. /verbose) so that re-entering the top
+   * menu via ESC lands the cursor on the row the user descended from.
+   * Clamped to `0..options.length-1` by the menu component.
+   */
+  initialIndex?: number;
+  /**
+   * When set, CommandMenu renders a live preview pane below the menu.
+   * The /verbosity submenus use this to show synthetic scrollback that
+   * reflects the in-progress config. Values match VerbosityPreviewKey in
+   * lite/render.ts plus the editor-mode keys `truncation:args:edit` and
+   * `truncation:output:edit`, which swap the menu for the numeric editor.
+   */
+  previewKey?: string;
 }
 
 export interface TransientAlert {
@@ -459,8 +506,7 @@ export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
   | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
   | { type: 'agent_config_error'; path?: string; error: string }
-  | { type: 'mcp_governance_disabled'; apiFailure: boolean }
-  | { type: 'web_tools_governance_disabled'; apiFailure: boolean };
+  | { type: 'mcp_governance_disabled'; apiFailure: boolean };
 
 export interface LastTurnTokens {
   input: number;
@@ -474,6 +520,34 @@ function basename(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+/**
+ * Build a `cancelled`-status tool result that carries any partial output the
+ * tool streamed before the user interrupted. Shaped as the canonical ACP
+ * `{items: [{Text}]}` envelope so {@link unwrapToolOutput} in the renderer
+ * surfaces it without special-casing — same code path as a normal completed
+ * tool, just with the yellow `✗ cancelled` chip stamped on the header.
+ *
+ * `chunks` is the value of `state.liveOutputs.get(toolCallId)` — an array of
+ * arrays of lines accumulated by `flushToolOutputs`. Returns a bare
+ * `{ status: 'cancelled' }` when there's no buffered output so callers
+ * preserve the prior behavior for tools that hadn't streamed anything.
+ */
+function buildCancelledResult(chunks: string[][] | undefined): {
+  status: 'cancelled';
+  output?: { items: Array<{ Text: string }> };
+} {
+  if (!chunks || chunks.length === 0) return { status: 'cancelled' };
+  const lines: string[] = [];
+  for (const chunk of chunks) {
+    for (const line of chunk) lines.push(line);
+  }
+  if (lines.length === 0) return { status: 'cancelled' };
+  return {
+    status: 'cancelled',
+    output: { items: [{ Text: lines.join('\n') }] },
+  };
+}
+
 /** Compute a summary message from accumulated init errors. */
 export function summarizeInitErrors(errors: InitError[]): string | null {
   if (errors.length === 0) return null;
@@ -484,35 +558,16 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   const mcpGovernance = errors.filter(
     (e) => e.type === 'mcp_governance_disabled'
   );
-  const webToolsGovernance = errors.filter(
-    (e) => e.type === 'web_tools_governance_disabled'
-  );
   const parts: string[] = [];
 
   // MCP governance disabled (show first — important admin notice)
-  // When both MCP and web tools fail due to the same GetProfile API failure,
-  // coalesce into one message instead of two redundant warnings.
-  const mcpGov = mcpGovernance[0];
-  const webGov = webToolsGovernance[0];
-  if (mcpGov?.apiFailure && webGov?.apiFailure) {
+  if (mcpGovernance.length > 0) {
+    const e = mcpGovernance[0]!;
     parts.push(
-      'failed to retrieve governance settings — MCP and web tools disabled'
+      e.apiFailure
+        ? 'failed to retrieve MCP settings — MCP disabled'
+        : 'MCP disabled by your administrator'
     );
-  } else {
-    if (mcpGov) {
-      parts.push(
-        mcpGov.apiFailure
-          ? 'failed to retrieve MCP settings — MCP disabled'
-          : 'MCP disabled by your administrator'
-      );
-    }
-    if (webGov) {
-      parts.push(
-        webGov.apiFailure
-          ? 'failed to retrieve web tools settings — web tools disabled'
-          : 'web tools disabled by your administrator'
-      );
-    }
   }
 
   // Agent not found
@@ -551,11 +606,7 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
 export function severityForInitErrors(
   errors: InitError[]
 ): 'warning' | 'error' {
-  const hasHardError = errors.some(
-    (e) =>
-      e.type !== 'mcp_governance_disabled' &&
-      e.type !== 'web_tools_governance_disabled'
-  );
+  const hasHardError = errors.some((e) => e.type !== 'mcp_governance_disabled');
   return hasHardError ? 'error' : 'warning';
 }
 
@@ -579,25 +630,7 @@ interface AppStoreProps {
   noInteractive?: boolean;
   initialInput?: string;
   trustAllTools?: boolean;
-}
-
-/**
- * Stream event handler with lifecycle controls.
- *
- * Call as a function (`handler(event)`) to dispatch a stream event.
- * `flush()` commits any buffered content to the store — call it on the
- * happy path when a turn completes normally.
- * `dispose()` abandons the handler and drops buffered content — call it
- * from cancel/error paths so stale chunks from the cancelled stream
- * don't leak into the next turn via the handler's batched-flush timers
- * or the ACP SDK's deferred-unsubscribe window.
- */
-export interface StreamEventHandler {
-  (event: AgentStreamEvent): void;
-  /** Commit any buffered assistant content to the store (happy path). */
-  flush: () => void;
-  /** Abandon the handler and drop buffered content (cancel/error path). */
-  dispose: () => void;
+  uiMode?: 'tui' | 'lite';
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -609,7 +642,7 @@ interface BaseAppActions {
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  createStreamEventHandler: () => StreamEventHandler;
+  createStreamEventHandler: () => (event: AgentStreamEvent) => void;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
   ) => Promise<void>;
@@ -647,14 +680,37 @@ interface BaseAppActions {
   // Chat actions
   clearMessages: () => void;
   resetMessages: () => void;
-  queueMessage: (content: string) => void;
-  clearSteerMessage: () => void;
+  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
+  markMessagesFromHistory: (fromIndex: number) => void;
+  /**
+   * Append a message to the queue. Slash commands are deduped against the
+   * current queue contents — a duplicate triggers an "already queued" alert
+   * and the queue is left unchanged. Returns true when the message was
+   * actually appended, false when it was rejected (empty/whitespace, or
+   * dedup'd). Callers that surface their own success alert MUST gate it on
+   * the return value so the alert doesn't overwrite the dedup alert.
+   */
+  queueMessage: (content: string) => boolean;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
   removeQueuedMessage: (index: number) => void;
   replaceQueuedMessage: (index: number, content: string) => void;
   startEditingQueue: (index: number) => void;
   cancelEditingQueue: () => void;
+  /**
+   * Lite mode uses its own input segments rather than commandInputValue, so
+   * it tracks the editing index without piping the message text through the
+   * store. This is just a flag setter — no side effects.
+   */
+  setEditingQueueIndex: (index: number | null) => void;
+  /**
+   * Apply the pending `queuedInputRestore` snapshot back into
+   * `commandInputValue` and `input`, then clear the snapshot. No-op when
+   * `queuedInputRestore` is null. See the field's doc comment for the
+   * full lifecycle. Called from a `useLayoutEffect` in `LiteLayout` on
+   * `activeCommand` transitions non-null → null.
+   */
+  applyQueuedInputRestore: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
   setKasCommands: (commands: KasCommand[]) => void;
   setPrompts: (prompts: PromptEntry[]) => void;
@@ -693,6 +749,9 @@ interface BaseAppActions {
   setMode: (
     mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
   ) => void;
+  setUiMode: (uiMode: 'tui' | 'lite') => void;
+  /** Lite-only: see {@link AppState.liteStaticSkipBefore}. */
+  setLiteStaticSkipBefore: (idx: number) => void;
   addSubagentSession: (info: SubagentInfo) => void;
   updateSubagentSession: (sessionId: string, status: SubagentStatus) => void;
   pushSessionEvent: (sessionId: string, event: AgentStreamEvent) => void;
@@ -718,7 +777,6 @@ interface BaseAppActions {
 
   // Context usage actions
   setContextUsage: (percent: number) => void;
-  setKasMessageId: (kasMessageId: string) => void;
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (
@@ -757,6 +815,10 @@ interface BaseAppActions {
   setShowThemePanel: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
+  /** Set the parent route consumed by the verbose menu's ESC handler. */
+  setVerboseReturnOnEscape: (route: string | null) => void;
+  /** Set the parent route consumed by the /theme menu's ESC handler. */
+  setThemeReturnOnEscape: (route: string | null) => void;
   reopenSettingsMenu: () => void;
   setShowKnowledgePanel: (
     show: boolean,
@@ -878,10 +940,6 @@ interface BaseAppActions {
   removePendingImage: (index: number) => void;
   clearPendingImages: () => void;
 
-  // Dual-mode interrupt behavior actions
-  toggleInterruptMode: () => void;
-  setActiveInterruptMode: (mode: InterruptMode) => void;
-
   // Task management actions
   setTasks: (tasks: TaskItem[]) => void;
   toggleActivityTray: () => void;
@@ -895,6 +953,13 @@ interface BaseAppActions {
 
   // Trust all tools acceptance
   confirmTrustAllTools: () => void;
+
+  /**
+   * Persist the user's first-launch UI mode choice (writes cli.json + ACP),
+   * apply it to the running session, and clear `firstLaunchUiModeRequested`
+   * so the gate goes away. Only invoked once per fresh-install launch.
+   */
+  confirmFirstLaunchUiMode: (mode: 'tui' | 'lite') => void;
 
   // Research survey actions
   /** Increment the counter we use to decide when to first show the prompt. */
@@ -921,7 +986,47 @@ export interface AppState {
   // Chat state
   messages: MessageType[];
   liveOutputs: Map<string, string[][]>;
-  pendingSteerContent: string | null;
+  queuedMessages: string[];
+  /**
+   * The slash command currently mid-dispatch from `processQueue`. Set
+   * around the `await get().handleUserInput(...)` and cleared in the
+   * `finally`. During that await, `handleUserInput`'s queue branch can
+   * re-push the same string into `queuedMessages` (when `loadingMessage`
+   * is still non-null from an earlier picker swap), which makes
+   * `queueMessage`'s slash-dedup falsely report "already queued" if the
+   * user submits the same command they see absent from the strip.
+   * `queueMessage` exempts this exact string from the dedup so the
+   * bouncing dispatch window doesn't surface a confusing alert.
+   */
+  dispatchingMessage: string | null;
+  editingQueueIndex: number | null;
+  /**
+   * Pending input restore for queued slash-command drains that opened a
+   * picker (e.g. `/model`, `/agent`). When the user has typed pending
+   * text in the prompt while a slash command is queued, processQueue
+   * snapshots that text before dispatching. If the dispatch opens a
+   * picker (i.e. `activeCommand` becomes non-null after the await), an
+   * inline restore would be invisible — PromptInput renders
+   * `activeCommand.command.name` instead of segments while the picker is
+   * up, AND the picker's close handlers (`handleActiveCommandClose` and
+   * the no-hint `onSelect` branch) call `clearCommandInput()` which
+   * would clobber any restored value the moment the picker dismisses.
+   *
+   * Stash the snapshot here instead. A `useLayoutEffect` in `LiteLayout`
+   * watches `activeCommand` transitions from non-null → null and applies
+   * the restore via `applyQueuedInputRestore()`. That path catches BOTH
+   * Esc-dismissal (handleActiveCommandClose) and selection
+   * (executeCommandWithArg → set activeCommand:null) without either
+   * close-handler having to know about the queue-drain context.
+   *
+   * Stays null in the common case (no slash queued, or queued slash is a
+   * non-picker command like `/verbose`). For non-picker commands the
+   * existing inline restore in processQueue still applies.
+   */
+  queuedInputRestore: {
+    commandInputValue: string;
+    input: InputBufferState;
+  } | null;
   /**
    * V2 slash commands only. Two cohorts:
    * 1. Hardcoded TUI host commands (`source: 'local'`), seeded at store
@@ -1048,6 +1153,47 @@ export interface AppState {
    * retry is in flight. Cleared on cancel, on next request, and when the turn ends.
    */
   retryStatus: RetryStatus | null;
+  /**
+   * Index into `messages` at which lite's <Static> begins emitting rows.
+   * Messages at index < this value are skipped from lite's append-only chat
+   * log. Two callers set it:
+   *   1. tui→lite swap (`switchToLite` effect) → messages.length, so prior
+   *      messages already rendered through the modern TUI's ConversationView
+   *      don't get re-emitted in lite style below them.
+   *   2. Session resume (cold-boot --resume in index.tsx + /chat <id> in
+   *      effects.ts) → max(0, messages.length - LITE_HISTORY_RENDER_CAP),
+   *      so very long sessions don't dump hundreds of replayed rows into
+   *      scrollback. Live turns appended past the cap render normally.
+   *
+   * Direction-asymmetric on purpose: lite→tui doesn't touch this. The TUI
+   * fully re-renders messages from scratch, which the user has accepted as
+   * the cost of "TUI takes full control" on that direction.
+   *
+   * Default 0 covers fresh-session cold boot and lite→tui→lite cycles
+   * (each tui→lite or resume resets the value, so the bookmark always
+   * reflects the most recent swap or resume point).
+   */
+  liteStaticSkipBefore: number;
+  /** Streaming thinking/reasoning content from the agent (cleared on turn end). */
+  thinkingContent: string;
+  /**
+   * In-flight model content for the current streaming row. Updated per chunk
+   * by the stream handler INSTEAD of mutating `messages[messages.length - 1]`,
+   * which previously triggered a full `[...state.messages]` shallow-copy on
+   * every 16ms flush — at session length 200+ that meant ~1000 array
+   * reallocations/sec during streaming and forced every memo with `[messages]`
+   * deps to invalidate. Components rendering the live row (LiteLiveRegion's
+   * <Static> tail, modern TUI's StreamingMessage) subscribe to this slot
+   * directly. The handler still appends a single Model row to `messages` on
+   * first content of a turn (so layout/order is correct) and commits the
+   * accumulated content into that row at turn end via `flushContentToStore`.
+   * Empty string when no Model row is streaming.
+   */
+  streamingContent: string;
+  /** Stable id of the in-flight Model row that `streamingContent` belongs to.
+   *  Lets readers correlate the live string to the right row in `messages`
+   *  without inferring it from the array tail. Null when nothing streaming. */
+  streamingMessageId: string | null;
   loadingMessage: string | null;
   toolOutputsExpanded: boolean; // Global toggle for all tool outputs
   hasExpandableToolOutputs: boolean; // Whether there are any tool outputs that can be expanded
@@ -1091,6 +1237,38 @@ export interface AppState {
   mcpRegistryServers: McpServerInfo[];
   pendingOAuthServers: Map<string, string>; // serverName → oauthUrl
   initErrors: InitError[];
+  /** Per-MCP server init status for connecting screen */
+  mcpInitStatus: Map<
+    string,
+    {
+      status: 'loading' | 'ready' | 'failed';
+      startTime: number;
+      elapsed?: number;
+      error?: string;
+    }
+  >;
+  /**
+   * Pre-MCP boot stages (agent process spawn, ACP initialize handshake,
+   * session create). Lite mode renders these above the per-MCP status list
+   * so the user sees progress through the otherwise-opaque "connecting"
+   * window. Order matters — Map iteration order is insertion order.
+   */
+  bootProgress: Map<
+    string,
+    {
+      label: string;
+      status: 'loading' | 'ready' | 'failed';
+      startTime: number;
+      elapsed?: number;
+      error?: string;
+    }
+  >;
+  setBootStage: (
+    key: string,
+    label: string,
+    status: 'loading' | 'ready' | 'failed',
+    error?: string
+  ) => void;
   mcpMode: string;
   showToolsPanel: boolean;
   toolsList: ToolInfo[];
@@ -1104,6 +1282,10 @@ export interface AppState {
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
   showSettingsPanel: boolean;
+  /** Theme preview string rendered below the /theme menu during the lite flow. */
+  themePreview: string | null;
+  /** Set the lite /theme preview string (null clears it). */
+  setThemePreview: (preview: string | null) => void;
   terminalTitleEnabled: boolean;
   setTerminalTitleEnabled: (enabled: boolean) => void;
   /**
@@ -1114,6 +1296,28 @@ export interface AppState {
    * and reset whenever consumed.
    */
   settingsReturnOnEscape: boolean;
+  /**
+   * Parent route to re-dispatch on ESC from a /verbose sub-menu. Set by the
+   * verboseConfig handler when it opens any non-root menu (e.g. the density
+   * sub-menu sets this to `'menu:top'`). CommandMenu's escape handler clears
+   * the active overlay, then if this is non-null, it re-runs `/verbose` with
+   * the saved route so the user lands one level up instead of dropping out
+   * of the entire menu. Cleared on consume and on full menu exit.
+   */
+  verboseReturnOnEscape: string | null;
+  /**
+   * Parent args to re-dispatch on ESC from a /theme sub-menu. The /theme menu
+   * has three levels (top → custom → prompt|response|diff); without this
+   * flag, ESC from any submenu drops the entire overlay. Set by
+   * `showThemeMenu` at every menu-open path:
+   *   - top-level (`/theme`): null — ESC closes the overlay.
+   *   - `/theme custom`: `''` — ESC re-dispatches `/theme` (top level).
+   *   - `/theme prompt|response|diff`: `'custom'` — ESC re-dispatches
+   *     `/theme custom`.
+   * CommandMenu's escape handler consumes and clears the flag, then re-runs
+   * `/theme` (or `/theme <route>`) via handleUserInput.
+   */
+  themeReturnOnEscape: string | null;
   showKnowledgePanel: boolean;
   knowledgeEntries: KnowledgeEntry[];
   knowledgeStatus: string | null;
@@ -1142,11 +1346,6 @@ export interface AppState {
   artifactViewOpen: OpenArtifactView | null;
   // ── End spec artifact view state ───────────────────────────
 
-  // Dual-mode interrupt behavior state
-  activeInterruptMode: InterruptMode;
-  queuedMessages: string[];
-  editingQueueIndex: number | null;
-
   // Task management state
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
@@ -1170,15 +1369,86 @@ export interface AppState {
   isShellEscape: boolean;
   _shellEscapeWriter: ((data: string) => void) | null;
 
+  /**
+   * Reference to the in-flight stream event handler so cancelMessage can
+   * dispose it synchronously when the user interrupts mid-turn. The dispose
+   * body (defined inside createStreamEventHandler) commits buffered streaming
+   * content into the placeholder Model row before zeroing the closure
+   * buffers — without this the partial response the user already saw stream
+   * past the live region disappears, then leaks into the next turn's live
+   * region via stale streamingContent. Also clears any pending setTimeout
+   * flushes that would otherwise fire after the next sendMessage has started
+   * a new turn and stomp on its state.
+   *
+   * Not part of the public AppActions surface — leading underscore + loose
+   * typing on purpose so external callers don't grow a dependency on it.
+   */
+  _activeStreamHandler:
+    | (((event: AgentStreamEvent) => void) & {
+        flush?: () => void;
+        dispose?: () => void;
+      })
+    | null;
+
   // Initialization state — true once the ACP session is ready
   isInitialized: boolean;
 
   // Non-interactive mode
   noInteractive: boolean;
 
+  // UI mode (lite or tui)
+  uiMode: 'tui' | 'lite';
+
+  /**
+   * Lite-mode banners that should fire once per *session*, not per *mount*.
+   * Lives on the store (not a useRef in LiteLayout) so flipping /tui ↔ /lite
+   * doesn't re-emit the same banner every time LiteLayout remounts.
+   */
+  liteWelcomeEmitted: boolean;
+  liteMcpFailureWarningEmitted: boolean;
+  setLiteWelcomeEmitted: (value: boolean) => void;
+  setLiteMcpFailureWarningEmitted: (value: boolean) => void;
+
+  /**
+   * Bumped when scrollback should be wiped and the lite render cache reset
+   * (currently only on /chat <id> + /rewind session swaps). LiteLayout
+   * subscribes to the token; the value itself is opaque — only the change
+   * matters. See effects.ts:loadSession + LiteLayout.tsx for the consumer.
+   */
+  liteScrollbackClearToken: number;
+  bumpLiteScrollbackClear: () => void;
+
+  /**
+   * Lite mode subagent inspection panel state. When non-null, the lite
+   * layout has the Ctrl+O panel open over the activity strip; AppContainer's
+   * top-level keypress dispatch reads this so Esc/Ctrl+O don't double-fire
+   * as a stream cancel. The actual focused index lives inside LiteLayout —
+   * here we only track open/closed.
+   */
+  subagentPanelOpen: boolean;
+  setSubagentPanelOpen: (open: boolean) => void;
+
+  /**
+   * /prompts detail-view flag. PromptsMenu owns the picker↔detail toggle
+   * locally; this mirror lets LiteLayout's always-armed Esc handler skip
+   * its setActiveCommand(null) branch while the detail view has its own
+   * Esc-back semantics. Same shape as `subagentPanelOpen`.
+   */
+  promptDetailOpen: boolean;
+  setPromptDetailOpen: (open: boolean) => void;
+
   // Trust all tools mode
   trustAllToolsRequested: boolean;
   trustAllToolsConfirmed: boolean;
+
+  /**
+   * First-launch UI mode picker. Set to true at startup when the user has
+   * no persisted `chat.ui.mode` and no env-var/CLI override forced a mode,
+   * so AppContainer renders the gate before any chat UI. Cleared by
+   * confirmFirstLaunchUiMode after the user picks (the picker also persists
+   * the choice to cli.json + ACP and updates `uiMode`).
+   */
+  firstLaunchUiModeRequested: boolean;
 
   // Research-survey state
   /** Lazily-loaded snapshot of persisted survey state (eligibility, cooldown). */
@@ -1322,6 +1592,18 @@ function buildCommandContext(
   get: StoreApi<AppState & AppActions>['getState'],
   extraClearState?: Partial<AppState>
 ): CommandContext {
+  const addSystemMessage = (content: string, success: boolean) =>
+    set((s) => ({
+      messages: [
+        ...s.messages,
+        {
+          id: generateMessageId(),
+          role: MessageRole.System,
+          content,
+          success,
+        },
+      ],
+    }));
   // Dispatch + lookup work against the merged visible list so
   // `/research` (a prompt projection) is reachable even though prompts
   // live in their own slice.
@@ -1336,10 +1618,22 @@ function buildCommandContext(
     steering: state.steering,
     showAlert: (message, status, autoHideMs = 3000) =>
       state.showTransientAlert({ message, status, autoHideMs }),
+    announceSystem: (message: string, success: boolean = true) => {
+      if (state.uiMode === 'lite') {
+        addSystemMessage(message, success);
+      } else {
+        state.showTransientAlert({
+          message,
+          status: success ? 'success' : 'error',
+          autoHideMs: 3000,
+        });
+      }
+    },
     setLoadingMessage: state.setLoadingMessage,
     setActiveCommand: state.setActiveCommand,
     setCurrentModel: state.setCurrentModel,
     setCurrentEffort: state.setCurrentEffort,
+    getCurrentModel: () => get().currentModel,
     setCurrentAgent: state.setCurrentAgent,
     currentAgent: state.currentAgent,
     setContextUsage: state.setContextUsage,
@@ -1360,7 +1654,8 @@ function buildCommandContext(
     setShowThemePanel: state.setShowThemePanel,
     setShowSettingsPanel: state.setShowSettingsPanel,
     setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
-    setActiveInterruptMode: state.setActiveInterruptMode,
+    setVerboseReturnOnEscape: state.setVerboseReturnOnEscape,
+    setThemeReturnOnEscape: state.setThemeReturnOnEscape,
     settingsReturnOnEscape: state.settingsReturnOnEscape,
     reopenSettingsMenu: state.reopenSettingsMenu,
     setShowKnowledgePanel: state.setShowKnowledgePanel,
@@ -1368,6 +1663,8 @@ function buildCommandContext(
     openArtifactView: state.openArtifactView,
     clearMessages: state.clearMessages,
     resetMessages: state.resetMessages,
+    markMessagesFromHistory: state.markMessagesFromHistory,
+    bumpLiteScrollbackClear: state.bumpLiteScrollbackClear,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
     setSessionId: (id: string | null) => {
@@ -1379,18 +1676,7 @@ function buildCommandContext(
       }
       set({ sessionId: id, initErrors: [] });
     },
-    addSystemMessage: (content: string, success: boolean) =>
-      set((s) => ({
-        messages: [
-          ...s.messages,
-          {
-            id: generateMessageId(),
-            role: MessageRole.System,
-            content,
-            success,
-          },
-        ],
-      })),
+    addSystemMessage,
     addSession: state.addSession,
     setActiveSession: state.setActiveSession,
     sessions: state.sessions,
@@ -1409,12 +1695,55 @@ function buildCommandContext(
         showKeybindingsPanel: false,
         showThemePanel: false,
         settingsReturnOnEscape: false,
+        verboseReturnOnEscape: null,
+        themeReturnOnEscape: null,
         showKnowledgePanel: false,
         contextBreakdown: null,
         usageData: null,
         ...extraClearState,
       }),
     getMessages: () => get().messages,
+    setUserColors: (prompt?: any, response?: any, diff?: any) => {
+      const setter = get()._userColorsSetter;
+      if (setter) setter(prompt, response, diff);
+    },
+    setBaseTheme: (theme: any) => {
+      const setter = get()._baseThemeSetter;
+      if (setter) setter(theme);
+    },
+    setThemePreview: (preview: string | null) => {
+      set({ themePreview: preview });
+    },
+    getThemeDiffHex: () => {
+      const getter = get()._themeDiffHexGetter;
+      if (getter) return getter();
+      const d = kiroSafe.colors.diff;
+      return {
+        added: {
+          background: d.added.background,
+          bar: d.added.bar,
+          highlight: d.added.highlight,
+        },
+        removed: {
+          background: d.removed.background,
+          bar: d.removed.bar,
+          highlight: d.removed.highlight,
+        },
+      };
+    },
+    getAutoPreview: () => {
+      const getter = get()._autoPreviewGetter;
+      return getter ? getter() : '';
+    },
+    // Delegate to the canonical store setter so mode swaps go through
+    // the coordinated path (tui→lite bookmarks skipBefore; lite→tui
+    // bumps the clear token). A direct set({ uiMode }) here would
+    // break the asymmetric scrollback contract.
+    setUiMode: (uiMode: 'tui' | 'lite') => get().setUiMode(uiMode),
+    getUiMode: () => get().uiMode,
+    setLiteStaticSkipBefore: (idx: number) =>
+      get().setLiteStaticSkipBefore(idx),
+    processQueue: () => get().processQueue(),
     setVoiceStop: state.setVoiceStop,
     setVoiceCancel: state.setVoiceCancel,
     setVoiceLevel: state.setVoiceLevel,
@@ -1433,7 +1762,10 @@ export const createAppStore = (props: AppStoreProps) => {
     // Initial state
     messages: [],
     liveOutputs: new Map(),
-    pendingSteerContent: null,
+    queuedMessages: [],
+    dispatchingMessage: null,
+    editingQueueIndex: null,
+    queuedInputRestore: null,
     slashCommands: [
       {
         name: '/editor',
@@ -1444,6 +1776,16 @@ export const createAppStore = (props: AppStoreProps) => {
       {
         name: '/spawn',
         description: 'Spawn a new agent session with a task',
+        source: 'local' as const,
+        meta: { local: true },
+      },
+      {
+        // Always registered so cold-boot users discovering /switch via
+        // autocomplete get the correct "No active sessions" alert instead of
+        // having "/switch" sent to the agent as a chat message. The
+        // switchSession effect at effects.ts handles the empty-sessions case.
+        name: '/switch',
+        description: 'Switch to a spawned agent session',
         source: 'local' as const,
         meta: { local: true },
       },
@@ -1490,10 +1832,42 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
       {
-        name: '/tui',
-        description: "What's new in the TUI experience",
+        // /lite and /tui are the symmetric session swaps. The handlers route
+        // through setUiMode, which clears scrollback and re-renders the
+        // conversation in the destination mode's form. From TUI mode, /tui
+        // falls through to the info panel (origin/main behavior).
+        name: '/lite',
+        description: 'Switch to lite mode',
         source: 'local' as const,
-        meta: { local: true, inputType: 'panel' as const },
+        meta: { local: true },
+      },
+      {
+        name: '/tui',
+        description: 'Switch to TUI mode',
+        source: 'local' as const,
+        meta: { local: true },
+      },
+      {
+        // /verbosity is the most-touched config menu in lite mode (filters,
+        // density, truncation), so it earns a top-level shortcut despite
+        // most other /settings entries lacking one. /settings verbosity is
+        // also wired (settings-subcommands.ts) for users who discover the
+        // menu via /settings; both paths land in the same handler.
+        name: '/verbosity',
+        description:
+          'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
+        source: 'local' as const,
+        meta: { local: true, liteOnly: true },
+      },
+      {
+        // Backward-compat alias for /verbosity. Hidden from autocomplete so the
+        // canonical name is what surfaces in the menu, but typing /verbose
+        // still routes through the same dispatcher branch.
+        name: '/verbose',
+        description:
+          'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
+        source: 'local' as const,
+        meta: { local: true, liteOnly: true, hidden: true },
       },
       {
         name: '/changelog',
@@ -1513,7 +1887,7 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
-    ].filter((cmd) => agentEngine !== 'kas' || cmd.name !== '/tui'), // Backend sends all commands via CommandsUpdate
+    ], // Backend sends all commands via CommandsUpdate
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],
@@ -1572,6 +1946,10 @@ export const createAppStore = (props: AppStoreProps) => {
     suspendTimer: null,
     transientAlert: null,
     retryStatus: null,
+    thinkingContent: '',
+    streamingContent: '',
+    streamingMessageId: null as string | null,
+    liteStaticSkipBefore: 0,
     loadingMessage: null as string | null,
     toolOutputsExpanded: false,
     hasExpandableToolOutputs: false,
@@ -1594,6 +1972,27 @@ export const createAppStore = (props: AppStoreProps) => {
     mcpRegistryServers: [],
     pendingOAuthServers: new Map(),
     initErrors: [],
+    mcpInitStatus: new Map(),
+    bootProgress: new Map(),
+    setBootStage: (key, label, status, error) => {
+      set((state) => {
+        const next = new Map(state.bootProgress);
+        const prev = next.get(key);
+        if (status === 'loading') {
+          if (!prev) next.set(key, { label, status, startTime: Date.now() });
+        } else {
+          const startTime = prev?.startTime ?? Date.now();
+          next.set(key, {
+            label,
+            status,
+            startTime,
+            elapsed: Date.now() - startTime,
+            error,
+          });
+        }
+        return { bootProgress: next };
+      });
+    },
     mcpMode: 'list',
     showToolsPanel: false,
     showGoalPanel: false,
@@ -1607,8 +2006,11 @@ export const createAppStore = (props: AppStoreProps) => {
     showDisplaySettingsPanel: false,
     showThemePanel: false,
     showSettingsPanel: false,
+    themePreview: null,
     terminalTitleEnabled: readBoolSetting(Settings.CHAT_TERMINAL_TITLE, false),
     settingsReturnOnEscape: false,
+    verboseReturnOnEscape: null,
+    themeReturnOnEscape: null,
     showKnowledgePanel: false,
     knowledgeEntries: [],
     knowledgeStatus: null,
@@ -1630,17 +2032,8 @@ export const createAppStore = (props: AppStoreProps) => {
     cancelInProgress: null,
     isShellEscape: false,
     _shellEscapeWriter: null,
+    _activeStreamHandler: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
-
-    // Dual-mode interrupt behavior
-    activeInterruptMode: parseInterruptMode(
-      readStringSetting(
-        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-        DEFAULT_INTERRUPT_MODE
-      )
-    ),
-    queuedMessages: [],
-    editingQueueIndex: null,
 
     // Task management
     tasks: [],
@@ -1652,8 +2045,29 @@ export const createAppStore = (props: AppStoreProps) => {
 
     isInitialized: false,
     noInteractive: props.noInteractive ?? false,
+    uiMode: props.uiMode ?? 'tui',
+    liteWelcomeEmitted: false,
+    liteMcpFailureWarningEmitted: false,
+    setLiteWelcomeEmitted: (value: boolean) =>
+      set({ liteWelcomeEmitted: value }),
+    setLiteMcpFailureWarningEmitted: (value: boolean) =>
+      set({ liteMcpFailureWarningEmitted: value }),
+    liteScrollbackClearToken: 0,
+    bumpLiteScrollbackClear: () =>
+      set((s) => ({
+        liteScrollbackClearToken: s.liteScrollbackClearToken + 1,
+      })),
+    subagentPanelOpen: false,
+    setSubagentPanelOpen: (open: boolean) => set({ subagentPanelOpen: open }),
+    promptDetailOpen: false,
+    setPromptDetailOpen: (open: boolean) => set({ promptDetailOpen: open }),
     trustAllToolsRequested: props.trustAllTools ?? false,
     trustAllToolsConfirmed: false,
+
+    // Resolved at startup in index.tsx after UI mode resolution; defaults
+    // to false so existing installs (with a persisted setting) and tests
+    // never see the gate.
+    firstLaunchUiModeRequested: false,
 
     // Research survey — eligibility is resolved lazily on first boot.
     surveyState: (() => {
@@ -1741,21 +2155,17 @@ export const createAppStore = (props: AppStoreProps) => {
         };
       });
 
-      // The handler is declared outside the try block so the catch can
-      // dispose it (even if stream setup failed before kiro.streamMessage
-      // returned). Dispose prevents the handler's pending batched-flush
-      // timers from committing stale content to the next turn — critical
-      // for cancel + replay correctness (see app-store.test.ts).
-      let eventHandler: StreamEventHandler | null = null;
       try {
-        eventHandler = get().createStreamEventHandler();
+        const eventHandler = get().createStreamEventHandler();
+        set({ _activeStreamHandler: eventHandler });
         await kiro.streamMessage(
           expandedContent,
           abortController.signal,
           eventHandler,
           allImages.length > 0 ? allImages : undefined
         );
-        eventHandler.flush();
+        (eventHandler as any).flush?.();
+        set({ _activeStreamHandler: null });
 
         // Mark any remaining tool calls as finished and mark turn as complete
         // Clear agentError on successful completion (Requirement 4.3)
@@ -1788,19 +2198,24 @@ export const createAppStore = (props: AppStoreProps) => {
             agentErrorGuidance: null,
           };
         });
-
-        // After isProcessing is cleared, drain the next queued message (if any).
-        // Must be after the set() above so the double-send guard in processQueue
-        // sees isProcessing === false.
         await get().processQueue();
       } catch (error) {
-        // Drop buffered content from the cancelled/failed stream; see
-        // StreamEventHandler for why this matters.
-        eventHandler?.dispose();
-        set({ currentAbortController: null });
+        set({ currentAbortController: null, _activeStreamHandler: null });
         logger.error('[store] sendMessage: caught error', error);
         if (error instanceof DOMException && error.name === 'AbortError') {
+          // cancelMessage owns the cleanup on user-triggered abort: it has
+          // already disposed the active handler, cleared isProcessing, and
+          // queued processQueue from its finally block. If we drain here
+          // too, two processQueue calls race over queuedMessages.slice(1)
+          // and may stomp on each other's sendMessage state — historically
+          // this manifested as queued messages getting stuck or sent in the
+          // wrong order after an interrupt. The non-cancel abort path
+          // (e.g. shutdown) keeps the original drain so it doesn't regress.
+          if (get().cancelInProgress) {
+            return;
+          }
           set({ isProcessing: false });
+          await get().processQueue();
           return;
         }
         // Extract error message. Most agent errors arrive already-extracted
@@ -1852,26 +2267,19 @@ export const createAppStore = (props: AppStoreProps) => {
             autoHideMs: 5000,
           });
           set({ isProcessing: false });
-          // Turn ended (non-blocking error) — drain any queued messages.
-          // processQueue handles steer-first priority internally.
           await get().processQueue();
         }
       }
     },
 
     /**
-     * Create a stream event handler for one prompt turn. Call as a function
-     * to dispatch events; call `.flush()` on happy-path completion to commit
-     * any buffered content; call `.dispose()` on cancel/error to abandon
-     * the handler and drop buffered content. See `StreamEventHandler`.
+     * Creates a synchronous event handler callback for stream events.
+     * This is the core event-processing logic, used by streamMessage.
+     * Returns a cleanup function via the returned handler's `.flush` property.
      */
     createStreamEventHandler: () => {
       let isBuffering = false;
       let bufferedContent = '';
-      // Set by `.dispose()` to make this handler inert. Guards the event
-      // entry point and both batched-flush timers against late firings
-      // after the owning turn was cancelled — see StreamEventHandler.
-      let disposed = false;
       let bufferedThinking = '';
       // Reasoning timing: timestamp of the first Thought for the current model
       // message, and the duration once reasoning ends (first text Content or a
@@ -1895,7 +2303,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const flushToolOutputs = () => {
         pendingToolOutputFlush = null;
-        if (disposed) return;
         if (toolOutputBuffers.size === 0) return;
         const buffers = Array.from(toolOutputBuffers.entries());
         toolOutputBuffers.clear();
@@ -1918,100 +2325,173 @@ export const createAppStore = (props: AppStoreProps) => {
         isBuffering = true;
       };
 
+      // Stable id for the in-flight Model row this handler is writing to.
+      // null means no row has been appended for this turn yet — the next
+      // content flush will create one. Captured here (not just in state) so
+      // the handler compares cheaply on every chunk without a selector call.
+      let streamingMsgId: string | null = null;
+
+      /**
+       * Commit the accumulated buffer into the live Model row in `messages`
+       * and clear the streaming slot. Called at every boundary that ends the
+       * live phase: a tool call lands, a user message arrives, the turn
+       * ends, or stopBuffering fires.
+       *
+       * This is the only path that does a `[...state.messages]` copy on
+       * behalf of streaming. Per-chunk updates go through
+       * `flushContentToStore` and only update the `streamingContent` field
+       * — a single primitive write — so subscribers keyed on `messages`
+       * don't invalidate at 60Hz on long responses.
+       */
       const commitBufferedContent = () => {
-        if (!bufferedContent && !bufferedThinking) return;
-        set((state) => {
-          const lastModelMsgIndex = state.messages.findLastIndex(
-            (msg) => msg.role === MessageRole.Model
-          );
-          if (lastModelMsgIndex !== -1) {
-            const msg = state.messages[lastModelMsgIndex];
-            if (msg && msg.role === MessageRole.Model) {
-              const messages = [...state.messages];
-              messages[lastModelMsgIndex] = {
-                ...msg,
-                content: bufferedContent,
-                thinking: bufferedThinking || msg.thinking,
-                thinkingMs: thinkingMs ?? msg.thinkingMs,
-              };
-              return { messages };
-            }
+        if (!bufferedContent && !bufferedThinking) {
+          // Nothing to write. Still clear the streaming slots so stale
+          // empty strings don't outlive the boundary.
+          if (streamingMsgId != null) {
+            streamingMsgId = null;
+            set({
+              streamingContent: '',
+              streamingMessageId: null,
+              thinkingContent: '',
+            });
           }
-          return {};
+          return;
+        }
+        const idToCommit = streamingMsgId;
+        set((state) => {
+          // Locate the live row by id (set on the first chunk of this turn).
+          // Fall back to the last Model row if we somehow lost the id —
+          // matches the previous selector's behavior and keeps stopBuffering
+          // (called from external code) functional.
+          const idx =
+            idToCommit != null
+              ? state.messages.findIndex(
+                  (m) => m.role === MessageRole.Model && m.id === idToCommit
+                )
+              : state.messages.findLastIndex(
+                  (m) => m.role === MessageRole.Model
+                );
+          if (idx === -1) {
+            return {
+              streamingContent: '',
+              streamingMessageId: null,
+              thinkingContent: '',
+            };
+          }
+          const msg = state.messages[idx];
+          if (!msg || msg.role !== MessageRole.Model) {
+            return {
+              streamingContent: '',
+              streamingMessageId: null,
+              thinkingContent: '',
+            };
+          }
+          const messages = [...state.messages];
+          messages[idx] = {
+            ...msg,
+            content: bufferedContent,
+            thinking: bufferedThinking || msg.thinking,
+            thinkingMs: thinkingMs ?? msg.thinkingMs,
+          };
+          return {
+            messages,
+            streamingContent: '',
+            streamingMessageId: null,
+            // Clear the live thinking slot at commit so the indicator falls
+            // back to "inference" between rounds. Stale thinking text would
+            // keep the thinking branch sticky after the model emits its tool
+            // call — readers can't tell the round boundary moved.
+            thinkingContent: '',
+          };
         });
+        streamingMsgId = null;
       };
 
-      // Match KAS's STEERING_RESPONSE_PATTERN. Replace [STEERING steer-XXX: response]
-      // with just "response". The `s` flag lets `.` match newlines so multi-line
-      // acknowledgments are captured as a single response.
-      const STEERING_TAG_PATTERN = /\[STEERING (steer-[^\s:]+): (.+?)\]/gs;
-      // Detects a partially-streamed STEERING tag at the tail of the buffer
-      // (opener seen but no closing `]` yet). Used to hold back the in-progress
-      // tag from display so the user doesn't see `[STEERING steer-abc: …` flicker
-      // in before it gets stripped on the next chunk.
-      const PARTIAL_STEERING_TAG_PATTERN =
-        /\[STEERING (steer-[^\s:]+)(?::[^\]]*)?$/s;
-
+      /**
+       * Per-chunk flush. On the FIRST chunk of a turn, appends an empty
+       * Model row to `messages` (one [...state.messages] copy per turn) so
+       * layout/order stays correct relative to subsequent tool calls and
+       * captures its id. On every chunk after that, only updates the
+       * `streamingContent` primitive — no messages copy.
+       *
+       * Live readers (LiteLiveRegion, LiteLayout ctxPct, modern TUI's
+       * StreamingMessage) subscribe to `streamingContent` directly and read
+       * the placeholder Model row's id from `streamingMessageId`. The empty
+       * Model row is filtered from the static log by selectStaticEligible
+       * (the `isProcessing && i === messages.length - 1` gate plus the
+       * empty-content gate keep it out of <Static>).
+       */
       const flushContentToStore = () => {
         pendingContentFlush = null;
-        if (disposed) return;
         if (!bufferedContent && !bufferedThinking) return;
 
-        // If the tail of the buffer looks like a partially-streamed
-        // `[STEERING steer-…` opener with no closing `]` yet, hold it back
-        // from display until the next chunk arrives and we see the full
-        // tag. Without this guard the user would see a brief flicker of the
-        // raw opener before `STEERING_TAG_PATTERN` strips it on the next
-        // flush.
-        let renderable = bufferedContent;
-        const partialMatch = renderable.match(PARTIAL_STEERING_TAG_PATTERN);
-        if (partialMatch && partialMatch.index !== undefined) {
-          renderable = renderable.slice(0, partialMatch.index);
-          // Re-schedule a flush so the held-back tail renders once the
-          // closing bracket arrives (or streaming stalls long enough that
-          // it's clearly not a STEERING tag after all).
-          if (!pendingContentFlush) {
-            pendingContentFlush = setTimeout(flushContentToStore, 16);
-          }
+        if (streamingMsgId == null) {
+          // First flush of this turn — append the placeholder Model row with
+          // the current bufferedContent already inlined. Mid-stream readers of
+          // `messages[i].content` (transcript export, integ tests, anything
+          // that doesn't consult streamingContent) see streamed text as it
+          // arrives, matching origin/main's contract.
+          const newId = lastContentEventId ?? crypto.randomUUID();
+          streamingMsgId = newId;
+          set((state) => ({
+            messages: [
+              ...state.messages,
+              {
+                id: newId,
+                role: MessageRole.Model,
+                content: bufferedContent,
+                thinking: bufferedThinking || undefined,
+                agentName: state.currentAgent?.name,
+              },
+            ],
+            streamingContent: bufferedContent,
+            streamingMessageId: newId,
+            // Mirror buffered thinking text into the live store slot so
+            // LiteLiveRegion's "thinking" branch can render reasoning tokens
+            // as they arrive. Without this, Thought events only landed on the
+            // committed Model row's `thinking` field at commit time, and the
+            // live indicator stayed stuck on "inference".
+            thinkingContent: bufferedThinking,
+          }));
+          return;
         }
 
-        const displayContent = renderable.replace(STEERING_TAG_PATTERN, '$2');
-
-        // Bail only when there's nothing to persist. Thinking-only flushes
-        // (think→tool-call path) have empty displayContent but carry
-        // bufferedThinking + thinkingMs, which must still reach the model
-        // message so the "Thought for Ns" header renders.
-        if (!displayContent && !bufferedThinking) return;
-
+        // Subsequent chunk — also patch the placeholder row in place so
+        // external readers (transcript export, integ tests reading messages
+        // snapshot) stay in sync with streamingContent. ConversationView
+        // already substitutes streamingContent for message.content when
+        // `message.id === streamingMessageId && isProcessing`, so duplicate
+        // writes here do not double-render in modern TUI.
+        const idToPatch = streamingMsgId;
         set((state) => {
-          const lastMsg = state.messages[state.messages.length - 1];
-          if (lastMsg?.role === MessageRole.Model) {
-            const messages = [...state.messages];
-            messages[messages.length - 1] = {
-              id: lastMsg.id,
-              role: MessageRole.Model,
-              content: displayContent || lastMsg.content,
-              thinking: bufferedThinking || lastMsg.thinking,
-              thinkingMs: thinkingMs ?? lastMsg.thinkingMs,
-              agentName: lastMsg.agentName ?? state.currentAgent?.name,
-            };
-            return { messages };
-          } else {
-            // First content chunk — append a new model message
+          const idx = state.messages.findIndex(
+            (m) => m.role === MessageRole.Model && m.id === idToPatch
+          );
+          if (idx === -1) {
             return {
-              messages: [
-                ...state.messages,
-                {
-                  id: lastContentEventId ?? crypto.randomUUID(),
-                  role: MessageRole.Model,
-                  content: displayContent,
-                  thinking: bufferedThinking || undefined,
-                  thinkingMs: thinkingMs ?? undefined,
-                  agentName: state.currentAgent?.name,
-                },
-              ],
+              streamingContent: bufferedContent,
+              thinkingContent: bufferedThinking,
             };
           }
+          const msg = state.messages[idx];
+          if (!msg || msg.role !== MessageRole.Model) {
+            return {
+              streamingContent: bufferedContent,
+              thinkingContent: bufferedThinking,
+            };
+          }
+          const messages = [...state.messages];
+          messages[idx] = {
+            ...msg,
+            content: bufferedContent,
+            thinking: bufferedThinking || msg.thinking,
+            thinkingMs: thinkingMs ?? msg.thinkingMs,
+          };
+          return {
+            messages,
+            streamingContent: bufferedContent,
+            thinkingContent: bufferedThinking,
+          };
         });
       };
 
@@ -2024,13 +2504,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
       set({ streamingBuffer: { startBuffering, stopBuffering } });
 
-      const baseHandler = (event: AgentStreamEvent) => {
-        // Once disposed (cancelled turn), drop everything. The handler
-        // may still be briefly subscribed via `onUpdate` during the
-        // deferred-unsubscribe window in `kiro.ts::streamMessage`, but it
-        // must not mutate the store with events that belong to an
-        // abandoned turn.
-        if (disposed) return;
+      const handler = (event: AgentStreamEvent) => {
         // The retry banner reflects the wait between the SDK's HTTP attempts. Once any
         // other stream event arrives (a new message, content chunk, error, etc.) the
         // retry window is over — clear it so the "Thinking..." line reverts. We leave
@@ -2048,6 +2522,12 @@ export const createAppStore = (props: AppStoreProps) => {
               clearTimeout(pendingContentFlush);
               pendingContentFlush = null;
               flushContentToStore();
+            }
+            // Commit whatever buffered content belonged to the prior turn
+            // before starting a new turn — otherwise it would leak into the
+            // next Model row when the next Content event lands.
+            if (streamingMsgId != null) {
+              commitBufferedContent();
             }
             // Reset buffer for the next assistant turn
             bufferedContent = '';
@@ -2124,7 +2604,14 @@ export const createAppStore = (props: AppStoreProps) => {
               clearTimeout(pendingContentFlush);
               pendingContentFlush = null;
             }
-            flushContentToStore();
+            // Commit the streaming row so the model speech that preceded the
+            // tool call lands in scrollback before the tool row. Without
+            // this, the placeholder row keeps empty content in messages
+            // even though the user saw the text live, and the next chunk
+            // after the tool would create a second placeholder.
+            if (streamingMsgId != null) {
+              commitBufferedContent();
+            }
             // Report tool use to cmux sidebar
             syncCmuxStatus('tool-use', event.name);
             // Reset buffer so the next Model message after this tool
@@ -2140,7 +2627,60 @@ export const createAppStore = (props: AppStoreProps) => {
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
               );
 
-              const content = JSON.stringify(event.args);
+              // Capture `__tool_use_purpose` from the model's untouched
+              // rawInput before the per-shape synthesis below rebuilds a
+              // narrower content. Stash it on the typed `purpose` sibling
+              // so lite's reasoning slot can recover it; modern TUI's
+              // <Tool> excludes the field from its params display anyway,
+              // so omitting it from the synthesized content stays
+              // byte-equivalent for that path.
+              const rawArgs = (event.args ?? {}) as Record<string, unknown>;
+              const purpose =
+                typeof rawArgs.__tool_use_purpose === 'string' &&
+                rawArgs.__tool_use_purpose.trim().length > 0
+                  ? rawArgs.__tool_use_purpose
+                  : undefined;
+
+              let content: string;
+              const toolContentDiff = event.toolContent?.[0];
+              if (toolContentDiff) {
+                const args = event.args as Record<string, unknown>;
+                let command = 'create';
+                if (args.oldStr !== undefined) {
+                  command = 'strReplace';
+                } else if (args.insertLine !== undefined || args.append) {
+                  command = 'insert';
+                }
+                content = JSON.stringify({
+                  command,
+                  path: toolContentDiff.path,
+                  content: toolContentDiff.newText,
+                  oldStr: toolContentDiff.oldText,
+                  newStr: toolContentDiff.newText,
+                  insertLine: args.insertLine,
+                });
+              } else if (event.kind === 'edit') {
+                const args = event.args as Record<string, unknown>;
+                let command = 'create';
+                if (args.oldStr !== undefined) {
+                  command = 'strReplace';
+                } else if (args.insertLine !== undefined || args.append) {
+                  command = 'insert';
+                }
+                content = JSON.stringify({
+                  command,
+                  path: args.path,
+                  content: args.text || args.content || '',
+                  oldStr: args.oldStr,
+                  newStr: args.newStr,
+                  insertLine: args.insertLine,
+                });
+              } else {
+                content = JSON.stringify(event.args);
+              }
+              // Structured diff for the modern TUI's <Tool> renderer (main's
+              // path). Lite parses the synthesized `content` above instead;
+              // carrying both keeps each renderer on its own source.
               const diff = deriveToolDiff(event);
 
               if (existingIndex !== -1) {
@@ -2153,6 +2693,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     messages[existingIndex] = {
                       ...existingMsg,
                       content,
+                      purpose: purpose ?? existingMsg.purpose,
                       kind: event.kind || existingMsg.kind,
                       locations: event.locations || existingMsg.locations,
                       diff: diff ?? existingMsg.diff,
@@ -2164,6 +2705,7 @@ export const createAppStore = (props: AppStoreProps) => {
               }
 
               const isNotReady = NOT_READY_TOOLS.has(event.name);
+              logger.debug('[tool-created]', event.name, event.id);
               // Wipe previous subagent state when a new crew invocation starts
               let clearedMessages = state.messages;
               let clearedSessions = state.sessions;
@@ -2197,11 +2739,29 @@ export const createAppStore = (props: AppStoreProps) => {
                   }
                 }
               }
-              // Resolve agent name: use subagent session name if tool call is from a subagent
-              const agentName = event.sessionId
-                ? (state.sessions.get(event.sessionId)?.name ??
-                  state.currentAgent?.name)
-                : state.currentAgent?.name;
+              // Resolve agent name: use subagent session name if tool call is
+              // from a subagent. When the event carries a sessionId distinct
+              // from the main session — i.e. it came from inside a stage —
+              // we MUST avoid the `currentAgent?.name` fallback. Stamping a
+              // stage tool with the main agent's name makes static-flush.ts's
+              // `isInnerSubagentTool` treat it as a parent-agent tool, which
+              // both shows it in the chat log AND drops it out of
+              // `subagentSummariesById` (the LiteLayout walk filters with
+              // `m.agentName === agentName` to skip parent-side rows). The
+              // bug surfaces when the subagent_list_update for a stage
+              // hasn't landed by the time its first tool call arrives — the
+              // session isn't in `state.sessions` yet, so the lookup misses.
+              // Using the sessionId as a stable placeholder keeps the
+              // inner-subagent distinction, and once the list update lands
+              // the stage's name flows through later resolves anyway.
+              const mainSessionId = state.sessionId;
+              let agentName: string | undefined;
+              if (event.sessionId && event.sessionId !== mainSessionId) {
+                agentName =
+                  state.sessions.get(event.sessionId)?.name ?? event.sessionId;
+              } else {
+                agentName = state.currentAgent?.name;
+              }
               return {
                 sessions: clearedSessions,
                 sessionMessages: clearedSessionMessages,
@@ -2214,10 +2774,12 @@ export const createAppStore = (props: AppStoreProps) => {
                     name: event.name,
                     kind: event.kind,
                     content,
+                    purpose,
                     diff,
                     locations: event.locations,
                     agentName,
                     ...(event.sessionId && { isSubagentTool: true }),
+                    startTime: Date.now(),
                     ...(isNotReady && {
                       isFinished: true,
                       result: {
@@ -2262,6 +2824,23 @@ export const createAppStore = (props: AppStoreProps) => {
               if (toolMsgIndex !== -1) {
                 const toolMsg = messages[toolMsgIndex];
                 if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+                  logger.debug('[tool-finished]', toolMsg.name, event.id);
+                  // Detect "denied by user" on replay: the SACP layer collapses
+                  // user-rejected and actually-failed tool calls into the same
+                  // wire shape (status: Failed, content: error text). The Rust
+                  // backend stamps a canonical reason string for each path —
+                  // recover the distinction by string-matching that text so a
+                  // replayed denial renders with the rejected glyph instead of
+                  // the failed glyph.
+                  const errText =
+                    event.result?.status === 'error'
+                      ? event.result.error
+                      : undefined;
+                  const wasDeniedByUser =
+                    typeof errText === 'string' &&
+                    /denied by the user|rejected because the arguments supplied are forbidden/i.test(
+                      errText
+                    );
                   // If the user cancelled the tool (e.g. denied approval),
                   // the local cancellation flow already marked the message
                   // as 'cancelled'. Preserve that — don't let a subsequent
@@ -2284,13 +2863,32 @@ export const createAppStore = (props: AppStoreProps) => {
                         oldText: wireDiff.oldText,
                       }
                     : toolMsg.diff;
+                  // Spread `...toolMsg` so any optional sibling fields the
+                  // ToolCall handler stamped onto the message (notably the
+                  // typed `purpose` carrying __tool_use_purpose) survive
+                  // the finalize-on-finish rewrite. An explicit field list
+                  // here previously dropped `purpose` the moment Rust
+                  // emitted ToolCallFinished, wiping the lite TUI's purple
+                  // reasoning text right after the user approved. `diff` is
+                  // overridden below with the freshly-derived value.
                   messages[toolMsgIndex] = {
                     ...toolMsg,
                     diff,
                     isFinished: true,
+                    status: wasDeniedByUser
+                      ? ToolUseStatus.Rejected
+                      : toolMsg.status,
                     result: event.result,
+                    finishTime: Date.now(),
                   };
                 }
+              } else {
+                logger.debug(
+                  '[tool-finished-NOT-FOUND]',
+                  event.id,
+                  'result:',
+                  event.result?.status
+                );
               }
               return { messages, liveOutputs: newLiveOutputs };
             });
@@ -2299,56 +2897,15 @@ export const createAppStore = (props: AppStoreProps) => {
             extractTaskState(event, get);
             break;
           case AgentEventType.ApprovalRequest: {
-            const {
-              autoApproveCrewTools,
-              sessionId: mainSessionId,
-              trustAllToolsConfirmed,
-            } = get();
-
-            // --trust-all-tools: auto-approve all permission requests
-            // Prefer allow_always (V2 parity: server learns tool is trusted),
-            // fall back to allow_once if always isn't offered.
-            if (trustAllToolsConfirmed) {
-              const opt =
-                event.value.permissionOptions.find(
-                  (o: { kind: string }) => o.kind === 'allow_always'
-                ) ??
-                event.value.permissionOptions.find(
-                  (o: { kind: string }) => o.kind === 'allow_once'
-                );
-              if (opt) {
-                event.value.resolve({
-                  outcome: 'selected',
-                  optionId: opt.optionId,
-                  _meta:
-                    get().agentEngine === 'kas'
-                      ? {
-                          kiro: {
-                            consent: {
-                              scope:
-                                opt.kind === 'allow_always'
-                                  ? 'session'
-                                  : 'invocation',
-                            },
-                          },
-                        }
-                      : undefined,
-                });
-                break;
-              }
-            }
-
+            const { autoApproveCrewTools, sessionId: mainSessionId } = get();
             const isCrewApproval = !!(
               event.value.sessionId &&
               mainSessionId &&
               event.value.sessionId !== mainSessionId
             );
             if (autoApproveCrewTools && isCrewApproval) {
-              // Match by `kind` so KAS approvals (optionId='accept', kind='allow_once')
-              // resolve correctly alongside Rust ones (optionId='allow_once').
               const opt = event.value.permissionOptions.find(
-                (o: { optionId: string; kind?: string }) =>
-                  o.kind === 'allow_once'
+                (o: { optionId: string }) => o.optionId === 'allow_once'
               );
               if (opt) {
                 event.value.resolve({
@@ -2392,9 +2949,6 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
-          case AgentEventType.KasMessageIdAssigned:
-            get().setKasMessageId(event.kasMessageId);
-            break;
           case AgentEventType.EffortUpdate:
             get().setCurrentEffort(event.effort);
             break;
@@ -2403,25 +2957,6 @@ export const createAppStore = (props: AppStoreProps) => {
               get().setGoalStatus(null);
             } else {
               const prev = get().goalStatus;
-              // When the iteration advances, flush and reset the content
-              // buffer so new-iteration content can't overwrite the
-              // previous iteration's Model message in scrollback.
-              if (
-                prev &&
-                event.iteration !== undefined &&
-                event.iteration > prev.iteration
-              ) {
-                if (pendingContentFlush) {
-                  clearTimeout(pendingContentFlush);
-                  pendingContentFlush = null;
-                }
-                flushContentToStore();
-                bufferedContent = '';
-                bufferedThinking = '';
-                lastContentEventId = null;
-                thinkingStart = null;
-                thinkingMs = null;
-              }
               get().setGoalStatus({
                 state: event.state,
                 iteration: event.iteration,
@@ -2449,7 +2984,17 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.CompactionStatus:
             if (event.status === 'started') {
-              set({ isCompacting: true, loadingMessage: null });
+              // 'Compacting conversation...' surfaces in lite as a dim
+              // spinner line above the divider via LiteLayout's
+              // loadingMessage block, matching the visual language used by
+              // /chat new ('Starting new conversation...') and /chat <id>
+              // ('Loading session ...'). Modern TUI consumes the same slot,
+              // so the label appears in both modes; isCompacting separately
+              // gates input in InlineLayout.
+              set({
+                isCompacting: true,
+                loadingMessage: 'Compacting conversation...',
+              });
             } else if (event.status === 'completed') {
               set({ isCompacting: false, loadingMessage: null });
             } else if (event.status === 'failed') {
@@ -2502,7 +3047,21 @@ export const createAppStore = (props: AppStoreProps) => {
                   error: event.error,
                 },
               ];
-              set({ initErrors: updated });
+              // Track MCP init status. elapsed is only meaningful if we saw
+              // the loading transition ourselves; otherwise leave undefined.
+              const mcpStatus = new Map(get().mcpInitStatus);
+              const prev = mcpStatus.get(event.serverName);
+              const elapsed =
+                prev?.status === 'loading'
+                  ? Date.now() - prev.startTime
+                  : undefined;
+              mcpStatus.set(event.serverName, {
+                status: 'failed',
+                startTime: prev?.startTime ?? Date.now(),
+                elapsed,
+                error: event.error,
+              });
+              set({ initErrors: updated, mcpInitStatus: mcpStatus });
               const message = summarizeInitErrors(updated);
               if (message) {
                 get().showTransientAlert({
@@ -2525,11 +3084,25 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.McpServerInitialized:
             {
               set((state) => {
+                const mcpStatus = new Map(state.mcpInitStatus);
+                const prev = mcpStatus.get(event.serverName);
+                const elapsed =
+                  prev?.status === 'loading'
+                    ? Date.now() - prev.startTime
+                    : undefined;
+                mcpStatus.set(event.serverName, {
+                  status: 'ready',
+                  startTime: prev?.startTime ?? Date.now(),
+                  elapsed,
+                });
                 if (!state.pendingOAuthServers.has(event.serverName))
-                  return state;
+                  return { mcpInitStatus: mcpStatus };
                 const updated = new Map(state.pendingOAuthServers);
                 updated.delete(event.serverName);
-                return { pendingOAuthServers: updated };
+                return {
+                  pendingOAuthServers: updated,
+                  mcpInitStatus: mcpStatus,
+                };
               });
             }
             break;
@@ -2629,65 +3202,6 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
-          case AgentEventType.WebToolsGovernanceDisabled:
-            {
-              const updated = [
-                ...get().initErrors.filter(
-                  (e) => e.type !== 'web_tools_governance_disabled'
-                ),
-                {
-                  type: 'web_tools_governance_disabled' as const,
-                  apiFailure: event.apiFailure,
-                },
-              ];
-              set({ initErrors: updated });
-              const message = summarizeInitErrors(updated);
-              if (message) {
-                get().showTransientAlert({
-                  message,
-                  status: severityForInitErrors(updated),
-                  autoHideMs: 8000,
-                });
-              }
-            }
-            break;
-          case AgentEventType.SteeringQueued:
-            set({ pendingSteerContent: event.message });
-            break;
-          case AgentEventType.SteeringConsumed:
-            // Flush any pending content from the previous turn BEFORE adding the
-            // user bubble so turn 1's output is finalized as its own Model
-            // message. Then reset the buffer so turn 2's content doesn't get
-            // concatenated with turn 1's text.
-            if (pendingContentFlush) {
-              clearTimeout(pendingContentFlush);
-              pendingContentFlush = null;
-              flushContentToStore();
-            }
-            bufferedContent = '';
-            lastContentEventId = null;
-
-            // Clear the queued message from the activity tray and render a user
-            // bubble in the conversation at the injection point.
-            set((state) => ({
-              pendingSteerContent: null,
-              messages: [
-                ...state.messages,
-                {
-                  id: generateMessageId(),
-                  role: MessageRole.User,
-                  content: event.content,
-                  agentName: state.currentAgent?.name,
-                },
-              ],
-            }));
-            break;
-          case AgentEventType.SteeringCleared:
-            // Backend cleared the queue without consuming it (cancel, or
-            // explicit TUI clear request). Reset the activity-tray display
-            // without adding a user bubble.
-            set({ pendingSteerContent: null });
-            break;
           case AgentEventType.HooksUpdate:
             // Update cached hooks list. If the panel is open, it will
             // re-render with the new data automatically.
@@ -2696,32 +3210,44 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       };
 
-      const handle = (event: AgentStreamEvent) => {
-        baseHandler(event);
-      };
-
-      const flush = () => {
-        if (disposed) return;
-        // Cancel any pending batched flush and commit immediately.
+      // TODO: Refactor createStreamEventHandler to return { handle, flush } instead of
+      // monkey-patching flush onto the handler function and casting to any.
+      // Attach flush for callers to commit remaining buffered content
+      (handler as any).flush = () => {
+        // Cancel any pending batched flush — we'll commit synchronously below.
         if (pendingContentFlush) {
           clearTimeout(pendingContentFlush);
           pendingContentFlush = null;
         }
-        // `flushContentToStore` handles both creating a new Model message
-        // and updating an existing one — no need to also call
-        // `commitBufferedContent`.
-        flushContentToStore();
+        // End-of-stream commit: drain the live streaming slot into the row.
+        // flushContentToStore (the per-chunk path) only writes the primitive
+        // after the first chunk; the buffered text never lands in messages
+        // unless we explicitly commit. Need to ensure the placeholder row
+        // exists first (in case stream ended on the very first chunk arriving
+        // simultaneously with end-of-stream — rare, but commitBufferedContent
+        // looks for a Model row by id and finds nothing).
+        if (streamingMsgId == null && (bufferedContent || bufferedThinking)) {
+          flushContentToStore();
+        }
+        commitBufferedContent();
         set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
       };
 
-      // See StreamEventHandler for the flush-vs-dispose contract. The
-      // guards against `disposed` in here and in the flush fns above are
-      // the race defense: without them, a late stream chunk arriving in
-      // the deferred-unsubscribe window (see kiro.ts::streamMessage)
-      // would leak into the next turn's Model message.
-      const dispose = () => {
-        if (disposed) return;
-        disposed = true;
+      // Discard everything pending without committing it to the store.
+      // Called by cancelMessage when the user interrupts mid-turn — at that
+      // point any setTimeout-scheduled flush would otherwise fire AFTER the
+      // next turn's User message has been appended, and would either mutate
+      // the new turn's Model message or (if no Model exists yet) append a
+      // ghost Model with the previous turn's content. Zeroing the captured
+      // buffers here makes both flush callbacks no-ops if they still fire.
+      //
+      // Partial-response preservation: under the streaming-slot design the
+      // live row in `messages` is empty until commitBufferedContent runs.
+      // Commit BEFORE zeroing so the partial response that the user already
+      // saw in the live region lands in scrollback at cancel time — matches
+      // pre-E1 behavior where mid-stream `[...state.messages]` writes had
+      // already left the row partially populated.
+      (handler as any).dispose = () => {
         if (pendingContentFlush) {
           clearTimeout(pendingContentFlush);
           pendingContentFlush = null;
@@ -2730,13 +3256,14 @@ export const createAppStore = (props: AppStoreProps) => {
           clearTimeout(pendingToolOutputFlush);
           pendingToolOutputFlush = null;
         }
+        commitBufferedContent();
         bufferedContent = '';
+        bufferedThinking = '';
         lastContentEventId = null;
         toolOutputBuffers.clear();
-        set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
       };
 
-      return Object.assign(handle, { flush, dispose });
+      return handler;
     },
 
     /**
@@ -2748,25 +3275,49 @@ export const createAppStore = (props: AppStoreProps) => {
       for await (const event of stream) {
         handler(event);
       }
-      handler.flush();
+      (handler as any).flush?.();
     },
 
     cancelMessage: async () => {
-      const { kiro, currentAbortController } = get();
+      const { kiro, currentAbortController, cancelInProgress } = get();
       if (!kiro) return;
+      // If a cancel is already in flight, await it instead of starting a
+      // second concurrent cancel. Two cancels back-to-back would race the
+      // `finally` block that clears isProcessing — the second would see
+      // currentAbortController already nulled and might issue a duplicate
+      // kiro.cancel() against the new turn after the first one returns.
+      if (cancelInProgress) return cancelInProgress;
       let resolveCancelPromise: () => void;
       const cancelPromise = new Promise<void>((resolve) => {
         resolveCancelPromise = resolve;
       });
       set({ cancelInProgress: cancelPromise, wasCancelled: true });
 
-      // Capture whether there are pending messages (steer or queue) to decide
-      // whether to show "Cancelled streaming" toast or suppress it (since a
-      // new turn will start immediately from processQueue).
-      const hasPendingMessages =
-        get().pendingSteerContent != null || get().queuedMessages.length > 0;
-
       try {
+        // Dispose the active stream event handler FIRST, before anything
+        // async runs. This (a) commits any buffered streaming content into
+        // the placeholder Model row so the partial response the user just
+        // watched stream lands in scrollback at cancel time, and (b) drops
+        // any pending content/tool-output flush setTimeouts so they can't
+        // fire after the next sendMessage has started a new turn — without
+        // this, a setTimeout scheduled by the cancelled turn would run
+        // after the next User message has been appended and would either
+        // mutate the new turn's Model message or append a ghost Model with
+        // the cancelled turn's content.
+        const activeHandler = get()._activeStreamHandler;
+        if (activeHandler) {
+          activeHandler.dispose?.();
+          set({ _activeStreamHandler: null });
+        }
+        // Clear the live streaming slot so LiteLiveRegion doesn't repaint
+        // the previous turn's partial text on the next isProcessing flip.
+        // (commitBufferedContent above already wrote it into messages.)
+        set({
+          streamingContent: '',
+          streamingMessageId: null,
+          thinkingContent: '',
+        });
+
         // Abort local stream first
         if (currentAbortController) {
           currentAbortController.abort();
@@ -2779,33 +3330,47 @@ export const createAppStore = (props: AppStoreProps) => {
         // Mark any unfinished tool uses as finished with cancelled status
         // immediately — before async calls. This stops spinners and prevents
         // a leak if kiro.cancel() is slow or throws.
+        //
+        // For shell-class tools the user has watched stdout stream past in
+        // the live region as the command ran; that buffered partial output
+        // lives in `state.liveOutputs` keyed by tool-call id. Snapshot it
+        // into the cancelled tool's `result.output` so the renderer surfaces
+        // it under the yellow `✗ cancelled` header instead of dropping the
+        // whole body. Without this the user only sees the chip and has no
+        // record of what the command had produced before the interrupt
+        // landed — even though some commands complete useful work before
+        // we can kill them.
         set((state) => {
           const hasUnfinishedToolCalls = state.messages.some(
             (msg) => msg.role === MessageRole.ToolUse && !msg.isFinished
           );
 
           if (hasUnfinishedToolCalls) {
-            return {
-              messages: state.messages.map((msg) =>
-                msg.role === MessageRole.ToolUse && !msg.isFinished
-                  ? {
-                      ...msg,
-                      isFinished: true,
-                      // Clear Pending so the shimmer gate
-                      // (effectiveFinished = isFinished && status !== Pending)
-                      // resolves. A tool the user already Approved stays
-                      // Approved — `result.status === 'cancelled'` drives the
-                      // user-visible 'Cancelled' label and error icon
-                      // regardless of the internal status.
-                      status:
-                        msg.status === ToolUseStatus.Approved
-                          ? ToolUseStatus.Approved
-                          : ToolUseStatus.Rejected,
-                      result: { status: 'cancelled' },
-                    }
-                  : msg
-              ),
-            };
+            const newLiveOutputs = new Map(state.liveOutputs);
+            const messages = state.messages.map((msg) => {
+              if (msg.role !== MessageRole.ToolUse || msg.isFinished)
+                return msg;
+              const result = buildCancelledResult(
+                state.liveOutputs.get(msg.id)
+              );
+              newLiveOutputs.delete(msg.id);
+              return {
+                ...msg,
+                isFinished: true,
+                // Clear Pending so the shimmer gate
+                // (effectiveFinished = isFinished && status !== Pending)
+                // resolves. A tool the user already Approved stays
+                // Approved — `result.status === 'cancelled'` drives the
+                // user-visible 'Cancelled' label regardless of the internal
+                // status.
+                status:
+                  msg.status === ToolUseStatus.Approved
+                    ? ToolUseStatus.Approved
+                    : ToolUseStatus.Rejected,
+                result,
+              };
+            });
+            return { messages, liveOutputs: newLiveOutputs };
           }
 
           return {};
@@ -2821,9 +3386,10 @@ export const createAppStore = (props: AppStoreProps) => {
         // "Prompt already in progress".
         await kiro.cancel();
 
-        // If there are pending messages (steer or queue), skip the generic
-        // "Cancelled streaming" toast since a new turn will start immediately.
-        if (!hasPendingMessages) {
+        // Only show the alert when the queue is empty — if there are
+        // queued messages the next one will start immediately and the
+        // transient alert would just flash confusingly.
+        if (get().queuedMessages.length === 0) {
           get().showTransientAlert({
             message: 'Cancelled streaming',
             status: 'info',
@@ -2851,13 +3417,9 @@ export const createAppStore = (props: AppStoreProps) => {
         });
         resolveCancelPromise!();
         set({ cancelInProgress: null });
+        // Drain any queued messages now that isProcessing is cleared.
+        await get().processQueue();
       }
-
-      // Drain pending messages after cancel resolves. processQueue handles
-      // steer-first priority internally: steer replays first, then queue drains.
-      // Done outside the try/finally so it doesn't race with the
-      // isProcessing reset — sendMessage() will flip it back on.
-      await get().processQueue();
     },
 
     setProcessing: (isProcessing) => set({ isProcessing }),
@@ -2940,10 +3502,6 @@ export const createAppStore = (props: AppStoreProps) => {
         get().setContextUsage(event.percent);
         return;
       }
-      if (event.type === AgentEventType.KasMessageIdAssigned) {
-        get().setKasMessageId(event.kasMessageId);
-        return;
-      }
       if (event.type === AgentEventType.EffortUpdate) {
         get().setCurrentEffort(event.effort);
         return;
@@ -2980,9 +3538,7 @@ export const createAppStore = (props: AppStoreProps) => {
       } else if (event.status === 'failed') {
         set({ isCompacting: false, isProcessing: false });
         get().showTransientAlert({
-          message: event.error
-            ? `Compaction failed: ${event.error}`
-            : 'Compaction failed',
+          message: `Compaction failed: ${event.error ?? 'unknown error'}`,
           status: 'error',
           autoHideMs: 5000,
         });
@@ -3047,11 +3603,8 @@ export const createAppStore = (props: AppStoreProps) => {
         const isRejected =
           optionId === ApprovalOptionId.RejectOnce ||
           optionId === ApprovalOptionId.RejectAlways;
-        const resolvedKind = approval.permissionOptions.find(
-          (o) => o.optionId === optionId
-        )?.kind;
         const isTrust =
-          resolvedKind === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
+          optionId === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
 
         // When trusting a tool, cascade to all pending approvals of the same tool
         let cascadeApprovals: ApprovalRequestInfo[] = [];
@@ -3090,6 +3643,7 @@ export const createAppStore = (props: AppStoreProps) => {
         const feedbackText = (_meta as Record<string, unknown>)?.feedback as
           | string
           | undefined;
+        const now = Date.now();
 
         set((state) => {
           const updatedMessages = state.messages.map((msg) => {
@@ -3101,10 +3655,24 @@ export const createAppStore = (props: AppStoreProps) => {
                   ? ToolUseStatus.Rejected
                   : ToolUseStatus.Approved,
                 isFinished: isRejected ? true : msg.isFinished,
+                startTime: isRejected ? msg.startTime : now,
               };
             }
-            if (cascadeIds.has(msg.id)) {
+            // Cascade the trusted approval to other queued tool calls of
+            // the same tool name.
+            if (msg.role === MessageRole.ToolUse && cascadeIds.has(msg.id)) {
               return { ...msg, status: ToolUseStatus.Approved };
+            }
+            // When the last approval resolves, reset startTime for all other
+            // unfinished tools that were blocked waiting so the timer doesn't
+            // show inflated wait time.
+            if (
+              !isRejected &&
+              remainingQueue.length === 0 &&
+              msg.role === MessageRole.ToolUse &&
+              !msg.isFinished
+            ) {
+              return { ...msg, startTime: now };
             }
             return msg;
           });
@@ -3131,37 +3699,10 @@ export const createAppStore = (props: AppStoreProps) => {
           };
         });
 
-        // Build _meta for the response, including KAS consent if applicable
-        let resolvedMeta = _meta;
-        if (get().agentEngine === 'kas' && !_meta?.trustOption) {
-          const optionKind = approval.permissionOptions.find(
-            (o) => o.optionId === optionId
-          )?.kind;
-          const kasScope =
-            (_meta?.kasScope as string) ??
-            (optionKind === ApprovalOptionId.AllowAlways
-              ? 'session'
-              : 'invocation');
-          // kasResource: explicitly provided = trust specific resource;
-          // undefined = trust entire capability (no resource filter)
-          const kasResource = _meta?.kasResource as string | undefined;
-          resolvedMeta = {
-            kiro: {
-              consent: {
-                scope: kasScope,
-                ...(kasResource ? { resource: kasResource } : {}),
-                ...(approval.consentContext?.workspaceRoot
-                  ? { workspaceRoot: approval.consentContext.workspaceRoot }
-                  : {}),
-              },
-            },
-          };
-        }
-
         approval.resolve({
           outcome: 'selected',
           optionId,
-          _meta: resolvedMeta,
+          _meta,
         });
 
         // Auto-resolve cascaded approvals with allow_once (trust is already applied)
@@ -3191,10 +3732,18 @@ export const createAppStore = (props: AppStoreProps) => {
           cancelIds.add(queued.toolCall.toolCallId);
         }
 
-        // Mark all cancelled tool calls as finished
-        set((state) => ({
-          messages: state.messages.map((msg) => {
+        // Mark all cancelled tool calls as finished. Approval-stage cancels
+        // usually have no live output yet (the call hasn't started), but
+        // snapshot liveOutputs anyway so the rare race where the user
+        // declines mid-execution still preserves whatever stdout streamed.
+        set((state) => {
+          const newLiveOutputs = new Map(state.liveOutputs);
+          const messages = state.messages.map((msg) => {
             if (msg.role === MessageRole.ToolUse && cancelIds.has(msg.id)) {
+              const result = buildCancelledResult(
+                state.liveOutputs.get(msg.id)
+              );
+              newLiveOutputs.delete(msg.id);
               return {
                 ...msg,
                 isFinished: true,
@@ -3202,12 +3751,13 @@ export const createAppStore = (props: AppStoreProps) => {
                 // and the shimmer stops. Use Rejected to mirror an explicit
                 // user-driven denial.
                 status: ToolUseStatus.Rejected,
-                result: { status: 'cancelled' as const },
+                result,
               };
             }
             return msg;
-          }),
-        }));
+          });
+          return { messages, liveOutputs: newLiveOutputs };
+        });
 
         pendingApproval.resolve({ outcome: 'cancelled' });
 
@@ -3248,7 +3798,60 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     resetMessages: () => {
-      set({ messages: [] });
+      // Single coordinated session reset: drop the messages array AND every
+      // piece of view-state derived from it, in one atomic update.
+      //
+      // Before this consolidation, callers had to remember three steps —
+      // resetMessages(), setLiteStaticSkipBefore(0), bumpLiteScrollbackClear()
+      // — and any handler that forgot one half-cleared and produced glitches:
+      // /chat new kept old scrollback because it skipped the bump; the stale
+      // skipBefore bookmark made new messages slice out to nothing and only
+      // flash through the live region. Folding it all here means every
+      // resetMessages() call (now or future) wipes correctly.
+      //
+      // - liteStaticSkipBefore reset to 0: the bookmark is a slice index into
+      //   the messages array. With messages now empty, any non-zero value
+      //   would skip the entire next session's scrollback.
+      // - liteScrollbackClearToken bumped: triggers LiteLayout's terminal
+      //   wipe + cursor reset + ref clear (LiteLayout.tsx:539). Also picked
+      //   up by ConversationView (TUI) for the symmetric singleton wipe so
+      //   tui→lite→tui swaps don't accumulate state across modes.
+      // - liteWelcomeEmitted reset: lets the next mount re-emit the banner
+      //   (per-session welcome on /chat new, fresh boot, etc.).
+      // - tasks cleared + activityTrayExpanded collapsed: the task list is
+      //   populated by the agent's todo_list/task tool calls in the active
+      //   conversation. With the conversation gone, the tray's contents
+      //   would be stale — and Ctrl+X (gated on tasks.length > 0) would
+      //   still toggle that stale tray, leaking the prior session's todos
+      //   into the new chat.
+      set((s) => ({
+        messages: [],
+        liteStaticSkipBefore: 0,
+        // Gate the cross-mode token bump to lite mode only. Modern TUI's
+        // ConversationView is a consumer of liteScrollbackClearToken (added
+        // for tui→lite swap symmetry), but in main /chat new does NOT wipe
+        // ConversationView's singletons. Leaving this unconditional would
+        // cross-mode-leak the bump into modern TUI on /chat new and force
+        // a singleton wipe that main never performed.
+        ...(s.uiMode === 'lite'
+          ? { liteScrollbackClearToken: s.liteScrollbackClearToken + 1 }
+          : {}),
+        liteWelcomeEmitted: false,
+        liteMcpFailureWarningEmitted: false,
+        tasks: [],
+        activityTrayExpanded: false,
+      }));
+    },
+
+    /**
+     * Stamp `fromHistory: true` on all messages whose index is >= fromIndex.
+     * Called after a /chat resume bulk-replay so the lite renderer can pick
+     * a cheaper preset for those rows. Currently a no-op: the consumer was
+     * removed from the lite renderer in a separate cleanup. Action surface
+     * is retained so call sites in commands/effects.ts don't need editing.
+     */
+    markMessagesFromHistory: (_fromIndex: number) => {
+      // intentional no-op
     },
 
     setSlashCommands: (commands: SlashCommand[]) => {
@@ -3358,58 +3961,68 @@ export const createAppStore = (props: AppStoreProps) => {
         codeData: null,
       });
 
+      // Lite has no NotificationBar mounted; route only failure alerts to
+      // scrollback so the user sees them. Successes are dropped (state
+      // changes worth showing should call ctx.announceSystem instead).
+      //
+      // Only clear activeCommand on warn/error: the dispatcher's "show result
+      // message" step (line 245) fires showAlert with the success-path
+      // result.message even when nothing visible happens here, and clearing
+      // unconditionally clobbers any menu a queued slash command just opened
+      // mid-drain. /agent swap → user queues /verbosity → drain runs and
+      // sets activeCommand to /verbosity → outer dispatcher's success alert
+      // clears it. Failures still close: a failed command's menu shouldn't
+      // linger over its error toast.
+      if (state.uiMode === 'lite') {
+        ctx.showAlert = (message, status) => {
+          if (status === 'error' || status === 'warning') {
+            ctx.addSystemMessage(message, false);
+            set({ activeCommand: null });
+          }
+        };
+      }
+
       await executeCommandWithArg(cmdName, arg, ctx);
     },
 
-    queueMessage: (content: string) => {
+    queueMessage: (content: string): boolean => {
       const trimmed = content.trim();
-      if (!trimmed) return;
-      const { kiro, sessionId, isInitialized, activeInterruptMode } = get();
-
-      // Pre-init: buffer locally on `pendingSteerContent` regardless of mode.
-      // This reuses the same display slot as the backend steer queue
-      // (ActivityTray, prompt placeholder, etc.) so the user sees what they
-      // typed immediately. Multiple submissions concatenate with "\n\n",
-      // matching the backend steer queue's format. Drained by the init path
-      // in index.tsx as a fresh `sendMessage` once init completes — pre-init
-      // input is semantically a first prompt, not a mid-turn steer.
-      if (!isInitialized || !sessionId) {
-        set((state) => ({
-          pendingSteerContent:
-            state.pendingSteerContent != null
-              ? `${state.pendingSteerContent}\n\n${trimmed}`
-              : trimmed,
-        }));
-        return;
-      }
-
-      // Steering mode: send to backend via ACP
-      if (activeInterruptMode === InterruptMode.STEER) {
-        kiro.steerMessage(sessionId, trimmed).catch((err) => {
-          logger.error('queueMessage: steerMessage failed', err);
-          get().showTransientAlert({
-            message: 'Failed to queue message — try again',
-            status: 'error',
-            autoHideMs: 3000,
+      if (!trimmed) return false;
+      // Slash-command dedup. Interactive pickers (/model, /agent, /effort,
+      // /theme, /chat) re-open the same UI when re-issued — a duplicate in
+      // the queue just makes the user dismiss the picker twice in a row at
+      // drain time. Plain chat messages can legitimately repeat (asking
+      // the same question twice is a real workflow), so the check is
+      // gated on the leading "/". `.includes` is O(n) but the queue
+      // length is bounded by what a user types between turns; comfortably
+      // under the per-render alert dedup threshold elsewhere in this file.
+      if (trimmed.startsWith('/')) {
+        const state = get();
+        // Exclude the in-flight dispatch from the dedup. processQueue
+        // slices the item out before awaiting handleUserInput, but the
+        // queue branch of handleUserInput re-pushes it during the await
+        // when loadingMessage is non-null — making the array briefly
+        // contain a string the user-visible strip has already cleared.
+        // Without this exemption, re-submitting the same command in
+        // that window fires a false-positive "already queued" alert.
+        if (
+          state.queuedMessages.includes(trimmed) &&
+          state.dispatchingMessage !== trimmed
+        ) {
+          state.showTransientAlert({
+            message: `${trimmed} is already queued`,
+            status: 'info',
+            autoHideMs: 2000,
           });
-        });
-        return;
+          return false;
+        }
       }
-
-      // Queueing mode: append to local buffer
-      set((state) => ({
-        queuedMessages: [...state.queuedMessages, trimmed],
-      }));
+      set((state) => ({ queuedMessages: [...state.queuedMessages, trimmed] }));
+      return true;
     },
 
     processQueue: async () => {
-      const {
-        cancelInProgress,
-        isProcessing,
-        pendingSteerContent,
-        queuedMessages,
-      } = get();
-
+      const { cancelInProgress, isProcessing } = get();
       if (cancelInProgress) {
         await cancelInProgress;
       }
@@ -3417,21 +4030,12 @@ export const createAppStore = (props: AppStoreProps) => {
       // Don't drain if already processing (prevents double-send races)
       if (isProcessing) return;
 
-      // Steer cuts the line: if a pending steer exists (wasn't consumed
-      // mid-turn), replay it as a fresh prompt before draining the queue.
-      if (pendingSteerContent != null) {
-        const steer = pendingSteerContent;
-        set({ pendingSteerContent: null });
-        await get().sendMessage(steer);
-        return; // After this turn ends, processQueue will be called again for the queue.
-      }
-
-      // Then drain the queue
+      const { queuedMessages, editingQueueIndex } = get();
       const nextMessage = queuedMessages[0];
       if (!nextMessage) return;
 
       // Adjust editing index since we're removing index 0
-      let newEditingIndex = get().editingQueueIndex;
+      let newEditingIndex = editingQueueIndex;
       if (newEditingIndex != null) {
         if (newEditingIndex === 0) {
           newEditingIndex = null;
@@ -3439,17 +4043,102 @@ export const createAppStore = (props: AppStoreProps) => {
           newEditingIndex = newEditingIndex - 1;
         }
       }
-
-      // Clear commandInputValue if we just exited editing mode
-      const wasEditing = get().editingQueueIndex != null;
-      const stoppedEditing = wasEditing && newEditingIndex == null;
+      const stoppedEditing =
+        editingQueueIndex != null && newEditingIndex == null;
 
       set((state) => ({
         queuedMessages: state.queuedMessages.slice(1),
         editingQueueIndex: newEditingIndex,
         commandInputValue: stoppedEditing ? '' : state.commandInputValue,
       }));
-
+      // Lite mode queues known slash commands so they fire at turn-end
+      // (handleUserInput's queue branch). Dispatch them via handleUserInput
+      // so slash commands like /tui actually run rather than getting sent
+      // to the agent as a chat message. Mode-check is on `nextMessage`
+      // shape (slash + known) rather than current uiMode — a queued /lite
+      // following a queued /tui must still dispatch as a slash command
+      // even though the swap put us in TUI mode mid-drain.
+      const isSlash = nextMessage.startsWith('/');
+      if (
+        isSlash &&
+        isKnownSlashCommandToken(nextMessage, get().slashCommands)
+      ) {
+        // Emit a scrollback marker so users have a record that a queued
+        // slash command ran. Most painful for picker-opening commands
+        // (/model, /agent, /effort, /theme, /chat): if the user dismisses
+        // the picker with Esc, no announcement lands and scrollback
+        // contains no evidence the queued command fired at all. The row
+        // is dim-styled so it reads as a turn-boundary marker; lite
+        // renders it inline in scrollback, modern TUI surfaces it in the
+        // conversation view — both are useful.
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: crypto.randomUUID(),
+              role: MessageRole.System,
+              content: chalk.dim(`[queue] ${nextMessage}`),
+              success: true,
+            },
+          ],
+        }));
+        // Snapshot the user's current prompt buffer before dispatching the
+        // queued slash command. handleUserInput's main path clears
+        // `commandInputValue` before dispatching — fine when the user just
+        // hit enter, but during a queue drain the user may have typed new
+        // text after queueing the command. Without the snapshot, that mid-
+        // typed text disappears the moment the drain fires (P438912313).
+        //
+        // Three guards on the restore:
+        //   1. `userTypedExtra` — the snapshot has to differ from the
+        //      queued command itself; otherwise we'd put the very command
+        //      we just dispatched back in the input.
+        //   2. `userTypedDuringDispatch` — handleUserInput is async; for
+        //      RPC-bound commands the user can type into the cleared
+        //      buffer during the await. Restoring the pre-dispatch
+        //      snapshot in that window would CLOBBER the new typing.
+        //   3. Picker open vs. closed — when activeCommand is non-null
+        //      after the await, stash the snapshot in `queuedInputRestore`
+        //      and let LiteLayout's effect apply it on the picker's close
+        //      transition. Inline restore in that case would be invisible
+        //      while the picker is up (PromptInput renders the command
+        //      name) and gets clobbered by clearCommandInput on dismiss.
+        const commandSnapshot = get().commandInputValue;
+        const inputSnapshot = get().input;
+        const userTypedExtra = commandSnapshot.trim() !== nextMessage.trim();
+        set({ dispatchingMessage: nextMessage });
+        try {
+          await get().handleUserInput(nextMessage);
+        } finally {
+          set({ dispatchingMessage: null });
+        }
+        if (userTypedExtra) {
+          const userTypedDuringDispatch = !!get().commandInputValue.trim();
+          if (!userTypedDuringDispatch) {
+            if (get().activeCommand != null) {
+              set({
+                queuedInputRestore: {
+                  commandInputValue: commandSnapshot,
+                  input: inputSnapshot,
+                },
+              });
+            } else {
+              set({
+                commandInputValue: commandSnapshot,
+                input: inputSnapshot,
+              });
+            }
+          }
+        }
+        // Slash commands that don't trigger sendMessage (e.g. mode swaps,
+        // /clear, panel toggles) leave isProcessing false — the next
+        // queued item won't drain on its own. Re-enter processQueue
+        // so the rest of the queue keeps draining in FIFO order.
+        if (!get().isProcessing) {
+          await get().processQueue();
+        }
+        return;
+      }
       await get().sendMessage(nextMessage);
     },
 
@@ -3463,86 +4152,72 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     removeQueuedMessage: (index: number) => {
-      const { queuedMessages, editingQueueIndex } = get();
-      if (index < 0 || index >= queuedMessages.length) return;
-
-      let newEditingIndex = editingQueueIndex;
-      if (newEditingIndex != null) {
-        if (newEditingIndex === index) {
-          newEditingIndex = null;
-        } else if (newEditingIndex > index) {
-          newEditingIndex = newEditingIndex - 1;
+      set((state) => {
+        const newMessages = state.queuedMessages.filter((_, i) => i !== index);
+        // Adjust editing index: clear if the edited item was removed, shift down
+        // if an earlier item was removed
+        let newEditingIndex = state.editingQueueIndex;
+        if (newEditingIndex != null) {
+          if (newEditingIndex === index) {
+            newEditingIndex = null;
+          } else if (newEditingIndex > index) {
+            newEditingIndex = newEditingIndex - 1;
+          }
         }
-      }
-
-      // Clear commandInputValue if we just exited editing mode
-      const wasEditing = editingQueueIndex != null;
-      const stoppedEditing = wasEditing && newEditingIndex == null;
-
-      set((state) => ({
-        queuedMessages: queuedMessages.filter((_, i) => i !== index),
-        editingQueueIndex: newEditingIndex,
-        commandInputValue: stoppedEditing ? '' : state.commandInputValue,
-      }));
+        // Clear the input field if we just exited editing mode
+        const wasEditing = state.editingQueueIndex != null;
+        const stoppedEditing = wasEditing && newEditingIndex == null;
+        return {
+          queuedMessages: newMessages,
+          editingQueueIndex: newEditingIndex,
+          commandInputValue: stoppedEditing ? '' : state.commandInputValue,
+        };
+      });
     },
 
     replaceQueuedMessage: (index: number, content: string) => {
-      const { queuedMessages } = get();
-      if (index < 0 || index >= queuedMessages.length) {
-        set({ editingQueueIndex: null });
-        return;
-      }
-      const trimmed = content.trim();
-      if (!trimmed) return;
-
-      set({
-        queuedMessages: queuedMessages.map((msg, i) =>
-          i === index ? trimmed : msg
-        ),
-        editingQueueIndex: null,
+      set((state) => {
+        if (index < 0 || index >= state.queuedMessages.length) {
+          return { editingQueueIndex: null };
+        }
+        const updated = [...state.queuedMessages];
+        updated[index] = content;
+        return { queuedMessages: updated, editingQueueIndex: null };
       });
     },
 
     startEditingQueue: (index: number) => {
-      const { queuedMessages } = get();
-      if (index < 0 || index >= queuedMessages.length) return;
-      // Load the message text into commandInputValue so PromptInput picks it up
-      set({
-        editingQueueIndex: index,
-        commandInputValue: queuedMessages[index],
-      });
+      const msg = get().queuedMessages[index];
+      if (msg == null) return;
+      // Load the message text into the command input so PromptInput picks it up
+      set({ editingQueueIndex: index, commandInputValue: msg });
     },
 
     cancelEditingQueue: () => {
       set({ editingQueueIndex: null, commandInputValue: '' });
     },
 
-    clearSteerMessage: () => {
-      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
-      if (pendingSteerContent == null) return;
+    setEditingQueueIndex: (index: number | null) => {
+      set({ editingQueueIndex: index });
+    },
 
-      // Optimistically clear locally. The backend `SteeringCleared`
-      // notification (if we made a backend call) will reconfirm. If the
-      // clear request fails we'll re-receive a `SteeringQueued` snapshot
-      // that restores the display.
-      set({ pendingSteerContent: null });
-
-      // Pre-init clear is local-only — there's no backend queue to sync
-      // with until init dispatches the buffered content as a fresh prompt
-      // (see index.tsx init path). A session-live queue still needs the
-      // explicit `_session/steer/clear` round-trip to keep the backend in
-      // sync.
-      const hasBackendQueue = isInitialized && sessionId != null;
-      if (hasBackendQueue) {
-        kiro.clearSteering(sessionId).catch((err) => {
-          logger.error('clearSteerMessage failed', err);
-          get().showTransientAlert({
-            message: 'Failed to clear queued message',
-            status: 'error',
-            autoHideMs: 3000,
-          });
-        });
-      }
+    applyQueuedInputRestore: () => {
+      const restore = get().queuedInputRestore;
+      if (!restore) return;
+      // Single set so the input buffer (lower-level lines/cursor) and
+      // commandInputValue (PromptInput's syncToStore target) land in the
+      // same render — otherwise PromptInput's commandInputValue effect
+      // could fire mid-restore against a half-applied state and resync
+      // segments to the snapshot value before lines is restored, leaving
+      // a transient row where the cursor sits at column 0 of a segment
+      // that says the right text. The matched-pair set keeps the
+      // visible row, the cursor column, and the segments stack
+      // consistent across the single render.
+      set({
+        commandInputValue: restore.commandInputValue,
+        input: restore.input,
+        queuedInputRestore: null,
+      });
     },
 
     // Input actions
@@ -3704,16 +4379,48 @@ export const createAppStore = (props: AppStoreProps) => {
     setMode: (mode) => {
       // The artifact-generation card is tied to the spec workflow.
       // Clear it on any mode change so the user doesn't see stale
-      // generation state after switching to the default agent (or
-      // away from spec mode in general). The open artifact-view
-      // panel is left alone — the user explicitly opened it and
-      // dismisses with Q.
+      // generation state after switching to vibe mode (or away from
+      // spec mode in general). The open artifact-view panel is left
+      // alone — the user explicitly opened it and dismisses with Q.
       set((state) =>
         state.artifactGenerating === null
           ? { mode }
           : { mode, artifactGenerating: null }
       );
     },
+    setUiMode: (uiMode: 'tui' | 'lite') => {
+      // Both directions CLEAR scrollback and re-render the full conversation
+      // in the destination mode's form. Symmetric: the user sees their entire
+      // session styled consistently for whichever mode they're in, with the
+      // current verbosity and theme applied uniformly. No half-and-half
+      // (some turns in TUI Card chrome, others with lite `You:`/`<agent>:`
+      // headers).
+      //
+      // Mechanism: bump liteScrollbackClearToken. LiteLayout and
+      // ConversationView both subscribe to it; on bump each wipes its
+      // module-level singletons, writes \x1b[3J\x1b[H\x1b[2J (twinki's
+      // stdout interceptor catches that and drops accumulatedStaticOutput
+      // too), and resets twinki's monotonic cursor. The destination
+      // renderer then paints from messages[] from scratch.
+      //
+      // skipBefore is reset to 0 in both directions so the destination
+      // renderer paints every message in the array (the cap on resume is
+      // re-applied by loadSession after replay if needed).
+      //
+      // Same-mode noop: dispatching setUiMode('lite') while already in
+      // lite must NOT bump the clear token — that would wipe the user's
+      // scrollback for a no-op call (e.g., a stale dispatch).
+      set((state) => {
+        if (state.uiMode === uiMode) return state;
+        return {
+          uiMode,
+          liteStaticSkipBefore: 0,
+          liteScrollbackClearToken: state.liteScrollbackClearToken + 1,
+        };
+      });
+    },
+    setLiteStaticSkipBefore: (idx: number) =>
+      set({ liteStaticSkipBefore: Math.max(0, idx) }),
 
     addSubagentSession: (info) => {
       set((state) => {
@@ -3771,7 +4478,34 @@ export const createAppStore = (props: AppStoreProps) => {
           }
         }
         newSessions.set(session.id, session);
-        if (staleIds.length === 0) return { sessions: newSessions };
+        // Backfill: when a stage's first tool call lands BEFORE the
+        // subagent_list_update for that session, the resolver in ToolCall
+        // stamped the message with the raw sessionId as a placeholder name
+        // (see app-store.ts:2192). Now that we have the real session →
+        // name mapping, rewrite those rows so the lite render walk finds
+        // them under the human-readable stage name and the final block
+        // surfaces every stage's summary.
+        const sessionName = session.name;
+        const placeholderId = session.id;
+        const needsBackfill =
+          sessionName &&
+          sessionName !== placeholderId &&
+          state.messages.some(
+            (m) =>
+              m.role === MessageRole.ToolUse && m.agentName === placeholderId
+          );
+        const backfilledMessages = needsBackfill
+          ? state.messages.map((m) =>
+              m.role === MessageRole.ToolUse && m.agentName === placeholderId
+                ? { ...m, agentName: sessionName }
+                : m
+            )
+          : state.messages;
+        if (staleIds.length === 0) {
+          return needsBackfill
+            ? { sessions: newSessions, messages: backfilledMessages }
+            : { sessions: newSessions };
+        }
         // Also clear stale messages, event buffers, and inbox messages
         const staleNames = new Set(
           staleIds.map((id) => state.sessions.get(id)?.name).filter(Boolean)
@@ -3786,7 +4520,7 @@ export const createAppStore = (props: AppStoreProps) => {
           sessions: newSessions,
           sessionMessages: newMessages,
           sessionEventBuffer: newBuffer,
-          messages: state.messages.filter(
+          messages: backfilledMessages.filter(
             (msg) =>
               msg.role !== MessageRole.ToolUse ||
               !msg.agentName ||
@@ -3978,42 +4712,26 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setLoadingMessage: (message) => {
+      const prev = get().loadingMessage;
       set({ loadingMessage: message });
+      // The "loading window" (e.g. /agent swap, /chat resume, /<cmd> options
+      // fetch) accepts queued slash commands via handleUserInput while it's
+      // open — but no other path drains the queue when it closes. Without
+      // this drain, anything the user queued during the swap stays stuck
+      // until the next sendMessage/cancelMessage cycle. Fire-and-forget the
+      // drain on the close transition so the queued command runs immediately
+      // after the swap settles. processQueue() no-ops if isProcessing is
+      // still true, so this is safe even when an agent stream is interleaved
+      // with the loading window.
+      if (prev != null && message == null) {
+        void get().processQueue();
+      }
     },
 
     // Context usage actions
     setContextUsage: (percent) => {
-      set((state) => {
-        const lastUserIdx = state.messages.findLastIndex(
-          (m) => m.role === MessageRole.User
-        );
-        if (lastUserIdx >= 0) {
-          const msg = state.messages[lastUserIdx]!;
-          if (msg.role === MessageRole.User) {
-            const messages = [...state.messages];
-            messages[lastUserIdx] = { ...msg, contextPercent: percent };
-            return { contextUsagePercent: percent, messages };
-          }
-        }
-        return { contextUsagePercent: percent };
-      });
-    },
-
-    setKasMessageId: (kasMessageId) => {
-      set((state) => {
-        const lastUserIdx = state.messages.findLastIndex(
-          (m) => m.role === MessageRole.User
-        );
-        if (lastUserIdx >= 0) {
-          const msg = state.messages[lastUserIdx]!;
-          if (msg.role === MessageRole.User) {
-            const messages = [...state.messages];
-            messages[lastUserIdx] = { ...msg, kasMessageId };
-            return { messages };
-          }
-        }
-        return {};
-      });
+      logger.debug('[context-usage] setContextUsage called, percent=', percent);
+      set({ contextUsagePercent: percent });
     },
 
     setLastTurnTokens: (tokens) => {
@@ -4100,13 +4818,40 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ settingsReturnOnEscape: value });
     },
 
+    setVerboseReturnOnEscape: (route) => {
+      set({ verboseReturnOnEscape: route });
+    },
+
+    setThemeReturnOnEscape: (route) => {
+      set({ themeReturnOnEscape: route });
+    },
+
     /**
      * Re-open the top-level /settings panel. Used by ESC handlers when a
      * /settings-derived overlay is dismissed: we go back one level rather
      * than close everything.
      */
     reopenSettingsMenu: () => {
-      set({ showSettingsPanel: true });
+      // Lite presents /settings as a command-menu (it carries lite-only
+      // entries such as verbosity that main's settings panel doesn't have),
+      // while the modern TUI uses main's showSettingsPanel. Branch so an
+      // ESC-back from a /settings-derived sub-overlay returns to the surface
+      // the user actually opened in each mode.
+      if (get().uiMode === 'lite') {
+        const settingsCmd = get().slashCommands.find(
+          (c) => c.name === '/settings'
+        );
+        if (!settingsCmd) return;
+        // Pass uiMode so lite-only entries (e.g. verbosity) match the
+        // visibility they had at first open — without this, ESC-back from a
+        // sub-panel could re-render the settings menu with a different row
+        // count than the user originally saw.
+        set({
+          activeCommand: buildSettingsActiveCommand(settingsCmd, get().uiMode),
+        });
+      } else {
+        set({ showSettingsPanel: true });
+      }
     },
 
     setShowKnowledgePanel: (show, entries = [], status) => {
@@ -4397,6 +5142,10 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ _autoPreviewGetter: getter });
     },
 
+    setThemePreview: (preview) => {
+      set({ themePreview: preview });
+    },
+
     setPendingFileAttachment: (path, triggerPosition = 0) => {
       set({ pendingFileAttachment: path ? { path, triggerPosition } : null });
     },
@@ -4447,32 +5196,10 @@ export const createAppStore = (props: AppStoreProps) => {
     toggleActivityTray: () => {
       set((state) => ({
         activityTrayExpanded: !state.activityTrayExpanded,
-        // Clear editing state when collapsing
-        editingQueueIndex: !state.activityTrayExpanded
-          ? state.editingQueueIndex
-          : null,
+        editingQueueIndex: state.activityTrayExpanded
+          ? null
+          : state.editingQueueIndex,
       }));
-    },
-
-    // Dual-mode interrupt behavior toggle
-    toggleInterruptMode: () => {
-      const switchingToQueue =
-        get().activeInterruptMode === InterruptMode.STEER;
-      const newMode = switchingToQueue
-        ? InterruptMode.QUEUE
-        : InterruptMode.STEER;
-      set({ activeInterruptMode: newMode });
-      get().showTransientAlert({
-        message: switchingToQueue
-          ? 'Switched to Queue mode'
-          : 'Switched to Steer mode',
-        status: 'info',
-        autoHideMs: 3000,
-      });
-    },
-
-    setActiveInterruptMode: (mode: InterruptMode) => {
-      set({ activeInterruptMode: mode });
     },
 
     setAnnouncement: (msg) => {
@@ -4489,6 +5216,26 @@ export const createAppStore = (props: AppStoreProps) => {
 
     confirmTrustAllTools: () => {
       set({ trustAllToolsConfirmed: true });
+    },
+
+    confirmFirstLaunchUiMode: (mode: 'tui' | 'lite') => {
+      // Same dual-write the /settings → display selector does — persist to
+      // cli.json synchronously (so the next session can read it before ACP
+      // is up) and fire-and-forget through ACP for the cross-process locked
+      // write. Don't fail the gate if either write throws; the user has
+      // told us their preference and the gate must clear regardless.
+      try {
+        const settings = readCliSettings();
+        settings[Settings.CHAT_UI_MODE] = mode;
+        writeCliSettings(settings);
+      } catch {
+        /* keep going — UI mode for this session still works in-memory */
+      }
+      const kiro = get().kiro;
+      if (kiro) {
+        kiro.setSetting(Settings.CHAT_UI_MODE, mode).catch(() => {});
+      }
+      set({ uiMode: mode, firstLaunchUiModeRequested: false });
     },
 
     recordCompletedTurn: () => {
@@ -4516,7 +5263,6 @@ export const createAppStore = (props: AppStoreProps) => {
         state.transientAlert ||
         state.surveyPrompt ||
         state.queuedMessages.length > 0 ||
-        state.pendingSteerContent != null ||
         state.tasks.some((t) => t.status === 'pending')
       ) {
         return;
@@ -4702,8 +5448,11 @@ export const createAppStore = (props: AppStoreProps) => {
       const state = get();
       state.resetExitSequence();
 
-      // Queue if processing or not yet initialized — but always allow /quit and /exit through.
-      if (state.isProcessing || !state.isInitialized) {
+      // Queue if processing, loading a session, or not yet initialized — but
+      // always allow /quit and /exit through. loadingMessage covers the
+      // /chat <id> resume window in lite: the input row stays visible so the
+      // user can keep typing, but the agent isn't ready to receive input yet.
+      if (state.isProcessing || !state.isInitialized || state.loadingMessage) {
         const lower = trimmed.toLowerCase();
         // Collapse internal whitespace so e.g. "/goal  clear" matches "/goal clear".
         const normalized = lower.replace(/\s+/g, ' ');
@@ -4757,14 +5506,47 @@ export const createAppStore = (props: AppStoreProps) => {
         // TODO: support queuing non-interactive slash commands (e.g. /clear, /compact)
         //       that don't require UI interaction to complete
         if (trimmed.startsWith('/')) {
-          state.showTransientAlert({
-            message:
-              "Slash commands can't be queued — wait for the current task to finish",
-            status: 'warning',
-            autoHideMs: 4000,
-          });
-          state.clearInput();
-          return;
+          // Lite mode queues slash commands so they fire at turn-end. Unknown
+          // tokens (e.g. "/foozle", pasted "/some/file/path") fall through to
+          // chat-message queueing — the lite contract is "first token must
+          // exactly match a known command, otherwise it's a message".
+          const allCommands = state.slashCommands;
+          const isLite = state.uiMode === 'lite';
+          const isKnown = isKnownSlashCommandToken(trimmed, allCommands);
+          if (isLite && isKnown) {
+            // The queue strip above the divider already shows the new entry
+            // (and "(N queued)") the moment queueMessage returns — a transient
+            // alert echoing the same name reads as a duplicate "queued" row.
+            // queueMessage's slash-dedup path still surfaces its own "already
+            // queued" alert when it rejects a duplicate, so the user gets
+            // feedback in the only case where the strip wouldn't have changed.
+            state.queueMessage(trimmed);
+            // clearInput resets only the lower-level state.input buffer
+            // (lines, cursor). PromptInput renders from `commandInputValue`,
+            // which is a separate slot that PromptInput's syncToStore
+            // writes to on every keystroke. Without clearCommandInput the
+            // visible row keeps showing the just-queued command — and the
+            // user's next keystroke appends to it: typing `/model` again
+            // produces `/model/model`, which fails isKnownSlashCommandToken
+            // and falls through to chat-message queueing below, defeating
+            // the dedup check (which keys on exact `/model`). The two
+            // clears together mirror what InlineLayout does at its own
+            // submit site (clearInput() + clearCommandInput()) and what
+            // the main-path `set` block below does inline.
+            state.clearInput();
+            state.clearCommandInput();
+            return;
+          }
+          if (!isLite) {
+            state.showTransientAlert({
+              message:
+                "Slash commands can't be queued — wait for the current task to finish",
+              status: 'warning',
+              autoHideMs: 4000,
+            });
+            return;
+          }
+          // Lite + unknown token: fall through to chat-message queueing below.
         }
         if (trimmed.startsWith('!')) {
           state.showTransientAlert({
@@ -4773,11 +5555,15 @@ export const createAppStore = (props: AppStoreProps) => {
             status: 'warning',
             autoHideMs: 4000,
           });
-          state.clearInput();
           return;
         }
         state.queueMessage(trimmed);
+        // Same incomplete-clear reason as the slash branch above:
+        // clearInput leaves commandInputValue populated, so the visible
+        // input keeps the just-queued chat message and the user's next
+        // keystroke appends to it.
         state.clearInput();
+        state.clearCommandInput();
         return;
       }
 
@@ -4838,6 +5624,38 @@ export const createAppStore = (props: AppStoreProps) => {
       if (trimmed.startsWith('/')) {
         CommandHistory.getInstance().add(trimmed);
         const ctx: CommandContext = buildCommandContext(state, set, get);
+
+        // Lite has no NotificationBar mounted; route only failure alerts to
+        // scrollback so the user sees them. Successes are dropped (state
+        // changes worth showing should call ctx.announceSystem instead).
+        //
+        // Only clear activeCommand on warn/error — see the matching block in
+        // executeCommandWithArg above for why unconditional clearing breaks
+        // the queue-drain flow.
+        if (state.uiMode === 'lite') {
+          ctx.showAlert = (message, status) => {
+            if (status === 'error' || status === 'warning') {
+              ctx.addSystemMessage(message, false);
+              set({ activeCommand: null });
+            }
+          };
+        }
+
+        // Lite mode: only dispatch when the first whitespace-separated token
+        // is an EXACT command-registry match. Typos like "/foozle" and pasted
+        // paths like "/some/file/path" go straight to chat. Subcommand errors
+        // (e.g. "/verbose foozle") still flow through the dispatcher so the
+        // command's own handler can show the proper error.
+        if (state.uiMode === 'lite') {
+          const allCommands = state.slashCommands;
+          if (isKnownSlashCommandToken(trimmed, allCommands)) {
+            await executeCommand(trimmed, ctx);
+            return;
+          }
+          await state.sendMessage(trimmed, undefined, trimmed);
+          return;
+        }
+
         const handled = await executeCommand(trimmed, ctx);
         if (handled) return;
         // Not a recognized command — could be a file path like /Users/...
@@ -4849,6 +5667,7 @@ export const createAppStore = (props: AppStoreProps) => {
           afterSlash.length > 0 &&
           afterSlash[0] !== '/' &&
           afterSlash[0] !== ' ';
+
         const messageText = isFilePath ? afterSlash : trimmed;
         await state.sendMessage(messageText, undefined, trimmed);
         return;
@@ -4955,19 +5774,46 @@ export const createAppStore = (props: AppStoreProps) => {
           try {
             const result = await promise;
 
-            // Finalize
-            const finalContent = accumulated || '(no output)';
+            // Finalize. Three cases:
+            //  - buffer non-empty, exit 0  → keep buffer as-is
+            //  - buffer non-empty, exit ≠0 → buffer + "\n\n[exit code: N]"
+            //  - buffer empty             → leave content '' and let
+            //    the lite-mode empty-Model skip drop the row entirely.
+            //    Previously inserted '(no output)' here, but that flipped
+            //    the message from ineligible→eligible AFTER cancelMessage
+            //    had already set isProcessing=false and the cancelArmedRef
+            //    effect had appended a 'user interrupted' System row —
+            //    causing the lite static-flush delta walk to push the
+            //    System row a second time and trigger React's
+            //    "Encountered two children with the same key" warning
+            //    forever (the duplicate id stays in the append-only
+            //    static items array). For empty-output shell commands
+            //    there's nothing useful to show in scrollback anyway;
+            //    if it failed, the exit-code suffix below provides the
+            //    minimum signal the user needs.
             const exitSuffix =
               result.exitCode !== 0
                 ? `\n\n[exit code: ${result.exitCode}]`
                 : '';
-            set((state) => ({
-              messages: state.messages.map((msg) =>
-                msg.id === outputMsgId
-                  ? { ...msg, content: finalContent + exitSuffix }
-                  : msg
-              ),
-            }));
+            const finalContent = accumulated
+              ? accumulated + exitSuffix
+              : exitSuffix.trimStart();
+            // Only push the content update when there's something to
+            // commit — `accumulated || exitSuffix` covers all the cases
+            // where the row should land in scrollback. Empty buffer +
+            // exit 0 → finalContent is '', and we skip the setState so
+            // the row stays empty and gets dropped by the empty-Model
+            // filter. Avoids re-introducing the same race the comment
+            // above describes.
+            if (finalContent) {
+              set((state) => ({
+                messages: state.messages.map((msg) =>
+                  msg.id === outputMsgId
+                    ? { ...msg, content: finalContent }
+                    : msg
+                ),
+              }));
+            }
           } finally {
             set({
               isProcessing: false,
@@ -4976,7 +5822,6 @@ export const createAppStore = (props: AppStoreProps) => {
               currentAbortController: null,
             });
           }
-          // Shell command finished — drain any queued messages.
           await get().processQueue();
         }
         return;

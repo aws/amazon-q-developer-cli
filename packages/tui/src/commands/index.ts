@@ -6,6 +6,7 @@ import { parseCommand } from '../types/commands.js';
 import type { AvailableCommand } from '../types/commands.js';
 import { dispatch } from './dispatcher.js';
 import type { CommandContext } from './types.js';
+import type { SlashCommand } from '../stores/app-store.js';
 
 export type { CommandContext } from './types.js';
 
@@ -23,6 +24,22 @@ function findCommand<T extends AvailableCommand>(
   // Prefix match - sort alphabetically so /clear < /compact < /context
   const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
   return sorted.find((c) => c.name.toLowerCase().startsWith(`/${lower}`));
+}
+
+/**
+ * Whether the input's first whitespace-separated token names a known slash
+ * command (exact match, no prefix). Used by lite mode to decide between
+ * "dispatch a command" and "send as a chat message" — the latter is the
+ * lite contract for typos like /foozle and pasted paths like /some/path.
+ */
+export function isKnownSlashCommandToken(
+  input: string,
+  commands: SlashCommand[]
+): boolean {
+  const { isCommand, name } = parseCommand(input);
+  if (!isCommand) return false;
+  const lower = name.toLowerCase();
+  return commands.some((c) => c.name.toLowerCase() === `/${lower}`);
 }
 
 /**

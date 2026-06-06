@@ -13,7 +13,12 @@ import type {
   CommandResult,
   TuiCommand,
 } from './commands';
-import type { ModeChangedNotification } from './generated/chat-cli';
+import type {
+  ModeChangedNotification,
+  UiModeChangedNotification,
+  UiModeDefaultChangedNotification,
+  UiModeSessionStartNotification,
+} from './generated/chat-cli';
 
 // ── KAS /context wire shapes ──────────────────────────────────────────
 // TODO: Replace these inline definitions with the typed `ContextParams`
@@ -301,6 +306,27 @@ export interface SessionClient {
    * Fire-and-forget — implementations should not throw.
    */
   sendModeChanged?(payload: ModeChangedNotification): void;
+
+  /**
+   * Sends a `uiModeSessionStart` telemetry event after the TUI resolves its UI mode at
+   * startup. Fire-and-forget — implementations should not throw.
+   */
+  sendUiModeSessionStart?(payload: UiModeSessionStartNotification): void;
+
+  /**
+   * Sends a `uiModeChanged` telemetry event when the user toggles between lite and tui
+   * mid-session. Caller is responsible for skipping no-op changes.
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendUiModeChanged?(payload: UiModeChangedNotification): void;
+
+  /**
+   * Sends a `uiModeDefaultChanged` telemetry event when /settings → display
+   * writes a new value to the persisted chat.ui.mode setting. Caller is
+   * responsible for skipping no-ops.
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendUiModeDefaultChanged?(payload: UiModeDefaultChangedNotification): void;
 
   // ── KAS /context ext methods ───────────────────────────────────────
   // Each method maps 1:1 to a `_kiro/session/context` call with the

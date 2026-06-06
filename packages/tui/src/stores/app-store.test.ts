@@ -88,10 +88,12 @@ describe('Streaming content flush', () => {
     return store;
   }
 
-  it('flushContentToStore updates last model message in place without double spread', async () => {
+  it('flushContentToStore appends a placeholder Model row and writes live text to streamingContent', async () => {
     const store = createStore();
 
-    // Seed a user message and a model message
+    // Seed a user message and a prior model message (from an earlier turn).
+    // The new turn appends ANOTHER Model row (the streaming placeholder) —
+    // it does not edit the prior one in place; that one already committed.
     store.setState({
       messages: [
         { id: 'u1', role: MessageRole.User, content: 'hello' },
@@ -101,25 +103,31 @@ describe('Streaming content flush', () => {
 
     const handler = store.getState().createStreamEventHandler();
 
-    // Send a content event — this buffers the text
     handler!({
       type: AgentEventType.Content,
-      id: 'm1',
+      id: 'm-new',
       content: { type: ContentType.Text, text: 'updated response' },
     });
 
-    // Manually trigger the batched flush by advancing the timer
-    // The flush is scheduled via setTimeout(fn, 16), so we wait for it
+    // Batched flush is scheduled via setTimeout(fn, 16) — wait past it.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const messages = store.getState().messages;
-    expect(messages).toHaveLength(2);
-    expect(messages[1]?.content).toBe('updated response');
-    // The user message should be the exact same object reference (not copied)
-    expect(messages[0]?.id).toBe('u1');
+    // Three rows now: user, prior model, streaming placeholder. The live
+    // text lives in `streamingContent` AND is mirrored onto the placeholder
+    // row's content field so external readers (transcript export, integ
+    // tests reading the messages snapshot) stay in sync mid-stream. The
+    // prior model row stays untouched (same id, same content).
+    const state = store.getState();
+    expect(state.messages).toHaveLength(3);
+    expect(state.messages[0]?.id).toBe('u1');
+    expect(state.messages[1]?.id).toBe('m1');
+    expect(state.messages[1]?.content).toBe('initial');
+    expect(state.messages[2]?.role).toBe(MessageRole.Model);
+    expect(state.messages[2]?.content).toBe('updated response');
+    expect(state.streamingContent).toBe('updated response');
   });
 
-  it('flushContentToStore appends new model message when last is not model', async () => {
+  it('flushContentToStore appends placeholder Model row when last is not model', async () => {
     const store = createStore();
 
     store.setState({
@@ -136,10 +144,14 @@ describe('Streaming content flush', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const messages = store.getState().messages;
-    expect(messages).toHaveLength(2);
-    expect(messages[1]?.role).toBe(MessageRole.Model);
-    expect(messages[1]?.content).toBe('first chunk');
+    // Live streaming text lands in `streamingContent` AND is mirrored onto
+    // the placeholder Model row's content so external readers can see
+    // streamed text mid-stream. The row is committed at turn end.
+    const state = store.getState();
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]?.role).toBe(MessageRole.Model);
+    expect(state.messages[1]?.content).toBe('first chunk');
+    expect(state.streamingContent).toBe('first chunk');
   });
 
   it('commitBufferedContent returns empty when no model message exists', () => {
@@ -698,6 +710,59 @@ describe('reopenSettingsMenu', () => {
 
     store.getState().reopenSettingsMenu();
 
+    // tui mode: reopenSettingsMenu opens main's SettingsPanel overlay, not
+    // the lite command-menu, so activeCommand stays null.
+    expect(store.getState().activeCommand).toBeNull();
+  });
+
+  it('opens the lite settings command-menu in lite mode', () => {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
+
+    store.getState().reopenSettingsMenu();
+
+    const meta = store.getState().activeCommand!.command.meta!;
+    expect(meta.inputType).toBe('selection');
+    expect(meta.searchable).toBe(false);
+  });
+
+  it('mirrors every registered subcommand as a menu option', async () => {
+    // Dynamic import so we read the same registry the action uses.
+    const { settingsSubcommands } =
+      await import('../commands/settings-subcommands.js');
+    const mockKiro = new Kiro();
+    // uiMode='lite' so the assertion sees every registered subcommand —
+    // reopenSettingsMenu filters lite-only entries (e.g. verbosity) out
+    // when uiMode is 'tui' (the store's default), and we want to verify
+    // the menu mirrors the full registry, not the tui-filtered subset.
+    const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
+
+    store.getState().reopenSettingsMenu();
+
+    const { options } = store.getState().activeCommand!;
+    // Top-level menu only shows subcommands without ':' (sub-options are nested)
+    const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
+    expect(options).toHaveLength(topLevel.length);
+    for (let i = 0; i < topLevel.length; i++) {
+      expect(options[i]!.value).toBe(topLevel[i]!.value);
+      expect(options[i]!.label).toBe(topLevel[i]!.label);
+    }
+  });
+
+  it('is a no-op when the /settings command is not registered (lite)', () => {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
+
+    // Remove /settings from slashCommands (e.g. in a stripped-down test harness).
+    store.setState({
+      slashCommands: store
+        .getState()
+        .slashCommands.filter((c) => c.name !== '/settings'),
+    });
+
+    store.getState().reopenSettingsMenu();
+
+    // Should gracefully do nothing rather than throw or set a bad activeCommand.
     expect(store.getState().activeCommand).toBeNull();
   });
 });

@@ -56,6 +56,9 @@ export function createMockCommandContext(
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
     sendModeChanged: mock(() => undefined),
     sendChatSlashCommandTelemetry: mock(() => undefined),
+    sendUiModeSessionStart: mock(() => undefined),
+    sendUiModeChanged: mock(() => undefined),
+    sendUiModeDefaultChanged: mock(() => undefined),
   };
 
   return {
@@ -67,6 +70,7 @@ export function createMockCommandContext(
     skills: opts.skills ?? [],
     steering: opts.steering ?? [],
     showAlert: spy('showAlert') as any,
+    announceSystem: spy('announceSystem') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
@@ -91,6 +95,8 @@ export function createMockCommandContext(
     setShowThemePanel: spy('setShowThemePanel') as any,
     setShowSettingsPanel: spy('setShowSettingsPanel') as any,
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
+    setVerboseReturnOnEscape: spy('setVerboseReturnOnEscape') as any,
+    setThemeReturnOnEscape: spy('setThemeReturnOnEscape') as any,
     setActiveInterruptMode: spy('setActiveInterruptMode') as any,
     settingsReturnOnEscape: opts.settingsReturnOnEscape ?? false,
     reopenSettingsMenu: spy('reopenSettingsMenu') as any,
@@ -99,6 +105,8 @@ export function createMockCommandContext(
     openArtifactView: spy('openArtifactView') as any,
     clearMessages: spy('clearMessages') as any,
     resetMessages: spy('resetMessages') as any,
+    markMessagesFromHistory: spy('markMessagesFromHistory') as any,
+    bumpLiteScrollbackClear: spy('bumpLiteScrollbackClear') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,
     createStreamEventHandler: spy('createStreamEventHandler') as any,
@@ -109,6 +117,26 @@ export function createMockCommandContext(
     sessions: new Map(),
     setMode: spy('setMode') as any,
     getMessages: mock(() => opts.messages ?? []) as any,
+    setUserColors: spy('setUserColors') as any,
+    setBaseTheme: spy('setBaseTheme') as any,
+    setThemePreview: spy('setThemePreview') as any,
+    getThemeDiffHex: mock(() => ({
+      added: {
+        background: { named: 'default' as const },
+        bar: { named: 'green' as const },
+        highlight: { named: 'default' as const },
+      },
+      removed: {
+        background: { named: 'default' as const },
+        bar: { named: 'red' as const },
+        highlight: { named: 'default' as const },
+      },
+    })) as any,
+    getAutoPreview: mock(() => '') as any,
+    setUiMode: spy('setUiMode') as any,
+    getUiMode: mock(() => 'tui') as any,
+    processQueue: mock(() => Promise.resolve()) as any,
+
     setVoiceStop: spy('setVoiceStop') as any,
     setVoiceCancel: spy('setVoiceCancel') as any,
     setVoiceLevel: spy('setVoiceLevel') as any,

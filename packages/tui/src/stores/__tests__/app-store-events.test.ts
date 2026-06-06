@@ -2,6 +2,7 @@
 // @ts-nocheck
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { AgentEventType, ContentType } from '../../types/agent-events';
+import { isInnerSubagentTool } from '../../components/layout/lite/static-flush';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
@@ -24,6 +25,59 @@ function makeStore() {
   store.setState({ isInitialized: true });
   return store;
 }
+
+describe('Stream event handler — ToolCall subagent stamping (Bug 1)', () => {
+  // Regression guard for the flush/spinner-stall bug: a subagent stage's
+  // tool call must be stamped with the STAGE agentName (so static-flush's
+  // isInnerSubagentTool hides it), not the main agent. The acp-client fix
+  // attaches the notification sessionId to the ToolCall event before
+  // broadcasting it to the main store; this test pins the store side of
+  // that contract — given a sessionId for a registered subagent session,
+  // the message's agentName resolves to the stage name and the tool is
+  // treated as an inner subagent tool.
+  it('stamps the stage name (inner) when the ToolCall carries a subagent sessionId', async () => {
+    const store = makeStore();
+    store.setState({ sessionId: 'main-session' });
+    store.getState().addSubagentSession({
+      sessionId: 'stage-session',
+      agentName: 'scan',
+      status: 'working',
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-sub',
+      name: 'grep',
+      args: { pattern: 'x' },
+      sessionId: 'stage-session',
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const msg = store.getState().messages.find((m: any) => m.id === 'tc-sub');
+    expect(msg).toBeDefined();
+    expect(msg!.agentName).toBe('scan');
+    expect(isInnerSubagentTool(msg as any, 'main-agent')).toBe(true);
+  });
+
+  it('stamps the main agent name (visible) when no sessionId is present', async () => {
+    const store = makeStore();
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'main-agent' },
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-main',
+      name: 'grep',
+      args: { pattern: 'x' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const msg = store.getState().messages.find((m: any) => m.id === 'tc-main');
+    expect(msg).toBeDefined();
+    expect(msg!.agentName).toBe('main-agent');
+    expect(isInnerSubagentTool(msg as any, 'main-agent')).toBe(false);
+  });
+});
 
 describe('Stream event handler — ToolCall', () => {
   it('adds a new tool call message', async () => {
@@ -96,6 +150,76 @@ describe('Stream event handler — ToolCall', () => {
         oldText: 'old',
       });
     }
+  });
+
+  it('captures __tool_use_purpose on the typed sibling field for edit-kind tools', async () => {
+    // The lite renderer reads `msg.purpose` to surface the model's "why"
+    // string in scrollback. The synthesis below rebuilds `content` from a
+    // fixed field list and drops `__tool_use_purpose` from the JSON, so
+    // without the typed sibling lite has no way to recover the field.
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    // Stream-style first chunk: empty args, no purpose yet.
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-purpose-1',
+      name: 'fs_write',
+      kind: 'edit',
+      args: {},
+    });
+    // Full tool_call event with rawInput including the model's purpose.
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-purpose-1',
+      name: 'fs_write',
+      kind: 'edit',
+      args: {
+        path: '/tmp/foo.ts',
+        content: 'hi',
+        __tool_use_purpose: 'hello',
+      },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const msg = store
+      .getState()
+      .messages.find((m: any) => m.id === 'tc-purpose-1');
+    expect(msg).toBeDefined();
+    expect(msg!.purpose).toBe('hello');
+    // Sanity: the synthesized content does NOT carry the purpose, so the
+    // typed field is the only surface that has it.
+    const parsed = JSON.parse(msg!.content);
+    expect(parsed.__tool_use_purpose).toBeUndefined();
+  });
+
+  it('preserves typed purpose across ToolCallFinished', async () => {
+    // ToolCallFinished previously rebuilt the message via an explicit
+    // field list and dropped `purpose`, wiping the lite scrollback's
+    // purple reasoning the moment Rust finished executing the tool.
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-finish-purpose',
+      name: 'fs_write',
+      kind: 'edit',
+      args: {
+        path: '/tmp/x.ts',
+        content: 'hi',
+        __tool_use_purpose: 'hello',
+      },
+    });
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tc-finish-purpose',
+      result: { status: 'success', output: 'ok' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const msg = store
+      .getState()
+      .messages.find((m: any) => m.id === 'tc-finish-purpose');
+    expect(msg).toBeDefined();
+    expect(msg!.isFinished).toBe(true);
+    expect(msg!.purpose).toBe('hello');
   });
 
   it('handles insert command detection via insertLine arg', async () => {
@@ -973,6 +1097,42 @@ describe('resetMessages', () => {
     store.getState().resetMessages();
     expect(store.getState().messages).toEqual([]);
   });
+
+  it('clears tasks and collapses the task tray (lite /chat new fix)', () => {
+    // Bug: starting a new chat from within a session left the prior turn's
+    // todo list in `tasks`, so LiteTaskTray kept rendering it and Ctrl+X
+    // (gated on tasks.length > 0) still toggled the stale tray.
+    const store = makeStore();
+    store.setState({
+      messages: [{ id: 'x', role: MessageRole.User, content: 'hi' }],
+      tasks: [
+        { id: '1', subject: 'Old task', status: 'pending' as const },
+        { id: '2', subject: 'Done', status: 'completed' as const },
+      ],
+      activityTrayExpanded: true,
+    });
+    store.getState().resetMessages();
+    expect(store.getState().tasks).toEqual([]);
+    expect(store.getState().activityTrayExpanded).toBe(false);
+  });
+
+  it('bumps liteScrollbackClearToken and resets the lite skip bookmark', () => {
+    // Locks in the rest of the atomic-reset contract documented above the
+    // resetMessages set() call so a future split (e.g. only clearing one
+    // half) trips this test. The bump is gated behind uiMode==='lite'
+    // (only lite mode tracks scrollback clear tokens), so set lite first.
+    const store = makeStore();
+    store.setState({ uiMode: 'lite' });
+    const startToken = store.getState().liteScrollbackClearToken;
+    store.setState({
+      liteStaticSkipBefore: 42,
+      liteWelcomeEmitted: true,
+    });
+    store.getState().resetMessages();
+    expect(store.getState().liteScrollbackClearToken).toBe(startToken + 1);
+    expect(store.getState().liteStaticSkipBefore).toBe(0);
+    expect(store.getState().liteWelcomeEmitted).toBe(false);
+  });
 });
 
 describe('setCurrentAgent', () => {
@@ -1068,6 +1228,46 @@ describe('Session management', () => {
     const store = makeStore();
     store.getState().pushSessionEvent('s1', { type: 'content', text: 'hi' });
     expect(store.getState().sessionEventBuffer['s1']).toHaveLength(1);
+  });
+
+  it('addSession backfills placeholder agentName once the session arrives', async () => {
+    // Reproduces the race where a stage's first tool call lands BEFORE the
+    // subagent_list_update for that session — the resolver in app-store
+    // stamps the message with the raw sessionId as a placeholder, then the
+    // backfill in addSession rewrites it to the human-readable stage name.
+    // Without the backfill, the lite render's subagentSummariesById walk
+    // misses that stage's summaries and the final block is missing the row.
+    const store = makeStore();
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'main' },
+    });
+    const handler = store.getState().createStreamEventHandler();
+    // Stage tool arrives before its session is registered → resolver stamps
+    // agentName = sessionId (the placeholder fallback).
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-1',
+      name: 'summary',
+      kind: 'other',
+      args: { taskResult: 'stage A done' },
+      sessionId: 'sub-session-uuid',
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const before = store.getState().messages.find((m: any) => m.id === 'tc-1');
+    expect(before?.agentName).toBe('sub-session-uuid');
+    // Now register the session — the backfill should rewrite the placeholder
+    // to the real stage name.
+    store.getState().addSession({
+      id: 'sub-session-uuid',
+      name: 'stage-a',
+      status: 'busy',
+      type: 'ephemeral',
+      created: new Date(),
+      lastActivity: new Date(),
+    } as any);
+    const after = store.getState().messages.find((m: any) => m.id === 'tc-1');
+    expect(after?.agentName).toBe('stage-a');
   });
 
   it('addSession clears terminated sessions when new active arrives', () => {

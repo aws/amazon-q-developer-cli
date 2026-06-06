@@ -316,7 +316,7 @@ export interface ConsentContext {
 
 export interface ApprovalRequestInfo {
   sessionId?: string;
-  toolCall: { toolCallId: string; title?: string };
+  toolCall: { toolCallId: string; title?: string; rawInput?: unknown };
   /**
    * The tool being approved, from `_meta.kiro.toolId`. Present for real tool
    * approvals; absent for `user_input` questions, which reuse the permission
@@ -353,6 +353,8 @@ export interface AgentContentEvent {
   type: AgentEventType.Content;
   id: string;
   content: ContentChunk;
+  /** True when this content is thinking/reasoning, not the final response */
+  _thinking?: boolean;
   meta?: { kiro?: KiroMeta };
 }
 
@@ -407,6 +409,11 @@ export interface CommandsUpdateEvent {
     name: string;
     description: string;
     meta?: CommandMeta;
+  }>;
+  mcpServers?: Array<{
+    name: string;
+    status: string;
+    toolCount: number;
   }>;
 }
 

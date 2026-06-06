@@ -32,6 +32,15 @@ export interface SettingsSubcommand {
   description: string;
   /** Dispatch logic for this subcommand */
   handle: (ctx: SettingsHandleContext) => void | Promise<void>;
+  /**
+   * Hide this entry from the /settings menu when the UI is not in lite
+   * mode. The entry stays in the registry — typing the full
+   * `/settings <value>` form still routes through `findSettingsSubcommand`
+   * — only the menu listing is affected. Used by lite-specific entries
+   * (e.g. verbosity) so the menu doesn't surface options that produce a
+   * lite-only error alert when selected from TUI mode.
+   */
+  liteOnly?: boolean;
 }
 
 /**
@@ -53,10 +62,34 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
   {
     value: 'display',
     label: 'display',
-    description: 'Control animations, ASCII art, and icons',
+    description:
+      'Default UI at startup, animations, ASCII art, icons, and thinking',
     handle: ({ ctx }) => {
       ctx.setSettingsReturnOnEscape(true);
       ctx.setShowDisplaySettingsPanel(true);
+    },
+  },
+  {
+    value: 'verbosity',
+    label: 'verbosity',
+    description:
+      'Tool args, reasoning, output filters, density (lite mode only)',
+    liteOnly: true,
+    handle: ({ ctx, settingsCommand, resolveEffect }) => {
+      ctx.setSettingsReturnOnEscape(true);
+
+      // Pass the /settings cmd as the dispatcher hint — the verbosityConfig
+      // handler resolves the canonical /verbosity SlashCommand from the
+      // registry internally, so the menu chip says /verbosity (matching
+      // direct entry) regardless of which value we hand it here. The shape
+      // we pass is only used as a fallback if /verbosity isn't registered
+      // (test-only). Mirrors the /settings theme delegation pattern below.
+      // Empty args opens the top-level density menu — same as bare
+      // `/verbosity`. ESC inside a verbosity submenu is governed by
+      // `verboseReturnOnEscape`; once the user ESCs out of the top-level
+      // verbosity menu, the `settingsReturnOnEscape` flag set above
+      // re-opens /settings.
+      resolveEffect('verbosityConfig')(null, ctx, settingsCommand, '');
     },
   },
   {
@@ -280,3 +313,41 @@ export function findSettingsSubcommand(
 function alertDurationFor(message: string): number {
   return message.length > 180 ? 10000 : 5000;
 }
+
+/**
+ * Build the `activeCommand` shape for the /settings top-level menu.
+ * Shared by showSettingsMenu (first open) and reopenSettingsMenu (Esc-back).
+ *
+ * `uiMode` filters lite-only entries (e.g. verbosity) out of the menu when
+ * the UI is in TUI mode — the entry's handler would just fire a "lite only"
+ * error alert, so surfacing the row is misleading. Pass `'lite'`/`'tui'` to
+ * gate explicitly; omit (or pass `undefined`) to show every entry, which is
+ * the legacy behavior used by callers that don't have a UI-mode signal yet.
+ */
+export function buildSettingsActiveCommand(
+  settingsCommand: AvailableCommand,
+  uiMode?: 'tui' | 'lite'
+): {
+  command: AvailableCommand;
+  options: Array<{ value: string; label: string; description: string }>;
+} {
+  return {
+    command: {
+      ...settingsCommand,
+      meta: {
+        ...settingsCommand.meta,
+        inputType: 'selection' as const,
+        searchable: false,
+      },
+    },
+    options: settingsSubcommands
+      .filter((s) => !s.value.includes(':'))
+      .filter((s) => !s.liteOnly || uiMode === 'lite' || uiMode === undefined)
+      .map((s) => ({
+        value: s.value,
+        label: s.label,
+        description: s.description,
+      })),
+  };
+}
+

@@ -293,7 +293,6 @@ describe('UI selectors', () => {
     expect(result).toHaveProperty('hasExpandableToolOutputs');
     expect(result).toHaveProperty('showContextBreakdown');
     expect(result).toHaveProperty('contextBreakdown');
-    expect(result).toHaveProperty('showTuiPanel');
     expect(result).toHaveProperty('showHelpPanel');
     expect(result).toHaveProperty('helpCommands');
     expect(result).toHaveProperty('showUsagePanel');
@@ -324,7 +323,6 @@ describe('UI selectors', () => {
     expect(typeof result.setHasExpandableToolOutputs).toBe('function');
     expect(typeof result.setShowContextBreakdown).toBe('function');
     expect(typeof result.setShowHelpPanel).toBe('function');
-    expect(typeof result.setShowTuiPanel).toBe('function');
     expect(typeof result.setShowUsagePanel).toBe('function');
     expect(typeof result.setShowMcpPanel).toBe('function');
     expect(typeof result.setShowToolsPanel).toBe('function');
