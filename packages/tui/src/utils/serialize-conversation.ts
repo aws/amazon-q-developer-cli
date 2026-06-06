@@ -38,9 +38,10 @@ export function serializeConversation(
 
 // Keep the original export for backward compatibility
 export function serializeConversationToMarkdown(
-  messages: SerializableMessage[]
+  messages: SerializableMessage[],
+  format: TranscriptFormat = 'markdown'
 ): string {
-  return serializeConversation(messages, 'markdown');
+  return serializeConversation(messages, format);
 }
 
 /**

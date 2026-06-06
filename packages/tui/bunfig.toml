@@ -3,6 +3,8 @@ root = "src"
 coverage = true
 coverageReporter = ["text", "lcov"]
 coverageSkipTestFiles = true
+# Concurrency caps live on the package.json `test*` scripts as `--parallel`
+# and `--max-concurrency` flags — Bun does not honor these as bunfig keys.
 
 # Coverage exclusions — keep in sync with coverage-config.json (source of truth).
 # Excluded categories:

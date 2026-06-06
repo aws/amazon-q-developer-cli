@@ -111,6 +111,12 @@ export class TestCase {
         KIRO_MOCK_ACP: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
+        // Default to TUI mode so the first-launch UI-mode picker never blocks
+        // boot. KIRO_LITE_ROLLOUT_ENABLED can leak in from the ambient env
+        // (node-pty inherits process.env); with no UI mode resolved that gate
+        // intercepts boot and tests time out waiting for the prompt. withLite()
+        // overrides this to 'lite' via extraEnv (spread last).
+        KIRO_UI_MODE: 'tui',
         // Default to the locally-resolved chat_cli (env -> CARGO_TARGET_DIR
         // -> repo target/debug). Tests that explicitly set
         // KIRO_CHAT_CLI_BIN via extraEnv (e.g. stubbed binaries) override
@@ -253,6 +259,24 @@ export class TestCase {
     return this.sendKeys('\r');
   }
 
+  /**
+   * Types text and then submits by pressing Enter. Includes a render-cycle
+   * delay between typing and submit so the TUI's input component has time
+   * to process the characters before the Enter key fires the submit handler.
+   *
+   * Without this delay, sending text+Enter as a single PTY write causes Ink
+   * to submit an empty input (the characters haven't been rendered into state
+   * by the time the Enter key handler reads them).
+   *
+   * @param text - The text to type before submitting
+   * @param settleMs - Delay between typing and Enter (default: 150ms)
+   */
+  async typeAndSubmit(text: string, settleMs = 150): Promise<void> {
+    await this.sendKeys(text);
+    await this.sleepMs(settleMs);
+    await this.sendKeys('\r');
+  }
+
   /** Send Escape key */
   async pressEscape(): Promise<void> {
     return this.sendKeys([0x1b]);
@@ -266,6 +290,28 @@ export class TestCase {
   /** Send Ctrl+C twice to exit */
   async pressCtrlCTwice(): Promise<void> {
     return this.sendKeys([0x03, 0x03]);
+  }
+
+  /**
+   * Explicitly ends the mock turn by resolving the pending prompt() Promise.
+   * This causes streamMessage() to resolve, which commits buffered content
+   * to the store and sets isProcessing=false.
+   *
+   * Call this when your test needs:
+   * - Committed message content in the store (e.g., model.content assertions)
+   * - isProcessing to flip to false before the next interaction
+   *
+   * Tests that need isProcessing=true to persist (e.g., subagent panel tests)
+   * should NOT call this until they're done with mid-turn assertions.
+   */
+  async completeTurn(): Promise<void> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'COMPLETE_TURN',
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error((response.data as any).error);
+    }
   }
 
   /**
@@ -324,6 +370,46 @@ export class TestCase {
     const response = await this.tuiConnection.sendCommand({
       kind: 'MOCK_SESSION_UPDATE',
       event,
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error((response.data as any).error);
+    }
+  }
+
+  /**
+   * Test-only: drive `startEditingQueue` directly. The user-facing path
+   * goes through the activity tray (Ctrl+X), which is gated on
+   * tasks.length > 0 in lite mode. Tests asserting queue-edit semantics
+   * shouldn't have to seed unrelated task state.
+   */
+  async mockStartEditingQueue(index: number): Promise<void> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MOCK_START_EDITING_QUEUE',
+      index,
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error((response.data as any).error);
+    }
+  }
+
+  /**
+   * Test-only: seed a subagent stage entry into the store's `sessions` map
+   * so the lite layout's subagent panel + kill-ladder paths see it. Used
+   * by tests that exercise subagentSessionIdByName lookups (Ctrl+X kill
+   * ladder, panel auto-expand) without orchestrating a full real
+   * subagent_list_update event.
+   */
+  async mockAddSession(session: {
+    id: string;
+    name: string;
+    agentName?: string;
+    status?: 'busy' | 'pending' | 'terminated';
+  }): Promise<void> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MOCK_ADD_SESSION',
+      session,
     });
     if (response.data.kind === 'ERROR') {
       throw new Error((response.data as any).error);
@@ -413,6 +499,16 @@ export class TestCase {
    */
   findTextCells(text: string): CellAttributes[] | null {
     return this.ptyManager.findTextCells(text);
+  }
+
+  /**
+   * Returns cell attributes for every line containing `text` (top-to-bottom).
+   * Used by tests that compare older scrollback rows against newer live-region
+   * rows — e.g. /theme reflow assertions where the old row's color must stay
+   * frozen and the new row's color must update.
+   */
+  findAllTextCells(text: string): CellAttributes[][] {
+    return this.ptyManager.findAllTextCells(text);
   }
 
   /**
@@ -565,6 +661,23 @@ export class TestCaseBuilder {
   withEnv(env: Record<string, string>): TestCaseBuilder {
     this.options.extraEnv = { ...this.options.extraEnv, ...env };
     return this;
+  }
+
+  /**
+   * Launches the TUI in lite mode by setting KIRO_UI_MODE=lite.
+   *
+   * Also sets KIRO_LITE_ROLLOUT_ENABLED=1 — without it, resolveUiMode()
+   * (index.tsx) silently falls back to 'tui' under the rollout gate
+   * added in commit e4077111c, so requesting lite via env alone has no
+   * effect in tests.
+   *
+   * @returns This builder for method chaining
+   */
+  withLite(): TestCaseBuilder {
+    return this.withEnv({
+      KIRO_UI_MODE: 'lite',
+      KIRO_LITE_ROLLOUT_ENABLED: '1',
+    });
   }
 
   /**

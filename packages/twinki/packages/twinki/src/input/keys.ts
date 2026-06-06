@@ -816,8 +816,16 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
  * ```
  */
 export function parseKey(data: string): KeyId | undefined {
-	// Try Kitty protocol first
-	if (kittyProtocolActive) {
+	// Try Kitty CSI-u parsing unconditionally. The CSI-u byte pattern
+	// (`\x1b[<codepoint>;<mod>u`, plus its arrow/functional variants) is
+	// unambiguous and never collides with legacy sequences, so parsing it is
+	// always safe — even when the local twinki instance hasn't auto-detected
+	// the terminal (e.g. inside a multiplexer like cmux/tmux that strips the
+	// outer terminal's TERM_PROGRAM but still passes CSI-u bytes through from
+	// the parent terminal). Without this, modifier keys like Shift+Enter and
+	// Option+Backspace fall on the floor when the multiplexer reports a TERM
+	// that twinki doesn't recognize as Kitty-capable.
+	{
 		const parsed = parseKittySequence(data);
 		if (parsed) {
 			const { codepoint, baseLayoutKey, modifier } = parsed;

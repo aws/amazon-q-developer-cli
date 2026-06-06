@@ -22,6 +22,18 @@ const themeCmd: SlashCommand = {
   meta: { local: true },
 };
 
+// verbosityConfig (the effect /settings verbosity delegates into) resolves
+// the canonical /verbosity command from ctx.slashCommands so the menu chip
+// stays /verbosity regardless of entry path. Tests that exercise the
+// /settings → verbosity routing path must register this command too.
+const verbosityCmd: SlashCommand = {
+  name: '/verbosity',
+  description:
+    'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
+  source: 'local',
+  meta: { local: true, liteOnly: true },
+};
+
 describe('/settings command', () => {
   let testDir: string;
   let originalHome: string | undefined;
@@ -48,19 +60,43 @@ describe('/settings command', () => {
   });
 
   describe('bare /settings (no args)', () => {
-    it('opens the SettingsPanel overlay', async () => {
-      // The /settings UI now lives in <SettingsPanel> (an Explorer-based
+    it('opens the SettingsPanel overlay in TUI mode', async () => {
+      // The TUI /settings UI lives in <SettingsPanel> (an Explorer-based
       // overlay), not in the slash-command active-command machinery.
-      // Bare /settings just flips the panel state on; the panel itself
-      // owns the row list and routing.
+      // Bare /settings in TUI mode just flips the panel state on; the
+      // panel itself owns the row list and routing. (Lite keeps its
+      // command-menu — see the lite-mode test below.)
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
+      // Default mock getUiMode returns 'tui'.
       await dispatch(settingsCmd, '', ctx);
 
       expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
       expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
-      // We no longer route through setActiveCommand for the top-level
-      // /settings menu — keep this assertion as a regression guard.
+      // TUI mode does not route through the command-menu.
       expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
+    });
+
+    it('opens the lite command-menu (not the panel) in lite mode', async () => {
+      // Lite preserves its /settings command-menu — it carries lite-only
+      // entries (e.g. verbosity) the SettingsPanel doesn't have — so bare
+      // /settings in lite mode opens the command-menu, not the panel.
+      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
+      (ctx as any).getUiMode = () => 'lite';
+      await dispatch(settingsCmd, '', ctx);
+
+      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+      expect(ctx._spies.setShowSettingsPanel!).not.toHaveBeenCalled();
+    });
+
+    it('shows lite-only entries in the menu when in lite mode', async () => {
+      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
+      (ctx as any).getUiMode = () => 'lite';
+      await dispatch(settingsCmd, '', ctx);
+
+      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
+      const { options } = call[0];
+      const values = options.map((o: { value: string }) => o.value);
+      expect(values).toContain('verbosity');
     });
   });
 
@@ -84,6 +120,51 @@ describe('/settings command', () => {
       for (const [message] of alertCalls) {
         expect(String(message)).not.toContain('moved to /settings theme');
       }
+    });
+
+    it('routes /settings verbosity to the verbosity menu with the canonical chip name (lite mode)', async () => {
+      // 1:1 wiring contract: reaching the verbosity menu via /settings →
+      // verbosity must produce an activeCommand with `command.name ===
+      // '/verbosity'` so CommandMenu's verbosity-specific UI wires up the
+      // same way as direct entry. CommandMenu has three checks against
+      // `command.name === '/verbosity'`:
+      //   - Reset preview state when leaving /verbosity
+      //   - Gate Ctrl+P / p preview-toggle hotkeys
+      //   - Track the highlighted density preset for inline preview
+      // If the chip says `/settings`, all three silently fail and the
+      // user can't open the preview pane or see draft preset previews.
+      // The verbosityConfig handler resolves the canonical /verbosity
+      // SlashCommand internally so the chip name stays right regardless
+      // of entry path; this test locks that behavior in.
+      const ctx = createMockCommandContext({
+        slashCommands: [settingsCmd, verbosityCmd],
+      });
+      (ctx as any).getUiMode = () => 'lite';
+      await dispatch(settingsCmd, 'verbosity', ctx);
+
+      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
+      const arg = call[0] as {
+        command: SlashCommand;
+        options: Array<{ value: string; label: string }>;
+        previewKey?: string;
+      };
+
+      // Chip name is the canonical /verbosity, not /settings.
+      expect(arg.command.name).toBe('/verbosity');
+
+      // The menu opened in the same shape as a direct /verbosity entry —
+      // previewKey is set (non-null), and the option set is recognizable
+      // as a verbosity menu (density rows or config rows depending on
+      // whether an active preset is detected). The default install (no
+      // saved config) lands in the density menu with previewKey 'density'.
+      expect(arg.previewKey).toBeTruthy();
+      const labels = arg.options.map((o) => o.label);
+      // Either density rows ('default', 'full', 'custom') OR config rows
+      // ('Tool calls', 'Show output') depending on detected preset state.
+      const isDensityMenu = labels.includes('default') || labels.includes('full');
+      const isConfigMenu = labels.includes('Tool calls');
+      expect(isDensityMenu || isConfigMenu).toBe(true);
     });
 
     it('shows an error for an unknown subcommand', async () => {
@@ -125,6 +206,25 @@ describe('/settings command', () => {
       expect(call[0]).toBe(true);
     });
 
+    it('sets settingsReturnOnEscape=true when routing to verbosity (lite mode)', async () => {
+      // Register /verbosity in the slash command registry so the inner
+      // verbosityConfig handler's canonical resolution succeeds — without
+      // it the handler falls back to the legacy /settings cmd shape and
+      // the chip-name assertion below would fail.
+      const ctx = createMockCommandContext({
+        slashCommands: [settingsCmd, verbosityCmd],
+      });
+      // Lite mode so the verbosityConfig handler reaches its menu-build
+      // path. The subcommand's handle wrapper sets the flag before
+      // delegating, so this asserts the wrapper, not the inner handler.
+      (ctx as any).getUiMode = () => 'lite';
+      await dispatch(settingsCmd, 'verbosity', ctx);
+
+      expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalled();
+      const call = ctx._spies.setSettingsReturnOnEscape!.mock.calls[0]!;
+      expect(call[0]).toBe(true);
+    });
+
     it('does not set the flag when the subcommand is unknown', async () => {
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
       await dispatch(settingsCmd, 'nonsense', ctx);
@@ -134,4 +234,6 @@ describe('/settings command', () => {
       expect(ctx._spies.setSettingsReturnOnEscape!).not.toHaveBeenCalled();
     });
   });
+
+  // default-ui folded into the settings-display submenu (1e0a8a8c2); coverage lives there.
 });

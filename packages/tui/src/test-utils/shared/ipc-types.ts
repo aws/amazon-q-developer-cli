@@ -4,6 +4,7 @@
  */
 
 import type { AppState } from '../../stores/app-store';
+import type { AgentSession } from '../../types/multi-session';
 import type { AgentStreamEvent } from '../../types/agent-events';
 import type { MockStreamItem } from '../../../e2e_tests/types/chat-cli';
 
@@ -36,6 +37,9 @@ export type TestCommand =
       events: MockStreamItem[] | null;
     }
   | { kind: 'MOCK_SESSION_UPDATE'; event: AgentStreamEvent }
+  | { kind: 'MOCK_ADD_SESSION'; session: Partial<AgentSession> & { id: string; name: string } }
+  | { kind: 'MOCK_START_EDITING_QUEUE'; index: number }
+  | { kind: 'COMPLETE_TURN' }
   | { kind: 'MOCK_ERROR'; error: string }
   | { kind: 'HEAP_SNAPSHOT'; filename: string }
   | { kind: 'MEMORY_USAGE' }
@@ -54,6 +58,11 @@ export type TestResponse =
   | { kind: 'GET_AGENT_STATE'; data: AgentSnapshot }
   | { kind: 'PUSH_SEND_MESSAGE_RESPONSE' }
   | { kind: 'MOCK_SESSION_UPDATE' }
+  | { kind: 'MOCK_ADD_SESSION' }
+  | { kind: 'MOCK_START_EDITING_QUEUE' }
+  | { kind: 'MOCK_SET_PROMPT_DETAIL_OPEN' }
+  | { kind: 'MOCK_SET_ACTIVE_COMMAND' }
+  | { kind: 'COMPLETE_TURN' }
   | { kind: 'MOCK_ERROR' }
   | { kind: 'HEAP_SNAPSHOT'; filename: string }
   | { kind: 'MEMORY_USAGE'; data: MemoryUsageData }

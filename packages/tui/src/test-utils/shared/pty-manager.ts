@@ -380,8 +380,21 @@ export class PtyManager {
    * @returns Array of per-character attribute objects, or null if text not found
    */
   findTextCells(text: string): CellAttributes[] | null {
+    const all = this.findAllTextCells(text);
+    return all.length > 0 ? all[0]! : null;
+  }
+
+  /**
+   * Returns per-character cell attributes for every occurrence of `text`
+   * across the entire xterm buffer (scrollback + viewport), in top-to-bottom
+   * order. One match per line. Used by /theme reflow tests to compare an
+   * older flushed scrollback row against a newer live-region row painted
+   * after a theme swap.
+   */
+  findAllTextCells(text: string): CellAttributes[][] {
     const buffer = this.terminal.buffer.active;
     const totalLines = buffer.baseY + this.terminal.rows;
+    const matches: CellAttributes[][] = [];
 
     for (let y = 0; y < totalLines; y++) {
       const line = buffer.getLine(y);
@@ -410,9 +423,9 @@ export class PtyManager {
           fgIsRgb: cell.isFgRGB(),
         });
       }
-      return attrs;
+      matches.push(attrs);
     }
-    return null;
+    return matches;
   }
 
   /**

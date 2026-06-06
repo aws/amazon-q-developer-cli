@@ -23,6 +23,7 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
+      debugKeys: false,
     });
   });
 
@@ -33,6 +34,7 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
+      debugKeys: false,
     });
   });
 
@@ -90,6 +92,7 @@ describe('parseCliArgs', () => {
       noInteractive: true,
       resume: false,
       resumePicker: false,
+      debugKeys: false,
       input: 'do something',
     });
   });
@@ -209,6 +212,16 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs();
     expect(result.resume).toBe(false);
     expect(result.resumeId).toBe('abc-123');
+  });
+
+  it('parses --lite flag', () => {
+    setArgs('chat', '--lite');
+    expect(parseCliArgs().uiMode).toBe('lite');
+  });
+
+  it('uiMode is undefined when --lite not passed', () => {
+    setArgs('chat');
+    expect(parseCliArgs().uiMode).toBeUndefined();
   });
 });
 

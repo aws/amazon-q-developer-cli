@@ -1,4 +1,7 @@
-import { execSync } from 'child_process';
+import { execFile, execSync } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Resolves the full path to the git binary.
@@ -24,6 +27,13 @@ function resolveGitPath(): string {
 /**
  * Gets the current git branch name.
  * Returns null if not in a git repository or if git is not available.
+ *
+ * Synchronous variant — blocks the caller for up to 1s. Used at component
+ * mount where a sync result avoids a "flash of no branch" on first paint.
+ * Anywhere we re-check during a running session (e.g. lite layout's
+ * turn-boundary refresh in `LiteLayout.tsx`), use {@link getGitBranchAsync}
+ * instead so a slow `git rev-parse` (NFS home, large repo, cold fs cache)
+ * can't stall a React render for up to a second.
  */
 export function getGitBranch(): string | null {
   try {
@@ -33,6 +43,25 @@ export function getGitBranch(): string | null {
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: 1000,
     }).trim();
+    return branch || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Async variant of {@link getGitBranch}. Spawns `git rev-parse` off the
+ * render path so a slow filesystem can't pin the UI thread. Same return
+ * contract: branch name string, or null on error / not-a-git-repo.
+ */
+export async function getGitBranchAsync(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      { encoding: 'utf8', timeout: 1000 }
+    );
+    const branch = stdout.trim();
     return branch || null;
   } catch {
     return null;

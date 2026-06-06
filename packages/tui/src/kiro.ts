@@ -17,7 +17,12 @@ import type {
   KasContextMutationResponse,
   ChatSlashCommandTelemetryPayload,
 } from './types/session-client';
-import type { ModeChangedNotification } from './types/generated/chat-cli';
+import type {
+  ModeChangedNotification,
+  UiModeChangedNotification,
+  UiModeDefaultChangedNotification,
+  UiModeSessionStartNotification,
+} from './types/generated/chat-cli';
 import type { ContextBreakdownData, ToolInfo } from './stores/app-store';
 import type {
   CommandOptionsResponse,
@@ -44,6 +49,18 @@ export class Kiro {
   private sessionClient?: SessionClient;
   private _settings: Record<string, unknown> = {};
   private commandsHandler?: (
+    commands: Array<{
+      name: string;
+      description: string;
+      meta?: CommandMeta;
+    }>,
+    mcpServers?: Array<{
+      name: string;
+      status: string;
+      toolCount: number;
+    }>
+  ) => void;
+  private extensionMethodsHandler?: (
     commands: Array<{
       name: string;
       description: string;
@@ -101,6 +118,11 @@ export class Kiro {
         name: string;
         description: string;
         meta?: CommandMeta;
+      }>,
+      mcpServers?: Array<{
+        name: string;
+        status: string;
+        toolCount: number;
       }>
     ) => void
   ): void {
@@ -348,6 +370,21 @@ export class Kiro {
     this.sessionClient.sendChatSlashCommandTelemetry?.(payload);
   }
 
+  sendUiModeSessionStart(payload: UiModeSessionStartNotification): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendUiModeSessionStart?.(payload);
+  }
+
+  sendUiModeChanged(payload: UiModeChangedNotification): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendUiModeChanged?.(payload);
+  }
+
+  sendUiModeDefaultChanged(payload: UiModeDefaultChangedNotification): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendUiModeDefaultChanged?.(payload);
+  }
+
   async terminateSession(sessionId: string): Promise<void> {
     if (!this.sessionClient) return;
     return (this.sessionClient as any).terminateSession(sessionId);
@@ -415,7 +452,7 @@ export class Kiro {
           event.type === AgentEventType.CommandsUpdate &&
           this.commandsHandler
         ) {
-          this.commandsHandler(event.commands);
+          this.commandsHandler(event.commands, event.mcpServers);
         }
         if (
           event.type === AgentEventType.KasCommandsDiscovered &&

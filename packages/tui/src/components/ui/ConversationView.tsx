@@ -47,8 +47,16 @@ function resolvePrevRole(
 }
 
 /** Returns true if a tool-use message belongs to a subagent (not the main turn agent). */
-function isSubagentToolCall(msg: StoreMessageType): boolean {
-  return msg.role === MessageRole.ToolUse && !!msg.isSubagentTool;
+function isSubagentToolCall(
+  msg: StoreMessageType,
+  mainAgentName: string | undefined
+): boolean {
+  return (
+    msg.role === MessageRole.ToolUse &&
+    !!msg.agentName &&
+    !!mainAgentName &&
+    msg.agentName !== mainAgentName
+  );
 }
 
 const SystemMessage = React.memo(function SystemMessage({
@@ -95,7 +103,7 @@ const StaticMessage = React.memo(function StaticMessage({
   }
   if (message.role === MessageRole.ToolUse) {
     // Skip subagent tool calls — they are rendered via SubagentToolPanel
-    if (isSubagentToolCall(message)) return null;
+    if (isSubagentToolCall(message, mainAgentName)) return null;
 
     // Spec mode hides tool args/diff/output to keep the conversation clean.
     return (
@@ -178,20 +186,33 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   const { height: termHeight } = useTerminalSize();
   const { thinkingMode } = useThinkingMode();
   const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
+  // Live streaming content lives in its own slot (post-E1). The placeholder
+  // Model row in `tailMessages` has empty content while streaming; the live
+  // text is in `streamingContent` and the row that owns it is identified by
+  // `streamingMessageId`. Subscribing to these here means per-chunk content
+  // updates re-render only this component, not every memo with [messages]
+  // deps elsewhere in the layout.
+  const streamingContent = useAppStore((s) => s.streamingContent);
+  const streamingMessageId = useAppStore((s) => s.streamingMessageId);
 
   // Find the last message that isn't a subagent tool call (those are hidden in rendering)
   const lastVisibleMsg = useMemo(() => {
     for (let i = tailMessages.length - 1; i >= 0; i--) {
-      if (!isSubagentToolCall(tailMessages[i]!)) return tailMessages[i];
+      if (!isSubagentToolCall(tailMessages[i]!, mainAgentName))
+        return tailMessages[i];
     }
     return undefined;
-  }, [tailMessages]);
+  }, [tailMessages, mainAgentName]);
   const hasActiveContent = lastVisibleMsg
     ? (lastVisibleMsg.role === MessageRole.ToolUse &&
         !lastVisibleMsg.isFinished) ||
       (lastVisibleMsg.role === MessageRole.Model &&
         isProcessing &&
+        // Treat the live streaming slot as "active content" so the thinking
+        // indicator yields the moment text starts arriving — message.content
+        // stays empty until commit.
         (!!lastVisibleMsg.content ||
+          (lastVisibleMsg.id === streamingMessageId && !!streamingContent) ||
           ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput) ||
           ('thinking' in lastVisibleMsg && !!lastVisibleMsg.thinking)))
     : false;
@@ -219,8 +240,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         }
         if (message.role === MessageRole.ToolUse) {
           // Skip subagent tool calls — rendered via SubagentToolPanel
-          if (isSubagentToolCall(message)) return null;
-
+          if (isSubagentToolCall(message, mainAgentName)) return null;
           const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
           return (
             <React.Fragment key={message.id}>
@@ -244,11 +264,19 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           thinkingMode !== 'off' && 'thinking' in message
             ? message.thinking
             : undefined;
+        // Pre-E1 the live streaming row mutated `message.content` per chunk;
+        // post-E1 the row is the placeholder for streamingContent. Substitute
+        // the live text whenever this row owns the streaming slot so the
+        // empty-content drop and the wrap calc below see real content.
+        const liveContent =
+          message.id === streamingMessageId && isProcessing
+            ? streamingContent
+            : message.content;
         // Skip messages whose only content is hidden thinking — otherwise we'd
         // render an empty wrapping Box and leave a stray blank row in the
         // streaming scrollback when `chat.showThinking` is off.
         if (
-          (!message.content || message.content === '') &&
+          (!liveContent || liveContent === '') &&
           !('shellOutput' in message && message.shellOutput) &&
           !thinkingText
         )
@@ -258,15 +286,14 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         const isShell = 'shellOutput' in message && message.shellOutput;
         const useStreaming =
           isLastModel &&
-          (isProcessing ||
-            message.content.split('\n').length > termHeight - 13);
+          (isProcessing || liveContent.split('\n').length > termHeight - 13);
 
         // Determine inner content for Model messages
         let inner: React.ReactNode;
         if (isShell) {
           inner = (
             <ShellOutputMessage
-              content={message.content}
+              content={liveContent}
               isStatic={false}
               barColor={agentBarColor}
             />
@@ -274,7 +301,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         } else if (useStreaming) {
           inner = (
             <StreamingMessage
-              content={message.content}
+              content={liveContent}
               type={MessageType.AGENT}
               isStreaming={isProcessing}
               barColor={agentBarColor}
@@ -284,7 +311,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         } else {
           inner = (
             <Message
-              content={message.content}
+              content={liveContent}
               type={MessageType.AGENT}
               barColor={agentBarColor}
             />
@@ -402,6 +429,15 @@ let _hadMessages = false;
 let _hadUserMessage = false;
 let _welcomeInStatic = false;
 let _hasAnimated = false;
+// The last `liteScrollbackClearToken` value this module observed. The store
+// bumps the token on session reset (resetMessages) and on lite→tui mode
+// swap (setUiMode). When the next render of ConversationView sees a higher
+// token than this, it knows the singletons below are stale and must be
+// wiped before any append work runs. Module-level (not React state) so the
+// check + wipe land BEFORE the staticItemsRef wiring on the same render —
+// React effects fire too late, twinki would already have appended duplicate
+// rows by then.
+let _lastObservedClearToken = 0;
 
 type StaticItem =
   | { type: 'welcome'; id: string }
@@ -537,6 +573,46 @@ export const ConversationView = React.memo(function ConversationView() {
   // trigger a re-render so the append logic runs. Low-impact: entries are added
   // only when a turn completes (~once per 10-60s).
   const turnSummaries = useAppStore((s) => s.turnSummaries);
+
+  // Coordinated session/mode reset. The store bumps `liteScrollbackClearToken`
+  // when (a) the user runs /chat new or /chat <id>, (b) they swap from lite
+  // to tui. Both cases require the TUI's module-level singletons below to
+  // start empty — otherwise the staticItemsRef.current points at an array
+  // already filled with the prior session/mode's rows, and twinki's
+  // monotonic <Static> cursor has already advanced past those indices.
+  // Newly appended rows would then land at indices the cursor has already
+  // skipped past, which is what made messages "flash and disappear" or
+  // never reach scrollback during mode swaps.
+  //
+  // Why this runs in the render body (not a useEffect): the singletons feed
+  // refs created on the next two lines (staticItemsRef, emittedIdsRef,
+  // flushedRef). If we wiped them in an effect, the FIRST render after a
+  // bump would already have committed appends against the stale arrays
+  // and called twinki's writeStaticLines with cross-mode rows. By the time
+  // the effect fired we'd be undoing damage. Synchronous wipe = safe.
+  //
+  // Token is read with a single store subscription so React re-renders this
+  // component when the store dispatches the bump.
+  const clearToken = useAppStore((s) => s.liteScrollbackClearToken);
+  if (clearToken !== _lastObservedClearToken) {
+    _lastObservedClearToken = clearToken;
+    // Mutate in place — refs declared below already point at these arrays.
+    _staticItems.length = 0;
+    _emittedIds.clear();
+    _flushedMap.clear();
+    // Reset the "have we ever seen messages" trackers so the post-clear
+    // welcome path treats this like a fresh session.
+    _hadMessages = false;
+    _hadUserMessage = false;
+    _welcomeInStatic = false;
+    // Wipe the visible terminal + scrollback + reset twinki's monotonic
+    // write cursor. Mirrors LiteLayout's clear effect verbatim — the
+    // sequence below makes twinki's stdout interceptor invoke
+    // handleExternalClear(), which drops accumulatedStaticOutput too.
+    process.stdout.write('\x1b[3J\x1b[H\x1b[2J');
+    adjustStaticCursor?.(Number.MAX_SAFE_INTEGER);
+  }
+
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 

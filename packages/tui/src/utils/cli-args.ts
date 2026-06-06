@@ -30,6 +30,10 @@ export interface CliArgs extends AcpSpawnArgs {
   resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker / --list). TUI-only. */
   resumePicker: boolean;
+  /** UI mode override from --lite flag. TUI-only. */
+  uiMode?: 'lite' | 'tui';
+  /** Diagnostic mode: print every keypress + parsed sequence and exit. TUI-only. */
+  debugKeys: boolean;
 }
 
 // ── Flag definitions ────────────────────────────────────────────────────
@@ -85,6 +89,7 @@ const FLAG_DEFS: FlagDef[] = [
     key: 'resumePicker',
     flags: ['--resume-picker', '--list'],
   },
+  { type: 'boolean', key: 'debugKeys', flags: ['--debug-keys'] },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
   { type: 'skip', flags: ['--tui', '--v3'] },
   {
@@ -93,6 +98,8 @@ const FLAG_DEFS: FlagDef[] = [
     flags: ['--agent-engine'],
     acp: '--agent-engine',
   },
+  // --lite activates lite UI mode (TUI-only, not forwarded to ACP)
+  { type: 'skip', flags: ['--lite'] },
 ];
 
 // Build a lookup map: flag string → FlagDef (built once at module load)
@@ -115,6 +122,7 @@ export function parseCliArgs(): CliArgs {
     noInteractive: false,
     resume: false,
     resumePicker: false,
+    debugKeys: false,
   };
 
   // Skip past "chat" subcommand if present
@@ -141,8 +149,10 @@ export function parseCliArgs(): CliArgs {
         (result as any)[def.key] = csv.split(',');
       } else if (def.type === 'boolean') {
         (result as any)[def.key] = true;
-      } else if (def.type === 'skip' && def.hasValue) {
-        if (eqValue === undefined) i++; // consume next arg
+      } else if (def.type === 'skip') {
+        // Handle --lite specially
+        if (flag === '--lite') result.uiMode = 'lite';
+        else if (def.hasValue && eqValue === undefined) i++; // consume next arg
       }
     } else if (raw.startsWith('-')) {
       // Unknown flag — skip its value if the next arg looks like a value
