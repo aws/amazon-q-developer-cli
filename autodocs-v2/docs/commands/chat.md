@@ -109,7 +109,6 @@ kiro-cli chat --resume-picker
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
-| `--lite` | | flag | Use the lite (classic-style) UI instead of the full TUI (internal/nightly only) |
 | `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |

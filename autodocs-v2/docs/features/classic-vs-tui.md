@@ -139,9 +139,7 @@ kiro-cli chat --legacy-mode
 
 Lite mode is a streamlined, classic-style UI that runs within the TUI framework. It provides a simpler chat experience without the full panel-based interface.
 
-```bash
-kiro-cli chat --lite
-```
+Switch to lite mode with `/lite` mid-session, or set it as your default via `/settings → display` (Default UI row).
 
 Lite mode is currently gated to internal and nightly users. The default UI mode at startup can be configured with the `chat.ui.mode` setting (values: `tui`, `lite`). You can also toggle between TUI and lite mid-session via `/settings display`.
 

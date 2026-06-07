@@ -98,17 +98,15 @@ export interface UiModeDefaultChangedNotification {
 
 /**
  * Which input source resolved the UI mode at session start. The wire format is the
- * camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var > CLI
- * arg > persisted setting > built-in default).
+ * camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
+ * persisted setting > built-in default).
  */
 export enum UiModeSource {
 	/** Resolved from the `KIRO_UI_MODE` env var. */
 	EnvVar = "envVar",
-	/** Resolved from the `--ui-mode` CLI arg. */
-	CliArg = "cliArg",
 	/** Resolved from the persisted `chat.ui.mode` setting. */
 	Setting = "setting",
-	/** No env / arg / setting — fell through to the built-in default. */
+	/** No env / setting — fell through to the built-in default. */
 	Default = "default",
 }
 
