@@ -6,7 +6,7 @@ doc_meta:
   keywords: [lite, classic, scrollback, mode, switch, tui, ui, terminal]
   related: [classic-vs-tui, verbosity, settings, theme]
   validated: 2026-06-07
-  commit: b15435df4
+  commit: eaabfbb9e
   status: validated
   testable_headless: false
 ---

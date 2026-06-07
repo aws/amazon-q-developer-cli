@@ -6,7 +6,7 @@ doc_meta:
   keywords: [verbosity, verbose, density, filters, output, tool, args, reasoning, elapsed, subagent, minimal, lean, full, lite]
   related: [lite, settings, classic-vs-tui]
   validated: 2026-06-07
-  commit: b15435df4
+  commit: eaabfbb9e
   status: validated
   testable_headless: false
 ---
@@ -47,7 +47,7 @@ Presets apply a coordinated set of all display toggles and output filters at onc
 | Preset | Tool Args | Reasoning | Elapsed | Thinking | Write Diffs | Tasks | Output Filters | Output Max Lines |
 |--------|-----------|-----------|---------|----------|-------------|-------|---------------|-----------------|
 | **minimal** | off | off | off | off | off | off | none | 5 |
-| **lean** | inline | off | on | off | off | on | none | 5 |
+| **lean** | inline | off | on | off | off | on | none | 10 |
 | **default** | block | on | on | on | on | on | shell only | 5 |
 | **full** | block | on | on | on | on | on | all | unlimited |
 
