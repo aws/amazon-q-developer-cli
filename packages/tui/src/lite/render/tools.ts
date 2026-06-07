@@ -860,9 +860,10 @@ function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
       if (
         item &&
         typeof item === 'object' &&
-        typeof (item as any).text === 'string'
+        'text' in item &&
+        typeof (item as Record<string, unknown>).text === 'string'
       ) {
-        parts.push((item as any).text);
+        parts.push((item as Record<string, unknown>).text as string);
       }
     }
     if (parts.length > 0) return { kind: 'text', value: parts.join('\n') };

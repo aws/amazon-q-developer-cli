@@ -75,6 +75,16 @@ export interface MessageLike {
   name?: string;
   isFinished?: boolean;
   result?: { status: string; error?: string; output?: unknown };
+  /**
+   * Approval-prompt outcome stamped on the store message (`ToolUseStatus`);
+   * `'rejected'` when the user denied the tool call. Kept as `string` (like
+   * `result.status` above) so the store's `MessageType` stays structurally
+   * assignable without the render layer importing the store enum. Distinct
+   * from a `result.status` of `'error'`/`'cancelled'` — a rejected call may
+   * carry no `result` at all. Read in the `tool_use` branch to paint the
+   * `DENIED` chip.
+   */
+  status?: string;
   success?: boolean;
   standalone?: boolean;
   agentName?: string;
@@ -287,7 +297,7 @@ export function renderMessageToText(
     }
 
     case 'tool_use': {
-      const isRejected = (msg as any).status === 'rejected';
+      const isRejected = msg.status === 'rejected';
       const status: ToolCallRenderInfo['status'] = isRejected
         ? 'error'
         : msg.result

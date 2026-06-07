@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Cancelled tool calls now display as cancelled instead of failed"
-}

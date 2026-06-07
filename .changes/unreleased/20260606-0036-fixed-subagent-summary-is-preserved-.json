@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Subagent summary is preserved when cancellation arrives after work completes"
-}
