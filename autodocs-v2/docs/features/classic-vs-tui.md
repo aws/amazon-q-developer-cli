@@ -165,6 +165,8 @@ Sessions saved in the TUI can be loaded in classic mode and vice versa via `/cha
 
 ## Related
 
+- [/lite](../slash-commands/lite.md) — Switch to lite mode
+- [/verbosity](../slash-commands/verbosity.md) — Configure lite-mode output density
 - [/help](../slash-commands/help.md) — Command reference panel
 - [/guide](../slash-commands/guide.md) — Conversational help
 - [/theme](../slash-commands/theme.md) — Theme customization
