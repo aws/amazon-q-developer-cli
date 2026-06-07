@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-06-07
-  commit: ac93ac65d
+  commit: b15435df4
   status: validated
   testable_headless: true
   category: command

@@ -6,7 +6,7 @@ doc_meta:
   keywords: [verbosity, verbose, density, filters, output, tool, args, reasoning, elapsed, subagent, minimal, lean, full, lite]
   related: [lite, settings, classic-vs-tui]
   validated: 2026-06-07
-  commit: c0b814f63
+  commit: b15435df4
   status: validated
   testable_headless: false
 ---
