@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Lite mode — a new classic-style terminal UI activated via `--lite` flag or `/lite` command, with configurable verbosity, density presets, and per-tool output filtering"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Cancelled subagent now surfaces its summary when the model had already produced the result"
+}

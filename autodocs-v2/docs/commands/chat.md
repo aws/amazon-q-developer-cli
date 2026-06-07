@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-04
-  commit: fde97d540
+  validated: 2026-06-07
+  commit: ac93ac65d
   status: validated
   testable_headless: true
   category: command
@@ -110,6 +110,7 @@ kiro-cli chat --resume-picker
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
 | `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
+| `--lite` | | flag | Use the lite (classic-style) UI instead of the full TUI (requires lite mode rollout) |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
 | `[INPUT]` | | string | Initial query to send |
