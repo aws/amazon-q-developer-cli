@@ -1098,8 +1098,14 @@ abstract class BaseAcpClient implements SessionClient {
             }
             case 'agent':
             case 'mode':
+            case 'custom-agent':
               // Agents/modes are handled via the modes cache (session/new
-              // response), not as slash commands. Drop them here.
+              // response), not as slash commands. `custom-agent` entries
+              // (e.g. KAS's `context-gatherer`, `general-task-execution`,
+              // and user/workspace agent profiles) are delegate-a-task
+              // subagents — not top-level commands, and not switchable modes
+              // in the cache the Layer-2 override cross-references. Drop them
+              // all here so they don't clutter the autocomplete menu.
               break;
             default:
               otherCommands.push(cmd);
@@ -1882,8 +1888,13 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /** Override to filter out commands that match cached modes (agents).
-   *  KAS may send agents in available_commands_update without a recognized
-   *  _meta.kiro.type; cross-referencing with the modes cache catches them. */
+   *  Typed agent/mode/custom-agent entries are already dropped upstream in
+   *  the partition switch (see convertAcpUpdateToEvent in the base class).
+   *  This is the fallback for the *untyped* case: KAS may send a switchable
+   *  agent in available_commands_update without a recognized _meta.kiro.type,
+   *  so we cross-reference the modes cache by name to catch it. (Untyped
+   *  custom-agent subagents can't be caught here — they're not modes — so
+   *  the upstream type-based filter is the source of truth for those.) */
   protected override convertAcpUpdateToEvent(
     update: AcpSessionUpdate
   ): AgentStreamEvent | null {

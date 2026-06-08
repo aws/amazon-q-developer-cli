@@ -2022,6 +2022,54 @@ describe('KasAcpClient', () => {
     expect(commandsEvent.commands[0].name).toBe('help');
   });
 
+  it('available_commands_update filters out custom-agent commands (delegate-task subagents)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help', _meta: {} },
+          // KAS exposes curated builtin subagents + user/workspace agent
+          // profiles tagged `custom-agent` (see kiro-agent source-adapters
+          // EXPOSED_BUILTIN_SUBAGENTS). They are delegate-a-task subagents,
+          // not top-level slash commands, and aren't switchable modes.
+          {
+            name: 'context-gatherer',
+            description: 'Analyzes repository structure',
+            _meta: { kiro: { type: 'custom-agent' } },
+          },
+          {
+            name: 'general-task-execution',
+            description: 'Delegates a general task',
+            _meta: { kiro: { type: 'custom-agent' } },
+          },
+          // A real prompt must still partition correctly alongside them.
+          {
+            name: 'summarize',
+            description: 'Prompt template',
+            _meta: { kiro: { type: 'prompt' } },
+          },
+        ],
+      },
+    });
+
+    // Only the untyped `help` survives into the slash-command list.
+    const commandsEvent = events.find((e) => e.type === 'commands_update');
+    expect(commandsEvent.commands).toHaveLength(1);
+    expect(commandsEvent.commands[0].name).toBe('help');
+
+    // The prompt still routes into the prompts slice.
+    const promptsEvent = events.find((e) => e.type === 'prompts_update');
+    expect(promptsEvent.prompts).toHaveLength(1);
+    expect(promptsEvent.prompts[0].name).toBe('summarize');
+  });
+
   it('available_commands_update filters out commands matching cached modes even without kiro type', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
