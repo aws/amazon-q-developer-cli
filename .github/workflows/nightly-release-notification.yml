@@ -25,7 +25,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   prepare_message:
@@ -39,31 +39,67 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.branch_name }}
 
-      - name: Get Commits Since Last Nightly
-        id: get-commits
+      - name: Get tag range
+        id: tags
         run: |
-          # Get current tag (just created) and previous tag from nightly branch
-          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -1)
-          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -2 | tail -1)
+          CURRENT_TAG=$(git tag -l 'v*-nightly.*' --sort=-version:refname | head -1)
+          LAST_TAG=$(git tag -l 'v*-nightly.*' --sort=-version:refname | head -2 | tail -1)
+          echo "current=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+          echo "last=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Tags: $LAST_TAG → $CURRENT_TAG"
+
+      - name: Get changelog from fragments
+        id: changelog
+        run: |
+          LAST_TAG="${{ steps.tags.outputs.last }}"
+          CURRENT_TAG="${{ steps.tags.outputs.current }}"
+
           if [[ -z "$LAST_TAG" ]]; then
-            COMMITS=$(git log origin/nightly --format="• %h %s (%an)" -10 | grep -v "Sync: Merge main into nightly")
+            # First nightly — show all unreleased fragments
+            FRAGMENTS=$(find .changes/unreleased -name '*.json' 2>/dev/null)
           else
-            COMMITS=$(git log ${LAST_TAG}..${CURRENT_TAG} --format="• %h %s (%an)" | grep -v "Sync: Merge main into nightly")
+            # Fragments added between the two tags
+            FRAGMENTS=$(git diff --name-only --diff-filter=A "$LAST_TAG".."$CURRENT_TAG" -- .changes/unreleased/)
           fi
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Generate Release Notes from Fragments
-        id: release-notes
+          CHANGELOG=""
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            [[ ! -f "$f" ]] && continue
+            TYPE=$(jq -r '.type // empty' "$f" 2>/dev/null)
+            DESC=$(jq -r '.description // empty' "$f" 2>/dev/null)
+            [[ -z "$DESC" ]] && continue
+            CHANGELOG="${CHANGELOG}• [${TYPE}] ${DESC}\n"
+          done <<< "$FRAGMENTS"
+
+          if [[ -z "$CHANGELOG" ]]; then
+            CHANGELOG="No new changelog entries in this nightly."
+          fi
+
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Get commits
+        id: commits
         run: |
-          NOTES=$(python3 .github/scripts/nightly-release-notes.py generate)
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          LAST_TAG="${{ steps.tags.outputs.last }}"
+          CURRENT_TAG="${{ steps.tags.outputs.current }}"
 
-      - name: Format Timestamp
-        id: format-timestamp
+          if [[ -z "$LAST_TAG" ]]; then
+            COMMITS=$(git log --format="• %h %s (%an)" -10)
+          else
+            COMMITS=$(git log "${LAST_TAG}".."${CURRENT_TAG}" --format="• %h %s (%an)")
+          fi
+          COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
+
+          echo "list<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$COMMITS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Format timestamp
+        id: timestamp
         run: |
           TS="${{ inputs.build_timestamp }}"
           YEAR="${TS:0:4}"
@@ -72,35 +108,35 @@ jobs:
           HOUR="${TS:8:2}"
           MIN="${TS:10:2}"
           READABLE=$(TZ='America/Los_Angeles' date -d "${YEAR}-${MONTH}-${DAY} ${HOUR}:${MIN} UTC" "+%B %d, %Y at %I:%M %p PST")
-          echo "readable=$READABLE" >> $GITHUB_OUTPUT
+          echo "readable=$READABLE" >> "$GITHUB_OUTPUT"
 
-      - name: Build Message
+      - name: Build message
         id: build-message
         env:
-          COMMITS: ${{ steps.get-commits.outputs.commits }}
-          RELEASE_NOTES: ${{ steps.release-notes.outputs.notes }}
+          CHANGELOG: ${{ steps.changelog.outputs.changelog }}
+          COMMITS: ${{ steps.commits.outputs.list }}
+          COMMIT_COUNT: ${{ steps.commits.outputs.count }}
         run: |
-          if [[ -z "$RELEASE_NOTES" ]]; then
-            RELEASE_NOTES="Could not auto-populate the changelog. The kiro-cli team will share updates in this :thread: soon."
-          fi
           jq -n \
             --arg message "🌙 New Kiro CLI nightly version released!" \
             --arg version "${{ inputs.version }}" \
-            --arg timestamp "${{ steps.format-timestamp.outputs.readable }}" \
+            --arg timestamp "${{ steps.timestamp.outputs.readable }}" \
             --arg branch "${{ inputs.branch_name }}" \
+            --arg changelog "$CHANGELOG" \
             --arg commits "$COMMITS" \
-            --arg release_notes "$RELEASE_NOTES" \
+            --arg commit_count "$COMMIT_COUNT" \
             '{
               message: $message,
               version: $version,
               build_timestamp: $timestamp,
               branch_name: $branch,
+              release_notes: $changelog,
               commits: $commits,
-              release_notes: $release_notes
+              commit_count: $commit_count
             }' > message.json
-          echo "message<<JSONEOF" >> $GITHUB_OUTPUT
-          cat message.json >> $GITHUB_OUTPUT
-          echo "JSONEOF" >> $GITHUB_OUTPUT
+          echo "message<<JSONEOF" >> "$GITHUB_OUTPUT"
+          cat message.json >> "$GITHUB_OUTPUT"
+          echo "JSONEOF" >> "$GITHUB_OUTPUT"
 
   notify:
     name: Send Notification
