@@ -2324,17 +2324,49 @@ export class KasAcpClient extends BaseAcpClient {
           type: AgentEventType.CompactionStatus,
           status: 'started',
         });
+        // KAS reports the compact outcome only as `{ success: boolean }` (see
+        // the `_kiro/session/compact` covenant type) and resolves the RPC after
+        // the operation finishes. It never emits a `summarization_started`, so
+        // the eager 'started' above is what shows the spinner; we terminate it
+        // from the RPC result, deriving purely from `success` — we never infer
+        // a reason the agent didn't give us:
+        //   • success → 'completed'. A real compaction also emits a
+        //     `summarization_completed` session update carrying the summary;
+        //     this terminator is an idempotent duplicate (no summary, so it
+        //     won't double-append and processQueue() no-ops when idle).
+        //   • failure → 'failed', surfacing a reason only when KAS actually
+        //     provided one (e.g. a thrown error message); otherwise the UI just
+        //     shows that compaction failed.
         this.callExtMethod('_kiro/session/compact', {
           ...(args?.value && { value: args.value }),
-        }).then((result) => {
-          if (!result.success) {
+        })
+          .then((result) => {
+            // callExtMethod wraps any non-throwing RPC as
+            // { success: true, data: <response> }, so KAS's real status is in
+            // result.data.success.
+            const body = result.data as { success?: boolean } | undefined;
+            if (!result.success || body?.success === false) {
+              this.broadcastStreamEvent({
+                type: AgentEventType.CompactionStatus,
+                status: 'failed',
+                error: result.message || undefined,
+              });
+            } else {
+              this.broadcastStreamEvent({
+                type: AgentEventType.CompactionStatus,
+                status: 'completed',
+              });
+            }
+          })
+          // Defensive: callExtMethod swallows errors today, but guard against a
+          // future change so a rejected promise can never strand the spinner.
+          .catch((e) => {
             this.broadcastStreamEvent({
               type: AgentEventType.CompactionStatus,
               status: 'failed',
-              error: result.message,
+              error: e instanceof Error ? e.message : undefined,
             });
-          }
-        });
+          });
         return { success: true, message: 'Compacting conversation...' };
       }
       case 'code': {

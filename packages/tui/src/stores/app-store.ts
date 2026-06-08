@@ -2686,7 +2686,9 @@ export const createAppStore = (props: AppStoreProps) => {
       } else if (event.status === 'failed') {
         set({ isCompacting: false, isProcessing: false });
         get().showTransientAlert({
-          message: `Compaction failed: ${event.error ?? 'unknown error'}`,
+          message: event.error
+            ? `Compaction failed: ${event.error}`
+            : 'Compaction failed',
           status: 'error',
           autoHideMs: 5000,
         });

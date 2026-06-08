@@ -561,6 +561,82 @@ describe('KasAcpClient', () => {
     expect(result.message).toContain('kas is down');
   });
 
+  // ── /compact ──
+  // executeCommand resolves synchronously with "Compacting..."; the terminating
+  // CompactionStatus is broadcast later from `.then()`/`.catch()`. Flush a
+  // macrotask after invoking so those broadcasts settle before asserting.
+  const flushAsync = () => new Promise((r) => setTimeout(r, 0));
+
+  it('executeCommand("compact") broadcasts started then completed on success', async () => {
+    // Derived purely from success: KAS returns { success: true } for both a
+    // real compaction and a no-op (e.g. empty conversation). Either way we
+    // terminate the spinner with 'completed' — we do not infer a reason.
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => s.status)).toEqual([
+      'started',
+      'completed',
+    ]);
+  });
+
+  it('executeCommand("compact") broadcasts failed with no fabricated reason when success is false', async () => {
+    // KAS reports a failure as { success: false } with no message. callExtMethod
+    // wraps it as a transport-success, so the real status is in result.data. We
+    // surface 'failed' without inventing a reason.
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: false });
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => s.status)).toEqual(['started', 'failed']);
+    // No fabricated reason — error stays undefined when KAS gives none.
+    expect(
+      statuses.find((s: any) => s.status === 'failed').error
+    ).toBeUndefined();
+  });
+
+  it('executeCommand("compact") surfaces the real reason when the ext method rejects', async () => {
+    // A thrown error (e.g. SessionNotFoundError) is a genuine reason from KAS,
+    // so it is surfaced verbatim — extraction, not fabrication.
+    mockKiroSendExtMethod.mockRejectedValueOnce(new Error('kas is down'));
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+
+    const failed = handler.mock.calls
+      .map((c) => c[0])
+      .find(
+        (e: any) =>
+          e.type === AgentEventType.CompactionStatus && e.status === 'failed'
+      );
+    expect(failed).toBeDefined();
+    expect(failed.error).toBe('kas is down');
+  });
+
   it('executeCommand("agent") with agentName swaps via setSessionConfigOption', async () => {
     const client = new KasAcpClient();
     await client.initialize();
