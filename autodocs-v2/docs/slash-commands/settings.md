@@ -1,12 +1,12 @@
 ---
 doc_meta:
   title: /settings
-  description: Open the settings menu to configure theme, keybindings, terminal, display, and verbosity
+  description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, verbosity, display, ui-mode]
-  related: [theme, title, verbosity, lite-mode]
-  validated: 2026-06-06
-  commit: fcddc2183
+  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title]
+  related: [theme, title]
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: false
 ---
@@ -33,14 +33,13 @@ You can also jump directly to a subcommand:
 
 ## Subcommands
 
-| Subcommand    | Description                                                      | Details |
-|---------------|------------------------------------------------------------------|---------|
-| `display`     | Default UI at startup, animations, ASCII art, icons, and thinking | Toggle display preferences |
-| `verbosity`   | Tool args, reasoning, output filters, density (lite mode only)   | See [/verbosity](verbosity.md) |
-| `theme`       | Colors, prompt style, diff styling                               | See [/theme](theme.md) |
-| `keybindings` | View configurable keyboard shortcuts                             | Read-only; edit in `~/.kiro/settings.json` |
-| `terminal`    | Shift+Enter / Option+Enter for newlines                          | Configures your terminal app |
-| `history`     | Prompt history scope (session or global)                         | Choose between per-session or shared history |
+| Subcommand    | Description                                          | Details |
+|---------------|------------------------------------------------------|---------|
+| `display`     | Control animations, ASCII art, and icons             | Toggle display preferences |
+| `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
+| `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
+| `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
+| `history`     | Prompt history scope (session or global)             | Choose between per-session or shared history |
 
 ### display
 
@@ -48,22 +47,14 @@ Opens a toggle panel for display settings. Use ↑↓ to navigate, ←→ to tog
 
 | Setting | Key | Default | Effect |
 |---------|-----|---------|--------|
-| Default UI mode | `chat.ui.mode` | tui | Choose between `tui` (full TUI) and `lite` (minimal append-only) at startup. Only shown when the Lite rollout is enabled |
 | Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
 | ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
 | Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
-| Show thinking | `chat.showThinking` | on | When off, suppresses the model's freeform thinking content. Shared with lite mode's verbosity setting |
 | Terminal title | `chat.terminalTitle` | off | When on, updates the terminal window title with session info via OSC 0 sequences |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
 
 **Environment variable override**: `KIRO_ASCII_MODE=1` forces ASCII mode regardless of the setting.
-
-### verbosity
-
-Opens the lite-mode verbosity configuration menu. Equivalent to `/verbosity`. Only available when the UI is in lite mode — in TUI mode, the entry is hidden from the menu.
-
-See [/verbosity](verbosity.md) for full documentation.
 
 ### theme
 
@@ -160,14 +151,7 @@ The `chat.historyMode` setting persists to `~/.kiro/settings/cli.json`.
 /settings history
 ```
 
-### Open verbosity configuration (lite mode)
-
-```
-/settings verbosity
-```
-
 ## Related
 
 - [/theme](theme.md) — Open the theme menu directly (also accessible via `/settings theme`)
-- [/verbosity](verbosity.md) — Configure lite-mode rendering density (also accessible via `/settings verbosity`)
 - [Settings (CLI)](../commands/settings.md) — `kiro-cli settings` for configuration via CLI, including remapping `chat.keybindings.*`

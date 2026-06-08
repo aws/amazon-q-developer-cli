@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Verbosity and density settings for Lite mode via `/settings` → verbosity (tool output filters, args display, truncation)"
-}

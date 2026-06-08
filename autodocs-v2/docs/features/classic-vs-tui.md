@@ -1,21 +1,21 @@
 ---
 doc_meta:
-  validated: 2026-06-06
-  commit: fcddc2183
+  validated: 2026-06-07
+  commit: eaabfbb9e
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
-  description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
-  related: [help, theme, spawn, feedback, lite-mode]
+  description: Differences between classic mode (V1), the new TUI, and lite mode, including what changed, what's new, and how to switch
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite, lite-mode, scrollback]
+  related: [help, theme, spawn, feedback]
 ---
 
 ## Overview
 
-Kiro CLI has three interfaces: the new TUI (default), lite mode, and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, lite mode is a minimal append-only chat that lives in your scrollback, and classic mode is the original Rust-based experience.
+Kiro CLI has two interfaces: the new TUI (default) and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, while classic mode is the original Rust-based experience.
 
-Switch to classic mode anytime with `kiro-cli --classic`. Switch to lite mode with `kiro-cli chat --lite` or `/lite` mid-session (requires the Lite rollout). See [Lite Mode](lite-mode.md) for full details.
+Switch to classic mode anytime with `kiro-cli --classic`.
 
 ## What's New in the TUI
 
@@ -124,7 +124,7 @@ Classic mode supported `chat.diffTool` with delta, difft, meld, VS Code, and icd
 - Vi edit mode (`chat.editMode`) not available in TUI
 - Backslash continuation (`\` at end of line) not supported
 - Triple backtick code block auto-detection not supported
-- Inline hints and rotating tips not available
+- Inline hints and rotating tips not available in TUI mode (lite mode shows daily rotating tips at startup)
 
 ## Switching Between Modes
 
@@ -135,13 +135,38 @@ kiro-cli --classic
 kiro-cli chat --legacy-mode
 ```
 
+### Use Lite Mode (Rollout-Gated)
+
+Lite mode is a streamlined, classic-style scrollback UI within the TUI. It requires the lite mode rollout to be enabled for your account.
+
+```bash
+kiro-cli chat --lite
+```
+
+Once inside a session, switch between modes at any time:
+
+```
+/lite    Switch to lite (classic-style scrollback) UI
+/tui     Switch back to the full TUI
+```
+
+Scrollback is preserved when switching — prior messages stay on screen.
+
+Lite mode uses `/settings → verbosity` to control output density:
+- Tool arg display mode (off/inline/block)
+- Output filters per tool category
+- Reasoning visibility
+- Elapsed time display
+- Subagent pipeline detail toggles
+
 ### Session Compatibility
 
 Sessions saved in the TUI can be loaded in classic mode and vice versa via `/chat save` and `/chat load`. However, TUI sessions created during a TUI session are not available in classic mode's session picker.
 
 ## Related
 
-- [Lite Mode](lite-mode.md) — The minimal append-only chat interface
+- [/lite](../slash-commands/lite.md) — Switch to lite mode
+- [/verbosity](../slash-commands/verbosity.md) — Configure lite-mode output density
 - [/help](../slash-commands/help.md) — Command reference panel
 - [/guide](../slash-commands/guide.md) — Conversational help
 - [/theme](../slash-commands/theme.md) — Theme customization

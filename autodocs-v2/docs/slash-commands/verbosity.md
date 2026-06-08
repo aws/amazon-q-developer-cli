@@ -1,23 +1,23 @@
 ---
 doc_meta:
   title: /verbosity
-  description: Configure lite-mode rendering density, tool output filters, args display, and truncation
+  description: Configure lite-mode output rendering — density presets, tool filters, and display toggles
   category: slash_command
-  keywords: [verbosity, verbose, density, filters, tools, output, minimal, lean, full, truncation, lite]
-  related: [settings, lite-mode]
-  validated: 2026-06-06
-  commit: fcddc2183
+  keywords: [verbosity, verbose, density, filters, output, tool, args, reasoning, elapsed, subagent, minimal, lean, full, lite]
+  related: [lite, settings, classic-vs-tui]
+  validated: 2026-06-07
+  commit: eaabfbb9e
   status: validated
   testable_headless: false
 ---
 
 ## Overview
 
-The `/verbosity` command configures how lite mode renders tool calls, agent output, and subagent activity in your scrollback. It controls which tools show output, how arguments display, truncation limits, and overall information density.
+The `/verbosity` command opens a configuration menu for lite mode's scrollback rendering. It controls how much detail appears for tool calls, reasoning, subagent pipelines, and output bars.
 
-This command is only available in lite mode. In TUI mode, the entry appears in `/settings` but routes to a "lite mode only" notice.
+This command is lite-mode only. In TUI mode it is not surfaced in autocomplete; attempting to run it displays an error alert.
 
-An alias `/verbose` is also accepted.
+Also reachable via `/settings → verbosity` or the alias `/verbose`.
 
 ## Usage
 
@@ -25,158 +25,148 @@ An alias `/verbose` is also accepted.
 /verbosity
 ```
 
-Opens the top-level density menu with preset options and a custom configuration path.
+Opens the top-level verbosity menu with these sections:
 
-You can also access it via:
+- **Density** — Apply a preset (minimal, lean, default, full) or customize individual settings
+- **Show output** — Toggle which tool categories display output bars
+- **Tool args** — Control how tool arguments render (off/inline/block)
+- **Reasoning** — Show or hide per-tool-call reasoning text
+- **Elapsed time** — Show or hide execution duration
+- **Thinking** — Show or hide model thinking content
+- **Write diffs** — Show or hide diff bodies for file writes
+- **Tasks** — Show or hide the task tray
+- **Subagent** — Toggle individual subagent sections (pipeline, prompts, roles, deps, responses)
+- **Truncation** — Set max lines/chars for tool args and output bars
 
-```
-/settings verbosity
-```
+Navigate with arrow keys, Enter to select, Esc to go back one level.
 
 ## Density Presets
 
-Presets are the fastest way to configure verbosity. Each preset sets all display options at once:
+Presets apply a coordinated set of all display toggles and output filters at once:
 
-| Preset | Tool Reasoning | Args Mode | Elapsed | Thinking | Write Diffs | Tasks | Output Filters |
-|--------|---------------|-----------|---------|----------|-------------|-------|----------------|
-| `minimal` | off | off | off | off | off | off | none |
-| `lean` | off | inline | on | off | off | on | none |
-| `default` | on | block | on | on | on | on | shell only |
-| `full` | on | block | on | on | on | on | all tools |
+| Preset | Tool Args | Reasoning | Elapsed | Thinking | Write Diffs | Tasks | Output Filters | Output Max Lines |
+|--------|-----------|-----------|---------|----------|-------------|-------|---------------|-----------------|
+| **minimal** | off | off | off | off | off | off | none | 5 |
+| **lean** | inline | off | on | off | off | on | none | 10 |
+| **default** | block | on | on | on | on | on | shell only | 5 |
+| **full** | block | on | on | on | on | on | all | unlimited |
 
-Selecting a preset replaces both the display configuration and the filter list.
-
-## Display Options
-
-These control how tool calls render in scrollback:
-
-### Tool reasoning (`chat.tools.showReasoning`)
-
-Show the model's per-tool "why" explanation (the purple reasoning line above each tool call). Default: on.
-
-### Args mode (`chat.tools.argsMode`)
-
-How tool arguments display:
-
-- `off` — Only the tool name, no arguments shown
-- `inline` — Single-line chip (shell-style: `tool [arg]`)
-- `block` — Full key:value tree under the tool name (default)
-
-### Elapsed time (`chat.tools.showElapsed`)
-
-Show duration next to completed tool calls. Default: on.
-
-### Thinking content (`chat.showThinking`)
-
-Show the model's freeform thinking blocks. Shared with the TUI's "Show thinking" setting — both modes read and write the same `chat.showThinking` key. Default: on.
-
-### Write diffs (`chat.tools.showWriteDiffs`)
-
-Show diff bodies for file-write tool calls. When off, only the tool header (name, status, elapsed) renders — diffs are suppressed. Default: on.
-
-### Tasks (`chat.showTasks`)
-
-Show the task tray above the input. The tray surfaces `todo_list`/`task` tool state. Default: on.
+Selecting a preset resets both the display settings and the output filter list to match. Custom filter lists are only preserved when using the individual toggle menus (not when picking a preset).
 
 ## Output Filters
 
-Filters control which tools show their output content below the tool-call header. The filter list is the single source of truth — `filters: []` means no output renders for any tool; `filters: ['all']` shows output for every tool.
+The "Show output" submenu controls which tool categories display an output bar below the tool-call line. Available categories:
 
-### Filter tokens
+| Category | Tools Covered |
+|----------|--------------|
+| `shell` | execute_bash, shell |
+| `read` | fs_read, read |
+| `web` | web_search, web_fetch |
+| `grep` | grep, ripgrep |
+| `glob` | glob, find_files |
+| `code` | code intelligence tools |
+| `introspect` | introspect |
+| `task` | todo_list, task |
+| `subagent` | subagent pipeline tools |
+| `mcp` | Any tool prefixed with `mcp__` |
+| `all` | Toggle all categories on/off |
 
-| Token | Tools included |
-|-------|---------------|
-| `all` | Every tool (overrides other tokens) |
-| `shell` | `execute_bash`, `bash` |
-| `read` | `fs_read` |
-| `web` | `web_search`, `web_fetch` |
-| `grep` | `grep` |
-| `glob` | `glob` |
-| `code` | `code` |
-| `introspect` | `introspect` |
-| `task` | `task`, `todo_list` |
-| `subagent` | Subagent tools |
-| `mcp` | Any tool starting with `mcp__` |
-
-You can also use exact tool names as filter tokens.
-
-Default filters: `['shell']` (only shell tool output is shown).
-
-## Subagent Display
-
-Controls what renders in the subagent summary block:
-
-| Setting | Key | Default | Description |
-|---------|-----|---------|-------------|
-| Pipeline | `chat.subagent.showPipeline` | on | Show the pipeline/stage tree |
-| Prompts | `chat.subagent.showPrompts` | on | Show stage prompts |
-| Roles | `chat.subagent.showRoles` | on | Show agent roles |
-| Dependencies | `chat.subagent.showDeps` | on | Show dependency arrows |
-| Responses | `chat.subagent.showResponses` | on | Show per-stage responses |
-
-## Truncation
-
-Caps how many lines/characters render for tool arguments and output:
-
-| Setting | Key | Default |
-|---------|-----|---------|
-| Args max lines | `chat.tools.argsMaxLines` | unlimited |
-| Output max lines | `chat.tools.outputMaxLines` | 5 |
-| Args max chars | `chat.tools.argsMaxChars` | unlimited |
-| Output max chars | `chat.tools.outputMaxChars` | unlimited |
-
-When a limit is hit, content is truncated with a marker. Set to `null` or `0` for unlimited.
-
-## Persistence
-
-Configuration is persisted in two locations:
-
-- `~/.kiro/settings/lite_verbose.json` — Legacy file, still read as fallback
-- `~/.kiro/settings/cli.json` — Canonical source; individual keys like `chat.tools.filters`, `chat.tools.argsMode`, etc.
-
-The `/verbosity` menu writes to both locations. Resolution order: `cli.json` > `lite_verbose.json` > built-in defaults.
+An empty filter list means no output bars render for any tool. The `all` row acts as a master toggle.
 
 ## Examples
 
-### Open the verbosity menu
+### Apply a density preset
 
 ```
 /verbosity
 ```
 
-### Access via settings
+Select "Density" → pick "lean" for a compact view with inline tool args and no reasoning.
+
+### Show output for shell commands only
 
 ```
-/settings verbosity
+/verbosity
 ```
 
-### Quick density switch
+Select "Show output" → enable only "shell". Other tool categories won't show output bars.
 
-Select "Density" from the `/verbosity` menu, then choose `minimal`, `lean`, `default`, or `full`.
+### Enable all output
 
-### Enable all tool output
+```
+/verbosity
+```
 
-Select "Filters" from the menu and add `all` to the filter list. Or select the `full` density preset.
+Select "Show output" → select "all" to enable output bars for every tool.
 
-### Show only shell output (default)
+### Hide subagent pipeline details
 
-Filters: `['shell']` — only `execute_bash` and `bash` tool output renders.
+```
+/verbosity
+```
+
+Select "Subagent" → toggle off "prompts", "roles", and "deps" to show only the pipeline tree and final responses.
+
+### Set truncation limits
+
+```
+/verbosity
+```
+
+Select "Truncation" → set output max lines to 10 to cap tool output bars at 10 visible rows (older lines show a "+N more lines above" marker).
+
+## Configuration Storage
+
+Verbosity settings are saved to two locations:
+
+- `~/.kiro/settings/lite_verbose.json` — legacy mirror, full verbose config
+- `~/.kiro/settings/cli.json` — canonical settings (shared with TUI mode)
+
+Both are written on every change so settings stay in sync. The `cli.json` keys used:
+
+| Setting Key | Controls |
+|-------------|----------|
+| `chat.tools.filters` | Output filter list |
+| `chat.tools.showReasoning` | Per-tool reasoning visibility |
+| `chat.tools.argsMode` | Tool args mode (off/inline/block) |
+| `chat.tools.showElapsed` | Elapsed time display |
+| `chat.tools.argsMaxLines` | Args block truncation (lines) |
+| `chat.tools.outputMaxLines` | Output bar truncation (lines) |
+| `chat.tools.argsMaxChars` | Args value truncation (chars) |
+| `chat.tools.outputMaxChars` | Output line truncation (chars) |
+| `chat.tools.showWriteDiffs` | Write tool diff bodies |
+| `chat.showTasks` | Task tray visibility |
+| `chat.showThinking` | Model thinking content |
+| `chat.subagent.showPipeline` | Subagent pipeline tree |
+| `chat.subagent.showPrompts` | Subagent prompt sections |
+| `chat.subagent.showRoles` | Subagent role annotations |
+| `chat.subagent.showDeps` | Subagent dependency arrows |
+| `chat.subagent.showResponses` | Subagent per-stage responses |
 
 ## Troubleshooting
 
-### `/verbosity` shows "lite mode only" error
+### /verbosity shows "lite only" error
 
-This command only works in lite mode. Switch to lite mode with `/lite` first.
+**Cause**: You're in TUI mode, not lite mode.  
+**Solution**: Switch to lite mode with `/lite` first, then use `/verbosity`.
 
 ### Changes don't seem to take effect
 
-Verbosity settings apply to newly rendered tool calls. Already-rendered content in scrollback is not re-rendered. Send a new message to see the updated rendering.
+**Cause**: Verbosity settings apply to new messages only. Already-rendered scrollback is immutable (append-only rendering).  
+**Solution**: Changes apply to the next tool call or message. Use `/clear` to start fresh if needed.
 
-### Setting was changed in TUI but lite doesn't reflect it
+### Output bar not showing for a tool
 
-The `chat.showThinking` setting is shared between both modes. Other verbosity settings are lite-specific. If you edit `cli.json` manually, changes take effect on the next tool call render.
+**Cause**: The tool's category isn't in the active filter list.  
+**Solution**: `/verbosity` → Show output → enable the relevant category. Check if you're on a density preset that clears filters (minimal, lean, default only shows shell).
+
+### Saved config not loading
+
+**Cause**: File permissions or corruption in `~/.kiro/settings/lite_verbose.json`.  
+**Solution**: Delete the file to reset to defaults. The next `/verbosity` change recreates it.
 
 ## Related
 
-- [/settings](settings.md) — Parent settings menu (includes verbosity as a subcommand)
-- [Lite Mode](../features/lite-mode.md) — The lite UI mode where verbosity applies
+- [/lite](lite.md) — Switch to lite mode
+- [/settings](settings.md) — Top-level settings menu (verbosity is a submenu in lite mode)
+- [Classic vs TUI](../features/classic-vs-tui.md) — Mode comparison and switching

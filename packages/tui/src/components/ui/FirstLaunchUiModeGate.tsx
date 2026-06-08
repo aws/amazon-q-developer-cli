@@ -47,7 +47,7 @@ export const FirstLaunchUiModeGate: React.FC<FirstLaunchUiModeGateProps> = ({
         <Box marginTop={1} marginBottom={1}>
           <Text wrap="wrap">
             {primary(
-              'You can change this any time from /settings → display, or override per-launch with --lite/--tui. Use /lite or /tui mid-session to switch on the fly.'
+              'You can change this any time from /settings → display. Use /lite or /tui mid-session to switch on the fly.'
             )}
           </Text>
         </Box>
