@@ -25,6 +25,7 @@ export enum KasCommandName {
   Hooks = '/hooks',
   Mcp = '/mcp',
   Plan = '/plan',
+  Feedback = '/feedback',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -176,5 +177,14 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Plan,
     description: 'Switch to quick-plan mode for structured spec generation',
+  },
+  {
+    name: KasCommandName.Feedback,
+    description: 'Submit feedback, request features, or report issues',
+    meta: {
+      inputType: 'selection',
+      searchable: false,
+      hint: '',
+    },
   },
 ];

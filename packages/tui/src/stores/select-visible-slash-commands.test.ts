@@ -56,6 +56,12 @@ describe('selectVisibleSlashCommands', () => {
     expect(visible.find((c) => c.name === '/settings')).toBeDefined();
   });
 
+  it('exposes /feedback in KAS mode', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/feedback')).toBeDefined();
+  });
+
   it('merges prompts, skills, and steering into the visible list', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setPrompts([
