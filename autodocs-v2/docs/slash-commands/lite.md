@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [lite, mode, switch, ui, lightweight, scrollback, minimal]
   related: [tui, verbosity, settings, lite-mode]
-  validated: 2026-06-06
-  commit: 80052afab
+  validated: 2026-06-05
+  commit: 8a53bd9d9
   status: validated
   testable_headless: false
 ---
@@ -75,7 +75,6 @@ To make lite mode your default so it activates on every new session:
 
 1. `/settings → display → Default UI → lite`
 2. Or set `"chat.ui.mode": "lite"` in `~/.kiro/settings/cli.json`
-3. Or pass `--lite` on the command line
 
 ## Troubleshooting
 

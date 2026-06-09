@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
   related: [classic-vs-tui, settings]
-  validated: 2026-06-06
-  commit: 80052afab
+  validated: 2026-06-05
+  commit: 8a53bd9d9
   status: validated
   testable_headless: true
 ---
@@ -30,12 +30,6 @@ Key differences from the standard TUI:
 Lite mode is currently available on internal nightly builds. First-time eligible users are prompted to pick their default mode at launch.
 
 ## Enabling Lite Mode
-
-### CLI Flag
-
-```bash
-kiro-cli chat --lite
-```
 
 ### Mid-Session Switch
 
@@ -67,9 +61,8 @@ Set your default via `/settings → display → Default UI` or write directly to
 The UI mode is resolved with this priority (highest first):
 
 1. `KIRO_UI_MODE` environment variable
-2. `--lite` CLI flag
-3. `chat.ui.mode` setting in `cli.json`
-4. Default (`tui`)
+2. `chat.ui.mode` setting in `cli.json`
+3. Default (`tui`)
 
 ## Switching Between Modes
 
@@ -166,8 +159,11 @@ Lite mode verbosity settings are persisted in `~/.kiro/settings/cli.json`:
 
 ### Example 1: Start in Lite Mode
 
+Set lite as your default (persists across sessions):
+
 ```bash
-kiro-cli chat --lite
+kiro-cli settings chat.ui.mode lite
+kiro-cli chat
 ```
 
 ### Example 2: Switch Mid-Session

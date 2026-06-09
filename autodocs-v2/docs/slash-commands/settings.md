@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, verbosity, display, lite]
   related: [theme, title, verbosity, lite]
-  validated: 2026-06-06
-  commit: 80052afab
+  validated: 2026-06-05
+  commit: 8a53bd9d9
   status: validated
   testable_headless: false
 ---
