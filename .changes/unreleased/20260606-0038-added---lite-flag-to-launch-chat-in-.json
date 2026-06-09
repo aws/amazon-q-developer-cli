@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Lite UI mode: a streamlined, scrollback-friendly chat experience. Switch to it with `/lite` mid-session, or set it as your default via `/settings → display` (internal and nightly only)"
-}

@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-06
-  commit: 0dfcbc4ea
+  validated: 2026-06-04
+  commit: fde97d540
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker, lite]
-  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes, classic-vs-tui]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
+  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
 # kiro-cli chat

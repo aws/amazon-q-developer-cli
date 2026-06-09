@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Cancelling a subagent mid-execution now preserves its already-computed result instead of showing \"No result\""
-}
