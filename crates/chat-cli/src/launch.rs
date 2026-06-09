@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -175,21 +176,39 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 
+            // An explicit `KIRO_KAS_NODE_PATH` takes precedence over the
+            // embedded Node runtime so released builds can run KAS with a
+            // user-supplied Node.js. The value is forwarded to the TUI via
+            // `KIRO_AGENT_PATH` (read by `KasAcpClient`). When unset we fall
+            // back to the previous behavior: embedded node, then `node` on
+            // PATH.
+            let node_override = crate::embedded_tui::kas_node_override(os);
+
             if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
-                cmd.env("KIRO_AGENT_PATH", "node");
+                let node = node_override.unwrap_or_else(|| PathBuf::from("node"));
+                cmd.env("KIRO_AGENT_PATH", &node);
                 cmd.env("KIRO_KAS_SERVER_PATH", &kas_server_path);
-                info!("Using KAS agent engine, server path override: {}", kas_server_path);
+                info!(
+                    "Using KAS agent engine, node: {}, server path override: {}",
+                    node.display(),
+                    kas_server_path
+                );
             } else if let Some((node_bin, server_js)) = extract_kas_assets_if_needed(os).await? {
-                cmd.env("KIRO_AGENT_PATH", &node_bin);
+                let node = node_override.unwrap_or(node_bin);
+                cmd.env("KIRO_AGENT_PATH", &node);
                 cmd.env("KIRO_KAS_SERVER_PATH", &server_js);
                 info!(
-                    "Using KAS agent engine, embedded node: {}, server: {}",
-                    node_bin.display(),
+                    "Using KAS agent engine, node: {}, server: {}",
+                    node.display(),
                     server_js.display()
                 );
             } else {
-                cmd.env("KIRO_AGENT_PATH", "node");
-                info!("Using KAS agent engine, server resolved from @kiro/agent package");
+                let node = node_override.unwrap_or_else(|| PathBuf::from("node"));
+                cmd.env("KIRO_AGENT_PATH", &node);
+                info!(
+                    "Using KAS agent engine, node: {}, server resolved from @kiro/agent package",
+                    node.display()
+                );
             }
         },
         AgentEngine::V2 => {

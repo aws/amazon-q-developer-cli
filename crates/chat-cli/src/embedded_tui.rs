@@ -156,6 +156,21 @@ pub async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, Pa
     Ok(Some((node_extract_path, server_path)))
 }
 
+/// Explicit override for the Node.js binary used to run KAS.
+///
+/// When `KIRO_KAS_NODE_PATH` is set to a non-empty value it takes precedence
+/// over the embedded Node runtime that ships with release builds, letting
+/// users point KAS at a specific Node.js installation. The chosen Node must be
+/// compatible with the bundled KAS server (see `NODE_VERSION` in
+/// `scripts/const.py` for the version releases are validated against).
+pub fn kas_node_override(os: &Os) -> Option<PathBuf> {
+    os.env
+        .get(crate::util::consts::env_var::KIRO_KAS_NODE_PATH)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 async fn extract_tui_assets_if_needed_impl(
     os: &Os,
     bun_extract_path: impl AsRef<Path>,

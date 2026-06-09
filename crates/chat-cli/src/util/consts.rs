@@ -156,6 +156,13 @@ pub mod env_var {
         /// Chat UI mode override: "legacy" or "tui"
         KIRO_CHAT_UI = "KIRO_CHAT_UI",
 
+        /// Overrides the Node.js binary used to run the KAS agent engine.
+        /// Takes precedence over the embedded Node runtime shipped with
+        /// release builds, letting users point KAS at a specific Node.js
+        /// install. The chosen Node must be compatible with the bundled KAS
+        /// server (see `NODE_VERSION` in `scripts/const.py`).
+        KIRO_KAS_NODE_PATH = "KIRO_KAS_NODE_PATH",
+
         /// Used for E2E tests
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
 

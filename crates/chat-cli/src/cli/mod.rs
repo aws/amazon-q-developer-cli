@@ -718,6 +718,9 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
     };
 
+    // `KIRO_KAS_NODE_PATH` overrides the resolved node (including the embedded one).
+    let node_bin = crate::embedded_tui::kas_node_override(os).unwrap_or(node_bin);
+
     debug!(
         node = %node_bin.display(),
         server = %server_js.display(),
@@ -779,6 +782,9 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
     } else {
         bail!("KAS assets not available. Install nightly or set KIRO_KAS_SERVER_PATH.");
     };
+
+    // `KIRO_KAS_NODE_PATH` overrides the resolved node (including the embedded one).
+    let node_bin = crate::embedded_tui::kas_node_override(os).unwrap_or(node_bin);
 
     debug!(
         "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws --auth=acp-callback (port {})",
