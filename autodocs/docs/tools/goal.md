@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-01
-  commit: 598173c4d
+  validated: 2026-06-05
+  commit: 3e7d014be
   status: validated
   testable_headless: true
   category: tool
   title: goal
   description: Built-in tool for signaling goal completion or checking progress
-  keywords: [goal, complete, iteration, loop, verification]
+  keywords: [goal, complete, iteration, loop, verification, retry, failure]
   related: [task, subagent]
 ---
 

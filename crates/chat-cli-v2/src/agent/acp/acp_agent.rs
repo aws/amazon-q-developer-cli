@@ -1207,6 +1207,64 @@ impl AcpSession {
         )));
     }
 
+    /// Handle a dispatch failure during an active goal. Does NOT increment the
+    /// iteration counter. Retries with exponential backoff up to 3 times, then
+    /// pauses the goal (same as Ctrl+C from the user's perspective).
+    async fn handle_goal_dispatch_failure(&mut self) {
+        let Some(ref mut goal_ctrl) = self.goal_controller else {
+            return;
+        };
+
+        let should_retry = goal_ctrl.record_failure();
+        let failures = goal_ctrl.consecutive_failures;
+
+        if !should_retry {
+            // Retries exhausted — pause the goal.
+            tracing::warn!("Goal paused after {failures} consecutive dispatch failures");
+            self.send_goal_status_notification();
+            self.emit_goal_telemetry("dispatch_failure_exhausted");
+            self.release_goal_response().await;
+            return;
+        }
+
+        let backoff = goal_ctrl.backoff_delay();
+        let iteration = goal_ctrl.iteration;
+        let prompt = goal_ctrl.build_prompt(iteration + 1);
+
+        tracing::info!(
+            "Goal: dispatch failure #{failures}, retrying after {}s",
+            backoff.as_secs()
+        );
+
+        let agent = self.agent.clone();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(backoff).await;
+            for attempt in 0..5u64 {
+                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
+                match agent
+                    .send_prompt(agent::protocol::SendPromptArgs {
+                        content: vec![agent::protocol::ContentChunk::Text(prompt.clone())],
+                        should_continue_turn: None,
+                    })
+                    .await
+                {
+                    Ok(()) => return,
+                    Err(e) => {
+                        tracing::warn!("Goal retry re-injection attempt {} failed: {e:?}", attempt + 1);
+                    },
+                }
+            }
+            // All re-injection attempts failed — notify actor.
+            let _ = self_tx
+                .send(AcpSessionRequest::GoalReinjectionFailed {
+                    tool_call_id: format!("goal-retry-{}", iteration),
+                    error: "Re-injection failed after dispatch failure retry".into(),
+                })
+                .await;
+        });
+    }
+
     /// Release pending_prompt_response back to TUI (goal done/exhausted/error).
     async fn release_goal_response(&mut self) {
         if let Some(respond_to) = self.pending_prompt_response.take() {
@@ -1286,11 +1344,23 @@ impl AcpSession {
             agent::agent_loop::protocol::LoopEndReason::Cancelled
                 | agent::agent_loop::protocol::LoopEndReason::ToolUseRejected
         );
+        let was_error = md.end_reason == agent::agent_loop::protocol::LoopEndReason::Error
+            || (goal_should_continue && Self::should_simulate_goal_failure());
 
         if goal_should_continue && !was_cancelled {
-            // Keep pending_prompt_response held — the re-injected prompt
-            // triggers another turn whose EndTurn will eventually respond.
-            self.evaluate_goal_on_end_turn().await;
+            if was_error {
+                // Turn ended due to dispatch failure — don't count as iteration.
+                // Retry with backoff or pause if retries exhausted.
+                self.handle_goal_dispatch_failure().await;
+            } else {
+                // Successful turn — reset failure counter, proceed normally.
+                if let Some(ref mut ctrl) = self.goal_controller {
+                    ctrl.record_success();
+                }
+                // Keep pending_prompt_response held — the re-injected prompt
+                // triggers another turn whose EndTurn will eventually respond.
+                self.evaluate_goal_on_end_turn().await;
+            }
         } else {
             // Goal complete, exhausted, or normal non-goal turn — release to TUI.
             if let Some(respond_to) = self.pending_prompt_response.take() {
@@ -1305,6 +1375,19 @@ impl AcpSession {
                 let _ = respond_to.respond(PromptResponse::new(stop_reason));
             }
         }
+    }
+
+    /// Test-only: when `KIRO_GOAL_SIMULATE_FAILURE=1` is set, every turn during
+    /// an active goal is treated as a dispatch failure. Used by Knight Rider to
+    /// validate retry + pause behavior without needing real network failures.
+    #[cfg(any(test, debug_assertions))]
+    fn should_simulate_goal_failure() -> bool {
+        std::env::var("KIRO_GOAL_SIMULATE_FAILURE").is_ok_and(|v| v == "1")
+    }
+
+    #[cfg(not(any(test, debug_assertions)))]
+    fn should_simulate_goal_failure() -> bool {
+        false
     }
 
     fn send_goal_status_notification(&self) {

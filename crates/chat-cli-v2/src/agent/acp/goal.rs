@@ -4,6 +4,9 @@ use serde::{
     Serialize,
 };
 
+/// Maximum consecutive dispatch failures before pausing the goal.
+const MAX_CONSECUTIVE_FAILURES: u32 = 3;
+
 /// State machine managing the goal loop lifecycle. Owned by AcpSession.
 #[derive(Debug, Clone)]
 pub struct GoalController {
@@ -12,6 +15,8 @@ pub struct GoalController {
     pub iteration: u32,
     pub history: Vec<GoalIterationResult>,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    /// Consecutive turn failures (dispatch errors, 5xx). Reset on successful turn.
+    pub consecutive_failures: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -63,6 +68,7 @@ impl GoalController {
             iteration: 0,
             history: Vec::new(),
             started_at: chrono::Utc::now(),
+            consecutive_failures: 0,
         }
     }
 
@@ -86,11 +92,38 @@ impl GoalController {
             iteration: snapshot.iteration,
             history: snapshot.history,
             started_at: snapshot.started_at,
+            consecutive_failures: 0,
         }
     }
 
     pub fn should_continue(&self) -> bool {
         self.state == GoalState::WaitingForTurn
+    }
+
+    /// Record a successful turn — resets the failure counter.
+    pub fn record_success(&mut self) {
+        self.consecutive_failures = 0;
+    }
+
+    /// Record a dispatch failure. Returns `true` if the goal should retry
+    /// (after a backoff delay), or `false` if retries are exhausted and the
+    /// goal has been paused.
+    pub fn record_failure(&mut self) -> bool {
+        self.consecutive_failures += 1;
+        if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+            self.mark_exhausted(format!(
+                "Paused after {} consecutive dispatch failures",
+                self.consecutive_failures
+            ));
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Exponential backoff delay for the current failure count: 2s, 4s, 8s.
+    pub fn backoff_delay(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(1 << self.consecutive_failures)
     }
 
     /// Transition the goal into the [`GoalState::Exhausted`] state with the given
@@ -257,5 +290,57 @@ mod tests {
         let display = ctrl.status_display();
         assert!(display.contains("⟳ Active"));
         assert!(display.contains("Implement pagination"));
+    }
+
+    #[test]
+    fn record_success_resets_failure_counter() {
+        let mut ctrl = GoalController::new(make_definition());
+        ctrl.consecutive_failures = 2;
+        ctrl.record_success();
+        assert_eq!(ctrl.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn record_failure_allows_retry_below_max() {
+        let mut ctrl = GoalController::new(make_definition());
+        assert!(ctrl.record_failure()); // 1st failure — retry
+        assert!(ctrl.record_failure()); // 2nd failure — retry
+        assert!(ctrl.should_continue());
+    }
+
+    #[test]
+    fn record_failure_pauses_at_max() {
+        let mut ctrl = GoalController::new(make_definition());
+        ctrl.record_failure();
+        ctrl.record_failure();
+        let should_retry = ctrl.record_failure(); // 3rd — exhausted
+        assert!(!should_retry);
+        assert!(!ctrl.should_continue());
+        assert!(matches!(ctrl.state, GoalState::Exhausted { .. }));
+    }
+
+    #[test]
+    fn backoff_delay_grows_exponentially() {
+        let mut ctrl = GoalController::new(make_definition());
+        ctrl.consecutive_failures = 1;
+        assert_eq!(ctrl.backoff_delay().as_secs(), 2);
+        ctrl.consecutive_failures = 2;
+        assert_eq!(ctrl.backoff_delay().as_secs(), 4);
+        ctrl.consecutive_failures = 3;
+        assert_eq!(ctrl.backoff_delay().as_secs(), 8);
+    }
+
+    #[test]
+    fn success_after_failures_resets_and_allows_continuation() {
+        let mut ctrl = GoalController::new(make_definition());
+        ctrl.record_failure();
+        ctrl.record_failure();
+        // At 2 failures but not paused yet
+        assert!(ctrl.should_continue());
+        ctrl.record_success();
+        assert_eq!(ctrl.consecutive_failures, 0);
+        // Can now tolerate another 3 failures
+        assert!(ctrl.record_failure());
+        assert!(ctrl.record_failure());
     }
 }

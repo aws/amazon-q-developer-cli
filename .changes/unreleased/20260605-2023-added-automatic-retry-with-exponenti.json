@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Automatic retry with exponential backoff for `/goal` dispatch failures (pauses after 3 consecutive failures)"
+}

@@ -1,13 +1,13 @@
 ---
 doc_meta:
   validated: 2026-06-05
-  commit: f6df040ba
+  commit: 46d015fca
   status: validated
   testable_headless: true
   category: slash_command
   title: /goal
   description: Set a goal with validation criteria for iterative agent completion
-  keywords: [goal, iterate, loop, validation, criteria, complete, autonomous, agent]
+  keywords: [goal, iterate, loop, validation, criteria, complete, autonomous, agent, retry, failure]
   related: [compact, spawn, effort]
 ---
 
@@ -64,9 +64,28 @@ This lets you track progress at a glance. The description is truncated if longer
 | Completed | ✓ | All criteria verified with cited evidence |
 | Exhausted | ✗ | Max iterations reached without completion |
 
+## Failure Handling
+
+When a dispatch failure occurs (network error, server 5xx response), the goal automatically retries with exponential backoff:
+
+| Failure # | Backoff Delay | Action |
+|-----------|---------------|--------|
+| 1 | 2 seconds | Retry |
+| 2 | 4 seconds | Retry |
+| 3 | — | Goal paused |
+
+After 3 consecutive failures, the goal enters the **Exhausted** state with a message like:
+
+```
+Paused after 3 consecutive dispatch failures
+```
+
+Successful turns reset the failure counter. You can resume a paused goal by starting a new one.
+
 ## Troubleshooting
 
 - **"No active goal"** — No goal is set. Use `/goal <description>` first.
 - **"Goal description is too long"** — Keep under 4,000 characters.
 - **"--max exceeds the 50 iteration ceiling"** — Use `--max 50` or lower.
 - **Goal exhausted** — Increase `--max`, simplify the goal, or break into sub-goals.
+- **"Paused after 3 consecutive dispatch failures"** — Network or server issues caused repeated failures. Check your connection and start a new goal to retry.
