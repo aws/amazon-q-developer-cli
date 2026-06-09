@@ -2342,6 +2342,25 @@ export const createAppStore = (props: AppStoreProps) => {
               get().setGoalStatus(null);
             } else {
               const prev = get().goalStatus;
+              // When the iteration advances, flush and reset the content
+              // buffer so new-iteration content can't overwrite the
+              // previous iteration's Model message in scrollback.
+              if (
+                prev &&
+                event.iteration !== undefined &&
+                event.iteration > prev.iteration
+              ) {
+                if (pendingContentFlush) {
+                  clearTimeout(pendingContentFlush);
+                  pendingContentFlush = null;
+                }
+                flushContentToStore();
+                bufferedContent = '';
+                bufferedThinking = '';
+                lastContentEventId = null;
+                thinkingStart = null;
+                thinkingMs = null;
+              }
               get().setGoalStatus({
                 state: event.state,
                 iteration: event.iteration,

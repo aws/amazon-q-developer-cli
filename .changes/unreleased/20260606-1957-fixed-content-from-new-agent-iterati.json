@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Content from new agent iterations overwriting previous iteration messages in scrollback"
+}
