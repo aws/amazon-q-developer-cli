@@ -2,15 +2,35 @@ import { getTerminalChalkColor } from './colorUtils.js';
 
 export const DEFAULT_AGENT_NAME = 'kiro_default';
 
-/** Agent names that represent the default/built-in agent across engines. */
-const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set([
-  'kiro_default', // V2 engine
-  'vibe', // KAS engine
-]);
+/** Agent names that represent the default/built-in agent. */
+const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set(['kiro_default']);
 
 /** Whether the given agent name is the default built-in agent. */
 export function isDefaultAgent(name: string): boolean {
   return DEFAULT_AGENT_NAMES.has(name);
+}
+
+/**
+ * Canonical display names for built-in modes. The TUI translates KAS wire
+ * mode ids to TUI ids in `acp-client.ts` (`fromKasModeId`); this map keeps
+ * the rendered label consistent across the `/agent` selector and the
+ * status-bar chip. User-defined agents are not normalized — their names
+ * pass through verbatim.
+ */
+const BUILTIN_DISPLAY_NAMES: Record<string, string> = {
+  kiro_default: 'Kiro',
+  kiro_planner: 'Plan',
+  plan: 'Plan',
+  spec: 'Spec',
+};
+
+/**
+ * Returns the user-facing label for an agent. Built-ins use their canonical
+ * name; everything else prefers a caller-supplied fallback (typically the
+ * KAS-supplied display name) and falls back to the id.
+ */
+export function getAgentDisplayName(id: string, fallbackName?: string): string {
+  return BUILTIN_DISPLAY_NAMES[id] ?? fallbackName ?? id;
 }
 
 // 20-color palette for agent names with 256-color fallbacks

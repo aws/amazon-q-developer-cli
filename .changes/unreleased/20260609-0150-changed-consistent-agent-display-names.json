@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Consistent agent display names in status bar and `/agent` menu — default agent shows as \"Kiro\", planner as \"Plan\""
+}

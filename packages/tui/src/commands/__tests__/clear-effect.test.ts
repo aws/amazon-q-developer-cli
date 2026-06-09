@@ -24,7 +24,7 @@ describe('/clear effect — clearMessages', () => {
       data: {
         sessionId: 'new-session-123',
         currentModel: { id: 'auto', name: 'Auto' },
-        currentAgent: { name: 'vibe' },
+        currentAgent: { name: 'kiro_default' },
       },
     };
 
@@ -50,14 +50,14 @@ describe('/clear effect — clearMessages', () => {
       message: '',
       data: {
         sessionId: 'new-session-456',
-        currentAgent: { name: 'vibe', welcomeMessage: 'Hello' },
+        currentAgent: { name: 'kiro_default', welcomeMessage: 'Hello' },
       },
     };
 
     runEffect(clearCmd, result, ctx, '');
 
     expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
-      name: 'vibe',
+      name: 'kiro_default',
       welcomeMessage: 'Hello',
     });
   });
@@ -74,7 +74,7 @@ describe('/clear effect — clearMessages', () => {
       message: '',
       data: {
         sessionId: 'new-session-789',
-        currentAgent: { name: 'vibe', welcomeMessage: 'Welcome' },
+        currentAgent: { name: 'kiro_default', welcomeMessage: 'Welcome' },
       },
     };
 
@@ -85,7 +85,7 @@ describe('/clear effect — clearMessages', () => {
 
     // Should have fallen back to backend agent and shown alert
     expect(ctx._spies.setCurrentAgent!).toHaveBeenNthCalledWith(2, {
-      name: 'vibe',
+      name: 'kiro_default',
       welcomeMessage: 'Welcome',
     });
     expect(ctx._spies.showAlert!).toHaveBeenCalledWith(

@@ -632,8 +632,59 @@ describe('KasAcpClient', () => {
       agents: Array<{ name: string; description: string }>;
       current: string;
     };
-    expect(data.current).toBe('vibe');
-    expect(data.agents.map((a) => a.name)).toEqual(['vibe', 'research']);
+    expect(data.current).toBe('kiro_default');
+    expect(data.agents.map((a) => a.name)).toEqual([
+      'kiro_default',
+      'research',
+    ]);
+  });
+
+  it('captureModes translates wire vibe → kiro_default and rewrites the display name to "Kiro"', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          { id: 'vibe', name: 'Vibe', description: 'General coding' },
+          { id: 'spec', name: 'Spec', description: 'Spec mode' },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+    const state = (client as any).modesState;
+    expect(state.currentModeId).toBe('kiro_default');
+    expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
+      'kiro_default',
+      'spec',
+    ]);
+    const def = state.availableModes.find(
+      (m: { id: string }) => m.id === 'kiro_default'
+    );
+    expect(def.name).toBe('Kiro');
+    // Spec is unaffected — its display name passes through.
+    const spec = state.availableModes.find(
+      (m: { id: string }) => m.id === 'spec'
+    );
+    expect(spec.name).toBe('Spec');
+  });
+
+  it('agent swap of kiro_default sends "vibe" on the wire (toKasModeId)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSetSessionConfigOption.mockClear();
+    await client.executeCommand({
+      command: 'agent',
+      args: { agentName: 'kiro_default' },
+    } as any);
+    const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'mode'
+    );
+    expect(modeCalls.length).toBe(1);
+    expect(modeCalls[0][0].value).toBe('vibe');
   });
 
   it('executeCommand("clear") creates a new session via session/new primitive', async () => {
@@ -957,8 +1008,8 @@ describe('KasAcpClient', () => {
     );
     expect(result.options).toEqual([
       {
-        value: 'vibe',
-        label: 'Default',
+        value: 'kiro_default',
+        label: 'Kiro',
         description: '[active] General coding assistance',
         group: 'Bundled',
       },
@@ -1018,7 +1069,7 @@ describe('KasAcpClient', () => {
 
     const result = await client.getCommandOptions('/agent', '');
     const values = result.options.map((o: any) => o.value);
-    expect(values).toEqual(['vibe']);
+    expect(values).toEqual(['kiro_default']);
     expect(values).not.toContain('semantic_reviewer');
   });
 
@@ -1141,7 +1192,7 @@ describe('KasAcpClient', () => {
       .find((e: any) => e.type === AgentEventType.AgentSwitched);
     expect(switched).toBeDefined();
     expect(switched.agentName).toBe('spec');
-    expect(switched.previousAgentName).toBe('vibe');
+    expect(switched.previousAgentName).toBe('kiro_default');
     expect(switched.welcomeMessage).toBe('Spec mode: ready to plan');
   });
 
@@ -3352,7 +3403,7 @@ describe('MCP OAuth flow', () => {
         requestedAgent: 'missing-agent',
         fallbackAgent: 'vibe',
       });
-      expect((client as any).modesState.currentModeId).toBe('vibe');
+      expect((client as any).modesState.currentModeId).toBe('kiro_default');
     });
   });
 });

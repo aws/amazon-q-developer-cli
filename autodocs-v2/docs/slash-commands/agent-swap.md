@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-29
-  commit: f7071e53
+  validated: 2026-06-09
+  commit: 96dc37b3f
   status: validated
   testable_headless: false
   category: slash_command
   title: /agent
   description: Switch to different agent configuration during chat session
-  keywords: [agent, switch, swap, profile, description, model, autocomplete]
+  keywords: [agent, switch, swap, profile, description, model, autocomplete, display-name]
   related: [agent-create, agent-edit, agent-configuration, model]
 ---
 
@@ -85,10 +85,10 @@ Opens agent for editing.
 ```
 → rust-expert - Rust development with cargo and clippy
   python-dev - Python development assistant
-  kiro_default - Default agent
+  Kiro - Default agent
 ```
 
-Current agent marked with `→`. Shows name and description.
+Current agent marked with `→`. Shows display name and description. Built-in agents use canonical display names (e.g., "Kiro" for the default agent, "Plan" for the planner).
 
 ### Example 2: Direct Switch
 

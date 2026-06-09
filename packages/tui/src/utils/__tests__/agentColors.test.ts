@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { DEFAULT_AGENT_NAME, getAgentColor } from '../agentColors';
+import {
+  DEFAULT_AGENT_NAME,
+  getAgentColor,
+  getAgentDisplayName,
+} from '../agentColors';
 
 describe('agentColors', () => {
   const mockGetColor = (path: string) => {
@@ -56,6 +60,29 @@ describe('agentColors', () => {
       const unique = new Set(hexes);
       // At least 2 different colors among 8 agents
       expect(unique.size).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('getAgentDisplayName', () => {
+    it('returns "Kiro" for the default built-in', () => {
+      expect(getAgentDisplayName('kiro_default')).toBe('Kiro');
+      // Built-in lookup wins even when KAS supplies a different fallback.
+      expect(getAgentDisplayName('kiro_default', 'Vibe')).toBe('Kiro');
+    });
+
+    it('returns "Plan" for kiro_planner and the legacy "plan" id', () => {
+      expect(getAgentDisplayName('kiro_planner')).toBe('Plan');
+      expect(getAgentDisplayName('plan')).toBe('Plan');
+      expect(getAgentDisplayName('plan', undefined)).toBe('Plan');
+    });
+
+    it('returns "Spec" for the spec built-in', () => {
+      expect(getAgentDisplayName('spec', 'Spec')).toBe('Spec');
+    });
+
+    it('passes user-defined agent names through verbatim', () => {
+      expect(getAgentDisplayName('my-agent')).toBe('my-agent');
+      expect(getAgentDisplayName('my-agent', 'My Agent')).toBe('My Agent');
     });
   });
 });

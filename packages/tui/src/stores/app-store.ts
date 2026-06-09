@@ -3602,9 +3602,10 @@ export const createAppStore = (props: AppStoreProps) => {
     setMode: (mode) => {
       // The artifact-generation card is tied to the spec workflow.
       // Clear it on any mode change so the user doesn't see stale
-      // generation state after switching to vibe mode (or away from
-      // spec mode in general). The open artifact-view panel is left
-      // alone — the user explicitly opened it and dismisses with Q.
+      // generation state after switching to the default agent (or
+      // away from spec mode in general). The open artifact-view
+      // panel is left alone — the user explicitly opened it and
+      // dismisses with Q.
       set((state) =>
         state.artifactGenerating === null
           ? { mode }

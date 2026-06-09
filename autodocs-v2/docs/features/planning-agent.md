@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-06-09
+  commit: 96dc37b3f
   status: validated
   testable_headless: false
   category: feature
@@ -23,10 +23,10 @@ The Planning Agent is a specialized built-in agent that helps transform ideas in
 1. **Slash Command**: Use `/plan` to switch to the planning agent
 ```
 > /plan
-Switched to the Kiro [plan] agent.
+Switched to the Plan agent.
 Transform any idea into fully working code. What do you want to build today?
 
-[plan] > 
+Plan > 
 ```
 3. **With Immediate Prompt**: Use `/plan` with your idea to start planning immediately
 ```
@@ -34,7 +34,7 @@ Transform any idea into fully working code. What do you want to build today?
 ```
 
 **Visual Indicators:**
-- `[plan]` indicator in your status
+- "Plan" label in status bar chip
 - Welcome message when switching modes
 
 ## Planning Workflow
@@ -42,7 +42,7 @@ Transform any idea into fully working code. What do you want to build today?
 ### 1. Requirements Gathering
 The planner guides you through structured questions to refine your initial idea.
 ```
-[plan] > I want to build a todo app
+Plan > I want to build a todo app
 
 I understand you want to build a todo app. Let me help you plan this implementation.
 
@@ -118,12 +118,12 @@ Task 3: Add advanced features
 Before switching to execution, the planner seeks your approval.
 
 ```
-[plan] > Does this plan look good, or would you like me to adjust anything?
+Plan > Does this plan look good, or would you like me to adjust anything?
 
 > The plan looks great! Let's implement it.
 
 *Planning complete!*
-Ready to exit [plan] agent to start your implementation? [y/n]:
+Ready to exit Plan agent to start your implementation? [y/n]:
 
 > y
 ```
@@ -166,7 +166,7 @@ Ready to exit [plan] agent to start your implementation? [y/n]:
 ```
 > /plan Add user authentication to my web app
 
-[plan] > I understand you want to add user authentication to your web application.
+Plan > I understand you want to add user authentication to your web application.
 
 **My Understanding:** You want to implement user authentication functionality 
 for an existing web application.
@@ -179,7 +179,7 @@ d. **Multi-factor** - Combination of methods with 2FA
 
 > 1=a
 
-[plan] > Great! Email/password authentication it is.
+Plan > Great! Email/password authentication it is.
 
 [2]: What's your current tech stack?
 a. **React + Node.js** - JavaScript full-stack
@@ -189,7 +189,7 @@ d. **Other** - Please specify
 
 > 2=d, I'm using Rust with Axum framework
 
-[plan] > Perfect! Rust with Axum is an excellent choice for secure authentication.
+Plan > Perfect! Rust with Axum is an excellent choice for secure authentication.
 
 *Researching Axum authentication patterns...*
 *Exploring your existing codebase structure...*
@@ -201,8 +201,8 @@ Does this plan look good, or would you like me to adjust anything?
 
 > Looks perfect!
 
-Ready to exit [plan] agent to start your implementation? [y/n]: y
+Ready to exit Plan agent to start your implementation? [y/n]: y
 
-[default] > Implement this plan:
+Kiro > Implement this plan:
 [Plan content transferred to execution agent]
 ```

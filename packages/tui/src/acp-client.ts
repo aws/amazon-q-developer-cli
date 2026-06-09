@@ -58,6 +58,7 @@ import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
 import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
+import { getAgentDisplayName } from './utils/agentColors';
 
 const TUI_VERSION: string = packageJson.version;
 
@@ -1768,12 +1769,14 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 /** Map TUI-facing mode names to KAS wire names. */
 function toKasModeId(tuiModeId: string): string {
   if (tuiModeId === 'kiro_planner') return 'quick-plan';
+  if (tuiModeId === 'kiro_default') return 'vibe';
   return tuiModeId;
 }
 
 /** Map KAS wire mode names back to TUI-facing names. */
 function fromKasModeId(kasModeId: string): string {
   if (kasModeId === 'quick-plan') return 'kiro_planner';
+  if (kasModeId === 'vibe') return 'kiro_default';
   return kasModeId;
 }
 
@@ -1930,10 +1933,14 @@ export class KasAcpClient extends BaseAcpClient {
     if (!modes) return;
     this.modesState = {
       availableModes: (modes.availableModes ?? [])
-        .map((m) => ({
-          ...m,
-          id: fromKasModeId(m.id),
-        }))
+        .map((m) => {
+          const id = fromKasModeId(m.id);
+          return {
+            ...m,
+            id,
+            name: id === 'kiro_default' ? 'Kiro' : m.name,
+          };
+        })
         // Drop denylisted bundled agents (e.g. the bundled semantic
         // reviewer) so they never appear in the /agent menu or any derived
         // listing. User/workspace-defined agents are preserved — see
@@ -2076,7 +2083,10 @@ export class KasAcpClient extends BaseAcpClient {
    *  agent in available_commands_update without a recognized _meta.kiro.type,
    *  so we cross-reference the modes cache by name to catch it. (Untyped
    *  custom-agent subagents can't be caught here — they're not modes — so
-   *  the upstream type-based filter is the source of truth for those.) */
+   *  the upstream type-based filter is the source of truth for those.)
+   *  The cache holds TUI-translated ids (e.g. `kiro_default`), but KAS
+   *  emits commands using the wire ids (e.g. `vibe`), so the filter set
+   *  has to include both. */
   protected override convertAcpUpdateToEvent(
     update: AcpSessionUpdate
   ): AgentStreamEvent | null {
@@ -2085,7 +2095,11 @@ export class KasAcpClient extends BaseAcpClient {
       event?.type === AgentEventType.CommandsUpdate &&
       this.modesState.availableModes.length > 0
     ) {
-      const modeIds = new Set(this.modesState.availableModes.map((m) => m.id));
+      const modeIds = new Set<string>();
+      for (const m of this.modesState.availableModes) {
+        modeIds.add(m.id);
+        modeIds.add(toKasModeId(m.id));
+      }
       event.commands = event.commands.filter((cmd) => !modeIds.has(cmd.name));
     }
     return event;
@@ -3423,7 +3437,7 @@ export class KasAcpClient extends BaseAcpClient {
             const descBase = m.description ?? '';
             return {
               value: m.id,
-              label: m.name || m.id,
+              label: getAgentDisplayName(m.id, m.name),
               description: isActive
                 ? `[active]${descBase ? ` ${descBase}` : ''}`
                 : descBase,

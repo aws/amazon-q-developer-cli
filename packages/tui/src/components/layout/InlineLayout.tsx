@@ -83,7 +83,7 @@ import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { InterruptMode } from '../../constants/interrupt-mode.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
-import { getAgentColor, isDefaultAgent } from '../../utils/agentColors.js';
+import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 
 const TRIGGER_RULES = [
@@ -750,17 +750,10 @@ export const InlineLayout: React.FC = () => {
 
     const primaryItems = [
       currentAgent && (
-        <>
-          {currentAgent.name === 'kiro_planner' && (
-            <Text color="magenta">[plan] </Text>
-          )}
-          <Chip
-            value={
-              isDefaultAgent(currentAgent.name) ? 'Kiro' : currentAgent.name
-            }
-            color={getAgentColor(currentAgent.name, getColor)}
-          />
-        </>
+        <Chip
+          value={getAgentDisplayName(currentAgent.name)}
+          color={getAgentColor(currentAgent.name, getColor)}
+        />
       ),
       currentModel && (
         <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
@@ -856,7 +849,7 @@ export const InlineLayout: React.FC = () => {
     const primaryItems = [
       currentAgent && (
         <Chip
-          value={isDefaultAgent(currentAgent.name) ? 'Kiro' : currentAgent.name}
+          value={getAgentDisplayName(currentAgent.name)}
           color={mutedColor}
         />
       ),
