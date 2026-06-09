@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "TUI launch on Windows now correctly appends the exe extension to node and bun paths"
-}
