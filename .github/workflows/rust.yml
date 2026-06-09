@@ -27,6 +27,7 @@ jobs:
               - '**.rs'
               - '**/Cargo.toml'
               - '**/Cargo.lock'
+              - 'deny.toml'
               - '.github/workflows/rust.yml'
 
   cargo-clippy:

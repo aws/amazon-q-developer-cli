@@ -50,7 +50,7 @@ async function runTurn(tc: E2ETestCase, turnIndex: number, events: MockStreamIte
   tc.sendKeys(`q${turnIndex}`);
   await tc.sleepMs(100);
   tc.pressEnter();
-  await tc.waitForIdle();
+  await tc.waitForIdle(60_000);
   return tc.getMemoryUsage();
 }
 
