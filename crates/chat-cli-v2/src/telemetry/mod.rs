@@ -591,8 +591,7 @@ impl TelemetryThread {
     /// hit, or the user clears the goal).
     ///
     /// Used to track average iterations to completion and the breakdown of
-    /// terminal states. Gated by the `goal` rollout — only emitted in
-    /// nightly builds where the feature is enabled.
+    /// terminal states.
     #[allow(clippy::too_many_arguments)]
     pub fn send_goal_completed(
         &self,

@@ -3642,9 +3642,7 @@ async fn effort_persists_for_multiple_models_in_one_session() {
 #[timeout(60000)]
 #[serial]
 async fn goal_set_and_status() {
-    // /goal is gated behind the `goal` rollout (nightly+internal in
-    // production). The harness sets KIRO_TEST_MODE on the subprocess
-    // which makes Rollout::init enable all features unconditionally.
+    // /goal is always available (no rollout gate).
     let (_harness, client, session_id, _) = AcpTestHarnessBuilder::new("goal_set_and_status")
         .with_trust_all(true)
         .build_with_session()

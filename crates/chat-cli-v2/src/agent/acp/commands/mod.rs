@@ -193,13 +193,7 @@ pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandRe
         },
         #[cfg(not(feature = "voice"))]
         TuiCommand::Voice(_) => CommandResult::error("Voice mode is not supported on this platform"),
-        TuiCommand::Goal(ref args) => {
-            if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal) {
-                goal::execute(args, ctx).await
-            } else {
-                CommandResult::error("/goal is not available in this build")
-            }
-        },
+        TuiCommand::Goal(ref args) => goal::execute(args, ctx).await,
     }
 }
 

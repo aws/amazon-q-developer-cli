@@ -1419,12 +1419,7 @@ impl AcpSession {
     ///
     /// Must be called BEFORE `self.goal_controller` is cleared/replaced so
     /// the read sees the final state.
-    ///
-    /// Gated by the `goal` rollout — no-op if the feature is not enabled.
     fn emit_goal_telemetry(&self, terminal_state: &str) {
-        if !crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal) {
-            return;
-        }
         let Some(ref ctrl) = self.goal_controller else {
             return;
         };
@@ -2985,10 +2980,6 @@ async fn advertise_commands_and_prompts_to_client(
             // Hide /voice from command list when rollout is not enabled
             if cmd.name() == "/voice" {
                 return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice);
-            }
-            // Hide /goal from command list when rollout is not enabled
-            if cmd.name() == "/goal" {
-                return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Goal);
             }
             true
         })

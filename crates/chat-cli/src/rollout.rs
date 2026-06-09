@@ -22,7 +22,6 @@ pub const CONTROL: &str = "CONTROL";
 pub enum Feature {
     Tui,
     Voice,
-    Goal,
     #[cfg(test)]
     Test,
     #[cfg(test)]

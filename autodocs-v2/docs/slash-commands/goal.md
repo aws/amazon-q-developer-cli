@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-05
-  commit: 46d015fca
+  validated: 2026-06-09
+  commit: 027ba1a2e
   status: validated
   testable_headless: true
   category: slash_command
@@ -18,8 +18,6 @@ Set a goal for iterative autonomous completion.
 ## Overview
 
 The `/goal` command starts a goal-driven loop where the agent works autonomously toward a stated objective. The agent iterates — taking actions, verifying progress, and re-attempting with different strategies — until it can prove all success criteria are met or the iteration limit is reached.
-
-**Availability**: Internal nightly builds only (rollout-gated).
 
 ## Usage
 

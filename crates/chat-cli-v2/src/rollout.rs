@@ -23,7 +23,6 @@ pub const CONTROL: &str = "CONTROL";
 pub enum Feature {
     Tui,
     Voice,
-    Goal,
 }
 
 /// Which user segment the experiment targets.
@@ -142,7 +141,7 @@ impl Rollout {
             return;
         }
         let mut features = HashMap::new();
-        for name in ["tui", "voice", "goal"] {
+        for name in ["tui", "voice"] {
             features.insert(name.to_string(), FeatureRollout {
                 description: "test-enabled".to_string(),
                 treatment_percent: 100,

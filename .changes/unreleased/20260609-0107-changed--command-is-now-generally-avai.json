@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/goal` command is now generally available (no longer restricted to internal nightly builds)"
+}

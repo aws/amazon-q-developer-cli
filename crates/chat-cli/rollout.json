@@ -10,12 +10,6 @@
     "segment": "internal",
     "channel": "nightly"
   },
-  "goal": {
-    "description": "Goal-driven iterative agent loop (/goal command) - internal nightly only initially",
-    "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
-  },
   "test": {
     "description": "Test experiment for unit tests",
     "treatment_percent": 100
