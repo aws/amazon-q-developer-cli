@@ -22,6 +22,7 @@ pub const CONTROL: &str = "CONTROL";
 pub enum Feature {
     Tui,
     Voice,
+    Lite,
     #[cfg(test)]
     Test,
     #[cfg(test)]
@@ -87,6 +88,13 @@ pub struct Rollout {
     client_id: Option<Uuid>,
     is_internal: bool,
     is_nightly: bool,
+    /// True when the running binary is installed from the toolbox `insider`
+    /// channel. Used as an additional, treat-as-TREATMENT signal for
+    /// `Feature::Lite` only — see `variation_impl`. Detected from the install
+    /// path because the insider release flow ships binaries with
+    /// `CARGO_PKG_VERSION = 0.0.0-dev`, so the standard nightly version-string
+    /// detection cannot see them.
+    is_insider_toolbox: bool,
 }
 
 const EMBEDDED_CONFIG: &str = include_str!("../rollout.json");
@@ -104,17 +112,53 @@ fn in_rollout(feature: &str, client_id: Uuid, percent: u8) -> bool {
     bucket < percent as u64
 }
 
+/// True when `exe` looks like `~/.toolbox/tools/kiro-cli/<X>-insider/.../kiro-cli`.
+///
+/// Toolbox installs at `~/.toolbox/tools/<tool>/<version>/...`. Custom channels
+/// suffix the version dir with the channel name (`2.5.0-insider`,
+/// `2.5.0-beta`); stable does not. Checking the suffix on the version
+/// component is therefore a reliable runtime signal for "running from the
+/// insider channel" — independent of `CARGO_PKG_VERSION`, which the insider
+/// release flow does not bake correctly today.
+///
+/// Pulled out as a free function so unit tests can exercise the path-parsing
+/// without needing to relocate a real binary.
+fn path_is_insider_toolbox(exe: &std::path::Path) -> bool {
+    let mut comps = exe.components();
+    // `any` short-circuits, leaving the iterator positioned just after the
+    // `.toolbox` component (same as `position`) so `nth(2)` below still lands
+    // on <version>.
+    if !comps.by_ref().any(|c| c.as_os_str() == ".toolbox") {
+        return false;
+    }
+    // After ".toolbox" we expect: tools / <tool> / <version> / ...
+    let version_comp = match comps.nth(2) {
+        Some(c) => c,
+        None => return false,
+    };
+    version_comp.as_os_str().to_string_lossy().ends_with("-insider")
+}
+
+fn detect_insider_toolbox() -> bool {
+    std::env::current_exe()
+        .ok()
+        .as_deref()
+        .is_some_and(path_is_insider_toolbox)
+}
+
 impl Rollout {
     /// Initialize the global rollout instance. Call once at startup after resolving client_id.
     pub fn init(client_id: Option<Uuid>, start_url: Option<String>) {
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
         let is_internal = start_url.as_deref().map(str::trim) == Some(AMZN_START_URL);
         let is_nightly = env!("CARGO_PKG_VERSION").contains("-nightly");
+        let is_insider_toolbox = detect_insider_toolbox();
         let _ = INSTANCE.set(Rollout {
             features,
             client_id,
             is_internal,
             is_nightly,
+            is_insider_toolbox,
         });
     }
 
@@ -131,6 +175,15 @@ impl Rollout {
 
     /// Instance method: testable without OnceLock.
     fn variation_impl(&self, feature: Feature) -> Option<&'static str> {
+        // Lite-only escape hatch: anyone running from the toolbox `insider`
+        // channel gets `Feature::Lite` regardless of segment / channel /
+        // treatment_percent. The insider channel is itself a curated install
+        // (only Amazonians have a working toolbox), so it acts as the gate.
+        // Scoped via matches!() so this CANNOT affect Voice or Tui.
+        if matches!(feature, Feature::Lite) && self.is_insider_toolbox {
+            return Some(TREATMENT);
+        }
+
         let config = self.features.get(<&str>::from(feature))?;
         if config.segment == Segment::Internal && !self.is_internal {
             return None;
@@ -163,6 +216,9 @@ mod tests {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(features.contains_key(<&str>::from(Feature::Tui)));
         assert!(features.contains_key(<&str>::from(Feature::Voice)));
+        // NOTE: no `lite` key in rollout.json yet — it is added in the final
+        // flag-flip PR, which keeps lite dark until then. The config-driven
+        // `Feature::Lite` tests land with that PR.
         assert!(features.contains_key(<&str>::from(Feature::Test)));
         assert!(features.contains_key(<&str>::from(Feature::TestInternalOnly)));
         assert!(features.contains_key(<&str>::from(Feature::TestNightlyOnly)));
@@ -175,6 +231,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: false,
             is_nightly: true,
+            is_insider_toolbox: false,
         };
 
         // test has segment=all, treatment_percent=100 → TREATMENT
@@ -191,6 +248,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
             is_nightly: true,
+            is_insider_toolbox: false,
         };
 
         assert_eq!(rollout.variation_impl(Feature::Test), Some(TREATMENT));
@@ -205,6 +263,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
             is_nightly: true,
+            is_insider_toolbox: false,
         };
         assert_eq!(rollout.variation_impl(Feature::TestNightlyOnly), Some(TREATMENT));
 
@@ -214,6 +273,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
             is_nightly: false,
+            is_insider_toolbox: false,
         };
         assert_eq!(rollout_stable.variation_impl(Feature::TestNightlyOnly), None);
     }
@@ -226,6 +286,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
             is_nightly: true,
+            is_insider_toolbox: false,
         };
         assert_eq!(rollout.variation_impl(Feature::Voice), Some(TREATMENT));
 
@@ -235,6 +296,7 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: true,
             is_nightly: false,
+            is_insider_toolbox: false,
         };
         assert_eq!(rollout_stable.variation_impl(Feature::Voice), None);
 
@@ -244,9 +306,16 @@ mod tests {
             client_id: Some(Uuid::from_u128(1)),
             is_internal: false,
             is_nightly: true,
+            is_insider_toolbox: false,
         };
         assert_eq!(rollout_external.variation_impl(Feature::Voice), None);
     }
+
+    // NOTE: the config-driven `test_lite_requires_internal_and_nightly` test
+    // lives with the flag-flip PR that adds the `lite` key to rollout.json.
+    // Until then there is no `lite` config entry, so `variation_impl` only
+    // resolves `Feature::Lite` via the insider-toolbox escape hatch (covered
+    // by `insider_toolbox_enables_lite_*` above).
 
     #[test]
     fn test_0_percent_never_enables() {
@@ -268,5 +337,66 @@ mod tests {
         let id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         assert!(!in_rollout("test", id, 16)); // bucket 16 is NOT < 16
         assert!(in_rollout("test", id, 17)); // bucket 16 IS < 17
+    }
+
+    // ── path_is_insider_toolbox: pure path parsing ────────────────────────
+
+    #[test]
+    fn path_insider_install_is_detected() {
+        let p = std::path::PathBuf::from(
+            "/Users/alice/.toolbox/tools/kiro-cli/2.5.0-insider/Kiro CLI.app/Contents/MacOS/kiro-cli",
+        );
+        assert!(path_is_insider_toolbox(&p));
+    }
+
+    #[test]
+    fn path_stable_and_nightly_toolbox_installs_are_not_insider() {
+        let stable =
+            std::path::PathBuf::from("/Users/alice/.toolbox/tools/kiro-cli/2.5.0/Kiro CLI.app/Contents/MacOS/kiro-cli");
+        let nightly = std::path::PathBuf::from(
+            "/Users/alice/.toolbox/tools/kiro-cli/2.5.1-nightly.1-nightly/Kiro CLI.app/Contents/MacOS/kiro-cli",
+        );
+        assert!(!path_is_insider_toolbox(&stable));
+        assert!(!path_is_insider_toolbox(&nightly));
+    }
+
+    #[test]
+    fn path_outside_toolbox_or_insider_in_parent_dir_is_not_match() {
+        let outside = std::path::PathBuf::from("/usr/local/bin/kiro-cli");
+        // `insider` in a parent dir but NOT the version component must not match.
+        let parent = std::path::PathBuf::from("/Users/insider-fan/.toolbox/tools/kiro-cli/2.5.0/bin/kiro-cli");
+        assert!(!path_is_insider_toolbox(&outside));
+        assert!(!path_is_insider_toolbox(&parent));
+    }
+
+    // ── variation_impl: Feature::Lite via the insider toolbox branch ──────
+
+    #[test]
+    fn insider_toolbox_enables_lite_for_external_stable_user() {
+        // External + stable would normally fail Lite's segment+channel gate.
+        // With is_insider_toolbox = true, lite is enabled anyway.
+        let r = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: false,
+            is_nightly: false,
+            is_insider_toolbox: true,
+        };
+        assert_eq!(r.variation_impl(Feature::Lite), Some(TREATMENT));
+    }
+
+    #[test]
+    fn insider_toolbox_does_not_enable_voice_or_tui() {
+        // Scope guarantee: the insider branch is gated on matches!(Feature::Lite),
+        // so Voice/Tui resolution is unchanged for an external+stable user.
+        let r = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: false,
+            is_nightly: false,
+            is_insider_toolbox: true,
+        };
+        assert_eq!(r.variation_impl(Feature::Voice), None);
+        assert_eq!(r.variation_impl(Feature::Tui), None);
     }
 }

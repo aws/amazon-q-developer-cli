@@ -77,6 +77,7 @@ pub struct TestCaseBuilder {
     settings: Option<AgentSettings>,
     mcp_servers: Vec<(String, McpServerConfig)>,
     mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
+    is_subagent: bool,
 }
 
 impl TestCaseBuilder {
@@ -151,6 +152,14 @@ impl TestCaseBuilder {
         self
     }
 
+    /// Mark this agent as a subagent. Affects which built-in tools are
+    /// available — most notably gates the `summary` tool on (and `agent_crew`
+    /// off). Set to `true` for tests that exercise subagent-specific paths.
+    pub fn with_is_subagent(mut self, is_subagent: bool) -> Self {
+        self.is_subagent = is_subagent;
+        self
+    }
+
     pub async fn build(self) -> Result<TestCase> {
         let mut model = MockModel::new();
         for response in self.mock_responses {
@@ -205,7 +214,7 @@ impl TestCaseBuilder {
             None,
             Arc::clone(&model) as Arc<dyn agent::agent_loop::model::Model>,
             McpManager::default().spawn(),
-            false,
+            self.is_subagent,
             None,       // code_intelligence not needed for tests
             None,       // knowledge_provider not needed for tests
             None,       // task_store

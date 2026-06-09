@@ -1,0 +1,9 @@
+// Subagent emits the summary tool with full taskResult, expecting execute() to broadcast SubagentSummary
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Done. Submitting summary."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_summary","name":"summary"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"taskDescription\":\"count LOC\","}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"\"taskResult\":\"42 LOC across 1 file\"}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T00:00:00.000000Z","requestEndTime":"2025-10-29T00:00:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":80},"usage":null,"service":{"requestId":"summary-tool-call","statusCode":null}}}}

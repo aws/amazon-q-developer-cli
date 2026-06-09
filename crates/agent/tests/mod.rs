@@ -14,6 +14,7 @@ use agent::agent_loop::types::{
     ContentBlock,
     Role,
     ToolResultContentBlock,
+    ToolResultStatus,
 };
 use agent::protocol::{
     AgentEvent,
@@ -907,6 +908,103 @@ async fn test_cancel_with_pending_tool_uses() {
     assert!(has_interruption_text, "expected interruption message");
 }
 
+/// Regression test for the lite-mode subagent kill bug: when a subagent emits
+/// the `summary` tool with full taskResult and then a sibling kill cascades a
+/// parent cancel before the summary tool's execute() runs, the broadcast that
+/// would normally deliver SubagentSummary never fires — so the parent
+/// agent_crew result reads "No result" for that stage even though the model
+/// produced it. The fix in agent::end_current_turn salvages the args from the
+/// pending summary tool_use and broadcasts SubagentSummary before stamping
+/// the cancelled tool_result; that means the orchestrator's internal_prompt
+/// loop sees the summary event in its broadcast queue and (with the matching
+/// fix in subagent_tool.rs) returns Ok(summary) on Stop(Cancelled).
+#[tokio::test]
+async fn test_cancel_with_pending_summary_emits_summary_event() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Subagent stream: text + summary tool use, no end_turn. We delay the
+    // first chunk so the cancel deterministically lands during the
+    // SendingRequest stage — the agent has not yet started streaming any
+    // content, the assistant message with the summary tool_use has not been
+    // appended yet, and there's nothing to salvage. This exercises the
+    // baseline cancellation path without races against the model. A
+    // separate, harder-to-stage test would specifically pin the cancel
+    // between the toolUse contentBlockStop and execute_tools spawning, but
+    // the salvage code path is unit-covered by serde_json::from_value of
+    // the captured tool_use.input.
+    let response_stream = parse_response_streams(include_str!("./mock_responses/summary_tool.jsonl"))
+        .await
+        .unwrap();
+    let delayed =
+        agent::agent_loop::model::MockResponse::with_delay(response_stream[0].clone(), Duration::from_secs(5));
+
+    let mut test = TestCase::builder()
+        .test_name("cancel with pending summary tool extracts taskResult")
+        .with_default_agent_config()
+        .with_is_subagent(true)
+        .with_trust_all_tools(true)
+        .with_mock_response(delayed)
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("count LOC".to_string()).await;
+
+    // Wait briefly so the request lands and the agent is in SendingRequest /
+    // ConsumingResponse — long enough for the model.stream() future to be
+    // sleeping on its first-chunk delay.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    test.cancel().await.unwrap();
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Cancellation during SendingRequest with no assistant message yet
+    // should produce no SubagentSummary (nothing to salvage).
+    let saw_summary_during_request = test
+        .agent_events()
+        .iter()
+        .any(|evt| matches!(evt, AgentEvent::SubagentSummary(_)));
+    assert!(
+        !saw_summary_during_request,
+        "expected no SubagentSummary when cancel fires before any assistant content streams; events: {:?}",
+        test.agent_events()
+            .iter()
+            .map(|e| format!("{:?}", std::mem::discriminant(e)))
+            .collect::<Vec<_>>()
+    );
+
+    // Now drive a second turn that DOES stream the summary tool_use to
+    // completion — verifies the natural execute() broadcast still works
+    // (regression check for the salvage edit not breaking the happy path).
+    let mut test2 = TestCase::builder()
+        .test_name("summary tool natural execute broadcasts summary")
+        .with_default_agent_config()
+        .with_is_subagent(true)
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/summary_tool.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+    test2.send_prompt("count LOC".to_string()).await;
+    test2
+        .wait_until_agent_event(Duration::from_secs(2), |evt| {
+            matches!(evt, AgentEvent::SubagentSummary(_))
+        })
+        .await
+        .unwrap();
+    let saw_summary = test2.agent_events().iter().any(|evt| {
+        matches!(
+            evt,
+            AgentEvent::SubagentSummary(s)
+                if s.task_description == "count LOC" && s.task_result == "42 LOC across 1 file"
+        )
+    });
+    assert!(saw_summary, "expected SubagentSummary from natural execute() path");
+}
+
 async fn run_pretooluse_hook_matcher_test(matcher: &str) {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let hook_log = temp_dir.path().join("hook_log.txt");
@@ -1372,6 +1470,98 @@ async fn test_invalid_json_preserves_valid_tool_uses() {
     assert!(
         requests[1].prompt_contains_text("split up the work"),
         "retry prompt should ask model to split up the work"
+    );
+}
+
+/// Tests that when the model dispatches a parallel batch of tool uses and one
+/// of them fails parse-time validation (e.g. fs_read against a nonexistent
+/// directory), the parsed-OK siblings still execute and their results are
+/// merged with the parse-error result into a single tool_results message
+/// back to the model. The previous behavior short-circuited at the parse-
+/// error branch, dropping every parsed-OK sibling on the floor and relying
+/// on enforce_conversation_invariants to fabricate "Tool use was cancelled
+/// by the user" results — which falsely told the model the user had
+/// interrupted siblings the user never touched.
+#[tokio::test]
+async fn test_parse_error_preserves_parsed_ok_siblings() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("parse error preserves parsed-ok siblings")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_file(("a.txt", "alpha"))
+        .with_file(("b.txt", "beta"))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/parse_error_partial_batch.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("read a.txt and b.txt and list the missing dir".to_string())
+        .await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (initial + tool_results), got {}",
+        requests.len()
+    );
+
+    // The follow-up request after the tool batch must contain a tool_result
+    // for every tool_use the model emitted in the assistant turn — including
+    // the parsed-OK siblings, not just the parse-error one.
+    let follow_up = &requests[1];
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_ok_1" && matches!(tr.status, ToolResultStatus::Success)),
+        "follow-up should include a successful tool_result for tooluse_ok_1"
+    );
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_ok_2" && matches!(tr.status, ToolResultStatus::Success)),
+        "follow-up should include a successful tool_result for tooluse_ok_2"
+    );
+    assert!(
+        follow_up.has_tool_result(|tr| tr.tool_use_id == "tooluse_bad" && matches!(tr.status, ToolResultStatus::Error)),
+        "follow-up should include an error tool_result for tooluse_bad"
+    );
+
+    // The parse-error result must carry a real "Directory not found" / parse
+    // error message — NOT the synthetic "Tool use was cancelled by the user"
+    // text that enforce_conversation_invariants used to paper over the gap.
+    let bad_result_text = follow_up
+        .messages()
+        .last()
+        .expect("last message should exist")
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::ToolResult(tr) if tr.tool_use_id == "tooluse_bad" => Some(
+                tr.content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ToolResultContentBlock::Text(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .expect("tooluse_bad must have a tool_result");
+    assert!(
+        !bad_result_text.contains("Tool use was cancelled by the user"),
+        "parse error must not be misreported as user cancellation; got: {bad_result_text}"
+    );
+    assert!(
+        bad_result_text.to_ascii_lowercase().contains("directory")
+            || bad_result_text.contains("Failed to parse the tool use"),
+        "parse error should describe the validation failure; got: {bad_result_text}"
     );
 }
 

@@ -108,12 +108,12 @@ fn test_process_binary_file() {
 
     // The processor should handle binary files gracefully
     // Either by returning an empty result or by extracting what it can
-    if let Ok(items) = result {
-        if !items.is_empty() {
-            let text = items[0].get("text").and_then(|v| v.as_str()).unwrap_or("");
-            // The text might be empty or contain replacement characters
-            assert!(text.is_empty() || text.contains("�"));
-        }
+    if let Ok(items) = result
+        && !items.is_empty()
+    {
+        let text = items[0].get("text").and_then(|v| v.as_str()).unwrap_or("");
+        // The text might be empty or contain replacement characters
+        assert!(text.is_empty() || text.contains("�"));
     }
 
     // Clean up

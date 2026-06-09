@@ -200,6 +200,12 @@ async fn launch_acp_interactive(
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("JSC_numberOfGCMarkers", "1")
+        // Surface the real CLI version to the TUI. The embedded TUI bundle's
+        // package.json is pinned to "0.0.0-dev" in-repo and isn't bumped by
+        // the tag-based release flow, so the TUI reads this env (carrying
+        // CARGO_PKG_VERSION, set from KIRO_VERSION at build time) to show the
+        // correct version in its footer.
+        .env("KIRO_VERSION", env!("CARGO_PKG_VERSION"))
         .kill_on_drop(true);
 
     // Used by the TUI voice helper (packages/tui/src/commands/voice-helper.ts) to

@@ -1,21 +1,21 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 33b3c338
+  validated: 2026-06-06
+  commit: deff402d5
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
   related: [help, theme, spawn, feedback]
 ---
 
 ## Overview
 
-Kiro CLI has two interfaces: the new TUI (default) and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, while classic mode is the original Rust-based experience.
+Kiro CLI has three interface modes: the full TUI (default), lite mode, and classic mode. The full TUI is a React/Ink-based terminal interface with rich overlays and widgets. Lite mode is a streamlined, classic-style experience that runs within the TUI framework (rollout-gated). Classic mode is the original Rust-based experience.
 
-Switch to classic mode anytime with `kiro-cli --classic`.
+Switch to classic mode anytime with `kiro-cli --classic`. Switch to lite mode with `/lite` mid-session, or set it as your default via `/settings → display` (when available).
 
 ## What's New in the TUI
 
@@ -132,6 +132,19 @@ Classic mode supported `chat.diffTool` with delta, difft, meld, VS Code, and icd
 kiro-cli --classic
 kiro-cli chat --legacy-mode
 ```
+
+### Use Lite Mode
+
+**Availability**: Internal nightly builds only (rollout-gated).
+
+Lite mode is a streamlined, classic-style interface that runs within the TUI framework. It provides a simpler experience without the full overlay panels and rich widgets of the default TUI.
+
+Switch to it mid-session with `/lite` (use `/tui` to return). To make it your default, set it via `/settings → display` or persist the `chat.ui.mode` setting (accepted aliases: `chat.uiMode`, `chat.ui.mode`) to `"lite"`.
+
+The precedence order for resolving the UI mode is:
+1. `KIRO_UI_MODE` environment variable
+2. Persisted `chat.ui.mode` setting
+3. Built-in default (full TUI)
 
 ### Session Compatibility
 

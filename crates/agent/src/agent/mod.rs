@@ -1031,9 +1031,9 @@ impl Agent {
     }
 
     async fn set_active_state(&mut self, new_state: ActiveState) {
-        let from = self.execution_state.clone();
+        let from = Box::new(self.execution_state.clone());
         self.execution_state.active_state = new_state;
-        let to = self.execution_state.clone();
+        let to = Box::new(self.execution_state.clone());
         self.agent_event_buf
             .push(AgentEvent::Internal(InternalEvent::StateChange { from, to }));
     }
@@ -1129,6 +1129,24 @@ impl Agent {
             if let Some(m) = self.conversation_state.messages().last() {
                 for c in &m.content {
                     if let ContentBlock::ToolUse(tool_use) = c {
+                        // A subagent that completes its work emits the `summary`
+                        // tool as the assistant turn's final tool call, with the
+                        // full taskResult sitting in the args. If cancellation
+                        // arrives after the assistant message lands but before
+                        // the tool's execute() ran, the orchestrator's
+                        // `internal_prompt` loop sees Stop(Cancelled) without
+                        // ever observing SubagentSummary — and the parent's
+                        // agent_crew result reads "No result" for the stage,
+                        // even though the model already produced the summary.
+                        // Salvage it here: deserialize the args we already have
+                        // and broadcast SubagentSummary before the tool result
+                        // is replaced with the cancellation marker.
+                        if tool_use.name == tools::BuiltInToolName::Summary.as_ref()
+                            && let Ok(summary) =
+                                serde_json::from_value::<tools::summary::Summary>(tool_use.input.clone())
+                        {
+                            self.agent_event_buf.push(AgentEvent::SubagentSummary(summary));
+                        }
                         content.push(ContentBlock::ToolResult(ToolResultBlock {
                             tool_use_id: tool_use.tool_use_id.clone(),
                             content: vec![ToolResultContentBlock::Text(
@@ -1791,7 +1809,9 @@ impl Agent {
 
         if all_approved {
             let tools = state.tools.clone();
-            self.execute_tools(tools).await?;
+            let pre_built_content = state.pre_built_content.clone();
+            let pre_built_results = state.pre_built_results.clone();
+            self.execute_tools(tools, pre_built_content, pre_built_results).await?;
         }
 
         Ok(AgentResponse::Success)
@@ -2476,11 +2496,24 @@ impl Agent {
 
         // First, parse tool uses.
         let (tools, errors) = self.parse_tools(tool_uses).await;
+
+        // Parse errors don't short-circuit the rest of the batch. When the
+        // model dispatches multiple tools in parallel and one fails parse-
+        // time validation (e.g. an fs_read tool with a path that doesn't
+        // exist), the previous behavior dropped every parsed-OK sibling on
+        // the floor — never executed, never sent a tool_result. The model's
+        // tool_use → tool_result invariant was then patched up by
+        // enforce_conversation_invariants synthesizing fake "Tool use was
+        // cancelled by the user" results, which falsely told the model the
+        // user had interrupted siblings the user never touched. Now we hold
+        // the parse-error results aside and continue down the normal path
+        // with the parsed-OK tools; send_tool_results merges the held
+        // results into the eventual outbound batch so every tool_use the
+        // model emitted gets a real, accurate tool_result paired with it.
+        let mut pre_built_content: Vec<ContentBlock> = Vec::new();
+        let mut pre_built_results: HashMap<String, LogToolResult> = HashMap::new();
         if !errors.is_empty() {
-            // Send parse errors back to the model.
             trace!(?errors, "failed to parse tools");
-            let mut content = Vec::new();
-            let mut results = HashMap::new();
             for e in errors {
                 let tool_use_id = e.tool_use.tool_use_id.clone();
                 let tool_name = e.tool_use.name.clone();
@@ -2491,12 +2524,12 @@ impl Agent {
                 // avoid surfacing the wrapper in the UI.
                 let model_err_msg = e.to_string();
                 let user_err_msg = e.kind.to_string();
-                content.push(ContentBlock::ToolResult(ToolResultBlock {
+                pre_built_content.push(ContentBlock::ToolResult(ToolResultBlock {
                     tool_use_id: tool_use_id.clone(),
                     content: vec![ToolResultContentBlock::Text(model_err_msg.clone())],
                     status: ToolResultStatus::Error,
                 }));
-                results.insert(tool_use_id.clone(), LogToolResult {
+                pre_built_results.insert(tool_use_id.clone(), LogToolResult {
                     tool: None,
                     result: ToolCallResult::Error(ToolExecutionError::Custom(model_err_msg)),
                 });
@@ -2510,16 +2543,23 @@ impl Agent {
                         error: user_err_msg,
                     }));
             }
-            let pending = PendingUserMessage::new_tool_results(content.clone(), results);
-            let args = self.format_request(&pending).await;
-            self.send_request(args).await?;
-            self.set_active_state(ActiveState::ExecutingRequest {
-                compaction_retry: None,
-                empty_response_retried: false,
-                pending_user_message: Some(pending),
-            })
-            .await;
-            return Ok(());
+            // Whole batch failed parse — nothing to execute, send the
+            // parse-error results immediately so the model can react.
+            if tools.is_empty() {
+                let pending = PendingUserMessage::new_tool_results(pre_built_content.clone(), pre_built_results);
+                let args = self.format_request(&pending).await;
+                self.send_request(args).await?;
+                self.set_active_state(ActiveState::ExecutingRequest {
+                    compaction_retry: None,
+                    empty_response_retried: false,
+                    pending_user_message: Some(pending),
+                })
+                .await;
+                return Ok(());
+            }
+            // Otherwise fall through with `pre_built_*` carrying the parse-
+            // error results; they'll be merged by send_tool_results once the
+            // parsed-OK tools finish executing.
         }
 
         // Next, evaluate permissions.
@@ -2548,8 +2588,10 @@ impl Agent {
 
         // Return denied tools immediately back to the model
         if !denied.is_empty() {
-            let mut content = Vec::new();
-            let mut results = HashMap::new();
+            // Carry forward parse-error results from above so the model sees
+            // a tool_result for every tool_use it emitted.
+            let mut content = std::mem::take(&mut pre_built_content);
+            let mut results = std::mem::take(&mut pre_built_results);
             for (block, tool, reason) in denied {
                 // Full detail (including matched pattern / reason) goes to
                 // the model so it can avoid retrying. The user-facing error
@@ -2616,28 +2658,58 @@ impl Agent {
                 tools: tools.clone(),
                 needs_approval: needs_approval.clone(),
                 trust_options_map: trust_options_map.clone(),
+                pre_built_content: std::mem::take(&mut pre_built_content),
+                pre_built_results: std::mem::take(&mut pre_built_results),
             };
             self.start_hooks_execution(hooks_to_execute, stage, None, None).await;
             return Ok(());
         }
 
-        self.process_tool_uses(tools, needs_approval, trust_options_map).await
+        self.process_tool_uses(
+            tools,
+            needs_approval,
+            trust_options_map,
+            pre_built_content,
+            pre_built_results,
+        )
+        .await
     }
 
     /// Processes successfully parsed tool uses, requesting permission if required, and then
     /// executing.
+    ///
+    /// `pre_built_content` and `pre_built_results` carry tool_results synthesized before this
+    /// stage — e.g. parse-error siblings from the same model batch. They flow through to
+    /// send_tool_results so the model sees a tool_result for every tool_use it emitted, even
+    /// when some couldn't be parsed and others were executed normally.
     async fn process_tool_uses(
         &mut self,
         tools: Vec<(ToolUseBlock, Tool)>,
         needs_approval: Vec<String>,
         trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
+        pre_built_content: Vec<ContentBlock>,
+        pre_built_results: HashMap<String, LogToolResult>,
     ) -> Result<(), AgentError> {
         for tool in &tools {
+            // For the subagent (AgentCrew) tool, substitute `{task}` placeholders
+            // in each stage's `prompt_template` on the display copy of the tool
+            // input. The schema instructs the model to use `{task}` literally;
+            // backend execution substitutes when feeding the spawned subagent
+            // (agent_crew.rs spawn_ready_stages) but the model's raw input flows
+            // verbatim to the TUI via tool_use_block.input. Without this,
+            // subagent panel rows showing `prompt_template` render the literal
+            // `{task}` token instead of the resolved prompt the user actually
+            // dispatched. Mutating only the cloned display copy — the parsed
+            // `Tool` and the executor still see the original.
+            let mut display_block = tool.0.clone();
+            if matches!(&tool.1.kind, tools::ToolKind::BuiltIn(tools::BuiltInTool::AgentCrew(_))) {
+                tools::agent_crew::substitute_task_placeholder(&mut display_block.input);
+            }
             self.agent_event_buf.push(
                 ToolCall {
                     id: tool.0.tool_use_id.clone(),
                     tool: tool.1.clone(),
-                    tool_use_block: tool.0.clone(),
+                    tool_use_block: display_block,
                 }
                 .into(),
             );
@@ -2645,12 +2717,18 @@ impl Agent {
 
         // request permission for any asked tools
         if !needs_approval.is_empty() {
-            self.request_tool_approvals(tools, needs_approval, trust_options_map)
-                .await?;
+            self.request_tool_approvals(
+                tools,
+                needs_approval,
+                trust_options_map,
+                pre_built_content,
+                pre_built_results,
+            )
+            .await?;
             return Ok(());
         }
 
-        self.execute_tools(tools).await
+        self.execute_tools(tools, pre_built_content, pre_built_results).await
     }
 
     async fn start_hooks_execution(
@@ -2710,11 +2788,21 @@ impl Agent {
         if let Some(tool) = executing_tools.get_tool_mut(&evt.id) {
             tool.result = Some(evt.result.clone());
 
-            // Emit ToolCallFinished event for the completed tool
+            // Emit ToolCallFinished event for the completed tool. Mirror the
+            // process_tool_uses display-copy substitution for AgentCrew so
+            // post-completion scrollback shows resolved prompts, not the
+            // literal `{task}` placeholder. See process_tool_uses for context.
+            let mut display_block = tool.tool_use_block.clone();
+            if matches!(
+                &tool.tool.kind,
+                tools::ToolKind::BuiltIn(tools::BuiltInTool::AgentCrew(_))
+            ) {
+                tools::agent_crew::substitute_task_placeholder(&mut display_block.input);
+            }
             let tool_call = ToolCall {
                 id: tool.tool_use_block.tool_use_id.clone(),
                 tool: tool.tool.clone(),
-                tool_use_block: tool.tool_use_block.clone(),
+                tool_use_block: display_block,
             };
 
             let result = match &evt.result {
@@ -2839,6 +2927,8 @@ impl Agent {
                 tools,
                 needs_approval,
                 trust_options_map,
+                pre_built_content,
+                pre_built_results,
             } => {
                 // If any command hooks exited with status 2, then we'll block.
                 // Otherwise, execute the tools.
@@ -2855,9 +2945,12 @@ impl Agent {
                     }
                 }
                 if !denied_tools.is_empty() {
-                    // Send denied tool results back to the model.
-                    let mut content = Vec::new();
-                    let mut results = HashMap::new();
+                    // Send denied tool results back to the model. Carry forward
+                    // any parse-error siblings from the original handle_tool_uses
+                    // invocation so the model still sees a tool_result for every
+                    // tool_use it emitted.
+                    let mut content = pre_built_content.clone();
+                    let mut results = pre_built_results.clone();
                     for (tool_use_id, tool_name, raw_input, tool, hook_res) in denied_tools {
                         let err_msg = format!(
                             "PreToolHook blocked the tool execution: {}",
@@ -2898,7 +2991,17 @@ impl Agent {
                 let tools = tools.clone();
                 let needs_approval = needs_approval.clone();
                 let trust_options_map = trust_options_map.clone();
-                Ok(self.process_tool_uses(tools, needs_approval, trust_options_map).await?)
+                let pre_built_content = pre_built_content.clone();
+                let pre_built_results = pre_built_results.clone();
+                Ok(self
+                    .process_tool_uses(
+                        tools,
+                        needs_approval,
+                        trust_options_map,
+                        pre_built_content,
+                        pre_built_results,
+                    )
+                    .await?)
             },
             HookStage::PostToolUse { executing_tools } => {
                 let executing_tools = executing_tools.clone();
@@ -3171,6 +3274,8 @@ impl Agent {
         tools: Vec<(ToolUseBlock, Tool)>,
         needs_approval: Vec<String>,
         trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
+        pre_built_content: Vec<ContentBlock>,
+        pre_built_results: HashMap<String, LogToolResult>,
     ) -> Result<(), AgentError> {
         // First, update the agent state to WaitingForApproval
         let mut needs_approval_map = HashMap::new();
@@ -3188,6 +3293,8 @@ impl Agent {
         self.set_active_state(ActiveState::WaitingForApproval(WaitingForApproval {
             tools: tools.clone(),
             needs_approval: needs_approval_map,
+            pre_built_content,
+            pre_built_results,
         }))
         .await;
 
@@ -3212,7 +3319,12 @@ impl Agent {
         Ok(())
     }
 
-    async fn execute_tools(&mut self, tools: Vec<(ToolUseBlock, Tool)>) -> Result<(), AgentError> {
+    async fn execute_tools(
+        &mut self,
+        tools: Vec<(ToolUseBlock, Tool)>,
+        pre_built_content: Vec<ContentBlock>,
+        pre_built_results: HashMap<String, LogToolResult>,
+    ) -> Result<(), AgentError> {
         let mut tool_state = Vec::new();
         for (block, tool) in tools {
             let id = ToolExecutionId::new(block.tool_use_id.clone());
@@ -3224,8 +3336,12 @@ impl Agent {
             });
             self.start_tool_execution(id.clone(), tool).await?;
         }
-        self.set_active_state(ActiveState::ExecutingTools(ExecutingTools(tool_state)))
-            .await;
+        self.set_active_state(ActiveState::ExecutingTools(ExecutingTools {
+            tools: tool_state,
+            pre_built_content,
+            pre_built_results,
+        }))
+        .await;
         Ok(())
     }
 
@@ -3463,8 +3579,8 @@ impl Agent {
     }
 
     async fn send_tool_results(&mut self, executing_tools: &ExecutingTools) -> Result<(), AgentError> {
-        let mut content = Vec::new();
-        let mut results = HashMap::new();
+        let mut content = executing_tools.pre_built_content.clone();
+        let mut results = executing_tools.pre_built_results.clone();
 
         for executing_tool in executing_tools.tools() {
             debug_assert!(executing_tool.result.is_some(), "tool result must be Some");
@@ -4321,26 +4437,44 @@ pub struct WaitingForApproval {
     pub tools: Vec<(ToolUseBlock, Tool)>,
     /// Approval state keyed by tool use ID
     pub needs_approval: HashMap<String, ApprovalState>,
+    /// Pre-built tool_results to merge into the eventual outbound batch — see
+    /// ExecutingTools for the rationale.
+    #[serde(default)]
+    pub pre_built_content: Vec<ContentBlock>,
+    #[serde(default)]
+    pub pre_built_results: HashMap<String, LogToolResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutingTools(Vec<ExecutingTool>);
+pub struct ExecutingTools {
+    tools: Vec<ExecutingTool>,
+    /// Tool results synthesized before execution started — e.g. parse-error
+    /// results for siblings of successfully-parsed tools in the same model
+    /// batch. Carried through the executor stages and merged into the
+    /// outbound tool_results message in send_tool_results so the model sees
+    /// every tool_use from its assistant turn paired with a tool_result,
+    /// without short-circuiting the parsed-OK tools.
+    #[serde(default)]
+    pre_built_content: Vec<ContentBlock>,
+    #[serde(default)]
+    pre_built_results: HashMap<String, LogToolResult>,
+}
 
 impl ExecutingTools {
     fn tools(&self) -> &[ExecutingTool] {
-        &self.0
+        &self.tools
     }
 
     fn get_tool(&self, id: &ToolExecutionId) -> Option<&ExecutingTool> {
-        self.0.iter().find(|tool| &tool.id == id)
+        self.tools.iter().find(|tool| &tool.id == id)
     }
 
     fn get_tool_mut(&mut self, id: &ToolExecutionId) -> Option<&mut ExecutingTool> {
-        self.0.iter_mut().find(|tool| &tool.id == id)
+        self.tools.iter_mut().find(|tool| &tool.id == id)
     }
 
     fn all_tools_finished(&self) -> bool {
-        self.0.iter().all(|tool| tool.result.is_some())
+        self.tools.iter().all(|tool| tool.result.is_some())
     }
 }
 
@@ -4457,6 +4591,12 @@ pub enum HookStage {
         needs_approval: Vec<String>,
         /// Granular trust options per tool_use_id from permission evaluation
         trust_options_map: HashMap<String, Vec<protocol::TrustOption>>,
+        /// Pre-built tool_results to merge into the eventual outbound batch — see
+        /// ExecutingTools for the rationale.
+        #[serde(default)]
+        pre_built_content: Vec<ContentBlock>,
+        #[serde(default)]
+        pre_built_results: HashMap<String, LogToolResult>,
     },
     /// Hooks after executing tool uses
     PostToolUse { executing_tools: ExecutingTools },

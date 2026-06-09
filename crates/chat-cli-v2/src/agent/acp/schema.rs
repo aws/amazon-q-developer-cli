@@ -404,6 +404,71 @@ pub struct ModeChangedNotification {
     pub session_id: Option<String>,
 }
 
+/// Which input source resolved the UI mode at session start. The wire format is the
+/// camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
+/// persisted setting > built-in default).
+///
+/// The canonical definition lives in [`kiro_telemetry_host::UiModeSource`] so that the
+/// portable telemetry [`Event`](kiro_telemetry_host::Event) types in the host crate can
+/// refer to it directly. This re-export keeps the V2 `agent::acp::schema` API surface
+/// unchanged.
+pub use kiro_telemetry_host::UiModeSource;
+
+/// Telemetry payload sent from the TUI exactly once per session, immediately after the
+/// UI mode is resolved. Carries both the mode the session actually started in and the
+/// persisted default, so dashboards can answer "is lite the user's default" independent
+/// of which source won at startup.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[notification(method = "_kiro.dev/telemetry/uiModeSessionStart")]
+#[typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct UiModeSessionStartNotification {
+    /// The UI mode the session actually started in (`"lite"` or `"tui"`).
+    pub ui_mode: String,
+    /// Which input source resolved the mode.
+    pub ui_mode_source: UiModeSource,
+    /// The persisted default — `"lite"`, `"tui"`, or `"unset"` if no value is stored.
+    /// Distinct from `ui_mode` so a dashboard can count "users whose default is lite"
+    /// without having to ignore env-var-driven sessions.
+    pub ui_mode_default: String,
+    /// ACP session id, used as `amazonqConversationId` on the metric. Optional —
+    /// startup-time emission may run before a session id is available.
+    pub session_id: Option<String>,
+}
+
+/// Telemetry payload sent when the user toggles the UI mode mid-session via `/lite` or
+/// `/tui`. Caller is responsible for skipping no-op changes (`from == to`).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[notification(method = "_kiro.dev/telemetry/uiModeChanged")]
+#[typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct UiModeChangedNotification {
+    /// Mode before the toggle (`"lite"` or `"tui"`).
+    pub from: String,
+    /// Mode after the toggle (`"lite"` or `"tui"`).
+    pub to: String,
+    /// How the toggle was initiated. Today only `slashCommand`; the field is reserved
+    /// so a future keybinding entry point doesn't need a wire-format change.
+    pub source: ModeChangeSource,
+    /// ACP session id, used as `amazonqConversationId` on the metric.
+    pub session_id: Option<String>,
+}
+
+/// Telemetry payload sent when `/settings default-ui` writes a new value to the
+/// persisted `chat.ui.mode` setting. Caller is responsible for skipping no-ops.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[notification(method = "_kiro.dev/telemetry/uiModeDefaultChanged")]
+#[typeshare]
+#[serde(rename_all = "camelCase")]
+pub struct UiModeDefaultChangedNotification {
+    /// Prior persisted default (`"lite"`, `"tui"`, or `"unset"`).
+    pub from: String,
+    /// New persisted default (`"lite"` or `"tui"`).
+    pub to: String,
+    /// ACP session id, used as `amazonqConversationId` on the metric.
+    pub session_id: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,5 +511,12 @@ mod tests {
             "\"_other_\"",
             serde_json::to_string(&TurnCompletionStatus::Other).unwrap()
         );
+    }
+
+    #[test]
+    fn test_ui_mode_source_ser_deser() {
+        test_ser_deser!(UiModeSource, UiModeSource::EnvVar, "envVar");
+        test_ser_deser!(UiModeSource, UiModeSource::Setting, "setting");
+        test_ser_deser!(UiModeSource, UiModeSource::Default, "default");
     }
 }

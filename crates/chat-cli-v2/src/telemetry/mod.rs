@@ -746,6 +746,52 @@ impl TelemetryThread {
         });
         Ok(self.tx.send(event)?)
     }
+
+    /// Emit `uiModeSessionStart`. Fires exactly once per session, after the TUI resolves
+    /// the UI mode at startup.
+    pub fn send_ui_mode_session_start(
+        &self,
+        ui_mode: String,
+        ui_mode_source: crate::agent::acp::schema::UiModeSource,
+        ui_mode_default: String,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeSessionStart {
+            ui_mode,
+            ui_mode_source,
+            ui_mode_default,
+            session_id,
+        });
+        Ok(self.tx.send(event)?)
+    }
+
+    /// Emit `uiModeChanged`. Caller is responsible for skipping no-op changes.
+    pub fn send_ui_mode_changed(
+        &self,
+        from: String,
+        to: String,
+        source: crate::agent::acp::schema::ModeChangeSource,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeChanged {
+            from,
+            to,
+            source,
+            session_id,
+        });
+        Ok(self.tx.send(event)?)
+    }
+
+    /// Emit `uiModeDefaultChanged`. Caller is responsible for skipping no-op writes.
+    pub fn send_ui_mode_default_changed(
+        &self,
+        from: String,
+        to: String,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeDefaultChanged { from, to, session_id });
+        Ok(self.tx.send(event)?)
+    }
 }
 
 pub(crate) async fn set_event_metadata(database: &Database, event: &mut Event) {
