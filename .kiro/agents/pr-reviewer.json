@@ -1,6 +1,6 @@
 {
   "name": "pr-reviewer",
-  "description": "Automated PR reviewer for CI. Reviews PRs using the semantic-pr-reviewer skill with dedup against prior bot comments.",
+  "description": "Automated PR reviewer for CI. Delegates behavioral review to the semantic-reviewer sub-agent, handles memory queries, dedup, and Slack posting.",
   "prompt": "file://resources/REVIEWER_PROMPT.md",
   "tools": [
     "fs_read",
@@ -36,10 +36,17 @@
         "^wc[^&;|]*$",
         "^curl[^&;|]*$"
       ]
+    },
+    "subagent": {
+      "trustedAgents": [
+        "semantic-reviewer"
+      ],
+      "availableAgents": [
+        "semantic-reviewer"
+      ]
     }
   },
   "resources": [
-    "file://.kiro/skills/semantic-pr-reviewer/SKILL.md",
     "file://.kiro/skills/pr-memory/SKILL.md",
     "file://.kiro/skills/slack-publish/SKILL.md",
     "file://AGENTS.md"

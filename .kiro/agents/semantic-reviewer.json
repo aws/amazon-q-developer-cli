@@ -1,0 +1,50 @@
+{
+  "name": "semantic-reviewer",
+  "description": "Generates behavioral code reviews organized by concern, not by file. Produces a design-level review with confidence qualifiers, issue summary, and editing pass.",
+  "prompt": "file://../../.kiro/skills/semantic-pr-reviewer/SKILL.md",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "code",
+    "grep",
+    "glob"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "grep",
+    "glob"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^aws lambda invoke .*$",
+        "^gh .*$",
+        "^git .*$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^grep[^&;|]*$",
+        "^find[^&;|]*$",
+        "^jq[^&;|]*$",
+        "^wc[^&;|]*$",
+        "^cargo clippy.*$",
+        "^cargo build.*$"
+      ]
+    },
+    "fs_write": {
+      "allowedPaths": [
+        "semantic-review/**",
+        ".agents/tasks/**",
+        "/tmp/semantic-review/**"
+      ]
+    }
+  },
+  "resources": [
+    "file://AGENTS.md"
+  ]
+}

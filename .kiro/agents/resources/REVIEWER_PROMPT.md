@@ -40,7 +40,47 @@ Correlate: if memory flags a pattern in this file, check if the current diff int
 
 ## Step 3: Review the PR
 
-Follow the semantic-pr-reviewer skill for behavioral analysis and output format.
+Delegate the behavioral review to the `semantic-reviewer` sub-agent. Pass it:
+- The PR number and repo (`{owner}/{repo}`)
+- The memory context from step 2 (author patterns, component patterns, known patterns)
+- That this is a **final review** — the sub-agent must emit a verdict (APPROVED or NEEDS_CHANGES)
+
+When passing memory context, instruct the sub-agent to correlate it with the diff:
+- If memory flags a pattern (e.g. "bare-unwrap", "string_slice") in this file area → check if the current diff introduces that pattern
+- If memory shows "team decided X in PR #Y" → don't re-litigate that decision, acknowledge it
+- If the author has a known review pattern (e.g. "typically gets flagged for missing error propagation") → look for that specifically in the diff
+- If `known_patterns[]` includes something relevant, flag it as a concern if the diff introduces it
+
+The sub-agent will produce the full review document at `./semantic-review/<date>-<time>-pr-<N>.md`. Read it back when done.
+
+## Step 3b: Append Memory Context and Suggested Reviewers
+
+After reading the sub-agent's review, append these sections to the end of the review body (before the signature):
+
+**🧠 Memory Context** — synthesize the memory search results from step 2:
+- Which prior PRs are related (cite PR number, author, what was flagged)
+- Known patterns in this area (from `known_patterns[]` in the response)
+- If no relevant memory, write: "No prior patterns flagged for this area."
+
+**👥 Suggested Reviewers** — from `suggested_reviewers[]` across all three memory searches (deduplicated):
+- List reviewers with their review count in this area
+- Format: `**reviewer** (N reviews in this area)`
+
+These sections are mandatory in every posted review. The sub-agent does not produce them — the orchestrator must add them.
+
+## Step 3c: Move verdict to bottom
+
+The sub-agent emits a `**Verdict**:` line in the summary section. Remove it from there and place it as the **last section** of the posted comment, as a standalone heading with one line of reasoning:
+
+```
+---
+
+### 🏷️ Recommendation: **Approve** | **Request Changes**
+
+One sentence explaining why (e.g. "Clean config extraction with no runtime concerns." or "Byte-index slice will panic on multi-byte input — must fix.")
+```
+
+This must always be the last thing before the bot signature.
 
 ## Step 4: Post or edit (never both)
 
