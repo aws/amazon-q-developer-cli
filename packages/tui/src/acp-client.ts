@@ -1226,6 +1226,15 @@ abstract class BaseAcpClient implements SessionClient {
             this.cachedBreakdown = meta.breakdown;
           }
         }
+        if (
+          meta?.kind === 'user_message_id_assigned' &&
+          typeof (meta as any)?.userMessageId === 'string'
+        ) {
+          this.broadcastStreamEvent({
+            type: AgentEventType.KasMessageIdAssigned,
+            kasMessageId: (meta as any).userMessageId,
+          });
+        }
         logger.debug(
           'KAS session update (not yet mapped):',
           update.sessionUpdate
@@ -2369,6 +2378,37 @@ export class KasAcpClient extends BaseAcpClient {
           });
         return { success: true, message: 'Compacting conversation...' };
       }
+      case 'rewind': {
+        const args = (command as Record<string, unknown>).args as
+          | Record<string, string>
+          | undefined;
+        const kasId = args?.messageId;
+
+        if (!kasId) {
+          return { success: false, message: 'No KAS message ID for this turn' };
+        }
+
+        try {
+          const response = await this.kiroClient.sendExtMethod('session/fork', {
+            sessionId: this.sessionId,
+            cwd: process.cwd(),
+            _meta: { kiro: { messageId: kasId, createdReason: 'rewind' } },
+          });
+          return {
+            success: true,
+            message: '',
+            data: {
+              sessionId: (response as any).sessionId,
+              switchSession: true,
+            },
+          };
+        } catch (err) {
+          return {
+            success: false,
+            message: err instanceof Error ? err.message : 'Fork failed',
+          };
+        }
+      }
       case 'code': {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
@@ -2409,6 +2449,8 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /** /help — effect expects data.commands with { name, description, usage } */
+  /** Attach KAS-assigned messageId to the most recent User message for session/fork. */
+
   private async executeHelp(): Promise<CommandResult> {
     const result = await this.callExtMethod('_kiro/help');
     if (!result.success) return result;

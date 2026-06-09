@@ -26,6 +26,7 @@ export enum KasCommandName {
   Mcp = '/mcp',
   Plan = '/plan',
   Feedback = '/feedback',
+  Rewind = '/rewind',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -186,5 +187,10 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       searchable: false,
       hint: '',
     },
+  },
+  {
+    name: KasCommandName.Rewind,
+    description: 'Fork the session at an earlier turn',
+    meta: { inputType: 'panel' },
   },
 ];

@@ -1126,7 +1126,7 @@ export const InlineLayout: React.FC = () => {
                     ? { body: turn.responseSnippet }
                     : undefined,
                 }))}
-                previewHeading="Response Snippet"
+                previewHeading="● Turn Activity"
                 keyHints={[
                   { key: '↑↓', label: 'navigate' },
                   { key: 'Enter', label: 'to fork' },

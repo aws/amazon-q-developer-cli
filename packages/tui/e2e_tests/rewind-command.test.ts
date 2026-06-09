@@ -113,7 +113,7 @@ describe('Rewind Command', () => {
 
     // Explorer shows "Response Snippet" heading and the assistant's reply.
     // The prompt text is the hovered row label (shown in the list).
-    expect(snapshot).toContain('Response Snippet');
+    expect(snapshot).toContain('Turn Activity');
     expect(snapshot).toContain('The answer is 42.');
     expect(snapshot).toContain('What is the meaning of life?');
   }, 60000);

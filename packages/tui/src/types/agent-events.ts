@@ -39,6 +39,7 @@ export enum AgentEventType {
   EffortUpdate = 'effort_update',
   HooksUpdate = 'hooks_update',
   GoalStatus = 'goal_status',
+  KasMessageIdAssigned = 'kas_message_id_assigned',
 }
 
 export enum ContentType {
@@ -372,6 +373,11 @@ export interface ContextUsageEvent {
   percent: number;
 }
 
+export interface KasMessageIdAssignedEvent {
+  type: AgentEventType.KasMessageIdAssigned;
+  kasMessageId: string;
+}
+
 export interface EffortUpdateEvent {
   type: AgentEventType.EffortUpdate;
   effort: string | null;
@@ -512,6 +518,7 @@ export type AgentStreamEvent =
   | SkillsUpdateEvent
   | SteeringUpdateEvent
   | ContextUsageEvent
+  | KasMessageIdAssignedEvent
   | MetadataEvent
   | CompactionStatusEvent
   | McpServerInitFailureEvent

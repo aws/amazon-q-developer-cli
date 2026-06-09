@@ -367,7 +367,14 @@ export type ToolResult =
   | { status: 'cancelled' };
 
 export type MessageType =
-  | { id: string; role: MessageRole.User; content: string; agentName?: string }
+  | {
+      id: string;
+      role: MessageRole.User;
+      content: string;
+      agentName?: string;
+      contextPercent?: number;
+      kasMessageId?: string;
+    }
   | {
       id: string;
       role: MessageRole.Model;
@@ -660,6 +667,7 @@ interface BaseAppActions {
 
   // Context usage actions
   setContextUsage: (percent: number) => void;
+  setKasMessageId: (kasMessageId: string) => void;
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
   setShowContextBreakdown: (
@@ -2217,6 +2225,9 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
+          case AgentEventType.KasMessageIdAssigned:
+            get().setKasMessageId(event.kasMessageId);
+            break;
           case AgentEventType.EffortUpdate:
             get().setCurrentEffort(event.effort);
             break;
@@ -2648,6 +2659,10 @@ export const createAppStore = (props: AppStoreProps) => {
           event.percent
         );
         get().setContextUsage(event.percent);
+        return;
+      }
+      if (event.type === AgentEventType.KasMessageIdAssigned) {
+        get().setKasMessageId(event.kasMessageId);
         return;
       }
       if (event.type === AgentEventType.EffortUpdate) {
@@ -3549,8 +3564,37 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Context usage actions
     setContextUsage: (percent) => {
-      logger.debug('[context-usage] setContextUsage called, percent=', percent);
-      set({ contextUsagePercent: percent });
+      set((state) => {
+        const lastUserIdx = state.messages.findLastIndex(
+          (m) => m.role === MessageRole.User
+        );
+        if (lastUserIdx >= 0) {
+          const msg = state.messages[lastUserIdx]!;
+          if (msg.role === MessageRole.User) {
+            const messages = [...state.messages];
+            messages[lastUserIdx] = { ...msg, contextPercent: percent };
+            return { contextUsagePercent: percent, messages };
+          }
+        }
+        return { contextUsagePercent: percent };
+      });
+    },
+
+    setKasMessageId: (kasMessageId) => {
+      set((state) => {
+        const lastUserIdx = state.messages.findLastIndex(
+          (m) => m.role === MessageRole.User
+        );
+        if (lastUserIdx >= 0) {
+          const msg = state.messages[lastUserIdx]!;
+          if (msg.role === MessageRole.User) {
+            const messages = [...state.messages];
+            messages[lastUserIdx] = { ...msg, kasMessageId };
+            return { messages };
+          }
+        }
+        return {};
+      });
     },
 
     setLastTurnTokens: (tokens) => {

@@ -14,6 +14,29 @@ import {
 import chalk from 'chalk';
 
 /**
+ * Clamp `lines` to at most `max` rows. When they overflow, keep the head and
+ * tail and replace the middle with a "⋯ N more ⋯" marker, so the start and end
+ * of a sequence stay visible (e.g. a rewind turn's first tools + final reply).
+ * The marker inherits the indent of the first hidden line for visual alignment.
+ */
+function elideLines(lines: string[], max: number): string[] {
+  if (max <= 0) return [];
+  if (lines.length <= max) return lines;
+  if (max === 1) return [`⋯ ${lines.length} more ⋯`];
+  const visible = max - 1; // one row reserved for the marker
+  const head = Math.ceil(visible / 2);
+  const tail = visible - head;
+  const hidden = lines.length - head - tail;
+  const firstHidden = lines[head] || '';
+  const indent = firstHidden.match(/^(\s*)/)?.[1] || '';
+  return [
+    ...lines.slice(0, head),
+    `${indent}⋯ ${hidden} more ⋯`,
+    ...(tail > 0 ? lines.slice(lines.length - tail) : []),
+  ];
+}
+
+/**
  * A selectable overlay with a list of rows, optional column headers, and an
  * optional contextual preview pane that updates on highlight.
  *
@@ -203,6 +226,10 @@ export const Explorer: React.FC<ExplorerProps> = ({
         )
       : 0;
 
+  const previewLines = selected?.preview
+    ? elideLines(selected.preview.body.split('\n'), maxPreviewLines)
+    : [];
+
   // Responsive width: max width for the first column so rows never wrap.
   const chevronW = 2;
   const gapW = 4;
@@ -356,7 +383,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             <Divider />
             {previewHeading && (
               <Box>
-                <Text>{previewHeading}</Text>
+                <Text>{chalk.hex(brandHex)(previewHeading)}</Text>
               </Box>
             )}
             {selected.preview.heading && (
@@ -364,28 +391,25 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 <Text>{chalk.bold(selected.preview.heading)}</Text>
               </Box>
             )}
-            <Box flexDirection="row" marginTop={previewHeading ? 1 : 0}>
+            <Box flexDirection="row" marginTop={0}>
               <Box flexDirection="column" width={1} backgroundColor={brandHex}>
-                {selected.preview.body
-                  .split('\n')
-                  .slice(0, maxPreviewLines)
-                  .map((_line, i) => (
-                    <Text key={i}> </Text>
-                  ))}
+                {previewLines.map((_line, i) => (
+                  <Text key={i}> </Text>
+                ))}
               </Box>
               <Box flexDirection="column" marginLeft={1}>
-                {selected.preview.body
-                  .split('\n')
-                  .slice(0, maxPreviewLines)
-                  .map((line, i) => {
-                    const truncated =
-                      visibleWidth(line) > 160
-                        ? truncateToWidth(line, 160, '…')
-                        : line;
-                    return (
-                      <Text key={i}>{chalk.hex(secondaryHex)(truncated)}</Text>
-                    );
-                  })}
+                {previewLines.map((line, i) => {
+                  const truncated =
+                    visibleWidth(line) > 160
+                      ? truncateToWidth(line, 160, '…')
+                      : line;
+                  const isTool = line.trimStart().startsWith('↳');
+                  return (
+                    <Text key={i}>
+                      {isTool ? chalk.hex(secondaryHex)(truncated) : truncated}
+                    </Text>
+                  );
+                })}
               </Box>
             </Box>
           </>

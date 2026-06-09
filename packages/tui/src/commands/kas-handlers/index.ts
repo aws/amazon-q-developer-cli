@@ -7,6 +7,7 @@ import { handleCompact } from './compact';
 import { handleContext } from './context';
 import { handleHooks } from './hooks';
 import { handlePrompts } from './prompts';
+import { handleRewind } from './rewind';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -30,4 +31,5 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Context]: handleContext,
   [KasCommandName.Hooks]: handleHooks,
   [KasCommandName.Prompts]: handlePrompts,
+  [KasCommandName.Rewind]: handleRewind,
 };

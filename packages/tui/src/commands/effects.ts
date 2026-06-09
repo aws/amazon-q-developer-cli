@@ -11,6 +11,10 @@
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
+import {
+  enrichTurnsWithPreview,
+  type TurnMessage,
+} from '../utils/rewind-preview.js';
 import type {
   HookInfo,
   KnowledgeEntry,
@@ -1090,7 +1094,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.showAlert('No previous turns to rewind to', 'warning', 3000);
       return true;
     }
-    ctx.setShowRewindExplorer(true, turns);
+    const enriched = enrichTurnsWithPreview(
+      turns,
+      ctx.getMessages() as TurnMessage[]
+    );
+    ctx.setShowRewindExplorer(true, enriched);
     return true;
   },
 };

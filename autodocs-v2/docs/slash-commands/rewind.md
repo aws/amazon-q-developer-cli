@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-13
-  commit: 32e2af204
+  validated: 2026-06-08
+  commit: a2197258c
   status: validated
   testable_headless: false
   category: slash_command
@@ -66,15 +66,15 @@ The original session is preserved—you can switch back to it with `/chat load` 
 Opens a picker showing your conversation turns:
 
 ```
-┌─ Select turn to rewind to ─────────────────────────────┐
-│ > Help me refactor the authentication module          │ 45%
-│   Add unit tests for the login function               │ 32%
-│   Create a new user registration endpoint             │ 18%
-│   Set up the project structure                        │  5%
-└────────────────────────────────────────────────────────┘
+┌─ Select turn to rewind to ──────────────────────────────────── ● Turn Activity ─┐
+│ > Help me refactor the authentication module          │ 45% ┃ I'll restructure… │
+│   Add unit tests for the login function               │ 32% ┃ ↳ fs_read auth.ts  │
+│   Create a new user registration endpoint             │ 18% ┃ ↳ fs_write auth.ts │
+│   Set up the project structure                        │  5% ┃   ⋯ 3 more ⋯       │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The percentage shows context window usage at each turn. Selecting "Add unit tests..." creates a new session starting from that point.
+The percentage shows context window usage at each turn. The right pane shows the highlighted turn's activity (tool calls and model responses). Selecting "Add unit tests..." creates a new session starting from that point.
 
 ### Example 2: Rewind to Specific Turn
 
@@ -114,9 +114,27 @@ The rewind picker shows:
 |--------|-------------|
 | Prompt preview | First 80 characters of your message |
 | Context % | Context window usage at that turn (e.g., "45%") |
-| Response preview | First few lines of the AI's response (on hover) |
 
 Turns are listed newest-first for quick access to recent history.
+
+### Turn Activity Preview
+
+When you highlight a turn, a "● Turn Activity" preview pane appears on the right showing a summary of what the AI did during that turn. The preview includes:
+
+- **Model responses** — The first meaningful line of each assistant reply
+- **Tool calls** — Prefixed with `↳`, showing the tool name and a brief description of what it did (e.g., `↳ fs_write: create src/utils.ts`, `↳ execute_bash npm test`)
+
+When the turn activity is too long to display, the middle is collapsed with a `⋯ N more ⋯` marker so you can still see the beginning and end of the turn.
+
+```
+● Turn Activity
+┃ Let me fix the failing test.
+┃ ↳ fs_read src/auth.test.ts
+┃ ↳ fs_write: update assertion in login test
+┃   ⋯ 4 more ⋯
+┃ ↳ execute_bash npm test
+┃ All tests are passing now.
+```
 
 ## Troubleshooting
 

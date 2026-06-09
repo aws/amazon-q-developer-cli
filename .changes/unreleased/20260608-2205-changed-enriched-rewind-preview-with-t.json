@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Enriched `/rewind` preview with tool call details and context usage per turn"
+}
