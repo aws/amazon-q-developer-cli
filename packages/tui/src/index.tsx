@@ -628,7 +628,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
             for (const event of events) {
               handler(event);
             }
-            (handler as any).flush?.();
+            handler.flush();
             pendingHistoryEvents = [];
             resolve();
           }, 0);
@@ -638,7 +638,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Mark initialization complete and drain any messages queued while initializing
       appStore.setState({ isInitialized: true });
       await appStore.getState().processQueue();
-
       // Start process health telemetry collector (60s interval)
       startProcessHealthCollector(
         (payload) => {

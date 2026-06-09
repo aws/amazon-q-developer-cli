@@ -198,12 +198,42 @@ export interface SessionClient {
   spawnSession?(task: string, name?: string): Promise<{ sessionId: string }>;
 
   /**
-   * Sends a message to a session.
+   * Sends a message to an existing session, waking it if idle.
+   *
+   * Used for replies into a persistent subagent / crew session (e.g. from
+   * the session-view screen). Routes through `_message/send → wake_session`,
+   * which starts (or resumes) a full turn on the target session.
+   *
+   * For mid-turn steering of the *active* session, use `steerMessage()`
+   * instead — steering has different semantics (queue for injection at the
+   * next drain point rather than start a new turn).
    *
    * @param sessionId - The session ID
    * @param content - The message content
    */
-  sendMessage?(sessionId: string, content: string): Promise<void>;
+  sendMessage(sessionId: string, content: string): Promise<void>;
+
+  /**
+   * Queues a steering message for mid-turn injection on an active session.
+   *
+   * The backend holds the queue and drains it at the next tool boundary or
+   * at end-of-turn. Safe to call repeatedly while the agent is busy; multiple
+   * messages concatenate on the backend.
+   *
+   * @param sessionId - The session ID
+   * @param content - The steering content
+   */
+  steerMessage(sessionId: string, content: string): Promise<void>;
+
+  /**
+   * Clears the queued steering message without consuming it.
+   *
+   * Complements `steerMessage()` — lets the TUI remove a pending steer
+   * without also cancelling the in-flight turn.
+   *
+   * @param sessionId - The session ID
+   */
+  clearSteering(sessionId: string): Promise<void>;
 
   /**
    * Registers a callback for subagent list updates.

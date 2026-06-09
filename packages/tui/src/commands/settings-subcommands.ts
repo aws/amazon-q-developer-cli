@@ -14,6 +14,10 @@ import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
 import { Settings } from '../constants/settings.js';
 import {
+  InterruptMode,
+  DEFAULT_INTERRUPT_MODE,
+} from '../constants/interrupt-mode.js';
+import {
   readStringSetting,
   readCliSettings,
   writeCliSettings,
@@ -67,10 +71,38 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
   {
     value: 'terminal',
     label: 'terminal',
+    description: 'Newlines, interrupt behaviour',
+    handle: ({ ctx, settingsCommand }) => {
+      ctx.setSettingsReturnOnEscape(true);
+      ctx.setActiveCommand({
+        command: {
+          ...settingsCommand,
+          meta: {
+            ...settingsCommand.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: [
+          {
+            value: 'terminal:newlines',
+            label: 'newlines',
+            description: 'Shift+Enter / Option+Enter for newlines',
+          },
+          {
+            value: 'terminal:interrupt',
+            label: 'interrupt behaviour',
+            description: 'What happens when you type while Kiro is working',
+          },
+        ],
+      });
+    },
+  },
+  {
+    value: 'terminal:newlines',
+    label: 'newlines',
     description: 'Shift+Enter / Option+Enter for newlines',
     handle: async ({ ctx }) => {
-      // Final-decision subcommand: execute, surface the result as a transient
-      // alert, close overlay. Setup logic lives in utils/terminal-setup.ts.
       ctx.setLoadingMessage('Configuring terminal…');
       try {
         const result = await setupTerminal();
@@ -88,6 +120,70 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
           error instanceof Error ? error.message : 'Terminal setup failed';
         ctx.showAlert(message, 'error', alertDurationFor(message));
       }
+    },
+  },
+  {
+    value: 'terminal:interrupt',
+    label: 'interrupt behaviour',
+    description: 'What happens when you type while Kiro is working',
+    handle: ({ ctx, settingsCommand }) => {
+      const current = readStringSetting(
+        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+        DEFAULT_INTERRUPT_MODE
+      );
+      ctx.setSettingsReturnOnEscape(true);
+      ctx.setActiveCommand({
+        command: {
+          ...settingsCommand,
+          meta: {
+            ...settingsCommand.meta,
+            inputType: 'selection' as const,
+            searchable: false,
+          },
+        },
+        options: [
+          {
+            value: 'terminal:interrupt:steer',
+            label: `steer${current === InterruptMode.STEER ? ' ●' : ''}`,
+            description: 'Inject your message mid-turn at tool boundaries',
+          },
+          {
+            value: 'terminal:interrupt:queue',
+            label: `queue${current === InterruptMode.QUEUE ? ' ●' : ''}`,
+            description: 'Buffer your message and send after turn ends',
+          },
+        ],
+      });
+    },
+  },
+  {
+    value: 'terminal:interrupt:steer',
+    label: 'steer',
+    description: 'Inject your message mid-turn at tool boundaries',
+    handle: ({ ctx }) => {
+      const settings = readCliSettings();
+      settings[Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR] = InterruptMode.STEER;
+      writeCliSettings(settings);
+      ctx.showAlert(
+        'Interrupt behaviour: steer (takes effect next session)',
+        'success',
+        5000
+      );
+    },
+  },
+  {
+    value: 'terminal:interrupt:queue',
+    label: 'queue',
+    description: 'Buffer your message and send after turn ends',
+    handle: ({ ctx }) => {
+      const settings = readCliSettings();
+      settings[Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR] = InterruptMode.QUEUE;
+      writeCliSettings(settings);
+      ctx.showAlert(
+        'Interrupt behaviour: queue (takes effect next session)',
+        'success',
+        5000
+      );
     },
   },
   {

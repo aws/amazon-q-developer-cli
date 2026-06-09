@@ -20,4 +20,7 @@ export const Settings = {
   CHAT_SHOW_THINKING: 'chat.showThinking',
   CHAT_HISTORY_MODE: 'chat.historyMode',
   CHAT_TERMINAL_TITLE: 'chat.terminalTitle',
+  CHAT_DEFAULT_INTERRUPT_BEHAVIOR: 'chat.defaultInterruptBehavior',
+  CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
+    'chat.keybindings.toggleInterruptBehavior',
 } as const;

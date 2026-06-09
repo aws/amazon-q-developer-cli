@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-06-08
+  commit: 18f860655
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli settings
   description: Configure Kiro CLI behavior at global and workspace levels with get, set, list, open, and delete operations
-  keywords: [settings, config, configure, preferences, workspace, global]
-  related: [slash-experiment, agent-configuration]
+  keywords: [settings, config, configure, preferences, workspace, global, interrupt, steer, queue]
+  related: [slash-experiment, agent-configuration, mid-turn-steering]
 ---
 
 # kiro-cli settings
@@ -193,6 +193,8 @@ kiro-cli settings --delete [--global|--workspace] <SETTING_NAME>
 | `chat.tangentModeKey` | string | t | Key binding for tangent mode toggle |
 | `chat.defaultAgent` | string | none | Default agent for new sessions |
 | `chat.defaultModel` | string | none | Default AI model |
+| `chat.defaultInterruptBehavior` | string | steer | Default follow-up mode (steer or queue) |
+| `chat.keybindings.toggleInterruptBehavior` | string | ctrl+s | Key binding to toggle follow-up mode |
 | `chat.enableThinking` | boolean | false | Enable thinking tool |
 | `chat.enableKnowledge` | boolean | false | Enable knowledge base |
 | `chat.enableCodeIntelligence` | boolean | false | Enable code intelligence |
@@ -259,6 +261,14 @@ kiro-cli settings chat.enableTangentMode true
 
 **Note**: Without `--workspace` flag, defaults to global.
 
+### Example 7: Set Default Follow-Up Mode
+
+```bash
+kiro-cli settings chat.defaultInterruptBehavior queue
+```
+
+**What this does**: New sessions start in queuing mode (messages buffered until turn ends). Use `steer` for mid-turn injection.
+
 ## Troubleshooting
 
 ### Issue: Setting Not Found
@@ -289,6 +299,7 @@ kiro-cli settings chat.enableTangentMode true
 
 - [/experiment](../slash-commands/experiment.md) - Toggle experimental features
 - [Tangent Mode](../features/tangent-mode.md) - Tangent mode feature
+- [Mid-Turn Steering](../features/mid-turn-steering.md) - Send follow-up messages while agent works
 - [Agent Configuration](../agent-config/overview.md) - Agent-specific settings
 
 ## Limitations

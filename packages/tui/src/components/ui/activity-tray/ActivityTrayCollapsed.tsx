@@ -6,10 +6,14 @@ import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 
 interface ActivityTrayCollapsedProps {
+  hasSteer: boolean;
+  hasQueue: boolean;
   queueCount: number;
 }
 
 export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
+  hasSteer,
+  hasQueue,
   queueCount,
 }: ActivityTrayCollapsedProps) {
   const { tasks } = useTaskState();
@@ -30,22 +34,44 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
   const done = tasks.filter((t) => t.status === 'completed').length;
   const remaining = tasks.length - done;
 
-  // Queue-only mode: no tasks, just pending messages
+  // No tasks: show steer/queue status only
   if (!hasTasks) {
     return (
       <Box width={termWidth} backgroundColor={bg} paddingX={1}>
         <Box flexGrow={1} overflow="hidden">
           <Text backgroundColor={bg} color={fg} wrap="truncate-end">
-            <Text backgroundColor={bg} color={muted}>
-              {!allowIcons ? '' : glyphs.diamond}
-            </Text>
-            <Text backgroundColor={bg} color={fg} bold>
-              {' '}
-              Queue
-            </Text>
+            {hasSteer && (
+              <>
+                {allowIcons && (
+                  <Text backgroundColor={bg} color={muted}>
+                    {glyphs.executing}{' '}
+                  </Text>
+                )}
+                <Text backgroundColor={bg} color={fg} bold>
+                  Steer · pending
+                </Text>
+              </>
+            )}
+            {hasSteer && hasQueue && (
+              <Text backgroundColor={bg} color={fg}>
+                {' · '}
+              </Text>
+            )}
+            {hasQueue && (
+              <>
+                {allowIcons && (
+                  <Text backgroundColor={bg} color={muted}>
+                    {glyphs.diamond}{' '}
+                  </Text>
+                )}
+                <Text backgroundColor={bg} color={fg} bold>
+                  Queue · {queueCount} pending
+                </Text>
+              </>
+            )}
             <Text backgroundColor={bg} color={fg}>
               {' '}
-              · {queueCount} pending · ctrl+x to view and manage
+              · ctrl+x to view and manage
             </Text>
           </Text>
         </Box>
@@ -53,7 +79,7 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
     );
   }
 
-  // Tasks mode: show task status, append queue badge if present
+  // Tasks mode: show task status, append steer/queue badges if present
   return (
     <Box width={termWidth} backgroundColor={bg} paddingX={1}>
       <Box flexGrow={1} overflow="hidden">
@@ -76,7 +102,13 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
               · {remaining} remaining
             </Text>
           )}
-          {queueCount > 0 && (
+          {hasSteer && (
+            <Text backgroundColor={bg} color={muted}>
+              {' '}
+              · +1 steer
+            </Text>
+          )}
+          {hasQueue && (
             <Text backgroundColor={bg} color={muted}>
               {' '}
               · +{queueCount} queued

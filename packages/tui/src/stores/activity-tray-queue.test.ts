@@ -5,6 +5,9 @@ import { Kiro } from '../kiro';
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),
+    sendMessage: mock(),
+    steerMessage: mock(),
+    clearSteering: mock(),
     cancel: mock(),
     close: mock(),
   })),
@@ -18,6 +21,178 @@ function createTestStore() {
   const mockKiro = new Kiro();
   return createAppStore({ kiro: mockKiro });
 }
+
+describe('Queue state (simplified)', () => {
+  describe('pendingSteerContent', () => {
+    it('starts as null', () => {
+      const store = createTestStore();
+      expect(store.getState().pendingSteerContent).toBeNull();
+    });
+
+    it('can be set to a string value', () => {
+      const store = createTestStore();
+      store.setState({ pendingSteerContent: 'fix the bug' });
+      expect(store.getState().pendingSteerContent).toBe('fix the bug');
+    });
+
+    it('can be cleared back to null', () => {
+      const store = createTestStore();
+      store.setState({ pendingSteerContent: 'some message' });
+      store.setState({ pendingSteerContent: null });
+      expect(store.getState().pendingSteerContent).toBeNull();
+    });
+  });
+
+  describe('queueMessage action', () => {
+    it('calls kiro.steerMessage with sessionId and trimmed content', () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: 'session-123', isInitialized: true });
+
+      store.getState().queueMessage('  hello world  ');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-123',
+        'hello world'
+      );
+    });
+
+    it('does not call sendMessage (sendMessage is for session wake/reply, not steering)', () => {
+      const store = createTestStore();
+      const mockSendMessage = mock(() => Promise.resolve());
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).sendMessage = mockSendMessage;
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: 'session-123', isInitialized: true });
+
+      store.getState().queueMessage('please redirect');
+
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-123',
+        'please redirect'
+      );
+    });
+
+    it('does nothing for empty/whitespace-only content', () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: 'session-123', isInitialized: true });
+
+      store.getState().queueMessage('   ');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+    });
+
+    it('buffers onto pendingSteerContent when sessionId is null (does not drop)', () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: null, isInitialized: false });
+
+      store.getState().queueMessage('hello');
+
+      // Pre-init input is buffered locally on the same pendingSteerContent
+      // slot that the backend queue uses. No backend round-trip yet —
+      // there's no session to steer against.
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().pendingSteerContent).toBe('hello');
+      // No transient alert — the user's input will be replayed on init
+      expect(store.getState().transientAlert).toBeNull();
+    });
+
+    it('concatenates multiple pre-session messages with "\\n\\n" (matches backend queue format)', () => {
+      const store = createTestStore();
+      store.setState({ sessionId: null, isInitialized: false });
+
+      store.getState().queueMessage('first');
+      store.getState().queueMessage('second');
+      store.getState().queueMessage('third');
+
+      expect(store.getState().pendingSteerContent).toBe(
+        'first\n\nsecond\n\nthird'
+      );
+    });
+  });
+
+  describe('clearSteerMessage action', () => {
+    it('optimistically clears pendingSteerContent and calls kiro.clearSteering when session-live', () => {
+      const store = createTestStore();
+      const mockClearSteering = mock(() => Promise.resolve());
+      (store.getState().kiro as any).clearSteering = mockClearSteering;
+      store.setState({
+        isInitialized: true,
+        sessionId: 'session-abc',
+        pendingSteerContent: 'pending steer',
+      });
+
+      store.getState().clearSteerMessage();
+
+      expect(store.getState().pendingSteerContent).toBeNull();
+      expect(mockClearSteering).toHaveBeenCalledWith('session-abc');
+    });
+
+    it('clears the pre-session buffer without a backend call', () => {
+      // Pre-session: there is no backend session to clear. Pressing Del
+      // on the tray must still wipe what the user sees.
+      const store = createTestStore();
+      const mockClearSteering = mock(() => Promise.resolve());
+      (store.getState().kiro as any).clearSteering = mockClearSteering;
+      store.setState({
+        isInitialized: false,
+        sessionId: null,
+        pendingSteerContent: 'pre1\n\npre2',
+      });
+
+      store.getState().clearSteerMessage();
+
+      expect(store.getState().pendingSteerContent).toBeNull();
+      expect(mockClearSteering).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when there is no queued message', () => {
+      const store = createTestStore();
+      const mockClearSteering = mock(() => Promise.resolve());
+      (store.getState().kiro as any).clearSteering = mockClearSteering;
+      store.setState({ sessionId: 'session-abc', pendingSteerContent: null });
+
+      store.getState().clearSteerMessage();
+
+      expect(mockClearSteering).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('toggleActivityTray', () => {
+    it('toggles activityTrayExpanded', () => {
+      const store = createTestStore();
+      store.setState({ activityTrayExpanded: false });
+
+      store.getState().toggleActivityTray();
+      expect(store.getState().activityTrayExpanded).toBe(true);
+
+      store.getState().toggleActivityTray();
+      expect(store.getState().activityTrayExpanded).toBe(false);
+    });
+  });
+
+  describe('setTasks updates task state', () => {
+    it('updates tasks in the store', () => {
+      const store = createTestStore();
+
+      store.getState().setTasks([
+        { id: '1', subject: 'Task A', status: 'completed' },
+        { id: '2', subject: 'Task B', status: 'pending' },
+      ]);
+
+      expect(store.getState().tasks).toEqual([
+        { id: '1', subject: 'Task A', status: 'completed' },
+        { id: '2', subject: 'Task B', status: 'pending' },
+      ]);
+    });
+  });
+});
 
 describe('Queue editing', () => {
   describe('startEditingQueue', () => {
@@ -116,6 +291,7 @@ describe('Queue editing', () => {
       store.getState().replaceQueuedMessage(-1, 'nope');
 
       expect(store.getState().queuedMessages).toEqual(['a']);
+      // Negative index is out-of-bounds, so editingQueueIndex should be cleared
       expect(store.getState().editingQueueIndex).toBeNull();
     });
   });
@@ -192,30 +368,31 @@ describe('Queue editing', () => {
 
 describe('Task-aware queue draining', () => {
   describe('processQueue with tasks present', () => {
-    it('drains queue even when tasks are pending', async () => {
+    it('drains queue when some tasks are pending', async () => {
       const store = createTestStore();
       store.setState({
         isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['queued msg'],
         tasks: [
-          { id: '1', subject: 'Task A', status: 'pending' },
+          { id: '1', subject: 'Task A', status: 'completed' },
           { id: '2', subject: 'Task B', status: 'pending' },
         ],
       });
 
       await store.getState().processQueue();
 
-      // Queue should drain — pending tasks no longer block it
       expect(store.getState().queuedMessages).toEqual([]);
     });
 
-    it('drains queue when some tasks are pending', async () => {
+    it('drains queue even when tasks are pending', async () => {
       const store = createTestStore();
       store.setState({
         isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['queued msg'],
         tasks: [
-          { id: '1', subject: 'Task A', status: 'completed' },
+          { id: '1', subject: 'Task A', status: 'pending' },
           { id: '2', subject: 'Task B', status: 'pending' },
         ],
       });
@@ -229,6 +406,7 @@ describe('Task-aware queue draining', () => {
       const store = createTestStore();
       store.setState({
         isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['queued msg'],
         tasks: [
           { id: '1', subject: 'Task A', status: 'completed' },
@@ -245,6 +423,7 @@ describe('Task-aware queue draining', () => {
       const store = createTestStore();
       store.setState({
         isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['queued msg'],
         tasks: [],
       });
@@ -257,6 +436,7 @@ describe('Task-aware queue draining', () => {
     it('does not drain queue when isProcessing is true', async () => {
       const store = createTestStore();
       store.setState({
+        activeInterruptMode: 'queue',
         queuedMessages: ['queued msg'],
         tasks: [],
         isProcessing: true,
@@ -269,23 +449,10 @@ describe('Task-aware queue draining', () => {
   });
 
   describe('setTasks updates task state', () => {
-    it('updates tasks in the store', () => {
-      const store = createTestStore();
-
-      store.getState().setTasks([
-        { id: '1', subject: 'Task A', status: 'completed' },
-        { id: '2', subject: 'Task B', status: 'pending' },
-      ]);
-
-      expect(store.getState().tasks).toEqual([
-        { id: '1', subject: 'Task A', status: 'completed' },
-        { id: '2', subject: 'Task B', status: 'pending' },
-      ]);
-    });
-
     it('does not automatically drain queue', () => {
       const store = createTestStore();
       store.setState({
+        activeInterruptMode: 'queue',
         queuedMessages: ['waiting msg'],
         isProcessing: false,
       });
@@ -365,6 +532,8 @@ describe('Editing state cleanup', () => {
     it('clears editing state when the edited item (index 0) is dequeued', async () => {
       const store = createTestStore();
       store.setState({
+        isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['being edited', 'next'],
         editingQueueIndex: 0,
         commandInputValue: 'being edited modified',
@@ -381,6 +550,7 @@ describe('Editing state cleanup', () => {
       const store = createTestStore();
       store.setState({
         isInitialized: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['first', 'second', 'third'],
         editingQueueIndex: 2,
         commandInputValue: 'third',
@@ -390,9 +560,9 @@ describe('Editing state cleanup', () => {
       await store.getState().processQueue();
 
       // Mock kiro completes sendMessage immediately, so processQueue
-      // recurses and drains the entire queue
+      // recurses and drains the entire queue.
       expect(store.getState().queuedMessages).toEqual([]);
-      // The edited item (originally at index 2) was eventually dequeued
+      // The edited item (originally at index 2) was eventually dequeued.
       expect(store.getState().editingQueueIndex).toBeNull();
     });
   });

@@ -692,31 +692,200 @@ describe('handleTurnSummaryEvent', () => {
 describe('queueMessage and processQueue', () => {
   it('queues a message', () => {
     const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      sessionId: 'test-session',
+    });
     store.getState().queueMessage('hello');
     expect(store.getState().queuedMessages).toEqual(['hello']);
   });
 
   it('ignores empty messages', () => {
     const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      sessionId: 'test-session',
+    });
     store.getState().queueMessage('   ');
     expect(store.getState().queuedMessages).toEqual([]);
   });
 
   it('clearQueue empties the queue', () => {
     const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      sessionId: 'test-session',
+    });
     store.getState().queueMessage('a');
     store.getState().queueMessage('b');
     store.getState().clearQueue();
     expect(store.getState().queuedMessages).toEqual([]);
   });
+
+  it('clearQueue resets editingQueueIndex', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+      editingQueueIndex: 1,
+    });
+    store.getState().clearQueue();
+    expect(store.getState().queuedMessages).toEqual([]);
+    expect(store.getState().editingQueueIndex).toBeNull();
+  });
 });
 
 describe('removeQueuedMessage', () => {
-  it('removes message at index', () => {
+  it('removes the item at the given index', () => {
     const store = makeStore();
-    store.setState({ queuedMessages: ['a', 'b', 'c'] });
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+    });
     store.getState().removeQueuedMessage(1);
     expect(store.getState().queuedMessages).toEqual(['a', 'c']);
+  });
+
+  it('does nothing for negative index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+    });
+    store.getState().removeQueuedMessage(-1);
+    expect(store.getState().queuedMessages).toEqual(['a', 'b']);
+  });
+
+  it('does nothing for index >= length', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+    });
+    store.getState().removeQueuedMessage(2);
+    expect(store.getState().queuedMessages).toEqual(['a', 'b']);
+  });
+
+  it('sets editingQueueIndex to null when removing the edited index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+      editingQueueIndex: 1,
+    });
+    store.getState().removeQueuedMessage(1);
+    expect(store.getState().editingQueueIndex).toBeNull();
+  });
+
+  it('decrements editingQueueIndex when removing before edited index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+      editingQueueIndex: 2,
+    });
+    store.getState().removeQueuedMessage(0);
+    expect(store.getState().editingQueueIndex).toBe(1);
+  });
+
+  it('leaves editingQueueIndex unchanged when removing after edited index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+      editingQueueIndex: 0,
+    });
+    store.getState().removeQueuedMessage(2);
+    expect(store.getState().editingQueueIndex).toBe(0);
+  });
+});
+
+describe('replaceQueuedMessage', () => {
+  it('replaces message at valid index with trimmed content', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+    });
+    store.getState().replaceQueuedMessage(1, '  updated  ');
+    expect(store.getState().queuedMessages).toEqual(['a', 'updated', 'c']);
+  });
+
+  it('does nothing for out-of-bounds index (negative)', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+    });
+    store.getState().replaceQueuedMessage(-1, 'x');
+    expect(store.getState().queuedMessages).toEqual(['a', 'b']);
+  });
+
+  it('does nothing for out-of-bounds index (>= length)', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+    });
+    store.getState().replaceQueuedMessage(5, 'x');
+    expect(store.getState().queuedMessages).toEqual(['a', 'b']);
+  });
+
+  it('does nothing when content is empty after trimming', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+    });
+    store.getState().replaceQueuedMessage(0, '   ');
+    expect(store.getState().queuedMessages).toEqual(['a', 'b']);
+  });
+});
+
+describe('startEditingQueue', () => {
+  it('sets editingQueueIndex to valid index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b', 'c'],
+    });
+    store.getState().startEditingQueue(1);
+    expect(store.getState().editingQueueIndex).toBe(1);
+  });
+
+  it('does nothing for negative index', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+      editingQueueIndex: null,
+    });
+    store.getState().startEditingQueue(-1);
+    expect(store.getState().editingQueueIndex).toBeNull();
+  });
+
+  it('does nothing for index >= length', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+      editingQueueIndex: null,
+    });
+    store.getState().startEditingQueue(2);
+    expect(store.getState().editingQueueIndex).toBeNull();
+  });
+});
+
+describe('cancelEditingQueue', () => {
+  it('resets editingQueueIndex to null', () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['a', 'b'],
+      editingQueueIndex: 1,
+    });
+    store.getState().cancelEditingQueue();
+    expect(store.getState().editingQueueIndex).toBeNull();
   });
 });
 

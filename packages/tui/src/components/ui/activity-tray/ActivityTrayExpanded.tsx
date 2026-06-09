@@ -7,6 +7,7 @@ import {
   useCommandState,
   useProcessingState,
 } from '../../../stores/selectors.js';
+import { useAppStore } from '../../../stores/app-store.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -15,25 +16,26 @@ const MAX_VISIBLE_LINES = 6;
 
 type ActiveTab = 'tasks' | 'queue';
 
-interface ActivityTrayExpandedProps {
-  queueCount: number;
-}
-
-export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
-  queueCount,
-}: ActivityTrayExpandedProps) {
+export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
   const { tasks } = useTaskState();
-  const { queuedMessages, editingQueueIndex } = useQueueState();
+  const { pendingSteerContent, queuedMessages, editingQueueIndex } =
+    useQueueState();
   const { removeQueuedMessage, startEditingQueue } = useQueueActions();
   const { commandInputValue } = useCommandState();
   const { pendingApproval } = useProcessingState();
+  const clearSteerMessage = useAppStore((s) => s.clearSteerMessage);
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { allowIcons } = useAllowIcons();
   const { width: termWidth } = useTerminalSize();
 
   const hasTasks = tasks.length > 0;
-  const hasQueue = queueCount > 0;
+  const hasSteer = pendingSteerContent != null;
+  const hasQueue = queuedMessages.length > 0;
+  const queueCount = queuedMessages.length;
+  // The "queue" tab hosts both the steer message (if any) and the queued
+  // messages list — show it whenever either is present.
+  const hasMessages = hasSteer || hasQueue;
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     hasTasks ? 'tasks' : 'queue'
@@ -42,14 +44,14 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
 
   // Auto-switch tab when the active tab's items disappear
   useEffect(() => {
-    if (activeTab === 'queue' && !hasQueue && hasTasks) {
+    if (activeTab === 'queue' && !hasMessages && hasTasks) {
       setActiveTab('tasks');
       setSelectedIndex(0);
-    } else if (activeTab === 'tasks' && !hasTasks && hasQueue) {
+    } else if (activeTab === 'tasks' && !hasTasks && hasMessages) {
       setActiveTab('queue');
       setSelectedIndex(0);
     }
-  }, [activeTab, hasTasks, hasQueue]);
+  }, [activeTab, hasTasks, hasMessages]);
 
   const itemCount =
     activeTab === 'tasks' ? tasks.length : queuedMessages.length;
@@ -65,10 +67,22 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   }, [clampedIndex, selectedIndex]);
 
   const handleRemoveQueued = useCallback(() => {
-    if (activeTab !== 'queue' || queuedMessages.length === 0) return;
-    removeQueuedMessage(clampedIndex);
-    // Cursor adjustment happens automatically via clampedIndex on re-render
-  }, [activeTab, queuedMessages.length, clampedIndex, removeQueuedMessage]);
+    if (activeTab !== 'queue') return;
+    if (queuedMessages.length > 0) {
+      removeQueuedMessage(clampedIndex);
+      // Cursor adjustment happens automatically via clampedIndex on re-render
+    } else if (hasSteer) {
+      // No queued messages — delete clears the pending steer instead.
+      clearSteerMessage();
+    }
+  }, [
+    activeTab,
+    queuedMessages.length,
+    clampedIndex,
+    removeQueuedMessage,
+    hasSteer,
+    clearSteerMessage,
+  ]);
 
   const handleEditQueued = useCallback(() => {
     if (activeTab !== 'queue' || queuedMessages.length === 0) return;
@@ -100,7 +114,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
         // ctrl+n — alternative down navigation
         setSelectedIndex((prev) => Math.min(itemCount - 1, prev + 1));
       } else if (key.tab && !key.shift) {
-        if (hasTasks && hasQueue) {
+        if (hasTasks && hasMessages) {
           const next = activeTab === 'tasks' ? 'queue' : 'tasks';
           setActiveTab(next);
           setSelectedIndex(0);
@@ -161,9 +175,16 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   ) {
     hints.push('enter to edit');
     hints.push('del to remove');
+  } else if (
+    activeTab === 'queue' &&
+    queuedMessages.length === 0 &&
+    hasSteer &&
+    editingQueueIndex == null
+  ) {
+    hints.push('del to remove');
   }
-  if (hasTasks && hasQueue && editingQueueIndex == null) {
-    hints.push(`tab to view ${activeTab === 'tasks' ? 'queue' : 'tasks'}`);
+  if (hasTasks && hasMessages && editingQueueIndex == null) {
+    hints.push(`tab to view ${activeTab === 'tasks' ? 'messages' : 'tasks'}`);
   }
   const hintText = hints.join(' · ');
 
@@ -181,18 +202,21 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
               {!allowIcons ? '' : glyphs.executing} Tasks ({tasks.length})
             </Text>
           )}
-          {hasTasks && hasQueue && (
+          {hasTasks && hasMessages && (
             <Text backgroundColor={bg} color={mutedHex}>
               {'  '}
             </Text>
           )}
-          {hasQueue && (
+          {hasMessages && (
             <Text
               backgroundColor={bg}
               color={activeTab === 'queue' ? fg : mutedHex}
               bold={activeTab === 'queue'}
             >
-              {!allowIcons ? '' : glyphs.diamond} Queue ({queueCount})
+              {hasSteer && `${!allowIcons ? '' : glyphs.executing} Steer`}
+              {hasSteer && hasQueue && ' · '}
+              {hasQueue &&
+                `${!allowIcons ? '' : glyphs.diamond} Queue (${queueCount})`}
             </Text>
           )}
         </Box>
@@ -215,7 +239,19 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
           termWidth={termWidth}
         />
       )}
-      {activeTab === 'queue' && (
+
+      {/* Steer message (if any) shown above the queued messages list. */}
+      {activeTab === 'queue' && pendingSteerContent && (
+        <Box width={termWidth} backgroundColor={bg} paddingX={1}>
+          <Text backgroundColor={bg} color={brandHex}>
+            {allowIcons ? `${glyphs.executing} ` : '> '}
+          </Text>
+          <Text backgroundColor={bg} color={fg} wrap="truncate-end">
+            {pendingSteerContent}
+          </Text>
+        </Box>
+      )}
+      {activeTab === 'queue' && hasQueue && (
         <QueueList
           messages={queuedMessages}
           scrollOffset={scrollOffset}
@@ -224,7 +260,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
           editingIndex={editingQueueIndex}
           bg={bg}
           fg={fg}
-          mutedHex={mutedHex}
+          mutedHex={mutedHex ?? ''}
           brandHex={brandHex}
           termWidth={termWidth}
         />

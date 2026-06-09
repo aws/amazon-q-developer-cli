@@ -2791,6 +2791,24 @@ impl AcpSession {
                     });
                 }
             },
+            AgentEvent::SteeringQueued { message } => {
+                let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                    session_id: self.session_id.clone(),
+                    update: ExtSessionUpdate::SteeringQueued { message },
+                });
+            },
+            AgentEvent::SteeringConsumed { content } => {
+                let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                    session_id: self.session_id.clone(),
+                    update: ExtSessionUpdate::SteeringConsumed { content },
+                });
+            },
+            AgentEvent::SteeringCleared => {
+                let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                    session_id: self.session_id.clone(),
+                    update: ExtSessionUpdate::SteeringCleared,
+                });
+            },
             AgentEvent::GoalAction(action) => {
                 self.handle_goal_action(action).await;
             },
@@ -3996,6 +4014,50 @@ pub async fn execute(
                         .await
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
                     request_cx.respond(super::schema::SettingsSetResponse {})
+                }
+            },
+            sacp::on_receive_request!(),
+        )
+        // Handle _session/steer
+        .on_receive_request(
+            {
+                let session_tx = session_manager_handle.clone();
+                async move |request: super::schema::SessionSteerRequest, request_cx, _cx| {
+                    let target = sacp::schema::SessionId::new(request.session_id);
+                    let handle = session_tx.get_session_handle(&target).await?;
+                    match handle.get_agent_handle().await {
+                        Some(agent) => {
+                            agent.steer_message(request.message).await
+                                .map_err(|e| sacp::util::internal_error(e.to_string()))?;
+                        }
+                        None => {
+                            return Err(sacp::util::internal_error("agent not available"));
+                        }
+                    }
+                    request_cx.respond(super::schema::SessionSteerResponse { queued: true })?;
+                    Ok(())
+                }
+            },
+            sacp::on_receive_request!(),
+        )
+        // Handle _session/steer/clear
+        .on_receive_request(
+            {
+                let session_tx = session_manager_handle.clone();
+                async move |request: super::schema::SessionSteerClearRequest, request_cx, _cx| {
+                    let target = sacp::schema::SessionId::new(request.session_id);
+                    let handle = session_tx.get_session_handle(&target).await?;
+                    match handle.get_agent_handle().await {
+                        Some(agent) => {
+                            agent.clear_steering().await
+                                .map_err(|e| sacp::util::internal_error(e.to_string()))?;
+                        }
+                        None => {
+                            return Err(sacp::util::internal_error("agent not available"));
+                        }
+                    }
+                    request_cx.respond(super::schema::SessionSteerClearResponse { cleared: true })?;
+                    Ok(())
                 }
             },
             sacp::on_receive_request!(),

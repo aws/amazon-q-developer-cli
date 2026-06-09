@@ -8,14 +8,18 @@
  *   - another panel (theme, keybindings, display) — opened via store
  *     setters with `settingsReturnOnEscape=true` so ESC walks the user
  *     back here rather than dismissing the whole overlay.
- *   - an inline async action (terminal) — runs setup, surfaces the
- *     result as a transient alert.
- *   - a sub-screen (history) — Explorer is re-mounted with a different
- *     row set; ESC backs out to the top screen rather than closing.
+ *   - an inline async action (terminal → newlines) — runs setup,
+ *     surfaces the result as a transient alert.
+ *   - a sub-screen (terminal, terminal → interrupt, history) — Explorer
+ *     is re-mounted with a different row set; ESC backs out one level
+ *     rather than closing.
  *
- * Tracks `screen` in local state to drive the history sub-screen. CLI
- * args (`/settings <sub>`) bypass this panel and route through
- * `settings-subcommands.ts` handlers in the dispatcher.
+ * The menu structure, row contents, selection routing, and ESC
+ * back-navigation are pure functions in `settings-panel-model.ts` so
+ * they can be unit tested without rendering. This component is the thin
+ * shell that wires those decisions to the store/effects and tracks the
+ * current `screen` in local state. CLI args (`/settings <sub>`) bypass
+ * this panel and route through `settings-subcommands.ts` handlers.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -28,49 +32,23 @@ import {
   writeCliSettings,
 } from '../../utils/cli-settings.js';
 import { setupTerminal } from '../../utils/terminal-setup.js';
+import {
+  type Screen,
+  type HistoryChoice,
+  type InterruptChoice,
+  type PanelAction,
+  DEFAULT_INTERRUPT_MODE,
+  buildRows,
+  resolveSelect,
+  resolveBack,
+  appliesOnSelect,
+  screenTitle,
+  screenDescription,
+} from './settings-panel-model.js';
 
 interface SettingsPanelProps {
   onClose: () => void;
 }
-
-type Screen = { type: 'top' } | { type: 'history' };
-
-type TopChoice = 'display' | 'theme' | 'terminal' | 'keybindings' | 'history';
-type HistoryChoice = 'session' | 'global';
-
-interface TopItem {
-  id: TopChoice;
-  label: string;
-  description: string;
-}
-
-const TOP_ITEMS: readonly TopItem[] = [
-  {
-    id: 'display',
-    label: 'Display',
-    description: 'Control animations, ASCII art, and icons',
-  },
-  {
-    id: 'theme',
-    label: 'Theme',
-    description: 'Colors, prompt style, diff styling',
-  },
-  {
-    id: 'terminal',
-    label: 'Terminal',
-    description: 'Shift+Enter / Option+Enter for newlines',
-  },
-  {
-    id: 'keybindings',
-    label: 'Keybindings',
-    description: 'Customize keyboard shortcuts',
-  },
-  {
-    id: 'history',
-    label: 'History',
-    description: 'Prompt history scope (session or global)',
-  },
-];
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const setShowSettingsPanel = useAppStore(
@@ -149,60 +127,50 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
     [kiro, showAlert, onClose]
   );
 
-  // ─── Rows ──────────────────────────────────────────────────────
-  const rows: ExplorerRow[] = useMemo(() => {
-    if (screen.type === 'top') {
-      return TOP_ITEMS.map((item) => ({
-        id: item.id,
-        values: { label: item.label, description: item.description },
-      }));
-    }
-    // History sub-screen.
-    // The active marker uses a `●` dot suffix on the label rather than
-    // theme's `[active]` description-column marker — both rows here have
-    // their own descriptions ("Each session has its own…" / "All sessions
-    // share one…"), so we can't fold the active marker into the
-    // description column without losing that text.
-    const current = readStringSetting(Settings.CHAT_HISTORY_MODE, 'session');
-    return [
-      {
-        id: 'session',
-        values: {
-          label: current === 'session' ? 'Session ●' : 'Session',
-          description: 'Each session has its own prompt history',
-        },
-      },
-      {
-        id: 'global',
-        values: {
-          label: current === 'global' ? 'Global ●' : 'Global',
-          description: 'All sessions share one prompt history',
-        },
-      },
-    ];
-  }, [screen]);
+  const applyInterruptMode = useCallback(
+    (mode: InterruptChoice) => {
+      const settings = readCliSettings();
+      settings[Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR] = mode;
+      writeCliSettings(settings);
+      showAlert({
+        message:
+          mode === 'steer'
+            ? 'Interrupt behaviour: steer (takes effect next session)'
+            : 'Interrupt behaviour: queue (takes effect next session)',
+        status: 'success',
+        autoHideMs: 5000,
+      });
+      onClose();
+    },
+    [showAlert, onClose]
+  );
 
-  // ─── Selection ──────────────────────────────────────────────────
-  const handleTopSelect = useCallback(
-    (id: TopChoice) => {
-      switch (id) {
-        case 'display':
-          openSubPanel(() => setShowDisplaySettingsPanel(true));
+  // Run a named action produced by `resolveSelect`. Keeping the
+  // store/effect wiring here means the routing logic stays pure and
+  // testable in `settings-panel-model.ts`.
+  const runAction = useCallback(
+    (action: PanelAction) => {
+      switch (action.type) {
+        case 'open-panel':
+          if (action.panel === 'display') {
+            openSubPanel(() => setShowDisplaySettingsPanel(true));
+          } else if (action.panel === 'theme') {
+            openSubPanel(() => setShowThemePanel(true));
+          } else {
+            openSubPanel(() => setShowKeybindingsPanel(true));
+          }
           return;
-        case 'theme':
-          openSubPanel(() => setShowThemePanel(true));
-          return;
-        case 'keybindings':
-          openSubPanel(() => setShowKeybindingsPanel(true));
-          return;
-        case 'terminal':
+        case 'run-terminal-setup':
           // Terminal setup is a self-contained async flow — close the
           // overlay first so the user sees the resulting alert, then run.
           onClose();
           void runTerminalSetup();
           return;
-        case 'history':
-          setScreen({ type: 'history' });
+        case 'apply-history':
+          void applyHistoryMode(action.mode);
+          return;
+        case 'apply-interrupt':
+          applyInterruptMode(action.mode);
           return;
       }
     },
@@ -213,46 +181,60 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
       setShowKeybindingsPanel,
       onClose,
       runTerminalSetup,
+      applyHistoryMode,
+      applyInterruptMode,
     ]
   );
 
+  // ─── Rows ──────────────────────────────────────────────────────
+  // Side effect (reading persisted settings) lives here; `buildRows`
+  // itself is pure and takes the resolved snapshot.
+  const rows: ExplorerRow[] = useMemo(
+    () =>
+      buildRows(screen, {
+        historyMode: readStringSetting(Settings.CHAT_HISTORY_MODE, 'session'),
+        interruptMode: readStringSetting(
+          Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+          DEFAULT_INTERRUPT_MODE
+        ),
+      }),
+    [screen]
+  );
+
+  // ─── Selection ──────────────────────────────────────────────────
   const handleSelect = useCallback(
     (row: ExplorerRow) => {
-      if (screen.type === 'top') {
-        handleTopSelect(row.id as TopChoice);
+      const result = resolveSelect(screen, row.id);
+      if (!result) return;
+      if (result.kind === 'navigate') {
+        setScreen(result.screen);
       } else {
-        void applyHistoryMode(row.id as HistoryChoice);
+        runAction(result.action);
       }
     },
-    [screen, handleTopSelect, applyHistoryMode]
+    [screen, runAction]
   );
 
   // ─── Back-navigation ────────────────────────────────────────────
   // ESC backs the user out one level. From the top screen we close the
-  // overlay; from the history sub-screen we return to the top.
+  // overlay; sub-screens return to their parent.
   const handleEsc = useCallback(() => {
-    if (screen.type === 'history') {
-      setScreen({ type: 'top' });
-      return;
+    const back = resolveBack(screen);
+    if (back === 'close') {
+      onClose();
+    } else {
+      setScreen(back);
     }
-    onClose();
   }, [screen, onClose]);
 
   // ─── Render ─────────────────────────────────────────────────────
   const isTop = screen.type === 'top';
-  const title = isTop ? '/settings' : '/settings – history';
-  // Top-level /settings has no subtitle per spec — the items speak for
-  // themselves. Sub-screens (e.g. history) get a short prompt because
-  // they're a deeper navigation step the user just landed on.
-  const description = isTop
-    ? undefined
-    : 'Choose where prompt history is stored';
+  const title = screenTitle(screen);
+  const description = screenDescription(screen);
 
-  // Both screens use the same [label, description] layout. The history
-  // sub-screen folds the [active] marker into the description column so
-  // it sits in the same column as the description text on non-active
-  // rows — matching the spec's "[active] aligns with the description"
-  // layout instead of getting pushed to the right edge.
+  // Both screens use the same [label, description] layout. The active
+  // marker is folded into the label column (with a `●` suffix) by
+  // `buildRows`.
   const columns = [
     { key: 'label', label: '' },
     { key: 'description', label: '' },
@@ -268,15 +250,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
       searchable={false}
       closeHintLabel={isTop ? 'to cancel' : 'to go back'}
       keyHints={
-        isTop
-          ? undefined // Use Explorer's defaults: navigate · select.
-          : [
-              // History rows apply immediately and dismiss the
-              // overlay — surface that in the footer rather than
-              // the generic "select".
+        appliesOnSelect(screen)
+          ? [
+              // Rows apply immediately and dismiss the overlay — surface
+              // that in the footer rather than the generic "select".
               { key: '↑↓', label: 'to navigate' },
               { key: '↵', label: 'to apply and close' },
             ]
+          : undefined // Use Explorer's defaults: navigate · select.
       }
       onSelect={handleSelect}
       onClose={handleEsc}

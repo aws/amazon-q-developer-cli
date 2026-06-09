@@ -484,8 +484,17 @@ describe('Image attachment selectors', () => {
 describe('Queue selectors', () => {
   test('useQueueState returns expected keys', async () => {
     const result = await renderSelectorHook(useQueueState);
+    expect(result).toHaveProperty('pendingSteerContent');
     expect(result).toHaveProperty('queuedMessages');
+    expect(result).toHaveProperty('activeInterruptMode');
     expect(result).toHaveProperty('editingQueueIndex');
+  });
+
+  test('useQueueState reflects pendingSteerContent override', async () => {
+    const result = await renderSelectorHook(useQueueState, {
+      pendingSteerContent: 'pending message',
+    });
+    expect(result.pendingSteerContent).toBe('pending message');
   });
 
   test('useQueueState reflects store overrides', async () => {
@@ -505,6 +514,7 @@ describe('Queue selectors', () => {
 
   test('useQueueState default values match initial store state', async () => {
     const result = await renderSelectorHook(useQueueState);
+    expect(result.pendingSteerContent).toBeNull();
     expect(result.queuedMessages).toEqual([]);
     expect(result.editingQueueIndex).toBeNull();
   });

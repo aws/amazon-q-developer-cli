@@ -244,6 +244,37 @@ pub struct TerminateSessionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
 pub struct TerminateSessionResponse {}
 
+/// Request to queue a mid-turn steering message.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
+#[request(method = "_session/steer", response = SessionSteerResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSteerRequest {
+    pub session_id: String,
+    pub message: String,
+}
+
+/// Response for session steer — indicates the message was queued.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSteerResponse {
+    pub queued: bool,
+}
+
+/// Request to clear the queued steering message without consuming it.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
+#[request(method = "_session/steer/clear", response = SessionSteerClearResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSteerClearRequest {
+    pub session_id: String,
+}
+
+/// Response for session steer clear.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSteerClearResponse {
+    pub cleared: bool,
+}
+
 /// Process health telemetry payload sent from TUI every 60s.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -31,6 +31,7 @@ import {
   useKiroClient,
   useImageAttachmentActions,
 } from '../../../stores/selectors.js';
+import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import {
   type Segment,
   type FileSegment,
@@ -177,6 +178,8 @@ export const PromptInput = React.memo(function PromptInput({
     setPromptHint,
     setActiveCommand,
   } = useCommandActions();
+  const toggleInterruptMode = useAppStore((s) => s.toggleInterruptMode);
+  const keybindings = useKeybindings();
   const voiceStop = useAppStore((s) => s.voiceStop);
   const voiceLevel = useAppStore((s) => s.voiceLevel);
   const voiceAutoSubmit = useAppStore((s) => s.voiceAutoSubmit);
@@ -735,6 +738,12 @@ export const PromptInput = React.memo(function PromptInput({
 
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
+
+      // Toggle interrupt behavior (Ctrl+S by default) — works in all states
+      if (keybindings.matches('toggleInterruptMode', userInput, key)) {
+        toggleInterruptMode();
+        return;
+      }
 
       // Clear expand hint on any keypress
       if (expandHintActive.current) {

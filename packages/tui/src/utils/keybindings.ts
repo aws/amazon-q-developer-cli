@@ -28,18 +28,24 @@ export interface Keybinding {
 }
 
 /** Binding slots exposed to the TUI. */
-export type KeybindingName = 'cancelStream' | 'closeMenu' | 'quit';
+export type KeybindingName =
+  | 'cancelStream'
+  | 'closeMenu'
+  | 'quit'
+  | 'toggleInterruptMode';
 
 const DEFAULTS: Record<KeybindingName, string> = {
   cancelStream: 'esc',
   closeMenu: 'esc',
   quit: 'ctrl+c',
+  toggleInterruptMode: 'ctrl+s',
 };
 
 const SETTING_KEYS: Record<KeybindingName, string> = {
   cancelStream: Settings.CHAT_KEYBINDINGS_CANCEL_STREAM,
   closeMenu: Settings.CHAT_KEYBINDINGS_CLOSE_MENU,
   quit: Settings.CHAT_KEYBINDINGS_QUIT,
+  toggleInterruptMode: Settings.CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR,
 };
 
 // Key aliases: user-facing → canonical

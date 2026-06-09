@@ -257,4 +257,19 @@ pub enum ExtSessionUpdate {
         delay_secs: f64,
         message: String,
     },
+    /// A steering message was queued for mid-turn injection.
+    ///
+    /// `message` is the **full current queue snapshot** (multiple steers are
+    /// concatenated on the backend with `"\n\n"`). Each emission carries the
+    /// entire queue, so clients should overwrite their local copy rather than
+    /// append.
+    #[serde(rename_all = "camelCase")]
+    SteeringQueued { message: String },
+    /// The queued steering message was consumed and injected into the conversation.
+    #[serde(rename_all = "camelCase")]
+    SteeringConsumed { content: String },
+    /// The queued steering message was cleared without being consumed
+    /// (cancel, or explicit TUI-initiated clear). Clients should clear any
+    /// local queue display on receipt.
+    SteeringCleared,
 }

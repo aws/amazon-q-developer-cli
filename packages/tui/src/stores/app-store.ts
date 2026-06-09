@@ -258,6 +258,11 @@ import {
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
+import {
+  InterruptMode,
+  DEFAULT_INTERRUPT_MODE,
+  parseInterruptMode,
+} from '../constants/interrupt-mode.js';
 import { readBoolSetting, readStringSetting } from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
@@ -550,6 +555,25 @@ interface AppStoreProps {
   trustAllTools?: boolean;
 }
 
+/**
+ * Stream event handler with lifecycle controls.
+ *
+ * Call as a function (`handler(event)`) to dispatch a stream event.
+ * `flush()` commits any buffered content to the store — call it on the
+ * happy path when a turn completes normally.
+ * `dispose()` abandons the handler and drops buffered content — call it
+ * from cancel/error paths so stale chunks from the cancelled stream
+ * don't leak into the next turn via the handler's batched-flush timers
+ * or the ACP SDK's deferred-unsubscribe window.
+ */
+export interface StreamEventHandler {
+  (event: AgentStreamEvent): void;
+  /** Commit any buffered assistant content to the store (happy path). */
+  flush: () => void;
+  /** Abandon the handler and drop buffered content (cancel/error path). */
+  dispose: () => void;
+}
+
 export type AppActions = BaseAppActions & InputBufferActions;
 
 interface BaseAppActions {
@@ -559,7 +583,7 @@ interface BaseAppActions {
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  createStreamEventHandler: () => (event: AgentStreamEvent) => void;
+  createStreamEventHandler: () => StreamEventHandler;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
   ) => Promise<void>;
@@ -598,6 +622,7 @@ interface BaseAppActions {
   clearMessages: () => void;
   resetMessages: () => void;
   queueMessage: (content: string) => void;
+  clearSteerMessage: () => void;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
   removeQueuedMessage: (index: number) => void;
@@ -827,6 +852,10 @@ interface BaseAppActions {
   removePendingImage: (index: number) => void;
   clearPendingImages: () => void;
 
+  // Dual-mode interrupt behavior actions
+  toggleInterruptMode: () => void;
+  setActiveInterruptMode: (mode: InterruptMode) => void;
+
   // Task management actions
   setTasks: (tasks: TaskItem[]) => void;
   toggleActivityTray: () => void;
@@ -866,8 +895,7 @@ export interface AppState {
   // Chat state
   messages: MessageType[];
   liveOutputs: Map<string, string[][]>;
-  queuedMessages: string[];
-  editingQueueIndex: number | null;
+  pendingSteerContent: string | null;
   /**
    * V2 slash commands only. Two cohorts:
    * 1. Hardcoded TUI host commands (`source: 'local'`), seeded at store
@@ -1088,6 +1116,11 @@ export interface AppState {
   artifactViewOpen: OpenArtifactView | null;
   // ── End spec artifact view state ───────────────────────────
 
+  // Dual-mode interrupt behavior state
+  activeInterruptMode: InterruptMode;
+  queuedMessages: string[];
+  editingQueueIndex: number | null;
+
   // Task management state
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
@@ -1301,6 +1334,7 @@ function buildCommandContext(
     setShowThemePanel: state.setShowThemePanel,
     setShowSettingsPanel: state.setShowSettingsPanel,
     setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+    setActiveInterruptMode: state.setActiveInterruptMode,
     settingsReturnOnEscape: state.settingsReturnOnEscape,
     reopenSettingsMenu: state.reopenSettingsMenu,
     setShowKnowledgePanel: state.setShowKnowledgePanel,
@@ -1373,8 +1407,7 @@ export const createAppStore = (props: AppStoreProps) => {
     // Initial state
     messages: [],
     liveOutputs: new Map(),
-    queuedMessages: [],
-    editingQueueIndex: null,
+    pendingSteerContent: null,
     slashCommands: [
       {
         name: '/editor',
@@ -1573,6 +1606,16 @@ export const createAppStore = (props: AppStoreProps) => {
     _shellEscapeWriter: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
+    // Dual-mode interrupt behavior
+    activeInterruptMode: parseInterruptMode(
+      readStringSetting(
+        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+        DEFAULT_INTERRUPT_MODE
+      )
+    ),
+    queuedMessages: [],
+    editingQueueIndex: null,
+
     // Task management
     tasks: [],
     activityTrayExpanded: false,
@@ -1672,15 +1715,21 @@ export const createAppStore = (props: AppStoreProps) => {
         };
       });
 
+      // The handler is declared outside the try block so the catch can
+      // dispose it (even if stream setup failed before kiro.streamMessage
+      // returned). Dispose prevents the handler's pending batched-flush
+      // timers from committing stale content to the next turn — critical
+      // for cancel + replay correctness (see app-store.test.ts).
+      let eventHandler: StreamEventHandler | null = null;
       try {
-        const eventHandler = get().createStreamEventHandler();
+        eventHandler = get().createStreamEventHandler();
         await kiro.streamMessage(
           expandedContent,
           abortController.signal,
           eventHandler,
           allImages.length > 0 ? allImages : undefined
         );
-        (eventHandler as any).flush?.();
+        eventHandler.flush();
 
         // Mark any remaining tool calls as finished and mark turn as complete
         // Clear agentError on successful completion (Requirement 4.3)
@@ -1713,13 +1762,19 @@ export const createAppStore = (props: AppStoreProps) => {
             agentErrorGuidance: null,
           };
         });
+
+        // After isProcessing is cleared, drain the next queued message (if any).
+        // Must be after the set() above so the double-send guard in processQueue
+        // sees isProcessing === false.
         await get().processQueue();
       } catch (error) {
+        // Drop buffered content from the cancelled/failed stream; see
+        // StreamEventHandler for why this matters.
+        eventHandler?.dispose();
         set({ currentAbortController: null });
         logger.error('[store] sendMessage: caught error', error);
         if (error instanceof DOMException && error.name === 'AbortError') {
           set({ isProcessing: false });
-          await get().processQueue();
           return;
         }
         // Extract error message. Most agent errors arrive already-extracted
@@ -1771,19 +1826,26 @@ export const createAppStore = (props: AppStoreProps) => {
             autoHideMs: 5000,
           });
           set({ isProcessing: false });
+          // Turn ended (non-blocking error) — drain any queued messages.
+          // processQueue handles steer-first priority internally.
           await get().processQueue();
         }
       }
     },
 
     /**
-     * Creates a synchronous event handler callback for stream events.
-     * This is the core event-processing logic, used by streamMessage.
-     * Returns a cleanup function via the returned handler's `.flush` property.
+     * Create a stream event handler for one prompt turn. Call as a function
+     * to dispatch events; call `.flush()` on happy-path completion to commit
+     * any buffered content; call `.dispose()` on cancel/error to abandon
+     * the handler and drop buffered content. See `StreamEventHandler`.
      */
     createStreamEventHandler: () => {
       let isBuffering = false;
       let bufferedContent = '';
+      // Set by `.dispose()` to make this handler inert. Guards the event
+      // entry point and both batched-flush timers against late firings
+      // after the owning turn was cancelled — see StreamEventHandler.
+      let disposed = false;
       let bufferedThinking = '';
       // Reasoning timing: timestamp of the first Thought for the current model
       // message, and the duration once reasoning ends (first text Content or a
@@ -1807,6 +1869,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const flushToolOutputs = () => {
         pendingToolOutputFlush = null;
+        if (disposed) return;
         if (toolOutputBuffers.size === 0) return;
         const buffers = Array.from(toolOutputBuffers.entries());
         toolOutputBuffers.clear();
@@ -1852,19 +1915,56 @@ export const createAppStore = (props: AppStoreProps) => {
         });
       };
 
+      // Match KAS's STEERING_RESPONSE_PATTERN. Replace [STEERING steer-XXX: response]
+      // with just "response". The `s` flag lets `.` match newlines so multi-line
+      // acknowledgments are captured as a single response.
+      const STEERING_TAG_PATTERN = /\[STEERING (steer-[^\s:]+): (.+?)\]/gs;
+      // Detects a partially-streamed STEERING tag at the tail of the buffer
+      // (opener seen but no closing `]` yet). Used to hold back the in-progress
+      // tag from display so the user doesn't see `[STEERING steer-abc: …` flicker
+      // in before it gets stripped on the next chunk.
+      const PARTIAL_STEERING_TAG_PATTERN =
+        /\[STEERING (steer-[^\s:]+)(?::[^\]]*)?$/s;
+
       const flushContentToStore = () => {
         pendingContentFlush = null;
+        if (disposed) return;
         if (!bufferedContent && !bufferedThinking) return;
+
+        // If the tail of the buffer looks like a partially-streamed
+        // `[STEERING steer-…` opener with no closing `]` yet, hold it back
+        // from display until the next chunk arrives and we see the full
+        // tag. Without this guard the user would see a brief flicker of the
+        // raw opener before `STEERING_TAG_PATTERN` strips it on the next
+        // flush.
+        let renderable = bufferedContent;
+        const partialMatch = renderable.match(PARTIAL_STEERING_TAG_PATTERN);
+        if (partialMatch && partialMatch.index !== undefined) {
+          renderable = renderable.slice(0, partialMatch.index);
+          // Re-schedule a flush so the held-back tail renders once the
+          // closing bracket arrives (or streaming stalls long enough that
+          // it's clearly not a STEERING tag after all).
+          if (!pendingContentFlush) {
+            pendingContentFlush = setTimeout(flushContentToStore, 16);
+          }
+        }
+
+        const displayContent = renderable.replace(STEERING_TAG_PATTERN, '$2');
+
+        // Bail only when there's nothing to persist. Thinking-only flushes
+        // (think→tool-call path) have empty displayContent but carry
+        // bufferedThinking + thinkingMs, which must still reach the model
+        // message so the "Thought for Ns" header renders.
+        if (!displayContent && !bufferedThinking) return;
 
         set((state) => {
           const lastMsg = state.messages[state.messages.length - 1];
           if (lastMsg?.role === MessageRole.Model) {
-            // Update existing model message: single array copy, direct index write
             const messages = [...state.messages];
             messages[messages.length - 1] = {
               id: lastMsg.id,
               role: MessageRole.Model,
-              content: bufferedContent,
+              content: displayContent || lastMsg.content,
               thinking: bufferedThinking || lastMsg.thinking,
               thinkingMs: thinkingMs ?? lastMsg.thinkingMs,
               agentName: lastMsg.agentName ?? state.currentAgent?.name,
@@ -1878,7 +1978,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 {
                   id: lastContentEventId ?? crypto.randomUUID(),
                   role: MessageRole.Model,
-                  content: bufferedContent,
+                  content: displayContent,
                   thinking: bufferedThinking || undefined,
                   thinkingMs: thinkingMs ?? undefined,
                   agentName: state.currentAgent?.name,
@@ -1898,7 +1998,13 @@ export const createAppStore = (props: AppStoreProps) => {
 
       set({ streamingBuffer: { startBuffering, stopBuffering } });
 
-      const handler = (event: AgentStreamEvent) => {
+      const baseHandler = (event: AgentStreamEvent) => {
+        // Once disposed (cancelled turn), drop everything. The handler
+        // may still be briefly subscribed via `onUpdate` during the
+        // deferred-unsubscribe window in `kiro.ts::streamMessage`, but it
+        // must not mutate the store with events that belong to an
+        // abandoned turn.
+        if (disposed) return;
         // The retry banner reflects the wait between the SDK's HTTP attempts. Once any
         // other stream event arrives (a new message, content chunk, error, etc.) the
         // retry window is over — clear it so the "Thinking..." line reverts. We leave
@@ -2443,6 +2549,43 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
+          case AgentEventType.SteeringQueued:
+            set({ pendingSteerContent: event.message });
+            break;
+          case AgentEventType.SteeringConsumed:
+            // Flush any pending content from the previous turn BEFORE adding the
+            // user bubble so turn 1's output is finalized as its own Model
+            // message. Then reset the buffer so turn 2's content doesn't get
+            // concatenated with turn 1's text.
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+              flushContentToStore();
+            }
+            bufferedContent = '';
+            lastContentEventId = null;
+
+            // Clear the queued message from the activity tray and render a user
+            // bubble in the conversation at the injection point.
+            set((state) => ({
+              pendingSteerContent: null,
+              messages: [
+                ...state.messages,
+                {
+                  id: generateMessageId(),
+                  role: MessageRole.User,
+                  content: event.content,
+                  agentName: state.currentAgent?.name,
+                },
+              ],
+            }));
+            break;
+          case AgentEventType.SteeringCleared:
+            // Backend cleared the queue without consuming it (cancel, or
+            // explicit TUI clear request). Reset the activity-tray display
+            // without adding a user bubble.
+            set({ pendingSteerContent: null });
+            break;
           case AgentEventType.HooksUpdate:
             // Update cached hooks list. If the panel is open, it will
             // re-render with the new data automatically.
@@ -2451,22 +2594,47 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       };
 
-      // TODO: Refactor createStreamEventHandler to return { handle, flush } instead of
-      // monkey-patching flush onto the handler function and casting to any.
-      // Attach flush for callers to commit remaining buffered content
-      (handler as any).flush = () => {
-        // Cancel any pending batched flush and commit immediately
+      const handle = (event: AgentStreamEvent) => {
+        baseHandler(event);
+      };
+
+      const flush = () => {
+        if (disposed) return;
+        // Cancel any pending batched flush and commit immediately.
         if (pendingContentFlush) {
           clearTimeout(pendingContentFlush);
           pendingContentFlush = null;
         }
-        // flushContentToStore handles both creating new and updating
-        // existing Model messages — no need to also call commitBufferedContent
+        // `flushContentToStore` handles both creating a new Model message
+        // and updating an existing one — no need to also call
+        // `commitBufferedContent`.
         flushContentToStore();
         set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
       };
 
-      return handler;
+      // See StreamEventHandler for the flush-vs-dispose contract. The
+      // guards against `disposed` in here and in the flush fns above are
+      // the race defense: without them, a late stream chunk arriving in
+      // the deferred-unsubscribe window (see kiro.ts::streamMessage)
+      // would leak into the next turn's Model message.
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        if (pendingContentFlush) {
+          clearTimeout(pendingContentFlush);
+          pendingContentFlush = null;
+        }
+        if (pendingToolOutputFlush) {
+          clearTimeout(pendingToolOutputFlush);
+          pendingToolOutputFlush = null;
+        }
+        bufferedContent = '';
+        lastContentEventId = null;
+        toolOutputBuffers.clear();
+        set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
+      };
+
+      return Object.assign(handle, { flush, dispose });
     },
 
     /**
@@ -2478,7 +2646,7 @@ export const createAppStore = (props: AppStoreProps) => {
       for await (const event of stream) {
         handler(event);
       }
-      (handler as any).flush?.();
+      handler.flush();
     },
 
     cancelMessage: async () => {
@@ -2489,6 +2657,12 @@ export const createAppStore = (props: AppStoreProps) => {
         resolveCancelPromise = resolve;
       });
       set({ cancelInProgress: cancelPromise, wasCancelled: true });
+
+      // Capture whether there are pending messages (steer or queue) to decide
+      // whether to show "Cancelled streaming" toast or suppress it (since a
+      // new turn will start immediately from processQueue).
+      const hasPendingMessages =
+        get().pendingSteerContent != null || get().queuedMessages.length > 0;
 
       try {
         // Abort local stream first
@@ -2545,10 +2719,9 @@ export const createAppStore = (props: AppStoreProps) => {
         // "Prompt already in progress".
         await kiro.cancel();
 
-        // Only show the alert when the queue is empty — if there are
-        // queued messages the next one will start immediately and the
-        // transient alert would just flash confusingly.
-        if (get().queuedMessages.length === 0) {
+        // If there are pending messages (steer or queue), skip the generic
+        // "Cancelled streaming" toast since a new turn will start immediately.
+        if (!hasPendingMessages) {
           get().showTransientAlert({
             message: 'Cancelled streaming',
             status: 'info',
@@ -2576,9 +2749,13 @@ export const createAppStore = (props: AppStoreProps) => {
         });
         resolveCancelPromise!();
         set({ cancelInProgress: null });
-        // Drain any queued messages now that isProcessing is cleared.
-        await get().processQueue();
       }
+
+      // Drain pending messages after cancel resolves. processQueue handles
+      // steer-first priority internally: steer replays first, then queue drains.
+      // Done outside the try/finally so it doesn't race with the
+      // isProcessing reset — sendMessage() will flip it back on.
+      await get().processQueue();
     },
 
     setProcessing: (isProcessing) => set({ isProcessing }),
@@ -3036,11 +3213,52 @@ export const createAppStore = (props: AppStoreProps) => {
     queueMessage: (content: string) => {
       const trimmed = content.trim();
       if (!trimmed) return;
-      set((state) => ({ queuedMessages: [...state.queuedMessages, trimmed] }));
+      const { kiro, sessionId, isInitialized, activeInterruptMode } = get();
+
+      // Pre-init: buffer locally on `pendingSteerContent` regardless of mode.
+      // This reuses the same display slot as the backend steer queue
+      // (ActivityTray, prompt placeholder, etc.) so the user sees what they
+      // typed immediately. Multiple submissions concatenate with "\n\n",
+      // matching the backend steer queue's format. Drained by the init path
+      // in index.tsx as a fresh `sendMessage` once init completes — pre-init
+      // input is semantically a first prompt, not a mid-turn steer.
+      if (!isInitialized || !sessionId) {
+        set((state) => ({
+          pendingSteerContent:
+            state.pendingSteerContent != null
+              ? `${state.pendingSteerContent}\n\n${trimmed}`
+              : trimmed,
+        }));
+        return;
+      }
+
+      // Steering mode: send to backend via ACP
+      if (activeInterruptMode === InterruptMode.STEER) {
+        kiro.steerMessage(sessionId, trimmed).catch((err) => {
+          logger.error('queueMessage: steerMessage failed', err);
+          get().showTransientAlert({
+            message: 'Failed to queue message — try again',
+            status: 'error',
+            autoHideMs: 3000,
+          });
+        });
+        return;
+      }
+
+      // Queueing mode: append to local buffer
+      set((state) => ({
+        queuedMessages: [...state.queuedMessages, trimmed],
+      }));
     },
 
     processQueue: async () => {
-      const { cancelInProgress, isProcessing } = get();
+      const {
+        cancelInProgress,
+        isProcessing,
+        pendingSteerContent,
+        queuedMessages,
+      } = get();
+
       if (cancelInProgress) {
         await cancelInProgress;
       }
@@ -3048,12 +3266,21 @@ export const createAppStore = (props: AppStoreProps) => {
       // Don't drain if already processing (prevents double-send races)
       if (isProcessing) return;
 
-      const { queuedMessages, editingQueueIndex } = get();
+      // Steer cuts the line: if a pending steer exists (wasn't consumed
+      // mid-turn), replay it as a fresh prompt before draining the queue.
+      if (pendingSteerContent != null) {
+        const steer = pendingSteerContent;
+        set({ pendingSteerContent: null });
+        await get().sendMessage(steer);
+        return; // After this turn ends, processQueue will be called again for the queue.
+      }
+
+      // Then drain the queue
       const nextMessage = queuedMessages[0];
       if (!nextMessage) return;
 
       // Adjust editing index since we're removing index 0
-      let newEditingIndex = editingQueueIndex;
+      let newEditingIndex = get().editingQueueIndex;
       if (newEditingIndex != null) {
         if (newEditingIndex === 0) {
           newEditingIndex = null;
@@ -3061,14 +3288,17 @@ export const createAppStore = (props: AppStoreProps) => {
           newEditingIndex = newEditingIndex - 1;
         }
       }
-      const stoppedEditing =
-        editingQueueIndex != null && newEditingIndex == null;
+
+      // Clear commandInputValue if we just exited editing mode
+      const wasEditing = get().editingQueueIndex != null;
+      const stoppedEditing = wasEditing && newEditingIndex == null;
 
       set((state) => ({
         queuedMessages: state.queuedMessages.slice(1),
         editingQueueIndex: newEditingIndex,
         commandInputValue: stoppedEditing ? '' : state.commandInputValue,
       }));
+
       await get().sendMessage(nextMessage);
     },
 
@@ -3082,49 +3312,86 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     removeQueuedMessage: (index: number) => {
-      set((state) => {
-        const newMessages = state.queuedMessages.filter((_, i) => i !== index);
-        // Adjust editing index: clear if the edited item was removed, shift down
-        // if an earlier item was removed
-        let newEditingIndex = state.editingQueueIndex;
-        if (newEditingIndex != null) {
-          if (newEditingIndex === index) {
-            newEditingIndex = null;
-          } else if (newEditingIndex > index) {
-            newEditingIndex = newEditingIndex - 1;
-          }
+      const { queuedMessages, editingQueueIndex } = get();
+      if (index < 0 || index >= queuedMessages.length) return;
+
+      let newEditingIndex = editingQueueIndex;
+      if (newEditingIndex != null) {
+        if (newEditingIndex === index) {
+          newEditingIndex = null;
+        } else if (newEditingIndex > index) {
+          newEditingIndex = newEditingIndex - 1;
         }
-        // Clear the input field if we just exited editing mode
-        const wasEditing = state.editingQueueIndex != null;
-        const stoppedEditing = wasEditing && newEditingIndex == null;
-        return {
-          queuedMessages: newMessages,
-          editingQueueIndex: newEditingIndex,
-          commandInputValue: stoppedEditing ? '' : state.commandInputValue,
-        };
-      });
+      }
+
+      // Clear commandInputValue if we just exited editing mode
+      const wasEditing = editingQueueIndex != null;
+      const stoppedEditing = wasEditing && newEditingIndex == null;
+
+      set((state) => ({
+        queuedMessages: queuedMessages.filter((_, i) => i !== index),
+        editingQueueIndex: newEditingIndex,
+        commandInputValue: stoppedEditing ? '' : state.commandInputValue,
+      }));
     },
 
     replaceQueuedMessage: (index: number, content: string) => {
-      set((state) => {
-        if (index < 0 || index >= state.queuedMessages.length) {
-          return { editingQueueIndex: null };
-        }
-        const updated = [...state.queuedMessages];
-        updated[index] = content;
-        return { queuedMessages: updated, editingQueueIndex: null };
+      const { queuedMessages } = get();
+      if (index < 0 || index >= queuedMessages.length) {
+        set({ editingQueueIndex: null });
+        return;
+      }
+      const trimmed = content.trim();
+      if (!trimmed) return;
+
+      set({
+        queuedMessages: queuedMessages.map((msg, i) =>
+          i === index ? trimmed : msg
+        ),
+        editingQueueIndex: null,
       });
     },
 
     startEditingQueue: (index: number) => {
-      const msg = get().queuedMessages[index];
-      if (msg == null) return;
-      // Load the message text into the command input so PromptInput picks it up
-      set({ editingQueueIndex: index, commandInputValue: msg });
+      const { queuedMessages } = get();
+      if (index < 0 || index >= queuedMessages.length) return;
+      // Load the message text into commandInputValue so PromptInput picks it up
+      set({
+        editingQueueIndex: index,
+        commandInputValue: queuedMessages[index],
+      });
     },
 
     cancelEditingQueue: () => {
       set({ editingQueueIndex: null, commandInputValue: '' });
+    },
+
+    clearSteerMessage: () => {
+      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
+      if (pendingSteerContent == null) return;
+
+      // Optimistically clear locally. The backend `SteeringCleared`
+      // notification (if we made a backend call) will reconfirm. If the
+      // clear request fails we'll re-receive a `SteeringQueued` snapshot
+      // that restores the display.
+      set({ pendingSteerContent: null });
+
+      // Pre-init clear is local-only — there's no backend queue to sync
+      // with until init dispatches the buffered content as a fresh prompt
+      // (see index.tsx init path). A session-live queue still needs the
+      // explicit `_session/steer/clear` round-trip to keep the backend in
+      // sync.
+      const hasBackendQueue = isInitialized && sessionId != null;
+      if (hasBackendQueue) {
+        kiro.clearSteering(sessionId).catch((err) => {
+          logger.error('clearSteerMessage failed', err);
+          get().showTransientAlert({
+            message: 'Failed to clear queued message',
+            status: 'error',
+            autoHideMs: 3000,
+          });
+        });
+      }
     },
 
     // Input actions
@@ -4028,10 +4295,32 @@ export const createAppStore = (props: AppStoreProps) => {
     toggleActivityTray: () => {
       set((state) => ({
         activityTrayExpanded: !state.activityTrayExpanded,
-        editingQueueIndex: state.activityTrayExpanded
-          ? null
-          : state.editingQueueIndex,
+        // Clear editing state when collapsing
+        editingQueueIndex: !state.activityTrayExpanded
+          ? state.editingQueueIndex
+          : null,
       }));
+    },
+
+    // Dual-mode interrupt behavior toggle
+    toggleInterruptMode: () => {
+      const switchingToQueue =
+        get().activeInterruptMode === InterruptMode.STEER;
+      const newMode = switchingToQueue
+        ? InterruptMode.QUEUE
+        : InterruptMode.STEER;
+      set({ activeInterruptMode: newMode });
+      get().showTransientAlert({
+        message: switchingToQueue
+          ? 'Switched to Queue mode'
+          : 'Switched to Steer mode',
+        status: 'info',
+        autoHideMs: 3000,
+      });
+    },
+
+    setActiveInterruptMode: (mode: InterruptMode) => {
+      set({ activeInterruptMode: mode });
     },
 
     setAnnouncement: (msg) => {
@@ -4075,6 +4364,7 @@ export const createAppStore = (props: AppStoreProps) => {
         state.transientAlert ||
         state.surveyPrompt ||
         state.queuedMessages.length > 0 ||
+        state.pendingSteerContent != null ||
         state.tasks.some((t) => t.status === 'pending')
       ) {
         return;
@@ -4534,6 +4824,7 @@ export const createAppStore = (props: AppStoreProps) => {
               currentAbortController: null,
             });
           }
+          // Shell command finished — drain any queued messages.
           await get().processQueue();
         }
         return;

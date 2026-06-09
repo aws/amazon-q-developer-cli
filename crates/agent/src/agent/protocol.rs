@@ -106,6 +106,24 @@ pub enum AgentEvent {
 
     /// Clear-related events
     Clear(ClearEvent),
+
+    /// A steering message was queued (for TUI display).
+    ///
+    /// `message` is the **full current queue snapshot** (multiple steers
+    /// concatenated with `"\n\n"`). Consumers SHOULD overwrite their local
+    /// copy rather than append, since each emission carries the complete
+    /// queue state.
+    SteeringQueued { message: String },
+
+    /// The queued steering message was consumed and injected into the
+    /// conversation (either at a tool boundary or at the start of an
+    /// auto-started turn at end-of-turn drain).
+    SteeringConsumed { content: String },
+
+    /// The queued steering message was cleared without being consumed
+    /// (e.g. via cancel, or via explicit user clear from the TUI).
+    /// Consumers SHOULD clear their local queue display on receipt.
+    SteeringCleared,
 }
 
 /// Events related to conversation compaction
@@ -281,6 +299,12 @@ pub enum AgentRequest {
     /// Set trust_all_tools on this agent (used for "allow all for session")
     SetTrustAllTools(bool),
     InvalidateCachedToolSpecs,
+    /// Queue a steering message for injection at the next tool boundary.
+    SteerMessage {
+        message: String,
+    },
+    /// Clear any queued steering message without consuming it.
+    ClearSteering,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

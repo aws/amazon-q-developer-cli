@@ -110,6 +110,18 @@ export class MockSessionClient implements SessionClient {
     // No-op for mock
   }
 
+  async sendMessage(_sessionId: string, _content: string): Promise<void> {
+    // No-op for mock — used by tests that only care about the call itself.
+  }
+
+  async steerMessage(_sessionId: string, _content: string): Promise<void> {
+    // No-op for mock.
+  }
+
+  async clearSteering(_sessionId: string): Promise<void> {
+    // No-op for mock.
+  }
+
   async setMode(_modeId: string): Promise<void> {
     // No-op for mock
   }

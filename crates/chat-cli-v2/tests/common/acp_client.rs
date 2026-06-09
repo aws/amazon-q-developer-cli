@@ -103,6 +103,15 @@ enum Command {
         command: String,
         reply: oneshot::Sender<acp::Result<agent::tui_commands::CommandOptionsResponse>>,
     },
+    Steer {
+        session_id: acp::SessionId,
+        message: String,
+        reply: oneshot::Sender<acp::Result<serde_json::Value>>,
+    },
+    ClearSteer {
+        session_id: acp::SessionId,
+        reply: oneshot::Sender<acp::Result<serde_json::Value>>,
+    },
     GetCaptured {
         reply: oneshot::Sender<CapturedNotifications>,
     },
@@ -428,6 +437,29 @@ impl AcpTestClient {
             .map_err(|_e| acp::Error::new(-1, "get_command_options actor channel closed".to_string()))?
     }
 
+    /// Send a `_session/steer` ext method to queue a steering message.
+    pub async fn steer(&self, session_id: acp::SessionId, message: &str) -> acp::Result<serde_json::Value> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Steer {
+                session_id,
+                message: message.to_string(),
+                reply,
+            })
+            .await
+            .ok();
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "steer actor channel closed".to_string()))?
+    }
+
+    /// Send a `_session/steer/clear` ext method to clear the queued steering message.
+    pub async fn steer_clear(&self, session_id: acp::SessionId) -> acp::Result<serde_json::Value> {
+        let (reply, rx) = oneshot::channel();
+        self.tx.send(Command::ClearSteer { session_id, reply }).await.ok();
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "steer_clear actor channel closed".to_string()))?
+    }
+
     pub async fn captured(&self) -> CapturedNotifications {
         let (reply, rx) = oneshot::channel();
         self.tx.send(Command::GetCaptured { reply }).await.ok();
@@ -586,6 +618,49 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                             .await
                             .and_then(|resp| {
                                 serde_json::from_str::<agent::tui_commands::CommandOptionsResponse>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
+                            });
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            Command::Steer {
+                session_id,
+                message,
+                reply,
+            } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        let params = serde_json::json!({
+                            "sessionId": session_id.0.as_ref(),
+                            "message": message,
+                        });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest::new("session/steer", raw_params.into()))
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<serde_json::Value>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
+                            });
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            Command::ClearSteer { session_id, reply } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        let params = serde_json::json!({
+                            "sessionId": session_id.0.as_ref(),
+                        });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest::new("session/steer/clear", raw_params.into()))
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<serde_json::Value>(resp.0.get())
                                     .map_err(|e| acp::Error::new(-1, e.to_string()))
                             });
                         let _ = reply.send(result);

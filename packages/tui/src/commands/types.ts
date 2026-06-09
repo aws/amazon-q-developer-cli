@@ -2,10 +2,11 @@
  * Types for the slash command handler system.
  */
 
-import type { AgentStreamEvent } from '../types/agent-events.js';
+import type { StreamEventHandler } from '../stores/app-store.js';
 import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
 import type { KasCommand } from '../kas-commands.js';
+import type { InterruptMode } from '../constants/interrupt-mode.js';
 import type {
   AvailableCommand,
   PromptEntry,
@@ -125,6 +126,8 @@ export interface CommandContext {
   setShowThemePanel: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
+  /** Set the active interrupt mode (steer or queue) — takes effect immediately */
+  setActiveInterruptMode: (mode: InterruptMode) => void;
   /**
    * Snapshot of `settingsReturnOnEscape`. Effect handlers read this to
    * decide whether to bounce the user back into the /settings picker on
@@ -170,7 +173,7 @@ export interface CommandContext {
     displayContent?: string
   ) => Promise<void>;
   /** Create a stream event handler for processing agent events into messages */
-  createStreamEventHandler: () => (event: AgentStreamEvent) => void;
+  createStreamEventHandler: () => StreamEventHandler;
   /** Update the session ID in the store */
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */

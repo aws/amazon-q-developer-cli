@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-29T18:13:43.694968",
-  "total_docs": 116,
+  "generated_at": "2026-06-08T13:12:38.656186",
+  "total_docs": 118,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -25,6 +25,7 @@
       "features/hooks.md",
       "features/knowledge-management.md",
       "features/mcp-registry.md",
+      "features/mid-turn-steering.md",
       "features/paste-chips.md",
       "features/planning-agent.md",
       "features/research-surveys.md",
@@ -46,6 +47,7 @@
       "settings/cleanup-period-days.md",
       "settings/context-usage-indicator.md",
       "settings/default-agent.md",
+      "settings/default-interrupt-mode.md",
       "settings/default-model.md",
       "settings/diff-tool-settings.md",
       "settings/disable-markdown-rendering.md",
@@ -196,6 +198,7 @@
         "history",
         "KIRO_LOG_NO_COLOR",
         "KIRO_HOME",
+        "KIRO_DATA_DIR",
         "config-directory"
       ],
       "related": [
@@ -204,7 +207,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-05-22",
+      "validated": "2026-05-29",
       "status": "validated"
     },
     {
@@ -303,13 +306,17 @@
         "configure",
         "preferences",
         "workspace",
-        "global"
+        "global",
+        "interrupt",
+        "steer",
+        "queue"
       ],
       "related": [
         "slash-experiment",
-        "agent-configuration"
+        "agent-configuration",
+        "mid-turn-steering"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-06-08",
       "status": "validated"
     },
     {
@@ -585,6 +592,32 @@
       "status": "validated"
     },
     {
+      "path": "features/mid-turn-steering.md",
+      "file": "mid-turn-steering.md",
+      "title": "Mid-Turn Steering",
+      "description": "Send messages to the agent while it's working to redirect or guide its approach",
+      "category": "feature",
+      "keywords": [
+        "steering",
+        "redirect",
+        "interrupt",
+        "queue",
+        "mid-turn",
+        "guidance",
+        "follow-up",
+        "queuing",
+        "steer mode",
+        "queue mode"
+      ],
+      "related": [
+        "session-management",
+        "tangent-mode",
+        "key-bindings-settings"
+      ],
+      "validated": "2026-06-08",
+      "status": "validated"
+    },
+    {
       "path": "features/paste-chips.md",
       "file": "paste-chips.md",
       "title": "Paste Chips",
@@ -853,6 +886,29 @@
         "agent-config"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "settings/default-interrupt-mode.md",
+      "file": "default-interrupt-mode.md",
+      "title": "chat.defaultInterruptBehavior",
+      "description": "Default follow-up delivery mode for new chat sessions",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "follow-up",
+        "steering",
+        "queuing",
+        "mid-turn",
+        "queue",
+        "interrupt",
+        "steer"
+      ],
+      "related": [
+        "mid-turn-steering",
+        "key-bindings-settings"
+      ],
+      "validated": "2026-06-08",
       "status": "validated"
     },
     {
@@ -1133,10 +1189,11 @@
         "key",
         "bindings",
         "shortcuts",
-        "keyboard"
+        "keyboard",
+        "toggleInterruptBehavior"
       ],
       "related": [],
-      "validated": "2026-01-27",
+      "validated": "2026-06-08",
       "status": "validated"
     },
     {
@@ -1200,17 +1257,21 @@
       "path": "settings/show-thinking.md",
       "file": "show-thinking.md",
       "title": "chat.showThinking",
-      "description": "Show thinking/reasoning blocks in chat output",
+      "description": "Control how reasoning/thinking blocks are displayed (collapsed, expanded, or off)",
       "category": "setting",
       "keywords": [
         "setting",
         "thinking",
         "reasoning",
         "display",
-        "tui"
+        "tui",
+        "collapsed",
+        "expanded"
       ],
-      "related": [],
-      "validated": "2026-05-21",
+      "related": [
+        "enable-thinking"
+      ],
+      "validated": "2026-06-03",
       "status": "validated"
     },
     {
@@ -1709,9 +1770,10 @@
       ],
       "related": [
         "compact",
+        "spawn",
         "effort"
       ],
-      "validated": "2026-05-29",
+      "validated": "2026-06-01",
       "status": "validated"
     },
     {
@@ -2232,17 +2294,15 @@
       "keywords": [
         "goal",
         "complete",
-        "status",
         "iteration",
         "loop",
-        "verification",
-        "evidence"
+        "verification"
       ],
       "related": [
-        "use-subagent",
-        "todo-list"
+        "task",
+        "subagent"
       ],
-      "validated": "2026-05-29",
+      "validated": "2026-06-01",
       "status": "validated"
     },
     {

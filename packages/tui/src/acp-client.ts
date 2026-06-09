@@ -116,6 +116,8 @@ const EXT_METHODS = {
   SESSION_TERMINATE: 'session/terminate',
   SESSION_ATTACH: 'session/attach',
   MESSAGE_SEND: 'message/send',
+  SESSION_STEER: 'session/steer',
+  SESSION_STEER_CLEAR: 'session/steer/clear',
   AGENT_SWITCHED: 'kiro.dev/agent/switched',
   SESSION_UPDATE: 'kiro.dev/session/update',
   GOAL_STATUS: 'kiro.dev/goal/status',
@@ -547,7 +549,56 @@ abstract class BaseAcpClient implements SessionClient {
     task: string,
     name?: string
   ): Promise<{ sessionId: string; name: string }>;
-  abstract sendMessage(sessionId: string, content: string): Promise<void>;
+
+  /**
+   * Transport for extension methods. Subclasses implement this once (Rust
+   * goes through `conn.extMethod(this.ext(method), ...)`, KAS through
+   * `kiroClient.sendExtMethod(method, ...)`), and the concrete methods below
+   * (`sendMessage`, `steerMessage`, `clearSteering`) share one implementation.
+   *
+   * `method` is the canonical underscore-prefixed name (e.g.
+   * `_session/steer`). Rust's `ext()` helper is a no-op when already prefixed,
+   * so both engines receive the same input.
+   */
+  protected abstract extRequest<T = unknown>(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<T>;
+
+  // ── Concrete extension-method wrappers (shared between engines) ──
+
+  /**
+   * Reply/wake path for persistent (subagent/crew) sessions — routes through
+   * `_message/send → wake_session`, starting or resuming a full turn on the
+   * target session. For mid-turn steering of the active session, use
+   * {@link steerMessage} instead.
+   */
+  async sendMessage(sessionId: string, content: string): Promise<void> {
+    await this.extRequest(`_${EXT_METHODS.MESSAGE_SEND}`, {
+      sessionId,
+      content,
+    });
+  }
+
+  /**
+   * Queue a mid-turn steering message. The backend holds it until the next
+   * drain point (tool boundary or turn end), at which point it's injected
+   * into the conversation alongside the pending tool results.
+   */
+  async steerMessage(sessionId: string, content: string): Promise<void> {
+    await this.extRequest(`_${EXT_METHODS.SESSION_STEER}`, {
+      sessionId,
+      message: content,
+    });
+  }
+
+  /**
+   * Clear the queued steering message without consuming it. Complements
+   * {@link steerMessage} for the "removed from queue" UX.
+   */
+  async clearSteering(sessionId: string): Promise<void> {
+    await this.extRequest(`_${EXT_METHODS.SESSION_STEER_CLEAR}`, { sessionId });
+  }
   abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
   abstract sendModeChanged(payload: ModeChangedNotification): void;
 
@@ -809,11 +860,12 @@ abstract class BaseAcpClient implements SessionClient {
     });
   }
 
-  private handleExtSessionUpdate(params: Record<string, unknown>) {
+  protected handleExtSessionUpdate(params: Record<string, unknown>) {
     const update = params.update as Record<string, unknown> | undefined;
     if (!update) return;
+    const sessionUpdate = update.sessionUpdate;
 
-    if (update.sessionUpdate === 'tool_call_chunk') {
+    if (sessionUpdate === 'tool_call_chunk') {
       const chunk = update as {
         toolCallId: string;
         title: string;
@@ -831,7 +883,10 @@ abstract class BaseAcpClient implements SessionClient {
       };
       if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
       this.broadcastStreamEvent(event);
-    } else if (update.sessionUpdate === 'retry_warning') {
+      return;
+    }
+
+    if (sessionUpdate === 'retry_warning') {
       const warning = update as {
         attempt: number;
         maxAttempts: number;
@@ -846,6 +901,44 @@ abstract class BaseAcpClient implements SessionClient {
         delaySecs: warning.delaySecs,
         message: warning.message,
       });
+      return;
+    }
+
+    // Steering events — both engines emit the same payload shape, but KAS
+    // uses `AgentExecutionXxx` discriminators where Rust uses `steering_xxx`.
+    // Normalize both to the same TUI event. Schema references:
+    //   Rust:  crates/chat-cli-v2/src/agent/acp/extensions.rs::ExtSessionUpdate
+    //   KAS:   packages/@kiro/agent/src/acp/session-updates.ts
+    // Keep in sync with the kas-acp-client test fixture
+    // (packages/tui/src/__tests__/kas-acp-client.test.ts).
+    if (
+      sessionUpdate === 'steering_queued' ||
+      sessionUpdate === 'AgentExecutionUserMessageQueued'
+    ) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.SteeringQueued,
+        message: (update as { message?: string }).message ?? '',
+      });
+      return;
+    }
+
+    if (
+      sessionUpdate === 'steering_consumed' ||
+      sessionUpdate === 'AgentExecutionSteeringInjected'
+    ) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.SteeringConsumed,
+        content: (update as { content?: string }).content ?? '',
+      });
+      return;
+    }
+
+    if (
+      sessionUpdate === 'steering_cleared' ||
+      sessionUpdate === 'AgentExecutionUserMessageCleared'
+    ) {
+      this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
+      return;
     }
   }
 
@@ -1256,6 +1349,10 @@ abstract class BaseAcpClient implements SessionClient {
       }
 
       default:
+        // Steering events arrive through the `_kiro.dev/session/update`
+        // extension channel (see `handleExtSessionUpdate`), not here. If
+        // we reach this default branch we've received something neither
+        // ACP nor KAS has taught us to render yet — log and drop.
         logger.debug(
           'Unhandled session update type:',
           (update as any).sessionUpdate
@@ -1516,11 +1613,11 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     };
   }
 
-  async sendMessage(sessionId: string, content: string): Promise<void> {
-    await this.connection.extMethod(this.ext(EXT_METHODS.MESSAGE_SEND), {
-      sessionId,
-      content,
-    });
+  protected async extRequest<T = unknown>(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<T> {
+    return (await this.connection.extMethod(this.ext(method), params)) as T;
   }
 
   sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
@@ -1893,6 +1990,15 @@ export class KasAcpClient extends BaseAcpClient {
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
         return this.handlePermissionRequest(request);
       }),
+      // Mid-turn steering events arrive as `_kiro/steering/session_update` ext
+      // notifications rather than standard `session/update` because the ACP
+      // SDK validates `session/update` params against a fixed schema that
+      // rejects vendor-specific discriminators. Delegate to the same
+      // handler used by the Rust engine.
+      this.kiroClient.onExtNotification(
+        '_kiro/steering/session_update',
+        (params) => this.handleExtSessionUpdate(params)
+      ),
     ];
   }
 
@@ -3356,11 +3462,36 @@ export class KasAcpClient extends BaseAcpClient {
     return { sessionId: '', name: name ?? '' };
   }
 
-  async sendMessage(sessionId: string, content: string): Promise<void> {
+  /**
+   * KAS does not implement the `_message/send` ext method that the Rust
+   * backend uses for the wake/reply path. KAS achieves the same wake/reply
+   * semantics via the standard ACP `session/prompt` RPC, so we shim
+   * `sendMessage` to call `kiroClient.prompt(...)` directly. This keeps
+   * `SessionViewScreen` reply (the only `kiro.sendMessage` call site
+   * outside of init replay) working when KAS eventually grows crew
+   * session support.
+   *
+   * The base class implementation routes through `extRequest →
+   * kiroClient.sendExtMethod('_message/send', ...)` which would throw
+   * `Unknown ext method: _message/send` against today's KAS. Once KAS
+   * implements `_message/send`, this override can be removed and the
+   * base will work uniformly across engines.
+   */
+  override async sendMessage(
+    sessionId: string,
+    content: string
+  ): Promise<void> {
     await this.kiroClient.prompt({
       prompt: [{ type: 'text', text: content }],
       sessionId,
     });
+  }
+
+  protected async extRequest<T = unknown>(
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<T> {
+    return (await this.kiroClient.sendExtMethod(method, params)) as T;
   }
 
   sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {

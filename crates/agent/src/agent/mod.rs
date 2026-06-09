@@ -561,6 +561,32 @@ impl AgentHandle {
             .unwrap_or(Err(AgentError::Channel))?;
         Ok(())
     }
+
+    /// Queue a steering message for injection at the next tool boundary.
+    pub async fn steer_message(&self, message: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::SteerMessage { message })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    /// Clear any queued steering message without consuming it.
+    pub async fn clear_steering(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ClearSteering)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 /// Core LLM agent that implements an [`AgentConfig`].
@@ -662,6 +688,11 @@ pub struct Agent {
     tool_search_activated: HashSet<CanonicalToolName>,
     /// Whether tool search is effectively active (computed from settings + thresholds)
     tool_search_active: bool,
+
+    /// Queued user message for mid-turn steering.
+    /// Consumed at the next tool boundary (send_tool_results) or end-of-turn.
+    /// Multiple messages are concatenated with "\n\n".
+    queued_user_message: Option<String>,
 }
 
 impl Agent {
@@ -754,6 +785,7 @@ impl Agent {
             tool_search_config: ToolLoadConfig::from_env(),
             tool_search_activated: HashSet::new(),
             tool_search_active: false,
+            queued_user_message: None,
         })
     }
 
@@ -1463,6 +1495,37 @@ impl Agent {
                 self.cached_tool_specs = None;
                 Ok(AgentResponse::Success)
             },
+            AgentRequest::SteerMessage { message } => {
+                let trimmed = message.trim();
+                if trimmed.is_empty() {
+                    return Err(AgentError::Custom("empty steering message".into()));
+                }
+                // Append onto the existing queue, or initialize it.
+                // Successive steers concatenate with "\n\n" and drain
+                // together at the next tool boundary or end of turn.
+                //
+                // No size cap is applied — the human typing rate is the
+                // natural bound. If a runaway front-end becomes a problem
+                // in practice, a cap can be added here.
+                let snapshot = if let Some(existing) = &mut self.queued_user_message {
+                    existing.push_str("\n\n");
+                    existing.push_str(trimmed);
+                    existing.clone()
+                } else {
+                    let s = trimmed.to_string();
+                    self.queued_user_message = Some(s.clone());
+                    s
+                };
+                self.agent_event_buf
+                    .push(AgentEvent::SteeringQueued { message: snapshot });
+                Ok(AgentResponse::Success)
+            },
+            AgentRequest::ClearSteering => {
+                if self.queued_user_message.take().is_some() {
+                    self.agent_event_buf.push(AgentEvent::SteeringCleared);
+                }
+                Ok(AgentResponse::Success)
+            },
         }
     }
 
@@ -1643,6 +1706,15 @@ impl Agent {
             self.set_active_state(ActiveState::Idle).await;
         }
 
+        // Clear any queued steering message on cancel and notify the TUI.
+        // The TUI captures the queued content locally before issuing cancel
+        // and replays it as a fresh prompt after cancel resolves ("cancel =
+        // redirect" UX). The backend clear ensures a subsequent turn doesn't
+        // accidentally inherit stale steering content.
+        if let Some(_cleared) = self.queued_user_message.take() {
+            self.agent_event_buf.push(AgentEvent::SteeringCleared);
+        }
+
         Ok(AgentResponse::Success)
     }
 
@@ -1803,10 +1875,9 @@ impl Agent {
                     return Ok(());
                 }
 
-                // Otherwise, end turn.
-                self.set_active_state(ActiveState::Idle).await;
-                self.agent_event_buf.push(AgentEvent::EndTurn(md));
-                self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
+                // Drain queued steering message at end-of-turn, or emit end-of-turn
+                // events if the queue is empty.
+                self.drain_steering_or_end_turn(md).await?;
             },
             AgentLoopEventKind::AssistantText(text) => self
                 .agent_event_buf
@@ -2846,6 +2917,9 @@ impl Agent {
                         None
                     }
                 });
+                // Clone the metadata out of the &mut self.execution_state borrow
+                // so the drain-or-end-turn helper below can take &mut self.
+                let md = (**user_turn_metadata).clone();
 
                 if let Some(reason) = block_reason {
                     // Send the reason as a new user message to continue the conversation.
@@ -2862,10 +2936,9 @@ impl Agent {
                     .await;
                     Ok(())
                 } else {
-                    self.agent_event_buf
-                        .push(AgentEvent::EndTurn((**user_turn_metadata).clone()));
-                    self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
-                    self.set_active_state(ActiveState::Idle).await;
+                    // Drain queued steering message at end-of-turn after stop hooks complete,
+                    // or emit end-of-turn events if the queue is empty.
+                    self.drain_steering_or_end_turn(md).await?;
                     Ok(())
                 }
             },
@@ -3348,6 +3421,47 @@ impl Agent {
         false
     }
 
+    /// End-of-turn handler: if the steering queue is non-empty, extend the
+    /// current turn by sending the queued content as the next user message
+    /// (the turn continues in-place rather than ending and starting a new
+    /// one). Otherwise, emit `EndTurn(md)` + `Stop(EndTurn)` and go idle.
+    ///
+    /// Extending the existing turn (rather than starting a new one) avoids:
+    ///   - double per-turn metering (one `EndTurn(md)` per drained message)
+    ///   - ACP's "cancel/end resolves the prompt response" race that would leave subsequent turn
+    ///     events streaming into a TUI with no active prompt
+    ///
+    /// The `UserTurnMetadata` parameter represents the LLM's natural
+    /// end-of-turn. When we extend, we drop that metadata — the turn isn't
+    /// really ending, so its metering rolls up into the extended turn's
+    /// final `EndTurn` instead.
+    async fn drain_steering_or_end_turn(&mut self, md: UserTurnMetadata) -> Result<(), AgentError> {
+        if let Some(steering) = self.queued_user_message.take() {
+            self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                content: steering.clone(),
+            });
+            // Extend the existing agent loop (still alive in UserTurnEnded
+            // state) with the drained content. This mirrors the stop-hook
+            // block path above: reuse the loop rather than spawning a new
+            // one, so the drained content is "continuation of the same
+            // user turn" semantically.
+            let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(steering)], None);
+            let args = self.format_request(&pending).await;
+            self.send_request(args).await?;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: None,
+                empty_response_retried: false,
+                pending_user_message: Some(pending),
+            })
+            .await;
+        } else {
+            self.agent_event_buf.push(AgentEvent::EndTurn(md));
+            self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
+            self.set_active_state(ActiveState::Idle).await;
+        }
+        Ok(())
+    }
+
     async fn send_tool_results(&mut self, executing_tools: &ExecutingTools) -> Result<(), AgentError> {
         let mut content = Vec::new();
         let mut results = HashMap::new();
@@ -3397,6 +3511,13 @@ impl Agent {
                     // Should never happen in this flow
                 },
             }
+        }
+
+        // Drain queued steering message and append as user content
+        if let Some(steering) = self.queued_user_message.take() {
+            content.push(ContentBlock::Text(format_steering_message(&steering)));
+            self.agent_event_buf
+                .push(AgentEvent::SteeringConsumed { content: steering });
         }
 
         let pending = PendingUserMessage::new_tool_results(content.clone(), results);
@@ -3582,6 +3703,30 @@ where
     };
 
     vec![user_msg, assistant_msg]
+}
+
+/// Format a steering message using the LIVE STEERING format.
+///
+/// Generates a `steer-` prefixed message ID and wraps the user's message
+/// in the standard steering template that instructs the LLM to incorporate
+/// the user's mid-turn guidance.
+fn format_steering_message(content: &str) -> String {
+    let message_id = format!("steer-{}", Uuid::new_v4().as_simple());
+    format!(
+        "[LIVE STEERING - New message from user]\n\
+         \n\
+         The user sent a new message while you are working. As the currently active agent, \
+         adjust your approach if necessary based on this guidance.\n\
+         \n\
+         <user_message id=\"{message_id}\">\n\
+         {content}\n\
+         </user_message>\n\
+         \n\
+         IMPORTANT: After completing your work, include a brief note about how you handled \
+         this steering message. Use this exact format:\n\
+         \n\
+         [STEERING {message_id}: <describe what you did or why it wasn't applicable>]"
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

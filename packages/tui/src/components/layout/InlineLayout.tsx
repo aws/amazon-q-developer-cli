@@ -63,7 +63,6 @@ import {
   useConversationState,
   useApprovalState,
   useQueueState,
-  useQueueActions,
   useKiroClient,
 } from '../../stores/selectors.js';
 import {
@@ -76,7 +75,12 @@ import {
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
+import {
+  resolveKeybinding,
+  formatKeybinding,
+} from '../../utils/keybindings.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
+import { InterruptMode } from '../../constants/interrupt-mode.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, isDefaultAgent } from '../../utils/agentColors.js';
@@ -92,7 +96,11 @@ function getPlaceholder(opts: {
   pendingApproval: boolean;
   isShellEscape: boolean;
   isProcessing: boolean;
+  isInitialized: boolean;
+  pendingSteerContent: string | null;
+  activeInterruptMode: InterruptMode;
   queuedMessages: string[];
+  toggleHintLabel: string;
   agentName: string | undefined;
   goalStatus?: {
     state: string;
@@ -102,8 +110,17 @@ function getPlaceholder(opts: {
   } | null;
   cancelLabel?: string;
 }): string {
+  // Editing a queued message takes precedence over all other states.
   if (opts.editingQueueIndex != null) {
     return `Editing queued message ${opts.editingQueueIndex + 1} · esc to cancel`;
+  }
+  // While the session is still initializing, the user can type freely —
+  // input is buffered locally (as `pendingSteerContent`) and replayed once init
+  // completes.
+  if (!opts.isInitialized) {
+    return opts.pendingSteerContent != null
+      ? 'Initializing · type to queue another message'
+      : 'Initializing · type to queue a message';
   }
   if (opts.goalStatus && opts.goalStatus.state === 'active') {
     const desc =
@@ -114,9 +131,10 @@ function getPlaceholder(opts: {
     return `Goal Active: ${desc} · Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} · ${cancel} to pause`;
   }
   if (opts.pendingApproval || opts.isProcessing) {
-    return opts.queuedMessages.length > 0
-      ? 'Kiro is working · type to queue another message'
-      : 'Kiro is working · type to queue a message';
+    if (opts.activeInterruptMode === InterruptMode.STEER) {
+      return `Kiro is working · Type to steer · ${opts.toggleHintLabel} to queue`;
+    }
+    return `Kiro is working · Type to queue · ${opts.toggleHintLabel} to steer`;
   }
   if (opts.isShellEscape) {
     return 'running shell command · ctrl+c to cancel';
@@ -288,10 +306,23 @@ export const InlineLayout: React.FC = () => {
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
-  const { editingQueueIndex, queuedMessages } = useQueueState();
-  const { replaceQueuedMessage, cancelEditingQueue } = useQueueActions();
+  const {
+    pendingSteerContent,
+    activeInterruptMode,
+    queuedMessages,
+    editingQueueIndex,
+  } = useQueueState();
+  const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
+  const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
+  const isInitialized = useAppStore((s) => s.isInitialized);
+  const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
+
+  const toggleHintLabel = useMemo(() => {
+    const binding = resolveKeybinding(settings, 'toggleInterruptMode');
+    return formatKeybinding(binding);
+  }, [settings]);
   const setMode = useAppStore((state) => state.setMode);
   const exitSequence = useAppStore((state) => state.exitSequence);
   const suspendArmed = useAppStore((state) => state.suspendArmed);
@@ -336,18 +367,6 @@ export const InlineLayout: React.FC = () => {
   // Esc during approval is handled by Panel's useInput → handleClose in
   // ApprovalRequest (drill-in → dropdown, trust → default, dropdown → cancel).
 
-  // Handle escape to cancel queue editing
-  useKeypress(
-    (_input, key) => {
-      if (key.escape) {
-        cancelEditingQueue();
-        clearInput();
-        clearCommandInput();
-      }
-    },
-    { isActive: editingQueueIndex != null }
-  );
-
   const { setCurrentAgent, setPreviousAgentName } = useAppStore(
     useShallow((s) => ({
       setCurrentAgent: s.setCurrentAgent,
@@ -385,6 +404,18 @@ export const InlineLayout: React.FC = () => {
       }
     },
     { isActive: toolOutputsExpanded }
+  );
+
+  // Handle Esc to cancel queue editing
+  useKeypress(
+    (_input, key) => {
+      if (key.escape) {
+        cancelEditingQueue();
+        clearInput();
+        clearCommandInput();
+      }
+    },
+    { isActive: editingQueueIndex != null }
   );
 
   // Handle Shift+Tab for agent switching
@@ -1039,7 +1070,11 @@ export const InlineLayout: React.FC = () => {
               pendingApproval: !!pendingApproval,
               isShellEscape,
               isProcessing,
+              isInitialized,
+              pendingSteerContent,
+              activeInterruptMode,
               queuedMessages,
+              toggleHintLabel,
               agentName: currentAgent?.name,
               goalStatus,
               cancelLabel: keybindings.label('cancelStream'),

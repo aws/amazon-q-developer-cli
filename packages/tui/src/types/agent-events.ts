@@ -37,6 +37,9 @@ export enum AgentEventType {
   McpGovernanceDisabled = 'mcp_governance_disabled',
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
+  SteeringQueued = 'steering_queued',
+  SteeringConsumed = 'steering_consumed',
+  SteeringCleared = 'steering_cleared',
   HooksUpdate = 'hooks_update',
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
@@ -505,6 +508,20 @@ export interface KasCommandsDiscoveredEvent {
   commands: KasCommand[];
 }
 
+export interface SteeringQueuedEvent {
+  type: AgentEventType.SteeringQueued;
+  message: string;
+}
+
+export interface SteeringConsumedEvent {
+  type: AgentEventType.SteeringConsumed;
+  content: string;
+}
+
+export interface SteeringClearedEvent {
+  type: AgentEventType.SteeringCleared;
+}
+
 export type AgentStreamEvent =
   | AgentContentEvent
   | AgentThoughtEvent
@@ -533,6 +550,9 @@ export type AgentStreamEvent =
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
+  | SteeringQueuedEvent
+  | SteeringConsumedEvent
+  | SteeringClearedEvent
   | KasCommandsDiscoveredEvent
   | EffortUpdateEvent
   | HooksUpdateEvent

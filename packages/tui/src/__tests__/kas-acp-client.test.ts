@@ -123,6 +123,7 @@ const mockKiroListSessions = mock(() =>
 
 const mockSessionUpdateDispose = mock(() => {});
 const mockPermissionRequestDispose = mock(() => {});
+const mockExtNotificationDispose = mock(() => {});
 
 let capturedKiroClientConfig: any = null;
 
@@ -146,7 +147,7 @@ const MockKiroClient = class {
   onExtNotification = mock((_method: string, _handler: any) => {
     if (!this._extNotifHandlers) this._extNotifHandlers = {};
     this._extNotifHandlers[_method] = _handler;
-    return { dispose: mock(() => {}) };
+    return { dispose: mockExtNotificationDispose };
   });
   _extNotifHandlers: Record<string, any> = {};
   constructor(config: any) {
@@ -435,6 +436,53 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     await client.cancel();
     expect(mockKiroCancel).not.toHaveBeenCalled();
+  });
+
+  // ── sendMessage / steerMessage / clearSteering wire format ──
+
+  it('sendMessage() calls kiroClient.prompt directly (KAS does not implement _message/send)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    mockKiroPrompt.mockClear();
+    mockKiroSendExtMethod.mockClear();
+
+    await client.sendMessage('kas-session-1', 'wake the crew session');
+
+    expect(mockKiroPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'kas-session-1',
+        prompt: [{ type: 'text', text: 'wake the crew session' }],
+      })
+    );
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_message/send',
+      expect.anything()
+    );
+  });
+
+  it('steerMessage() forwards to _session/steer ext method', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    await client.steerMessage('kas-session-1', 'redirect mid-turn');
+
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith('_session/steer', {
+      sessionId: 'kas-session-1',
+      message: 'redirect mid-turn',
+    });
+  });
+
+  it('clearSteering() forwards to _session/steer/clear ext method', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    await client.clearSteering('kas-session-1');
+
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith('_session/steer/clear', {
+      sessionId: 'kas-session-1',
+    });
   });
 
   // ── executeCommand routing ──

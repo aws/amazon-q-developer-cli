@@ -111,6 +111,15 @@ describe('Survey flow integration', () => {
     expect(store.getState().transientAlert).toBeNull();
   });
 
+  it('does not show survey when a pending steer message exists', () => {
+    const store = makeStore();
+    store.setState({ pendingSteerContent: 'pending prompt' });
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
   it('does not show survey when pending tasks exist', () => {
     const store = makeStore();
     store.setState({

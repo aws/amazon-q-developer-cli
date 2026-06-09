@@ -175,6 +175,147 @@ describe('Streaming content flush', () => {
   });
 });
 
+describe('Stream handler dispose (cancel race hardening)', () => {
+  function createStore() {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({ isInitialized: true });
+    return store;
+  }
+
+  it('dispose drops buffered content instead of committing it', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [{ id: 'u1', role: MessageRole.User, content: 'hello' }],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+
+    // Stream partial content
+    handler({
+      type: AgentEventType.Content,
+      id: 'm1',
+      content: { type: ContentType.Text, text: 'partial response' },
+    });
+
+    // Cancel the turn mid-stream — dispose before the batched flush timer fires
+    handler.dispose();
+
+    // Wait long enough for any stale timers to have fired
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The partial content must NOT have leaked into the message list
+    const msgs = store.getState().messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe(MessageRole.User);
+  });
+
+  it('events arriving after dispose are no-ops (simulates post-cancel stream chunks)', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [{ id: 'u1', role: MessageRole.User, content: 'hello' }],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+    handler.dispose();
+
+    // Simulate a late event that arrives through the ACP SDK's
+    // deferred-unsubscribe window. It must not commit a Model message.
+    handler({
+      type: AgentEventType.Content,
+      id: 'late',
+      content: {
+        type: ContentType.Text,
+        text: 'late chunk from cancelled stream',
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const msgs = store.getState().messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe(MessageRole.User);
+  });
+
+  it('dispose clears streamingBuffer so old closures do not retain bufferedContent', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    // createStreamEventHandler installs non-null buffer control fns
+    expect(store.getState().streamingBuffer.startBuffering).not.toBeNull();
+
+    handler.dispose();
+
+    // After dispose, the store must not hold closures that keep the
+    // old handler's bufferedContent alive. Consumers see null.
+    expect(store.getState().streamingBuffer.startBuffering).toBeNull();
+    expect(store.getState().streamingBuffer.stopBuffering).toBeNull();
+  });
+
+  it('dispose is idempotent (safe to call multiple times)', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    expect(() => {
+      handler.dispose();
+      handler.dispose();
+      handler.dispose();
+    }).not.toThrow();
+  });
+
+  it('flush is a no-op after dispose (does not resurrect stale content)', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [{ id: 'u1', role: MessageRole.User, content: 'hello' }],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.Content,
+      id: 'm1',
+      content: { type: ContentType.Text, text: 'buffered' },
+    });
+
+    handler.dispose();
+    // Caller (sendMessage success path) would normally call flush after
+    // streamMessage resolves. Post-dispose it must not leak content.
+    handler.flush();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const msgs = store.getState().messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe(MessageRole.User);
+  });
+
+  it('tool output buffers are cleared on dispose', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [
+        { id: 't1', role: MessageRole.ToolUse, name: 'bash', content: '{}' },
+      ],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 't1',
+      content: { type: ContentType.Text, text: 'line1\n' },
+    });
+
+    handler.dispose();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Live output buffer for the abandoned tool call must not be populated
+    // from the cancelled handler's batched flush.
+    const liveOutput = store.getState().liveOutputs.get('t1') ?? [];
+    expect(liveOutput).toEqual([]);
+  });
+});
+
 describe('Enum and constant exports', () => {
   it('MessageRole has the expected values', () => {
     expect(MessageRole.User as string).toBe('user');

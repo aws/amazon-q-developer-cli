@@ -90,6 +90,7 @@ export function createMockCommandContext(
     setShowThemePanel: spy('setShowThemePanel') as any,
     setShowSettingsPanel: spy('setShowSettingsPanel') as any,
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
+    setActiveInterruptMode: spy('setActiveInterruptMode') as any,
     settingsReturnOnEscape: opts.settingsReturnOnEscape ?? false,
     reopenSettingsMenu: spy('reopenSettingsMenu') as any,
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,

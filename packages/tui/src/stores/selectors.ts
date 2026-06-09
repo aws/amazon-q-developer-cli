@@ -324,16 +324,22 @@ export const useImageAttachmentActions = () =>
   );
 
 /**
- * Queue state selector - for ActivityTray and ConversationView queued messages
+ * Queue state selector — for ActivityTray display of the "what will run next"
+ * message.
  */
 export const useQueueState = () =>
   useAppStore(
     useShallow((state) => ({
+      pendingSteerContent: state.pendingSteerContent,
       queuedMessages: state.queuedMessages,
+      activeInterruptMode: state.activeInterruptMode,
       editingQueueIndex: state.editingQueueIndex,
     }))
   );
 
+/**
+ * Queue action selector — for queue management (remove, edit, reorder).
+ */
 export const useQueueActions = () =>
   useAppStore(
     useShallow((state) => ({

@@ -300,7 +300,27 @@ export class Kiro {
       throw new Error('Kiro not initialized');
     }
     this.onSessionMessageSent?.(sessionId);
-    return (this.sessionClient as any).sendMessage(sessionId, content);
+    return this.sessionClient.sendMessage(sessionId, content);
+  }
+
+  /**
+   * Queue a mid-turn steering message on the active session.
+   * Routes through `_session/steer` so the backend can inject the
+   * content at the next drain point without starting a new turn.
+   */
+  async steerMessage(sessionId: string, content: string): Promise<void> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    return this.sessionClient.steerMessage(sessionId, content);
+  }
+
+  /**
+   * Clear the queued steering message (if any) without consuming it.
+   */
+  async clearSteering(sessionId: string): Promise<void> {
+    if (!this.sessionClient) return;
+    return this.sessionClient.clearSteering(sessionId);
   }
 
   onSessionMessageSent?: (sessionId: string) => void;

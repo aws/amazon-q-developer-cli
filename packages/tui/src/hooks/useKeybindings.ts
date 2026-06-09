@@ -19,14 +19,17 @@ export interface ResolvedKeybindings {
   cancelStream: Keybinding;
   closeMenu: Keybinding;
   quit: Keybinding;
+  toggleInterruptMode: Keybinding;
   /** Convenience: does `input`/`key` match the named binding? */
   matches: (
-    name: 'cancelStream' | 'closeMenu' | 'quit',
+    name: 'cancelStream' | 'closeMenu' | 'quit' | 'toggleInterruptMode',
     input: string,
     key: Key
   ) => boolean;
   /** Convenience: human-readable label for the named binding. */
-  label: (name: 'cancelStream' | 'closeMenu' | 'quit') => string;
+  label: (
+    name: 'cancelStream' | 'closeMenu' | 'quit' | 'toggleInterruptMode'
+  ) => string;
 }
 
 export function useKeybindings(): ResolvedKeybindings {
@@ -36,8 +39,17 @@ export function useKeybindings(): ResolvedKeybindings {
     const cancelStream = resolveKeybinding(settings, 'cancelStream');
     const closeMenu = resolveKeybinding(settings, 'closeMenu');
     const quit = resolveKeybinding(settings, 'quit');
+    const toggleInterruptMode = resolveKeybinding(
+      settings,
+      'toggleInterruptMode'
+    );
 
-    const bindings = { cancelStream, closeMenu, quit };
+    const bindings = {
+      cancelStream,
+      closeMenu,
+      quit,
+      toggleInterruptMode,
+    };
 
     return {
       ...bindings,
