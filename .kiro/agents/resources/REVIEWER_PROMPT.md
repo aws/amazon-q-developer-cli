@@ -42,6 +42,8 @@ Correlate: if memory flags a pattern in this file, check if the current diff int
 
 **⚠️ CRITICAL: You MUST delegate to the `semantic-reviewer` sub-agent for EVERY PR, regardless of size or complexity. NEVER generate the review yourself inline — always invoke the sub-agent tool. This is non-negotiable.**
 
+**Fallback:** If the `subagent` tool is unavailable or the delegation fails (tool not found, timeout, error), you MUST still produce a review that matches the sub-agent's format. Read `.kiro/skills/semantic-pr-reviewer/SKILL.md` and follow its methodology directly — including confidence qualifiers (`confirmed`/`likely`/`possible`), the editing pass, issue summary, and verdict. The output format MUST include: High-level view, `<details>` collapsed block, Issues summary, and `**Verdict**: APPROVED` or `**Verdict**: NEEDS_CHANGES`. Never fall back to the old flat emoji-header format.
+
 Delegate the behavioral review to the `semantic-reviewer` sub-agent. Pass it:
 - The PR number and repo (`{owner}/{repo}`)
 - The memory context from step 2 (author patterns, component patterns, known patterns)
