@@ -138,6 +138,49 @@ type CachedModesState = {
   currentModeId?: string;
 };
 
+/**
+ * Agents (KAS modes) that should never surface in the `/agent` menu or any
+ * agent listing, keyed by their KAS mode id.
+ *
+ * Each entry MUST carry a comment explaining why it is being removed so that
+ * future maintainers know whether the exclusion is still warranted.
+ *
+ * Note: ids are compared after `fromKasModeId` normalization, i.e. the same
+ * form stored in `modesState.availableModes`. Denial is scoped to
+ * bundled agents (see `isAgentDenied`) so a user/workspace config that
+ * deliberately defines an agent under one of these ids is preserved.
+ */
+const AGENT_DENYLIST: Record<string, string> = {
+  // The semantic reviewer is an internal review-only subagent invoked
+  // programmatically (e.g. by the autonomous planner's review loop). It is
+  // not a general-purpose conversational agent, so exposing it in the
+  // user-facing `/agent` picker is confusing and lets users switch into a
+  // mode that isn't meant to drive an interactive session. KAS advertises it
+  // under the wire mode id `semantic_reviewer`.
+  semantic_reviewer:
+    'Internal review-only subagent; not a user-selectable conversational agent.',
+};
+
+/**
+ * Whether the given mode should be hidden from agent listings.
+ *
+ * The denylist targets KAS's *bundled* agents only. A user- or
+ * workspace-defined agent that happens to share a denylisted id (e.g. a
+ * workspace `semantic_reviewer` that overrides the bundled one) is
+ * intentionally left visible — the user opted into defining it, so we must
+ * not silently drop it. Modes with no source metadata are treated as
+ * non-bundled and therefore never denied.
+ */
+function isAgentDenied(mode: {
+  id: string;
+  _meta?: Record<string, unknown> | null;
+}): boolean {
+  if (!Object.prototype.hasOwnProperty.call(AGENT_DENYLIST, mode.id)) {
+    return false;
+  }
+  return getModeSource(mode._meta) === 'bundled';
+}
+
 function extractCurrentAgent(
   modes?: {
     currentModeId?: string;
@@ -1868,10 +1911,16 @@ export class KasAcpClient extends BaseAcpClient {
     const modes = response?.modes;
     if (!modes) return;
     this.modesState = {
-      availableModes: (modes.availableModes ?? []).map((m) => ({
-        ...m,
-        id: fromKasModeId(m.id),
-      })),
+      availableModes: (modes.availableModes ?? [])
+        .map((m) => ({
+          ...m,
+          id: fromKasModeId(m.id),
+        }))
+        // Drop denylisted bundled agents (e.g. the bundled semantic
+        // reviewer) so they never appear in the /agent menu or any derived
+        // listing. User/workspace-defined agents are preserved — see
+        // AGENT_DENYLIST and isAgentDenied for the rationale.
+        .filter((m) => !isAgentDenied(m)),
       currentModeId: modes.currentModeId
         ? fromKasModeId(modes.currentModeId)
         : modes.currentModeId,

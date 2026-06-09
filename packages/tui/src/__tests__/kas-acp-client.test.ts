@@ -917,6 +917,71 @@ describe('KasAcpClient', () => {
     expect(result.options).toEqual([]);
   });
 
+  it('getCommandOptions("/agent") filters out denylisted agents (e.g. semantic-reviewer)', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Default',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'semantic_reviewer',
+            name: 'Semantic Reviewer',
+            description: 'Reviews PRs',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/agent', '');
+    const values = result.options.map((o: any) => o.value);
+    expect(values).toEqual(['vibe']);
+    expect(values).not.toContain('semantic_reviewer');
+  });
+
+  it('getCommandOptions("/agent") preserves a user/workspace agent that shares a denylisted id', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Default',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            // Same id as the bundled denylist entry, but user-defined: the
+            // user opted into this, so it must NOT be filtered out.
+            id: 'semantic_reviewer',
+            name: 'My Semantic Reviewer',
+            description: 'Custom reviewer',
+            _meta: { kiro: { source: 'workspace' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/agent', '');
+    const values = result.options.map((o: any) => o.value);
+    expect(values).toContain('semantic_reviewer');
+  });
+
   it('current_mode_update notification updates the cached currentModeId used by /agent', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
