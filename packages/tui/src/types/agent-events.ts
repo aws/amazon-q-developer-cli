@@ -134,6 +134,10 @@ export const INTROSPECT_TOOL_NAMES: Set<string> = new Set([
   'introspect',
   'Introspect',
 ]);
+export const KNOWLEDGE_TOOL_NAMES: Set<string> = new Set([
+  'knowledge',
+  'Knowledge Search',
+]);
 export const TASK_TOOL_NAMES: Set<string> = new Set([
   'task',
   'todo_list',
@@ -155,6 +159,7 @@ export function resolveToolId(name: string): BuiltinToolId | undefined {
   if (CODE_TOOL_NAMES.has(name)) return 'code';
   if (IMAGE_READ_TOOL_NAMES.has(name)) return 'image_read';
   if (TASK_TOOL_NAMES.has(name)) return 'task';
+  if (KNOWLEDGE_TOOL_NAMES.has(name)) return 'knowledge';
   return undefined;
 }
 

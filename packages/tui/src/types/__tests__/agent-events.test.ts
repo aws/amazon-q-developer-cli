@@ -60,6 +60,11 @@ describe('resolveToolId', () => {
     expect(resolveToolId('todo_list')).toBe('task');
   });
 
+  it('resolves knowledge tools', () => {
+    expect(resolveToolId('knowledge')).toBe('knowledge');
+    expect(resolveToolId('Knowledge Search')).toBe('knowledge');
+  });
+
   it('returns undefined for unknown tools', () => {
     expect(resolveToolId('custom_mcp_tool')).toBeUndefined();
   });

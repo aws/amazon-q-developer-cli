@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Knowledge tool calls now display with a dedicated label and parameters in the TUI"
+}

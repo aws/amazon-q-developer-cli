@@ -20,6 +20,7 @@ import { SessionTool } from '../chat/tools/SessionTool.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolMeta } from '../chat/tools/ToolMeta.js';
 import { formatToolParams } from '../../utils/tool-params.js';
+import { parseToolArg } from '../../utils/tool-result.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
 import {
   WRITE_TOOL_NAMES,
@@ -37,6 +38,7 @@ import {
   INTROSPECT_TOOL_NAMES,
   IMAGE_READ_TOOL_NAMES,
   TASK_TOOL_NAMES,
+  KNOWLEDGE_TOOL_NAMES,
   type ToolDiff,
   type ToolKind,
   type ToolCallLocation,
@@ -415,6 +417,21 @@ const ToolUseContent = React.memo(function ToolUseContent({
       /* ignore */
     }
     return <StatusInfo title={label} />;
+  }
+
+  // Knowledge tool — show "Knowledge <command>" + remaining args, same pattern
+  // as Grep (primary arg as target, the rest via ToolMeta). The rich
+  // KnowledgePanel surfaces full knowledge-base state separately.
+  if (KNOWLEDGE_TOOL_NAMES.has(name)) {
+    const title = getToolLabel('knowledge');
+    const command = parseToolArg(content, 'command');
+    const params = formatToolParams(content, ['command']);
+    return (
+      <>
+        <StatusInfo title={title} target={command || undefined} />
+        <ToolMeta params={params} />
+      </>
+    );
   }
 
   // Fallback: use generic Tool component
