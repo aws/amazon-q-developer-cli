@@ -1421,6 +1421,7 @@ abstract class BaseAcpClient implements SessionClient {
     params: acp.RequestPermissionRequest
   ): Promise<acp.RequestPermissionResponse> {
     return new Promise<acp.RequestPermissionResponse>((resolve) => {
+      const meta = params._meta as any;
       const event: AgentStreamEvent = {
         type: AgentEventType.ApprovalRequest,
         value: {
@@ -1431,7 +1432,8 @@ abstract class BaseAcpClient implements SessionClient {
             name: opt.name,
             optionId: opt.optionId,
           })),
-          trustOptions: (params._meta as any)?.trustOptions,
+          trustOptions: meta?.trustOptions,
+          consentContext: meta?.kiro?.consent,
           resolve: (userResponse: {
             outcome: string;
             optionId?: string;
@@ -1440,9 +1442,13 @@ abstract class BaseAcpClient implements SessionClient {
             resolve(
               userResponse.outcome === 'selected'
                 ? {
+                    _meta: userResponse._meta as
+                      | Record<string, unknown>
+                      | undefined,
                     outcome: {
                       outcome: 'selected' as const,
                       optionId: userResponse.optionId,
+                      // V2 Rust SDK reads _meta from the outcome variant (selected.meta)
                       _meta: userResponse._meta,
                     } as acp.RequestPermissionResponse['outcome'],
                   }

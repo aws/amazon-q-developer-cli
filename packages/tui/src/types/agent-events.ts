@@ -289,18 +289,34 @@ export interface PermissionResponseCancelled {
 export interface PermissionResponseSelected {
   outcome: 'selected';
   optionId: string;
-  _meta?: { trustOption?: TrustOption };
+  _meta?: {
+    trustOption?: TrustOption;
+    kiro?: { consent: Record<string, unknown> };
+  };
 }
 
 export type PermissionResponse =
   | PermissionResponseCancelled
   | PermissionResponseSelected;
 
+/** KAS consent context — sent by the agent in _meta.kiro.consent */
+export interface ConsentContext {
+  capability?: string;
+  resource?: string;
+  askType?: 'explicit' | 'implicit';
+  triggeringResource?: string;
+  matchedRule?: string;
+  scope?: string;
+  source?: string;
+  workspaceRoot?: string;
+}
+
 export interface ApprovalRequestInfo {
   sessionId?: string;
   toolCall: { toolCallId: string };
   permissionOptions: PermissionOption[];
   trustOptions?: TrustOption[];
+  consentContext?: ConsentContext;
   resolve: (response: PermissionResponse) => void;
 }
 

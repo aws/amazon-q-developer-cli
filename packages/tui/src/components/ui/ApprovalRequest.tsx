@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box } from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { Panel } from './panel/Panel.js';
 import { Menu } from './menu/Menu.js';
 import { PromptInput } from '../chat/prompt-bar/PromptInput.js';
@@ -10,8 +11,9 @@ import { useApprovalState, useConversationState } from '../../stores/selectors';
 import {
   type PermissionOption,
   type TrustOption,
+  type ConsentContext,
 } from '../../types/agent-events';
-import { MessageRole } from '../../stores/app-store.js';
+import { MessageRole, useAppStore } from '../../stores/app-store.js';
 
 interface ApprovalRequestProps {
   onDrillInSubmit: (value: string) => void;
@@ -33,6 +35,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   } = useApprovalState();
   const { messages } = useConversationState();
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const secondary = getColor('secondary');
   const primary = getColor('primary');
 
@@ -43,13 +46,22 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       : undefined;
 
   const [focusedIndex, setFocusedIndex] = useState(0);
-  const [page, setPage] = useState<'default' | 'trust'>('default');
+  const [page, setPage] = useState<'default' | 'trust' | 'kas-scope'>(
+    'default'
+  );
 
   const options: PermissionOption[] = pendingApproval
     ? pendingApproval.permissionOptions
     : [];
   const trustOptions: TrustOption[] = pendingApproval?.trustOptions ?? [];
+  const consentContext: ConsentContext | undefined =
+    pendingApproval?.consentContext;
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const hasTrustPage = trustOptions.length > 0;
+  const hasKasScopePage = !hasTrustPage && agentEngine === 'kas';
+  // The wire optionId for the allow_always option (e.g. 'always-accept' from KAS)
+  const TRUST_OPTION_ID =
+    options.find((o) => o.kind === TRUST_ENTRY_ID)?.optionId ?? 'always-accept';
 
   const optionLabels: Record<string, string> = {
     allow_once: 'Yes, single permission',
@@ -72,12 +84,98 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     { label: ENTIRE_TOOL_LABEL, description: '' },
   ];
 
-  const menuItems = page === 'trust' ? trustMenuItems : defaultMenuItems;
+  const resource = consentContext?.resource;
+  const capability = consentContext?.capability;
+  const toolName2 = (() => {
+    const msg = messages.find(
+      (m) =>
+        m.role === MessageRole.ToolUse &&
+        m.id === pendingApproval?.toolCall.toolCallId
+    );
+    return msg && msg.role === MessageRole.ToolUse ? msg.name : undefined;
+  })();
+
+  // Derive a "base command" pattern from the resource (e.g. "git commit -m x" → "git *")
+  // Only for shell-like capabilities where the resource is a command string
+  const isShellCapability = capability === 'shell' || capability === 'exec';
+  const baseCommand =
+    resource && isShellCapability && resource.includes(' ')
+      ? resource.split(/\s+/)[0] + ' *'
+      : undefined;
+  const resourceLabel = resource
+    ? resource.length > 50
+      ? `"${resource.slice(0, 47)}…"`
+      : `"${resource}"`
+    : undefined;
+
+  const [trustScope, setTrustScope] = useState<
+    'session' | 'workspace' | 'global'
+  >('session');
+  const scopeLabels = {
+    session: 'session',
+    workspace: 'workspace',
+    global: 'always',
+  };
+
+  const kasScopeItems = [
+    ...(resourceLabel
+      ? [
+          {
+            label: `Trust ${resourceLabel}`,
+            description: `exact match · ${scopeLabels[trustScope]}`,
+          },
+        ]
+      : []),
+    ...(baseCommand && baseCommand !== resource
+      ? [
+          {
+            label: `Trust "${baseCommand}"`,
+            description: `pattern · ${scopeLabels[trustScope]}`,
+          },
+        ]
+      : []),
+    {
+      label: `Trust entire tool${toolName2 ? ` (${toolName2})` : ''}`,
+      description: scopeLabels[trustScope],
+    },
+  ];
+
+  const menuItems =
+    page === 'trust'
+      ? trustMenuItems
+      : page === 'kas-scope'
+        ? kasScopeItems
+        : defaultMenuItems;
 
   const focusedOnTrust =
     page === 'default' &&
-    options[focusedIndex]?.optionId === TRUST_ENTRY_ID &&
-    hasTrustPage;
+    options[focusedIndex]?.kind === TRUST_ENTRY_ID &&
+    (hasTrustPage || hasKasScopePage);
+
+  // Right arrow → drill-in, Left arrow → back (same as Esc)
+  useKeypress((input, key) => {
+    if (!pendingApproval) return;
+    if (key.rightArrow && mode === 'dropdown') {
+      setApprovalMode('drill-in');
+    } else if (key.leftArrow) {
+      if (mode === 'drill-in') {
+        setApprovalMode('dropdown');
+      } else if (page === 'trust' || page === 'kas-scope') {
+        setPage('default');
+        setFocusedIndex(0);
+      } else {
+        cancelApproval();
+      }
+    } else if (input === 's' && page === 'kas-scope') {
+      setTrustScope((prev) =>
+        prev === 'session'
+          ? 'workspace'
+          : prev === 'workspace'
+            ? 'global'
+            : 'session'
+      );
+    }
+  });
 
   if (!pendingApproval) return null;
 
@@ -95,12 +193,14 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       ? `${prefix}${toolName} requires approval · Modify request`
       : page === 'trust'
         ? `${prefix}${toolName} requires approval · trust options`
-        : `${prefix}${toolName} requires approval`;
+        : page === 'kas-scope'
+          ? `${prefix}${toolName} requires approval · trust [${scopeLabels[trustScope]}] (s to cycle)`
+          : `${prefix}${toolName} requires approval`;
 
   const handleClose = () => {
     if (mode === 'drill-in') {
       setApprovalMode('dropdown');
-    } else if (page === 'trust') {
+    } else if (page === 'trust' || page === 'kas-scope') {
       setPage('default');
       setFocusedIndex(0);
     } else {
@@ -116,26 +216,38 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     }
   };
 
-  // Right arrow → drill-in, Left arrow → back (same as Esc)
-  useKeypress((_input, key) => {
-    if (key.rightArrow && mode === 'dropdown') {
-      setApprovalMode('drill-in');
-    } else if (key.leftArrow) {
-      handleClose();
-    }
-  });
-
   const handleSelect = (item: { label: string }) => {
     if (page === 'default') {
       const opt = options.find(
         (o) => (optionLabels[o.optionId] ?? o.name) === item.label
       );
-      if (opt?.optionId === TRUST_ENTRY_ID && hasTrustPage) {
+      if (opt?.kind === TRUST_ENTRY_ID && hasTrustPage) {
         setPage('trust');
         setFocusedIndex(0);
         return;
       }
+      if (opt?.kind === TRUST_ENTRY_ID && hasKasScopePage) {
+        setPage('kas-scope');
+        setFocusedIndex(0);
+        return;
+      }
       if (opt) respondToApproval(opt.optionId);
+    } else if (page === 'kas-scope') {
+      const scopeValue = trustScope === 'global' ? 'user' : trustScope;
+      if (resourceLabel && item.label === `Trust ${resourceLabel}`) {
+        respondToApproval(TRUST_OPTION_ID, undefined, {
+          kasScope: scopeValue,
+          kasResource: resource,
+        });
+      } else if (baseCommand && item.label === `Trust "${baseCommand}"`) {
+        respondToApproval(TRUST_OPTION_ID, undefined, {
+          kasScope: scopeValue,
+          kasResource: baseCommand,
+        });
+      } else {
+        // Entire tool — no resource filter
+        respondToApproval(TRUST_OPTION_ID, undefined, { kasScope: scopeValue });
+      }
     } else {
       if (item.label === ENTIRE_TOOL_LABEL) {
         respondToApproval('allow_always');
@@ -173,6 +285,16 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       footerLeft={footerLeft}
     >
       <Box flexDirection="column">
+        {consentContext &&
+          (consentContext.capability || consentContext.resource) && (
+            <Box marginBottom={1}>
+              <Text>
+                {secondary(
+                  `${consentContext.capability ?? ''}${consentContext.capability && consentContext.resource ? ` ${glyphs.arrow} ` : ''}${consentContext.resource ?? ''}`
+                )}
+              </Text>
+            </Box>
+          )}
         {mode === 'dropdown' && (
           <Menu
             key={page}

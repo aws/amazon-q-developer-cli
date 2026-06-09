@@ -1487,7 +1487,7 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
-    ], // Backend sends all commands via CommandsUpdate
+    ].filter((cmd) => agentEngine !== 'kas' || cmd.name !== '/tui'), // Backend sends all commands via CommandsUpdate
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],
@@ -2964,8 +2964,11 @@ export const createAppStore = (props: AppStoreProps) => {
         const isRejected =
           optionId === ApprovalOptionId.RejectOnce ||
           optionId === ApprovalOptionId.RejectAlways;
+        const resolvedKind = approval.permissionOptions.find(
+          (o) => o.optionId === optionId
+        )?.kind;
         const isTrust =
-          optionId === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
+          resolvedKind === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
 
         // When trusting a tool, cascade to all pending approvals of the same tool
         let cascadeApprovals: ApprovalRequestInfo[] = [];
@@ -3026,10 +3029,37 @@ export const createAppStore = (props: AppStoreProps) => {
           approvalMode: 'dropdown',
         }));
 
+        // Build _meta for the response, including KAS consent if applicable
+        let resolvedMeta = _meta;
+        if (get().agentEngine === 'kas' && !_meta?.trustOption) {
+          const optionKind = approval.permissionOptions.find(
+            (o) => o.optionId === optionId
+          )?.kind;
+          const kasScope =
+            (_meta?.kasScope as string) ??
+            (optionKind === ApprovalOptionId.AllowAlways
+              ? 'session'
+              : 'invocation');
+          // kasResource: explicitly provided = trust specific resource;
+          // undefined = trust entire capability (no resource filter)
+          const kasResource = _meta?.kasResource as string | undefined;
+          resolvedMeta = {
+            kiro: {
+              consent: {
+                scope: kasScope,
+                ...(kasResource ? { resource: kasResource } : {}),
+                ...(approval.consentContext?.workspaceRoot
+                  ? { workspaceRoot: approval.consentContext.workspaceRoot }
+                  : {}),
+              },
+            },
+          };
+        }
+
         approval.resolve({
           outcome: 'selected',
           optionId,
-          _meta,
+          _meta: resolvedMeta,
         });
 
         // Auto-resolve cascaded approvals with allow_once (trust is already applied)

@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
+import { Box } from '../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { Panel } from '../../ui/panel/Panel.js';
 import { Menu } from '../../ui/menu/Menu.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { MessageRole, useAppStore } from '../../../stores/app-store.js';
 import { useSessionConversation } from '../../../stores/session-conversations.js';
 import type {
   ApprovalRequestInfo,
+  ConsentContext,
   TrustOption,
 } from '../../../types/agent-events.js';
 
@@ -21,6 +24,7 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
   const respondToApproval = useAppStore((state) => state.respondToApproval);
   const conversationMessages = useSessionConversation(approval.sessionId ?? '');
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const secondary = getColor('secondary');
   const primary = getColor('primary');
 
@@ -39,6 +43,7 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
 
   const options = approval.permissionOptions;
   const trustOptions: TrustOption[] = approval.trustOptions ?? [];
+  const consentContext: ConsentContext | undefined = approval.consentContext;
   const hasTrustPage = trustOptions.length > 0;
 
   const sortedOptions = useMemo(() => {
@@ -145,6 +150,16 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
         ) : undefined
       }
     >
+      {consentContext &&
+        (consentContext.capability || consentContext.resource) && (
+          <Box marginBottom={1}>
+            <Text>
+              {secondary(
+                `${consentContext.capability ?? ''}${consentContext.capability && consentContext.resource ? ` ${glyphs.arrow} ` : ''}${consentContext.resource ?? ''}`
+              )}
+            </Text>
+          </Box>
+        )}
       <Menu
         key={page}
         items={menuItems}

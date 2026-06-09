@@ -30,11 +30,6 @@ const CHAT_CMD: SlashCommand = {
   source: 'backend',
   meta: { inputType: 'selection', local: true },
 };
-const HELP_CMD: KasCommand = {
-  name: KasCommandName.Help,
-  description: 'x',
-  meta: { inputType: 'panel' },
-};
 const CONTEXT_CMD: SlashCommand = {
   name: '/context',
   description: 'x',
@@ -90,12 +85,17 @@ describe('dispatcher KAS intercept', () => {
   });
 
   it("agentEngine='kas' + non-handler command: falls through to existing dispatch", async () => {
+    const MODEL_CMD: KasCommand = {
+      name: KasCommandName.Model,
+      description: 'x',
+      meta: { inputType: 'selection' },
+    };
     const ctx = createMockCommandContext({
-      kasCommands: [HELP_CMD],
+      kasCommands: [MODEL_CMD],
     });
     ctx.agentEngine = 'kas';
-    await dispatch(HELP_CMD, '', ctx);
-    expect(ctx._spies.setActiveCommand).toHaveBeenCalled();
+    await dispatch(MODEL_CMD, 'some-model', ctx);
+    expect(ctx.kiro.executeCommand).toHaveBeenCalled();
   });
 
   it("agentEngine='kas' + /context add: handler is invoked and forwards args via typed contextAdd", async () => {

@@ -187,3 +187,32 @@ describe('selectVisibleSlashCommands', () => {
     expect(matches[0]!.meta?.type).toBe('prompt');
   });
 });
+
+describe('/tui filter — KAS vs V2', () => {
+  it("when agentEngine is 'kas', /tui is NOT in slashCommands", () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    const tui = visible.find((c) => c.name === '/tui');
+    expect(tui).toBeUndefined();
+  });
+
+  it("when agentEngine is 'v2', /tui IS in slashCommands", () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    const tui = visible.find((c) => c.name === '/tui');
+    expect(tui).toBeDefined();
+    expect(tui!.description).toContain("What's new");
+  });
+
+  it("when agentEngine is 'kas', /tui is not in the raw slashCommands slice", () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const raw = store.getState().slashCommands;
+    expect(raw.find((c) => c.name === '/tui')).toBeUndefined();
+  });
+
+  it("when agentEngine is 'v2', /tui is in the raw slashCommands slice", () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    const raw = store.getState().slashCommands;
+    expect(raw.find((c) => c.name === '/tui')).toBeDefined();
+  });
+});

@@ -5,6 +5,7 @@ import { KasCommandName } from '../../kas-commands';
 import { handleChat } from './chat';
 import { handleCompact } from './compact';
 import { handleContext } from './context';
+import { handleHelp } from './help';
 import { handleHooks } from './hooks';
 import { handlePrompts } from './prompts';
 import { handleRewind } from './rewind';
@@ -29,6 +30,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Chat]: handleChat,
   [KasCommandName.Compact]: handleCompact,
   [KasCommandName.Context]: handleContext,
+  [KasCommandName.Help]: handleHelp,
   [KasCommandName.Hooks]: handleHooks,
   [KasCommandName.Prompts]: handlePrompts,
   [KasCommandName.Rewind]: handleRewind,

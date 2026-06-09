@@ -3,6 +3,7 @@ import { Box, Text as InkText } from './../../renderer.js';
 import { Wordmark /*useTheme*/ } from '../brand/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { Text } from '../ui/text/Text.js';
+import { useAppStore } from '../../stores/app-store.js';
 
 export interface WelcomeScreenProps {
   agent: string;
@@ -18,6 +19,7 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   const { getColor } = useTheme();
   const primary = getColor('primary');
   const brand = getColor('brand');
+  const agentEngine = useAppStore((s) => s.agentEngine);
 
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
@@ -32,13 +34,21 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         marginTop={1}
         paddingX={2}
       >
-        <Text>
-          {primary('Welcome to the new Kiro CLI UX! ')}
-          {brand('/tui')}
-          {primary(' to learn more, ')}
-          {brand('/feedback')}
-          {primary(' for thoughts.')}
-        </Text>
+        {agentEngine !== 'kas' ? (
+          <Text>
+            {primary('Welcome to the new Kiro CLI UX! ')}
+            {brand('/tui')}
+            {primary(' to learn more, ')}
+            {brand('/feedback')}
+            {primary(' for thoughts.')}
+          </Text>
+        ) : (
+          <Text>
+            {primary('Welcome to the new Kiro CLI UX! ')}
+            {brand('/feedback')}
+            {primary(' for thoughts.')}
+          </Text>
+        )}
         <Text>
           {primary('Prefer the classic experience? Relaunch with ')}
           {brand('kiro-cli --classic')}
