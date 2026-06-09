@@ -112,10 +112,19 @@ jobs:
 
           case "$MODE" in
             nightly)
-              # Find last nightly or stable tag (exclude rc tags which sort unpredictably)
-              LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -v '\-rc\.' | head -1)
-              CURRENT_VERSION="${LAST_TAG#v}"
-              [[ -z "$CURRENT_VERSION" ]] && CURRENT_VERSION="0.0.0"
+              # Find the latest stable tag, then check if a nightly series already exists for the next patch
+              LATEST_STABLE=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+              STABLE_VERSION="${LATEST_STABLE#v}"
+              [[ -z "$STABLE_VERSION" ]] && STABLE_VERSION="0.0.0"
+              # Compute next patch base
+              NEXT_PATCH=$(python3 .github/scripts/bump_version.py "$STABLE_VERSION" "patch" "nightly" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+              # Check if nightlies already exist for that base
+              LAST_NIGHTLY=$(git tag --list "v${NEXT_PATCH}-nightly.*" --sort=-version:refname | head -1)
+              if [[ -n "$LAST_NIGHTLY" ]]; then
+                CURRENT_VERSION="${LAST_NIGHTLY#v}"
+              else
+                CURRENT_VERSION="$STABLE_VERSION"
+              fi
               NEW_VERSION=$(python3 .github/scripts/bump_version.py "$CURRENT_VERSION" "patch" "nightly")
               ;;
             rc)
