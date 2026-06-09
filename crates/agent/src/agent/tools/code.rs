@@ -1826,4 +1826,635 @@ mod tests {
         assert!(text.contains("0 files"));
         assert!(text.contains("0 replacements"));
     }
+
+    // ===== read_paths =====
+    #[test]
+    fn test_read_paths_search_symbols_with_path() {
+        let op = Code::SearchSymbols(SearchSymbolsParams {
+            symbol_name: "foo".into(),
+            path: Some("/src".into()),
+            symbol_type: None,
+            limit: None,
+            language: None,
+            exact_match: None,
+        });
+        assert_eq!(op.read_paths(), vec!["/src".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_search_symbols_no_path() {
+        let op = Code::SearchSymbols(SearchSymbolsParams {
+            symbol_name: "foo".into(),
+            path: None,
+            symbol_type: None,
+            limit: None,
+            language: None,
+            exact_match: None,
+        });
+        assert!(op.read_paths().is_empty());
+    }
+
+    #[test]
+    fn test_read_paths_find_references() {
+        let op = Code::FindReferences(FindReferencesParams {
+            file_path: "src/main.rs".into(),
+            row: 1,
+            column: 1,
+            limit: None,
+            workspace_only: None,
+        });
+        assert_eq!(op.read_paths(), vec!["src/main.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_goto_definition() {
+        let op = Code::GotoDefinition(GotoDefinitionParams {
+            file_path: "x.rs".into(),
+            row: 1,
+            column: 1,
+            show_source: None,
+        });
+        assert_eq!(op.read_paths(), vec!["x.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_get_document_symbols() {
+        let op = Code::GetDocumentSymbols(GetDocumentSymbolsParams {
+            file_path: "lib.rs".into(),
+            top_level_only: None,
+        });
+        assert_eq!(op.read_paths(), vec!["lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_lookup_symbols_with_path() {
+        let op = Code::LookupSymbols(LookupSymbolsParams {
+            symbols: vec!["foo".into()],
+            file_path: Some("a.rs".into()),
+            include_source: false,
+        });
+        assert_eq!(op.read_paths(), vec!["a.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_lookup_symbols_no_path() {
+        let op = Code::LookupSymbols(LookupSymbolsParams {
+            symbols: vec!["foo".into()],
+            file_path: None,
+            include_source: false,
+        });
+        assert!(op.read_paths().is_empty());
+    }
+
+    #[test]
+    fn test_read_paths_get_diagnostics() {
+        let op = Code::GetDiagnostics(GetDiagnosticsParams {
+            file_path: "d.rs".into(),
+        });
+        assert_eq!(op.read_paths(), vec!["d.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_get_hover() {
+        let op = Code::GetHover(GetHoverParams {
+            file_path: "h.rs".into(),
+            row: 1,
+            column: 1,
+        });
+        assert_eq!(op.read_paths(), vec!["h.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_get_completions() {
+        let op = Code::GetCompletions(GetCompletionsParams {
+            file_path: "c.rs".into(),
+            row: 1,
+            column: 1,
+            trigger_character: None,
+            limit: 50,
+            filter: None,
+            symbol_type: None,
+        });
+        assert_eq!(op.read_paths(), vec!["c.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_pattern_search_with_path() {
+        let op = Code::PatternSearch(PatternSearchParams {
+            pattern: "$X".into(),
+            language: "rust".into(),
+            file_path: Some("p.rs".into()),
+            limit: None,
+            offset: None,
+        });
+        assert_eq!(op.read_paths(), vec!["p.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_pattern_search_no_path() {
+        let op = Code::PatternSearch(PatternSearchParams {
+            pattern: "$X".into(),
+            language: "rust".into(),
+            file_path: None,
+            limit: None,
+            offset: None,
+        });
+        assert!(op.read_paths().is_empty());
+    }
+
+    #[test]
+    fn test_read_paths_generate_codebase_overview() {
+        let op = Code::GenerateCodebaseOverview(GenerateCodebaseOverviewParams {
+            path: Some("/proj".into()),
+        });
+        assert_eq!(op.read_paths(), vec!["/proj".to_string()]);
+    }
+
+    #[test]
+    fn test_read_paths_search_codebase_map_both() {
+        let op = Code::SearchCodebaseMap(SearchCodebaseMapParams {
+            path: Some("/a".into()),
+            file_path: Some("/b".into()),
+        });
+        let paths = op.read_paths();
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&"/a".to_string()));
+        assert!(paths.contains(&"/b".to_string()));
+    }
+
+    #[test]
+    fn test_read_paths_initialize_workspace() {
+        assert!(Code::InitializeWorkspace.read_paths().is_empty());
+    }
+
+    // ===== Serde roundtrip (serialize then deserialize) =====
+    #[test]
+    fn test_serde_roundtrip_all_variants() {
+        let ops: Vec<Code> = vec![
+            Code::SearchSymbols(SearchSymbolsParams {
+                symbol_name: "foo".into(),
+                path: Some("/p".into()),
+                symbol_type: Some("Function".into()),
+                limit: Some(10),
+                language: Some("rust".into()),
+                exact_match: Some(true),
+            }),
+            Code::FindReferences(FindReferencesParams {
+                file_path: "x.rs".into(),
+                row: 5,
+                column: 3,
+                limit: Some(20),
+                workspace_only: Some(false),
+            }),
+            Code::GotoDefinition(GotoDefinitionParams {
+                file_path: "y.rs".into(),
+                row: 1,
+                column: 1,
+                show_source: Some(false),
+            }),
+            Code::RenameSymbol(RenameSymbolParams {
+                file_path: "z.rs".into(),
+                row: 2,
+                column: 4,
+                new_name: "bar".into(),
+                dry_run: false,
+            }),
+            Code::Format(FormatCodeParams {
+                file_path: Some("f.rs".into()),
+                tab_size: 2,
+                insert_spaces: false,
+                dry_run: false,
+            }),
+            Code::GetDocumentSymbols(GetDocumentSymbolsParams {
+                file_path: "d.rs".into(),
+                top_level_only: Some(false),
+            }),
+            Code::LookupSymbols(LookupSymbolsParams {
+                symbols: vec!["a".into(), "b".into()],
+                file_path: Some("l.rs".into()),
+                include_source: true,
+            }),
+            Code::GetDiagnostics(GetDiagnosticsParams {
+                file_path: "g.rs".into(),
+            }),
+            Code::GetHover(GetHoverParams {
+                file_path: "h.rs".into(),
+                row: 10,
+                column: 5,
+            }),
+            Code::GetCompletions(GetCompletionsParams {
+                file_path: "c.rs".into(),
+                row: 3,
+                column: 7,
+                trigger_character: Some(".".into()),
+                limit: 25,
+                filter: Some("get".into()),
+                symbol_type: Some("Method".into()),
+            }),
+            Code::InitializeWorkspace,
+            Code::PatternSearch(PatternSearchParams {
+                pattern: "$X.unwrap()".into(),
+                language: "rust".into(),
+                file_path: Some("ps.rs".into()),
+                limit: Some(5),
+                offset: Some(2),
+            }),
+            Code::PatternRewrite(PatternRewriteParams {
+                pattern: "$X.unwrap()".into(),
+                replacement: "$X?".into(),
+                language: "rust".into(),
+                file_path: Some("pr.rs".into()),
+                dry_run: false,
+                limit: Some(10),
+            }),
+            Code::GenerateCodebaseOverview(GenerateCodebaseOverviewParams {
+                path: Some("/workspace".into()),
+            }),
+            Code::SearchCodebaseMap(SearchCodebaseMapParams {
+                path: Some("/src".into()),
+                file_path: Some("main.rs".into()),
+            }),
+        ];
+        for op in &ops {
+            let json = serde_json::to_string(op).unwrap();
+            let deserialized: Code = serde_json::from_str(&json).unwrap();
+            // Re-serialize to verify stability
+            let json2 = serde_json::to_string(&deserialized).unwrap();
+            assert_eq!(json, json2);
+        }
+    }
+
+    // ===== resolve_path edge cases =====
+    #[test]
+    fn test_resolve_path_with_dot_components() {
+        let cwd = PathBuf::from("/home/user/project");
+        let result = resolve_path(&cwd, "./src/lib.rs");
+        assert_eq!(result, PathBuf::from("/home/user/project/./src/lib.rs"));
+    }
+
+    #[test]
+    fn test_resolve_path_with_parent_components() {
+        let cwd = PathBuf::from("/home/user/project");
+        let result = resolve_path(&cwd, "../other/file.rs");
+        assert_eq!(result, PathBuf::from("/home/user/project/../other/file.rs"));
+    }
+
+    #[test]
+    fn test_resolve_path_absolute_ignores_cwd() {
+        let cwd = PathBuf::from("/home/user");
+        let result = resolve_path(&cwd, "/etc/config");
+        assert_eq!(result, PathBuf::from("/etc/config"));
+    }
+
+    // ===== text_output =====
+    #[test]
+    fn test_text_output_basic() {
+        let out = text_output("hello");
+        assert_eq!(extract_text(&out), "hello");
+    }
+
+    #[test]
+    fn test_text_output_from_string() {
+        let out = text_output(String::from("world"));
+        assert_eq!(extract_text(&out), "world");
+    }
+
+    // ===== format edge cases =====
+    #[test]
+    fn test_format_pattern_matches_empty_matched_code() {
+        let m = code_agent_sdk::PatternMatch {
+            file_path: "x.rs".to_string(),
+            matched_code: "".to_string(),
+            start_row: 1,
+            start_column: 1,
+            end_row: 1,
+            end_column: 1,
+            enclosing_symbols: vec![],
+        };
+        let text = extract_text(&format_pattern_matches(&[m]));
+        assert!(text.contains("Found 1 matches"));
+        assert!(text.contains("x.rs:1:1"));
+    }
+
+    #[test]
+    fn test_format_hover_empty_string_content() {
+        let hover = code_agent_sdk::model::entities::HoverInfo {
+            file_path: "x.rs".to_string(),
+            row: 1,
+            column: 1,
+            content: Some("".to_string()),
+        };
+        let text = extract_text(&format_hover(&hover));
+        assert_eq!(text, "\n");
+    }
+
+    #[test]
+    fn test_format_references_exact_limit() {
+        let refs: Vec<_> = (0..3)
+            .map(|i| code_agent_sdk::model::entities::ReferenceInfo {
+                file_path: format!("f{i}.rs"),
+                start_row: i + 1,
+                start_column: 1,
+                end_row: i + 1,
+                end_column: 5,
+                source_line: None,
+            })
+            .collect();
+        let result = code_agent_sdk::ApiReferencesResult {
+            references: refs,
+            total_count: 3,
+        };
+        let text = extract_text(&format_references(&result, Some(3)));
+        assert!(!text.contains("more"));
+        assert!(text.contains("f0.rs"));
+        assert!(text.contains("f2.rs"));
+    }
+
+    #[test]
+    fn test_format_references_no_limit_uses_default() {
+        let refs: Vec<_> = (0..3)
+            .map(|i| code_agent_sdk::model::entities::ReferenceInfo {
+                file_path: format!("f{i}.rs"),
+                start_row: i + 1,
+                start_column: 1,
+                end_row: i + 1,
+                end_column: 5,
+                source_line: None,
+            })
+            .collect();
+        let result = code_agent_sdk::ApiReferencesResult {
+            references: refs,
+            total_count: 3,
+        };
+        // Default limit is 100, so 3 refs should all show
+        let text = extract_text(&format_references(&result, None));
+        assert!(text.contains("f2.rs"));
+        assert!(!text.contains("more"));
+    }
+
+    #[test]
+    fn test_read_paths_write_ops_empty() {
+        let ops = vec![
+            Code::RenameSymbol(RenameSymbolParams {
+                file_path: "x.rs".into(),
+                row: 1,
+                column: 1,
+                new_name: "n".into(),
+                dry_run: true,
+            }),
+            Code::Format(FormatCodeParams {
+                file_path: Some("x.rs".into()),
+                tab_size: 4,
+                insert_spaces: true,
+                dry_run: true,
+            }),
+            Code::PatternRewrite(PatternRewriteParams {
+                pattern: "$X".into(),
+                replacement: "$Y".into(),
+                language: "rust".into(),
+                file_path: Some("x.rs".into()),
+                dry_run: true,
+                limit: None,
+            }),
+        ];
+        for op in ops {
+            assert!(op.read_paths().is_empty());
+        }
+    }
+
+    // ===== is_write_operation for all non-write variants =====
+    #[test]
+    fn test_is_write_operation_all_read_variants() {
+        let ops: Vec<Code> = vec![
+            Code::FindReferences(FindReferencesParams {
+                file_path: "x.rs".into(),
+                row: 1,
+                column: 1,
+                limit: None,
+                workspace_only: None,
+            }),
+            Code::GotoDefinition(GotoDefinitionParams {
+                file_path: "x.rs".into(),
+                row: 1,
+                column: 1,
+                show_source: None,
+            }),
+            Code::GetDocumentSymbols(GetDocumentSymbolsParams {
+                file_path: "x.rs".into(),
+                top_level_only: None,
+            }),
+            Code::LookupSymbols(LookupSymbolsParams {
+                symbols: vec!["a".into()],
+                file_path: None,
+                include_source: false,
+            }),
+            Code::GetHover(GetHoverParams {
+                file_path: "x.rs".into(),
+                row: 1,
+                column: 1,
+            }),
+            Code::GetCompletions(GetCompletionsParams {
+                file_path: "x.rs".into(),
+                row: 1,
+                column: 1,
+                trigger_character: None,
+                limit: 50,
+                filter: None,
+                symbol_type: None,
+            }),
+            Code::PatternSearch(PatternSearchParams {
+                pattern: "$X".into(),
+                language: "rust".into(),
+                file_path: None,
+                limit: None,
+                offset: None,
+            }),
+            Code::GenerateCodebaseOverview(GenerateCodebaseOverviewParams { path: None }),
+            Code::SearchCodebaseMap(SearchCodebaseMapParams {
+                path: None,
+                file_path: None,
+            }),
+        ];
+        for op in &ops {
+            assert!(!is_write_operation(op));
+            assert!(!op.is_write_operation());
+        }
+    }
+
+    // ===== validate with real files =====
+    #[tokio::test]
+    async fn test_validate_find_references_with_existing_file() {
+        let test_dir = TestDir::new();
+        let provider = TestProvider::new_with_base(test_dir.path());
+        let test_dir = test_dir.with_file_sys(("src.rs", "fn main() {}"), &provider).await;
+        let op = Code::FindReferences(FindReferencesParams {
+            file_path: "src.rs".into(),
+            row: 1,
+            column: 1,
+            limit: None,
+            workspace_only: None,
+        });
+        assert!(op.validate(&provider).await.is_ok());
+        drop(test_dir);
+    }
+
+    #[tokio::test]
+    async fn test_validate_goto_definition_with_existing_file() {
+        let test_dir = TestDir::new();
+        let provider = TestProvider::new_with_base(test_dir.path());
+        let test_dir = test_dir.with_file_sys(("f.rs", ""), &provider).await;
+        let op = Code::GotoDefinition(GotoDefinitionParams {
+            file_path: "f.rs".into(),
+            row: 1,
+            column: 1,
+            show_source: Some(true),
+        });
+        assert!(op.validate(&provider).await.is_ok());
+        drop(test_dir);
+    }
+
+    #[tokio::test]
+    async fn test_validate_rename_symbol_with_existing_file() {
+        let test_dir = TestDir::new();
+        let provider = TestProvider::new_with_base(test_dir.path());
+        let test_dir = test_dir.with_file_sys(("r.rs", ""), &provider).await;
+        let op = Code::RenameSymbol(RenameSymbolParams {
+            file_path: "r.rs".into(),
+            row: 1,
+            column: 1,
+            new_name: "new_name".into(),
+            dry_run: true,
+        });
+        assert!(op.validate(&provider).await.is_ok());
+        drop(test_dir);
+    }
+
+    #[tokio::test]
+    async fn test_validate_get_completions_with_existing_file() {
+        let test_dir = TestDir::new();
+        let provider = TestProvider::new_with_base(test_dir.path());
+        let test_dir = test_dir.with_file_sys(("c.rs", ""), &provider).await;
+        let op = Code::GetCompletions(GetCompletionsParams {
+            file_path: "c.rs".into(),
+            row: 1,
+            column: 1,
+            trigger_character: Some(".".into()),
+            limit: 10,
+            filter: Some("get".into()),
+            symbol_type: Some("Method".into()),
+        });
+        assert!(op.validate(&provider).await.is_ok());
+        drop(test_dir);
+    }
+
+    #[tokio::test]
+    async fn test_validate_get_hover_with_existing_file() {
+        let test_dir = TestDir::new();
+        let provider = TestProvider::new_with_base(test_dir.path());
+        let test_dir = test_dir.with_file_sys(("h.rs", ""), &provider).await;
+        let op = Code::GetHover(GetHoverParams {
+            file_path: "h.rs".into(),
+            row: 1,
+            column: 1,
+        });
+        assert!(op.validate(&provider).await.is_ok());
+        drop(test_dir);
+    }
+
+    // ===== Serde error cases =====
+    #[test]
+    fn test_serde_invalid_operation() {
+        let json = r#"{"operation":"nonexistent_op"}"#;
+        let result = serde_json::from_str::<Code>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_serde_missing_required_field() {
+        // search_symbols requires symbol_name
+        let json = r#"{"operation":"search_symbols"}"#;
+        let result = serde_json::from_str::<Code>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_serde_format_defaults_applied() {
+        let json = r#"{"operation":"format"}"#;
+        let op: Code = serde_json::from_str(json).unwrap();
+        if let Code::Format(p) = op {
+            assert_eq!(p.tab_size, 4);
+            assert!(p.insert_spaces);
+            assert!(p.dry_run);
+            assert!(p.file_path.is_none());
+        } else {
+            panic!("expected Format");
+        }
+    }
+
+    #[test]
+    fn test_serde_completions_defaults() {
+        let json = r#"{"operation":"get_completions","file_path":"x.rs","row":1,"column":1}"#;
+        let op: Code = serde_json::from_str(json).unwrap();
+        if let Code::GetCompletions(p) = op {
+            assert_eq!(p.limit, 50);
+            assert!(p.trigger_character.is_none());
+            assert!(p.filter.is_none());
+            assert!(p.symbol_type.is_none());
+        } else {
+            panic!("expected GetCompletions");
+        }
+    }
+
+    #[test]
+    fn test_serde_rename_dry_run_default_true() {
+        let json = r#"{"operation":"rename_symbol","file_path":"x.rs","row":1,"column":1,"new_name":"n"}"#;
+        let op: Code = serde_json::from_str(json).unwrap();
+        if let Code::RenameSymbol(p) = op {
+            assert!(p.dry_run);
+        } else {
+            panic!("expected RenameSymbol");
+        }
+    }
+
+    #[test]
+    fn test_serde_pattern_rewrite_dry_run_default() {
+        let json = r#"{"operation":"pattern_rewrite","pattern":"$X","replacement":"$Y","language":"rust"}"#;
+        let op: Code = serde_json::from_str(json).unwrap();
+        if let Code::PatternRewrite(p) = op {
+            assert!(p.dry_run);
+            assert!(p.file_path.is_none());
+            assert!(p.limit.is_none());
+        } else {
+            panic!("expected PatternRewrite");
+        }
+    }
+
+    // ===== Clone and Debug =====
+    #[test]
+    fn test_code_clone() {
+        let op = Code::InitializeWorkspace;
+        let cloned = op.clone();
+        assert!(matches!(cloned, Code::InitializeWorkspace));
+    }
+
+    #[test]
+    fn test_code_debug() {
+        let op = Code::InitializeWorkspace;
+        let debug = format!("{:?}", op);
+        assert!(debug.contains("InitializeWorkspace"));
+    }
+
+    #[test]
+    fn test_params_debug() {
+        let p = SearchSymbolsParams {
+            symbol_name: "test".into(),
+            path: None,
+            symbol_type: None,
+            limit: None,
+            language: None,
+            exact_match: None,
+        };
+        let debug = format!("{:?}", p);
+        assert!(debug.contains("test"));
+    }
 }

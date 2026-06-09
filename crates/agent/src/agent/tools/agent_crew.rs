@@ -928,4 +928,325 @@ mod tests {
         };
         assert!(text.contains("0 stages pending"));
     }
+
+    // ── validate_roles ──────────────────────────────────────────────────
+
+    #[test]
+    fn validate_roles_empty_available_allows_all() {
+        let c = crew(vec![stage("A", None)]);
+        let settings = AgentCrewSettings::default();
+        assert!(c.validate_roles(&settings).is_ok());
+    }
+
+    #[test]
+    fn validate_roles_exact_match_passes() {
+        let mut s = stage("A", None);
+        s.role = "research".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["research"]
+        }))
+        .unwrap();
+        assert!(c.validate_roles(&settings).is_ok());
+    }
+
+    #[test]
+    fn validate_roles_glob_match_passes() {
+        let mut s = stage("A", None);
+        s.role = "test-unit".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["test-*"]
+        }))
+        .unwrap();
+        assert!(c.validate_roles(&settings).is_ok());
+    }
+
+    #[test]
+    fn validate_roles_denied_returns_error() {
+        let mut s = stage("A", None);
+        s.role = "hacker".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["research", "code"]
+        }))
+        .unwrap();
+        let err = c.validate_roles(&settings).unwrap_err().to_string();
+        assert!(err.contains("hacker"), "expected denied role in: {err}");
+    }
+
+    #[test]
+    fn validate_roles_multiple_denied() {
+        let mut s1 = stage("A", None);
+        s1.role = "bad1".to_string();
+        let mut s2 = stage("B", None);
+        s2.role = "bad2".to_string();
+        let c = crew(vec![s1, s2]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["research"]
+        }))
+        .unwrap();
+        let err = c.validate_roles(&settings).unwrap_err().to_string();
+        assert!(err.contains("bad1"));
+        assert!(err.contains("bad2"));
+    }
+
+    #[test]
+    fn validate_roles_partial_match() {
+        let mut s1 = stage("A", None);
+        s1.role = "research".to_string();
+        let mut s2 = stage("B", None);
+        s2.role = "evil".to_string();
+        let c = crew(vec![s1, s2]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["research"]
+        }))
+        .unwrap();
+        let err = c.validate_roles(&settings).unwrap_err().to_string();
+        assert!(err.contains("evil"));
+        assert!(!err.contains("research"));
+    }
+
+    // ── validate_loop_configs additional edge cases ─────────────────────
+
+    #[test]
+    fn validate_loop_configs_whitespace_trigger() {
+        let c = crew(vec![stage("A", lc("B", 3, "   ")), stage("B", None)]);
+        let err = c.validate_loop_configs().unwrap_err().to_string();
+        assert!(err.contains("too short"));
+    }
+
+    #[test]
+    fn validate_loop_configs_exactly_min_trigger() {
+        // MIN_TRIGGER_LENGTH is 4, so exactly 4 chars should pass
+        let c = crew(vec![stage("A", lc("B", 1, "DONE")), stage("B", None)]);
+        assert!(c.validate_loop_configs().is_ok());
+    }
+
+    // ── Serde roundtrip tests ───────────────────────────────────────────
+
+    #[test]
+    fn serde_roundtrip_agent_crew() {
+        let c = AgentCrew {
+            task: "build feature".to_string(),
+            stages: vec![
+                PipelineStage {
+                    name: "research".to_string(),
+                    role: "researcher".to_string(),
+                    prompt_template: "Research {task}".to_string(),
+                    depends_on: vec![],
+                    model: Some("claude-sonnet".to_string()),
+                    loop_to: None,
+                },
+                PipelineStage {
+                    name: "implement".to_string(),
+                    role: "coder".to_string(),
+                    prompt_template: "Implement {task}".to_string(),
+                    depends_on: vec!["research".to_string()],
+                    model: None,
+                    loop_to: Some(LoopConfig {
+                        target: "research".to_string(),
+                        max_iterations: 3,
+                        trigger: "NEEDS_MORE_INFO".to_string(),
+                    }),
+                },
+            ],
+            mode: CrewMode::Blocking,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let deserialized: AgentCrew = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.task, "build feature");
+        assert_eq!(deserialized.stages.len(), 2);
+        assert_eq!(deserialized.stages[0].name, "research");
+        assert_eq!(deserialized.stages[0].model.as_deref(), Some("claude-sonnet"));
+        assert_eq!(deserialized.stages[1].depends_on, vec!["research"]);
+        assert_eq!(deserialized.stages[1].loop_to.as_ref().unwrap().target, "research");
+        assert_eq!(deserialized.stages[1].loop_to.as_ref().unwrap().max_iterations, 3);
+        assert_eq!(deserialized.mode, CrewMode::Blocking);
+    }
+
+    #[test]
+    fn serde_roundtrip_pending_stage_spec() {
+        let spec = PendingStageSpec {
+            name: "review".to_string(),
+            role: "reviewer".to_string(),
+            task: "review the code".to_string(),
+            depends_on: vec!["implement".to_string()],
+            loop_config: Some(LoopConfig {
+                target: "implement".to_string(),
+                max_iterations: 5,
+                trigger: "NEEDS_CHANGES".to_string(),
+            }),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let deserialized: PendingStageSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "review");
+        assert_eq!(deserialized.depends_on, vec!["implement"]);
+        assert_eq!(deserialized.loop_config.as_ref().unwrap().trigger, "NEEDS_CHANGES");
+    }
+
+    #[test]
+    fn serde_crew_mode_default() {
+        let json = serde_json::json!({"task": "x", "stages": []});
+        let c: AgentCrew = serde_json::from_value(json).unwrap();
+        assert_eq!(c.mode, CrewMode::Blocking);
+    }
+
+    #[test]
+    fn serde_loop_config_roundtrip() {
+        let lc = LoopConfig {
+            target: "stage_a".to_string(),
+            max_iterations: 7,
+            trigger: "RETRY_NOW".to_string(),
+        };
+        let json = serde_json::to_string(&lc).unwrap();
+        let deserialized: LoopConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.target, "stage_a");
+        assert_eq!(deserialized.max_iterations, 7);
+        assert_eq!(deserialized.trigger, "RETRY_NOW");
+    }
+
+    #[test]
+    fn serde_pipeline_stage_minimal() {
+        let json = serde_json::json!({
+            "name": "s1",
+            "role": "r1",
+            "prompt_template": "do {task}"
+        });
+        let s: PipelineStage = serde_json::from_value(json).unwrap();
+        assert_eq!(s.name, "s1");
+        assert!(s.depends_on.is_empty());
+        assert!(s.model.is_none());
+        assert!(s.loop_to.is_none());
+    }
+
+    // ── BuiltInToolTrait methods ────────────────────────────────────────
+
+    #[test]
+    fn builtin_trait_name() {
+        assert_eq!(AgentCrew::name(), BuiltInToolName::AgentCrew);
+    }
+
+    #[test]
+    fn builtin_trait_description_not_empty() {
+        let desc = AgentCrew::description();
+        assert!(desc.contains("pipeline"));
+    }
+
+    #[test]
+    fn builtin_trait_input_schema_valid_json() {
+        let schema = AgentCrew::input_schema();
+        let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap();
+        assert_eq!(parsed["type"], "object");
+        assert!(
+            parsed["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("task"))
+        );
+        assert!(
+            parsed["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("stages"))
+        );
+    }
+
+    #[test]
+    fn builtin_trait_aliases() {
+        let aliases = AgentCrew::aliases().unwrap();
+        assert!(aliases.contains(&"agent_crew"));
+    }
+
+    // ── get_canonical_name ──────────────────────────────────────────────
+
+    #[test]
+    fn get_canonical_name_returns_builtin() {
+        let name = AgentCrew::get_canonical_name();
+        assert_eq!(name, CanonicalToolName::BuiltIn(BuiltInToolName::AgentCrew));
+    }
+
+    // ── generate_dynamic_tool_spec description content ──────────────────
+
+    #[test]
+    fn dynamic_spec_includes_agent_descriptions() {
+        let agents = vec![make_agent("research", "Deep research agent")];
+        let settings = AgentCrewSettings::default();
+        let spec = AgentCrew::generate_dynamic_tool_spec(&agents, &settings);
+        let schema = serde_json::Value::Object(spec.input_schema);
+        let role_desc = schema
+            .pointer("/properties/stages/items/properties/role/description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        assert!(role_desc.contains("Deep research agent"));
+        assert!(role_desc.contains("research"));
+    }
+
+    #[test]
+    fn dynamic_spec_agent_no_description() {
+        let mut cfg = AgentConfigV2025_08_22::default();
+        cfg.name = "nodesc".to_string();
+        cfg.description = None;
+        let agent = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(cfg),
+            ConfigSource::BuiltIn,
+            ResolvedGlobalPrompt::None,
+        );
+        let settings = AgentCrewSettings::default();
+        let spec = AgentCrew::generate_dynamic_tool_spec(&[agent], &settings);
+        let schema = serde_json::Value::Object(spec.input_schema);
+        let role_desc = schema
+            .pointer("/properties/stages/items/properties/role/description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        assert!(role_desc.contains("No description"));
+    }
+
+    // ── clamp_loop_iterations at boundary ───────────────────────────────
+
+    #[test]
+    fn clamp_loop_iterations_exactly_at_cap() {
+        let c = crew(vec![stage("A", lc("B", 10, "RETRY")), stage("B", None)]);
+        let clamped = c.clamp_loop_iterations();
+        assert_eq!(clamped[0].loop_to.as_ref().unwrap().max_iterations, 10);
+    }
+
+    // ── AgentIdentifier glob edge cases via validate_roles ──────────────
+
+    #[test]
+    fn validate_roles_glob_star_prefix() {
+        let mut s = stage("A", None);
+        s.role = "my-research".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["*-research"]
+        }))
+        .unwrap();
+        assert!(c.validate_roles(&settings).is_ok());
+    }
+
+    #[test]
+    fn validate_roles_glob_middle_star() {
+        let mut s = stage("A", None);
+        s.role = "test-unit-fast".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["test-*-fast"]
+        }))
+        .unwrap();
+        assert!(c.validate_roles(&settings).is_ok());
+    }
+
+    #[test]
+    fn validate_roles_glob_no_match() {
+        let mut s = stage("A", None);
+        s.role = "production".to_string();
+        let c = crew(vec![s]);
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["test-*"]
+        }))
+        .unwrap();
+        let err = c.validate_roles(&settings).unwrap_err().to_string();
+        assert!(err.contains("production"));
+    }
 }

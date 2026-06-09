@@ -146,6 +146,16 @@ impl McpServerActorHandle {
     pub async fn shutdown(&self) {
         _ = self.sender.send_recv(McpServerActorRequest::Terminate).await;
     }
+
+    /// Create a dummy handle for testing without spawning a subprocess.
+    #[cfg(test)]
+    pub(super) fn new_dummy(name: &str) -> Self {
+        let (tx, _rx) = crate::agent::util::request_channel::new_request_channel();
+        Self {
+            _server_name: name.to_string(),
+            sender: tx,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -546,6 +556,48 @@ mod tests {
     }
 
     #[test]
+    fn test_mcp_server_actor_error_from_service_error() {
+        let se = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "test error",
+            None,
+        ));
+        let actor_err: McpServerActorError = se.into();
+        match actor_err {
+            McpServerActorError::Service { message, source } => {
+                assert!(message.contains("test error"));
+                assert!(source.is_some());
+            },
+            _ => panic!("expected Service variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_service_serde() {
+        let e = McpServerActorError::Service {
+            message: "connection lost".to_string(),
+            source: None,
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorError = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorError::Service { message, source } => {
+                assert_eq!(message, "connection lost");
+                // source is skipped in serde
+                assert!(source.is_none());
+            },
+            _ => panic!("expected Service"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_clone() {
+        let e = McpServerActorError::Custom("test".to_string());
+        let cloned = e.clone();
+        assert_eq!(e.to_string(), cloned.to_string());
+    }
+
+    #[test]
     fn test_mcp_server_actor_event_serde_initializing() {
         let e = McpServerActorEvent::Initializing {
             server_name: "test".to_string(),
@@ -625,5 +677,1186 @@ mod tests {
             },
             _ => panic!("expected Initialized"),
         }
+    }
+
+    #[test]
+    fn test_mcp_message_debug() {
+        let msg = McpMessage::Tools(Ok(vec![]));
+        let debug_str = format!("{:?}", msg);
+        assert!(debug_str.contains("Tools"));
+
+        let msg2 = McpMessage::Prompts(Err(ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "err",
+            None,
+        ))));
+        let debug_str2 = format!("{:?}", msg2);
+        assert!(debug_str2.contains("Prompts"));
+
+        let msg3 = McpMessage::ExecuteTool {
+            request_id: 42,
+            result: Err(McpServerActorError::Channel),
+        };
+        let debug_str3 = format!("{:?}", msg3);
+        assert!(debug_str3.contains("ExecuteTool"));
+        assert!(debug_str3.contains("42"));
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_serde() {
+        let req = McpServerActorRequest::GetTools;
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: McpServerActorRequest = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, McpServerActorRequest::GetTools));
+
+        let req2 = McpServerActorRequest::GetPrompts;
+        let json2 = serde_json::to_string(&req2).unwrap();
+        let parsed2: McpServerActorRequest = serde_json::from_str(&json2).unwrap();
+        assert!(matches!(parsed2, McpServerActorRequest::GetPrompts));
+
+        let req3 = McpServerActorRequest::Terminate;
+        let json3 = serde_json::to_string(&req3).unwrap();
+        let parsed3: McpServerActorRequest = serde_json::from_str(&json3).unwrap();
+        assert!(matches!(parsed3, McpServerActorRequest::Terminate));
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_get_prompt_serde() {
+        let req = McpServerActorRequest::GetPrompt {
+            name: "test_prompt".to_string(),
+            arguments: HashMap::from([("key".to_string(), "value".to_string())]),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: McpServerActorRequest = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorRequest::GetPrompt { name, arguments } => {
+                assert_eq!(name, "test_prompt");
+                assert_eq!(arguments.get("key"), Some(&"value".to_string()));
+            },
+            _ => panic!("expected GetPrompt"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_execute_tool_serde() {
+        let mut args = serde_json::Map::new();
+        args.insert("param".to_string(), Value::String("val".to_string()));
+        let req = McpServerActorRequest::ExecuteTool {
+            name: "my_tool".to_string(),
+            args: Some(args),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: McpServerActorRequest = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorRequest::ExecuteTool { name, args } => {
+                assert_eq!(name, "my_tool");
+                assert!(args.is_some());
+                assert_eq!(args.unwrap().get("param").unwrap(), "val");
+            },
+            _ => panic!("expected ExecuteTool"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_execute_tool_no_args_serde() {
+        let req = McpServerActorRequest::ExecuteTool {
+            name: "tool".to_string(),
+            args: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: McpServerActorRequest = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorRequest::ExecuteTool { name, args } => {
+                assert_eq!(name, "tool");
+                assert!(args.is_none());
+            },
+            _ => panic!("expected ExecuteTool"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_clone() {
+        let req = McpServerActorRequest::ExecuteTool {
+            name: "t".to_string(),
+            args: None,
+        };
+        let cloned = req.clone();
+        match cloned {
+            McpServerActorRequest::ExecuteTool { name, .. } => assert_eq!(name, "t"),
+            _ => panic!("expected ExecuteTool"),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "spawns real subprocess; requires environment with cat available, hangs in coverage"]
+    async fn test_mcp_server_actor_handle_terminate() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let (event_tx, _event_rx) = mpsc::channel(10);
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "cat".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 5000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let handle = McpServerActor::spawn("cat-server".to_string(), config, PathBuf::from("/tmp"), event_tx);
+        // Give it a moment to start
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.shutdown().await;
+    }
+
+    #[test]
+    #[ignore = "spawns real subprocess via false binary, can hang"]
+    fn test_mcp_server_actor_handle_debug() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let (event_tx, _event_rx) = mpsc::channel(10);
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "false".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let handle = McpServerActor::spawn("debug-server".to_string(), config, PathBuf::from("/tmp"), event_tx);
+        let debug_str = format!("{:?}", handle);
+        assert!(debug_str.contains("McpServerActorHandle"));
+    }
+
+    // --- Tests that exercise McpServerActorHandle methods without spawning ---
+
+    /// Helper: create a handle backed by a mock responder task.
+    fn make_test_handle() -> (
+        McpServerActorHandle,
+        mpsc::Receiver<
+            crate::agent::util::request_channel::Request<
+                McpServerActorRequest,
+                McpServerActorResponse,
+                McpServerActorError,
+            >,
+        >,
+    ) {
+        let (tx, rx) = crate::agent::util::request_channel::new_request_channel();
+        let handle = McpServerActorHandle {
+            _server_name: "test-server".to_string(),
+            sender: tx,
+        };
+        (handle, rx)
+    }
+
+    #[test]
+    fn test_handle_debug_without_spawn() {
+        let (handle, _rx) = make_test_handle();
+        let debug_str = format!("{:?}", handle);
+        assert!(debug_str.contains("McpServerActorHandle"));
+        assert!(debug_str.contains("test-server"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_tool_specs_success() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                let tools = vec![ToolSpec {
+                    name: "my_tool".to_string(),
+                    description: "desc".to_string(),
+                    input_schema: serde_json::Map::new(),
+                }];
+                req.respond(Ok(McpServerActorResponse::Tools(tools))).await;
+            }
+        });
+        let result = handle.get_tool_specs().await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "my_tool");
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_tool_specs_channel_closed() {
+        let (handle, rx) = make_test_handle();
+        drop(rx);
+        let result = handle.get_tool_specs().await;
+        assert!(matches!(result, Err(McpServerActorError::Channel)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_tool_specs_unexpected_response() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Ok(McpServerActorResponse::TerminateAcknowledged)).await;
+            }
+        });
+        let result = handle.get_tool_specs().await;
+        match result {
+            Err(McpServerActorError::Custom(msg)) => assert!(msg.contains("unexpected response")),
+            _ => panic!("expected Custom error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_tool_specs_service_error() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Err(McpServerActorError::Service {
+                    message: "service down".to_string(),
+                    source: None,
+                }))
+                .await;
+            }
+        });
+        let result = handle.get_tool_specs().await;
+        match result {
+            Err(McpServerActorError::Service { message, .. }) => assert!(message.contains("service down")),
+            _ => panic!("expected Service error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompts_success() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                let prompts = vec![Prompt {
+                    name: "p1".to_string(),
+                    description: Some("desc".to_string()),
+                    arguments: None,
+                }];
+                req.respond(Ok(McpServerActorResponse::Prompts(prompts))).await;
+            }
+        });
+        let result = handle.get_prompts().await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "p1");
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompts_channel_closed() {
+        let (handle, rx) = make_test_handle();
+        drop(rx);
+        let result = handle.get_prompts().await;
+        assert!(matches!(result, Err(McpServerActorError::Channel)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompts_unexpected_response() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Ok(McpServerActorResponse::TerminateAcknowledged)).await;
+            }
+        });
+        let result = handle.get_prompts().await;
+        match result {
+            Err(McpServerActorError::Custom(msg)) => assert!(msg.contains("unexpected response")),
+            _ => panic!("expected Custom error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompt_success() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                let messages = vec![serde_json::json!({"role": "user", "content": "hello"})];
+                req.respond(Ok(McpServerActorResponse::Prompt(messages))).await;
+            }
+        });
+        let result = handle.get_prompt("test".to_string(), HashMap::new()).await.unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompt_channel_closed() {
+        let (handle, rx) = make_test_handle();
+        drop(rx);
+        let result = handle.get_prompt("test".to_string(), HashMap::new()).await;
+        assert!(matches!(result, Err(McpServerActorError::Channel)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_prompt_unexpected_response() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Ok(McpServerActorResponse::Tools(vec![]))).await;
+            }
+        });
+        let result = handle.get_prompt("test".to_string(), HashMap::new()).await;
+        match result {
+            Err(McpServerActorError::Custom(msg)) => assert!(msg.contains("unexpected response")),
+            _ => panic!("expected Custom error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_execute_tool_success() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                let (tx, rx_inner) = oneshot::channel();
+                req.respond(Ok(McpServerActorResponse::ExecuteTool(rx_inner))).await;
+                let _ = tx.send(Err(McpServerActorError::Channel));
+            }
+        });
+        let rx = handle.execute_tool("tool".to_string(), None).await.unwrap();
+        let result = rx.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_execute_tool_channel_closed() {
+        let (handle, rx) = make_test_handle();
+        drop(rx);
+        let result = handle.execute_tool("tool".to_string(), None).await;
+        assert!(matches!(result, Err(McpServerActorError::Channel)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_execute_tool_unexpected_response() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Ok(McpServerActorResponse::TerminateAcknowledged)).await;
+            }
+        });
+        let result = handle.execute_tool("tool".to_string(), None).await;
+        match result {
+            Err(McpServerActorError::Custom(msg)) => assert!(msg.contains("unexpected response")),
+            _ => panic!("expected Custom error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_shutdown_channel_closed() {
+        let (handle, rx) = make_test_handle();
+        drop(rx);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_shutdown_success() {
+        let (handle, mut rx) = make_test_handle();
+        tokio::spawn(async move {
+            if let Some(req) = rx.recv().await {
+                req.respond(Ok(McpServerActorResponse::TerminateAcknowledged)).await;
+            }
+        });
+        handle.shutdown().await;
+    }
+
+    #[test]
+    fn test_handle_terminate_channel_closed() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (handle, rx) = make_test_handle();
+            drop(rx);
+            handle.terminate();
+        });
+    }
+
+    #[test]
+    fn test_mcp_server_actor_response_debug() {
+        let resp = McpServerActorResponse::Tools(vec![]);
+        assert!(format!("{:?}", resp).contains("Tools"));
+
+        let resp = McpServerActorResponse::Prompts(vec![]);
+        assert!(format!("{:?}", resp).contains("Prompts"));
+
+        let resp = McpServerActorResponse::Prompt(vec![serde_json::json!("hi")]);
+        assert!(format!("{:?}", resp).contains("Prompt"));
+
+        let resp = McpServerActorResponse::TerminateAcknowledged;
+        assert!(format!("{:?}", resp).contains("TerminateAcknowledged"));
+
+        let (_tx, rx) = oneshot::channel::<ExecuteToolResult>();
+        let resp = McpServerActorResponse::ExecuteTool(rx);
+        assert!(format!("{:?}", resp).contains("ExecuteTool"));
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_source_skipped_in_serde() {
+        let se = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "serde test",
+            None,
+        ));
+        let e = McpServerActorError::from(se);
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(!json.contains("source"));
+        let parsed: McpServerActorError = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorError::Service { message, source } => {
+                assert!(message.contains("serde test"));
+                assert!(source.is_none());
+            },
+            _ => panic!("expected Service"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_debug() {
+        let e = McpServerActorError::Service {
+            message: "test".to_string(),
+            source: None,
+        };
+        assert!(format!("{:?}", e).contains("Service"));
+
+        let e2 = McpServerActorError::Channel;
+        assert!(format!("{:?}", e2).contains("Channel"));
+
+        let e3 = McpServerActorError::Custom("custom msg".to_string());
+        assert!(format!("{:?}", e3).contains("custom msg"));
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_debug_all() {
+        let events: Vec<McpServerActorEvent> = vec![
+            McpServerActorEvent::Initializing {
+                server_name: "s".to_string(),
+            },
+            McpServerActorEvent::Initialized {
+                server_name: "s".to_string(),
+                serve_duration: Duration::from_secs(1),
+                list_tools_duration: None,
+                list_prompts_duration: Some(Duration::from_millis(50)),
+            },
+            McpServerActorEvent::InitializeError {
+                server_name: "s".to_string(),
+                error: "err".to_string(),
+            },
+            McpServerActorEvent::OauthRequest {
+                server_name: "s".to_string(),
+                oauth_url: "url".to_string(),
+            },
+            McpServerActorEvent::ToolListChanged {
+                server_name: "s".to_string(),
+            },
+        ];
+        for e in &events {
+            let _ = format!("{:?}", e);
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_debug_all() {
+        let reqs: Vec<McpServerActorRequest> = vec![
+            McpServerActorRequest::GetTools,
+            McpServerActorRequest::GetPrompts,
+            McpServerActorRequest::GetPrompt {
+                name: "p".to_string(),
+                arguments: HashMap::new(),
+            },
+            McpServerActorRequest::ExecuteTool {
+                name: "t".to_string(),
+                args: None,
+            },
+            McpServerActorRequest::Terminate,
+        ];
+        for r in &reqs {
+            let _ = format!("{:?}", r);
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_clone_all_variants() {
+        let events = vec![
+            McpServerActorEvent::Initializing {
+                server_name: "a".to_string(),
+            },
+            McpServerActorEvent::Initialized {
+                server_name: "b".to_string(),
+                serve_duration: Duration::from_millis(100),
+                list_tools_duration: Some(Duration::from_millis(50)),
+                list_prompts_duration: Some(Duration::from_millis(25)),
+            },
+            McpServerActorEvent::InitializeError {
+                server_name: "c".to_string(),
+                error: "e".to_string(),
+            },
+            McpServerActorEvent::OauthRequest {
+                server_name: "d".to_string(),
+                oauth_url: "u".to_string(),
+            },
+            McpServerActorEvent::ToolListChanged {
+                server_name: "e".to_string(),
+            },
+        ];
+        for e in events {
+            let _ = e.clone();
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_event_serde_initialized_all_durations() {
+        let e = McpServerActorEvent::Initialized {
+            server_name: "full".to_string(),
+            serve_duration: Duration::from_secs(2),
+            list_tools_duration: Some(Duration::from_millis(100)),
+            list_prompts_duration: Some(Duration::from_millis(200)),
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorEvent::Initialized {
+                list_tools_duration,
+                list_prompts_duration,
+                ..
+            } => {
+                assert_eq!(list_tools_duration, Some(Duration::from_millis(100)));
+                assert_eq!(list_prompts_duration, Some(Duration::from_millis(200)));
+            },
+            _ => panic!("expected Initialized"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_request_get_prompt_empty_args_serde() {
+        let req = McpServerActorRequest::GetPrompt {
+            name: "empty".to_string(),
+            arguments: HashMap::new(),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: McpServerActorRequest = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerActorRequest::GetPrompt { name, arguments } => {
+                assert_eq!(name, "empty");
+                assert!(arguments.is_empty());
+            },
+            _ => panic!("expected GetPrompt"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_message_execute_tool_ok_variant() {
+        use rmcp::model::CallToolResult;
+        let result: ExecuteToolResult = Ok(CallToolResult::success(vec![]));
+        let msg = McpMessage::ExecuteTool { request_id: 1, result };
+        assert!(format!("{:?}", msg).contains("ExecuteTool"));
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_service_with_source_clone() {
+        let se = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "clone test",
+            None,
+        ));
+        let e = McpServerActorError::from(se);
+        let cloned = e.clone();
+        match cloned {
+            McpServerActorError::Service { message, source } => {
+                assert!(message.contains("clone test"));
+                assert!(source.is_some());
+            },
+            _ => panic!("expected Service"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_source() {
+        use std::error::Error;
+        let se = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "source test",
+            None,
+        ));
+        let e = McpServerActorError::from(se);
+        assert!(e.source().is_some());
+
+        let e2 = McpServerActorError::Channel;
+        assert!(e2.source().is_none());
+        let e3 = McpServerActorError::Custom("x".to_string());
+        assert!(e3.source().is_none());
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_from_transport_closed() {
+        let se = ServiceError::TransportClosed;
+        let e: McpServerActorError = se.into();
+        match e {
+            McpServerActorError::Service { message, source } => {
+                assert!(message.contains("Transport closed"));
+                assert!(source.is_some());
+            },
+            _ => panic!("expected Service variant"),
+        }
+    }
+
+    // --- Tests for handle_mcp_message and handle_actor_request using a real actor ---
+
+    /// Helper to construct a test McpServerActor with a closed-transport service handle.
+    fn make_test_actor() -> (McpServerActor, mpsc::Receiver<McpServerActorEvent>) {
+        let (req_tx, req_rx) = new_request_channel();
+        let _ = req_tx; // keep sender alive implicitly via actor's req_rx
+        let (event_tx, event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let actor = McpServerActor {
+            server_name: "test-actor".to_string(),
+            _config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            tools: vec![ToolSpec {
+                name: "existing_tool".to_string(),
+                description: "desc".to_string(),
+                input_schema: serde_json::Map::new(),
+            }],
+            prompts: vec![Prompt {
+                name: "existing_prompt".to_string(),
+                description: Some("desc".to_string()),
+                arguments: None,
+            }],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        (actor, event_rx)
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_get_tools() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let res = actor.handle_actor_request(McpServerActorRequest::GetTools).await;
+        match res.unwrap() {
+            McpServerActorResponse::Tools(tools) => {
+                assert_eq!(tools.len(), 1);
+                assert_eq!(tools[0].name, "existing_tool");
+            },
+            _ => panic!("expected Tools response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_get_prompts() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let res = actor.handle_actor_request(McpServerActorRequest::GetPrompts).await;
+        match res.unwrap() {
+            McpServerActorResponse::Prompts(prompts) => {
+                assert_eq!(prompts.len(), 1);
+                assert_eq!(prompts[0].name, "existing_prompt");
+            },
+            _ => panic!("expected Prompts response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_terminate() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let res = actor.handle_actor_request(McpServerActorRequest::Terminate).await;
+        assert!(matches!(res.unwrap(), McpServerActorResponse::TerminateAcknowledged));
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_execute_tool_transport_closed() {
+        let (mut actor, _event_rx) = make_test_actor();
+        // Give the serve loop time to detect cancellation and close
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::ExecuteTool {
+                name: "tool".to_string(),
+                args: None,
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("Transport to MCP server"));
+                assert!(msg.contains("closed"));
+            },
+            _ => panic!("expected Custom error about transport closed, got: {res:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_get_prompt_transport_closed() {
+        let (mut actor, _event_rx) = make_test_actor();
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::GetPrompt {
+                name: "p".to_string(),
+                arguments: HashMap::new(),
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("Transport to MCP server"));
+                assert!(msg.contains("closed"));
+            },
+            _ => panic!("expected Custom error about transport closed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_execute_tool_transport_closed_remote_config() {
+        let (req_tx, req_rx) = new_request_channel();
+        let _ = req_tx;
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let mut actor = McpServerActor {
+            server_name: "remote-actor".to_string(),
+            _config: McpServerConfig::Remote(crate::agent::agent_config::definitions::RemoteMcpServerConfig {
+                url: "https://example.com".to_string(),
+                headers: HashMap::new(),
+                timeout_ms: 30000,
+                disabled: false,
+                disabled_tools: vec![],
+                oauth_scopes: vec![],
+                oauth: None,
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::ExecuteTool {
+                name: "tool".to_string(),
+                args: None,
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("terminated or the connection was lost"));
+            },
+            _ => panic!("expected Custom error for remote transport closed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_get_prompt_transport_closed_remote_config() {
+        let (req_tx, req_rx) = new_request_channel();
+        let _ = req_tx;
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let mut actor = McpServerActor {
+            server_name: "remote-actor".to_string(),
+            _config: McpServerConfig::Remote(crate::agent::agent_config::definitions::RemoteMcpServerConfig {
+                url: "https://example.com".to_string(),
+                headers: HashMap::new(),
+                timeout_ms: 30000,
+                disabled: false,
+                disabled_tools: vec![],
+                oauth_scopes: vec![],
+                oauth: None,
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::GetPrompt {
+                name: "p".to_string(),
+                arguments: HashMap::new(),
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("terminated or the connection was lost"));
+            },
+            _ => panic!("expected Custom error for remote transport closed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_none() {
+        let (mut actor, _event_rx) = make_test_actor();
+        // None message means channel closed - should just return
+        actor.handle_mcp_message(None).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_tools_ok() {
+        let (mut actor, mut event_rx) = make_test_actor();
+        let tools = vec![RmcpTool {
+            name: "new_tool".into(),
+            description: Some("new desc".into()),
+            input_schema: Arc::new(serde_json::Map::new()),
+            output_schema: None,
+            annotations: None,
+            title: None,
+            icons: None,
+            execution: None,
+            meta: None,
+        }];
+        actor.handle_mcp_message(Some(McpMessage::Tools(Ok(tools)))).await;
+        assert_eq!(actor.tools.len(), 1);
+        assert_eq!(actor.tools[0].name, "new_tool");
+        // Should have sent ToolListChanged event
+        let event = event_rx.recv().await.unwrap();
+        assert!(matches!(event, McpServerActorEvent::ToolListChanged { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_tools_err() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let err = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "list tools failed",
+            None,
+        ));
+        // Should not panic, just log error
+        actor.handle_mcp_message(Some(McpMessage::Tools(Err(err)))).await;
+        // Tools should remain unchanged
+        assert_eq!(actor.tools.len(), 1);
+        assert_eq!(actor.tools[0].name, "existing_tool");
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_prompts_ok() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let prompts = vec![RmcpPrompt {
+            name: "new_prompt".into(),
+            description: Some("new desc".into()),
+            arguments: None,
+            title: None,
+            icons: None,
+            meta: None,
+        }];
+        actor.handle_mcp_message(Some(McpMessage::Prompts(Ok(prompts)))).await;
+        assert_eq!(actor.prompts.len(), 1);
+        assert_eq!(actor.prompts[0].name, "new_prompt");
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_prompts_err() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let err = ServiceError::McpError(rmcp::ErrorData::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            "list prompts failed",
+            None,
+        ));
+        actor.handle_mcp_message(Some(McpMessage::Prompts(Err(err)))).await;
+        // Prompts should remain unchanged
+        assert_eq!(actor.prompts.len(), 1);
+        assert_eq!(actor.prompts[0].name, "existing_prompt");
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_execute_tool_found() {
+        let (mut actor, _event_rx) = make_test_actor();
+        let (tx, rx) = oneshot::channel();
+        actor.executing_tools.insert(42, tx);
+        let result: ExecuteToolResult = Ok(rmcp::model::CallToolResult::success(vec![]));
+        actor
+            .handle_mcp_message(Some(McpMessage::ExecuteTool { request_id: 42, result }))
+            .await;
+        // The oneshot should have received the result
+        let received = rx.await.unwrap();
+        assert!(received.is_ok());
+        assert!(actor.executing_tools.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_message_execute_tool_not_found() {
+        let (mut actor, _event_rx) = make_test_actor();
+        // No matching request_id in executing_tools
+        let result: ExecuteToolResult = Err(McpServerActorError::Channel);
+        actor
+            .handle_mcp_message(Some(McpMessage::ExecuteTool {
+                request_id: 999,
+                result,
+            }))
+            .await;
+        // Should just warn and not panic
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_execute_tool_transport_closed_registry_config() {
+        let (req_tx, req_rx) = new_request_channel();
+        let _ = req_tx;
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let mut actor = McpServerActor {
+            server_name: "registry-actor".to_string(),
+            _config: McpServerConfig::Registry(crate::agent::agent_config::definitions::RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: vec![],
+                oauth: None,
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::ExecuteTool {
+                name: "tool".to_string(),
+                args: None,
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("terminated or the connection was lost"));
+            },
+            _ => panic!("expected Custom error for registry transport closed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_actor_request_get_prompt_transport_closed_registry_config() {
+        let (req_tx, req_rx) = new_request_channel();
+        let _ = req_tx;
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let mut actor = McpServerActor {
+            server_name: "registry-actor".to_string(),
+            _config: McpServerConfig::Registry(crate::agent::agent_config::definitions::RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: vec![],
+                oauth: None,
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let res = actor
+            .handle_actor_request(McpServerActorRequest::GetPrompt {
+                name: "p".to_string(),
+                arguments: HashMap::new(),
+            })
+            .await;
+        match res {
+            Err(McpServerActorError::Custom(msg)) => {
+                assert!(msg.contains("terminated or the connection was lost"));
+            },
+            _ => panic!("expected Custom error for registry transport closed"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_main_loop_request_channel_closed() {
+        // When req_rx channel closes, main_loop should exit
+        let (req_tx, req_rx) = new_request_channel();
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let actor = McpServerActor {
+            server_name: "loop-test".to_string(),
+            _config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        // Drop the sender to close the channel
+        drop(req_tx);
+        // main_loop should exit immediately since channel is closed
+        actor.main_loop().await;
+    }
+
+    #[tokio::test]
+    async fn test_main_loop_terminate_request() {
+        let (req_tx, req_rx) = new_request_channel();
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let actor = McpServerActor {
+            server_name: "loop-terminate".to_string(),
+            _config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        // Send terminate request then run main_loop
+        tokio::spawn(async move {
+            let res = req_tx.send_recv(McpServerActorRequest::Terminate).await;
+            assert!(res.is_some());
+            match res.unwrap() {
+                Ok(McpServerActorResponse::TerminateAcknowledged) => {},
+                other => panic!("expected TerminateAcknowledged, got {other:?}"),
+            }
+        });
+        actor.main_loop().await;
+    }
+
+    #[tokio::test]
+    async fn test_main_loop_handles_message_from_channel() {
+        let (req_tx, req_rx) = new_request_channel();
+        let (event_tx, mut event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let actor = McpServerActor {
+            server_name: "loop-msg".to_string(),
+            _config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            tools: vec![],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx: message_tx.clone(),
+            message_rx,
+        };
+        // Send a tools message then terminate
+        let req_tx_clone = req_tx.clone();
+        tokio::spawn(async move {
+            // Send a tools update message
+            message_tx
+                .send(McpMessage::Tools(Ok(vec![RmcpTool {
+                    name: "dynamic_tool".into(),
+                    description: Some("dynamic".into()),
+                    input_schema: Arc::new(serde_json::Map::new()),
+                    output_schema: None,
+                    annotations: None,
+                    title: None,
+                    icons: None,
+                    execution: None,
+                    meta: None,
+                }])))
+                .await
+                .unwrap();
+            // Give actor time to process the message
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            // Then terminate
+            let _ = req_tx_clone.send_recv(McpServerActorRequest::Terminate).await;
+        });
+        actor.main_loop().await;
+        // Should have received ToolListChanged event
+        let event = event_rx.recv().await.unwrap();
+        assert!(matches!(event, McpServerActorEvent::ToolListChanged { .. }));
+        drop(req_tx);
+    }
+
+    #[tokio::test]
+    async fn test_main_loop_get_tools_request() {
+        let (req_tx, req_rx) = new_request_channel();
+        let (event_tx, _event_rx) = mpsc::channel(32);
+        let (message_tx, message_rx) = mpsc::channel(32);
+        let service_handle = RunningMcpService::new_closed_for_test();
+        let actor = McpServerActor {
+            server_name: "loop-get-tools".to_string(),
+            _config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            tools: vec![ToolSpec {
+                name: "t1".to_string(),
+                description: "d".to_string(),
+                input_schema: serde_json::Map::new(),
+            }],
+            prompts: vec![],
+            service_handle,
+            curr_tool_execution_id: 0,
+            executing_tools: HashMap::new(),
+            tool_annotations: HashMap::new(),
+            req_rx,
+            event_tx,
+            message_tx,
+            message_rx,
+        };
+        tokio::spawn(async move {
+            let res = req_tx.send_recv(McpServerActorRequest::GetTools).await;
+            match res.unwrap().unwrap() {
+                McpServerActorResponse::Tools(tools) => assert_eq!(tools[0].name, "t1"),
+                _ => panic!("expected Tools"),
+            }
+            let _ = req_tx.send_recv(McpServerActorRequest::Terminate).await;
+        });
+        actor.main_loop().await;
     }
 }

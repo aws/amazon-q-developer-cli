@@ -854,4 +854,569 @@ mod tests {
         let g: Grep = serde_json::from_str(json).unwrap();
         assert_eq!(g.pattern, "foo");
     }
+
+    #[test]
+    fn test_max_matches_per_file_clamping() {
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: Some(999),
+            max_files: Some(0),
+            max_total_lines: Some(999),
+            max_depth: Some(999),
+        };
+        assert_eq!(tool.max_matches_per_file(), MAX_ALLOWED_MATCHES_PER_FILE);
+        assert_eq!(tool.max_files(), 1); // clamped to min 1
+        assert_eq!(tool.max_total_lines(), MAX_ALLOWED_TOTAL_LINES);
+        assert_eq!(tool.max_depth(), MAX_ALLOWED_DEPTH);
+    }
+
+    #[test]
+    fn test_max_defaults() {
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        assert_eq!(tool.max_matches_per_file(), DEFAULT_MAX_MATCHES_PER_FILE);
+        assert_eq!(tool.max_files(), DEFAULT_MAX_FILES);
+        assert_eq!(tool.max_total_lines(), DEFAULT_MAX_TOTAL_LINES);
+        assert_eq!(tool.max_depth(), DEFAULT_MAX_DEPTH);
+    }
+
+    #[test]
+    fn test_sanitize_pattern_non_ascii_preserved() {
+        let mut p = "café\"".to_string();
+        sanitize_pattern(&mut p);
+        // Non-ASCII: no stripping
+        assert_eq!(p, "café\"");
+    }
+
+    #[test]
+    fn test_sanitize_pattern_paired_quotes_preserved() {
+        let mut p = "\"hello\"".to_string();
+        sanitize_pattern(&mut p);
+        assert_eq!(p, "\"hello\"");
+    }
+
+    #[tokio::test]
+    async fn test_grep_case_sensitive() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "HELLO world\nhello there"))
+            .await;
+
+        let tool = Grep {
+            pattern: "hello".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: Some(true),
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert_eq!(json["numMatches"], 1);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_single_file_path() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("target.txt", "match here\nno match"))
+            .await;
+
+        let tool = Grep {
+            pattern: "match".to_string(),
+            path: Some(test_base.join("target.txt").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert_eq!(json["numMatches"], 2);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_path_undefined_uses_cwd() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "findme")).await;
+
+        let tool = Grep {
+            pattern: "findme".to_string(),
+            path: Some("undefined".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert_eq!(json["numMatches"], 1);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_path_null_uses_cwd() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "findme")).await;
+
+        let tool = Grep {
+            pattern: "findme".to_string(),
+            path: Some("null".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert_eq!(json["numMatches"], 1);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_max_matches_per_file_limit() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "x\nx\nx\nx\nx\nx\nx\nx\nx\nx"))
+            .await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: Some(2),
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            let results = json["results"].as_array().unwrap();
+            let matches = results[0]["matches"].as_array().unwrap();
+            assert_eq!(matches.len(), 2);
+            assert!(json["truncated"].as_bool().unwrap());
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_max_total_lines_limit() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("a.txt", "x\nx\nx\nx\nx"))
+            .await
+            .with_file(("b.txt", "x\nx\nx\nx\nx"))
+            .await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: Some(30),
+            max_files: None,
+            max_total_lines: Some(3),
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(json["truncated"].as_bool().unwrap());
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_no_files_to_search() {
+        let test_base = TestBase::new().await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: Some("*.nonexistent".to_string()),
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert_eq!(json["numFiles"], 0);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_files_with_matches_no_match() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "nothing")).await;
+
+        let tool = Grep {
+            pattern: "zzz".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::FilesWithMatches),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(json["message"].as_str().unwrap().contains("No matches found"));
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_count_no_match() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "nothing")).await;
+
+        let tool = Grep {
+            pattern: "zzz".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Count),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(json["message"].as_str().unwrap().contains("No matches found"));
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[test]
+    fn test_truncate_line_short() {
+        let line = "short line";
+        assert_eq!(Grep::truncate_line(line), "short line");
+    }
+
+    #[test]
+    fn test_truncate_line_with_trailing_whitespace() {
+        let line = "hello   \t  ";
+        assert_eq!(Grep::truncate_line(line), "hello");
+    }
+
+    #[test]
+    fn test_serde_full() {
+        let json = r#"{"pattern":"foo","path":"/tmp","include":"*.rs","case_sensitive":true,"output_mode":"count","max_matches_per_file":10,"max_files":50,"max_total_lines":200,"max_depth":5}"#;
+        let g: Grep = serde_json::from_str(json).unwrap();
+        assert_eq!(g.pattern, "foo");
+        assert_eq!(g.path.as_deref(), Some("/tmp"));
+        assert_eq!(g.include.as_deref(), Some("*.rs"));
+        assert_eq!(g.case_sensitive, Some(true));
+        assert_eq!(g.output_mode, Some(OutputMode::Count));
+        assert_eq!(g.max_matches_per_file, Some(10));
+        assert_eq!(g.max_files, Some(50));
+        assert_eq!(g.max_total_lines, Some(200));
+        assert_eq!(g.max_depth, Some(5));
+    }
+
+    #[tokio::test]
+    async fn test_grep_max_depth_limit() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("a/b/c/deep.txt", "findme"))
+            .await
+            .with_file(("shallow.txt", "findme"))
+            .await;
+
+        let tool = Grep {
+            pattern: "findme".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Count),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: Some(1),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            // Only shallow.txt should be found at depth 1
+            assert_eq!(json["numFiles"], 1);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_sanitizes_trailing_quote() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "hello")).await;
+        let mut tool = Grep {
+            pattern: "hello\"".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.pattern, "hello");
+    }
+
+    #[test]
+    fn test_match_include_invalid_glob() {
+        // Invalid glob pattern should return false (the .ok() path returns None)
+        assert!(!Grep::match_include("[invalid", "file.rs"));
+    }
+
+    #[test]
+    fn test_aliases() {
+        assert_eq!(Grep::aliases(), Some(&["grep"][..]));
+    }
+
+    #[test]
+    fn test_truncate_line_exactly_max_length() {
+        let line = "x".repeat(MAX_LINE_LENGTH);
+        assert_eq!(Grep::truncate_line(&line), line);
+    }
+
+    #[test]
+    fn test_truncate_line_one_over_max() {
+        let line = "x".repeat(MAX_LINE_LENGTH + 1);
+        let result = Grep::truncate_line(&line);
+        assert!(result.contains("...[+1 chars]"));
+    }
+
+    #[tokio::test]
+    async fn test_grep_get_path_empty_string() {
+        let test_base = TestBase::new().await;
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some("".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+        // Empty string should fall through to cwd
+        let path = tool.get_path(&test_base).unwrap();
+        assert!(!path.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_grep_files_with_matches_truncated() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("a.txt", "x"))
+            .await
+            .with_file(("b.txt", "x"))
+            .await
+            .with_file(("c.txt", "x"))
+            .await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::FilesWithMatches),
+            max_matches_per_file: None,
+            max_files: Some(2),
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(json["truncated"].as_bool().unwrap());
+            assert_eq!(json["numFiles"], 3);
+            let results = json["results"].as_array().unwrap();
+            assert_eq!(results.len(), 2);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_count_truncated() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("a.txt", "x"))
+            .await
+            .with_file(("b.txt", "x"))
+            .await
+            .with_file(("c.txt", "x"))
+            .await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Count),
+            max_matches_per_file: None,
+            max_files: Some(2),
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(json["truncated"].as_bool().unwrap());
+            assert_eq!(json["numFiles"], 3);
+            let results = json["results"].as_array().unwrap();
+            assert_eq!(results.len(), 2);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grep_content_not_truncated() {
+        let test_base = TestBase::new().await.with_file(("a.txt", "x")).await;
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: Some(30),
+            max_files: Some(100),
+            max_total_lines: Some(100),
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            assert!(!json["truncated"].as_bool().unwrap());
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[test]
+    fn test_output_mode_default() {
+        let mode = OutputMode::default();
+        assert_eq!(mode, OutputMode::Content);
+    }
+
+    #[test]
+    fn test_output_mode_serde() {
+        let json = r#""files_with_matches""#;
+        let mode: OutputMode = serde_json::from_str(json).unwrap();
+        assert_eq!(mode, OutputMode::FilesWithMatches);
+    }
+
+    #[tokio::test]
+    async fn test_grep_binary_file_skipped() {
+        let test_base = TestBase::new().await;
+        let file_path = test_base.join("binary.bin");
+        let mut file = File::create(&file_path).unwrap();
+        // Write binary content with null bytes
+        file.write_all(&[0x00, 0x01, 0x02, b'x', 0x00]).unwrap();
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(test_base.join("").to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Json(json) = &result.items[0] {
+            // Binary file should be skipped
+            assert_eq!(json["numMatches"], 0);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_pattern_single_quote_not_at_end() {
+        let mut p = "he\"llo".to_string();
+        sanitize_pattern(&mut p);
+        // Quote not at end, count is 1 but doesn't end with quote
+        assert_eq!(p, "he\"llo");
+    }
+
+    #[test]
+    fn test_max_values_at_minimum() {
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: None,
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: Some(1),
+            max_files: Some(1),
+            max_total_lines: Some(1),
+            max_depth: Some(1),
+        };
+        assert_eq!(tool.max_matches_per_file(), 1);
+        assert_eq!(tool.max_files(), 1);
+        assert_eq!(tool.max_total_lines(), 1);
+        assert_eq!(tool.max_depth(), 1);
+    }
 }

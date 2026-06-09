@@ -1631,4 +1631,364 @@ mod tests {
             "AGENT_DISPLAY_OUT should be unset in blocking mode, got: {stdout}"
         );
     }
+
+    // ── Pure helper coverage ────────────────────────────────────────────
+
+    #[test]
+    fn format_output_no_truncation() {
+        let input = "short output";
+        let result = format_output(input, 100);
+        assert_eq!(result, "short output");
+    }
+
+    #[test]
+    fn format_output_with_truncation() {
+        let input = "a".repeat(200);
+        let result = format_output(&input, 50);
+        assert!(result.ends_with(" ... truncated"));
+        // The truncated portion should be at most 50 bytes of content
+        assert!(result.len() < 200);
+    }
+
+    #[test]
+    fn format_output_exact_boundary() {
+        let input = "x".repeat(100);
+        // Exactly at max_size — no truncation marker
+        let result = format_output(&input, 100);
+        assert_eq!(result, input);
+        assert!(!result.contains("truncated"));
+    }
+
+    #[test]
+    fn format_output_one_over_boundary() {
+        let input = "x".repeat(101);
+        let result = format_output(&input, 100);
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn format_output_empty_input() {
+        assert_eq!(format_output("", 100), "");
+    }
+
+    #[test]
+    fn build_output_result_without_agent_notes() {
+        let result = build_output_result("out", "err", "", "exit status: 0");
+        let json = extract_json(&result);
+        assert_eq!(json["stdout"], "out");
+        assert_eq!(json["stderr"], "err");
+        assert_eq!(json["exit_status"], "exit status: 0");
+        assert!(json.get("agent_notes").is_none());
+    }
+
+    #[test]
+    fn build_output_result_with_agent_notes() {
+        let result = build_output_result("out", "err", "notes here", "exit status: 1");
+        let json = extract_json(&result);
+        assert_eq!(json["stdout"], "out");
+        assert_eq!(json["stderr"], "err");
+        assert_eq!(json["exit_status"], "exit status: 1");
+        assert_eq!(json["agent_notes"], "notes here");
+    }
+
+    #[test]
+    fn build_output_result_truncates_large_stdout() {
+        let big = "x".repeat(MAX_COMMAND_OUTPUT_SIZE + 100);
+        let result = build_output_result(&big, "", "", "exit status: 0");
+        let json = extract_json(&result);
+        let stdout = json["stdout"].as_str().unwrap();
+        assert!(stdout.contains("truncated"));
+        assert!(stdout.len() < big.len());
+    }
+
+    #[test]
+    fn build_output_result_truncates_large_stderr() {
+        let big = "y".repeat(MAX_COMMAND_OUTPUT_SIZE + 100);
+        let result = build_output_result("", &big, "", "exit status: 0");
+        let json = extract_json(&result);
+        let stderr = json["stderr"].as_str().unwrap();
+        assert!(stderr.contains("truncated"));
+    }
+
+    #[test]
+    fn build_output_result_truncates_large_agent_notes() {
+        let big = "z".repeat(MAX_COMMAND_OUTPUT_SIZE + 100);
+        let result = build_output_result("", "", &big, "exit status: 0");
+        let json = extract_json(&result);
+        let notes = json["agent_notes"].as_str().unwrap();
+        assert!(notes.contains("truncated"));
+    }
+
+    // ── env_vars_with_user_agent coverage ───────────────────────────────
+
+    #[test]
+    fn env_vars_includes_git_editor() {
+        let vars = env_vars_with_user_agent();
+        assert_eq!(vars.get("GIT_EDITOR").unwrap(), "true");
+    }
+
+    #[test]
+    fn env_vars_includes_user_agent() {
+        let vars = env_vars_with_user_agent();
+        let ua = vars.get(USER_AGENT_ENV_VAR).unwrap();
+        assert!(ua.contains(USER_AGENT_APP_NAME));
+        assert!(ua.contains(USER_AGENT_VERSION_KEY));
+    }
+
+    // ── is_hidden boundary tests ────────────────────────────────────────
+
+    #[test]
+    fn is_hidden_boundary_just_below_ranges() {
+        // Characters just below each hidden range should NOT be hidden
+        assert!(!is_hidden('\u{DFFFE}')); // below TAG range (E0000)
+        assert!(!is_hidden('\u{200A}')); // below zero-width range (200B)
+        assert!(!is_hidden('\u{2027}')); // below separator range (2028)
+        assert!(!is_hidden('\u{205E}')); // below format control range (205F)
+        assert!(!is_hidden('\u{FFEF}')); // below specials range (FFF0)
+        assert!(!is_hidden('\u{FFFD}')); // replacement char preserved
+    }
+
+    #[test]
+    fn is_hidden_boundary_just_above_ranges() {
+        // Characters just above each hidden range should NOT be hidden
+        assert!(!is_hidden('\u{E0080}')); // above TAG range (E007F)
+        assert!(!is_hidden('\u{2010}')); // above zero-width range (200F)
+        assert!(!is_hidden('\u{2030}')); // above separator range (202F)
+        assert!(!is_hidden('\u{2070}')); // above format control range (206F)
+    }
+
+    #[test]
+    fn is_hidden_common_visible_chars() {
+        for c in ['a', 'Z', '0', ' ', '\n', '\t', '\r', '!', '~', '€', '🦀'] {
+            assert!(!is_hidden(c), "U+{:04X} should not be hidden", c as u32);
+        }
+    }
+
+    // ── FifoGuard drop cleanup ──────────────────────────────────────────
+
+    #[test]
+    fn fifo_guard_removes_file_on_drop() {
+        let tmp = std::env::temp_dir();
+        let path = tmp.join("test-fifo-guard-drop.fifo");
+        // Create a regular file to simulate
+        std::fs::write(&path, "").unwrap();
+        assert!(path.exists());
+
+        let guard = FifoGuard {
+            path: path.to_string_lossy().to_string(),
+        };
+        drop(guard);
+        assert!(!path.exists(), "FifoGuard drop should remove the file");
+    }
+
+    #[test]
+    fn fifo_guard_drop_nonexistent_file_no_panic() {
+        // Dropping a guard for a file that doesn't exist should not panic
+        let guard = FifoGuard {
+            path: "/tmp/nonexistent-fifo-test-12345.fifo".to_string(),
+        };
+        drop(guard); // should not panic
+    }
+
+    // ── make_fifo tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn make_display_fifo_creates_and_cleans_up() {
+        let guard = make_display_fifo("test-make-display");
+        assert!(guard.is_some());
+        let g = guard.unwrap();
+        let path = g.as_str().to_string();
+        assert!(std::path::Path::new(&path).exists());
+        assert!(path.contains("display"));
+        drop(g);
+        assert!(!std::path::Path::new(&path).exists());
+    }
+
+    #[test]
+    fn make_context_fifo_creates_and_cleans_up() {
+        let guard = make_context_fifo("test-make-context");
+        assert!(guard.is_some());
+        let g = guard.unwrap();
+        let path = g.as_str().to_string();
+        assert!(std::path::Path::new(&path).exists());
+        assert!(path.contains("context"));
+        drop(g);
+        assert!(!std::path::Path::new(&path).exists());
+    }
+
+    // ── validate tests ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn validate_empty_command_fails() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "".to_string(),
+            working_dir: None,
+        };
+        let err = cmd.validate(&test_base).await.unwrap_err();
+        assert!(err.contains("empty"), "expected empty error, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn validate_nonexistent_working_dir_fails() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo hi".to_string(),
+            working_dir: Some("/nonexistent_dir_xyz_12345".to_string()),
+        };
+        let err = cmd.validate(&test_base).await.unwrap_err();
+        assert!(
+            err.contains("Invalid working directory") || err.contains("not a directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_valid_command_succeeds() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo hi".to_string(),
+            working_dir: None,
+        };
+        assert!(cmd.validate(&test_base).await.is_ok());
+    }
+
+    // ── spawn_child / shell selection ───────────────────────────────────
+
+    #[tokio::test]
+    async fn spawn_child_uses_kiro_chat_shell_env() {
+        let test_base = TestBase::new().await;
+        let cmd = ExecuteCmd {
+            command: "echo shell_test".to_string(),
+            working_dir: None,
+        };
+        let result = cmd.execute(&test_base, None).await.unwrap();
+        let json = extract_json(&result);
+        assert!(json["stdout"].as_str().unwrap().contains("shell_test"));
+    }
+
+    #[tokio::test]
+    async fn spawn_child_invalid_shell_returns_error() {
+        use std::path::PathBuf;
+
+        use crate::util::providers::{
+            CwdProvider,
+            EnvProvider,
+            HomeProvider,
+        };
+
+        // Create a provider that returns a nonexistent shell
+        #[derive(Debug)]
+        struct BadShellProvider;
+        impl EnvProvider for BadShellProvider {
+            fn var(&self, key: &str) -> Result<String, std::env::VarError> {
+                if key == "KIRO_CHAT_SHELL" {
+                    Ok("/nonexistent_shell_xyz".to_string())
+                } else {
+                    std::env::var(key)
+                }
+            }
+        }
+        impl HomeProvider for BadShellProvider {
+            fn home(&self) -> Option<PathBuf> {
+                Some(PathBuf::from("/tmp"))
+            }
+        }
+        impl CwdProvider for BadShellProvider {
+            fn cwd(&self) -> Result<PathBuf, std::io::Error> {
+                Ok(PathBuf::from("/tmp"))
+            }
+        }
+        impl SystemProvider for BadShellProvider {}
+
+        let cmd = ExecuteCmd {
+            command: "echo hi".to_string(),
+            working_dir: None,
+        };
+        let result = cmd.execute(&BadShellProvider, None).await;
+        assert!(result.is_err(), "should fail with invalid shell");
+    }
+
+    // ── canonical_working_dir error path ────────────────────────────────
+
+    #[test]
+    fn canonical_working_dir_none_returns_none() {
+        use crate::util::test::TestProvider;
+
+        let provider = TestProvider::new();
+        let cmd = ExecuteCmd {
+            command: "echo".to_string(),
+            working_dir: None,
+        };
+        assert_eq!(cmd.canonical_working_dir(&provider).unwrap(), None);
+    }
+
+    // ── tool_schema test ────────────────────────────────────────────────
+
+    #[test]
+    fn tool_schema_is_valid_json() {
+        let schema = ExecuteCmd::tool_schema();
+        assert!(schema.is_object());
+        // Should have properties for command and working_dir
+        let props = schema.get("properties").or_else(|| {
+            schema
+                .get("$defs")
+                .and_then(|d| d.get("ExecuteCmd"))
+                .and_then(|e| e.get("properties"))
+        });
+        assert!(props.is_some(), "schema should have properties");
+    }
+
+    // ── BuiltInToolTrait coverage ───────────────────────────────────────
+
+    #[test]
+    fn tool_name_is_execute_cmd() {
+        assert_eq!(ExecuteCmd::name(), BuiltInToolName::ExecuteCmd);
+    }
+
+    #[test]
+    fn tool_description_not_empty() {
+        assert!(!ExecuteCmd::description().is_empty());
+    }
+
+    #[test]
+    fn tool_input_schema_is_valid_json() {
+        let schema_str = ExecuteCmd::input_schema();
+        let parsed: serde_json::Value = serde_json::from_str(&schema_str).unwrap();
+        assert_eq!(parsed["type"], "object");
+        assert!(parsed["properties"]["command"].is_object());
+    }
+
+    #[test]
+    fn tool_aliases_contains_expected() {
+        let aliases = ExecuteCmd::aliases().unwrap();
+        assert!(aliases.contains(&"shell"));
+        assert!(aliases.contains(&"execute_bash"));
+        assert!(aliases.contains(&"execute_cmd"));
+    }
+
+    // ── open_fifo_async error path ──────────────────────────────────────
+
+    #[test]
+    fn open_fifo_async_nonexistent_path_returns_error() {
+        let result = open_fifo_async("/nonexistent/path/to/fifo.fifo");
+        assert!(result.is_err());
+    }
+
+    // ── sanitize_unicode_tags with bstr lossy conversion ────────────────
+
+    #[test]
+    fn sanitize_handles_replacement_char() {
+        // U+FFFD (replacement character) should be preserved
+        let input = "hello\u{FFFD}world";
+        let result = sanitize_unicode_tags(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn sanitize_mixed_hidden_and_newlines() {
+        let input = "line1\u{200B}\nline2\u{E0041}\nline3";
+        let result = sanitize_unicode_tags(input);
+        assert_eq!(result, "line1\nline2\nline3");
+    }
 }

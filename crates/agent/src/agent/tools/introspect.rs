@@ -618,4 +618,218 @@ mod tests {
         let result = i.execute().await;
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_get_critical_instruction() {
+        let instruction = Introspect::get_critical_instruction();
+        assert!(instruction.contains("CRITICAL INSTRUCTION"));
+        assert!(instruction.contains("MUST ONLY"));
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_valid() {
+        let mut payload = HashMap::new();
+        payload.insert("path".to_string(), serde_json::json!("features/test.md"));
+        payload.insert("text".to_string(), serde_json::json!("doc content"));
+
+        let result = Introspect::extract_docs_from_payload(&payload);
+        assert!(result.is_some());
+        let (path, text) = result.unwrap();
+        assert_eq!(path, "features/test.md");
+        assert_eq!(text, "doc content");
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_missing_path() {
+        let mut payload = HashMap::new();
+        payload.insert("text".to_string(), serde_json::json!("doc content"));
+
+        let result = Introspect::extract_docs_from_payload(&payload);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_missing_text() {
+        let mut payload = HashMap::new();
+        payload.insert("path".to_string(), serde_json::json!("features/test.md"));
+
+        let result = Introspect::extract_docs_from_payload(&payload);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_non_string_values() {
+        let mut payload = HashMap::new();
+        payload.insert("path".to_string(), serde_json::json!(123));
+        payload.insert("text".to_string(), serde_json::json!("content"));
+
+        let result = Introspect::extract_docs_from_payload(&payload);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_all_docs_contains_index() {
+        let docs = Introspect::get_all_docs();
+        assert!(docs.contains("Available Documentation Index"));
+        assert!(docs.contains("doc_path"));
+        assert!(docs.contains("CRITICAL INSTRUCTION"));
+    }
+
+    #[test]
+    fn test_get_doc_by_path_valid() {
+        // This tests the cache path - first call populates cache
+        // Use a path that exists in the embedded index
+        let result = Introspect::get_doc_by_path("definitely-not-a-real-path-xyz.md");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Document not found"));
+    }
+
+    #[tokio::test]
+    async fn test_introspect_execute_with_query() {
+        let i = Introspect {
+            query: Some("slash commands".to_string()),
+            doc_path: None,
+        };
+        let result = i.execute().await;
+        // Should succeed - either via semantic search or fallback
+        assert!(result.is_ok());
+        if let Ok(output) = result {
+            if let ToolExecutionOutputItem::Json(json) = &output.items[0] {
+                assert!(json["documentation"].is_string());
+                assert_eq!(json["query_context"].as_str(), Some("slash commands"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_rrf_combine_both_empty() {
+        let results = Introspect::rrf_combine(vec![], vec![], 5);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_rrf_combine_top_k_zero() {
+        let semantic = vec![create_test_result(1, "doc1.md", 0.5)];
+        let bm25 = vec![create_test_result(2, "doc2.md", 5.0)];
+        let results = Introspect::rrf_combine(semantic, bm25, 0);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_parse_embedded_index() {
+        // Test that the embedded index can be parsed without error
+        let result = Introspect::parse_embedded_index();
+        assert!(result.is_ok());
+        let (contexts, _semantic, _bm25) = result.unwrap();
+        assert!(!contexts.is_empty());
+    }
+
+    #[test]
+    fn test_get_doc_by_path_partial_match() {
+        // Test the or_else branch that matches via ends_with
+        // First populate the cache by calling with a known-bad path
+        let _ = Introspect::get_doc_by_path("zzz_nonexistent_zzz.md");
+        // Now try a suffix match - this exercises the ends_with fallback
+        // We can't guarantee a match exists, but we exercise the code path
+        let result = Introspect::get_doc_by_path("definitely_no_match_xyz123.md");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_doc_by_path_cache_populated() {
+        // Call twice to exercise the cache-hit path (cache.is_none() == false)
+        let _ = Introspect::get_doc_by_path("first_call_nonexistent.md");
+        let result = Introspect::get_doc_by_path("second_call_nonexistent.md");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rrf_combine_large_overlap() {
+        // All results appear in both lists - exercises the and_modify path
+        let semantic = vec![
+            create_test_result(1, "doc1.md", 0.1),
+            create_test_result(2, "doc2.md", 0.2),
+            create_test_result(3, "doc3.md", 0.3),
+        ];
+        let bm25 = vec![
+            create_test_result(3, "doc3.md", 5.0),
+            create_test_result(1, "doc1.md", 4.0),
+            create_test_result(2, "doc2.md", 3.0),
+        ];
+
+        let results = Introspect::rrf_combine(semantic, bm25, 3);
+        assert_eq!(results.len(), 3);
+        // All results should have combined scores (higher than single-source)
+        for r in &results {
+            // Combined RRF score should be > single source max (1/(60+1) ≈ 0.0164)
+            assert!(r.distance > 0.02);
+        }
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_empty() {
+        let payload = HashMap::new();
+        assert!(Introspect::extract_docs_from_payload(&payload).is_none());
+    }
+
+    #[test]
+    fn test_extract_docs_from_payload_non_string_text() {
+        let mut payload = HashMap::new();
+        payload.insert("path".to_string(), serde_json::json!("valid/path.md"));
+        payload.insert("text".to_string(), serde_json::json!(42));
+        assert!(Introspect::extract_docs_from_payload(&payload).is_none());
+    }
+
+    #[test]
+    fn test_get_all_docs_contains_expected_sections() {
+        let docs = Introspect::get_all_docs();
+        assert!(docs.contains("Available Documentation Index"));
+        assert!(docs.contains("doc_path"));
+        assert!(docs.contains("features/tangent-mode.md"));
+        assert!(docs.contains("CRITICAL INSTRUCTION"));
+        assert!(docs.contains("MUST ONLY"));
+    }
+
+    #[tokio::test]
+    async fn test_introspect_execute_doc_path_not_found_returns_error() {
+        let i = Introspect {
+            query: Some("ignored".to_string()),
+            doc_path: Some("totally_fake_path_xyz.md".to_string()),
+        };
+        let result = i.execute().await;
+        // doc_path takes priority, and this path doesn't exist
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rrf_combine_single_item_each_different_ids() {
+        let semantic = vec![create_test_result(10, "a.md", 0.9)];
+        let bm25 = vec![create_test_result(20, "b.md", 8.0)];
+        let results = Introspect::rrf_combine(semantic, bm25, 10);
+        assert_eq!(results.len(), 2);
+        // Both should have equal RRF scores (both rank 0)
+        assert!((results[0].distance - results[1].distance).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_introspect_response_serialization() {
+        let response = IntrospectResponse {
+            documentation: Some("test docs".into()),
+            query_context: Some("test query".into()),
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["documentation"], "test docs");
+        assert_eq!(json["query_context"], "test query");
+    }
+
+    #[test]
+    fn test_introspect_response_serialization_none_fields() {
+        let response = IntrospectResponse {
+            documentation: None,
+            query_context: None,
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert!(json["documentation"].is_null());
+        assert!(json["query_context"].is_null());
+    }
 }

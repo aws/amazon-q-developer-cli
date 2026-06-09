@@ -558,4 +558,360 @@ mod tests {
             panic!("expected text output");
         }
     }
+
+    #[tokio::test]
+    async fn test_ls_empty_directory() {
+        let test_base = TestBase::new().await.with_directory("empty_dir").await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("empty_dir").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: None,
+        };
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            // Should have the user id prefix but no entries
+            assert!(!content.contains("empty_dir"));
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_long_format_file_metadata() {
+        let test_base = TestBase::new().await.with_file(("hello.txt", "hello world")).await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            // Long format: type+perms nlink uid gid size date path
+            assert!(content.contains("hello.txt"));
+            // File type indicator '-' for regular file
+            let lines: Vec<&str> = content.lines().collect();
+            let hello_line = lines.iter().find(|l| l.contains("hello.txt")).unwrap();
+            assert!(hello_line.starts_with('-'), "regular file should start with '-'");
+            // Should contain file size (11 bytes)
+            assert!(hello_line.contains("11"), "should show file size");
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_long_format_directory_metadata() {
+        let test_base = TestBase::new().await.with_directory("mydir").await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            let lines: Vec<&str> = content.lines().collect();
+            let dir_line = lines.iter().find(|l| l.contains("mydir")).unwrap();
+            assert!(dir_line.starts_with('d'), "directory should start with 'd'");
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_symlink_shown_in_listing() {
+        let test_base = TestBase::new().await.with_file(("real_file.txt", "content")).await;
+
+        tokio::fs::symlink(test_base.join("real_file.txt"), test_base.join("link.txt"))
+            .await
+            .unwrap();
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("link.txt"));
+            assert!(content.contains("real_file.txt"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_hidden_files_shown_without_filter() {
+        let test_base = TestBase::new()
+            .await
+            .with_file((".hidden", "secret"))
+            .await
+            .with_file(("visible.txt", "public"))
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(
+                content.contains(".hidden"),
+                "hidden files should appear with empty excludes"
+            );
+            assert!(content.contains("visible.txt"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_hidden_files_filtered_by_pattern() {
+        let test_base = TestBase::new()
+            .await
+            .with_file((".hidden", "secret"))
+            .await
+            .with_file(("visible.txt", "public"))
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![".*".to_string()]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(!content.contains(".hidden"), "dotfiles should be filtered");
+            assert!(content.contains("visible.txt"));
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_permission_denied() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_base = TestBase::new().await.with_directory("no_read").await;
+
+        // Remove read permission
+        let perms = std::fs::Permissions::from_mode(0o000);
+        std::fs::set_permissions(test_base.join("no_read"), perms).unwrap();
+
+        let tool = DirectoryOp {
+            path: test_base.join("no_read").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: None,
+        };
+
+        let result = tool.execute(&test_base).await;
+        // Restore permissions for cleanup
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(test_base.join("no_read"), perms).unwrap();
+
+        // Should fail with permission error (unless running as root)
+        let uid = unsafe { libc::geteuid() };
+        if uid != 0 {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("failed to read directory"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_deep_nesting() {
+        let test_base = TestBase::new().await.with_file(("a/b/c/d/e/deep.txt", "deep")).await;
+
+        // depth=0 should only show top level
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: Some(0),
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            let sep = std::path::MAIN_SEPARATOR;
+            assert!(
+                content.contains(&format!("{sep}a")) || content.contains("a"),
+                "should list top-level directory 'a'"
+            );
+            assert!(!content.contains("deep.txt"), "depth 0 should not show nested files");
+        }
+
+        // depth=5 should reach deep.txt (a/b/c/d/e = 5 levels)
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: Some(5),
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("deep.txt"), "depth 5 should reach nested file");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_depth_none_defaults_to_zero() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("top.txt", "top"))
+            .await
+            .with_file(("sub/nested.txt", "nested"))
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("top.txt"));
+            assert!(content.contains("sub"));
+            assert!(!content.contains("nested.txt"), "default depth should not recurse");
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_output_contains_user_id() {
+        let test_base = TestBase::new().await.with_file(("file.txt", "content")).await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: None,
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("User id:"), "output should contain user id prefix");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_sorted_by_modified_time_descending() {
+        let test_base = TestBase::new().await.with_file(("old.txt", "old")).await;
+
+        // Windows NTFS mtime granularity can be up to 100ms; use a larger delay to guarantee ordering
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        let test_base = test_base.with_file(("new.txt", "new")).await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            let new_pos = content.find("new.txt").unwrap();
+            let old_pos = content.find("old.txt").unwrap();
+            assert!(new_pos < old_pos, "newer files should appear first");
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_ls_broken_symlink() {
+        let test_base = TestBase::new().await;
+
+        // Create a symlink pointing to a non-existent target
+        tokio::fs::symlink("/nonexistent_target", test_base.join("broken_link"))
+            .await
+            .unwrap();
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec![]),
+        };
+
+        // DirEntry::metadata uses lstat (does NOT follow symlinks), so a broken
+        // symlink's metadata still resolves and the entry should appear in the listing.
+        let result = tool.execute(&test_base).await;
+        assert!(result.is_ok(), "broken symlinks should be handled gracefully via lstat");
+        let output = result.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &output.items[0] {
+            assert!(
+                content.contains("broken_link"),
+                "broken symlink should appear in directory listing, got: {content}"
+            );
+        } else {
+            panic!("expected Text output");
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_format_mode_all_permissions() {
+        assert_eq!(format_mode(0o777).iter().collect::<String>(), "rwxrwxrwx");
+        assert_eq!(format_mode(0o755).iter().collect::<String>(), "rwxr-xr-x");
+        assert_eq!(format_mode(0o644).iter().collect::<String>(), "rw-r--r--");
+        assert_eq!(format_mode(0o600).iter().collect::<String>(), "rw-------");
+        assert_eq!(format_mode(0o111).iter().collect::<String>(), "--x--x--x");
+        assert_eq!(format_mode(0o222).iter().collect::<String>(), "-w--w--w-");
+        assert_eq!(format_mode(0o444).iter().collect::<String>(), "r--r--r--");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_format_mode_masks_high_bits() {
+        // High bits (setuid, setgid, sticky) should be masked out
+        assert_eq!(format_mode(0o4755).iter().collect::<String>(), "rwxr-xr-x");
+        assert_eq!(format_mode(0o2755).iter().collect::<String>(), "rwxr-xr-x");
+        assert_eq!(format_mode(0o1755).iter().collect::<String>(), "rwxr-xr-x");
+    }
+
+    #[tokio::test]
+    async fn test_ls_multiple_exclude_patterns() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("keep.txt", "keep"))
+            .await
+            .with_file(("remove.log", "log"))
+            .await
+            .with_file(("remove.tmp", "tmp"))
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: None,
+            exclude_patterns: Some(vec!["*.log".to_string(), "*.tmp".to_string()]),
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("keep.txt"));
+            assert!(!content.contains("remove.log"));
+            assert!(!content.contains("remove.tmp"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_recursive_excludes_apply_to_subdirs() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("src/main.rs", "fn main() {}"))
+            .await
+            .with_file(("src/node_modules/pkg.js", "module"))
+            .await;
+
+        let tool = DirectoryOp {
+            path: test_base.join("").to_string_lossy().to_string(),
+            depth: Some(2),
+            exclude_patterns: None, // uses default IGNORE_PATTERNS
+        };
+
+        let result = tool.execute(&test_base).await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("main.rs"));
+            assert!(!content.contains("pkg.js"), "node_modules contents should be excluded");
+        }
+    }
 }

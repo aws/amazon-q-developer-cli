@@ -208,6 +208,17 @@ mod tests {
         ]
     }
 
+    // Minimal JPEG: SOI + APP0 header + EOI
+    fn create_test_jpeg() -> Vec<u8> {
+        vec![
+            0xff, 0xd8, 0xff, 0xe0, // SOI + APP0 marker
+            0x00, 0x10, // Length
+            0x4a, 0x46, 0x49, 0x46, 0x00, // JFIF identifier
+            0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, // JFIF data
+            0xff, 0xd9, // EOI
+        ]
+    }
+
     #[tokio::test]
     async fn test_read_valid_image() {
         let test_base = TestBase::new().await.with_file(("test.png", create_test_png())).await;
@@ -223,6 +234,33 @@ mod tests {
         if let ToolExecutionOutputItem::Image(image) = &result.items[0] {
             assert_eq!(image.format, ImageFormat::Png);
         }
+    }
+
+    #[tokio::test]
+    async fn test_read_valid_jpeg() {
+        let test_base = TestBase::new().await.with_file(("photo.jpg", create_test_jpeg())).await;
+
+        let tool = ImageOp {
+            paths: vec![test_base.join("photo.jpg").to_string_lossy().to_string()],
+        };
+
+        assert!(tool.validate().await.is_ok());
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 1);
+        if let ToolExecutionOutputItem::Image(image) = &result.items[0] {
+            assert_eq!(image.format, ImageFormat::Jpeg);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_jpeg_extension() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("photo.jpeg", create_test_jpeg()))
+            .await;
+
+        let result = read_image(test_base.join("photo.jpeg")).await.unwrap();
+        assert_eq!(result.format, ImageFormat::Jpeg);
     }
 
     #[tokio::test]
@@ -253,7 +291,8 @@ mod tests {
             paths: vec![test_base.join("test.txt").to_string_lossy().to_string()],
         };
 
-        assert!(tool.validate().await.is_err());
+        let err = tool.validate().await.unwrap_err();
+        assert!(err.contains("not a supported image type"));
     }
 
     #[tokio::test]
@@ -276,6 +315,64 @@ mod tests {
         assert!(tool.validate().await.is_err());
     }
 
+    #[tokio::test]
+    async fn test_validate_not_a_file() {
+        let test_base = TestBase::new().await.with_directory("subdir").await;
+
+        let tool = ImageOp {
+            paths: vec![test_base.join("subdir").to_string_lossy().to_string()],
+        };
+
+        let err = tool.validate().await.unwrap_err();
+        assert!(err.contains("not a supported image type") || err.contains("not a file"));
+    }
+
+    #[tokio::test]
+    async fn test_read_image_missing_extension() {
+        let test_base = TestBase::new().await.with_file(("noext", create_test_png())).await;
+
+        let result = read_image(test_base.join("noext")).await;
+        assert_eq!(result.unwrap_err(), "missing extension");
+    }
+
+    #[tokio::test]
+    async fn test_read_image_unsupported_extension() {
+        let test_base = TestBase::new().await.with_file(("file.bmp", create_test_png())).await;
+
+        let result = read_image(test_base.join("file.bmp")).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("unsupported format: bmp"));
+    }
+
+    #[tokio::test]
+    async fn test_read_image_nonexistent_path() {
+        let result = read_image("/tmp/does_not_exist_xyz.png").await;
+        let err = result.unwrap_err();
+        assert!(err.contains("failed to read file metadata"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_nonexistent_file() {
+        let tool = ImageOp {
+            paths: vec!["/tmp/nonexistent_image_test.png".to_string()],
+        };
+
+        let result = tool.execute().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_unsupported_format() {
+        let test_base = TestBase::new().await.with_file(("file.bmp", vec![0u8; 10])).await;
+
+        let tool = ImageOp {
+            paths: vec![test_base.join("file.bmp").to_string_lossy().to_string()],
+        };
+
+        let result = tool.execute().await;
+        assert!(result.is_err());
+    }
+
     #[test]
     fn test_is_supported_image_type() {
         assert!(is_supported_image_type("test.png"));
@@ -288,6 +385,29 @@ mod tests {
     }
 
     #[test]
+    fn test_is_supported_image_type_case_insensitive() {
+        assert!(is_supported_image_type("test.PNG"));
+        assert!(is_supported_image_type("test.Jpg"));
+        assert!(is_supported_image_type("test.WEBP"));
+        assert!(is_supported_image_type("test.GIF"));
+    }
+
+    #[test]
+    fn test_is_supported_image_type_no_extension() {
+        assert!(!is_supported_image_type("noextension"));
+        assert!(!is_supported_image_type("/path/to/file"));
+    }
+
+    #[test]
+    fn test_supported_image_formats_description() {
+        let desc = supported_image_formats_description();
+        assert!(desc.contains("png"));
+        assert!(desc.contains("jpeg"));
+        assert!(desc.contains("gif"));
+        assert!(desc.contains("webp"));
+    }
+
+    #[test]
     #[cfg(target_os = "macos")]
     fn test_pre_process_image_path_macos() {
         let input = "/path/Screenshot 2025-03-13 at 1.46.32 PM.png";
@@ -296,9 +416,114 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn test_pre_process_image_path_am() {
+        let input = "/path/Screenshot 2025-03-13 at 9.00.00 AM.png";
+        let expected = "/path/Screenshot 2025-03-13 at 9.00.00\u{202F}AM.png";
+        assert_eq!(pre_process_image_path(input), expected);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_pre_process_image_path_non_screenshot() {
+        let input = "/path/to/regular_image.png";
+        assert_eq!(pre_process_image_path(input), input);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_pre_process_image_path_screenshot_no_match() {
+        // Contains "Screenshot" but doesn't match the timestamp regex
+        let input = "/path/Screenshot random text.png";
+        assert_eq!(pre_process_image_path(input), input);
+    }
+
+    #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_pre_process_image_path_non_macos() {
         let input = "/path/Screenshot 2025-03-13 at 1.46.32 PM.png";
         assert_eq!(pre_process_image_path(input), input);
+    }
+
+    #[test]
+    fn test_pre_process_regular_path() {
+        let input = "/some/normal/path/image.png";
+        assert_eq!(pre_process_image_path(input), input);
+    }
+
+    #[test]
+    fn test_get_file_size() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), &[0u8; 42]).unwrap();
+        let md = std::fs::metadata(tmp.path()).unwrap();
+        assert_eq!(get_file_size(&md), 42);
+    }
+
+    #[tokio::test]
+    async fn test_validate_multiple_errors() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("bad.txt", "text"))
+            .await
+            .with_file(("good.png", create_test_png()))
+            .await;
+
+        let tool = ImageOp {
+            paths: vec![
+                test_base.join("bad.txt").to_string_lossy().to_string(),
+                test_base.join("good.png").to_string_lossy().to_string(),
+            ],
+        };
+
+        let err = tool.validate().await.unwrap_err();
+        assert!(err.contains("not a supported image type"));
+    }
+
+    #[tokio::test]
+    async fn test_read_image_gif_format() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("anim.gif", vec![0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))
+            .await;
+
+        let result = read_image(test_base.join("anim.gif")).await.unwrap();
+        assert_eq!(result.format, ImageFormat::Gif);
+    }
+
+    #[tokio::test]
+    async fn test_read_image_webp_format() {
+        // RIFF....WEBP header
+        let webp_bytes = vec![
+            0x52, 0x49, 0x46, 0x46, // RIFF
+            0x00, 0x00, 0x00, 0x00, // size
+            0x57, 0x45, 0x42, 0x50, // WEBP
+        ];
+        let test_base = TestBase::new().await.with_file(("photo.webp", webp_bytes)).await;
+
+        let result = read_image(test_base.join("photo.webp")).await.unwrap();
+        assert_eq!(result.format, ImageFormat::Webp);
+    }
+
+    #[tokio::test]
+    async fn test_read_image_exceeds_size_limit() {
+        let large_data = vec![0u8; (MAX_IMAGE_SIZE_BYTES + 1) as usize];
+        let test_base = TestBase::new().await.with_file(("huge.png", large_data)).await;
+
+        let result = read_image(test_base.join("huge.png")).await;
+        let err = result.unwrap_err();
+        assert!(err.contains("max supported size"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_exceeds_size_limit() {
+        let large_data = vec![0u8; (MAX_IMAGE_SIZE_BYTES + 1) as usize];
+        let test_base = TestBase::new().await.with_file(("huge.png", large_data)).await;
+
+        let tool = ImageOp {
+            paths: vec![test_base.join("huge.png").to_string_lossy().to_string()],
+        };
+
+        let err = tool.validate().await.unwrap_err();
+        assert!(err.contains("greater than the max supported size"));
     }
 }

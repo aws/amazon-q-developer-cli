@@ -383,6 +383,7 @@ mod tests {
         AgentConfigV2025_08_22,
         LocalMcpServerConfig,
         McpServerConfig,
+        RemoteMcpServerConfig,
     };
 
     fn agent_config_with_mcp() -> AgentConfig {
@@ -471,5 +472,290 @@ mod tests {
             "clear_mcp_configs must reset use_legacy_mcp_json to false"
         );
         assert!(cfg.mcp_servers().is_empty(), "agent-level MCP servers must be empty");
+    }
+
+    #[test]
+    fn test_global_prompt_none_when_not_set() {
+        let cfg = LoadedAgentConfig::new(
+            AgentConfig::default(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        assert_eq!(cfg.global_prompt(), None);
+    }
+
+    #[test]
+    fn test_global_prompt_none_when_resolution_failed() {
+        let cfg = LoadedAgentConfig::new(
+            AgentConfig::default(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::ResolutionFailed,
+        );
+        assert_eq!(cfg.global_prompt(), None);
+    }
+
+    #[test]
+    fn test_global_prompt_resolved_base_only() {
+        let cfg = LoadedAgentConfig::new(
+            AgentConfig::default(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::Resolved("base prompt".into()),
+        );
+        assert_eq!(cfg.global_prompt(), Some("base prompt".into()));
+    }
+
+    #[test]
+    fn test_global_prompt_with_prefix_and_suffix() {
+        let mut cfg = LoadedAgentConfig::new(
+            AgentConfig::default(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::Resolved("base".into()),
+        );
+        cfg.set_global_prompt_prefix("PRE:");
+        cfg.set_global_prompt_suffix(":SUF");
+        assert_eq!(cfg.global_prompt(), Some("PRE:base:SUF".into()));
+    }
+
+    #[test]
+    fn test_loaded_agent_config_accessors() {
+        let inner = AgentConfigV2025_08_22 {
+            name: "myagent".to_string(),
+            ..Default::default()
+        };
+        let cfg = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(inner),
+            ConfigSource::Workspace {
+                path: PathBuf::from("/tmp"),
+            },
+            ResolvedGlobalPrompt::None,
+        );
+        assert_eq!(cfg.name(), "myagent");
+        assert!(matches!(cfg.source(), ConfigSource::Workspace { .. }));
+        assert!(cfg.tools().is_empty());
+        assert!(cfg.tool_aliases().is_empty());
+        assert!(cfg.tool_settings().is_none());
+        assert!(cfg.allowed_tools().is_empty());
+        assert!(cfg.hooks().is_empty());
+        assert!(cfg.resources().is_empty());
+        assert!(cfg.resource_paths().is_empty());
+        assert!(cfg.model().is_none());
+    }
+
+    #[test]
+    fn test_loaded_agent_config_config_mut() {
+        let mut cfg = LoadedAgentConfig::new(
+            AgentConfig::default(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        let _m = cfg.config_mut();
+        let _am = cfg.allowed_tools_mut();
+    }
+
+    #[test]
+    fn test_loaded_mcp_server_config_is_enabled_local() {
+        let config = LoadedMcpServerConfig::new(
+            "test".into(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "/bin/echo".into(),
+                args: vec![],
+                env: None,
+                timeout_ms: 5000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            McpServerConfigSource::AgentConfig,
+        );
+        assert!(config.is_enabled());
+    }
+
+    #[test]
+    fn test_loaded_mcp_server_config_is_disabled_local() {
+        let config = LoadedMcpServerConfig::new(
+            "test".into(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "/bin/echo".into(),
+                args: vec![],
+                env: None,
+                timeout_ms: 5000,
+                disabled: true,
+                disabled_tools: vec![],
+            }),
+            McpServerConfigSource::AgentConfig,
+        );
+        assert!(!config.is_enabled());
+    }
+
+    #[test]
+    fn test_loaded_mcp_server_config_is_enabled_remote() {
+        let config = LoadedMcpServerConfig::new(
+            "test".into(),
+            McpServerConfig::Remote(RemoteMcpServerConfig {
+                url: "http://localhost".into(),
+                headers: HashMap::new(),
+                timeout_ms: 5000,
+                oauth_scopes: vec![],
+                oauth: None,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            McpServerConfigSource::GlobalMcpJson,
+        );
+        assert!(config.is_enabled());
+    }
+
+    #[test]
+    fn test_loaded_mcp_server_config_is_disabled_remote() {
+        let config = LoadedMcpServerConfig::new(
+            "test".into(),
+            McpServerConfig::Remote(RemoteMcpServerConfig {
+                url: "http://localhost".into(),
+                headers: HashMap::new(),
+                timeout_ms: 5000,
+                oauth_scopes: vec![],
+                oauth: None,
+                disabled: true,
+                disabled_tools: vec![],
+            }),
+            McpServerConfigSource::WorkspaceMcpJson,
+        );
+        assert!(!config.is_enabled());
+    }
+
+    #[test]
+    fn test_loaded_mcp_server_configs_server_names() {
+        let configs = LoadedMcpServerConfigs {
+            configs: vec![
+                LoadedMcpServerConfig::new(
+                    "server1".into(),
+                    McpServerConfig::Local(LocalMcpServerConfig {
+                        command: "/bin/echo".into(),
+                        args: vec![],
+                        env: None,
+                        timeout_ms: 5000,
+                        disabled: false,
+                        disabled_tools: vec![],
+                    }),
+                    McpServerConfigSource::AgentConfig,
+                ),
+                LoadedMcpServerConfig::new(
+                    "server2".into(),
+                    McpServerConfig::Local(LocalMcpServerConfig {
+                        command: "/bin/echo".into(),
+                        args: vec![],
+                        env: None,
+                        timeout_ms: 5000,
+                        disabled: false,
+                        disabled_tools: vec![],
+                    }),
+                    McpServerConfigSource::AgentConfig,
+                ),
+            ],
+            overridden_configs: vec![],
+        };
+        let names = configs.server_names();
+        assert_eq!(names, vec!["server1", "server2"]);
+    }
+
+    #[test]
+    fn test_agent_config_error_display() {
+        let err = AgentConfigError::AgentNotFound {
+            name: "foo".to_string(),
+        };
+        assert!(err.to_string().contains("foo"));
+
+        let err = AgentConfigError::InvalidAgentConfig {
+            path: "/tmp/x".into(),
+            message: "bad".into(),
+        };
+        assert!(err.to_string().contains("/tmp/x"));
+        assert!(err.to_string().contains("bad"));
+
+        let err = AgentConfigError::Channel;
+        assert!(err.to_string().contains("channel"));
+
+        let err = AgentConfigError::Custom("custom msg".into());
+        assert_eq!(err.to_string(), "custom msg");
+    }
+
+    #[test]
+    fn test_config_source_debug() {
+        let sources = vec![
+            ConfigSource::Workspace {
+                path: PathBuf::from("/tmp"),
+            },
+            ConfigSource::Global {
+                path: PathBuf::from("/home"),
+            },
+            ConfigSource::BuiltIn,
+            ConfigSource::Ephemeral,
+        ];
+        for s in sources {
+            let _ = format!("{:?}", s);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_load_mcp_config_from_path_valid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mcp.json");
+        std::fs::write(&path, r#"{"mcpServers":{"s1":{"command":"/bin/echo","args":[]}}}"#).unwrap();
+        let result = load_mcp_config_from_path(&path).await.unwrap();
+        assert!(result.mcp_servers.contains_key("s1"));
+    }
+
+    #[tokio::test]
+    async fn test_load_mcp_config_from_path_missing_file() {
+        let result = load_mcp_config_from_path("/nonexistent/path.json").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_mcp_config_from_path_invalid_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mcp.json");
+        std::fs::write(&path, "not json").unwrap();
+        let result = load_mcp_config_from_path(&path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_mcp_config_from_path_no_mcp_servers_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mcp.json");
+        std::fs::write(&path, r#"{"other": "value"}"#).unwrap();
+        let result = load_mcp_config_from_path(&path).await.unwrap();
+        assert!(result.mcp_servers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_mcp_config_from_path_skips_unrecognized_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mcp.json");
+        std::fs::write(
+            &path,
+            r#"{"mcpServers":{"good":{"command":"/bin/echo","args":[]},"bad":{"unknownField":true}}}"#,
+        )
+        .unwrap();
+        let result = load_mcp_config_from_path(&path).await.unwrap();
+        assert!(result.mcp_servers.contains_key("good"));
+        assert!(!result.mcp_servers.contains_key("bad"));
+    }
+
+    #[tokio::test]
+    async fn test_from_agent_config_overrides_duplicate_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace_path = tmp.path().join("workspace_mcp.json");
+        std::fs::write(
+            &workspace_path,
+            r#"{"mcpServers":{"foo":{"command":"/bin/ls","args":[]}}}"#,
+        )
+        .unwrap();
+
+        let cfg = agent_config_with_mcp();
+        let loaded = LoadedAgentConfig::new(cfg, ConfigSource::Ephemeral, ResolvedGlobalPrompt::None);
+        let result = LoadedMcpServerConfigs::from_agent_config(&loaded, Some(&workspace_path), None).await;
+
+        assert!(!result.overridden_configs.is_empty());
     }
 }

@@ -761,4 +761,260 @@ mod tests {
         let content = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(content, "baz\r\nbar\r\nbaz\r\n");
     }
+
+    #[tokio::test]
+    async fn test_str_replace_multiple_without_replace_all_errors() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "foo bar foo")).await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "foo".to_string(),
+            new_str: "baz".to_string(),
+            replace_all: false,
+            ..Default::default()
+        });
+
+        let result = tool.execute(None, &test_base).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_insert_at_line_zero() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", format!("line1{NEWLINE}line2")))
+            .await;
+
+        let tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "prepended".to_string(),
+            insert_line: Some(0),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
+        assert!(content.starts_with("prepended"));
+    }
+
+    #[tokio::test]
+    async fn test_insert_beyond_file_length() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", format!("line1{NEWLINE}line2")))
+            .await;
+
+        let tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "extra".to_string(),
+            insert_line: Some(999),
+            ..Default::default()
+        });
+
+        // Should clamp to end of file
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
+        assert!(content.contains("extra"));
+    }
+
+    #[tokio::test]
+    async fn test_insert_empty_content_validation_error() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "content")).await;
+
+        let mut tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "".to_string(),
+            insert_line: None,
+            ..Default::default()
+        });
+
+        let result = tool.validate(&test_base).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_create_file_bom_content() {
+        let test_base = TestBase::new().await;
+        let bom_content = "\u{FEFF}hello world";
+
+        let tool = FsWrite::Create(FileCreate {
+            path: test_base.join("bom.txt").to_string_lossy().to_string(),
+            content: bom_content.to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("bom.txt")).await.unwrap();
+        assert_eq!(content, bom_content);
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_multiline_old_str_lf() {
+        let test_base = TestBase::new().await.with_file(("test.txt", "aaa\nbbb\nccc")).await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "aaa\nbbb".to_string(),
+            new_str: "xxx\nyyy".to_string(),
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
+        assert_eq!(content, "xxx\nyyy\nccc");
+    }
+
+    #[tokio::test]
+    async fn test_file_line_tracker_defaults() {
+        let tracker = FileLineTracker::default();
+        assert_eq!(tracker.prev_fswrite_lines, 0);
+        assert_eq!(tracker.before_fswrite_lines, 0);
+        assert_eq!(tracker.after_fswrite_lines, 0);
+        assert_eq!(tracker.lines_added_by_agent, 0);
+        assert_eq!(tracker.lines_removed_by_agent, 0);
+        assert!(tracker.is_first_write);
+    }
+
+    #[test]
+    fn test_file_line_tracker_lines_by_user() {
+        let tracker = FileLineTracker {
+            prev_fswrite_lines: 10,
+            before_fswrite_lines: 15,
+            after_fswrite_lines: 0,
+            lines_added_by_agent: 0,
+            lines_removed_by_agent: 0,
+            is_first_write: false,
+        };
+        assert_eq!(tracker.lines_by_user(), 5);
+    }
+
+    #[test]
+    fn test_file_line_tracker_lines_by_agent() {
+        let tracker = FileLineTracker {
+            prev_fswrite_lines: 0,
+            before_fswrite_lines: 0,
+            after_fswrite_lines: 0,
+            lines_added_by_agent: 10,
+            lines_removed_by_agent: 3,
+            is_first_write: false,
+        };
+        assert_eq!(tracker.lines_by_agent(), 13);
+    }
+
+    #[tokio::test]
+    async fn test_make_context() {
+        let tool = FsWrite::Create(FileCreate {
+            path: "/some/path.txt".to_string(),
+            content: "content".to_string(),
+            ..Default::default()
+        });
+        let ctx = tool.make_context().await.unwrap();
+        assert_eq!(ctx.path, "/some/path.txt");
+    }
+
+    #[tokio::test]
+    async fn test_validate_replace_all_start_lines() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "foo\nbar\nfoo\nbaz"))
+            .await;
+
+        let mut tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "foo".to_string(),
+            new_str: "replaced".to_string(),
+            replace_all: true,
+            ..Default::default()
+        });
+
+        assert!(tool.validate(&test_base).await.is_ok());
+        assert_eq!(tool.start_lines(), vec![1, 3]);
+    }
+
+    #[test]
+    fn test_fs_write_path_accessor() {
+        let create = FsWrite::Create(FileCreate {
+            path: "/a/b.txt".to_string(),
+            content: "c".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(create.path(), "/a/b.txt");
+
+        let replace = FsWrite::StrReplace(StrReplace {
+            path: "/x/y.txt".to_string(),
+            old_str: "a".to_string(),
+            new_str: "b".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(replace.path(), "/x/y.txt");
+
+        let insert = FsWrite::Insert(Insert {
+            path: "/m/n.txt".to_string(),
+            content: "z".to_string(),
+            ..Default::default()
+        });
+        assert_eq!(insert.path(), "/m/n.txt");
+    }
+
+    #[test]
+    fn test_serde_create() {
+        let json = r#"{"command":"create","path":"/tmp/f.txt","content":"hello"}"#;
+        let tool: FsWrite = serde_json::from_str(json).unwrap();
+        assert!(matches!(tool, FsWrite::Create(_)));
+        assert_eq!(tool.path(), "/tmp/f.txt");
+    }
+
+    #[test]
+    fn test_serde_str_replace() {
+        let json = r#"{"command":"strReplace","path":"/tmp/f.txt","oldStr":"a","newStr":"b","replaceAll":true}"#;
+        let tool: FsWrite = serde_json::from_str(json).unwrap();
+        if let FsWrite::StrReplace(sr) = &tool {
+            assert_eq!(sr.old_str, "a");
+            assert_eq!(sr.new_str, "b");
+            assert!(sr.replace_all);
+        } else {
+            panic!("Expected StrReplace");
+        }
+    }
+
+    #[test]
+    fn test_serde_insert() {
+        let json = r#"{"command":"insert","path":"/tmp/f.txt","content":"line","insertLine":5}"#;
+        let tool: FsWrite = serde_json::from_str(json).unwrap();
+        if let FsWrite::Insert(ins) = &tool {
+            assert_eq!(ins.content, "line");
+            assert_eq!(ins.insert_line, Some(5));
+        } else {
+            panic!("Expected Insert");
+        }
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(FsWrite::name(), BuiltInToolName::FsWrite));
+        assert!(!FsWrite::description().is_empty());
+        assert!(!FsWrite::input_schema().is_empty());
+        assert_eq!(FsWrite::aliases(), Some(["fs_write", "write"].as_slice()));
+    }
+
+    #[tokio::test]
+    async fn test_insert_file_without_trailing_newline_appends() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "no trailing newline"))
+            .await;
+
+        let tool = FsWrite::Insert(Insert {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            content: "appended".to_string(),
+            insert_line: None,
+            ..Default::default()
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
+        assert!(content.contains(NEWLINE));
+        assert!(content.ends_with("appended"));
+    }
 }

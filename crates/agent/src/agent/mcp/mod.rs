@@ -667,6 +667,7 @@ impl From<McpServerActorEvent> for McpServerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::agent_config::definitions::LocalMcpServerConfig;
 
     #[test]
     fn test_mcp_manager_error_display() {
@@ -698,6 +699,13 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         let parsed: McpManagerError = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.to_string(), e.to_string());
+    }
+
+    #[test]
+    fn test_mcp_manager_error_from_actor_error() {
+        let actor_err = McpServerActorError::Channel;
+        let mgr_err: McpManagerError = actor_err.into();
+        assert!(matches!(mgr_err, McpManagerError::McpActor(_)));
     }
 
     #[test]
@@ -795,5 +803,832 @@ mod tests {
             McpServerEvent::Initializing { server_name } => assert_eq!(server_name, "x"),
             _ => panic!("expected Initializing"),
         }
+    }
+
+    #[test]
+    fn test_mcp_server_event_from_actor_event_all_variants() {
+        // Initializing
+        let evt = McpServerActorEvent::Initializing {
+            server_name: "s1".to_string(),
+        };
+        let converted: McpServerEvent = evt.into();
+        assert!(matches!(converted, McpServerEvent::Initializing { .. }));
+
+        // Initialized
+        let evt = McpServerActorEvent::Initialized {
+            server_name: "s2".to_string(),
+            serve_duration: Duration::from_millis(100),
+            list_tools_duration: Some(Duration::from_millis(50)),
+            list_prompts_duration: None,
+        };
+        let converted: McpServerEvent = evt.into();
+        match converted {
+            McpServerEvent::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            } => {
+                assert_eq!(server_name, "s2");
+                assert_eq!(serve_duration, Duration::from_millis(100));
+                assert_eq!(list_tools_duration, Some(Duration::from_millis(50)));
+                assert!(list_prompts_duration.is_none());
+            },
+            _ => panic!("expected Initialized"),
+        }
+
+        // InitializeError
+        let evt = McpServerActorEvent::InitializeError {
+            server_name: "s3".to_string(),
+            error: "fail".to_string(),
+        };
+        let converted: McpServerEvent = evt.into();
+        match converted {
+            McpServerEvent::InitializeError { server_name, error } => {
+                assert_eq!(server_name, "s3");
+                assert_eq!(error, "fail");
+            },
+            _ => panic!("expected InitializeError"),
+        }
+
+        // OauthRequest
+        let evt = McpServerActorEvent::OauthRequest {
+            server_name: "s4".to_string(),
+            oauth_url: "https://oauth.test".to_string(),
+        };
+        let converted: McpServerEvent = evt.into();
+        match converted {
+            McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                assert_eq!(server_name, "s4");
+                assert_eq!(oauth_url, "https://oauth.test");
+            },
+            _ => panic!("expected OauthRequest"),
+        }
+
+        // ToolListChanged
+        let evt = McpServerActorEvent::ToolListChanged {
+            server_name: "s5".to_string(),
+        };
+        let converted: McpServerEvent = evt.into();
+        assert!(matches!(converted, McpServerEvent::ToolListChanged { .. }));
+    }
+
+    #[test]
+    fn test_mcp_manager_new() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        assert!(mgr.servers.is_empty());
+        assert!(mgr.initializing_servers.is_empty());
+        assert!(mgr.failed_servers.is_empty());
+        assert!(mgr.event_buf.is_empty());
+    }
+
+    #[test]
+    #[ignore = "spawns real subprocess; can hang in coverage runs"]
+    fn test_mcp_manager_handle_mcp_actor_event_initialized() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (event_tx, _event_rx) = mpsc::channel(10);
+
+        // Simulate a server in initializing state
+        let handle = McpServerActor::spawn(
+            "test-server".to_string(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "false".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            PathBuf::from("/tmp"),
+            event_tx,
+        );
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("test-server".to_string(), (handle, tx));
+
+        // Handle Initialized event
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "test-server".to_string(),
+            serve_duration: Duration::from_millis(100),
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        });
+
+        assert!(mgr.servers.contains_key("test-server"));
+        assert!(!mgr.initializing_servers.contains_key("test-server"));
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "spawns real subprocess; can hang in coverage runs"]
+    fn test_mcp_manager_handle_mcp_actor_event_initialize_error() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (event_tx, _event_rx) = mpsc::channel(10);
+
+        let handle = McpServerActor::spawn(
+            "fail-server".to_string(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "false".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            PathBuf::from("/tmp"),
+            event_tx,
+        );
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("fail-server".to_string(), (handle, tx));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "fail-server".to_string(),
+            error: "connection refused".to_string(),
+        });
+
+        assert!(!mgr.initializing_servers.contains_key("fail-server"));
+        assert!(mgr.failed_servers.contains("fail-server"));
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    fn test_mcp_manager_handle_mcp_actor_event_oauth_request() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.handle_mcp_actor_event(McpServerActorEvent::OauthRequest {
+            server_name: "oauth-server".to_string(),
+            oauth_url: "https://auth.example.com/authorize".to_string(),
+        });
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    fn test_mcp_manager_handle_mcp_actor_event_tool_list_changed() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.handle_mcp_actor_event(McpServerActorEvent::ToolListChanged {
+            server_name: "some-server".to_string(),
+        });
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    fn test_mcp_manager_handle_mcp_actor_event_initializing_noop() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initializing {
+            server_name: "x".to_string(),
+        });
+        // Event is still buffered
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    fn test_mcp_manager_handle_mcp_actor_event_initialized_unknown_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        // No server in initializing_servers - should just warn and return
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "unknown".to_string(),
+            serve_duration: Duration::from_millis(100),
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        });
+        // Event is NOT buffered because we returned early
+        assert!(!mgr.servers.contains_key("unknown"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_get_tools_not_initialized() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
+                server_name: "nonexistent".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerNotInitialized { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_get_tools_failed_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.failed_servers.insert("bad-server".to_string());
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
+                server_name: "bad-server".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerFailed { .. })));
+    }
+
+    #[tokio::test]
+    #[ignore = "spawns real subprocess; can hang in coverage runs"]
+    async fn test_mcp_manager_handle_request_get_tools_initializing_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (event_tx, _event_rx) = mpsc::channel(10);
+        let handle = McpServerActor::spawn(
+            "init-server".to_string(),
+            McpServerConfig::Local(LocalMcpServerConfig {
+                command: "false".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            PathBuf::from("/tmp"),
+            event_tx,
+        );
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("init-server".to_string(), (handle, tx));
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
+                server_name: "init-server".to_string(),
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(McpManagerError::ServerCurrentlyInitializing { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_get_prompts_not_initialized() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetPrompts {
+                server_name: "nonexistent".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerNotInitialized { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_get_prompt_not_initialized() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetPrompt {
+                server_name: "nonexistent".to_string(),
+                name: "test".to_string(),
+                arguments: HashMap::new(),
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerNotInitialized { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_execute_tool_not_initialized() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::ExecuteTool {
+                server_name: "nonexistent".to_string(),
+                tool_name: "test_tool".to_string(),
+                args: None,
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerNotInitialized { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_request_terminate() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr.handle_mcp_manager_request(McpManagerRequest::Terminate).await;
+        assert!(matches!(result, Ok(McpManagerResponse::TerminateAcknowledged)));
+    }
+
+    #[tokio::test]
+    #[ignore = "spawns real subprocess; can hang in coverage runs"]
+    async fn test_mcp_manager_handle_request_launch_duplicate_initializing() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (event_tx, _event_rx) = mpsc::channel(10);
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "false".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let handle = McpServerActor::spawn(
+            "dup-server".to_string(),
+            config.clone(),
+            PathBuf::from("/tmp"),
+            event_tx,
+        );
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("dup-server".to_string(), (handle, tx));
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
+                server_name: "dup-server".to_string(),
+                config,
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(McpManagerError::ServerCurrentlyInitializing { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_spawn_and_terminate() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_clone() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        let _handle2 = handle.clone();
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_get_tool_specs_no_server() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        let result = handle.get_tool_specs("nonexistent".to_string()).await;
+        assert!(result.is_err());
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_get_prompts_no_server() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        let result = handle.get_prompts("nonexistent".to_string()).await;
+        assert!(result.is_err());
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_get_prompt_no_server() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        let result = handle
+            .get_prompt("nonexistent".to_string(), "p".to_string(), HashMap::new())
+            .await;
+        assert!(result.is_err());
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_execute_tool_no_server() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = mgr.spawn();
+        let result = handle
+            .execute_tool("nonexistent".to_string(), "tool".to_string(), None)
+            .await;
+        assert!(result.is_err());
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_handle_launch_server() {
+        let mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let mut handle = mgr.spawn();
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        // Launch returns a oneshot receiver for the result
+        let result = handle.launch_server("echo-server".to_string(), config).await;
+        assert!(result.is_ok());
+        handle.shutdown().await;
+    }
+
+    #[test]
+    fn test_mcp_manager_request_debug() {
+        let req = McpManagerRequest::Terminate;
+        let debug_str = format!("{:?}", req);
+        assert!(debug_str.contains("Terminate"));
+    }
+
+    #[test]
+    fn test_mcp_manager_request_clone() {
+        let req = McpManagerRequest::GetToolSpecs {
+            server_name: "x".to_string(),
+        };
+        let cloned = req.clone();
+        match cloned {
+            McpManagerRequest::GetToolSpecs { server_name } => assert_eq!(server_name, "x"),
+            _ => panic!("expected GetToolSpecs"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_manager_error_clone() {
+        let e = McpManagerError::ServerNotInitialized { name: "x".to_string() };
+        let cloned = e.clone();
+        assert_eq!(e.to_string(), cloned.to_string());
+    }
+
+    // --- Tests using dummy handles (no subprocess spawning) ---
+
+    #[test]
+    fn test_handle_actor_event_initialized_with_dummy_handle() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("srv");
+        let (tx, mut rx) = oneshot::channel();
+        mgr.initializing_servers.insert("srv".to_string(), (handle, tx));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "srv".to_string(),
+            serve_duration: Duration::from_millis(50),
+            list_tools_duration: Some(Duration::from_millis(10)),
+            list_prompts_duration: Some(Duration::from_millis(5)),
+        });
+
+        assert!(mgr.servers.contains_key("srv"));
+        assert!(!mgr.initializing_servers.contains_key("srv"));
+        assert_eq!(mgr.event_buf.len(), 1);
+        // The oneshot should have received Ok(())
+        assert!(rx.try_recv().unwrap().is_ok());
+    }
+
+    #[test]
+    fn test_handle_actor_event_initialize_error_with_dummy_handle() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("bad");
+        let (tx, mut rx) = oneshot::channel();
+        mgr.initializing_servers.insert("bad".to_string(), (handle, tx));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "bad".to_string(),
+            error: "timeout".to_string(),
+        });
+
+        assert!(!mgr.initializing_servers.contains_key("bad"));
+        assert!(mgr.failed_servers.contains("bad"));
+        assert_eq!(mgr.event_buf.len(), 1);
+        // The oneshot should have received an error
+        let result = rx.try_recv().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_handle_actor_event_initialize_error_no_matching_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        // No server in initializing_servers
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "ghost".to_string(),
+            error: "gone".to_string(),
+        });
+        // Should still track as failed
+        assert!(mgr.failed_servers.contains("ghost"));
+        assert_eq!(mgr.event_buf.len(), 1);
+    }
+
+    #[test]
+    fn test_handle_actor_event_initialized_duplicate_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        // Pre-populate servers with a dummy
+        mgr.servers
+            .insert("dup".to_string(), McpServerActorHandle::new_dummy("dup"));
+        // Also put in initializing
+        let handle = McpServerActorHandle::new_dummy("dup");
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("dup".to_string(), (handle, tx));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "dup".to_string(),
+            serve_duration: Duration::from_millis(1),
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        });
+
+        // Old server replaced, still in servers
+        assert!(mgr.servers.contains_key("dup"));
+        assert!(!mgr.initializing_servers.contains_key("dup"));
+    }
+
+    #[test]
+    fn test_handle_actor_event_initialized_dropped_receiver() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("dropped");
+        let (tx, rx) = oneshot::channel();
+        drop(rx); // Drop receiver before sending
+        mgr.initializing_servers.insert("dropped".to_string(), (handle, tx));
+
+        // Should not panic even though receiver is dropped
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "dropped".to_string(),
+            serve_duration: Duration::from_millis(1),
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        });
+
+        assert!(mgr.servers.contains_key("dropped"));
+    }
+
+    // --- Tests for handle_mcp_manager_request with injected state ---
+
+    #[tokio::test]
+    async fn test_request_get_tools_initializing_server_no_spawn() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("init-srv");
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("init-srv".to_string(), (handle, tx));
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
+                server_name: "init-srv".to_string(),
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(McpManagerError::ServerCurrentlyInitializing { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_request_launch_already_in_servers() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers
+            .insert("existing".to_string(), McpServerActorHandle::new_dummy("existing"));
+
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
+                server_name: "existing".to_string(),
+                config,
+            })
+            .await;
+        assert!(matches!(result, Err(McpManagerError::ServerAlreadyLaunched { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_request_launch_already_initializing_no_spawn() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("dup");
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert("dup".to_string(), (handle, tx));
+
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
+                server_name: "dup".to_string(),
+                config,
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(McpManagerError::ServerCurrentlyInitializing { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_request_terminate_with_servers() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers
+            .insert("s1".to_string(), McpServerActorHandle::new_dummy("s1"));
+        mgr.servers
+            .insert("s2".to_string(), McpServerActorHandle::new_dummy("s2"));
+
+        let result = mgr.handle_mcp_manager_request(McpManagerRequest::Terminate).await;
+        assert!(matches!(result, Ok(McpManagerResponse::TerminateAcknowledged)));
+    }
+
+    // --- event_buf processing tests ---
+
+    #[test]
+    fn test_event_buf_accumulates_multiple_events() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initializing {
+            server_name: "a".to_string(),
+        });
+        mgr.handle_mcp_actor_event(McpServerActorEvent::OauthRequest {
+            server_name: "b".to_string(),
+            oauth_url: "https://x".to_string(),
+        });
+        mgr.handle_mcp_actor_event(McpServerActorEvent::ToolListChanged {
+            server_name: "c".to_string(),
+        });
+        assert_eq!(mgr.event_buf.len(), 3);
+    }
+
+    #[test]
+    fn test_event_buf_drain() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.event_buf.push(McpServerActorEvent::Initializing {
+            server_name: "x".to_string(),
+        });
+        mgr.event_buf.push(McpServerActorEvent::ToolListChanged {
+            server_name: "y".to_string(),
+        });
+
+        let drained: Vec<_> = mgr.event_buf.drain(..).collect();
+        assert_eq!(drained.len(), 2);
+        assert!(mgr.event_buf.is_empty());
+    }
+
+    // --- failed_servers tracking ---
+
+    #[test]
+    fn test_failed_servers_multiple_failures() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "s1".to_string(),
+            error: "err1".to_string(),
+        });
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "s2".to_string(),
+            error: "err2".to_string(),
+        });
+        // Same server failing again
+        mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
+            server_name: "s1".to_string(),
+            error: "err3".to_string(),
+        });
+        assert_eq!(mgr.failed_servers.len(), 2);
+        assert!(mgr.failed_servers.contains("s1"));
+        assert!(mgr.failed_servers.contains("s2"));
+    }
+
+    // --- Serde tests for McpServerConfig variants ---
+
+    #[test]
+    fn test_serde_local_mcp_server_config() {
+        let config = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "node".to_string(),
+            args: vec!["server.js".to_string()],
+            env: Some(HashMap::from([("KEY".to_string(), "VAL".to_string())])),
+            timeout_ms: 5000,
+            disabled: false,
+            disabled_tools: vec!["tool1".to_string()],
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: McpServerConfig = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerConfig::Local(c) => {
+                assert_eq!(c.command, "node");
+                assert_eq!(c.args, vec!["server.js"]);
+                assert_eq!(c.timeout_ms, 5000);
+                assert!(!c.disabled);
+                assert_eq!(c.disabled_tools, vec!["tool1"]);
+            },
+            _ => panic!("expected Local"),
+        }
+    }
+
+    #[test]
+    fn test_serde_remote_mcp_server_config() {
+        use crate::agent::agent_config::definitions::RemoteMcpServerConfig;
+        let config = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://mcp.example.com".to_string(),
+            headers: HashMap::from([("Authorization".to_string(), "Bearer tok".to_string())]),
+            timeout_ms: 3000,
+            oauth_scopes: vec!["read".to_string()],
+            oauth: None,
+            disabled: true,
+            disabled_tools: vec![],
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: McpServerConfig = serde_json::from_str(&json).unwrap();
+        match parsed {
+            McpServerConfig::Remote(c) => {
+                assert_eq!(c.url, "https://mcp.example.com");
+                assert!(c.disabled);
+                assert_eq!(c.oauth_scopes, vec!["read"]);
+            },
+            _ => panic!("expected Remote"),
+        }
+    }
+
+    #[test]
+    fn test_serde_mcp_server_actor_event_all_variants() {
+        let events = vec![
+            McpServerActorEvent::Initializing {
+                server_name: "s".to_string(),
+            },
+            McpServerActorEvent::Initialized {
+                server_name: "s".to_string(),
+                serve_duration: Duration::from_secs(2),
+                list_tools_duration: Some(Duration::from_millis(200)),
+                list_prompts_duration: None,
+            },
+            McpServerActorEvent::InitializeError {
+                server_name: "s".to_string(),
+                error: "e".to_string(),
+            },
+            McpServerActorEvent::OauthRequest {
+                server_name: "s".to_string(),
+                oauth_url: "u".to_string(),
+            },
+            McpServerActorEvent::ToolListChanged {
+                server_name: "s".to_string(),
+            },
+        ];
+        for evt in events {
+            let json = serde_json::to_string(&evt).unwrap();
+            let _parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
+        }
+    }
+
+    // --- McpManagerError additional variants ---
+
+    #[test]
+    fn test_mcp_manager_error_all_variants_serde() {
+        let errors: Vec<McpManagerError> = vec![
+            McpManagerError::ServerNotInitialized { name: "a".to_string() },
+            McpManagerError::ServerCurrentlyInitializing { name: "b".to_string() },
+            McpManagerError::ServerFailed { name: "c".to_string() },
+            McpManagerError::ServerAlreadyLaunched { name: "d".to_string() },
+            McpManagerError::McpActor(McpServerActorError::Channel),
+            McpManagerError::McpActor(McpServerActorError::Custom("x".to_string())),
+            McpManagerError::McpActor(McpServerActorError::Service {
+                message: "svc err".to_string(),
+                source: None,
+            }),
+            McpManagerError::Channel,
+            McpManagerError::Custom("custom".to_string()),
+        ];
+        for e in &errors {
+            let json = serde_json::to_string(e).unwrap();
+            let parsed: McpManagerError = serde_json::from_str(&json).unwrap();
+            // Display should round-trip
+            assert!(!parsed.to_string().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_actor_error_display() {
+        let e = McpServerActorError::Service {
+            message: "connection reset".to_string(),
+            source: None,
+        };
+        assert!(e.to_string().contains("connection reset"));
+
+        let e2 = McpServerActorError::Channel;
+        assert_eq!(e2.to_string(), "The channel has closed");
+
+        let e3 = McpServerActorError::Custom("custom err".to_string());
+        assert_eq!(e3.to_string(), "custom err");
+    }
+
+    // --- McpManagerRequest variants ---
+
+    #[test]
+    fn test_mcp_manager_request_all_variants_clone_debug() {
+        let requests: Vec<McpManagerRequest> = vec![
+            McpManagerRequest::LaunchServer {
+                server_name: "s".to_string(),
+                config: McpServerConfig::Local(LocalMcpServerConfig {
+                    command: "x".to_string(),
+                    args: vec![],
+                    env: None,
+                    timeout_ms: 1000,
+                    disabled: false,
+                    disabled_tools: vec![],
+                }),
+            },
+            McpManagerRequest::GetToolSpecs {
+                server_name: "s".to_string(),
+            },
+            McpManagerRequest::GetPrompts {
+                server_name: "s".to_string(),
+            },
+            McpManagerRequest::GetPrompt {
+                server_name: "s".to_string(),
+                name: "p".to_string(),
+                arguments: HashMap::new(),
+            },
+            McpManagerRequest::ExecuteTool {
+                server_name: "s".to_string(),
+                tool_name: "t".to_string(),
+                args: None,
+            },
+            McpManagerRequest::Terminate,
+        ];
+        for req in &requests {
+            let cloned = req.clone();
+            let debug = format!("{:?}", cloned);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    // --- McpManager Default ---
+
+    #[test]
+    fn test_mcp_manager_default() {
+        let mgr = McpManager::default();
+        assert!(mgr.servers.is_empty());
+        assert!(mgr.failed_servers.is_empty());
     }
 }

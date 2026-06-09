@@ -526,6 +526,534 @@ mod tests {
         println!("parser_tests.json: {total} test cases passed");
     }
 
+    #[test]
+    fn test_empty_string() {
+        let r = parse_command("");
+        assert!(!r.parse_failed);
+        assert!(r.commands.is_empty());
+    }
+
+    #[test]
+    fn test_whitespace_only() {
+        let r = parse_command("   \t  ");
+        assert!(!r.parse_failed);
+        assert!(r.commands.is_empty());
+    }
+
+    #[test]
+    fn test_comment_only() {
+        // Comments-only input: non-empty but no commands → parse_failed
+        let r = parse_command("# this is a comment");
+        assert!(r.parse_failed);
+        assert!(r.commands.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_comments() {
+        let r = parse_command("# comment1\n# comment2");
+        assert!(r.parse_failed);
+        assert!(r.commands.is_empty());
+    }
+
+    #[test]
+    fn test_heredoc_multiline() {
+        let r = parse_command("cat <<EOF\nline1\nline2\nEOF");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].has_heredoc);
+        assert!(r.commands[0].has_redirection_to_file);
+        assert_eq!(r.commands[0].command_name, "cat");
+    }
+
+    #[test]
+    fn test_heredoc_with_pipe() {
+        let r = parse_command("cat <<EOF | grep hello\nline1\nEOF");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.has_heredoc));
+    }
+
+    #[test]
+    fn test_herestring() {
+        let r = parse_command("cat <<< \"hello\"");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].has_heredoc);
+    }
+
+    #[test]
+    fn test_command_substitution_dollar() {
+        let r = parse_command("echo $(uname -r)");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].has_command_substitution);
+    }
+
+    #[test]
+    fn test_command_substitution_backtick() {
+        let r = parse_command("echo `uname -r`");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].has_command_substitution);
+    }
+
+    #[test]
+    fn test_nested_command_substitution() {
+        let r = parse_command("echo $(cat $(find . -name '*.txt'))");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_command_substitution);
+    }
+
+    #[test]
+    fn test_single_quoted_string() {
+        let r = parse_command("echo 'hello world'");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].args, vec!["'hello world'"]);
+    }
+
+    #[test]
+    fn test_double_quoted_string_with_var() {
+        let r = parse_command("echo \"hello $USER\"");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_escape_sequences() {
+        let r = parse_command("echo \"hello\\nworld\"");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+    }
+
+    #[test]
+    fn test_ansi_c_string() {
+        let r = parse_command("echo $'\\x41\\n'");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].has_ansi_c_string);
+    }
+
+    #[test]
+    fn test_glob_expansion() {
+        let r = parse_command("ls *.rs");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "ls");
+        assert_eq!(r.commands[0].args, vec!["*.rs"]);
+    }
+
+    #[test]
+    fn test_glob_recursive() {
+        let r = parse_command("find . -name '*.txt'");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].args, vec![".", "-name", "'*.txt'"]);
+    }
+
+    #[test]
+    fn test_env_var_simple() {
+        let r = parse_command("echo $HOME");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_env_var_braces() {
+        let r = parse_command("echo ${PATH}");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_arithmetic_expansion() {
+        let r = parse_command("echo $((1 + 2))");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_subshell_simple() {
+        let r = parse_command("(ls)");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert!(r.commands[0].is_subshell);
+    }
+
+    #[test]
+    fn test_subshell_chain() {
+        let r = parse_command("(cmd1 && cmd2)");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 2);
+        assert!(r.commands[0].is_subshell);
+        assert!(r.commands[1].is_subshell);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::And));
+    }
+
+    #[test]
+    fn test_subshell_with_pipe() {
+        let r = parse_command("(cat file | grep foo)");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().all(|c| c.is_subshell));
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::Pipe));
+    }
+
+    #[test]
+    fn test_chain_and_or_sequence() {
+        let r = parse_command("a && b || c; d");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 4);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::And));
+        assert_eq!(r.commands[1].operator, Some(ChainOperator::Or));
+        assert_eq!(r.commands[2].operator, Some(ChainOperator::Sequence));
+        assert_eq!(r.commands[3].operator, None);
+    }
+
+    #[test]
+    fn test_process_substitution() {
+        let r = parse_command("diff <(ls a) <(ls b)");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_process_substitution);
+    }
+
+    #[test]
+    fn test_process_substitution_output() {
+        let r = parse_command("tee >(grep err > errors.log)");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_process_substitution);
+    }
+
+    #[test]
+    fn test_variable_assignment_standalone() {
+        // Standalone assignment without a command - tree-sitter parses it as variable_assignment
+        // at program level, which the parser doesn't extract as a command
+        let r = parse_command("FOO=bar");
+        assert!(r.parse_failed);
+        assert!(r.commands.is_empty());
+    }
+
+    #[test]
+    fn test_variable_assignment_with_command() {
+        let r = parse_command("VAR=value cmd arg");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "cmd");
+        assert_eq!(r.commands[0].variable_assignments, vec!["VAR=value"]);
+    }
+
+    #[test]
+    fn test_multiple_variable_assignments() {
+        let r = parse_command("A=1 B=2 cmd");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].variable_assignments, vec!["A=1", "B=2"]);
+    }
+
+    #[test]
+    fn test_export_declaration() {
+        let r = parse_command("export PATH=/usr/bin");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "export");
+        assert!(
+            r.commands[0]
+                .variable_assignments
+                .contains(&"PATH=/usr/bin".to_string())
+        );
+    }
+
+    #[test]
+    fn test_declare_command() {
+        let r = parse_command("declare -i NUM=42");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "declare");
+    }
+
+    #[test]
+    fn test_local_declaration() {
+        let r = parse_command("local x=5");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "local");
+    }
+
+    #[test]
+    fn test_redirect_multiple_targets() {
+        let r = parse_command("cmd > out.txt 2> err.txt");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_redirection_to_file);
+        assert!(r.commands[0].redirect_targets.contains(&"out.txt".to_string()));
+        assert!(r.commands[0].redirect_targets.contains(&"err.txt".to_string()));
+    }
+
+    #[test]
+    fn test_redirect_append() {
+        let r = parse_command("echo hi >> log.txt");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_redirection_to_file);
+        assert_eq!(r.commands[0].redirect_targets, vec!["log.txt"]);
+    }
+
+    #[test]
+    fn test_redirect_with_fd() {
+        let r = parse_command("cmd 2>&1");
+        assert!(!r.parse_failed);
+        // fd-to-fd duplicates (2>&1, 1>&2) are NOT file redirections.
+        assert!(!r.commands[0].has_redirection_to_file);
+        // fd-to-fd redirects don't produce targets
+        assert!(r.commands[0].redirect_targets.is_empty());
+    }
+
+    #[test]
+    fn test_redirect_quoted_target_not_extracted() {
+        // Quoted redirect targets are intentionally not extracted (fail closed)
+        let r = parse_command("echo hi > \"$FILE\"");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_redirection_to_file);
+        // Variable in target means it won't be a bare "word" node
+        assert!(r.commands[0].redirect_targets.is_empty());
+    }
+
+    #[test]
+    fn test_pipe_with_chain() {
+        let r = parse_command("cat f | grep x && echo ok");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 3);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::Pipe));
+        assert_eq!(r.commands[1].operator, Some(ChainOperator::And));
+    }
+
+    #[test]
+    fn test_command_with_path() {
+        let r = parse_command("/usr/bin/env python3");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_path, "/usr/bin/env");
+        assert_eq!(r.commands[0].command_name, "env");
+    }
+
+    #[test]
+    fn test_relative_path_command() {
+        let r = parse_command("./script.sh arg1");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_path, "./script.sh");
+        assert_eq!(r.commands[0].command_name, "script.sh");
+    }
+
+    #[test]
+    fn test_double_quoted_command_name() {
+        let r = parse_command("\"my cmd\" arg");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_path, "my cmd");
+        assert_eq!(r.commands[0].command_name, "my cmd");
+    }
+
+    #[test]
+    fn test_single_quoted_command_name() {
+        let r = parse_command("'my cmd' arg");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_path, "my cmd");
+    }
+
+    #[test]
+    fn test_newline_separated_commands() {
+        let r = parse_command("cmd1\ncmd2\ncmd3");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 3);
+    }
+
+    #[test]
+    fn test_semicolon_at_end() {
+        let r = parse_command("cmd1;");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::Sequence));
+    }
+
+    #[test]
+    fn test_complex_pipeline_with_redirect() {
+        let r = parse_command("find . -name '*.log' | xargs grep ERROR > results.txt");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 2);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::Pipe));
+        assert!(r.commands[1].has_redirection_to_file);
+    }
+
+    #[test]
+    fn test_heredoc_in_pipeline() {
+        let r = parse_command("cat <<EOF | sort\nbanana\napple\nEOF");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.has_heredoc));
+    }
+
+    #[test]
+    fn test_process_sub_in_redirected_statement() {
+        let r = parse_command("sort <(cat file) > sorted.txt");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_process_substitution);
+        assert!(r.commands[0].has_redirection_to_file);
+    }
+
+    #[test]
+    fn test_compound_statement_semicolons() {
+        let r = parse_command("echo a; echo b; echo c");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 3);
+        assert_eq!(r.commands[0].operator, Some(ChainOperator::Sequence));
+        assert_eq!(r.commands[1].operator, Some(ChainOperator::Sequence));
+    }
+
+    #[test]
+    fn test_raw_input_preserved() {
+        let input = "echo hello";
+        let r = parse_command(input);
+        assert_eq!(r.raw_input, input);
+    }
+
+    #[test]
+    fn test_subshell_nested() {
+        let r = parse_command("(echo a; (echo b))");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().all(|c| c.is_subshell));
+    }
+
+    #[test]
+    fn test_command_with_comment_after() {
+        let r = parse_command("ls -la # list all");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.len(), 1);
+        assert_eq!(r.commands[0].command_name, "ls");
+    }
+
+    #[test]
+    fn test_heredoc_redirect_on_redirected_statement() {
+        let r = parse_command("grep pattern <<EOF > out.txt\nhello pattern\nEOF");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_heredoc);
+        assert!(r.commands[0].has_redirection_to_file);
+    }
+
+    #[test]
+    fn test_readonly_declaration() {
+        let r = parse_command("readonly X=10");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "readonly");
+    }
+
+    #[test]
+    fn test_typeset_declaration() {
+        let r = parse_command("typeset -i N=5");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "typeset");
+    }
+
+    #[test]
+    fn test_variable_expansion_in_double_quotes() {
+        let r = parse_command("echo \"${HOME}/bin\"");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_arithmetic_in_command() {
+        let r = parse_command("echo $((2 * 3 + 1))");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_variable_expansion);
+    }
+
+    #[test]
+    fn test_background_job() {
+        let r = parse_command("sleep 100 &");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands[0].command_name, "sleep");
+    }
+
+    #[test]
+    fn test_redirected_subshell() {
+        let r = parse_command("(echo a; echo b) > combined.txt");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.is_subshell && c.has_redirection_to_file));
+    }
+
+    #[test]
+    fn test_redirected_declaration() {
+        // declaration_command with redirection - tests redirected_statement with declaration
+        let r = parse_command("export FOO=bar > /dev/null");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_redirection_to_file);
+    }
+
+    #[test]
+    fn test_for_loop_commands() {
+        // for loop - tests the wildcard `_` branch in extract_commands
+        let r = parse_command("for i in 1 2 3; do echo $i; done");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.command_name == "echo"));
+    }
+
+    #[test]
+    fn test_while_loop() {
+        let r = parse_command("while true; do echo loop; done");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.command_name == "echo"));
+    }
+
+    #[test]
+    fn test_if_statement() {
+        let r = parse_command("if true; then echo yes; fi");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.command_name == "echo"));
+    }
+
+    #[test]
+    fn test_case_statement() {
+        let r = parse_command("case $x in a) echo a;; esac");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.command_name == "echo"));
+    }
+
+    #[test]
+    fn test_function_definition() {
+        let r = parse_command("foo() { echo hello; }");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.command_name == "echo"));
+    }
+
+    #[test]
+    fn test_command_group_braces() {
+        // { cmd; } - compound_statement / group command
+        let r = parse_command("{ echo a; echo b; }");
+        assert!(!r.parse_failed);
+        assert_eq!(r.commands.iter().filter(|c| c.command_name == "echo").count(), 2);
+    }
+
+    #[test]
+    fn test_redirected_list() {
+        // A list inside a redirected_statement
+        let r = parse_command("{ cmd1 && cmd2; } > out.txt");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.has_redirection_to_file));
+    }
+
+    #[test]
+    fn test_heredoc_with_command_substitution() {
+        let r = parse_command("cat <<EOF\n$(whoami)\nEOF");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_heredoc);
+    }
+
+    #[test]
+    fn test_pipe_to_redirected() {
+        let r = parse_command("echo hi | tee file.txt > /dev/null");
+        assert!(!r.parse_failed);
+        assert!(r.commands.iter().any(|c| c.has_redirection_to_file));
+    }
+
+    #[test]
+    fn test_ansi_c_string_in_args() {
+        let r = parse_command("printf $'hello\\tworld\\n'");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_ansi_c_string);
+    }
+
+    #[test]
+    fn test_command_substitution_in_variable() {
+        let r = parse_command("DIR=$(pwd) ls");
+        assert!(!r.parse_failed);
+        assert!(r.commands[0].has_command_substitution);
+    }
+
     /// Debug helper to visualize tree-sitter AST for a command.
     /// To use: uncomment the #[test] attribute and change the input string.
     #[test]

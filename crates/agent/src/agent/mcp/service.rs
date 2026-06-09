@@ -654,6 +654,34 @@ impl RunningMcpService {
             InnerService::Peer(peer) => peer.is_transport_closed(),
         }
     }
+
+    /// Creates a test-only `RunningMcpService` with a closed transport.
+    #[cfg(test)]
+    pub(crate) fn new_closed_for_test() -> Self {
+        let (ours, _theirs) = tokio::io::duplex(64);
+        drop(_theirs);
+        let service = McpService {
+            server_name: "test".to_string(),
+            config: McpServerConfig::Local(crate::agent::agent_config::definitions::LocalMcpServerConfig {
+                command: "test".to_string(),
+                args: vec![],
+                env: None,
+                timeout_ms: 1000,
+                disabled: false,
+                disabled_tools: vec![],
+            }),
+            cred_path: PathBuf::from("/tmp"),
+            message_tx: mpsc::channel(1).0,
+        };
+        let ct = tokio_util::sync::CancellationToken::new();
+        ct.cancel(); // Cancel immediately so transport is closed
+        let boxed: Box<dyn DynService<RoleClient>> = Box::new(service);
+        let rs = rmcp::service::serve_directly_with_ct(boxed, ours, None, ct);
+        Self {
+            running_service: InnerService::Original(rs),
+            auth_client: None,
+        }
+    }
 }
 
 /// Wrapper around rmcp service types to enable cloning.
@@ -720,6 +748,44 @@ mod tests {
     }
 
     #[test]
+    fn test_mcp_service_clone() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("test".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        let cloned = service.clone();
+        assert_eq!(cloned.server_name, "test");
+    }
+
+    #[test]
+    fn test_mcp_service_debug() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("debug-test".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        let debug_str = format!("{:?}", service);
+        assert!(debug_str.contains("debug-test"));
+    }
+
+    #[test]
     fn test_launch_metadata_creation() {
         let m = LaunchMetadata {
             serve_time_taken: Duration::from_secs(1),
@@ -731,6 +797,7 @@ mod tests {
         };
         assert_eq!(m.serve_time_taken, Duration::from_secs(1));
         assert!(m.tools.is_none());
+        assert!(m.prompts.is_none());
     }
 
     #[test]
@@ -745,6 +812,8 @@ mod tests {
         };
         assert!(m.tools.is_some());
         assert_eq!(m.list_tools_duration, Some(Duration::from_millis(100)));
+        assert!(m.prompts.is_some());
+        assert_eq!(m.list_prompts_duration, Some(Duration::from_millis(50)));
     }
 
     #[test]
@@ -813,5 +882,482 @@ mod tests {
         assert_eq!(map.get("read_only_tool").and_then(|a| a.read_only_hint), Some(true));
         assert!(!map.contains_key("no_hint_tool"));
         assert!(!map.contains_key("bare_tool"));
+    }
+
+    #[test]
+    fn test_launch_metadata_debug() {
+        let m = LaunchMetadata {
+            serve_time_taken: Duration::from_secs(1),
+            tools: None,
+            tool_annotations: None,
+            list_tools_duration: None,
+            prompts: None,
+            list_prompts_duration: None,
+        };
+        let debug_str = format!("{:?}", m);
+        assert!(debug_str.contains("LaunchMetadata"));
+    }
+
+    #[test]
+    fn test_mcp_service_get_info() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("test".to_string(), cfg, PathBuf::from("/tmp"), tx);
+
+        #[allow(unused_imports)]
+        use rmcp::Service;
+        let info = rmcp::Service::get_info(&service);
+        assert_eq!(info.client_info.name, "Q DEV CLI");
+        assert_eq!(info.client_info.version, "1.0.0");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_service_launch_registry_config_fails() {
+        use crate::agent::agent_config::definitions::RegistryMcpServerConfig;
+
+        let cfg = McpServerConfig::Registry(RegistryMcpServerConfig {
+            server_type: "registry".to_string(),
+            env: None,
+            headers: None,
+            timeout: None,
+            oauth_scopes: vec![],
+            oauth: None,
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let service = McpService::new("registry-test".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        let result = service.launch(&event_tx).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not resolved"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_service_launch_local_invalid_command() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "/nonexistent/binary/path/xyz123".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 5000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let service = McpService::new("bad-cmd".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        let result = service.launch(&event_tx).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "spawns real cat subprocess; hangs waiting for MCP protocol response"]
+    async fn test_mcp_service_launch_local_with_env() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "cat".to_string(),
+            args: vec![],
+            env: Some(HashMap::from([
+                ("MY_VAR".to_string(), "my_value".to_string()),
+                ("ANOTHER".to_string(), "$HOME".to_string()),
+            ])),
+            timeout_ms: 5000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+
+        let (tx, _rx) = mpsc::channel(8);
+        let (event_tx, _event_rx) = mpsc::channel(8);
+        let service = McpService::new("env-test".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        // cat will start but won't speak MCP protocol, so launch will fail
+        let result = service.launch(&event_tx).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_running_mcp_service_clone_is_derived() {
+        fn assert_clone<T: Clone>() {}
+        fn assert_debug<T: std::fmt::Debug>() {}
+        assert_clone::<RunningMcpService>();
+        assert_debug::<RunningMcpService>();
+    }
+
+    #[test]
+    fn test_inner_service_debug_format() {
+        fn assert_debug<T: std::fmt::Debug>() {}
+        assert_debug::<InnerService>();
+    }
+
+    // --- Serde tests for McpServerConfig variants ---
+
+    #[test]
+    fn test_serde_local_config() {
+        let json = r#"{"command":"echo","args":["hi"],"env":{"K":"V"},"timeoutMs":5000,"disabled":false}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(cfg, McpServerConfig::Local(_)));
+        if let McpServerConfig::Local(l) = &cfg {
+            assert_eq!(l.command, "echo");
+            assert_eq!(l.args, vec!["hi"]);
+            assert_eq!(l.env.as_ref().unwrap()["K"], "V");
+            assert_eq!(l.timeout_ms, 5000);
+            assert!(!l.disabled);
+        }
+        // roundtrip
+        let serialized = serde_json::to_string(&cfg).unwrap();
+        let _: McpServerConfig = serde_json::from_str(&serialized).unwrap();
+    }
+
+    #[test]
+    fn test_serde_local_config_defaults() {
+        // minimal: only command required
+        let json = r#"{"command":"node"}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        if let McpServerConfig::Local(l) = cfg {
+            assert_eq!(l.command, "node");
+            assert!(l.args.is_empty());
+            assert!(l.env.is_none());
+            assert_eq!(l.timeout_ms, 120_000); // default_timeout
+            assert!(!l.disabled);
+            assert!(l.disabled_tools.is_empty());
+        } else {
+            panic!("expected Local");
+        }
+    }
+
+    #[test]
+    fn test_serde_local_config_timeout_alias() {
+        // "timeout" alias for "timeoutMs"
+        let json = r#"{"command":"x","timeout":9999}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        if let McpServerConfig::Local(l) = cfg {
+            assert_eq!(l.timeout_ms, 9999);
+        } else {
+            panic!("expected Local");
+        }
+    }
+
+    #[test]
+    fn test_serde_remote_config() {
+        let json = r#"{"url":"https://example.com/mcp","headers":{"Auth":"Bearer tok"},"timeoutMs":10000}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(cfg, McpServerConfig::Remote(_)));
+        if let McpServerConfig::Remote(r) = &cfg {
+            assert_eq!(r.url, "https://example.com/mcp");
+            assert_eq!(r.headers["Auth"], "Bearer tok");
+            assert_eq!(r.timeout_ms, 10000);
+        }
+        let serialized = serde_json::to_string(&cfg).unwrap();
+        let _: McpServerConfig = serde_json::from_str(&serialized).unwrap();
+    }
+
+    #[test]
+    fn test_serde_remote_config_defaults() {
+        let json = r#"{"url":"http://localhost:8080"}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        if let McpServerConfig::Remote(r) = cfg {
+            assert_eq!(r.url, "http://localhost:8080");
+            assert!(r.headers.is_empty());
+            assert_eq!(r.timeout_ms, 120_000);
+            assert!(r.oauth_scopes.is_empty());
+            assert!(r.oauth.is_none());
+            assert!(!r.disabled);
+        } else {
+            panic!("expected Remote");
+        }
+    }
+
+    #[test]
+    fn test_serde_registry_config() {
+        let json = r#"{"type":"registry","env":{"A":"B"},"timeout":5000,"oauthScopes":["read"]}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(cfg, McpServerConfig::Registry(_)));
+        if let McpServerConfig::Registry(r) = &cfg {
+            assert_eq!(r.server_type, "registry");
+            assert_eq!(r.env.as_ref().unwrap()["A"], "B");
+            assert_eq!(r.timeout, Some(5000));
+            assert_eq!(r.oauth_scopes, vec!["read"]);
+        }
+        let serialized = serde_json::to_string(&cfg).unwrap();
+        let _: McpServerConfig = serde_json::from_str(&serialized).unwrap();
+    }
+
+    #[test]
+    fn test_serde_local_with_disabled_tools() {
+        let json = r#"{"command":"srv","disabledTools":["tool_a","tool_b"]}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        if let McpServerConfig::Local(l) = cfg {
+            assert_eq!(l.disabled_tools, vec!["tool_a", "tool_b"]);
+        } else {
+            panic!("expected Local");
+        }
+    }
+
+    #[test]
+    fn test_serde_remote_with_oauth() {
+        let json = r#"{"url":"https://x.com","oauth":{"clientId":"cid","redirectUri":"http://localhost:7778"}}"#;
+        let cfg: McpServerConfig = serde_json::from_str(json).unwrap();
+        if let McpServerConfig::Remote(r) = cfg {
+            let oauth = r.oauth.unwrap();
+            assert_eq!(oauth.client_id, Some("cid".to_string()));
+            assert_eq!(oauth.redirect_uri, Some("http://localhost:7778".to_string()));
+        } else {
+            panic!("expected Remote");
+        }
+    }
+
+    // --- handle_request tests ---
+
+    fn make_service() -> McpService {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "echo".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let (tx, _rx) = mpsc::channel(8);
+        McpService::new("test".to_string(), cfg, PathBuf::from("/tmp"), tx)
+    }
+
+    // --- get_info tests ---
+
+    #[test]
+    fn test_get_info_protocol_version() {
+        let service = make_service();
+        let info = rmcp::Service::get_info(&service);
+        assert_eq!(info.client_info.name, "Q DEV CLI");
+        assert_eq!(info.client_info.version, "1.0.0");
+    }
+
+    // --- McpService with Remote config ---
+
+    #[test]
+    fn test_mcp_service_new_remote() {
+        let cfg = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://example.com".to_string(),
+            headers: HashMap::from([("X-Key".to_string(), "val".to_string())]),
+            timeout_ms: 60_000,
+            oauth_scopes: vec!["scope1".to_string()],
+            oauth: None,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("remote-srv".to_string(), cfg, PathBuf::from("/cred"), tx);
+        assert_eq!(service.server_name, "remote-srv");
+    }
+
+    #[test]
+    fn test_mcp_service_new_registry() {
+        use crate::agent::agent_config::definitions::RegistryMcpServerConfig;
+        let cfg = McpServerConfig::Registry(RegistryMcpServerConfig {
+            server_type: "registry".to_string(),
+            env: None,
+            headers: None,
+            timeout: None,
+            oauth_scopes: vec![],
+            oauth: None,
+        });
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("reg".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        assert_eq!(service.server_name, "reg");
+    }
+
+    // --- LaunchMetadata with populated fields ---
+
+    #[test]
+    fn test_launch_metadata_with_tool_specs() {
+        use crate::agent::agent_loop::types::ToolSpec;
+        let tools = vec![ToolSpec {
+            name: "read_file".to_string(),
+            description: "Reads a file".to_string(),
+            input_schema: serde_json::Map::new(),
+        }];
+        let prompts = vec![Prompt {
+            name: "summarize".to_string(),
+            description: Some("Summarize text".to_string()),
+            arguments: Some(vec![]),
+        }];
+        let m = LaunchMetadata {
+            serve_time_taken: Duration::from_millis(200),
+            tools: Some(tools),
+            tool_annotations: None,
+            list_tools_duration: Some(Duration::from_millis(50)),
+            prompts: Some(prompts),
+            list_prompts_duration: Some(Duration::from_millis(30)),
+        };
+        assert_eq!(m.tools.as_ref().unwrap().len(), 1);
+        assert_eq!(m.tools.as_ref().unwrap()[0].name, "read_file");
+        assert_eq!(m.prompts.as_ref().unwrap()[0].name, "summarize");
+    }
+
+    // --- Constants ---
+
+    #[test]
+    fn test_constants_values() {
+        assert_eq!(SHUTDOWN_TIMEOUT, Duration::from_secs(3));
+        assert_eq!(MCP_AUTH_REFRESH_FAILED, "MCP_AUTH_REFRESH_FAILED");
+        assert_eq!(MCP_AUTH_REAUTH_FAILED, "MCP_AUTH_REAUTH_FAILED");
+    }
+
+    // --- McpService cred_path field ---
+
+    #[test]
+    fn test_mcp_service_stores_cred_path() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "x".to_string(),
+            args: vec![],
+            env: None,
+            timeout_ms: 1000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("s".to_string(), cfg, PathBuf::from("/my/cred/path"), tx);
+        assert_eq!(service.cred_path, PathBuf::from("/my/cred/path"));
+    }
+
+    // --- Config field access ---
+
+    #[test]
+    fn test_mcp_service_config_field() {
+        use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+        let cfg = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "my-cmd".to_string(),
+            args: vec!["--flag".to_string()],
+            env: Some(HashMap::from([("K".to_string(), "V".to_string())])),
+            timeout_ms: 7000,
+            disabled: true,
+            disabled_tools: vec!["t1".to_string()],
+        });
+        let (tx, _rx) = mpsc::channel(8);
+        let service = McpService::new("srv".to_string(), cfg, PathBuf::from("/tmp"), tx);
+        if let McpServerConfig::Local(l) = &service.config {
+            assert_eq!(l.command, "my-cmd");
+            assert_eq!(l.args, vec!["--flag"]);
+            assert!(l.disabled);
+            assert_eq!(l.disabled_tools, vec!["t1"]);
+        } else {
+            panic!("expected Local");
+        }
+    }
+
+    // --- RunningMcpService::is_transport_closed ---
+
+    #[tokio::test]
+    async fn test_running_mcp_service_is_transport_closed() {
+        let svc = RunningMcpService::new_closed_for_test();
+        // The transport was closed immediately (peer dropped), so this should be true
+        // Give it a moment to detect closure
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(svc.is_transport_closed());
+    }
+
+    // --- RunningMcpService::cancel ---
+
+    #[tokio::test]
+    async fn test_running_mcp_service_cancel() {
+        let svc = RunningMcpService::new_closed_for_test();
+        // cancel should not panic even on a closed transport
+        svc.cancel().await;
+    }
+
+    // --- InnerService Clone ---
+
+    #[tokio::test]
+    async fn test_inner_service_clone_original_becomes_peer() {
+        let svc = RunningMcpService::new_closed_for_test();
+        // Cloning should convert Original to Peer
+        let cloned = svc.clone();
+        let debug = format!("{:?}", cloned.running_service);
+        assert!(debug.contains("Peer"));
+    }
+
+    // --- InnerService Debug ---
+
+    #[tokio::test]
+    async fn test_inner_service_debug_original() {
+        let svc = RunningMcpService::new_closed_for_test();
+        let debug = format!("{:?}", svc.running_service);
+        assert!(debug.contains("Original"));
+    }
+
+    // --- RunningMcpService get_prompt with empty/non-empty args ---
+
+    #[tokio::test]
+    async fn test_running_mcp_service_get_prompt_empty_args() {
+        let svc = RunningMcpService::new_closed_for_test();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Transport is closed, so this will error, but it exercises the arguments path
+        let result = svc.get_prompt("test_prompt".to_string(), HashMap::new()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_running_mcp_service_get_prompt_with_args() {
+        let svc = RunningMcpService::new_closed_for_test();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let mut args = HashMap::new();
+        args.insert("key1".to_string(), "value1".to_string());
+        args.insert("key2".to_string(), "value2".to_string());
+        let result = svc.get_prompt("test_prompt".to_string(), args).await;
+        assert!(result.is_err());
+    }
+
+    // --- RunningMcpService call_tool / list_all_tools / list_all_prompts ---
+
+    #[tokio::test]
+    async fn test_running_mcp_service_call_tool_closed() {
+        let svc = RunningMcpService::new_closed_for_test();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let params = CallToolRequestParams {
+            name: "test_tool".into(),
+            arguments: None,
+            meta: None,
+            task: None,
+        };
+        let result = svc.call_tool(params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_running_mcp_service_list_all_tools_closed() {
+        let svc = RunningMcpService::new_closed_for_test();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let result = svc.list_all_tools().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_running_mcp_service_list_all_prompts_closed() {
+        let svc = RunningMcpService::new_closed_for_test();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let result = svc.list_all_prompts().await;
+        assert!(result.is_err());
+    }
+
+    // --- RunningMcpService debug ---
+
+    #[tokio::test]
+    async fn test_running_mcp_service_debug() {
+        let svc = RunningMcpService::new_closed_for_test();
+        let debug = format!("{:?}", svc);
+        assert!(debug.contains("RunningMcpService"));
     }
 }

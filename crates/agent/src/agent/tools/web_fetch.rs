@@ -269,4 +269,225 @@ mod tests {
         let result = WebFetch::strip_html(malformed);
         assert!(!result.is_empty());
     }
+
+    #[test]
+    fn test_truncate_content_short() {
+        let text = "short text";
+        let result = WebFetch::truncate_content(text, 100);
+        assert_eq!(result, "short text");
+    }
+
+    #[test]
+    fn test_truncate_content_long() {
+        let text = "a".repeat(10000);
+        let result = WebFetch::truncate_content(&text, 100);
+        assert!(result.contains("[Content truncated"));
+        assert!(result.starts_with(&"a".repeat(100)));
+    }
+
+    #[test]
+    fn test_extract_snippets_no_search_terms() {
+        let wf = WebFetch {
+            url: "http://example.com".to_string(),
+            mode: FetchMode::Selective,
+            search_terms: None,
+        };
+        let text = (1..=30).map(|i| format!("sentence {i}")).collect::<Vec<_>>().join(". ");
+        let result = wf.extract_snippets(&text);
+        assert!(result.contains("sentence 1"));
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_extract_snippets_with_matching_terms() {
+        let wf = WebFetch {
+            url: "http://example.com".to_string(),
+            mode: FetchMode::Selective,
+            search_terms: Some("target".to_string()),
+        };
+        let text = "intro. filler. more filler. target content here. ending.";
+        let result = wf.extract_snippets(text);
+        assert!(result.contains("target content here"));
+    }
+
+    #[test]
+    fn test_extract_snippets_no_matching_terms_fallback() {
+        let wf = WebFetch {
+            url: "http://example.com".to_string(),
+            mode: FetchMode::Selective,
+            search_terms: Some("nonexistent_xyz".to_string()),
+        };
+        let text = "first sentence. second sentence. third sentence.";
+        let result = wf.extract_snippets(text);
+        // Falls back to first DEFAULT_SNIPPET_LINES sentences
+        assert!(result.contains("first sentence"));
+    }
+
+    #[test]
+    fn test_serde_default_mode() {
+        let json = r#"{"url": "http://example.com"}"#;
+        let wf: WebFetch = serde_json::from_str(json).unwrap();
+        assert!(matches!(wf.mode, FetchMode::Selective));
+        assert!(wf.search_terms.is_none());
+    }
+
+    #[test]
+    fn test_serde_full_mode() {
+        let json = r#"{"url": "http://example.com", "mode": "full"}"#;
+        let wf: WebFetch = serde_json::from_str(json).unwrap();
+        assert!(matches!(wf.mode, FetchMode::Full));
+    }
+
+    #[test]
+    fn test_serde_truncated_mode() {
+        let json = r#"{"url": "http://example.com", "mode": "truncated", "search_terms": "rust"}"#;
+        let wf: WebFetch = serde_json::from_str(json).unwrap();
+        assert!(matches!(wf.mode, FetchMode::Truncated));
+        assert_eq!(wf.search_terms.as_deref(), Some("rust"));
+    }
+
+    #[test]
+    fn test_built_in_tool_trait() {
+        assert!(matches!(WebFetch::name(), BuiltInToolName::WebFetch));
+        assert!(!WebFetch::description().is_empty());
+        assert!(!WebFetch::input_schema().is_empty());
+        assert_eq!(WebFetch::aliases(), Some(["web_fetch"].as_slice()));
+    }
+
+    #[test]
+    fn test_strip_html_complex() {
+        let html = r#"<html><head><title>Test</title><script>var x=1;</script><style>.a{}</style></head>
+        <body><h1>Title</h1><p>Paragraph with <a href="url">link</a></p></body></html>"#;
+        let result = WebFetch::strip_html(html);
+        assert!(result.contains("Title"));
+        assert!(result.contains("Paragraph"));
+        assert!(result.contains("link"));
+    }
+
+    #[test]
+    fn test_extract_snippets_case_insensitive_search() {
+        let wf = WebFetch {
+            url: "http://example.com".to_string(),
+            mode: FetchMode::Selective,
+            search_terms: Some("TARGET".to_string()),
+        };
+        let text = "intro. filler. target content here. ending.";
+        let result = wf.extract_snippets(text);
+        assert!(result.contains("target content here"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_mockito() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/test")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<p>Hello from mock</p>")
+            .create_async()
+            .await;
+
+        let wf = WebFetch {
+            url: format!("{}/test", server.url()),
+            mode: FetchMode::Full,
+            search_terms: None,
+        };
+
+        let result = wf.execute().await.unwrap();
+        if let ToolExecutionOutputItem::Text(text) = &result.items[0] {
+            assert!(text.contains("Hello from mock"));
+        } else {
+            panic!("Expected text output");
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_truncated_mode() {
+        let body = "word ".repeat(5000);
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/big")
+            .with_status(200)
+            .with_header("content-type", "text/plain")
+            .with_body(&body)
+            .create_async()
+            .await;
+
+        let wf = WebFetch {
+            url: format!("{}/big", server.url()),
+            mode: FetchMode::Truncated,
+            search_terms: None,
+        };
+
+        let result = wf.execute().await.unwrap();
+        if let ToolExecutionOutputItem::Text(text) = &result.items[0] {
+            assert!(text.contains("[Content truncated"));
+        } else {
+            panic!("Expected text output");
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_selective_mode() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/doc")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body("<p>intro. filler. rust programming. ending.</p>")
+            .create_async()
+            .await;
+
+        let wf = WebFetch {
+            url: format!("{}/doc", server.url()),
+            mode: FetchMode::Selective,
+            search_terms: Some("rust".to_string()),
+        };
+
+        let result = wf.execute().await.unwrap();
+        if let ToolExecutionOutputItem::Text(text) = &result.items[0] {
+            assert!(text.contains("rust programming"));
+        } else {
+            panic!("Expected text output");
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_http_error() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server.mock("GET", "/fail").with_status(404).create_async().await;
+
+        let wf = WebFetch {
+            url: format!("{}/fail", server.url()),
+            mode: FetchMode::Full,
+            search_terms: None,
+        };
+
+        let result = wf.execute().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_unsupported_content_type() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/binary")
+            .with_status(200)
+            .with_header("content-type", "application/octet-stream")
+            .with_body("binary data")
+            .create_async()
+            .await;
+
+        let wf = WebFetch {
+            url: format!("{}/binary", server.url()),
+            mode: FetchMode::Full,
+            search_terms: None,
+        };
+
+        let result = wf.execute().await;
+        assert!(result.is_err());
+    }
 }

@@ -248,22 +248,24 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
     // Disable AWS CLI pager to prevent hanging when stdout is piped
     env_vars.insert("AWS_PAGER".to_string(), String::new());
-    let user_agent_metadata_value =
-        format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
-
-    match std::env::var(USER_AGENT_ENV_VAR).ok() {
-        Some(existing) if !existing.is_empty() => {
-            env_vars.insert(
-                USER_AGENT_ENV_VAR.to_string(),
-                format!("{existing} {user_agent_metadata_value}"),
-            );
-        },
-        _ => {
-            env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
-        },
-    }
-
+    let existing = std::env::var(USER_AGENT_ENV_VAR).ok();
+    let value = build_user_agent_value(existing.as_deref());
+    env_vars.insert(USER_AGENT_ENV_VAR.to_string(), value);
     env_vars
+}
+
+/// Builds the value of the AWS_EXECUTION_ENV user-agent header, preserving any
+/// caller-set value as a prefix.
+///
+/// Extracted so tests can exercise both branches without mutating the process
+/// environment (which is `unsafe` and unsound under the multi-threaded test
+/// harness on Rust ≥1.83).
+fn build_user_agent_value(existing: Option<&str>) -> String {
+    let metadata = format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
+    match existing {
+        Some(v) if !v.is_empty() => format!("{v} {metadata}"),
+        _ => metadata,
+    }
 }
 
 #[cfg(test)]
@@ -482,5 +484,283 @@ mod tests {
     #[test]
     fn test_max_output_size_const() {
         assert_eq!(MAX_OUTPUT_SIZE, 100_000);
+    }
+
+    #[test]
+    fn test_serde_roundtrip() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "positional_args": ["arg1"],
+            "parameters": {"instance-ids": "i-123"},
+            "region": "us-west-2",
+            "profile_name": "dev",
+            "label": "List instances"
+        }};
+        let json = serde_json::to_value(&cmd).unwrap();
+        let roundtripped: UseAws = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtripped.service_name, "ec2");
+        assert_eq!(roundtripped.operation_name, "describe-instances");
+        assert_eq!(roundtripped.region, "us-west-2");
+        assert_eq!(roundtripped.profile_name.as_deref(), Some("dev"));
+        assert_eq!(roundtripped.label.as_deref(), Some("List instances"));
+        assert_eq!(roundtripped.positional_args.as_deref(), Some(&["arg1".to_string()][..]));
+    }
+
+    #[test]
+    fn test_serde_roundtrip_minimal() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "list-buckets",
+            "region": "eu-west-1",
+            "label": "x"
+        }};
+        let json = serde_json::to_value(&cmd).unwrap();
+        let roundtripped: UseAws = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtripped.service_name, "s3api");
+        assert!(roundtripped.positional_args.is_none());
+        assert!(roundtripped.parameters.is_none());
+        assert!(roundtripped.profile_name.is_none());
+    }
+
+    #[test]
+    fn test_cli_parameters_numeric_value() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "parameters": {"max-results": 10},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(
+            params.iter().any(|p| p.0 == "--max-results" && p.1 == "10"),
+            "numeric param not found in {params:?}"
+        );
+    }
+
+    #[test]
+    fn test_cli_parameters_boolean_flag_empty_string() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "list-objects",
+            "parameters": {"no-paginate": ""},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(
+            params.iter().any(|p| p.0 == "--no-paginate" && p.1.is_empty()),
+            "boolean flag not found in {params:?}"
+        );
+    }
+
+    #[test]
+    fn test_cli_parameters_json_object_value() {
+        let cmd = use_aws! {{
+            "service_name": "dynamodb",
+            "operation_name": "put-item",
+            "parameters": {"item": {"id": {"S": "123"}}},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        let item_param = params.iter().find(|p| p.0 == "--item").unwrap();
+        // JSON object should be serialized as a string
+        assert!(item_param.1.contains("\"id\""));
+        assert!(item_param.1.contains("\"S\""));
+    }
+
+    #[test]
+    fn test_cli_parameters_array_value() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "parameters": {"instance-ids": ["i-111", "i-222"]},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        let ids_param = params.iter().find(|p| p.0 == "--instance-ids").unwrap();
+        assert!(ids_param.1.contains("i-111"));
+        assert!(ids_param.1.contains("i-222"));
+    }
+
+    #[test]
+    fn test_cli_parameters_boolean_json_value() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "put-object",
+            "parameters": {"acl-public": true},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(
+            params.iter().any(|p| p.0 == "--acl-public" && p.1 == "true"),
+            "bool json value not found in {params:?}"
+        );
+    }
+
+    #[test]
+    fn test_env_vars_user_agent_contains_app_name() {
+        let env = env_vars_with_user_agent();
+        let ua = env.get(USER_AGENT_ENV_VAR).unwrap();
+        assert!(ua.contains(USER_AGENT_APP_NAME));
+        assert!(ua.contains(USER_AGENT_VERSION_KEY));
+        assert!(ua.contains(USER_AGENT_VERSION_VALUE));
+    }
+
+    #[test]
+    fn test_build_user_agent_value_no_existing() {
+        let v = build_user_agent_value(None);
+        assert!(v.contains(USER_AGENT_APP_NAME));
+        assert!(v.contains(USER_AGENT_VERSION_KEY));
+        assert!(v.contains(USER_AGENT_VERSION_VALUE));
+    }
+
+    #[test]
+    fn test_build_user_agent_value_empty_existing_treated_as_none() {
+        let v = build_user_agent_value(Some(""));
+        assert!(v.contains(USER_AGENT_APP_NAME));
+        assert!(
+            !v.starts_with(' '),
+            "should not have leading space when existing is empty"
+        );
+    }
+
+    #[test]
+    fn test_build_user_agent_value_appends_to_existing() {
+        let v = build_user_agent_value(Some("ExistingAgent/1.0"));
+        assert!(v.starts_with("ExistingAgent/1.0 "));
+        assert!(v.contains(USER_AGENT_APP_NAME));
+    }
+
+    #[test]
+    fn test_env_vars_with_user_agent_disables_pager_and_sets_user_agent() {
+        // Sanity-check the side-effecting wrapper: it must always populate
+        // both keys, regardless of the caller's environment.
+        let env = env_vars_with_user_agent();
+        assert_eq!(env.get("AWS_PAGER").map(String::as_str), Some(""));
+        assert!(env.contains_key(USER_AGENT_ENV_VAR));
+        let ua = env.get(USER_AGENT_ENV_VAR).unwrap();
+        assert!(ua.contains(USER_AGENT_APP_NAME));
+    }
+
+    #[test]
+    fn test_deser_missing_optional_fields() {
+        let cmd: UseAws = serde_json::from_value(serde_json::json!({
+            "service_name": "sts",
+            "operation_name": "get-caller-identity",
+            "region": "us-east-1"
+        }))
+        .unwrap();
+        assert!(cmd.label.is_none());
+        assert!(cmd.profile_name.is_none());
+        assert!(cmd.positional_args.is_none());
+        assert!(cmd.parameters.is_none());
+    }
+
+    #[test]
+    fn test_deser_extra_fields_ignored() {
+        let result = serde_json::from_value::<UseAws>(serde_json::json!({
+            "service_name": "ec2",
+            "operation_name": "describe-vpcs",
+            "region": "us-east-1",
+            "label": "x",
+            "unknown_field": "should be ignored"
+        }));
+        // UseAwsRaw uses default deny_unknown_fields behavior (which is off by default)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_deser_missing_required_field() {
+        let result = serde_json::from_value::<UseAws>(serde_json::json!({
+            "service_name": "ec2",
+            "operation_name": "describe-instances"
+            // missing region
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_service_name_validation_dash_only() {
+        let result = serde_json::from_value::<UseAws>(serde_json::json!({
+            "service_name": "-",
+            "operation_name": "x",
+            "region": "us-east-1",
+            "label": ""
+        }));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot start with '-'"));
+    }
+
+    #[test]
+    fn test_cli_parameters_camel_to_kebab() {
+        let cmd = use_aws! {{
+            "service_name": "lambda",
+            "operation_name": "invoke",
+            "parameters": {"FunctionName": "my-func", "InvocationType": "RequestResponse"},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(params.iter().any(|p| p.0 == "--function-name" && p.1 == "my-func"));
+        assert!(
+            params
+                .iter()
+                .any(|p| p.0 == "--invocation-type" && p.1 == "RequestResponse")
+        );
+    }
+
+    #[test]
+    fn test_cli_parameters_null_value() {
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "put-object",
+            "parameters": {"metadata": null},
+            "region": "us-east-1",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        assert!(
+            params.iter().any(|p| p.0 == "--metadata" && p.1 == "null"),
+            "null param not found in {params:?}"
+        );
+    }
+
+    #[test]
+    fn test_is_readonly_additions() {
+        // Verify the additions list is loaded and works
+        assert!(!AWS_READONLY_ADDITIONS.is_empty() || AWS_READONLY_OPS.len() > 0);
+    }
+
+    #[test]
+    fn test_use_aws_debug_impl() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "region": "us-east-1",
+            "label": "test"
+        }};
+        let debug = format!("{:?}", cmd);
+        assert!(debug.contains("ec2"));
+        assert!(debug.contains("describe-instances"));
+    }
+
+    #[test]
+    fn test_use_aws_clone() {
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "parameters": {"max-results": "5"},
+            "region": "us-east-1",
+            "label": "test"
+        }};
+        let cloned = cmd.clone();
+        assert_eq!(cloned.service_name, cmd.service_name);
+        assert_eq!(cloned.operation_name, cmd.operation_name);
+        assert_eq!(cloned.region, cmd.region);
     }
 }

@@ -487,4 +487,222 @@ mod tests {
         assert!(!SessionTool::description().is_empty());
         assert!(!SessionTool::input_schema().is_empty());
     }
+
+    #[test]
+    fn test_get_canonical_name() {
+        let name = SessionTool::get_canonical_name();
+        assert!(matches!(
+            name,
+            CanonicalToolName::BuiltIn(BuiltInToolName::SessionManagement)
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_get_session_status() {
+        let json = r#"{"command":"get_session_status","target":"s1","verbose":true}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(tool, SessionTool::GetSessionStatus { target, verbose } if target == "s1" && verbose == Some(true))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_interrupt() {
+        let json = r#"{"command":"interrupt","target":"s1","message":"stop"}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(matches!(tool, SessionTool::Interrupt { target, message } if target == "s1" && message == "stop"));
+    }
+
+    #[test]
+    fn test_deserialize_inject_context() {
+        let json = r#"{"command":"inject_context","target":"s1","context":"ctx"}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(matches!(tool, SessionTool::InjectContext { target, context } if target == "s1" && context == "ctx"));
+    }
+
+    #[test]
+    fn test_deserialize_manage_group() {
+        let json = r#"{"command":"manage_group","action":"create","group":"g1"}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(tool, SessionTool::ManageGroup { action: GroupAction::Create, group: Some(g), .. } if g == "g1")
+        );
+    }
+
+    #[test]
+    fn test_deserialize_revive_session() {
+        let json = r#"{"command":"revive_session","target":"s1","task":"new task"}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(matches!(tool, SessionTool::ReviveSession { target, task } if target == "s1" && task == "new task"));
+    }
+
+    #[test]
+    fn test_deserialize_wait_for_group() {
+        let json = r#"{"command":"wait_for_group","group":"g1"}"#;
+        let tool: SessionTool = serde_json::from_str(json).unwrap();
+        assert!(matches!(tool, SessionTool::WaitForGroup { group } if group == "g1"));
+    }
+
+    #[test]
+    fn test_serialize_all_variants_roundtrip() {
+        let variants: Vec<SessionTool> = vec![
+            SessionTool::SpawnSession {
+                agent_name: "a".into(),
+                task: "t".into(),
+                name: None,
+                role: Some("r".into()),
+                group: Some("g".into()),
+                persistent: Some(true),
+            },
+            SessionTool::SendMessage {
+                target: None,
+                message: "m".into(),
+                priority: MessagePriority::Escalation,
+            },
+            SessionTool::ReadMessages { limit: 10 },
+            SessionTool::ListSessions {
+                filter: Some(SessionFilter::Busy),
+            },
+            SessionTool::GetSessionStatus {
+                target: "t".into(),
+                verbose: Some(false),
+            },
+            SessionTool::Interrupt {
+                target: "t".into(),
+                message: "m".into(),
+            },
+            SessionTool::InjectContext {
+                target: "t".into(),
+                context: "c".into(),
+            },
+            SessionTool::ManageGroup {
+                action: GroupAction::Broadcast,
+                group: Some("g".into()),
+                target: Some("t".into()),
+                role: Some("r".into()),
+                message: Some("m".into()),
+            },
+            SessionTool::ReviveSession {
+                target: "t".into(),
+                task: "task".into(),
+            },
+            SessionTool::WaitForGroup { group: "g".into() },
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let parsed: SessionTool = serde_json::from_str(&json).unwrap();
+            let json2 = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_response_sender_send_success() {
+        let (tx, rx) = oneshot::channel();
+        let sender = SessionResponseSender::new(tx);
+        let resp = SessionToolResponse {
+            output: ToolExecutionOutput::new(vec![]),
+        };
+        sender.send(Ok(resp)).await.unwrap();
+        assert!(rx.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_response_sender_send_twice_fails() {
+        let (tx, _rx) = oneshot::channel();
+        let sender = SessionResponseSender::new(tx);
+        let resp = SessionToolResponse {
+            output: ToolExecutionOutput::new(vec![]),
+        };
+        sender.clone().send(Ok(resp.clone())).await.unwrap();
+        let result = sender.send(Ok(resp)).await;
+        assert_eq!(result.unwrap_err(), "Response already sent");
+    }
+
+    #[tokio::test]
+    async fn test_response_sender_receiver_dropped() {
+        let (tx, rx) = oneshot::channel();
+        let sender = SessionResponseSender::new(tx);
+        drop(rx);
+        let resp = SessionToolResponse {
+            output: ToolExecutionOutput::new(vec![]),
+        };
+        let result = sender.send(Ok(resp)).await;
+        assert_eq!(result.unwrap_err(), "Receiver dropped");
+    }
+
+    #[tokio::test]
+    async fn test_execute_channel_closed() {
+        let (event_tx, _rx) = broadcast::channel::<AgentEvent>(1);
+        drop(_rx);
+        let tool = SessionTool::ReadMessages { limit: 5 };
+        let result = tool.execute(event_tx).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_response_dropped() {
+        let (event_tx, mut event_rx) = broadcast::channel::<AgentEvent>(1);
+        let tool = SessionTool::ReadMessages { limit: 5 };
+
+        let handle = tokio::spawn(async move { tool.execute(event_tx).await });
+
+        if let Ok(AgentEvent::SessionToolRequest(req)) = event_rx.recv().await {
+            drop(req.response_tx);
+        }
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_execute_success() {
+        let (event_tx, mut event_rx) = broadcast::channel::<AgentEvent>(1);
+        let tool = SessionTool::ListSessions { filter: None };
+
+        let handle = tokio::spawn(async move { tool.execute(event_tx).await });
+
+        if let Ok(AgentEvent::SessionToolRequest(req)) = event_rx.recv().await {
+            let resp = SessionToolResponse {
+                output: ToolExecutionOutput::new(vec![]),
+            };
+            req.response_tx.send(Ok(resp)).await.unwrap();
+        }
+
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_error_response() {
+        let (event_tx, mut event_rx) = broadcast::channel::<AgentEvent>(1);
+        let tool = SessionTool::ListSessions { filter: None };
+
+        let handle = tokio::spawn(async move { tool.execute(event_tx).await });
+
+        if let Ok(AgentEvent::SessionToolRequest(req)) = event_rx.recv().await {
+            req.response_tx.send(Err("test error".into())).await.unwrap();
+        }
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_session_response_sender_default() {
+        let sender = SessionResponseSender::default();
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let result = rt.block_on(sender.send(Err("x".into())));
+        assert_eq!(result.unwrap_err(), "Response already sent");
+    }
+
+    #[test]
+    fn test_session_tool_request_debug() {
+        let req = SessionToolRequest {
+            request: SessionTool::ReadMessages { limit: 5 },
+            response_tx: SessionResponseSender::default(),
+        };
+        let debug = format!("{:?}", req);
+        assert!(debug.contains("ReadMessages"));
+    }
 }

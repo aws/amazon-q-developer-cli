@@ -356,6 +356,37 @@ mod tests {
         }
     }
 
+    fn make_tool_spec(name: &str, description: &str) -> ToolSpec {
+        ToolSpec {
+            name: name.to_string(),
+            description: description.to_string(),
+            input_schema: serde_json::Map::new(),
+        }
+    }
+
+    fn call_sanitize(
+        mcp_tool_specs: HashMap<String, Vec<ToolSpec>>,
+        aliases: &HashMap<String, String>,
+    ) -> SanitizedToolSpecs {
+        let mut canonical_names = Vec::new();
+        for (server, specs) in &mcp_tool_specs {
+            for spec in specs {
+                canonical_names.push(CanonicalToolName::Mcp {
+                    server_name: server.clone(),
+                    tool_name: spec.name.clone(),
+                });
+            }
+        }
+        sanitize_tool_specs(
+            canonical_names,
+            mcp_tool_specs,
+            aliases,
+            false,
+            &[],
+            &ToolsSettings::default(),
+        )
+    }
+
     /// Following classic mode behavior, the code tool is prioritized first in the
     /// tool spec ordering. Remaining tools are sorted alphabetically. The ordering
     /// must be deterministic for prompt caching.
@@ -377,5 +408,209 @@ mod tests {
         let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names[0], BuiltInToolName::Code.to_string(), "code tool must be first");
         assert_eq!(&names[1..], &["alpha_mcp", "glob", "read", "shell", "write"]);
+    }
+
+    // --- add_tool_use_purpose_arg tests ---
+
+    #[test]
+    fn add_tool_use_purpose_arg_adds_field_to_object_schema() {
+        let schema: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"type":"object","properties":{"foo":{"type":"string"}}}"#).unwrap();
+        let mut specs = vec![ToolSpec {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: schema,
+        }];
+        add_tool_use_purpose_arg(&mut specs);
+        let props = specs[0].input_schema["properties"].as_object().unwrap();
+        assert!(props.contains_key(TOOL_USE_PURPOSE_FIELD_NAME));
+    }
+
+    #[test]
+    fn add_tool_use_purpose_arg_skips_non_object_type() {
+        let schema: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"type":"array","properties":{"foo":{"type":"string"}}}"#).unwrap();
+        let mut specs = vec![ToolSpec {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: schema,
+        }];
+        add_tool_use_purpose_arg(&mut specs);
+        let props = specs[0].input_schema["properties"].as_object().unwrap();
+        assert!(!props.contains_key(TOOL_USE_PURPOSE_FIELD_NAME));
+    }
+
+    #[test]
+    fn add_tool_use_purpose_arg_skips_without_type() {
+        let schema: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"properties":{"foo":{"type":"string"}}}"#).unwrap();
+        let mut specs = vec![ToolSpec {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: schema,
+        }];
+        add_tool_use_purpose_arg(&mut specs);
+        let props = specs[0].input_schema["properties"].as_object().unwrap();
+        assert!(!props.contains_key(TOOL_USE_PURPOSE_FIELD_NAME));
+    }
+
+    #[test]
+    fn add_tool_use_purpose_arg_skips_without_properties() {
+        let schema: serde_json::Map<String, serde_json::Value> = serde_json::from_str(r#"{"type":"object"}"#).unwrap();
+        let mut specs = vec![ToolSpec {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: schema,
+        }];
+        add_tool_use_purpose_arg(&mut specs);
+        assert!(!specs[0].input_schema.contains_key("properties"));
+    }
+
+    #[test]
+    fn add_tool_use_purpose_arg_preserves_existing_field() {
+        let schema: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&format!(
+            r#"{{"type":"object","properties":{{"{}":{{"type":"number"}}}}}}"#,
+            TOOL_USE_PURPOSE_FIELD_NAME
+        ))
+        .unwrap();
+        let mut specs = vec![ToolSpec {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: schema,
+        }];
+        add_tool_use_purpose_arg(&mut specs);
+        let props = specs[0].input_schema["properties"].as_object().unwrap();
+        // Should still be "number", not overwritten
+        assert_eq!(props[TOOL_USE_PURPOSE_FIELD_NAME]["type"], "number");
+    }
+
+    // --- sanitize_tool_specs tests ---
+
+    #[test]
+    fn sanitize_tool_specs_empty_inputs() {
+        let result = call_sanitize(HashMap::new(), &HashMap::new());
+        assert!(result.tool_map().is_empty());
+        assert!(result.filtered_specs().is_empty());
+        assert!(result.transformed_tool_specs().is_empty());
+    }
+
+    #[test]
+    fn sanitize_tool_specs_filters_empty_description() {
+        let mut mcp = HashMap::new();
+        mcp.insert("srv".to_string(), vec![make_tool_spec("valid_name", "")]);
+        let result = call_sanitize(mcp, &HashMap::new());
+        assert!(result.tool_map().is_empty());
+        assert_eq!(result.filtered_specs().len(), 1);
+        assert!(matches!(
+            result.filtered_specs()[0].kind,
+            ToolValidationErrorKind::EmptyDescription
+        ));
+    }
+
+    #[test]
+    fn sanitize_tool_specs_filters_name_too_long() {
+        let long_name = "a".repeat(MAX_TOOL_NAME_LEN + 1);
+        let mut mcp = HashMap::new();
+        mcp.insert("srv".to_string(), vec![make_tool_spec(&long_name, "desc")]);
+        let result = call_sanitize(mcp, &HashMap::new());
+        assert!(result.tool_map().is_empty());
+        assert_eq!(result.filtered_specs().len(), 1);
+        assert!(matches!(
+            result.filtered_specs()[0].kind,
+            ToolValidationErrorKind::NameTooLong
+        ));
+    }
+
+    #[test]
+    fn sanitize_tool_specs_transforms_invalid_chars_with_warning() {
+        let mut mcp = HashMap::new();
+        mcp.insert("srv".to_string(), vec![make_tool_spec("my.tool!name", "desc")]);
+        let result = call_sanitize(mcp, &HashMap::new());
+        // Should be transformed to "mytoolname"
+        assert!(result.tool_map().contains_key("mytoolname"));
+        assert_eq!(result.transformed_tool_specs().len(), 1);
+        assert!(matches!(
+            result.transformed_tool_specs()[0].kind,
+            ToolValidationErrorKind::OutOfSpecName { .. }
+        ));
+    }
+
+    #[test]
+    fn sanitize_tool_specs_uses_alias() {
+        let mut mcp = HashMap::new();
+        mcp.insert("srv".to_string(), vec![make_tool_spec("original", "desc")]);
+        let mut aliases = HashMap::new();
+        aliases.insert("@srv/original".to_string(), "aliased_name".to_string());
+        let result = call_sanitize(mcp, &aliases);
+        assert!(result.tool_map().contains_key("aliased_name"));
+        assert!(!result.tool_map().contains_key("original"));
+    }
+
+    #[test]
+    fn sanitize_tool_specs_unknown_server_skipped() {
+        // Request tools from a server not in mcp_tool_specs
+        let canonical_names = vec![CanonicalToolName::Mcp {
+            server_name: "missing_server".into(),
+            tool_name: "tool".into(),
+        }];
+        let result = sanitize_tool_specs(
+            canonical_names,
+            HashMap::new(),
+            &HashMap::new(),
+            false,
+            &[],
+            &ToolsSettings::default(),
+        );
+        assert!(result.tool_map().is_empty());
+        assert!(result.filtered_specs().is_empty());
+    }
+
+    #[test]
+    fn sanitize_tool_specs_long_description_warning() {
+        let long_desc = "x".repeat(LARGE_TOOL_DESCRIPTION_THRESHOLD + 1);
+        let mut mcp = HashMap::new();
+        mcp.insert("srv".to_string(), vec![make_tool_spec("mytool", &long_desc)]);
+        let result = call_sanitize(mcp, &HashMap::new());
+        assert!(result.tool_map().contains_key("mytool"));
+        assert_eq!(result.transformed_tool_specs().len(), 1);
+        assert!(matches!(
+            result.transformed_tool_specs()[0].kind,
+            ToolValidationErrorKind::DescriptionTooLong
+        ));
+    }
+
+    // --- ToolValidationError tests ---
+
+    #[test]
+    fn tool_validation_error_construction_and_debug() {
+        let err = ToolValidationError::new(
+            "server".to_string(),
+            make_tool_spec("t", "d"),
+            ToolValidationErrorKind::EmptyDescription,
+        );
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("EmptyDescription"));
+        assert!(debug.contains("server"));
+    }
+
+    #[test]
+    fn tool_validation_error_kind_all_variants() {
+        let variants: Vec<ToolValidationErrorKind> = vec![
+            ToolValidationErrorKind::OutOfSpecName {
+                transformed_name: "x".into(),
+            },
+            ToolValidationErrorKind::EmptyName,
+            ToolValidationErrorKind::NameTooLong,
+            ToolValidationErrorKind::EmptyDescription,
+            ToolValidationErrorKind::DescriptionTooLong,
+            ToolValidationErrorKind::NameCollision(CanonicalToolName::Mcp {
+                server_name: "s".into(),
+                tool_name: "t".into(),
+            }),
+        ];
+        for v in &variants {
+            let _ = format!("{:?}", v);
+        }
+        assert_eq!(variants.len(), 6);
     }
 }

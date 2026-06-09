@@ -1643,6 +1643,283 @@ mod tests {
         assert!(!result.is_registry());
     }
 
+    #[test]
+    fn test_hook_trigger_display_and_parse() {
+        use std::str::FromStr;
+        let cases = [
+            (HookTrigger::AgentSpawn, "agentSpawn"),
+            (HookTrigger::UserPromptSubmit, "userPromptSubmit"),
+            (HookTrigger::PreToolUse, "preToolUse"),
+            (HookTrigger::PostToolUse, "postToolUse"),
+            (HookTrigger::Stop, "stop"),
+        ];
+        for (variant, expected) in cases {
+            assert_eq!(variant.to_string(), expected);
+            assert_eq!(HookTrigger::from_str(expected).unwrap(), variant);
+        }
+    }
+
+    #[test]
+    fn test_hook_trigger_serde_roundtrip() {
+        for trigger in [
+            HookTrigger::AgentSpawn,
+            HookTrigger::UserPromptSubmit,
+            HookTrigger::PreToolUse,
+            HookTrigger::PostToolUse,
+            HookTrigger::Stop,
+        ] {
+            let json = serde_json::to_value(&trigger).unwrap();
+            let back: HookTrigger = serde_json::from_value(json).unwrap();
+            assert_eq!(back, trigger);
+        }
+    }
+
+    #[test]
+    fn test_hook_config_shell_command_serde() {
+        let json = serde_json::json!({
+            "command": "echo hello",
+            "timeout_ms": 5000,
+            "max_output_size": 2048,
+            "cache_ttl_seconds": 60,
+            "matcher": "fs_*"
+        });
+        let hook: HookConfig = serde_json::from_value(json).unwrap();
+        match &hook {
+            HookConfig::ShellCommand(cmd) => {
+                assert_eq!(cmd.command, "echo hello");
+                assert_eq!(cmd.opts.timeout_ms, 5000);
+                assert_eq!(cmd.opts.max_output_size, 2048);
+                assert_eq!(cmd.opts.cache_ttl_seconds, 60);
+                assert_eq!(cmd.opts.matcher.as_deref(), Some("fs_*"));
+            },
+            _ => panic!("Expected ShellCommand"),
+        }
+        assert_eq!(hook.matcher(), Some("fs_*"));
+        // roundtrip
+        let rt = serde_json::to_value(&hook).unwrap();
+        let back: HookConfig = serde_json::from_value(rt).unwrap();
+        assert_eq!(back, hook);
+    }
+
+    #[test]
+    fn test_hook_config_tool_serde() {
+        let json = serde_json::json!({
+            "tool_name": "my_tool",
+            "args": {"key": "value"}
+        });
+        let hook: HookConfig = serde_json::from_value(json).unwrap();
+        match &hook {
+            HookConfig::Tool(t) => {
+                assert_eq!(t.tool_name, "my_tool");
+                assert_eq!(t.args, serde_json::json!({"key": "value"}));
+            },
+            _ => panic!("Expected Tool"),
+        }
+    }
+
+    #[test]
+    fn test_hook_config_shell_defaults() {
+        let json = serde_json::json!({"command": "ls"});
+        let hook: HookConfig = serde_json::from_value(json).unwrap();
+        let opts = hook.opts();
+        assert_eq!(opts.timeout_ms, 10_000);
+        assert_eq!(opts.max_output_size, 1024 * 10);
+        assert_eq!(opts.cache_ttl_seconds, 0);
+        assert!(opts.matcher.is_none());
+    }
+
+    #[test]
+    fn test_base_hook_config_default() {
+        let d = BaseHookConfig::default();
+        assert_eq!(d.timeout_ms, 10_000);
+        assert_eq!(d.max_output_size, 10240);
+        assert_eq!(d.cache_ttl_seconds, 0);
+        assert!(d.matcher.is_none());
+    }
+
+    #[test]
+    fn test_default_timeout() {
+        assert_eq!(default_timeout(), 120_000);
+    }
+
+    #[test]
+    fn test_default_legacy_oauth_scopes() {
+        let scopes = default_legacy_oauth_scopes();
+        assert_eq!(scopes, vec!["openid", "email", "profile", "offline_access"]);
+    }
+
+    #[test]
+    fn test_use_aws_settings_default() {
+        let d = UseAwsSettings::default();
+        assert!(d.allowed_services.is_empty());
+        assert!(d.denied_services.is_empty());
+        assert!(d.auto_allow_readonly);
+    }
+
+    #[test]
+    fn test_agent_config_default() {
+        let config = AgentConfig::default();
+        assert_eq!(config.name(), "");
+        assert!(config.description().is_none());
+        assert!(config.welcome_message().is_none());
+        assert!(config.global_prompt().is_none());
+        assert!(config.tools().is_empty());
+        assert!(config.tool_aliases().is_empty());
+        assert!(config.tool_settings().is_none());
+        assert!(config.allowed_tools().is_empty());
+        assert!(config.hooks().is_empty());
+        assert!(config.resources().is_empty());
+        assert!(config.mcp_servers().is_empty());
+        assert!(!config.use_legacy_mcp_json());
+        assert!(config.model().is_none());
+    }
+
+    #[test]
+    fn test_agent_config_new_empty() {
+        let config = AgentConfig::new_empty();
+        assert!(config.allowed_tools().is_empty());
+        assert!(config.resources().is_empty());
+    }
+
+    #[test]
+    fn test_agent_config_debug() {
+        let config = AgentConfig::default();
+        let dbg = format!("{:?}", config);
+        assert!(dbg.contains("V2025_08_22"));
+    }
+
+    #[test]
+    fn test_agent_config_accessors_with_values() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "my-agent",
+            "description": "A test agent",
+            "welcomeMessage": "Hello!",
+            "prompt": "Be helpful",
+            "tools": ["read", "write"],
+            "model": "claude-sonnet"
+        }))
+        .unwrap();
+        assert_eq!(config.name(), "my-agent");
+        assert_eq!(config.description(), Some("A test agent"));
+        assert_eq!(config.welcome_message(), Some("Hello!"));
+        assert_eq!(config.global_prompt(), Some("Be helpful"));
+        assert_eq!(config.tools(), vec!["read", "write"]);
+        assert_eq!(config.model(), Some("claude-sonnet"));
+    }
+
+    #[test]
+    fn test_append_to_global_prompt() {
+        let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "prompt": "base"
+        }))
+        .unwrap();
+        config.append_to_global_prompt("extra");
+        assert_eq!(config.global_prompt(), Some("base\n\nextra"));
+    }
+
+    #[test]
+    fn test_append_to_global_prompt_none() {
+        let mut config = AgentConfig::default();
+        config.append_to_global_prompt("extra");
+        // No prompt set, so nothing happens
+        assert!(config.global_prompt().is_none());
+    }
+
+    #[test]
+    fn test_prepend_to_global_prompt() {
+        let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "prompt": "base"
+        }))
+        .unwrap();
+        config.prepend_to_global_prompt("prefix");
+        assert_eq!(config.global_prompt(), Some("prefix\n\nbase"));
+    }
+
+    #[test]
+    fn test_prepend_to_global_prompt_none() {
+        let mut config = AgentConfig::default();
+        config.prepend_to_global_prompt("prefix");
+        assert!(config.global_prompt().is_none());
+    }
+
+    #[test]
+    fn test_set_tools() {
+        let mut config = AgentConfig::default();
+        config.set_tools(vec!["a".into(), "b".into()]);
+        assert_eq!(config.tools(), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn test_allowed_tools_mut() {
+        let mut config = AgentConfig::default();
+        config.allowed_tools_mut().insert("tool_x".into());
+        assert!(config.allowed_tools().contains("tool_x"));
+    }
+
+    #[test]
+    fn test_add_hook() {
+        let mut config = AgentConfig::default();
+        let hook = HookConfig::ShellCommand(CommandHook {
+            command: "echo hi".into(),
+            opts: BaseHookConfig::default(),
+        });
+        config.add_hook(HookTrigger::AgentSpawn, hook.clone());
+        assert_eq!(config.hooks().get(&HookTrigger::AgentSpawn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_retain_mcp_servers() {
+        let mut config = AgentConfig::default();
+        let s1 = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "a".into(),
+            args: vec![],
+            env: None,
+            timeout_ms: 120_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        let s2 = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "b".into(),
+            args: vec![],
+            env: None,
+            timeout_ms: 120_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        config.add_mcp_servers(vec![("keep".into(), s1), ("drop".into(), s2)]);
+        config.retain_mcp_servers(|name| name == "keep");
+        assert!(config.mcp_servers().contains_key("keep"));
+        assert!(!config.mcp_servers().contains_key("drop"));
+    }
+
+    #[test]
+    fn test_insert_mcp_servers_no_tools_modification() {
+        let mut config = AgentConfig::default();
+        let s = McpServerConfig::Remote(RemoteMcpServerConfig {
+            url: "https://x.com".into(),
+            headers: HashMap::new(),
+            timeout_ms: 120_000,
+            oauth_scopes: vec![],
+            oauth: None,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        config.insert_mcp_servers(vec![("srv".into(), s)]);
+        assert!(config.mcp_servers().contains_key("srv"));
+        // tools list should NOT have @srv/* added
+        assert!(!config.tools().contains(&"@srv/*".to_string()));
+    }
+
+    #[test]
+    fn test_set_use_legacy_mcp_json() {
+        let mut config = AgentConfig::default();
+        assert!(!config.use_legacy_mcp_json());
+        config.set_use_legacy_mcp_json(true);
+        assert!(config.use_legacy_mcp_json());
+    }
+
     /// Regression test: oauth blocks on registry-type entries must survive
     /// deserialization round-trip.
     #[test]
@@ -1667,5 +1944,313 @@ mod tests {
             Some(&serde_json::json!({"oauthScopes": ["read:user", "write:user"]})),
             "oauth block must round-trip through Registry variant"
         );
+    }
+
+    #[test]
+    fn test_agent_identifier_exact_matches() {
+        let id: AgentIdentifier = serde_json::from_value(serde_json::json!("my-agent")).unwrap();
+        assert!(matches!(&id, AgentIdentifier::ExactName(n) if n == "my-agent"));
+        assert!(id.matches("my-agent"));
+        assert!(!id.matches("other"));
+    }
+
+    #[test]
+    fn test_agent_identifier_glob_matches() {
+        let id: AgentIdentifier = serde_json::from_value(serde_json::json!("test-*")).unwrap();
+        assert!(matches!(&id, AgentIdentifier::NameGlob(_, p) if p == "test-*"));
+        assert!(id.matches("test-foo"));
+        assert!(id.matches("test-"));
+        assert!(!id.matches("other-foo"));
+    }
+
+    #[test]
+    fn test_agent_identifier_serialize_roundtrip() {
+        let exact: AgentIdentifier = serde_json::from_value(serde_json::json!("exact")).unwrap();
+        let json = serde_json::to_value(&exact).unwrap();
+        assert_eq!(json, serde_json::json!("exact"));
+
+        let glob: AgentIdentifier = serde_json::from_value(serde_json::json!("prefix-*")).unwrap();
+        let json = serde_json::to_value(&glob).unwrap();
+        assert_eq!(json, serde_json::json!("prefix-*"));
+    }
+
+    #[test]
+    fn test_agent_identifier_any_matches() {
+        let ids: Vec<AgentIdentifier> = serde_json::from_value(serde_json::json!(["exact", "test-*"])).unwrap();
+        assert!(AgentIdentifier::any_matches(&ids, "exact"));
+        assert!(AgentIdentifier::any_matches(&ids, "test-foo"));
+        assert!(!AgentIdentifier::any_matches(&ids, "other"));
+    }
+
+    #[test]
+    fn test_agent_identifier_partial_eq() {
+        let a: AgentIdentifier = serde_json::from_value(serde_json::json!("x")).unwrap();
+        let b: AgentIdentifier = serde_json::from_value(serde_json::json!("x")).unwrap();
+        let c: AgentIdentifier = serde_json::from_value(serde_json::json!("y")).unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+
+        let g1: AgentIdentifier = serde_json::from_value(serde_json::json!("a-*")).unwrap();
+        let g2: AgentIdentifier = serde_json::from_value(serde_json::json!("a-*")).unwrap();
+        let g3: AgentIdentifier = serde_json::from_value(serde_json::json!("b-*")).unwrap();
+        assert_eq!(g1, g2);
+        assert_ne!(g1, g3);
+
+        // Different variant types are not equal
+        assert_ne!(a, g1);
+    }
+
+    #[test]
+    fn test_resource_path_file_serde_roundtrip() {
+        let r: ResourcePath = serde_json::from_value(serde_json::json!("file://test.md")).unwrap();
+        assert!(matches!(&r, ResourcePath::FilePath(_)));
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json, serde_json::json!("file://test.md"));
+    }
+
+    #[test]
+    fn test_resource_path_skill_serde_roundtrip() {
+        let r: ResourcePath = serde_json::from_value(serde_json::json!("skill://my-skill")).unwrap();
+        assert!(matches!(&r, ResourcePath::Skill(_)));
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json, serde_json::json!("skill://my-skill"));
+    }
+
+    #[test]
+    fn test_resource_path_complex_serde_roundtrip() {
+        let input = serde_json::json!({
+            "type": "knowledgeBase",
+            "source": "file://./docs",
+            "name": "docs",
+            "description": "My docs",
+            "autoUpdate": true,
+            "include": ["*.md"],
+            "exclude": ["drafts/*"]
+        });
+        let r: ResourcePath = serde_json::from_value(input.clone()).unwrap();
+        assert!(matches!(&r, ResourcePath::Complex(_)));
+        assert_eq!(r.source(), "file://./docs");
+        assert!(r.is_knowledge_base());
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["source"], "file://./docs");
+        assert_eq!(json["name"], "docs");
+    }
+
+    #[test]
+    fn test_resource_path_invalid_prefix() {
+        let r = serde_json::from_value::<ResourcePath>(serde_json::json!("https://bad"));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_mcp_server_config_registry_overrides_helper() {
+        let reg = McpServerConfig::Registry(RegistryMcpServerConfig {
+            server_type: "registry".into(),
+            env: Some(HashMap::from([("K".into(), "V".into())])),
+            headers: None,
+            timeout: Some(5000),
+            oauth_scopes: vec![],
+            oauth: None,
+        });
+        let overrides = reg.registry_overrides().unwrap();
+        assert_eq!(overrides.timeout, Some(5000));
+        assert!(overrides.env.as_ref().unwrap().contains_key("K"));
+
+        // Non-registry returns None
+        let local = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "x".into(),
+            args: vec![],
+            env: None,
+            timeout_ms: 120_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        assert!(local.registry_overrides().is_none());
+    }
+
+    #[test]
+    fn test_mcp_server_disabled_tools_registry() {
+        let reg = McpServerConfig::Registry(RegistryMcpServerConfig {
+            server_type: "registry".into(),
+            env: None,
+            headers: None,
+            timeout: None,
+            oauth_scopes: vec![],
+            oauth: None,
+        });
+        assert!(reg.disabled_tools().is_empty());
+    }
+
+    #[test]
+    fn test_local_mcp_server_timeout_alias() {
+        // "timeout" alias should map to timeout_ms
+        let config: LocalMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "command": "srv",
+            "timeout": 5000
+        }))
+        .unwrap();
+        assert_eq!(config.timeout_ms, 5000);
+    }
+
+    #[test]
+    fn test_remote_mcp_server_timeout_alias() {
+        let config: RemoteMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "url": "https://x.com",
+            "timeout": 3000
+        }))
+        .unwrap();
+        assert_eq!(config.timeout_ms, 3000);
+    }
+
+    #[test]
+    fn test_local_mcp_server_disabled_flag() {
+        let config: LocalMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "command": "srv",
+            "disabled": true
+        }))
+        .unwrap();
+        assert!(config.disabled);
+    }
+
+    #[test]
+    fn test_remote_mcp_server_disabled_flag() {
+        let config: RemoteMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "url": "https://x.com",
+            "disabled": true
+        }))
+        .unwrap();
+        assert!(config.disabled);
+    }
+
+    #[test]
+    fn test_tools_settings_aliases_deser() {
+        // V1-style snake_case aliases
+        let agent: AgentConfigV2025_08_22 = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "toolsSettings": {
+                "fs_read": { "allowedPaths": ["/a"] },
+                "fs_write": { "deniedPaths": ["/b"] },
+                "execute_bash": { "denyByDefault": true },
+                "aws": { "allowedServices": ["s3"] },
+                "agent_crew": { "availableAgents": ["test-*"] }
+            }
+        }))
+        .unwrap();
+        let ts = agent.tools_settings.unwrap();
+        assert_eq!(ts.fs_read.allowed_paths, vec!["/a"]);
+        assert_eq!(ts.fs_write.denied_paths, vec!["/b"]);
+        assert!(ts.shell.deny_by_default);
+        assert_eq!(ts.use_aws.allowed_services, vec!["s3"]);
+        assert_eq!(ts.crew.available_agents.len(), 1);
+    }
+
+    #[test]
+    fn test_agent_config_serde_roundtrip() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "roundtrip",
+            "description": "desc",
+            "prompt": "be nice",
+            "tools": ["read"],
+            "allowedTools": ["read"],
+            "model": "fast"
+        }))
+        .unwrap();
+        let json = serde_json::to_value(&config).unwrap();
+        let back: AgentConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(back.name(), "roundtrip");
+        assert_eq!(back.model(), Some("fast"));
+    }
+
+    #[test]
+    fn test_hooks_in_full_config() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": {
+                "agentSpawn": [{"command": "echo spawn"}],
+                "stop": [{"command": "echo done"}]
+            }
+        }))
+        .unwrap();
+        assert_eq!(config.hooks().len(), 2);
+        assert!(config.hooks().contains_key(&HookTrigger::AgentSpawn));
+        assert!(config.hooks().contains_key(&HookTrigger::Stop));
+    }
+
+    #[test]
+    fn test_default_schema_value() {
+        // Default::default() gives empty string; serde default gives the URL
+        let config = AgentConfigV2025_08_22::default();
+        assert_eq!(config.schema, "");
+        // When deserialized without $schema, serde uses default_schema()
+        let config: AgentConfigV2025_08_22 = serde_json::from_value(serde_json::json!({"name": "t"})).unwrap();
+        assert!(config.schema.contains("agent-v1.json"));
+    }
+
+    #[test]
+    fn test_input_schema_debug() {
+        let schema = InputSchema(serde_json::json!({"type": "object"}));
+        let dbg = format!("{:?}", schema);
+        assert!(dbg.contains("InputSchema"));
+    }
+
+    #[test]
+    fn test_agent_crew_settings_deser() {
+        let settings: AgentCrewSettings = serde_json::from_value(serde_json::json!({
+            "availableAgents": ["agent-a", "test-*"],
+            "trustedAgents": ["trusted-one"]
+        }))
+        .unwrap();
+        assert_eq!(settings.available_agents.len(), 2);
+        assert_eq!(settings.trusted_agents.len(), 1);
+        assert!(settings.available_agents[0].matches("agent-a"));
+        assert!(settings.available_agents[1].matches("test-foo"));
+    }
+
+    #[test]
+    fn test_registry_mcp_with_oauth_scopes() {
+        let config: McpServerConfig = serde_json::from_value(serde_json::json!({
+            "type": "registry",
+            "oauthScopes": ["read", "write"]
+        }))
+        .unwrap();
+        match config {
+            McpServerConfig::Registry(r) => {
+                assert_eq!(r.oauth_scopes, vec!["read", "write"]);
+            },
+            _ => panic!("Expected Registry"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_servers_struct_deser() {
+        let json = serde_json::json!({
+            "mcpServers": {
+                "s1": {"command": "x", "args": []}
+            }
+        });
+        let servers: McpServers = serde_json::from_value(json).unwrap();
+        assert!(servers.mcp_servers.contains_key("s1"));
+    }
+
+    #[test]
+    fn test_local_mcp_env_field() {
+        let config: LocalMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "command": "srv",
+            "env": {"FOO": "bar", "BAZ": "qux"}
+        }))
+        .unwrap();
+        let env = config.env.unwrap();
+        assert_eq!(env.get("FOO").unwrap(), "bar");
+        assert_eq!(env.get("BAZ").unwrap(), "qux");
+    }
+
+    #[test]
+    fn test_remote_mcp_headers() {
+        let config: RemoteMcpServerConfig = serde_json::from_value(serde_json::json!({
+            "url": "https://x.com",
+            "headers": {"Authorization": "Bearer tok"}
+        }))
+        .unwrap();
+        assert_eq!(config.headers.get("Authorization").unwrap(), "Bearer tok");
     }
 }

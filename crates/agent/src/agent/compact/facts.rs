@@ -680,4 +680,303 @@ mod tests {
         // Limited to 100 chars
         assert_eq!(reasonings[0].chars().count(), 100);
     }
+
+    #[test]
+    fn test_add_reasoning_evicts_oldest() {
+        let mut reasonings = vec![];
+        for i in 0..7 {
+            add_reasoning(&mut reasonings, Some(&format!("reason {i}")));
+        }
+        assert_eq!(reasonings.len(), MAX_REASONINGS);
+        // Oldest (0, 1) should be evicted
+        assert_eq!(reasonings[0], "reason 2");
+        assert_eq!(reasonings[4], "reason 6");
+    }
+
+    #[test]
+    fn test_is_empty_true() {
+        let facts = CompactionFacts::default();
+        assert!(facts.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty_false_with_files() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/a.rs".into(),
+                reasonings: vec![],
+                write_count: 1,
+                read_count: 0,
+            }],
+            ..Default::default()
+        };
+        assert!(!facts.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty_false_with_commands() {
+        let facts = CompactionFacts {
+            commands_executed: vec![CommandEntry {
+                command: "ls".into(),
+                reasonings: vec![],
+                count: 1,
+            }],
+            ..Default::default()
+        };
+        assert!(!facts.is_empty());
+    }
+
+    #[test]
+    fn test_display_empty_facts() {
+        let facts = CompactionFacts::default();
+        let display = facts.to_string();
+        assert!(display.is_empty());
+    }
+
+    #[test]
+    fn test_display_file_no_reasonings() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/a.rs".into(),
+                reasonings: vec![],
+                write_count: 0,
+                read_count: 1,
+            }],
+            total_files: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("* /a.rs\n"));
+    }
+
+    #[test]
+    fn test_display_file_single_reasoning() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/b.rs".into(),
+                reasonings: vec!["Added tests".into()],
+                write_count: 1,
+                read_count: 0,
+            }],
+            total_files: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("* /b.rs - Added tests"));
+    }
+
+    #[test]
+    fn test_display_file_multiple_reasonings_with_truncation_note() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/c.rs".into(),
+                reasonings: vec!["r1".into(), "r2".into()],
+                write_count: 5, // write_count > reasonings.len()
+                read_count: 1,
+            }],
+            total_files: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("showing summaries for last 2 modifications"));
+        assert!(display.contains("  - r1"));
+        assert!(display.contains("  - r2"));
+    }
+
+    #[test]
+    fn test_display_file_multiple_reasonings_no_truncation_note() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/d.rs".into(),
+                reasonings: vec!["r1".into(), "r2".into()],
+                write_count: 2, // write_count == reasonings.len()
+                read_count: 3,
+            }],
+            total_files: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("2 modifications, 3 reads"));
+        assert!(!display.contains("showing summaries for last"));
+        assert!(display.contains("  - r1"));
+    }
+
+    #[test]
+    fn test_display_files_truncated_message() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/a.rs".into(),
+                reasonings: vec![],
+                write_count: 1,
+                read_count: 0,
+            }],
+            total_files: 50, // total_files > files_accessed.len()
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("Showing 1 of 50 files"));
+    }
+
+    #[test]
+    fn test_display_commands_truncated_message() {
+        let facts = CompactionFacts {
+            commands_executed: vec![CommandEntry {
+                command: "ls".into(),
+                reasonings: vec!["list files".into()],
+                count: 1,
+            }],
+            total_commands: 30, // total_commands > commands_executed.len()
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("Showing 1 of 30 commands"));
+    }
+
+    #[test]
+    fn test_display_command_no_reasoning() {
+        let facts = CompactionFacts {
+            commands_executed: vec![CommandEntry {
+                command: "pwd".into(),
+                reasonings: vec![],
+                count: 1,
+            }],
+            total_commands: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("* pwd\n"));
+        assert!(!display.contains(" - "));
+    }
+
+    #[test]
+    fn test_display_command_with_reasoning() {
+        let facts = CompactionFacts {
+            commands_executed: vec![CommandEntry {
+                command: "cargo test".into(),
+                reasonings: vec!["Run tests".into()],
+                count: 1,
+            }],
+            total_commands: 1,
+            ..Default::default()
+        };
+        let display = facts.to_string();
+        assert!(display.contains("* cargo test - Run tests"));
+    }
+
+    #[test]
+    fn test_extract_compaction_facts_exclude_last_n() {
+        let messages = vec![
+            create_fs_write_msg("/early.rs", "Early write"),
+            create_fs_write_msg("/late.rs", "Late write"),
+        ];
+        // Exclude last 1 message
+        let facts = extract_compaction_facts(&messages, 1);
+        assert_eq!(facts.total_files, 1);
+        assert_eq!(facts.files_accessed[0].path, "/early.rs");
+    }
+
+    #[test]
+    fn test_extract_compaction_facts_exclude_all() {
+        let messages = vec![
+            create_fs_write_msg("/a.rs", "Write A"),
+            create_fs_write_msg("/b.rs", "Write B"),
+        ];
+        let facts = extract_compaction_facts(&messages, 10);
+        assert!(facts.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_path_exactly_100() {
+        let path = "x".repeat(100);
+        assert_eq!(truncate_path(&path), path);
+    }
+
+    #[test]
+    fn test_truncate_cmd_exactly_max() {
+        let cmd = "x".repeat(MAX_CMD_LEN);
+        assert_eq!(truncate_cmd(&cmd), cmd);
+    }
+
+    #[test]
+    fn test_multiple_commands_scored_by_frequency() {
+        let tool_a = ExecuteCmd {
+            command: "cargo build".into(),
+            working_dir: None,
+        };
+        let tool_b = ExecuteCmd {
+            command: "cargo test".into(),
+            working_dir: None,
+        };
+        let make_cmd_msg = |tool: &ExecuteCmd| {
+            let input = serde_json::to_value(tool).unwrap();
+            Message::new(
+                Uuid::new_v4().to_string(),
+                Role::Assistant,
+                vec![ContentBlock::ToolUse(ToolUseBlock {
+                    tool_use_id: "t".into(),
+                    name: BuiltInToolName::ExecuteCmd.to_string(),
+                    input,
+                })],
+                None,
+            )
+        };
+        let messages = vec![
+            make_cmd_msg(&tool_a),
+            make_cmd_msg(&tool_a),
+            make_cmd_msg(&tool_a),
+            make_cmd_msg(&tool_b),
+        ];
+        let facts = extract_compaction_facts(&messages, 0);
+        assert_eq!(facts.commands_executed.len(), 2);
+        // cargo build has higher frequency so should be first
+        assert_eq!(facts.commands_executed[0].command, "cargo build");
+        assert_eq!(facts.commands_executed[0].count, 3);
+    }
+
+    #[test]
+    fn test_format_counts_zero_zero() {
+        // Edge case - shouldn't happen in practice but test the match
+        assert_eq!(format_counts(0, 0), "0 reads");
+    }
+
+    #[test]
+    fn test_ignores_unparsable_tool_input() {
+        // Valid tool name but invalid input JSON for that tool
+        let messages = vec![Message::new(
+            Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::ToolUse(ToolUseBlock {
+                tool_use_id: "test".into(),
+                name: BuiltInToolName::FsWrite.to_string(),
+                input: serde_json::json!({"invalid_field": true}),
+            })],
+            None,
+        )];
+        let facts = extract_compaction_facts(&messages, 0);
+        assert!(facts.is_empty());
+    }
+
+    #[test]
+    fn test_display_both_files_and_commands() {
+        let facts = CompactionFacts {
+            files_accessed: vec![FileEntry {
+                path: "/a.rs".into(),
+                reasonings: vec!["wrote code".into()],
+                write_count: 1,
+                read_count: 0,
+            }],
+            commands_executed: vec![CommandEntry {
+                command: "cargo build".into(),
+                reasonings: vec!["build project".into()],
+                count: 2,
+            }],
+            total_files: 1,
+            total_commands: 1,
+        };
+        let display = facts.to_string();
+        assert!(display.contains("Files Modified and Read"));
+        assert!(display.contains("Commands Executed"));
+        assert!(display.contains("/a.rs - wrote code"));
+        assert!(display.contains("cargo build - build project"));
+    }
 }

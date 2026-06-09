@@ -828,17 +828,1146 @@ async fn make_svc(
 mod tests {
     use super::*;
 
-    /// Regression test: cached registration files lacking `scopes` must still
-    /// parse so a single bad cache doesn't permanently block re-auth.
+    // ─── OAuthConfig serde ───────────────────────────────────────────────
+
+    #[test]
+    fn test_oauth_config_serialize_all_fields() {
+        let cfg = OAuthConfig {
+            client_id: Some("my-client".into()),
+            redirect_uri: Some("127.0.0.1:7778".into()),
+            oauth_scopes: Some(vec!["openid".into(), "email".into()]),
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"clientId\":\"my-client\""));
+        assert!(json.contains("\"redirectUri\":\"127.0.0.1:7778\""));
+        assert!(json.contains("\"oauthScopes\":[\"openid\",\"email\"]"));
+    }
+
+    #[test]
+    fn test_oauth_config_serialize_none_fields_omitted() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: None,
+            oauth_scopes: None,
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn test_oauth_config_deserialize_camel_case() {
+        let json = r#"{"clientId":"x","redirectUri":"y","oauthScopes":["a"]}"#;
+        let cfg: OAuthConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.client_id.unwrap(), "x");
+        assert_eq!(cfg.redirect_uri.unwrap(), "y");
+        assert_eq!(cfg.oauth_scopes.unwrap(), vec!["a"]);
+    }
+
+    #[test]
+    fn test_oauth_config_deserialize_empty_object() {
+        let cfg: OAuthConfig = serde_json::from_str("{}").unwrap();
+        assert!(cfg.client_id.is_none());
+        assert!(cfg.redirect_uri.is_none());
+        assert!(cfg.oauth_scopes.is_none());
+    }
+
+    #[test]
+    fn test_oauth_config_eq_and_clone() {
+        let cfg = OAuthConfig {
+            client_id: Some("id".into()),
+            redirect_uri: None,
+            oauth_scopes: None,
+        };
+        let cfg2 = cfg.clone();
+        assert_eq!(cfg, cfg2);
+    }
+
+    // ─── Registration serde ──────────────────────────────────────────────
+
     #[test]
     fn test_registration_tolerates_missing_scopes_field() {
         let cached_json =
             b"{\n  \"client_id\": \"abc-123\",\n  \"redirect_uri\": \"http://localhost:8080/callback\"\n}";
-
-        let reg: Registration = serde_json::from_slice(cached_json)
-            .expect("Registration should tolerate missing scopes field by defaulting to empty Vec");
+        let reg: Registration = serde_json::from_slice(cached_json).unwrap();
         assert_eq!(reg.client_id, "abc-123");
         assert_eq!(reg.redirect_uri, "http://localhost:8080/callback");
         assert!(reg.scopes.is_empty());
+    }
+
+    #[test]
+    fn test_registration_full_roundtrip() {
+        let reg = Registration {
+            client_id: "cid".into(),
+            client_secret: Some("secret".into()),
+            scopes: vec!["openid".into(), "email".into()],
+            redirect_uri: "http://127.0.0.1:9999".into(),
+        };
+        let json = serde_json::to_string(&reg).unwrap();
+        let reg2: Registration = serde_json::from_str(&json).unwrap();
+        assert_eq!(reg2.client_id, "cid");
+        assert_eq!(reg2.client_secret.unwrap(), "secret");
+        assert_eq!(reg2.scopes, vec!["openid", "email"]);
+        assert_eq!(reg2.redirect_uri, "http://127.0.0.1:9999");
+    }
+
+    #[test]
+    fn test_registration_missing_required_field_fails() {
+        let json = r#"{"client_id": "x"}"#;
+        let res = serde_json::from_str::<Registration>(json);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_registration_from_oauth_client_config() {
+        let config = OAuthClientConfig {
+            client_id: "from-config".into(),
+            client_secret: Some("s".into()),
+            scopes: vec!["a".into(), "b".into()],
+            redirect_uri: "http://localhost".into(),
+        };
+        let reg: Registration = config.into();
+        assert_eq!(reg.client_id, "from-config");
+        assert_eq!(reg.client_secret.unwrap(), "s");
+        assert_eq!(reg.scopes, vec!["a", "b"]);
+        assert_eq!(reg.redirect_uri, "http://localhost");
+    }
+
+    #[test]
+    fn test_registration_null_secret() {
+        let json = r#"{"client_id":"x","client_secret":null,"redirect_uri":"http://l","scopes":[]}"#;
+        let reg: Registration = serde_json::from_str(json).unwrap();
+        assert!(reg.client_secret.is_none());
+    }
+
+    // ─── OAuthMeta serde ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_oauth_meta_roundtrip() {
+        let meta = OAuthMeta {
+            authorization_endpoint: "https://auth.example.com/authorize".into(),
+            token_endpoint: "https://auth.example.com/token".into(),
+            registration_endpoint: Some("https://auth.example.com/register".into()),
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let meta2: OAuthMeta = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta2.authorization_endpoint, meta.authorization_endpoint);
+        assert_eq!(meta2.token_endpoint, meta.token_endpoint);
+        assert_eq!(meta2.registration_endpoint, meta.registration_endpoint);
+    }
+
+    #[test]
+    fn test_oauth_meta_optional_registration() {
+        let json = r#"{"authorization_endpoint":"a","token_endpoint":"t"}"#;
+        let meta: OAuthMeta = serde_json::from_str(json).unwrap();
+        assert!(meta.registration_endpoint.is_none());
+    }
+
+    #[test]
+    fn test_oauth_meta_missing_required_fails() {
+        let json = r#"{"authorization_endpoint":"a"}"#;
+        assert!(serde_json::from_str::<OAuthMeta>(json).is_err());
+    }
+
+    // ─── compute_key ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_compute_key_deterministic() {
+        let url = Url::parse("https://example.com/mcp").unwrap();
+        let k1 = compute_key(&url);
+        let k2 = compute_key(&url);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn test_compute_key_different_paths_differ() {
+        let u1 = Url::parse("https://example.com/a").unwrap();
+        let u2 = Url::parse("https://example.com/b").unwrap();
+        assert_ne!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_different_hosts_differ() {
+        let u1 = Url::parse("https://a.com/path").unwrap();
+        let u2 = Url::parse("https://b.com/path").unwrap();
+        assert_ne!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_ignores_query_and_fragment() {
+        let u1 = Url::parse("https://example.com/p?q=1#frag").unwrap();
+        let u2 = Url::parse("https://example.com/p?q=2#other").unwrap();
+        assert_eq!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_is_hex_sha256() {
+        let url = Url::parse("https://example.com/mcp").unwrap();
+        let key = compute_key(&url);
+        assert_eq!(key.len(), 64);
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_compute_key_port_matters() {
+        let u1 = Url::parse("https://example.com:443/p").unwrap();
+        let u2 = Url::parse("https://example.com:8443/p").unwrap();
+        assert_ne!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_scheme_matters() {
+        let u1 = Url::parse("http://example.com/mcp").unwrap();
+        let u2 = Url::parse("https://example.com/mcp").unwrap();
+        assert_ne!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_trailing_slash() {
+        let u1 = Url::parse("https://example.com/mcp/").unwrap();
+        let u2 = Url::parse("https://example.com/mcp").unwrap();
+        assert_ne!(compute_key(&u1), compute_key(&u2));
+    }
+
+    // ─── get_default_scopes ──────────────────────────────────────────────
+
+    #[test]
+    fn test_get_default_scopes() {
+        let scopes = get_default_scopes();
+        assert_eq!(scopes, &["openid", "email", "profile", "offline_access"]);
+    }
+
+    #[test]
+    fn test_get_default_scopes_length() {
+        assert_eq!(get_default_scopes().len(), 4);
+    }
+
+    // ─── get_stub_credentials ────────────────────────────────────────────
+
+    #[test]
+    fn test_get_stub_credentials_parses() {
+        let cred = get_stub_credentials().unwrap();
+        let json = serde_json::to_value(&cred).unwrap();
+        assert_eq!(json["access_token"], "stub");
+        assert_eq!(json["token_type"], "bearer");
+        assert_eq!(json["expires_in"], 3600);
+        assert_eq!(json["refresh_token"], "stub");
+    }
+
+    // ─── OauthUtilError ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        let err: OauthUtilError = io_err.into();
+        assert!(matches!(err, OauthUtilError::Io(_)));
+        assert!(err.to_string().contains("gone"));
+    }
+
+    #[test]
+    fn test_error_from_url_parse() {
+        let parse_err = Url::parse("://bad").unwrap_err();
+        let err: OauthUtilError = parse_err.into();
+        assert!(matches!(err, OauthUtilError::Parse(_)));
+    }
+
+    #[test]
+    fn test_error_from_serde() {
+        let serde_err = serde_json::from_str::<Registration>("not json").unwrap_err();
+        let err: OauthUtilError = serde_err.into();
+        assert!(matches!(err, OauthUtilError::Serde(_)));
+    }
+
+    #[test]
+    fn test_error_display_oauth_discovery_failed() {
+        let err = OauthUtilError::OAuthDiscoveryFailed;
+        assert!(err.to_string().contains("OAuth discovery failed"));
+    }
+
+    #[test]
+    fn test_error_display_missing_auth_manager() {
+        let err = OauthUtilError::MissingAuthorizationManager;
+        assert!(err.to_string().contains("Missing authorization manager"));
+    }
+
+    #[test]
+    fn test_error_display_missing_auth_client() {
+        let err = OauthUtilError::MissingAuthClient;
+        assert!(err.to_string().contains("Missing auth client"));
+    }
+
+    #[test]
+    fn test_error_display_malform_directory() {
+        let err = OauthUtilError::MalformDirectory;
+        assert!(err.to_string().contains("Malformed directory"));
+    }
+
+    #[test]
+    fn test_error_display_missing_credentials() {
+        let err = OauthUtilError::MissingCredentials;
+        assert!(err.to_string().contains("Missing credential"));
+    }
+
+    #[test]
+    fn test_error_display_service_not_obtained() {
+        let err = OauthUtilError::ServiceNotObtained("timeout".into());
+        assert!(err.to_string().contains("timeout"));
+        assert!(err.to_string().contains("Failed to create a running service"));
+    }
+
+    #[test]
+    fn test_error_display_http() {
+        let err = OauthUtilError::Http("bad header".into());
+        assert_eq!(err.to_string(), "bad header");
+    }
+
+    #[test]
+    fn test_error_from_auth_no_authorization_support() {
+        let auth_err = rmcp::transport::AuthError::NoAuthorizationSupport;
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::OAuthDiscoveryFailed));
+    }
+
+    #[tokio::test]
+    async fn test_error_from_oneshot_recv() {
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        drop(tx);
+        let recv_err = rx.await.unwrap_err();
+        let err: OauthUtilError = recv_err.into();
+        assert!(matches!(err, OauthUtilError::OneshotRecv(_)));
+    }
+
+    // ─── LoopBackDropGuard ───────────────────────────────────────────────
+
+    #[test]
+    fn test_loopback_drop_guard_cancels_on_drop() {
+        let token = CancellationToken::new();
+        assert!(!token.is_cancelled());
+        {
+            let _guard = LoopBackDropGuard {
+                cancellation_token: token.clone(),
+            };
+        }
+        assert!(token.is_cancelled());
+    }
+
+    // ─── make_svc (loopback server) ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_make_svc_binds_and_returns_addr() {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+        assert_eq!(actual_addr.ip(), std::net::Ipv4Addr::LOCALHOST);
+        assert_ne!(actual_addr.port(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_sends_auth_code_on_request() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/?code=AUTH_CODE&state=CSRF_STATE", actual_addr);
+        let _resp = client.get(&url).send().await.unwrap();
+
+        let (code, state) = rx.await.unwrap();
+        assert_eq!(code, "AUTH_CODE");
+        assert_eq!(state, "CSRF_STATE");
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_handles_error_param() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/?error=access_denied&code=c&state=s", actual_addr);
+        let resp = client.get(&url).send().await.unwrap();
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("OAuth failed"));
+
+        let (code, state) = rx.await.unwrap();
+        assert_eq!(code, "c");
+        assert_eq!(state, "s");
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_guard_drop_cancels() {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+        let (_actual_addr, guard) = make_svc(tx, addr, token).await.unwrap();
+        assert!(!token_clone.is_cancelled());
+        drop(guard);
+        assert!(token_clone.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_missing_code_defaults_empty() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/", actual_addr);
+        let _resp = client.get(&url).send().await.unwrap();
+
+        let (code, state) = rx.await.unwrap();
+        assert_eq!(code, "");
+        assert_eq!(state, "");
+    }
+
+    // ─── HttpServiceBuilder construction ─────────────────────────────────
+
+    #[test]
+    fn test_http_service_builder_new() {
+        let headers = HashMap::new();
+        let scopes: Vec<String> = vec![];
+        let oauth_config = None;
+        let (tx, _rx) = mpsc::channel(1);
+        let builder = HttpServiceBuilder::new(
+            "test-server",
+            "https://example.com/mcp",
+            5000,
+            &scopes,
+            &headers,
+            &oauth_config,
+            &tx,
+        );
+        assert_eq!(builder.server_name, "test-server");
+        assert_eq!(builder.url, "https://example.com/mcp");
+        assert_eq!(builder.timeout, 5000);
+    }
+
+    // ─── ReauthContext ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_reauth_context_clone() {
+        let (tx, _rx) = mpsc::channel(1);
+        let ctx = ReauthContext {
+            server_name: "srv".into(),
+            url: Url::parse("https://example.com").unwrap(),
+            reg_full_path: PathBuf::from("/tmp/reg.json"),
+            scopes: vec!["openid".into()],
+            oauth_config: None,
+            server_actor_event_tx: tx,
+        };
+        let ctx2 = ctx.clone();
+        assert_eq!(ctx2.server_name, "srv");
+        assert_eq!(ctx2.scopes, vec!["openid"]);
+    }
+
+    // ─── File-system touching tests (tempfile) ───────────────────────────
+
+    #[tokio::test]
+    async fn test_registration_file_write_and_read_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg_path = dir.path().join("reg.json");
+
+        let reg = Registration {
+            client_id: "test-id".into(),
+            client_secret: None,
+            scopes: vec!["openid".into()],
+            redirect_uri: "http://127.0.0.1:8080".into(),
+        };
+
+        let json = serde_json::to_string_pretty(&reg).unwrap();
+        tokio::fs::write(&reg_path, &json).await.unwrap();
+
+        let read_bytes = tokio::fs::read(&reg_path).await.unwrap();
+        let reg2: Registration = serde_json::from_slice(&read_bytes).unwrap();
+        assert_eq!(reg2.client_id, "test-id");
+        assert_eq!(reg2.scopes, vec!["openid"]);
+    }
+
+    #[tokio::test]
+    async fn test_credential_file_malformed_json_fails_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_path = dir.path().join("token.json");
+        tokio::fs::write(&cred_path, "not valid json {{{").await.unwrap();
+
+        let bytes = tokio::fs::read(&cred_path).await.unwrap();
+        let result = serde_json::from_slice::<OAuthTokenResponse>(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_credential_file_missing_fields_fails_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_path = dir.path().join("token.json");
+        tokio::fs::write(&cred_path, r#"{"access_token": "x"}"#).await.unwrap();
+
+        let bytes = tokio::fs::read(&cred_path).await.unwrap();
+        let result = serde_json::from_slice::<OAuthTokenResponse>(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_valid_token_response_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_path = dir.path().join("token.json");
+        let token_json = r#"{
+            "access_token": "abc123",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "refresh_token": "ref456",
+            "scope": "openid email"
+        }"#;
+        tokio::fs::write(&cred_path, token_json).await.unwrap();
+
+        let bytes = tokio::fs::read(&cred_path).await.unwrap();
+        let token: OAuthTokenResponse = serde_json::from_slice(&bytes).unwrap();
+        let val = serde_json::to_value(&token).unwrap();
+        assert_eq!(val["access_token"], "abc123");
+        assert_eq!(val["token_type"], "bearer");
+    }
+
+    #[tokio::test]
+    async fn test_create_nested_dir_for_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_path = dir.path().join("a/b/c/token.json");
+        let parent = cred_path.parent().unwrap();
+        tokio::fs::create_dir_all(parent).await.unwrap();
+        tokio::fs::write(&cred_path, "{}").await.unwrap();
+        assert!(cred_path.exists());
+    }
+
+    // ─── URL parsing edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn test_url_parse_invalid_returns_error() {
+        let result = Url::from_str("not a url");
+        assert!(result.is_err());
+        let err: OauthUtilError = result.unwrap_err().into();
+        assert!(matches!(err, OauthUtilError::Parse(_)));
+    }
+
+    // ─── OAuthConfig redirect_uri port parsing ───────────────────────────
+
+    #[test]
+    fn test_redirect_uri_port_parsing() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some("127.0.0.1:7778".into()),
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 7778);
+    }
+
+    #[test]
+    fn test_redirect_uri_port_parsing_no_port() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some("localhost".into()),
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 0);
+    }
+
+    #[test]
+    fn test_redirect_uri_port_parsing_none() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: None,
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 0);
+    }
+
+    // ─── HeaderMap conversion error ──────────────────────────────────────
+
+    #[test]
+    fn test_invalid_header_produces_http_error() {
+        let mut headers = HashMap::new();
+        headers.insert("bad\nheader".to_string(), "value".to_string());
+        let result: Result<HeaderMap, _> = HeaderMap::try_from(&headers);
+        assert!(result.is_err());
+    }
+
+    // ─── AuthClientWrapper construction ──────────────────────────────────
+
+    #[tokio::test]
+    async fn test_auth_client_wrapper_new() {
+        // We can't easily construct a real AuthClient without a server,
+        // but we can test the path logic
+        let path = PathBuf::from("/tmp/test/cred.json");
+        assert_eq!(path.parent().unwrap(), Path::new("/tmp/test"));
+    }
+
+    // ─── Additional coverage: AuthError From impl (non-NoAuthorizationSupport) ───
+
+    #[test]
+    fn test_error_from_auth_authorization_required() {
+        let auth_err = rmcp::transport::AuthError::AuthorizationRequired;
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("authorization required"));
+    }
+
+    #[test]
+    fn test_error_from_auth_authorization_failed() {
+        let auth_err = rmcp::transport::AuthError::AuthorizationFailed("bad code".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("bad code"));
+    }
+
+    #[test]
+    fn test_error_from_auth_token_exchange_failed() {
+        let auth_err = rmcp::transport::AuthError::TokenExchangeFailed("exchange err".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("exchange err"));
+    }
+
+    #[test]
+    fn test_error_from_auth_token_refresh_failed() {
+        let auth_err = rmcp::transport::AuthError::TokenRefreshFailed("refresh err".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("refresh err"));
+    }
+
+    #[test]
+    fn test_error_from_auth_oauth_error() {
+        let auth_err = rmcp::transport::AuthError::OAuthError("generic oauth".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("generic oauth"));
+    }
+
+    #[test]
+    fn test_error_from_auth_metadata_error() {
+        let auth_err = rmcp::transport::AuthError::MetadataError("meta err".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("meta err"));
+    }
+
+    #[test]
+    fn test_error_from_auth_internal_error() {
+        let auth_err = rmcp::transport::AuthError::InternalError("internal".into());
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+        assert!(err.to_string().contains("internal"));
+    }
+
+    #[test]
+    fn test_error_from_auth_url_error() {
+        let url_err = url::Url::parse("://").unwrap_err();
+        let auth_err = rmcp::transport::AuthError::UrlError(url_err);
+        let err: OauthUtilError = auth_err.into();
+        assert!(matches!(err, OauthUtilError::Auth(_)));
+    }
+
+    // ─── Additional compute_key edge cases ───────────────────────────────
+
+    #[test]
+    fn test_compute_key_with_username_password_in_url() {
+        // Origin serialization strips userinfo
+        let u1 = Url::parse("https://user:pass@example.com/mcp").unwrap();
+        let u2 = Url::parse("https://example.com/mcp").unwrap();
+        assert_eq!(compute_key(&u1), compute_key(&u2));
+    }
+
+    #[test]
+    fn test_compute_key_root_path() {
+        let url = Url::parse("https://example.com/").unwrap();
+        let key = compute_key(&url);
+        assert_eq!(key.len(), 64);
+    }
+
+    #[test]
+    fn test_compute_key_deep_path() {
+        let url = Url::parse("https://example.com/a/b/c/d/e/f").unwrap();
+        let key = compute_key(&url);
+        assert_eq!(key.len(), 64);
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_compute_key_non_standard_port() {
+        let url = Url::parse("http://localhost:3000/mcp").unwrap();
+        let key = compute_key(&url);
+        assert_eq!(key.len(), 64);
+    }
+
+    #[test]
+    fn test_compute_key_ipv6() {
+        let url = Url::parse("http://[::1]:8080/mcp").unwrap();
+        let key = compute_key(&url);
+        assert_eq!(key.len(), 64);
+    }
+
+    // ─── Additional redirect_uri port parsing edge cases ─────────────────
+
+    #[test]
+    fn test_redirect_uri_port_parsing_colon_only() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some(":7778".into()),
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 7778);
+    }
+
+    #[test]
+    fn test_redirect_uri_port_parsing_invalid_port() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some("127.0.0.1:99999".into()),
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 0); // 99999 > u16::MAX
+    }
+
+    #[test]
+    fn test_redirect_uri_port_parsing_empty_string() {
+        let cfg = OAuthConfig {
+            client_id: None,
+            redirect_uri: Some("".into()),
+            oauth_scopes: None,
+        };
+        let port = cfg
+            .redirect_uri
+            .as_ref()
+            .and_then(|uri| uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok()))
+            .unwrap_or(0);
+        assert_eq!(port, 0);
+    }
+
+    // ─── Additional make_svc tests ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_make_svc_response_body_success() {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/?code=c&state=s", actual_addr);
+        let resp = client.get(&url).send().await.unwrap();
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("You can close this page now"));
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_error_response_contains_hint() {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/?error=invalid_scope&code=c&state=s", actual_addr);
+        let resp = client.get(&url).send().await.unwrap();
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("invalid_scope"));
+        assert!(body.contains("oauthScopes"));
+    }
+
+    #[tokio::test]
+    async fn test_make_svc_with_specific_port() {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        // Use port 0 to let OS assign
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let token = CancellationToken::new();
+        let (actual_addr, _guard) = make_svc(tx, addr, token).await.unwrap();
+        assert!(actual_addr.port() > 0);
+    }
+
+    // ─── Additional file I/O tests ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_credential_and_registration_coexist_in_same_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = Url::parse("https://example.com/mcp").unwrap();
+        let key = compute_key(&url);
+        let cred_path = dir.path().join(format!("{key}.token.json"));
+        let reg_path = dir.path().join(format!("{key}.registration.json"));
+
+        let token_json = r#"{"access_token":"t","token_type":"bearer","expires_in":3600}"#;
+        let reg_json = r#"{"client_id":"c","redirect_uri":"http://localhost","scopes":[]}"#;
+
+        tokio::fs::write(&cred_path, token_json).await.unwrap();
+        tokio::fs::write(&reg_path, reg_json).await.unwrap();
+
+        assert!(cred_path.exists());
+        assert!(reg_path.exists());
+
+        let reg: Registration = serde_json::from_slice(&tokio::fs::read(&reg_path).await.unwrap()).unwrap();
+        assert_eq!(reg.client_id, "c");
+    }
+
+    #[tokio::test]
+    async fn test_file_read_nonexistent_returns_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        let result = tokio::fs::read(&path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parent_path_none_for_root() {
+        // Path::new("/").parent() returns Some("") not None
+        // But PathBuf::from("").parent() returns None
+        let path = PathBuf::from("");
+        assert_eq!(path.parent(), None);
+    }
+
+    // ─── Additional OAuthConfig tests ────────────────────────────────────
+
+    #[test]
+    fn test_oauth_config_debug_impl() {
+        let cfg = OAuthConfig {
+            client_id: Some("id".into()),
+            redirect_uri: None,
+            oauth_scopes: Some(vec!["scope1".into()]),
+        };
+        let debug_str = format!("{:?}", cfg);
+        assert!(debug_str.contains("OAuthConfig"));
+        assert!(debug_str.contains("id"));
+    }
+
+    #[test]
+    fn test_oauth_config_partial_fields() {
+        let json = r#"{"clientId":"only-id"}"#;
+        let cfg: OAuthConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.client_id.unwrap(), "only-id");
+        assert!(cfg.redirect_uri.is_none());
+        assert!(cfg.oauth_scopes.is_none());
+    }
+
+    #[test]
+    fn test_oauth_config_empty_scopes_array() {
+        let json = r#"{"oauthScopes":[]}"#;
+        let cfg: OAuthConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.oauth_scopes.unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_oauth_config_ne() {
+        let cfg1 = OAuthConfig {
+            client_id: Some("a".into()),
+            redirect_uri: None,
+            oauth_scopes: None,
+        };
+        let cfg2 = OAuthConfig {
+            client_id: Some("b".into()),
+            redirect_uri: None,
+            oauth_scopes: None,
+        };
+        assert_ne!(cfg1, cfg2);
+    }
+
+    // ─── Additional Registration tests ───────────────────────────────────
+
+    #[test]
+    fn test_registration_from_oauth_client_config_no_secret() {
+        let config = OAuthClientConfig {
+            client_id: "id".into(),
+            client_secret: None,
+            scopes: vec![],
+            redirect_uri: "http://localhost:1234".into(),
+        };
+        let reg: Registration = config.into();
+        assert!(reg.client_secret.is_none());
+        assert!(reg.scopes.is_empty());
+    }
+
+    #[test]
+    fn test_registration_debug_impl() {
+        let reg = Registration {
+            client_id: "debug-test".into(),
+            client_secret: None,
+            scopes: vec![],
+            redirect_uri: "http://localhost".into(),
+        };
+        let debug_str = format!("{:?}", reg);
+        assert!(debug_str.contains("debug-test"));
+    }
+
+    #[test]
+    fn test_registration_clone() {
+        let reg = Registration {
+            client_id: "clone-test".into(),
+            client_secret: Some("secret".into()),
+            scopes: vec!["s1".into()],
+            redirect_uri: "http://localhost".into(),
+        };
+        let reg2 = reg.clone();
+        assert_eq!(reg2.client_id, "clone-test");
+        assert_eq!(reg2.client_secret.unwrap(), "secret");
+    }
+
+    // ─── Additional OAuthMeta tests ──────────────────────────────────────
+
+    #[test]
+    fn test_oauth_meta_clone() {
+        let meta = OAuthMeta {
+            authorization_endpoint: "https://auth.example.com/authorize".into(),
+            token_endpoint: "https://auth.example.com/token".into(),
+            registration_endpoint: None,
+        };
+        let meta2 = meta.clone();
+        assert_eq!(meta2.authorization_endpoint, "https://auth.example.com/authorize");
+        assert!(meta2.registration_endpoint.is_none());
+    }
+
+    #[test]
+    fn test_oauth_meta_debug_impl() {
+        let meta = OAuthMeta {
+            authorization_endpoint: "a".into(),
+            token_endpoint: "t".into(),
+            registration_endpoint: Some("r".into()),
+        };
+        let debug_str = format!("{:?}", meta);
+        assert!(debug_str.contains("OAuthMeta"));
+    }
+
+    // ─── HttpServiceBuilder URL parse error path ─────────────────────────
+
+    #[test]
+    fn test_http_service_builder_invalid_url_parse() {
+        // The try_build method calls Url::from_str(url) which will fail for invalid URLs
+        let result = Url::from_str("not a valid url");
+        assert!(result.is_err());
+        let err: OauthUtilError = result.unwrap_err().into();
+        assert!(matches!(err, OauthUtilError::Parse(_)));
+    }
+
+    // ─── HttpServiceBuilder invalid headers path ─────────────────────────
+
+    #[test]
+    fn test_http_service_builder_invalid_headers_conversion() {
+        let mut headers = HashMap::new();
+        headers.insert("invalid\nheader".to_string(), "value".to_string());
+        let result: Result<HeaderMap, _> = HeaderMap::try_from(&headers);
+        assert!(result.is_err());
+        let err = OauthUtilError::Http(result.unwrap_err().to_string());
+        assert!(matches!(err, OauthUtilError::Http(_)));
+    }
+
+    // ─── get_stub_credentials additional tests ───────────────────────────
+
+    #[test]
+    fn test_get_stub_credentials_has_refresh_token() {
+        let cred = get_stub_credentials().unwrap();
+        let json = serde_json::to_value(&cred).unwrap();
+        assert_eq!(json["refresh_token"], "stub");
+        assert_eq!(json["scope"], "stub");
+    }
+
+    #[test]
+    fn test_get_stub_credentials_serializes_back() {
+        let cred = get_stub_credentials().unwrap();
+        let json_str = serde_json::to_string(&cred).unwrap();
+        let reparsed: OAuthTokenResponse = serde_json::from_str(&json_str).unwrap();
+        let val = serde_json::to_value(&reparsed).unwrap();
+        assert_eq!(val["access_token"], "stub");
+    }
+
+    // ─── LoopBackDropGuard additional tests ──────────────────────────────
+
+    #[test]
+    fn test_loopback_drop_guard_multiple_drops_idempotent() {
+        let token = CancellationToken::new();
+        let guard = LoopBackDropGuard {
+            cancellation_token: token.clone(),
+        };
+        drop(guard);
+        assert!(token.is_cancelled());
+        // Cancelling an already-cancelled token is fine
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    // ─── get_default_scopes contains expected values ─────────────────────
+
+    #[test]
+    fn test_get_default_scopes_contains_offline_access() {
+        assert!(get_default_scopes().contains(&"offline_access"));
+    }
+
+    #[test]
+    fn test_get_default_scopes_contains_openid() {
+        assert!(get_default_scopes().contains(&"openid"));
+    }
+
+    // ─── OauthUtilError reqwest variant ──────────────────────────────────
+
+    #[test]
+    fn test_error_reqwest_display() {
+        // We can't easily construct a reqwest::Error directly, but we can test the variant exists
+        let err = OauthUtilError::Http("simulated reqwest error".into());
+        assert!(err.to_string().contains("simulated reqwest error"));
+    }
+
+    // ─── HttpServiceBuilder with valid headers ───────────────────────────
+
+    #[test]
+    fn test_http_service_builder_stores_all_fields() {
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), "Bearer token".to_string());
+        let scopes = vec!["openid".to_string()];
+        let oauth_config = Some(OAuthConfig {
+            client_id: Some("cid".into()),
+            redirect_uri: Some("127.0.0.1:8080".into()),
+            oauth_scopes: Some(vec!["openid".into()]),
+        });
+        let (tx, _rx) = mpsc::channel(1);
+        let builder = HttpServiceBuilder::new("srv", "https://x.com/mcp", 10000, &scopes, &headers, &oauth_config, &tx);
+        assert_eq!(builder.server_name, "srv");
+        assert_eq!(builder.timeout, 10000);
+        assert_eq!(builder.scopes, &["openid".to_string()]);
+        assert!(builder.oauth_config.is_some());
+    }
+
+    // ─── ReauthContext with oauth_config ─────────────────────────────────
+
+    #[test]
+    fn test_reauth_context_with_oauth_config() {
+        let (tx, _rx) = mpsc::channel(1);
+        let ctx = ReauthContext {
+            server_name: "srv".into(),
+            url: Url::parse("https://example.com").unwrap(),
+            reg_full_path: PathBuf::from("/tmp/reg.json"),
+            scopes: vec!["openid".into(), "email".into()],
+            oauth_config: Some(OAuthConfig {
+                client_id: Some("custom-id".into()),
+                redirect_uri: Some("127.0.0.1:9999".into()),
+                oauth_scopes: None,
+            }),
+            server_actor_event_tx: tx,
+        };
+        let ctx2 = ctx.clone();
+        assert_eq!(
+            ctx2.oauth_config.as_ref().unwrap().client_id.as_deref(),
+            Some("custom-id")
+        );
+    }
+
+    // ─── Token response with optional fields ─────────────────────────────
+
+    #[tokio::test]
+    async fn test_token_response_without_refresh_token() {
+        let token_json = r#"{
+            "access_token": "abc",
+            "token_type": "bearer",
+            "expires_in": 7200
+        }"#;
+        let token: OAuthTokenResponse = serde_json::from_str(token_json).unwrap();
+        let val = serde_json::to_value(&token).unwrap();
+        assert_eq!(val["access_token"], "abc");
+        assert_eq!(val["expires_in"], 7200);
+    }
+
+    #[tokio::test]
+    async fn test_token_response_with_all_fields() {
+        let token_json = r#"{
+            "access_token": "access",
+            "token_type": "Bearer",
+            "expires_in": 1800,
+            "refresh_token": "refresh",
+            "scope": "openid email profile"
+        }"#;
+        let token: OAuthTokenResponse = serde_json::from_str(token_json).unwrap();
+        let val = serde_json::to_value(&token).unwrap();
+        // token_type may be normalized to lowercase by the library
+        assert!(val["token_type"].as_str().unwrap().eq_ignore_ascii_case("bearer"));
+        assert_eq!(val["scope"], "openid email profile");
+    }
+
+    // ─── compute_key known value test ────────────────────────────────────
+
+    #[test]
+    fn test_compute_key_known_value() {
+        // Verify the hash is SHA-256 of "https://example.com/mcp"
+        let url = Url::parse("https://example.com/mcp").unwrap();
+        let key = compute_key(&url);
+        // Manually compute: origin = "https://example.com", path = "/mcp"
+        // input = "https://example.com/mcp"
+        let mut hasher = Sha256::new();
+        hasher.update(b"https://example.com/mcp");
+        let expected = format!("{:x}", hasher.finalize());
+        assert_eq!(key, expected);
+    }
+
+    // ─── File path computation for cred/reg ──────────────────────────────
+
+    #[test]
+    fn test_cred_and_reg_path_computation() {
+        let url = Url::parse("https://mcp.example.com/v1").unwrap();
+        let key = compute_key(&url);
+        let cred_dir = PathBuf::from("/home/user/.config/mcp");
+        let cred_path = cred_dir.join(format!("{key}.token.json"));
+        let reg_path = cred_dir.join(format!("{key}.registration.json"));
+
+        assert!(cred_path.to_str().unwrap().ends_with(".token.json"));
+        assert!(reg_path.to_str().unwrap().ends_with(".registration.json"));
+        // Both share the same key prefix
+        assert_eq!(
+            cred_path.file_stem().unwrap().to_str().unwrap().replace(".token", ""),
+            reg_path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace(".registration", "")
+        );
+    }
+
+    // ─── MalformDirectory error for paths without parent ─────────────────
+
+    #[test]
+    fn test_malform_directory_error_path_without_parent() {
+        let path = PathBuf::from("");
+        let result: Result<&Path, OauthUtilError> = path.parent().ok_or(OauthUtilError::MalformDirectory);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), OauthUtilError::MalformDirectory));
+    }
+
+    // ─── OAuthConfig JsonSchema ──────────────────────────────────────────
+
+    #[test]
+    fn test_oauth_config_json_schema() {
+        let schema = schemars::schema_for!(OAuthConfig);
+        let schema_json = serde_json::to_string(&schema).unwrap();
+        assert!(schema_json.contains("clientId"));
+        assert!(schema_json.contains("redirectUri"));
+        assert!(schema_json.contains("oauthScopes"));
     }
 }

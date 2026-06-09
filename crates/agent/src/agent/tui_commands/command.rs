@@ -1176,4 +1176,654 @@ mod tests {
             }
         }
     }
+
+    // === Serde roundtrip for ALL variants ===
+
+    #[test]
+    fn test_serde_roundtrip_all_variants() {
+        let commands = vec![
+            TuiCommand::Help(HelpArgs::default()),
+            TuiCommand::Model(ModelArgs {
+                model_name: Some("test".into()),
+            }),
+            TuiCommand::Agent(AgentArgs {
+                agent_name: Some("a".into()),
+            }),
+            TuiCommand::Context(ContextArgs {
+                verbose: true,
+                subcommand: Some("show".into()),
+            }),
+            TuiCommand::Compact(CompactArgs {
+                target_tokens: Some(1000),
+            }),
+            TuiCommand::Clear(ClearArgs::default()),
+            TuiCommand::Quit(QuitArgs::default()),
+            TuiCommand::Usage(UsageArgs::default()),
+            TuiCommand::PasteImage(PasteImageArgs::default()),
+            TuiCommand::Mcp(McpArgs {
+                subcommand: Some("list".into()),
+            }),
+            TuiCommand::Tools(ToolsArgs {
+                subcommand: Some("trust-all".into()),
+            }),
+            TuiCommand::Plan(PlanArgs {
+                prompt: Some("build it".into()),
+            }),
+            TuiCommand::Feedback(FeedbackArgs {
+                feedback_type: Some("issue".into()),
+            }),
+            TuiCommand::Chat(ChatArgs {
+                subcommand: Some("save path".into()),
+            }),
+            TuiCommand::Knowledge(KnowledgeArgs {
+                subcommand: Some("add x y".into()),
+            }),
+            TuiCommand::Prompts(PromptsArgs {
+                prompt_name: Some("p".into()),
+            }),
+            TuiCommand::Reply(ReplyArgs::default()),
+            TuiCommand::Code(CodeArgs {
+                subcommand: Some("status".into()),
+            }),
+            TuiCommand::Voice(VoiceArgs { continuous: true }),
+            TuiCommand::Hooks(HooksArgs::default()),
+            TuiCommand::Guide(GuideArgs {
+                question: Some("how?".into()),
+            }),
+            TuiCommand::Rewind(RewindArgs {
+                turn_index: Some("3".into()),
+            }),
+            TuiCommand::Stats(StatsArgs {
+                subcommand: Some("save f.json".into()),
+                last: Some(5),
+            }),
+            TuiCommand::Effort(EffortArgs {
+                level: Some("high".into()),
+            }),
+        ];
+        for cmd in commands {
+            let json = serde_json::to_string(&cmd).unwrap();
+            let parsed: TuiCommand = serde_json::from_str(&json).unwrap();
+            assert_eq!(cmd.name(), parsed.name(), "roundtrip failed for {}", cmd.name());
+        }
+    }
+
+    #[test]
+    fn test_serde_paste_image_rename() {
+        // PasteImage uses #[serde(rename = "paste")]
+        let cmd = TuiCommand::PasteImage(PasteImageArgs::default());
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains(r#""command":"paste""#));
+        let parsed: TuiCommand = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, TuiCommand::PasteImage(_)));
+    }
+
+    #[test]
+    fn test_serde_skip_serializing_none_fields() {
+        let cmd = TuiCommand::Model(ModelArgs { model_name: None });
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(!json.contains("modelName"));
+    }
+
+    // === Parse edge cases ===
+
+    #[test]
+    fn test_parse_unknown_command_returns_none() {
+        assert!(TuiCommand::parse("nonexistent", "").is_none());
+        assert!(TuiCommand::parse("", "").is_none());
+        assert!(TuiCommand::parse("HELP", "").is_none()); // case sensitive
+    }
+
+    #[test]
+    fn test_parse_compact_with_number() {
+        let cmd = TuiCommand::parse("compact", "5000").unwrap();
+        match cmd {
+            TuiCommand::Compact(args) => assert_eq!(args.target_tokens, Some(5000)),
+            _ => panic!("expected Compact"),
+        }
+    }
+
+    #[test]
+    fn test_parse_compact_with_invalid_number() {
+        let cmd = TuiCommand::parse("compact", "abc").unwrap();
+        match cmd {
+            TuiCommand::Compact(args) => assert_eq!(args.target_tokens, None),
+            _ => panic!("expected Compact"),
+        }
+    }
+
+    #[test]
+    fn test_parse_compact_empty() {
+        let cmd = TuiCommand::parse("compact", "").unwrap();
+        match cmd {
+            TuiCommand::Compact(args) => assert_eq!(args.target_tokens, None),
+            _ => panic!("expected Compact"),
+        }
+    }
+
+    #[test]
+    fn test_parse_voice_continuous_flag() {
+        let cmd = TuiCommand::parse("voice", "--continuous").unwrap();
+        match cmd {
+            TuiCommand::Voice(args) => assert!(args.continuous),
+            _ => panic!("expected Voice"),
+        }
+    }
+
+    #[test]
+    fn test_parse_voice_short_flag() {
+        let cmd = TuiCommand::parse("voice", "-c").unwrap();
+        match cmd {
+            TuiCommand::Voice(args) => assert!(args.continuous),
+            _ => panic!("expected Voice"),
+        }
+    }
+
+    #[test]
+    fn test_parse_voice_no_flag() {
+        let cmd = TuiCommand::parse("voice", "").unwrap();
+        match cmd {
+            TuiCommand::Voice(args) => assert!(!args.continuous),
+            _ => panic!("expected Voice"),
+        }
+    }
+
+    #[test]
+    fn test_parse_voice_other_arg() {
+        let cmd = TuiCommand::parse("voice", "start").unwrap();
+        match cmd {
+            TuiCommand::Voice(args) => assert!(!args.continuous),
+            _ => panic!("expected Voice"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stats_empty() {
+        let cmd = TuiCommand::parse("stats", "").unwrap();
+        match cmd {
+            TuiCommand::Stats(args) => {
+                assert!(args.last.is_none());
+                assert!(args.subcommand.is_none());
+            },
+            _ => panic!("expected Stats"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stats_with_number() {
+        let cmd = TuiCommand::parse("stats", "10").unwrap();
+        match cmd {
+            TuiCommand::Stats(args) => {
+                assert_eq!(args.last, Some(10));
+                assert!(args.subcommand.is_none());
+            },
+            _ => panic!("expected Stats"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stats_with_subcommand() {
+        let cmd = TuiCommand::parse("stats", "save output.json").unwrap();
+        match cmd {
+            TuiCommand::Stats(args) => {
+                assert!(args.last.is_none());
+                assert_eq!(args.subcommand, Some("save output.json".to_string()));
+            },
+            _ => panic!("expected Stats"),
+        }
+    }
+
+    #[test]
+    fn test_parse_effort_with_level() {
+        let cmd = TuiCommand::parse("effort", "high").unwrap();
+        match cmd {
+            TuiCommand::Effort(args) => assert_eq!(args.level, Some("high".to_string())),
+            _ => panic!("expected Effort"),
+        }
+    }
+
+    #[test]
+    fn test_parse_effort_empty() {
+        let cmd = TuiCommand::parse("effort", "").unwrap();
+        match cmd {
+            TuiCommand::Effort(args) => assert!(args.level.is_none()),
+            _ => panic!("expected Effort"),
+        }
+    }
+
+    #[test]
+    fn test_parse_guide_with_question() {
+        let cmd = TuiCommand::parse("guide", "how do I use tools?").unwrap();
+        match cmd {
+            TuiCommand::Guide(args) => assert_eq!(args.question, Some("how do I use tools?".to_string())),
+            _ => panic!("expected Guide"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rewind_with_index() {
+        let cmd = TuiCommand::parse("rewind", "5").unwrap();
+        match cmd {
+            TuiCommand::Rewind(args) => assert_eq!(args.turn_index, Some("5".to_string())),
+            _ => panic!("expected Rewind"),
+        }
+    }
+
+    #[test]
+    fn test_parse_all_no_arg_commands() {
+        for (name, expected_name) in [
+            ("help", "/help"),
+            ("clear", "/clear"),
+            ("quit", "/quit"),
+            ("usage", "/usage"),
+            ("paste", "/paste"),
+            ("reply", "/reply"),
+            ("hooks", "/hooks"),
+        ] {
+            let cmd = TuiCommand::parse(name, "").unwrap();
+            assert_eq!(cmd.name(), expected_name, "parse({name}) name mismatch");
+        }
+    }
+
+    #[test]
+    fn test_parse_all_optional_arg_commands() {
+        for (name, arg, expected_name) in [
+            ("model", "x", "/model"),
+            ("agent", "x", "/agent"),
+            ("mcp", "list", "/mcp"),
+            ("tools", "trust x", "/tools"),
+            ("plan", "do stuff", "/plan"),
+            ("feedback", "issue", "/feedback"),
+            ("knowledge", "show", "/knowledge"),
+            ("prompts", "my-prompt", "/prompts"),
+            ("chat", "new", "/chat"),
+            ("code", "status", "/code"),
+            ("guide", "q", "/guide"),
+            ("rewind", "2", "/rewind"),
+            ("effort", "low", "/effort"),
+        ] {
+            let cmd = TuiCommand::parse(name, arg).unwrap();
+            assert_eq!(cmd.name(), expected_name, "parse({name}, {arg}) name mismatch");
+        }
+    }
+
+    // === Deserialization error paths ===
+
+    #[test]
+    fn test_deserialize_invalid_command_name() {
+        let json = r#"{"command":"invalid","args":{}}"#;
+        let result = serde_json::from_str::<TuiCommand>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_missing_args() {
+        let json = r#"{"command":"model"}"#;
+        let result = serde_json::from_str::<TuiCommand>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_malformed_json() {
+        let result = serde_json::from_str::<TuiCommand>("not json");
+        assert!(result.is_err());
+    }
+
+    // === name(), description(), usage() coverage for all variants ===
+
+    #[test]
+    fn test_all_commands_have_slash_prefix_name() {
+        for cmd in TuiCommand::all_commands() {
+            assert!(cmd.name().starts_with('/'), "{} name should start with /", cmd.name());
+        }
+    }
+
+    #[test]
+    fn test_all_commands_have_nonempty_description() {
+        for cmd in TuiCommand::all_commands() {
+            assert!(!cmd.description().is_empty(), "{} has empty description", cmd.name());
+        }
+    }
+
+    #[test]
+    fn test_all_commands_have_nonempty_usage() {
+        for cmd in TuiCommand::all_commands() {
+            assert!(!cmd.usage().is_empty(), "{} has empty usage", cmd.name());
+            assert!(cmd.usage().starts_with('/'), "{} usage should start with /", cmd.name());
+        }
+    }
+
+    // === Meta coverage for variants not yet tested ===
+
+    #[test]
+    fn test_meta_none_variants() {
+        // These should return None from meta (before subcommand injection)
+        let none_variants = vec![
+            TuiCommand::Clear(ClearArgs::default()),
+            TuiCommand::Compact(CompactArgs::default()),
+            TuiCommand::PasteImage(PasteImageArgs::default()),
+            TuiCommand::Plan(PlanArgs::default()),
+            TuiCommand::Reply(ReplyArgs::default()),
+            TuiCommand::Voice(VoiceArgs::default()),
+            TuiCommand::Guide(GuideArgs::default()),
+        ];
+        for cmd in none_variants {
+            // Voice has subcommands so meta won't be None
+            if !cmd.subcommands().is_empty() {
+                assert!(
+                    cmd.meta().is_some(),
+                    "{} has subcommands so meta should be Some",
+                    cmd.name()
+                );
+            } else {
+                assert!(cmd.meta().is_none(), "{} should have no meta", cmd.name());
+            }
+        }
+    }
+
+    #[test]
+    fn test_meta_panel_variants() {
+        let panel_variants = vec![
+            TuiCommand::Help(HelpArgs::default()),
+            TuiCommand::Usage(UsageArgs::default()),
+            TuiCommand::Mcp(McpArgs::default()),
+            TuiCommand::Tools(ToolsArgs::default()),
+            TuiCommand::Knowledge(KnowledgeArgs::default()),
+            TuiCommand::Code(CodeArgs::default()),
+            TuiCommand::Hooks(HooksArgs::default()),
+            TuiCommand::Rewind(RewindArgs::default()),
+            TuiCommand::Stats(StatsArgs::default()),
+            TuiCommand::Context(ContextArgs::default()),
+        ];
+        for cmd in panel_variants {
+            let meta = cmd.meta().unwrap_or_else(|| panic!("{} should have meta", cmd.name()));
+            assert_eq!(
+                meta.get("inputType").unwrap().as_str().unwrap(),
+                "panel",
+                "{} should have inputType=panel",
+                cmd.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_meta_selection_variants() {
+        let selection_variants = vec![
+            TuiCommand::Model(ModelArgs::default()),
+            TuiCommand::Agent(AgentArgs::default()),
+            TuiCommand::Feedback(FeedbackArgs::default()),
+            TuiCommand::Prompts(PromptsArgs::default()),
+            TuiCommand::Chat(ChatArgs::default()),
+            TuiCommand::Effort(EffortArgs::default()),
+        ];
+        for cmd in selection_variants {
+            let meta = cmd.meta().unwrap_or_else(|| panic!("{} should have meta", cmd.name()));
+            assert_eq!(
+                meta.get("inputType").unwrap().as_str().unwrap(),
+                "selection",
+                "{} should have inputType=selection",
+                cmd.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_meta_quit_local() {
+        let cmd = TuiCommand::Quit(QuitArgs::default());
+        let meta = cmd.meta().expect("quit should have meta");
+        assert_eq!(meta.get("local").unwrap(), &serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn test_meta_stats_hidden() {
+        let cmd = TuiCommand::Stats(StatsArgs::default());
+        let meta = cmd.meta().expect("stats should have meta");
+        assert_eq!(meta.get("hidden").unwrap(), &serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn test_meta_feedback_not_searchable() {
+        let cmd = TuiCommand::Feedback(FeedbackArgs::default());
+        let meta = cmd.meta().expect("feedback should have meta");
+        assert_eq!(meta.get("searchable").unwrap(), &serde_json::Value::Bool(false));
+    }
+
+    #[test]
+    fn test_meta_model_options_method() {
+        let cmd = TuiCommand::Model(ModelArgs::default());
+        let meta = cmd.meta().expect("model should have meta");
+        assert_eq!(
+            meta.get("optionsMethod").unwrap().as_str().unwrap(),
+            "_kiro.dev/commands/model/options"
+        );
+    }
+
+    #[test]
+    fn test_meta_agent_options_method() {
+        let cmd = TuiCommand::Agent(AgentArgs::default());
+        let meta = cmd.meta().expect("agent should have meta");
+        assert_eq!(
+            meta.get("optionsMethod").unwrap().as_str().unwrap(),
+            "_kiro.dev/commands/agent/options"
+        );
+    }
+
+    #[test]
+    fn test_meta_prompts_options_method() {
+        let cmd = TuiCommand::Prompts(PromptsArgs::default());
+        let meta = cmd.meta().expect("prompts should have meta");
+        assert_eq!(
+            meta.get("optionsMethod").unwrap().as_str().unwrap(),
+            "_kiro.dev/commands/prompts/options"
+        );
+    }
+
+    // === Subcommands and hints for remaining variants ===
+
+    #[test]
+    fn test_subcommands_knowledge() {
+        let cmd = TuiCommand::Knowledge(KnowledgeArgs::default());
+        let subs = cmd.subcommands();
+        assert_eq!(subs, vec!["show", "add", "remove", "update", "clear", "cancel"]);
+    }
+
+    #[test]
+    fn test_subcommands_tools() {
+        let cmd = TuiCommand::Tools(ToolsArgs::default());
+        let subs = cmd.subcommands();
+        assert_eq!(subs, vec!["trust-all", "trust", "untrust", "reset"]);
+    }
+
+    #[test]
+    fn test_subcommands_code() {
+        let cmd = TuiCommand::Code(CodeArgs::default());
+        let subs = cmd.subcommands();
+        assert_eq!(subs, vec!["status", "init", "logs", "overview", "summary"]);
+    }
+
+    #[test]
+    fn test_subcommands_voice() {
+        let cmd = TuiCommand::Voice(VoiceArgs::default());
+        let subs = cmd.subcommands();
+        assert_eq!(subs, vec!["start", "stop", "status"]);
+    }
+
+    #[test]
+    fn test_subcommands_mcp() {
+        let cmd = TuiCommand::Mcp(McpArgs::default());
+        let subs = cmd.subcommands();
+        assert_eq!(subs, vec!["list", "add", "remove"]);
+    }
+
+    #[test]
+    fn test_subcommand_hints_knowledge() {
+        let cmd = TuiCommand::Knowledge(KnowledgeArgs::default());
+        let hints = cmd.subcommand_hints();
+        assert!(hints.iter().any(|(n, _)| *n == "add"));
+        assert!(hints.iter().any(|(n, _)| *n == "remove"));
+        assert!(hints.iter().any(|(n, _)| *n == "update"));
+    }
+
+    #[test]
+    fn test_subcommand_hints_chat() {
+        let cmd = TuiCommand::Chat(ChatArgs::default());
+        let hints = cmd.subcommand_hints();
+        assert!(hints.iter().any(|(n, _)| *n == "save"));
+        assert!(hints.iter().any(|(n, _)| *n == "load"));
+        assert!(hints.iter().any(|(n, _)| *n == "new"));
+    }
+
+    #[test]
+    fn test_subcommand_hints_mcp() {
+        let cmd = TuiCommand::Mcp(McpArgs::default());
+        let hints = cmd.subcommand_hints();
+        assert!(hints.iter().any(|(n, _)| *n == "add"));
+        assert!(hints.iter().any(|(n, _)| *n == "remove"));
+        assert!(!hints.iter().any(|(n, _)| *n == "list"));
+    }
+
+    #[test]
+    fn test_subcommand_hints_empty_for_no_subcommand_variants() {
+        let cmd = TuiCommand::Help(HelpArgs::default());
+        assert!(cmd.subcommand_hints().is_empty());
+        let cmd = TuiCommand::Clear(ClearArgs::default());
+        assert!(cmd.subcommand_hints().is_empty());
+    }
+
+    // === all_commands() coverage ===
+
+    #[test]
+    fn test_all_commands_sorted_by_name() {
+        let all = TuiCommand::all_commands();
+        let names: Vec<&str> = all.iter().map(|c| c.name()).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted, "all_commands() should be sorted by name");
+    }
+
+    #[test]
+    fn test_all_commands_count() {
+        let all = TuiCommand::all_commands();
+        // Should have exactly 25 commands
+        assert_eq!(all.len(), 25);
+    }
+
+    // === Deserialize with value alias for remaining variants ===
+
+    #[test]
+    fn test_deserialize_agent_with_value_alias() {
+        let json = r#"{"command":"agent","args":{"value":"my-agent"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, TuiCommand::Agent(AgentArgs { agent_name: Some(n) }) if n == "my-agent"));
+    }
+
+    #[test]
+    fn test_deserialize_tools_with_value_alias() {
+        let json = r#"{"command":"tools","args":{"value":"trust-all"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Tools(args) => assert_eq!(args.subcommand, Some("trust-all".to_string())),
+            _ => panic!("expected Tools"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_mcp_with_value_alias() {
+        let json = r#"{"command":"mcp","args":{"value":"list"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Mcp(args) => assert_eq!(args.subcommand, Some("list".to_string())),
+            _ => panic!("expected Mcp"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_knowledge_with_value_alias() {
+        let json = r#"{"command":"knowledge","args":{"value":"show"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Knowledge(args) => assert_eq!(args.subcommand, Some("show".to_string())),
+            _ => panic!("expected Knowledge"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_prompts_with_value_alias() {
+        let json = r#"{"command":"prompts","args":{"value":"my-prompt"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Prompts(args) => assert_eq!(args.prompt_name, Some("my-prompt".to_string())),
+            _ => panic!("expected Prompts"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_feedback_with_value_alias() {
+        let json = r#"{"command":"feedback","args":{"value":"feature"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Feedback(args) => assert_eq!(args.feedback_type, Some("feature".to_string())),
+            _ => panic!("expected Feedback"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_rewind_with_value_alias() {
+        let json = r#"{"command":"rewind","args":{"value":"7"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Rewind(args) => assert_eq!(args.turn_index, Some("7".to_string())),
+            _ => panic!("expected Rewind"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_effort_with_value_alias() {
+        let json = r#"{"command":"effort","args":{"value":"low"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Effort(args) => assert_eq!(args.level, Some("low".to_string())),
+            _ => panic!("expected Effort"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_stats_with_value_alias() {
+        let json = r#"{"command":"stats","args":{"value":"save x.json"}}"#;
+        let cmd: TuiCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            TuiCommand::Stats(args) => assert_eq!(args.subcommand, Some("save x.json".to_string())),
+            _ => panic!("expected Stats"),
+        }
+    }
+
+    // === Voice subcommands in meta ===
+
+    #[test]
+    fn test_voice_meta_has_subcommands() {
+        let cmd = TuiCommand::Voice(VoiceArgs::default());
+        let meta = cmd.meta().expect("voice has subcommands so meta should exist");
+        let subs = meta.get("subcommands").expect("should have subcommands");
+        let arr = subs.as_array().unwrap();
+        let values: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(values, vec!["start", "stop", "status"]);
+    }
+
+    // === Chat meta local flag ===
+
+    #[test]
+    fn test_chat_meta_local() {
+        let cmd = TuiCommand::Chat(ChatArgs::default());
+        let meta = cmd.meta().expect("chat should have meta");
+        assert_eq!(meta.get("local").unwrap(), &serde_json::Value::Bool(true));
+    }
+
+    // === Effort meta searchable ===
+
+    #[test]
+    fn test_effort_meta_not_searchable() {
+        let cmd = TuiCommand::Effort(EffortArgs::default());
+        let meta = cmd.meta().expect("effort should have meta");
+        assert_eq!(meta.get("searchable").unwrap(), &serde_json::Value::Bool(false));
+    }
 }

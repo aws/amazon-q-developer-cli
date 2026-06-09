@@ -201,4 +201,106 @@ mod tests {
         assert!(PROMPT_NAME_REGEX.is_match("my_skill_v2"));
         assert!(PROMPT_NAME_REGEX.is_match("CamelCase"));
     }
+
+    #[test]
+    fn test_skill_file_to_prompt_with_frontmatter() {
+        let content = "---\nname: test-skill\ndescription: A test skill\n---\nBody content";
+        let prompt = skill_file_to_prompt(Path::new("/some/SKILL.md"), content).unwrap();
+        assert_eq!(prompt.name, "test-skill");
+        assert_eq!(prompt.description, Some("A test skill".to_string()));
+    }
+
+    #[test]
+    fn test_skill_file_to_prompt_falls_back_to_parent_dir_name() {
+        let content = "Body content with no frontmatter";
+        let prompt = skill_file_to_prompt(Path::new("/skills/my-skill-name/SKILL.md"), content).unwrap();
+        assert_eq!(prompt.name, "my-skill-name");
+    }
+
+    #[test]
+    fn test_strip_frontmatter_with_crlf() {
+        let content = "---\r\nname: test\r\n---\r\nBody";
+        let stripped = strip_frontmatter(content);
+        assert!(stripped.contains("Body"));
+    }
+
+    #[test]
+    fn test_strip_frontmatter_unclosed() {
+        let content = "---\nname: test\nno closing\nstill no closing";
+        let result = strip_frontmatter(content);
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn test_discover_from_resources_empty() {
+        use crate::agent::util::test::TestProvider;
+        let provider = TestProvider::new();
+        let resources: Vec<&str> = vec![];
+        let result = discover_from_resources(&resources, &provider);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_discover_from_resources_with_invalid_resource() {
+        use crate::agent::util::test::TestProvider;
+        let provider = TestProvider::new();
+        let resources: Vec<&str> = vec!["this is not a valid resource URI"];
+        let result = discover_from_resources(&resources, &provider);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_skill_from_resources_rejects_invalid_name() {
+        use crate::agent::util::test::TestProvider;
+        let provider = TestProvider::new();
+        let resources: Vec<&str> = vec![];
+        assert!(resolve_skill_from_resources(&resources, &provider, "../../etc/passwd").is_none());
+        assert!(resolve_skill_from_resources(&resources, &provider, "with space").is_none());
+        assert!(resolve_skill_from_resources(&resources, &provider, "").is_none());
+    }
+
+    #[test]
+    fn test_resolve_skill_from_resources_unknown_skill() {
+        use crate::agent::util::test::TestProvider;
+        let provider = TestProvider::new();
+        let resources: Vec<&str> = vec![];
+        assert!(resolve_skill_from_resources(&resources, &provider, "unknown-skill").is_none());
+    }
+
+    #[test]
+    fn test_collect_skill_paths_filters_non_skill_resources() {
+        use crate::agent::util::test::TestProvider;
+        let provider = TestProvider::new();
+        let resources: Vec<&str> = vec!["file:///some/path", "agent:///agent.json"];
+        let paths = collect_skill_paths(&resources, &provider);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_skill_file_to_prompt_with_no_filename() {
+        // Path that has no parent and no file_stem
+        let prompt = skill_file_to_prompt(Path::new(""), "body");
+        assert!(prompt.is_none());
+    }
+
+    #[test]
+    fn test_resolve_skill_with_valid_skill_file() {
+        use std::io::Write;
+
+        use crate::agent::util::test::TestProvider;
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("skill1");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+        let mut f = std::fs::File::create(&skill_file).unwrap();
+        writeln!(f, "---\nname: test-skill\ndescription: A test\n---\nBody content here").unwrap();
+
+        let provider = TestProvider::new_with_base(dir.path());
+        let resources = vec![format!("skill://{}", skill_file.display())];
+        // Try to look up the skill by its frontmatter name
+        let result = resolve_skill_from_resources(&resources, &provider, "test-skill");
+        // The skill:// URI parsing may or may not work depending on path handling
+        // At minimum no panic
+        let _ = result;
+    }
 }

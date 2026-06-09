@@ -234,4 +234,130 @@ mod tests {
         let err_msg = format!("{:?}", result.unwrap_err());
         assert!(err_msg.contains("not found"));
     }
+
+    #[test]
+    fn test_both_tool_id_and_query_fails() {
+        let index = make_test_index();
+        let limits = default_limits();
+
+        let result = ToolSearch::execute(Some("testserver::mytool"), Some("search"), None, &index, &limits);
+
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("not both"));
+    }
+
+    #[test]
+    fn test_neither_tool_id_nor_query_fails() {
+        let index = make_test_index();
+        let limits = default_limits();
+
+        let result = ToolSearch::execute(None, None, None, &index, &limits);
+
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("Provide either tool_id or query"));
+    }
+
+    #[test]
+    fn test_query_search_returns_matching_tools() {
+        let index = make_test_index();
+        let limits = ToolLoadConfig {
+            matching_threshold: 0.0,
+        };
+
+        let result = ToolSearch::execute(None, Some("test tool"), None, &index, &limits);
+
+        assert!(result.is_ok());
+        let (output, side_effects) = result.unwrap();
+        assert!(!side_effects.tools_to_activate.is_empty());
+        let text = format!("{:?}", output);
+        assert!(text.contains("tools"));
+    }
+
+    #[test]
+    fn test_query_search_with_high_threshold_returns_empty() {
+        let index = make_test_index();
+        let limits = ToolLoadConfig {
+            matching_threshold: 9999.0,
+        };
+
+        let result = ToolSearch::execute(None, Some("xyz nonexistent"), None, &index, &limits);
+
+        assert!(result.is_ok());
+        let (_output, side_effects) = result.unwrap();
+        assert!(side_effects.tools_to_activate.is_empty());
+    }
+
+    #[test]
+    fn test_query_search_with_max_results() {
+        let index = make_test_index();
+        let limits = ToolLoadConfig {
+            matching_threshold: 0.0,
+        };
+
+        let result = ToolSearch::execute(None, Some("tool"), Some(1), &index, &limits);
+
+        assert!(result.is_ok());
+        let (_output, side_effects) = result.unwrap();
+        assert!(side_effects.tools_to_activate.len() <= 1);
+    }
+
+    #[test]
+    fn test_exact_match_with_whitespace_trimmed() {
+        let index = make_test_index();
+        let limits = default_limits();
+
+        let result = ToolSearch::execute(Some("  testserver::mytool  "), None, None, &index, &limits);
+
+        assert!(result.is_ok());
+        let (_output, side_effects) = result.unwrap();
+        assert_eq!(side_effects.tools_to_activate.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_composite_key_valid() {
+        let (server, tool) = parse_composite_key("server::tool").unwrap();
+        assert_eq!(server, "server");
+        assert_eq!(tool, "tool");
+    }
+
+    #[test]
+    fn test_parse_composite_key_invalid() {
+        let result = parse_composite_key("no_separator");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tool_search_trait_name() {
+        assert_eq!(ToolSearch::name(), BuiltInToolName::ToolSearch);
+    }
+
+    #[test]
+    fn test_tool_search_trait_description() {
+        let desc = ToolSearch::description();
+        assert!(desc.contains("MCP tools"));
+    }
+
+    #[test]
+    fn test_tool_search_trait_schema() {
+        let schema = ToolSearch::input_schema();
+        assert!(schema.contains("tool_id"));
+        assert!(schema.contains("query"));
+        assert!(schema.contains("max_results"));
+    }
+
+    #[test]
+    fn test_tool_search_serde() {
+        let ts = ToolSearch {
+            tool_id: Some("server::tool".into()),
+            query: None,
+            max_results: Some(10),
+        };
+        let json = serde_json::to_string(&ts).unwrap();
+        let parsed: ToolSearch = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.tool_id.as_deref(), Some("server::tool"));
+        assert_eq!(parsed.query, None);
+        assert_eq!(parsed.max_results, Some(10));
+    }
 }

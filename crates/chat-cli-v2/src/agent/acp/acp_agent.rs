@@ -1791,6 +1791,7 @@ impl AcpSession {
             // Apply pending MCP registry refresh when idle (no prompt in progress).
             // The agent re-applies the stored registry to its current config and
             // reloads MCP servers internally; the host no longer pre-rewrites.
+            #[allow(clippy::collapsible_if)]
             if self.pending_prompt_response.is_none()
                 && let Some(registry) = self.pending_mcp_registry.take()
                 && let Err(e) = self.agent.refresh_mcp_registry(registry).await
