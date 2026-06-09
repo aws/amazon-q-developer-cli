@@ -21,7 +21,10 @@ use std::io::{
     Write as _,
     stdout,
 };
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::process::ExitCode;
 
 pub use agent::Agent;
@@ -685,6 +688,19 @@ pub(crate) enum KasStdio {
 /// the ACP client (the parent of this process) responsible for fielding
 /// `_kiro/auth/getAccessToken` whenever KAS needs an access token.
 ///
+/// Read the @kiro/agent package version from its package.json relative to acp-server.js path.
+fn read_kas_version(server_js: &Path) -> String {
+    server_js
+        .parent()  // dist/server/
+        .and_then(|p| p.parent())  // dist/
+        .and_then(|p| p.parent())  // @kiro/agent/
+        .map(|p| p.join("package.json"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v["version"].as_str().map(String::from))
+        .unwrap_or_else(|| "unknown".into())
+}
+
 /// Internal chat-cli ACP-client paths handle the callback via
 /// `chat_cli_v2::auth::kas_token::handle_ext_method`. External
 /// clients connecting to a `KasStdio::Inherit` spawn (e.g. `kiro-cli acp`)
@@ -734,6 +750,19 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         },
     }
 
+    let kas_version = read_kas_version(&server_js);
+
+    cmd.env(
+        "KIRO_CUSTOM_USER_AGENT",
+        format!(
+            "KiroCLI/{} KAS/{} os/{} md/appVersion-{} app/AmazonQ-For-CLI",
+            env!("CARGO_PKG_VERSION"),
+            kas_version,
+            std::env::consts::OS,
+            env!("CARGO_PKG_VERSION"),
+        ),
+    );
+
     let child = cmd
         .spawn()
         .with_context(|| format!("failed to spawn KAS: {} {}", node_bin.display(), server_js.display()))?;
@@ -761,12 +790,24 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
     eprintln!("Kiro agent server running on port {}", port);
     eprintln!("Connect with: kiro-cli --remote ws://<this-host>:{}", port);
 
+    let kas_version = read_kas_version(&server_js);
+
     let mut child = tokio::process::Command::new(&node_bin)
         .arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=ws")
         .arg("--auth=acp-callback")
         .env("ACP_WS_PORT", port.to_string())
+        .env(
+            "KIRO_CUSTOM_USER_AGENT",
+            format!(
+                "KiroCLI/{} KAS/{} os/{} md/appVersion-{} app/AmazonQ-For-CLI",
+                env!("CARGO_PKG_VERSION"),
+                kas_version,
+                std::env::consts::OS,
+                env!("CARGO_PKG_VERSION"),
+            ),
+        )
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())

@@ -61,6 +61,17 @@ import { formatEffort } from './utils/string';
 
 const TUI_VERSION: string = packageJson.version;
 
+function getKasVersion(kasServerPath: string): string {
+  try {
+    const { readFileSync } = require('node:fs');
+    const { join, dirname } = require('node:path');
+    const pkg = join(dirname(kasServerPath), '..', '..', 'package.json');
+    return JSON.parse(readFileSync(pkg, 'utf8')).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
  * Strip the `@serverName/` prefix from KAS MCP tool titles.
  * KAS sends titles like "@test-mock/echo"; V2 sends just "echo".
@@ -1863,6 +1874,7 @@ export class KasAcpClient extends BaseAcpClient {
           ...process.env,
           NODE_CHANNEL_FD: undefined,
           NODE_CHANNEL_SERIALIZATION_MODE: undefined,
+          KIRO_CUSTOM_USER_AGENT: `KiroCLI/${TUI_VERSION} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${TUI_VERSION} app/AmazonQ-For-CLI`,
         },
       }
     );
@@ -3635,79 +3647,25 @@ const KAS_FEEDBACK_OPTIONS: CommandOptionsResponse = {
   ],
 };
 
-/** External (public) feedback intake — GitHub. */
-const EXTERNAL_FEEDBACK_URLS: Record<string, string> = {
+const FEEDBACK_URLS: Record<string, string> = {
   general: 'https://github.com/kirodotdev/Kiro/issues/new/choose',
   feature:
     'https://github.com/kirodotdev/Kiro/issues/new?template=feature_request.yml',
   issue: 'https://github.com/kirodotdev/Kiro/issues',
 };
 
-/** Internal (Amazon) feedback intake — Taskei templates. */
-const INTERNAL_FEEDBACK_URLS: Record<string, string> = {
-  general:
-    'https://taskei.amazon.dev/tasks/create?template=f5ac492c-9ec3-4a2d-8abb-2f486c7222eb',
-  feature:
-    'https://taskei.amazon.dev/tasks/create?template=a05ddcbb-e4c6-4783-8eca-ef46ae5d7ef6',
-  issue:
-    'https://taskei.amazon.dev/tasks/create?template=c0312360-3f55-432d-a6d2-e3060ad2cc59',
-};
-
-/**
- * Resolve the feedback URL: internal (Amazon) users → Taskei, everyone else →
- * GitHub. Unknown kinds fall back to `general`. Pure for testability.
- */
-export function resolveFeedbackUrl(kind: string, isInternal: boolean): string {
-  const urls = isInternal ? INTERNAL_FEEDBACK_URLS : EXTERNAL_FEEDBACK_URLS;
-  return urls[kind] ?? urls.general!;
-}
-
-/** Best-effort WSL detection via the Linux kernel osrelease string. */
-function detectWsl(): boolean {
-  if (process.platform !== 'linux') return false;
-  try {
-    const { readFileSync } = require('fs');
-    const release = readFileSync(
-      '/proc/sys/kernel/osrelease',
-      'utf8'
-    ).toLowerCase();
-    return release.includes('microsoft') || release.includes('wsl');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Build the argv to open a URL in the default browser, per platform. Windows
- * uses rundll32's URL handler (not cmd `start`, which mangles `&` and treats
- * the URL as a window title); WSL uses wslview to reach the Windows browser.
- * URL stays its own argv element — no shell. Pure for testability.
- */
-export function browserOpenCommand(
-  platform: NodeJS.Platform,
-  url: string,
-  isWsl = false
-): { file: string; args: string[] } {
-  if (platform === 'darwin') return { file: 'open', args: [url] };
-  if (platform === 'win32')
-    return { file: 'rundll32', args: ['url.dll,FileProtocolHandler', url] };
-  if (isWsl) return { file: 'wslview', args: [url] };
-  return { file: 'xdg-open', args: [url] };
-}
-
 function kasFeedback(args?: Record<string, string>): CommandResult {
   const kind = args?.value || 'general';
-  // KIRO_INTERNAL=1 = signed in via Amazon-internal SSO (set by the launcher).
-  const isInternal = process.env.KIRO_INTERNAL === '1';
-  const url = resolveFeedbackUrl(kind, isInternal);
+  const url = FEEDBACK_URLS[kind] ?? FEEDBACK_URLS.general!;
   try {
-    const { execFileSync } = require('child_process');
-    const { file, args: openArgs } = browserOpenCommand(
-      process.platform,
-      url,
-      detectWsl()
-    );
-    execFileSync(file, openArgs, { stdio: 'ignore' });
+    const { execSync } = require('child_process');
+    const cmd =
+      process.platform === 'darwin'
+        ? 'open'
+        : process.platform === 'win32'
+          ? 'start'
+          : 'xdg-open';
+    execSync(`${cmd} '${url}'`, { stdio: 'ignore' });
     return { success: true, message: 'Opening in browser...' };
   } catch {
     return {
