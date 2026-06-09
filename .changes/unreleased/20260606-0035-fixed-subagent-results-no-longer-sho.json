@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Subagent results no longer show \"No result\" when cancellation races with completion"
-}

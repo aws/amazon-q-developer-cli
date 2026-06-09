@@ -332,21 +332,19 @@ jobs:
           script: |
             const isNightly = '${{ needs.UpdateVersionNumber.outputs.release_quality }}' === 'nightly';
             const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
-
-            // chat_version is required by autocomplete's build-kiro-cli.yml
-            // (flipped to required: true in autocomplete#611). UpdateVersionNumber's
-            // `version` output is the current Cargo.toml version regardless of
-            // whether a bump happened, so always sending it is safe — and
-            // necessary, since dispatch fails 422 otherwise on
-            // version_increment=none runs.
+            const versionUpdated = '${{ needs.UpdateVersionNumber.outputs.version_updated }}' === 'true';
+            
             const inputs = {
               release_quality: '${{ needs.UpdateVersionNumber.outputs.release_quality }}',
               chat_binary_commit: '${{ needs.UpdateVersionNumber.outputs.commit_sha }}',
-              chat_version: '${{ needs.UpdateVersionNumber.outputs.version }}',
               chat_build_timestamp: '${{ needs.generate_timestamp.outputs.build_timestamp }}',
               trigger_source: 'chat-build'
             };
-
+            
+            if (versionUpdated) {
+              inputs.chat_version = '${{ needs.UpdateVersionNumber.outputs.version }}';
+            }
+            
             github.rest.actions.createWorkflowDispatch({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',

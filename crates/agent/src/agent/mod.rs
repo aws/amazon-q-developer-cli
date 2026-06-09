@@ -1129,24 +1129,6 @@ impl Agent {
             if let Some(m) = self.conversation_state.messages().last() {
                 for c in &m.content {
                     if let ContentBlock::ToolUse(tool_use) = c {
-                        // A subagent that completes its work emits the `summary`
-                        // tool as the assistant turn's final tool call, with the
-                        // full taskResult sitting in the args. If cancellation
-                        // arrives after the assistant message lands but before
-                        // the tool's execute() ran, the orchestrator's
-                        // `internal_prompt` loop sees Stop(Cancelled) without
-                        // ever observing SubagentSummary — and the parent's
-                        // agent_crew result reads "No result" for the stage,
-                        // even though the model already produced the summary.
-                        // Salvage it here: deserialize the args we already have
-                        // and broadcast SubagentSummary before the tool result
-                        // is replaced with the cancellation marker.
-                        if tool_use.name == tools::BuiltInToolName::Summary.as_ref()
-                            && let Ok(summary) =
-                                serde_json::from_value::<tools::summary::Summary>(tool_use.input.clone())
-                        {
-                            self.agent_event_buf.push(AgentEvent::SubagentSummary(summary));
-                        }
                         content.push(ContentBlock::ToolResult(ToolResultBlock {
                             tool_use_id: tool_use.tool_use_id.clone(),
                             content: vec![ToolResultContentBlock::Text(
