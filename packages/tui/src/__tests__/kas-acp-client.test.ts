@@ -223,7 +223,8 @@ afterAll(() => {
 });
 
 // @ts-expect-error — bun-specific query-string import
-const { KasAcpClient } = await import('../acp-client?kas-test');
+const { KasAcpClient, resolveFeedbackUrl, browserOpenCommand } =
+  await import('../acp-client?kas-test');
 
 function freshMocks() {
   mockSpawn.mockClear();
@@ -255,6 +256,78 @@ function freshMocks() {
     return mockProcess;
   });
 }
+
+describe('resolveFeedbackUrl', () => {
+  it('routes external users to GitHub for each kind', () => {
+    expect(resolveFeedbackUrl('general', false)).toBe(
+      'https://github.com/kirodotdev/Kiro/issues/new/choose'
+    );
+    expect(resolveFeedbackUrl('feature', false)).toBe(
+      'https://github.com/kirodotdev/Kiro/issues/new?template=feature_request.yml'
+    );
+    expect(resolveFeedbackUrl('issue', false)).toBe(
+      'https://github.com/kirodotdev/Kiro/issues'
+    );
+  });
+
+  it('routes internal (Amazon) users to Taskei for each kind', () => {
+    expect(resolveFeedbackUrl('general', true)).toBe(
+      'https://taskei.amazon.dev/tasks/create?template=f5ac492c-9ec3-4a2d-8abb-2f486c7222eb'
+    );
+    expect(resolveFeedbackUrl('feature', true)).toBe(
+      'https://taskei.amazon.dev/tasks/create?template=a05ddcbb-e4c6-4783-8eca-ef46ae5d7ef6'
+    );
+    expect(resolveFeedbackUrl('issue', true)).toBe(
+      'https://taskei.amazon.dev/tasks/create?template=c0312360-3f55-432d-a6d2-e3060ad2cc59'
+    );
+  });
+
+  it('falls back to general for an unknown kind', () => {
+    expect(resolveFeedbackUrl('bogus', false)).toBe(
+      'https://github.com/kirodotdev/Kiro/issues/new/choose'
+    );
+    expect(resolveFeedbackUrl('bogus', true)).toBe(
+      'https://taskei.amazon.dev/tasks/create?template=f5ac492c-9ec3-4a2d-8abb-2f486c7222eb'
+    );
+  });
+});
+
+describe('browserOpenCommand', () => {
+  it('uses `open` with the URL as an argv element on macOS', () => {
+    expect(browserOpenCommand('darwin', 'https://example.com')).toEqual({
+      file: 'open',
+      args: ['https://example.com'],
+    });
+  });
+
+  it('uses rundll32 URL handler on Windows (not cmd `start`)', () => {
+    // The URL — including its `&`-bearing query string — must stay a single
+    // argv element so cmd `start` quirks and `&` splitting can never occur.
+    expect(
+      browserOpenCommand('win32', 'https://example.com/issues?a=1&b=2')
+    ).toEqual({
+      file: 'rundll32',
+      args: [
+        'url.dll,FileProtocolHandler',
+        'https://example.com/issues?a=1&b=2',
+      ],
+    });
+  });
+
+  it('uses xdg-open on Linux/other platforms', () => {
+    expect(browserOpenCommand('linux', 'https://example.com')).toEqual({
+      file: 'xdg-open',
+      args: ['https://example.com'],
+    });
+  });
+
+  it('uses wslview under WSL to reach the Windows browser', () => {
+    expect(browserOpenCommand('linux', 'https://example.com', true)).toEqual({
+      file: 'wslview',
+      args: ['https://example.com'],
+    });
+  });
+});
 
 describe('KasAcpClient', () => {
   let origKasPath: string | undefined;
