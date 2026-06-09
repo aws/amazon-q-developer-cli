@@ -40,6 +40,8 @@ Correlate: if memory flags a pattern in this file, check if the current diff int
 
 ## Step 3: Review the PR
 
+**⚠️ CRITICAL: You MUST delegate to the `semantic-reviewer` sub-agent for EVERY PR, regardless of size or complexity. NEVER generate the review yourself inline — always invoke the sub-agent tool. This is non-negotiable.**
+
 Delegate the behavioral review to the `semantic-reviewer` sub-agent. Pass it:
 - The PR number and repo (`{owner}/{repo}`)
 - The memory context from step 2 (author patterns, component patterns, known patterns)
