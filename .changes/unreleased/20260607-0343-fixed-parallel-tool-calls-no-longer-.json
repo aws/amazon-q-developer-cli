@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Parallel tool calls no longer silently cancel siblings when one fails validation"
-}
