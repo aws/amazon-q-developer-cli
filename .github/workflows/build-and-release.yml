@@ -2,7 +2,8 @@ name: "Release SOP: 2.0 Build and Trigger Release"
 
 on:
   schedule:
-    - cron: "21 6 * * *"  # nightly on main
+    - cron: "30 6 * * *"   # 11:30 PM PST
+    - cron: "30 18 * * *"  # 11:30 AM PST
   workflow_dispatch:
     inputs:
       increment:
