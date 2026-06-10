@@ -267,41 +267,40 @@ Then print: `SMOKE OK <N> scenarios, <F> failures, <O> observations`
 
 When running on Windows (detect via `RUNNER_OS=Windows` or `OS=Windows_NT`):
 
-The shell tool uses PowerShell on Windows. Bash heredocs and complex escaping WILL fail.
-Use this approach instead:
+The shell tool uses PowerShell. Use Python `urllib.request` for Knight Rider API calls.
+Run scenarios ONE AT A TIME — same observe-reason-act loop as Linux.
 
-1. **Use the `write` tool (NOT shell) to create `/tmp/kr-helpers.sh`** with the bash
-   helpers content. The write/fs_write tool writes files without escaping issues.
+### Example: running a scenario on Windows
 
-2. **Use Git Bash for every shell command:**
-   ```
-   & "C:\Program Files\Git\bin\bash.exe" -c 'source /tmp/kr-helpers.sh && type_text "/help" && curl -s -X POST $KR/enter && sleep 1 && screen'
-   ```
-
-3. **Run scenarios the same way as Linux** — one at a time, observe each frame, make
-   judgments. The ONLY difference is the Git Bash wrapper around each command.
-
-4. **Do NOT try to pipe multi-line bash through PowerShell.** Do NOT use `cat << EOF`.
-   Do NOT write Python scripts. Write files with the `write` tool, execute with Git Bash.
-
-5. **Timeout**: The entire smoke step has a 30-minute timeout. If you're still running
-   scenarios after 25 minutes, stop, write summary-results.md with what you have, and exit.
-
-## Incremental Results (CRITICAL)
-
-Write `summary-results.md` **incrementally** — after every scenario completes, append the
-result to the file. Do NOT wait until all scenarios finish. This way if the process is
-killed mid-run, partial results are still captured.
-
-After each scenario, append immediately:
-```bash
-echo "| $i | $scenario_id | $status | $note |" >> "$OUT_DIR/summary-results.md"
+```powershell
+# Scenario: slash-help
+python3 -c "import urllib.request,json; [urllib.request.urlopen(urllib.request.Request('http://localhost:3001/api/keys',json.dumps({'keys':c}).encode(),{'Content-Type':'application/json'})) for c in '/help']; import time; time.sleep(0.3)"
+```
+```powershell
+python3 -c "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://localhost:3001/api/enter',b'{}',{'Content-Type':'application/json'}))"
+```
+```powershell
+# Read screen — this is what you observe and reason about
+python3 -c "import urllib.request,json; r=urllib.request.urlopen('http://localhost:3001/api/screen'); lines=json.loads(r.read())['lines']; [print(l) for l in lines if l.strip()]"
+```
+```powershell
+# Capture frame
+python3 -c "import urllib.request,json; urllib.request.urlopen(urllib.request.Request('http://localhost:3001/api/frame',json.dumps({'label':'slash-help'}).encode(),{'Content-Type':'application/json'}))"
 ```
 
-## Per-Scenario Timeout
+### Key rules for Windows
 
-Do NOT wait more than 45 seconds for any single scenario. If `wait_for_idle` or
-`wait_text` exceeds this, mark the scenario as `TIMEOUT`, capture a frame, and move on.
+1. **One scenario per iteration** — call APIs, read screen, reason about what you see, then next
+2. **Do NOT write a script that runs all scenarios** — you lose the ability to observe between steps
+3. **Use `python3 -c "..."` for each API call** — works natively in PowerShell
+4. **Read screen after each scenario** — that's where your judgment adds value
+5. **45s max per scenario** — if `wait-for-text` hasn't returned, move on
+
+## Incremental Results
+
+After EACH scenario, immediately append the result to `summary-results.md` using the
+`write` tool (append mode). Do NOT wait until all scenarios finish — if the step times
+out at 30 minutes, partial results must already be on disk for the judge to evaluate.
 
 ## Constraints
 

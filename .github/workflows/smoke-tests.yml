@@ -225,3 +225,116 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
+
+  judge:
+    name: LLM Judge
+    needs: smoke
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Download all smoke artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: smoke-frames-*
+          path: ${{ github.workspace }}/evidence
+          merge-multiple: true
+
+      - name: Install kiro-cli
+        run: |
+          curl -fsSL https://cli.kiro.dev/install | bash
+          echo "$HOME/.kiro/bin" >> "$GITHUB_PATH"
+
+      - name: Verify kiro-cli
+        run: kiro-cli --version
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::551670267384:role/KiroReviewerGitHubActionsRole
+          aws-region: us-east-1
+
+      - name: Run LLM Judge
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/evidence
+        shell: bash
+        run: |
+          kiro-cli chat --no-interactive --trust-all-tools --agent smoke-judge \
+            "Evaluate the smoke test evidence in $SMOKE_EVIDENCE_DIR and render a verdict." \
+            2>&1 | tee ${{ github.workspace }}/evidence/judge-session.log
+
+      - name: Check verdict
+        if: always()
+        shell: bash
+        run: |
+          VERDICT_FILE="${{ github.workspace }}/evidence/judge-verdict.json"
+          if [ ! -f "$VERDICT_FILE" ]; then
+            echo "⚠️ Judge did not produce verdict file"
+            echo "## LLM Judge" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ No verdict produced — judge agent may have failed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          VERDICT=$(jq -r '.verdict' "$VERDICT_FILE")
+          SUMMARY=$(jq -r '.summary' "$VERDICT_FILE")
+          {
+            echo "## LLM Judge Verdict"
+            echo ""
+            if [ -f "${{ github.workspace }}/evidence/judge-summary.md" ]; then
+              cat "${{ github.workspace }}/evidence/judge-summary.md"
+            else
+              echo "**$VERDICT** — $SUMMARY"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$VERDICT" = "fail" ]; then
+            echo "::error::Smoke test judge verdict: FAIL — $SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload judge artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-judge-verdict
+          path: |
+            ${{ github.workspace }}/evidence/judge-verdict.json
+            ${{ github.workspace }}/evidence/judge-summary.md
+            ${{ github.workspace }}/evidence/judge-session.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Post to Slack
+        if: always()
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
+        run: |
+          if [ -z "$SLACK_BOT_TOKEN" ]; then exit 0; fi
+          VERDICT_FILE="${{ github.workspace }}/evidence/judge-verdict.json"
+          if [ -f "$VERDICT_FILE" ]; then
+            VERDICT=$(jq -r '.verdict' "$VERDICT_FILE")
+            SUMMARY=$(jq -r '.summary' "$VERDICT_FILE")
+          else
+            VERDICT="unknown"
+            SUMMARY="Judge did not produce verdict"
+          fi
+          case "$VERDICT" in
+            pass) EMOJI=":white_check_mark:" ;;
+            warn) EMOJI=":warning:" ;;
+            fail) EMOJI=":rotating_light:" ;;
+            *)    EMOJI=":question:" ;;
+          esac
+          RUN_URL="https://github.com/kiro-team/kiro-cli/actions/runs/${{ github.run_id }}"
+          DASHBOARD_URL="https://kiro-bot-dashboard.beta.harmony.a2z.com/?tab=smoke&runId=smoke-${{ github.run_id }}"
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\":\"C0ARG53D0NL\",\"unfurl_links\":false,\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"Smoke Test Judge Verdict\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"${EMOJI} *${VERDICT^^}* — ${SUMMARY}\n\n<${RUN_URL}|GitHub Run> | <${DASHBOARD_URL}|Dashboard> | Reason: ${{ inputs.reason || 'scheduled' }}\"}}]}" || true
