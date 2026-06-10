@@ -1914,7 +1914,7 @@ export class KasAcpClient extends BaseAcpClient {
       capabilities: [createGetAccessTokenCapability()],
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
-        telemetry: getTelemetryIdentity(),
+        ...(isTelemetryEnabled() && { telemetry: getTelemetryIdentity() }),
         knowledge: true,
         hooks: { enabled: true, v2: true },
         ...(kasSettings && { settings: kasSettings }),
