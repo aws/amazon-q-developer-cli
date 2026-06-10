@@ -100,8 +100,16 @@ describe('/effort command (KAS)', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
-
-    // Store populated by broadcastEffortFromConfigOptions on session/new.
+    // Wait for TUI mount, then re-send config to ensure effort reaches store
+    // (session/new effort broadcast can race ahead of React handler registration on Linux)
+    await tc.waitForVisibleText('ask a question', 10000);
+    tc.mock.notify('session/update', {
+      sessionId: 'test-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: baselineConfigOptions('high'),
+      },
+    });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
     // Chip shows the display-cased level in the prompt bar.
@@ -123,6 +131,14 @@ describe('/effort command (KAS)', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    tc.mock.notify('session/update', {
+      sessionId: 'test-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: baselineConfigOptions('high'),
+      },
+    });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
     // Open the selection menu.
@@ -170,6 +186,14 @@ describe('/effort command (KAS)', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    tc.mock.notify('session/update', {
+      sessionId: 'test-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: baselineConfigOptions('high'),
+      },
+    });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
     // Provide the level as an arg so the dispatcher executes directly.
@@ -211,6 +235,14 @@ describe('/effort command (KAS)', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    tc.mock.notify('session/update', {
+      sessionId: 'test-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: baselineConfigOptions('high'),
+      },
+    });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
     // KAS autonomously changes effort (e.g. after a model fallback).

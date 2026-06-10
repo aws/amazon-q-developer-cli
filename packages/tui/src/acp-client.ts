@@ -2171,10 +2171,21 @@ export class KasAcpClient extends BaseAcpClient {
         // KAS doesn't send current_mode_update after fallback, so update the cached mode here
         const fallback = params.fallbackAgent as string | undefined;
         if (fallback) {
+          const previousModeId = this.modesState.currentModeId;
+          const newModeId = fromKasModeId(fallback);
           this.modesState = {
             ...this.modesState,
-            currentModeId: fromKasModeId(fallback),
+            currentModeId: newModeId,
           };
+          // Also broadcast AgentSwitched so the store's currentAgent updates
+          // and the prompt bar shows the correct fallback agent name.
+          if (newModeId !== previousModeId) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.AgentSwitched,
+              agentName: newModeId,
+              previousAgentName: previousModeId,
+            });
+          }
         }
       }
     );

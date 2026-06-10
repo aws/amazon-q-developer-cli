@@ -471,7 +471,9 @@ export class Kiro {
             event.type === AgentEventType.McpGovernanceDisabled ||
             event.type === AgentEventType.WebToolsGovernanceDisabled ||
             event.type === AgentEventType.AgentNotFound ||
-            event.type === AgentEventType.AgentConfigError) &&
+            event.type === AgentEventType.AgentConfigError ||
+            event.type === AgentEventType.HooksUpdate ||
+            event.type === AgentEventType.RateLimitError) &&
           this.initNotificationHandler
         ) {
           this.initNotificationHandler(event);
