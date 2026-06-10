@@ -885,7 +885,14 @@ export const PromptInput = React.memo(function PromptInput({
               const alreadyInSub = subs.some((s) =>
                 afterCmd.startsWith(`${s} `)
               );
-              if (!alreadyInSub) {
+              // Don't show subcommand menu if the typed text doesn't match any
+              // subcommand — user is typing free-form args (e.g. /goal fix the bug)
+              const matchesSub =
+                !afterCmd ||
+                subs.some(
+                  (s) => s.startsWith(afterCmd) || afterCmd.startsWith(s)
+                );
+              if (!alreadyInSub && matchesSub) {
                 const subHints = cmd.meta?.subcommandHints ?? {};
                 const subOptions = subs.map((sub) => ({
                   value: sub,

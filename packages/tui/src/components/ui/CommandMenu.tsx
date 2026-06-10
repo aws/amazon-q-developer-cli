@@ -450,8 +450,14 @@ export const CommandMenu: React.FC = () => {
             // subcommand handlers and consumed (and cleared) here.
             const returnToSettings = settingsReturnOnEscape;
 
+            // Only clear input if the command menu system owns it (slash
+            // trigger active). When the subcommand dropdown was opened by
+            // Tab from PromptInput, the user's text is in segments — not
+            // commandInputValue — so clearing would wipe their prompt.
             setActiveCommand(null);
-            clearCommandInput();
+            if (activeTrigger) {
+              clearCommandInput();
+            }
             setPromptHint(null);
 
             if (returnToSettings) {

@@ -376,4 +376,71 @@ describe('/goal command', () => {
     await testCase.sendKeys([0x03]);
     await testCase.expectExit(15000);
   }, 45000);
+
+  it('Tab after /goal description does not show subcommand menu', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('goal-tab-no-subcommand-hijack')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.sleepMs(500);
+
+    // Type /goal with a free-form description
+    const cmd = '/goal fix the login bug';
+    for (const char of cmd) {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(30);
+    }
+    await testCase.sleepMs(300);
+
+    // Press Tab — should NOT open subcommand menu since user typed free text
+    await testCase.sendKeys('\t');
+    await testCase.sleepMs(500);
+
+    // Verify no activeCommand (subcommand dropdown) was opened
+    const store = await testCase.getStore();
+    expect(store.activeCommand).toBeNull();
+
+    // Verify the input text is still visible on screen
+    await testCase.waitForText('/goal fix the login bug', 2000);
+    // cleanup() handles process termination
+  }, 30000);
+
+  it('Esc from Tab-triggered menu preserves prompt text', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 120, height: 40 })
+      .withTestName('goal-esc-preserves-input')
+      .launch();
+
+    await testCase.waitForText('ask a question', 10000);
+    await testCase.sleepMs(500);
+
+    // Type /goal with just a space (empty after command) — Tab SHOULD show subcommand
+    const cmd = '/goal ';
+    for (const char of cmd) {
+      await testCase.sendKeys(char);
+      await testCase.sleepMs(30);
+    }
+    await testCase.sleepMs(300);
+
+    // Press Tab — should open subcommand menu (text after /goal is empty)
+    await testCase.sendKeys('\t');
+    await testCase.sleepMs(500);
+
+    let store = await testCase.getStore();
+    expect(store.activeCommand).not.toBeNull();
+
+    // Press Esc to dismiss menu
+    await testCase.sendKeys('\x1b');
+    await testCase.sleepMs(500);
+
+    // Verify menu is dismissed
+    store = await testCase.getStore();
+    expect(store.activeCommand).toBeNull();
+
+    // Verify input text is preserved (not wiped)
+    await testCase.waitForText('/goal', 2000);
+    // cleanup() handles process termination
+  }, 30000);
 });
