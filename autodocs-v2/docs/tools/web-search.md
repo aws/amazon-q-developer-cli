@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: b3f10998
+  validated: 2026-06-09
+  commit: 5bc633954
   status: validated
   testable_headless: true
   category: tool
   title: web_search
   description: Search the web for current information with automatic source citation
-  keywords: [web_search, search, web, internet, research]
-  related: [web-fetch]
+  keywords: [web_search, search, web, internet, research, governance, admin, disabled]
+  related: [web-fetch, tools]
 ---
 
 # web_search
@@ -131,7 +131,31 @@ References:
 [1] AWS Lambda Pricing - https://aws.amazon.com/lambda/pricing/
 ```
 
+## Web Tools Governance
+
+Administrators can disable web tools (web_search, web_fetch) via the Kiro console. When disabled:
+
+- web_search is unavailable to the agent
+- The `/tools` panel shows a warning: "Web tools have been disabled by your administrator"
+- A transient alert appears at session start
+
+If the governance API cannot be reached, web tools are disabled as a fail-closed safety measure with the message: "Failed to retrieve web tools settings — web tools disabled". When both MCP and web tools are disabled due to the same API failure, a single coalesced message is shown: "failed to retrieve governance settings — MCP and web tools disabled".
+
+This applies to enterprise users (IAM Identity Center) and API key users. Builder ID and social auth users are not subject to web tools governance.
+
 ## Troubleshooting
+
+### Issue: Web Tools Disabled by Administrator
+
+**Symptom**: "Web tools have been disabled by your administrator" warning  
+**Cause**: Your organization's administrator has disabled web tools via the Kiro console  
+**Solution**: Contact your administrator to enable web tools
+
+### Issue: Failed to Retrieve Web Tools Settings
+
+**Symptom**: "Failed to retrieve web tools settings — web tools disabled" warning  
+**Cause**: Could not reach the governance API to check web tools settings. For security, web tools are disabled when settings cannot be verified (fail-closed).  
+**Solution**: Check network connectivity. If the issue persists, contact your administrator.
 
 ### Issue: Tool Requires Approval
 

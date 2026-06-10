@@ -469,6 +469,7 @@ export class Kiro {
             event.type === AgentEventType.McpOauthRequest ||
             event.type === AgentEventType.McpServerInitialized ||
             event.type === AgentEventType.McpGovernanceDisabled ||
+            event.type === AgentEventType.WebToolsGovernanceDisabled ||
             event.type === AgentEventType.AgentNotFound ||
             event.type === AgentEventType.AgentConfigError) &&
           this.initNotificationHandler

@@ -971,7 +971,11 @@ export const InlineLayout: React.FC = () => {
                   ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to copy URL`
                   : undefined) ??
                 summarizeInitErrors(
-                  initErrors.filter((e) => e.type !== 'mcp_governance_disabled')
+                  initErrors.filter(
+                    (e) =>
+                      e.type !== 'mcp_governance_disabled' &&
+                      e.type !== 'web_tools_governance_disabled'
+                  )
                 ) ??
                 undefined)
           }
@@ -981,7 +985,11 @@ export const InlineLayout: React.FC = () => {
               : (transientAlert?.status ??
                 (pendingOAuthServers.size > 0
                   ? 'info'
-                  : initErrors.some((e) => e.type !== 'mcp_governance_disabled')
+                  : initErrors.some(
+                        (e) =>
+                          e.type !== 'mcp_governance_disabled' &&
+                          e.type !== 'web_tools_governance_disabled'
+                      )
                     ? severityForInitErrors(initErrors)
                     : undefined))
           }
@@ -1206,7 +1214,11 @@ export const InlineLayout: React.FC = () => {
               />
             )}
             {showToolsPanel && (
-              <ToolsPanel tools={toolsList} onClose={handleCloseToolsPanel} />
+              <ToolsPanel
+                tools={toolsList}
+                initErrors={initErrors}
+                onClose={handleCloseToolsPanel}
+              />
             )}
             {showGoalPanel && (
               <GoalPanel onClose={() => setShowGoalPanel(false)} />

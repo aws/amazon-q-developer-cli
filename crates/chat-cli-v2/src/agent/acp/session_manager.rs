@@ -114,6 +114,10 @@ pub struct StartSessionResult {
     /// When `mcp_enabled=false`, distinguishes admin-disabled (`false`) from
     /// API-failure fail-closed path (`true`). Ignored when `mcp_enabled=true`.
     pub mcp_api_failure: bool,
+    /// Whether web tools (web_search, web_fetch) are enabled by governance. When `false`, the TUI
+    /// should warn the user. The fail-closed/API-failure distinction reuses `mcp_api_failure`
+    /// since both come from the same GetProfile call.
+    pub web_tools_enabled: bool,
 }
 
 /// Result returned when spawning an orchestrated session.
@@ -301,6 +305,8 @@ impl SessionManagerBuilder {
             let mut agent_configs = agent_configs;
             debug!(
                 mcp_enabled,
+                web_tools_enabled,
+                mcp_api_failure,
                 is_enterprise,
                 is_api_key,
                 has_registry = mcp_registry_data.is_some(),
@@ -898,6 +904,7 @@ impl SessionManager {
                             agent_config_errors: self.agent_config_errors.clone(),
                             mcp_enabled: self.mcp_enabled,
                             mcp_api_failure: self.mcp_api_failure,
+                            web_tools_enabled: self.web_tools_enabled,
                         }));
 
                         // Send SUBAGENT_LIST_UPDATE notification after session creation

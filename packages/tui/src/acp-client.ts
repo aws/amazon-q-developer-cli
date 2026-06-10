@@ -116,6 +116,7 @@ const EXT_METHODS = {
   MCP_OAUTH_REQUEST: 'kiro.dev/mcp/oauth_request',
   MCP_SERVER_INITIALIZED: 'kiro.dev/mcp/server_initialized',
   MCP_GOVERNANCE_DISABLED: 'kiro.dev/mcp/governance_disabled',
+  WEB_TOOLS_GOVERNANCE_DISABLED: 'kiro.dev/webTools/governance_disabled',
   AGENT_NOT_FOUND: 'kiro.dev/agent/not_found',
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
@@ -731,6 +732,8 @@ abstract class BaseAcpClient implements SessionClient {
       this.handleMcpServerInitialized(p),
     [EXT_METHODS.MCP_GOVERNANCE_DISABLED]: (p) =>
       this.handleMcpGovernanceDisabled(p),
+    [EXT_METHODS.WEB_TOOLS_GOVERNANCE_DISABLED]: (p) =>
+      this.handleWebToolsGovernanceDisabled(p),
     [EXT_METHODS.AGENT_NOT_FOUND]: (p) => this.handleAgentNotFound(p),
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (p) => this.handleAgentConfigError(p),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (p) => this.handleRateLimitError(p),
@@ -851,6 +854,15 @@ abstract class BaseAcpClient implements SessionClient {
     logger.warn('MCP governance disabled:', { apiFailure });
     this.broadcastStreamEvent({
       type: AgentEventType.McpGovernanceDisabled,
+      apiFailure,
+    });
+  }
+
+  protected handleWebToolsGovernanceDisabled(params: Record<string, unknown>) {
+    const apiFailure = (params.apiFailure as boolean) ?? false;
+    logger.warn('Web tools governance disabled:', { apiFailure });
+    this.broadcastStreamEvent({
+      type: AgentEventType.WebToolsGovernanceDisabled,
       apiFailure,
     });
   }

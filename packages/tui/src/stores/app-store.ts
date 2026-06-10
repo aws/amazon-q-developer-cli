@@ -457,7 +457,8 @@ export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
   | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
   | { type: 'agent_config_error'; path?: string; error: string }
-  | { type: 'mcp_governance_disabled'; apiFailure: boolean };
+  | { type: 'mcp_governance_disabled'; apiFailure: boolean }
+  | { type: 'web_tools_governance_disabled'; apiFailure: boolean };
 
 export interface LastTurnTokens {
   input: number;
@@ -481,16 +482,35 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   const mcpGovernance = errors.filter(
     (e) => e.type === 'mcp_governance_disabled'
   );
+  const webToolsGovernance = errors.filter(
+    (e) => e.type === 'web_tools_governance_disabled'
+  );
   const parts: string[] = [];
 
   // MCP governance disabled (show first — important admin notice)
-  if (mcpGovernance.length > 0) {
-    const e = mcpGovernance[0]!;
+  // When both MCP and web tools fail due to the same GetProfile API failure,
+  // coalesce into one message instead of two redundant warnings.
+  const mcpGov = mcpGovernance[0];
+  const webGov = webToolsGovernance[0];
+  if (mcpGov?.apiFailure && webGov?.apiFailure) {
     parts.push(
-      e.apiFailure
-        ? 'failed to retrieve MCP settings — MCP disabled'
-        : 'MCP disabled by your administrator'
+      'failed to retrieve governance settings — MCP and web tools disabled'
     );
+  } else {
+    if (mcpGov) {
+      parts.push(
+        mcpGov.apiFailure
+          ? 'failed to retrieve MCP settings — MCP disabled'
+          : 'MCP disabled by your administrator'
+      );
+    }
+    if (webGov) {
+      parts.push(
+        webGov.apiFailure
+          ? 'failed to retrieve web tools settings — web tools disabled'
+          : 'web tools disabled by your administrator'
+      );
+    }
   }
 
   // Agent not found
@@ -529,7 +549,11 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
 export function severityForInitErrors(
   errors: InitError[]
 ): 'warning' | 'error' {
-  const hasHardError = errors.some((e) => e.type !== 'mcp_governance_disabled');
+  const hasHardError = errors.some(
+    (e) =>
+      e.type !== 'mcp_governance_disabled' &&
+      e.type !== 'web_tools_governance_disabled'
+  );
   return hasHardError ? 'error' : 'warning';
 }
 
@@ -2554,6 +2578,28 @@ export const createAppStore = (props: AppStoreProps) => {
                 ...get().initErrors,
                 {
                   type: 'mcp_governance_disabled' as const,
+                  apiFailure: event.apiFailure,
+                },
+              ];
+              set({ initErrors: updated });
+              const message = summarizeInitErrors(updated);
+              if (message) {
+                get().showTransientAlert({
+                  message,
+                  status: severityForInitErrors(updated),
+                  autoHideMs: 8000,
+                });
+              }
+            }
+            break;
+          case AgentEventType.WebToolsGovernanceDisabled:
+            {
+              const updated = [
+                ...get().initErrors.filter(
+                  (e) => e.type !== 'web_tools_governance_disabled'
+                ),
+                {
+                  type: 'web_tools_governance_disabled' as const,
                   apiFailure: event.apiFailure,
                 },
               ];

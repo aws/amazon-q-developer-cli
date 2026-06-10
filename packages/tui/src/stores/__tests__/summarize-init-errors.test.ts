@@ -132,6 +132,37 @@ describe('summarizeInitErrors', () => {
     );
   });
 
+  // --- Governance ---
+
+  it('coalesces MCP + web tools into one message on shared API failure', () => {
+    const errors: InitError[] = [
+      { type: 'mcp_governance_disabled', apiFailure: true },
+      { type: 'web_tools_governance_disabled', apiFailure: true },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      'failed to retrieve governance settings — MCP and web tools disabled'
+    );
+  });
+
+  it('keeps MCP + web tools separate when admin-disabled (not API failure)', () => {
+    const errors: InitError[] = [
+      { type: 'mcp_governance_disabled', apiFailure: false },
+      { type: 'web_tools_governance_disabled', apiFailure: false },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      'MCP disabled by your administrator; web tools disabled by your administrator'
+    );
+  });
+
+  it('web tools only — admin disabled', () => {
+    const errors: InitError[] = [
+      { type: 'web_tools_governance_disabled', apiFailure: false },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      'web tools disabled by your administrator'
+    );
+  });
+
   // --- Path handling ---
 
   it('handles Windows-style paths', () => {

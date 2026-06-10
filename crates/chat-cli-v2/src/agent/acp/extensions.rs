@@ -40,6 +40,8 @@ pub mod methods {
     pub const AGENT_CONFIG_ERROR: &str = "_kiro.dev/agent/config_error";
     /// MCP governance disabled — admin turned off MCP in the Kiro console
     pub const MCP_GOVERNANCE_DISABLED: &str = "_kiro.dev/mcp/governance_disabled";
+    /// Web tools governance disabled — admin turned off web tools in the Kiro console
+    pub const WEB_TOOLS_GOVERNANCE_DISABLED: &str = "_kiro.dev/webTools/governance_disabled";
     /// List sessions (temporary extension until sacp adds native session/list)
     pub const SESSION_LIST: &str = "_kiro.dev/session/list";
     /// Session update extension notification (e.g. tool_call_chunk)
@@ -221,6 +223,17 @@ pub struct AgentConfigErrorNotification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpGovernanceDisabledNotification {
+    pub session_id: SessionId,
+    /// `true` when the governance API call failed (fail-closed), `false` when admin explicitly
+    /// disabled.
+    pub api_failure: bool,
+}
+
+/// Web tools governance disabled notification payload — admin turned off web tools in the Kiro
+/// console.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebToolsGovernanceDisabledNotification {
     pub session_id: SessionId,
     /// `true` when the governance API call failed (fail-closed), `false` when admin explicitly
     /// disabled.

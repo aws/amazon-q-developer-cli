@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { Box } from '../../renderer.js';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
@@ -6,11 +7,13 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type { ToolInfo } from '../../stores/app-store.js';
+import type { ToolInfo, InitError } from '../../stores/app-store.js';
 import { visibleWidth, truncateToWidth } from '../../utils/text-width.js';
+import { webToolsGovernanceMessage } from './toolsPanelMessages.js';
 
 interface ToolsPanelProps {
   tools: ToolInfo[];
+  initErrors?: InitError[];
   onClose: () => void;
 }
 
@@ -24,7 +27,11 @@ function shortDescription(desc: string, maxLen: number): string {
 
 const GAP = 2;
 
-export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
+export const ToolsPanel: React.FC<ToolsPanelProps> = ({
+  tools,
+  initErrors = [],
+  onClose,
+}) => {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const glyphs = useGlyphs();
@@ -138,6 +145,11 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
     setScrollOffset(0);
   }, []);
 
+  const governanceMessage = webToolsGovernanceMessage(initErrors);
+  const governanceWarning = governanceMessage
+    ? `${!allowIcons ? '' : `${glyphs.warning} `}${governanceMessage}`
+    : undefined;
+
   return (
     <Panel
       title={`/tools · ${tools.length} tool${tools.length === 1 ? '' : 's'}`}
@@ -153,11 +165,18 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ tools, onClose }) => {
         )
       }
     >
-      {tools.length === 0 ? (
-        <Text>{dim('No tools available')}</Text>
-      ) : (
-        <Table columns={columns} rows={rows} />
-      )}
+      <Box flexDirection="column">
+        {governanceWarning && (
+          <Box marginBottom={tools.length > 0 ? 1 : 0}>
+            <Text>{warning(governanceWarning)}</Text>
+          </Box>
+        )}
+        {tools.length === 0 ? (
+          <Text>{dim('No tools available')}</Text>
+        ) : (
+          <Table columns={columns} rows={rows} />
+        )}
+      </Box>
     </Panel>
   );
 };

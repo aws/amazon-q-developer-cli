@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-05-26
-  commit: 29f769727
+  validated: 2026-06-09
+  commit: 5bc633954
   status: validated
   testable_headless: true
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, url-permission]
-  related: [web-search, trust-configuration, agent-configuration]
+  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, url-permission, governance, admin, disabled]
+  related: [web-search, trust-configuration, agent-configuration, tools]
 ---
 
 # web_fetch
@@ -192,7 +192,31 @@ Complete content.
 }
 ```
 
+## Web Tools Governance
+
+Administrators can disable web tools (web_search, web_fetch) via the Kiro console. When disabled:
+
+- web_fetch is unavailable to the agent
+- The `/tools` panel shows a warning: "Web tools have been disabled by your administrator"
+- A transient alert appears at session start
+
+If the governance API cannot be reached, web tools are disabled as a fail-closed safety measure with the message: "Failed to retrieve web tools settings — web tools disabled". When both MCP and web tools are disabled due to the same API failure, a single coalesced message is shown: "failed to retrieve governance settings — MCP and web tools disabled".
+
+This applies to enterprise users (IAM Identity Center) and API key users. Builder ID and social auth users are not subject to web tools governance.
+
 ## Troubleshooting
+
+### Issue: Web Tools Disabled by Administrator
+
+**Symptom**: "Web tools have been disabled by your administrator" warning  
+**Cause**: Your organization's administrator has disabled web tools via the Kiro console  
+**Solution**: Contact your administrator to enable web tools
+
+### Issue: Failed to Retrieve Web Tools Settings
+
+**Symptom**: "Failed to retrieve web tools settings — web tools disabled" warning  
+**Cause**: Could not reach the governance API to check web tools settings. For security, web tools are disabled when settings cannot be verified (fail-closed).  
+**Solution**: Check network connectivity. If the issue persists, contact your administrator.
 
 ### Issue: Fetch Failed
 

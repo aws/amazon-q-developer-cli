@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-06-09
+  commit: 5bc633954
   status: validated
   testable_headless: true
   category: slash_command
   title: /tools
   description: View available tools and manage tool permissions with trust, untrust, and reset operations
-  keywords: [tools, permissions, trust, approve]
-  related: [agent-configuration]
+  keywords: [tools, permissions, trust, approve, governance, web-tools, disabled]
+  related: [agent-configuration, web-search, web-fetch]
 ---
 
 # /tools
@@ -52,6 +52,7 @@ Shows:
 - Native tools (built-in)
 - MCP server tools (by server)
 - Permission status for each tool
+- Governance warnings (e.g., web tools disabled by administrator)
 
 **Permission Labels**:
 - `allowed` - Auto-approved
@@ -196,6 +197,12 @@ MCP server tools shown with `@server-name` prefix:
 - Format: `@server-name/tool-name`
 
 ## Troubleshooting
+
+### Issue: Web Tools Disabled Warning
+
+**Symptom**: "/tools panel shows "Web tools have been disabled by your administrator" or "Failed to retrieve web tools settings — web tools disabled"  
+**Cause**: Your organization's administrator has disabled web tools via the Kiro console, or the governance API could not be reached (fail-closed for security)  
+**Solution**: Contact your administrator to enable web tools. If it's an API failure, check network connectivity.
 
 ### Issue: Tool Not Found
 

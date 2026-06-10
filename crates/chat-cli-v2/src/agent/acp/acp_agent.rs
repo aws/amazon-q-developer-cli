@@ -3925,7 +3925,7 @@ pub async fn execute(
                     result.handle.emit_initial_metadata().await;
 
                     // Notify TUI about agent loading issues
-                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
+                    send_agent_load_notifications(&cx, &session_id, &result.requested_agent_name, &result.agent_config_errors, GovernanceNotices { mcp_enabled: result.mcp_enabled, api_failure: result.mcp_api_failure, web_tools_enabled: result.web_tools_enabled });
 
                     Ok(())
                 }
@@ -3958,7 +3958,7 @@ pub async fn execute(
                             result.handle.emit_initial_metadata().await;
 
                             // Notify TUI about agent loading issues
-                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, result.mcp_enabled, result.mcp_api_failure);
+                            send_agent_load_notifications(&cx, &request.session_id, &result.requested_agent_name, &result.agent_config_errors, GovernanceNotices { mcp_enabled: result.mcp_enabled, api_failure: result.mcp_api_failure, web_tools_enabled: result.web_tools_enabled });
 
                             Ok(())
                         },
@@ -4357,24 +4357,40 @@ pub async fn execute(
     Ok(ExitCode::SUCCESS)
 }
 
+/// Governance toggle state forwarded to the TUI alongside agent-load notifications.
+///
+/// Grouped into a struct (rather than positional bools) to avoid argument
+/// transposition between the several governance flags.
+struct GovernanceNotices {
+    /// Whether MCP is enabled by governance.
+    mcp_enabled: bool,
+    /// When a toggle is disabled, distinguishes admin-disabled (`false`) from the
+    /// API-failure fail-closed path (`true`). Shared across toggles since they all
+    /// derive from the same GetProfile call.
+    api_failure: bool,
+    /// Whether web tools (web_search, web_fetch) are enabled by governance.
+    web_tools_enabled: bool,
+}
+
 /// Send agent loading notifications to the TUI client.
 ///
 /// Notifies about:
 /// - Agent not found (fell back to default)
 /// - Agent config parse errors from startup
 /// - MCP governance disabled (admin turned off MCP)
+/// - Web tools governance disabled (admin turned off web tools)
 fn send_agent_load_notifications(
     cx: &ConnectionTo<sacp::Client>,
     session_id: &SessionId,
     requested_agent_name: &Option<String>,
     agent_config_errors: &[super::session_manager::AgentConfigLoadError],
-    mcp_enabled: bool,
-    mcp_api_failure: bool,
+    governance: GovernanceNotices,
 ) {
     use super::extensions::{
         AgentConfigErrorNotification,
         AgentNotFoundNotification,
         McpGovernanceDisabledNotification,
+        WebToolsGovernanceDisabledNotification,
         methods,
     };
 
@@ -4402,13 +4418,27 @@ fn send_agent_load_notifications(
         }
     }
 
-    if !mcp_enabled {
+    if !governance.mcp_enabled {
         let notif = McpGovernanceDisabledNotification {
             session_id: session_id.clone(),
-            api_failure: mcp_api_failure,
+            api_failure: governance.api_failure,
         };
         if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
             let ext = sacp::schema::ExtNotification::new(methods::MCP_GOVERNANCE_DISABLED, std::sync::Arc::from(raw));
+            let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
+        }
+    }
+
+    if !governance.web_tools_enabled {
+        // `api_failure` is shared: both toggles are resolved from the same GetProfile
+        // call, so an API failure disables both together.
+        let notif = WebToolsGovernanceDisabledNotification {
+            session_id: session_id.clone(),
+            api_failure: governance.api_failure,
+        };
+        if let Ok(raw) = serde_json::value::to_raw_value(&notif) {
+            let ext =
+                sacp::schema::ExtNotification::new(methods::WEB_TOOLS_GOVERNANCE_DISABLED, std::sync::Arc::from(raw));
             let _ = cx.send_notification(sacp::schema::AgentNotification::ExtNotification(ext));
         }
     }

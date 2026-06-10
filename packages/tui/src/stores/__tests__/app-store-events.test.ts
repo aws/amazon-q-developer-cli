@@ -494,6 +494,39 @@ describe('Stream event handler — McpGovernanceDisabled', () => {
   });
 });
 
+describe('Stream event handler — WebToolsGovernanceDisabled', () => {
+  it('adds to initErrors', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.WebToolsGovernanceDisabled,
+      apiFailure: false,
+    });
+    expect(store.getState().initErrors).toHaveLength(1);
+    expect(store.getState().initErrors[0].type).toBe(
+      'web_tools_governance_disabled'
+    );
+  });
+
+  it('deduplicates repeated notifications', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.WebToolsGovernanceDisabled,
+      apiFailure: false,
+    });
+    handler({
+      type: AgentEventType.WebToolsGovernanceDisabled,
+      apiFailure: false,
+    });
+    expect(
+      store
+        .getState()
+        .initErrors.filter((e) => e.type === 'web_tools_governance_disabled')
+    ).toHaveLength(1);
+  });
+});
+
 describe('respondToApproval', () => {
   it('resolves approval and updates tool status to approved', () => {
     const store = makeStore();

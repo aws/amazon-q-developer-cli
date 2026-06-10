@@ -35,6 +35,7 @@ export enum AgentEventType {
   McpOauthRequest = 'mcp_oauth_request',
   McpServerInitialized = 'mcp_server_initialized',
   McpGovernanceDisabled = 'mcp_governance_disabled',
+  WebToolsGovernanceDisabled = 'web_tools_governance_disabled',
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
   SteeringQueued = 'steering_queued',
@@ -521,6 +522,11 @@ export interface McpGovernanceDisabledEvent {
   apiFailure: boolean;
 }
 
+export interface WebToolsGovernanceDisabledEvent {
+  type: AgentEventType.WebToolsGovernanceDisabled;
+  apiFailure: boolean;
+}
+
 export type AuthErrorType = string;
 export type SessionErrorType = string;
 
@@ -571,6 +577,7 @@ export type AgentStreamEvent =
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent
+  | WebToolsGovernanceDisabledEvent
   | SteeringQueuedEvent
   | SteeringConsumedEvent
   | SteeringClearedEvent
