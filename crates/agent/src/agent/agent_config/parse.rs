@@ -9,7 +9,10 @@ use serde::{
 };
 
 use crate::agent::tools::BuiltInToolName;
-use crate::agent::util::path::canonicalize_path_sys;
+use crate::agent::util::path::{
+    canonicalize_path_sys,
+    expand_path,
+};
 use crate::agent::util::providers::SystemProvider;
 
 /// Represents a value from the `resources` array in the agent config.
@@ -32,29 +35,59 @@ impl<'a> ResourceKind<'a> {
         };
 
         let is_glob = path.contains('*') || path.contains('?');
-        let canon =
-            canonicalize_path_sys(path, sys).map_err(|err| format!("Failed to canonicalize path for {path}: {err}"))?;
 
-        match (scheme, is_glob) {
-            ("file", false) => Ok(Self::File {
-                original: value,
-                file_path: canon,
-            }),
-            ("file", true) => Ok(Self::FileGlob {
-                original: value,
-                pattern: glob::Pattern::new(&canon)
-                    .map_err(|err| format!("Failed to create glob for {canon}: {err}"))?,
-            }),
-            ("skill", false) => Ok(Self::Skill {
-                original: value,
-                file_path: canon,
-            }),
-            ("skill", true) => Ok(Self::SkillGlob {
-                original: value,
-                pattern: glob::Pattern::new(&canon)
-                    .map_err(|err| format!("Failed to create glob for {canon}: {err}"))?,
-            }),
-            _ => unreachable!(),
+        if is_glob {
+            // For glob patterns: expand ~ and env vars, make absolute, but do NOT
+            // canonicalize. On Windows, canonicalization resolves mapped drive letters
+            // (e.g. P:\) to UNC paths (\\server\share\...), but glob traversal returns
+            // paths using the original drive letter — causing a mismatch that prevents
+            // any files from matching. See V2240114729.
+            let expanded = expand_path(path, sys).map_err(|err| format!("Failed to expand path {path}: {err}"))?;
+            let expanded_path = std::path::Path::new(expanded.as_ref());
+            let abs = if expanded_path.is_absolute() {
+                expanded_path.to_path_buf()
+            } else {
+                sys.cwd()
+                    .map_err(|err| format!("Failed to get cwd: {err}"))?
+                    .join(expanded_path)
+            };
+            let pattern_str = abs.to_string_lossy().to_string();
+            // On Windows, shellexpand may leave forward slashes from the original
+            // pattern (e.g. "~/project/**/*.rs" → "C:\home/project/**/*.rs").
+            // Normalize to the platform separator so glob matching is consistent
+            // with filesystem traversal results.
+            #[cfg(windows)]
+            let pattern_str = pattern_str.replace('/', "\\");
+            let pattern = glob::Pattern::new(&pattern_str)
+                .map_err(|err| format!("Failed to create glob for {pattern_str}: {err}"))?;
+
+            match scheme {
+                "file" => Ok(Self::FileGlob {
+                    original: value,
+                    pattern,
+                }),
+                "skill" => Ok(Self::SkillGlob {
+                    original: value,
+                    pattern,
+                }),
+                _ => unreachable!(),
+            }
+        } else {
+            // For single file paths: full canonicalization for dedup and symlink resolution.
+            let canon = canonicalize_path_sys(path, sys)
+                .map_err(|err| format!("Failed to canonicalize path for {path}: {err}"))?;
+
+            match scheme {
+                "file" => Ok(Self::File {
+                    original: value,
+                    file_path: canon,
+                }),
+                "skill" => Ok(Self::Skill {
+                    original: value,
+                    file_path: canon,
+                }),
+                _ => unreachable!(),
+            }
         }
     }
 }
@@ -306,6 +339,237 @@ mod tests {
             original: resource,
             pattern: glob::Pattern::new(&expected_pattern).unwrap()
         });
+    }
+
+    /// Glob patterns must NOT be canonicalized — they should retain the original
+    /// path scheme (drive letter on Windows) so that glob traversal results match.
+    /// This is the regression test for V2240114729 (mapped drive skills bug).
+    #[test]
+    fn test_glob_pattern_preserves_drive_letter_path() {
+        // Simulate a Windows mapped drive: home is P:\users\dev
+        let drive_home = if cfg!(windows) {
+            "P:\\users\\dev"
+        } else {
+            "/mnt/network/users/dev"
+        };
+        let sys = TestProvider::new_with_base(drive_home);
+
+        let resource = "skill://~/.kiro/skills/**/*.md";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        match &result {
+            ResourceKind::SkillGlob { pattern, .. } => {
+                let pat = pattern.as_str();
+                // Pattern must start with the drive letter / mount path, NOT a UNC path
+                assert!(
+                    pat.starts_with(drive_home),
+                    "Glob pattern should preserve the original path scheme. Got: {pat}"
+                );
+                // Must not contain UNC prefix
+                assert!(
+                    !pat.contains("\\\\?\\"),
+                    "Glob pattern must not contain verbatim path prefix. Got: {pat}"
+                );
+                assert!(
+                    !pat.contains("\\\\UNC\\"),
+                    "Glob pattern must not be converted to UNC. Got: {pat}"
+                );
+            },
+            other => panic!("Expected SkillGlob, got: {:?}", other),
+        }
+    }
+
+    /// Non-glob paths should still be fully canonicalized (for dedup/identity).
+    #[test]
+    fn test_non_glob_paths_are_canonicalized() {
+        let sys = TestProvider::new();
+        let home = TestProvider::default_home();
+
+        // Single file (no wildcards) → should go through canonicalize
+        let resource = "file://~/project/README.md";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+        match &result {
+            ResourceKind::File { file_path, .. } => {
+                let expected = if cfg!(windows) {
+                    format!("{home}\\project\\README.md")
+                } else {
+                    format!("{home}/project/README.md")
+                };
+                assert_eq!(file_path, &expected);
+            },
+            other => panic!("Expected File, got: {:?}", other),
+        }
+    }
+
+    /// Glob patterns with forward slashes on Windows must have separators normalized.
+    #[test]
+    fn test_glob_normalizes_separators() {
+        let sys = TestProvider::new();
+
+        // Input uses forward slashes (common in YAML configs)
+        let resource = "file://~/.kiro/skills/**/*.md";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        match &result {
+            ResourceKind::FileGlob { pattern, .. } => {
+                let pat = pattern.as_str();
+                if cfg!(windows) {
+                    // On Windows, all separators should be backslashes
+                    assert!(
+                        !pat.contains('/'),
+                        "Windows glob pattern should not contain forward slashes. Got: {pat}"
+                    );
+                } else {
+                    // On Unix, forward slashes are native
+                    assert!(
+                        !pat.contains('\\'),
+                        "Unix glob pattern should not contain backslashes. Got: {pat}"
+                    );
+                }
+            },
+            other => panic!("Expected FileGlob, got: {:?}", other),
+        }
+    }
+
+    /// Relative glob patterns (no ~) should be made absolute using cwd.
+    #[test]
+    fn test_glob_relative_path_made_absolute() {
+        let sys = TestProvider::new();
+        let home = TestProvider::default_home();
+
+        let resource = "file://.kiro/skills/**/*.md";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        match &result {
+            ResourceKind::FileGlob { pattern, .. } => {
+                let pat = pattern.as_str();
+                // Must be absolute (starts with / on Unix, drive letter on Windows)
+                assert!(
+                    std::path::Path::new(pat.split('*').next().unwrap_or(pat)).is_absolute(),
+                    "Glob pattern should be absolute. Got: {pat}"
+                );
+                // Must contain the cwd prefix (which equals home for TestProvider)
+                assert!(
+                    pat.starts_with(home),
+                    "Glob pattern should be rooted at cwd. Got: {pat}, expected prefix: {home}"
+                );
+            },
+            other => panic!("Expected FileGlob, got: {:?}", other),
+        }
+    }
+
+    /// Question mark is also detected as a glob character.
+    #[test]
+    fn test_question_mark_detected_as_glob() {
+        let sys = TestProvider::new();
+
+        let resource = "file://~/project/file?.txt";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        assert!(
+            matches!(result, ResourceKind::FileGlob { .. }),
+            "Path with ? should be parsed as FileGlob"
+        );
+    }
+
+    /// Environment variables in glob patterns should be expanded.
+    #[test]
+    fn test_glob_expands_env_vars() {
+        let sys = TestProvider::new().with_var("KIRO_SKILLS", "/custom/skills");
+
+        let resource = "skill://$KIRO_SKILLS/**/*.md";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        match &result {
+            ResourceKind::SkillGlob { pattern, .. } => {
+                let pat = pattern.as_str();
+                // The env var value uses forward slashes; on Windows our separator
+                // normalization converts them to backslashes. Check platform-aware.
+                let expected_fragment = if cfg!(windows) {
+                    "custom\\skills"
+                } else {
+                    "custom/skills"
+                };
+                assert!(
+                    pat.contains(expected_fragment),
+                    "Env var should be expanded in glob pattern. Got: {pat}"
+                );
+                assert!(
+                    !pat.contains("$KIRO_SKILLS"),
+                    "Raw env var reference should not remain. Got: {pat}"
+                );
+            },
+            other => panic!("Expected SkillGlob, got: {:?}", other),
+        }
+    }
+
+    /// Absolute glob paths should be used as-is (no cwd prepend).
+    #[test]
+    fn test_glob_absolute_path_unchanged() {
+        let abs_pattern = if cfg!(windows) {
+            "file://C:\\projects\\**\\*.rs"
+        } else {
+            "file:///projects/**/*.rs"
+        };
+        let sys = TestProvider::new();
+        let result = ResourceKind::parse(abs_pattern, &sys).unwrap();
+
+        match &result {
+            ResourceKind::FileGlob { pattern, .. } => {
+                let pat = pattern.as_str();
+                if cfg!(windows) {
+                    assert!(
+                        pat.starts_with("C:\\projects"),
+                        "Absolute Windows glob should not be prefixed with cwd. Got: {pat}"
+                    );
+                } else {
+                    assert!(
+                        pat.starts_with("/projects"),
+                        "Absolute Unix glob should not be prefixed with cwd. Got: {pat}"
+                    );
+                }
+            },
+            other => panic!("Expected FileGlob, got: {:?}", other),
+        }
+    }
+
+    /// Bracket patterns `[abc]` are NOT currently detected as globs.
+    /// This documents the pre-existing limitation (not introduced by our fix).
+    #[test]
+    fn test_bracket_pattern_not_detected_as_glob() {
+        let sys = TestProvider::new();
+
+        // [abc] is valid glob syntax but our parser only checks * and ?
+        let resource = "file://~/project/file[abc].txt";
+        let result = ResourceKind::parse(resource, &sys).unwrap();
+
+        // Documents current behavior: treated as a regular file path, not a glob.
+        // Follow-up could add path.contains('[') to is_glob check.
+        assert!(
+            matches!(result, ResourceKind::File { .. }),
+            "Bracket patterns are currently treated as File (known limitation)"
+        );
+    }
+
+    /// Parsing the same path with and without wildcards produces different variants.
+    #[test]
+    fn test_glob_vs_non_glob_same_base_path() {
+        let sys = TestProvider::new();
+
+        let non_glob = "file://~/project/README.md";
+        let glob_ver = "file://~/project/*.md";
+
+        let non_glob_result = ResourceKind::parse(non_glob, &sys).unwrap();
+        let glob_result = ResourceKind::parse(glob_ver, &sys).unwrap();
+
+        assert!(
+            matches!(non_glob_result, ResourceKind::File { .. }),
+            "Path without wildcards should be File"
+        );
+        assert!(
+            matches!(glob_result, ResourceKind::FileGlob { .. }),
+            "Path with wildcards should be FileGlob"
+        );
     }
 
     #[test]
