@@ -314,7 +314,7 @@ export interface ConsentContext {
 
 export interface ApprovalRequestInfo {
   sessionId?: string;
-  toolCall: { toolCallId: string };
+  toolCall: { toolCallId: string; title?: string };
   permissionOptions: PermissionOption[];
   trustOptions?: TrustOption[];
   consentContext?: ConsentContext;

@@ -185,7 +185,9 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       m.id === pendingApproval.toolCall.toolCallId
   );
   const toolName =
-    toolMsg && toolMsg.role === MessageRole.ToolUse ? toolMsg.name : 'Tool';
+    toolMsg && toolMsg.role === MessageRole.ToolUse
+      ? toolMsg.name
+      : (pendingApproval.toolCall.title ?? 'Tool');
 
   const prefix = subagentName ? `${subagentName} > ` : '';
   const title =

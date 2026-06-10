@@ -539,3 +539,147 @@ describe('Trust cascade — allow_always auto-resolves same-tool approvals', () 
     expect(store.getState().pendingApproval?.toolCall.toolCallId).toBe('t2');
   });
 });
+
+describe('--trust-all-tools auto-approval', () => {
+  function createTrustAllStore() {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro, trustAllTools: true });
+    // Simulate user confirming the trust gate
+    store.getState().confirmTrustAllTools();
+    return store;
+  }
+
+  function makeApprovalWithAlways(
+    toolCallId: string,
+    resolve?: (r: any) => void
+  ): AgentStreamEvent {
+    return {
+      type: AgentEventType.ApprovalRequest,
+      value: {
+        toolCall: { toolCallId },
+        permissionOptions: [
+          {
+            kind: ApprovalOptionId.AllowOnce,
+            name: 'Allow',
+            optionId: 'accept',
+          },
+          {
+            kind: ApprovalOptionId.AllowAlways,
+            name: 'Always',
+            optionId: 'always-accept',
+          },
+          {
+            kind: ApprovalOptionId.RejectOnce,
+            name: 'Deny',
+            optionId: 'reject',
+          },
+        ],
+        resolve: resolve ?? (() => {}),
+      },
+    } as AgentStreamEvent;
+  }
+
+  it('prefers allow_always when available (V2 parity)', () => {
+    const store = createTrustAllStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    handler(makeToolCallEvent('tc1', 'shell', 'npm test'));
+    handler(makeApprovalWithAlways('tc1', resolve));
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve.mock.calls[0]![0]).toEqual({
+      outcome: 'selected',
+      optionId: 'always-accept',
+    });
+    expect(store.getState().pendingApproval).toBeNull();
+  });
+
+  it('in KAS mode, auto-approve attaches _meta.kiro.consent.scope', () => {
+    const mockKiro = new Kiro();
+    const store = createAppStore({
+      kiro: mockKiro,
+      trustAllTools: true,
+      agentEngine: 'kas',
+    });
+    store.getState().confirmTrustAllTools();
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    handler(makeToolCallEvent('tc-kas', 'shell', 'npm test'));
+    handler(makeApprovalWithAlways('tc-kas', resolve));
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    const call = resolve.mock.calls[0]![0];
+    expect(call.optionId).toBe('always-accept');
+    expect(call._meta?.kiro?.consent?.scope).toBe('session');
+  });
+
+  it('falls back to allow_once when allow_always not offered', () => {
+    const store = createTrustAllStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    handler(makeToolCallEvent('tc2', 'shell', 'npm test'));
+    handler(makeApprovalEvent('tc2', resolve));
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve.mock.calls[0]![0]).toEqual({
+      outcome: 'selected',
+      optionId: 'allow_once',
+    });
+    expect(store.getState().pendingApproval).toBeNull();
+  });
+
+  it('falls through to UI if neither allow_always nor allow_once available', () => {
+    const store = createTrustAllStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    const rejectOnlyEvent = {
+      type: AgentEventType.ApprovalRequest,
+      value: {
+        toolCall: { toolCallId: 'tc-edge' },
+        permissionOptions: [
+          {
+            kind: ApprovalOptionId.RejectOnce,
+            name: 'Deny',
+            optionId: 'reject',
+          },
+        ],
+        resolve,
+      },
+    } as AgentStreamEvent;
+
+    handler(makeToolCallEvent('tc-edge', 'shell', 'danger'));
+    handler(rejectOnlyEvent);
+
+    // No suitable option — falls through to show UI
+    expect(resolve).not.toHaveBeenCalled();
+    expect(store.getState().pendingApproval).not.toBeNull();
+  });
+
+  it('does NOT auto-approve when trustAllToolsConfirmed is false', () => {
+    const store = createAppStore({ kiro: new Kiro(), trustAllTools: true });
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    handler(makeToolCallEvent('tc3', 'shell', 'rm -rf /'));
+    handler(makeApprovalEvent('tc3', resolve));
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(store.getState().pendingApproval).not.toBeNull();
+  });
+
+  it('does NOT auto-approve when --trust-all-tools was not requested', () => {
+    const store = createTestStore();
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock((_r: any) => {});
+
+    handler(makeToolCallEvent('tc4', 'shell', 'ls'));
+    handler(makeApprovalEvent('tc4', resolve));
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(store.getState().pendingApproval).not.toBeNull();
+  });
+});

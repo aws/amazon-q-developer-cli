@@ -2303,7 +2303,45 @@ export const createAppStore = (props: AppStoreProps) => {
             extractTaskState(event, get);
             break;
           case AgentEventType.ApprovalRequest: {
-            const { autoApproveCrewTools, sessionId: mainSessionId } = get();
+            const {
+              autoApproveCrewTools,
+              sessionId: mainSessionId,
+              trustAllToolsConfirmed,
+            } = get();
+
+            // --trust-all-tools: auto-approve all permission requests
+            // Prefer allow_always (V2 parity: server learns tool is trusted),
+            // fall back to allow_once if always isn't offered.
+            if (trustAllToolsConfirmed) {
+              const opt =
+                event.value.permissionOptions.find(
+                  (o: { kind: string }) => o.kind === 'allow_always'
+                ) ??
+                event.value.permissionOptions.find(
+                  (o: { kind: string }) => o.kind === 'allow_once'
+                );
+              if (opt) {
+                event.value.resolve({
+                  outcome: 'selected',
+                  optionId: opt.optionId,
+                  _meta:
+                    get().agentEngine === 'kas'
+                      ? {
+                          kiro: {
+                            consent: {
+                              scope:
+                                opt.kind === 'allow_always'
+                                  ? 'session'
+                                  : 'invocation',
+                            },
+                          },
+                        }
+                      : undefined,
+                });
+                break;
+              }
+            }
+
             const isCrewApproval = !!(
               event.value.sessionId &&
               mainSessionId &&

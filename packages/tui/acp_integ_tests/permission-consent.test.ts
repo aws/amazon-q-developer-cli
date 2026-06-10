@@ -256,4 +256,38 @@ describe('KAS permission consent flow', () => {
     // KAS mode always attaches consent scope even without consent context
     expect(response._meta?.kiro?.consent?.scope).toBe('invocation');
   }, 30000);
+
+  it('shows tool name from permission request title when tool_call notification missing', async () => {
+    tc = new AcpTestCase({ testName: 'consent-tool-title-fallback' });
+    setupHandshake(tc);
+    tc.mock.on('session/prompt', () => ({ stopReason: 'end_turn' }));
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    await tc.sleepMs(300);
+
+    // Do NOT send tool_call notification — simulate race where permission arrives first
+    // Send permission request with a title
+    const responsePromise = tc.mock.request('session/request_permission', {
+      sessionId: 'test-session-1',
+      toolCall: {
+        toolCallId: 'tc-title-test',
+        title: 'Run Command',
+        status: 'pending',
+      },
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'accept' }],
+      _meta: {},
+    });
+
+    await tc.waitForStore((s) => s.pendingApproval !== null, 5000);
+    await tc.sleepMs(200);
+
+    // The approval dialog should show "Run Command requires approval" not "Tool requires approval"
+    await tc.waitForVisibleText('Run Command', 3000);
+
+    // Dismiss to clean up
+    await tc.pressEnter();
+    await responsePromise;
+  }, 30000);
 });
