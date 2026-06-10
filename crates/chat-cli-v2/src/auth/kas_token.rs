@@ -32,6 +32,17 @@ use crate::database::Database;
 /// here so dispatchers can match against it without drift.
 pub const KAS_AUTH_EXT_METHOD: &str = "kiro/auth/getAccessToken";
 
+/// Auth method advertised to KAS in the `_kiro/auth/getAccessToken` response.
+/// KAS maps each value to a `TokenType` request header. Auth types that need
+/// no header (Builder ID / IdC / Social) send nothing. Add a variant here when
+/// a new auth type needs a `TokenType` header (e.g. API key -> `api_key`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum KasAuthMethod {
+    /// `TokenType: EXTERNAL_IDP`.
+    #[serde(rename = "external_idp")]
+    ExternalIdp,
+}
+
 /// Token data returned to KAS for the `_kiro/auth/getAccessToken`
 /// extension. Wire shape matches the response type defined in
 /// `kiro-agent`'s `acp-type-covenant/client-capabilities/index.ts`.
@@ -52,6 +63,10 @@ pub struct AcpCallbackToken {
     /// resolver MUST return an error rather than letting KAS silently
     /// fall back to its default region.
     pub profile_arn: String,
+    /// Auth method KAS maps to a `TokenType` request header. `None` for auth
+    /// types that need none (Builder ID / IdC / Social); omitted from the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_method: Option<KasAuthMethod>,
 }
 
 /// Resolve the highest-priority token in the SQLite store, refreshing it
@@ -76,6 +91,7 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
             access_token: token.access_token.0.clone(),
             expires_at: format_time(&token.expires_at),
             profile_arn: profile_arn_from_db(database)?,
+            auth_method: Some(KasAuthMethod::ExternalIdp),
         }));
     }
     if let Some(token) = BuilderIdToken::coordinated_refresh(database, None).await? {
@@ -87,6 +103,7 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
             access_token: token.access_token.0.clone(),
             expires_at: format_time(&token.expires_at),
             profile_arn,
+            auth_method: None,
         }));
     }
     if let Some(token) = SocialToken::coordinated_refresh(database).await? {
@@ -98,6 +115,7 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
             access_token: token.access_token.0.clone(),
             expires_at: format_time(&token.expires_at),
             profile_arn,
+            auth_method: None,
         }));
     }
     Ok(None)
@@ -287,6 +305,7 @@ mod tests {
         // External IdP carries no profile of its own; resolver MUST fall
         // back to the AuthProfile row written by `select_profile_interactive`.
         assert_eq!(token.profile_arn, idc_profile().arn);
+        assert_eq!(token.auth_method, Some(KasAuthMethod::ExternalIdp));
     }
 
     /// BuilderId free-tier (`start_url = None`) MUST return the canonical
@@ -308,6 +327,7 @@ mod tests {
             .expect("token resolved");
         assert_eq!(token.access_token, "builder-access-tok");
         assert_eq!(token.profile_arn, BUILDER_ID_PROFILE_ARN);
+        assert_eq!(token.auth_method, None);
     }
 
     /// IdC (BuilderId with non-default `start_url`) MUST source the profile
@@ -332,6 +352,7 @@ mod tests {
             .expect("token resolved");
         assert_eq!(token.access_token, "idc-access-tok");
         assert_eq!(token.profile_arn, idc_profile().arn);
+        assert_eq!(token.auth_method, None);
     }
 
     #[tokio::test]
@@ -354,6 +375,7 @@ mod tests {
             token.profile_arn,
             "arn:aws:codewhisperer:us-east-1:111122223333:profile/Social"
         );
+        assert_eq!(token.auth_method, None);
     }
 
     /// IdC user logged in but `database.get_auth_profile()` returns None
@@ -414,6 +436,7 @@ mod tests {
             access_token: "at".into(),
             expires_at: "2099-01-01T00:00:00Z".into(),
             profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
+            auth_method: None,
         };
         let json = serde_json::to_value(&token).unwrap();
         assert!(json.get("refreshToken").is_none(), "{json}");
@@ -424,6 +447,22 @@ mod tests {
         let mut keys: Vec<_> = map.keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, vec!["accessToken", "expiresAt", "profileArn"]);
+    }
+
+    /// External IdP tokens MUST serialize `authMethod: "external_idp"` so KAS's
+    /// `AcpCallbackAuthProvider` applies the `TokenType: EXTERNAL_IDP` header.
+    /// Omitting it is the bug that made external-IDP CLI->KAS sessions fail.
+    #[test]
+    fn acp_callback_token_external_idp_serializes_auth_method() {
+        let token = AcpCallbackToken {
+            access_token: "at".into(),
+            expires_at: "2099-01-01T00:00:00Z".into(),
+            profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
+            auth_method: Some(KasAuthMethod::ExternalIdp),
+        };
+        let json = serde_json::to_value(&token).unwrap();
+        assert_eq!(json.get("authMethod").and_then(|v| v.as_str()), Some("external_idp"));
+        assert!(json.get("auth_method").is_none(), "must be camelCase: {json}");
     }
 
     /// Happy path: `handle_kas_auth_ext_method` returns an `ExtResponse`

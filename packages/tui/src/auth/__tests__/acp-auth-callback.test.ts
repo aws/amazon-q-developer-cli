@@ -147,6 +147,50 @@ describe('createGetAccessTokenCapability', () => {
     ]);
   });
 
+  it('forwards authMethod (external_idp) so KAS can set the TokenType header', async () => {
+    const { spawner } = makeSpawner({
+      status: 0,
+      stdout: JSON.stringify({
+        success: true,
+        accessToken: 'at',
+        expiresAt: '2099-01-01T00:00:00Z',
+        profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/x',
+        authMethod: 'external_idp',
+      }),
+    });
+    const cap = createGetAccessTokenCapability(spawner);
+
+    const response = await cap.handler({});
+
+    expect(response).toEqual({
+      accessToken: 'at',
+      expiresAt: '2099-01-01T00:00:00Z',
+      profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/x',
+      authMethod: 'external_idp',
+    } as unknown as typeof response);
+  });
+
+  it('omits authMethod when chat-cli does not emit one (Builder ID / IdC / Social)', async () => {
+    const { spawner } = makeSpawner({
+      status: 0,
+      stdout: JSON.stringify({
+        success: true,
+        accessToken: 'at',
+        expiresAt: '2099-01-01T00:00:00Z',
+        profileArn: 'arn:aws:iam::123:profile/x',
+      }),
+    });
+    const cap = createGetAccessTokenCapability(spawner);
+
+    const response = await cap.handler({});
+
+    expect(Object.keys(response).sort()).toEqual([
+      'accessToken',
+      'expiresAt',
+      'profileArn',
+    ]);
+  });
+
   it('throws when the JSON response is missing profileArn', async () => {
     // chat-cli always emits profileArn (its `AcpCallbackToken.profile_arn`
     // is `String`, not `Option<String>`). Missing -> contract violation.

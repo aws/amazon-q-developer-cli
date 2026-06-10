@@ -13,12 +13,14 @@
  *   - acquires the cross-process refresh lock,
  *   - resolves the highest-priority cached token (External -> Builder -> Social),
  *   - refreshes it via OIDC if it has crossed expiry,
- *   - prints `{success, accessToken, expiresAt, profileArn?}`.
+ *   - prints `{success, accessToken, expiresAt, profileArn?, authMethod?}`.
  *
  * The handler strips the host-internal `success` field and returns
- * `{accessToken, expiresAt, profileArn?}` to KAS. On failure (not logged
- * in, refresh fault) it throws; the KAS-side `AcpCallbackAuthProvider`
- * translates that into a `TokenExpiredError` surfaced to the caller.
+ * `{accessToken, expiresAt, profileArn?, authMethod?}` to KAS. On failure
+ * (not logged in, refresh fault) it throws; the KAS-side
+ * `AcpCallbackAuthProvider` translates that into a `TokenExpiredError`
+ * surfaced to the caller. `authMethod` (e.g. `external_idp`) lets KAS apply
+ * the matching `TokenType` header; it is absent for auth types that need none.
  *
  * # Binary resolution
  *
@@ -174,12 +176,23 @@ async function runGetKasToken(
     );
   }
 
+  // Forward the optional `authMethod` (e.g. `external_idp`) so the KAS-side
+  // `AcpCallbackAuthProvider` can apply the matching `TokenType` header.
+  // Spread (not a fixed property) stays assignable to the pinned
+  // `GetAccessTokenResponse` before that type adds the field, and omits it
+  // for auth types that need no header, where the subcommand sends nothing.
+  const authMethod =
+    typeof parsed.authMethod === 'string' && parsed.authMethod.length > 0
+      ? { authMethod: parsed.authMethod }
+      : {};
+
   // Project to the wire shape. Strips the host-internal `success` field;
   // KAS accepts extra fields but the minimal shape keeps the contract clean.
   return {
     accessToken: parsed.accessToken,
     expiresAt: parsed.expiresAt,
     profileArn: parsed.profileArn,
+    ...authMethod,
   };
 }
 
