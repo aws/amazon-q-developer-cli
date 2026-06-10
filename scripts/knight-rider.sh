@@ -6,21 +6,21 @@
 #   ./scripts/knight-rider.sh start                          # use default repo
 #   ./scripts/knight-rider.sh start --dir ~/workplace/kiro-cli-pr-1800  # use worktree
 #   ./scripts/knight-rider.sh start --out /path/to/frames   # custom output dir
-#   ./scripts/knight-rider.sh stop
+#   ./scripts/knight-rider.sh start --kas                    # use KAS engine
+#   ./scripts/knight-rider.sh start --port 3002 --kas       # KAS on custom port
+#   ./scripts/knight-rider.sh stop --port 3002              # stop specific instance
 #   ./scripts/knight-rider.sh status
 #   ./scripts/knight-rider.sh restart --dir /path/to/checkout
 
 set -euo pipefail
 
 PORT=3001
-KR_URL="http://localhost:$PORT"
-LOG="/tmp/knight-rider.log"
-PID_FILE="/tmp/knight-rider.pid"
+KAS=false
 BOOT_TIMEOUT=30
 KILL_TIMEOUT=10
 RUN_TIMEOUT=2700
 
-# Parse args: first positional is action, --dir and --out are optional
+# Parse args: first positional is action, rest are flags
 ACTION="${1:-status}"
 shift || true
 REPO_ROOT="$HOME/workplace/kiro-cli-review"
@@ -29,10 +29,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir) REPO_ROOT="$2"; shift 2 ;;
     --out) OUT_DIR="$2"; shift 2 ;;
+    --port) PORT="$2"; shift 2 ;;
+    --kas) KAS=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 TUI_DIR="$REPO_ROOT/packages/tui"
+
+# Derive per-port file paths so multiple instances can coexist
+KR_URL="http://localhost:$PORT"
+LOG="/tmp/knight-rider-${PORT}.log"
+PID_FILE="/tmp/knight-rider-${PORT}.pid"
 
 # Portable timeout: use GNU timeout if available, otherwise run without limit
 _timeout() {
@@ -100,11 +107,9 @@ start() {
   echo "Starting Knight Rider (max ${RUN_TIMEOUT}s lifetime)..."
   echo "  Repo: $REPO_ROOT"
   cd "$TUI_DIR"
-  local kr_args="knight-rider"
-  if [ -n "$OUT_DIR" ]; then
-    kr_args="knight-rider --out $OUT_DIR"
-    echo "  Out: $OUT_DIR"
-  fi
+  local kr_args="knight-rider --port $PORT"
+  [ -n "$OUT_DIR" ] && kr_args="$kr_args --out $OUT_DIR" && echo "  Out: $OUT_DIR"
+  [ "$KAS" = "true" ] && kr_args="$kr_args --kas" && echo "  Engine: KAS"
   _timeout "$RUN_TIMEOUT" bun run $kr_args > "$LOG" 2>&1 &
   local kr_pid=$!
   echo "$kr_pid" > "$PID_FILE"

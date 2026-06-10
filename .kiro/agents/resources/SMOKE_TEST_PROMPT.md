@@ -42,8 +42,16 @@ that scenario and log it as: `⏭️ <id>: skipped (command not implemented)`
 NEVER run raw `nohup bun run knight-rider` — it WILL hang without timeout guards.
 
 ```bash
+# Default (Rust ACP engine)
 bash scripts/knight-rider.sh start --dir "$(pwd)" --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}"
+
+# KAS engine (when SMOKE_ENGINE=kas)
+bash scripts/knight-rider.sh start --dir "$(pwd)" --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}" --kas
 ```
+
+**Engine selection**: Check the `SMOKE_ENGINE` env var. If it equals `kas`, add `--kas` to
+the start command. This launches Knight Rider with the KAS TypeScript agent engine instead
+of the default Rust ACP backend.
 
 The script handles: killing stale instances, timeout guards (30s boot, 5min lifetime),
 building the Rust binary if missing, and polling for readiness. If it exits non-zero,
@@ -190,9 +198,18 @@ For scenarios that exit the TUI (`/quit`, `ctrlc-twice`), restart Knight Rider.
 ### Special scenarios
 
 - **`/editor`, `/reply`, `/paste`** — skip in headless (no editor/clipboard)
-- **`/quit`, `keyboard-ctrlc-exit`** — run last or restart Knight Rider after
-- **`prompt:*` steps** — the real agent responds; wait for idle after
-- **`tool-use-*`** — watch for approval dialogs, observe tool execution flow
+- **`/quit`, `keyboard-ctrlc-exit`** — run LAST (they kill the TUI)
+- **ALL other scenarios MUST run** — including conversations, tool-use, and subagents
+- **`prompt:*` steps** — the real agent responds; wait for idle after (up to 90s)
+- **`tool-use-*`** — with `--trust-all-tools` set, approvals are auto-granted. Still run
+  these — verify the tool executes and output appears. Do NOT skip them.
+- **`conversation-*`** — these test multi-turn memory. They require real LLM responses.
+  Do NOT skip them. Wait for idle between turns.
+- **`slash-save`, `slash-load`, `slash-chat-resume`** — run them in sequence. Save creates
+  state that load/resume need.
+
+Do NOT batch-skip scenarios. Only skip `/editor`, `/reply`, `/paste` (3 scenarios).
+Everything else MUST be attempted. If a scenario times out (45s), mark it TIMEOUT and move on.
 
 ### On failure
 
@@ -203,7 +220,10 @@ If a verify fails or the screen shows unexpected output:
 
 ## Output
 
-When all scenarios are done, write `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md`:
+When all scenarios are done, write `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md`.
+
+**IMPORTANT**: Write this file using bash (`echo >>`) or the `write` tool — NOT PowerShell.
+Use actual UTF-8 characters (✅ ⚠️ ❌ ⏭️), NOT PowerShell escape sequences like `$([char]0x2705)`.
 
 ```markdown
 # Smoke Test Results
@@ -242,6 +262,46 @@ When all scenarios are done, write `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke
 ```
 
 Then print: `SMOKE OK <N> scenarios, <F> failures, <O> observations`
+
+## Windows CI
+
+When running on Windows (detect via `RUNNER_OS=Windows` or `OS=Windows_NT`):
+
+The shell tool uses PowerShell on Windows. Bash heredocs and complex escaping WILL fail.
+Use this approach instead:
+
+1. **Use the `write` tool (NOT shell) to create `/tmp/kr-helpers.sh`** with the bash
+   helpers content. The write/fs_write tool writes files without escaping issues.
+
+2. **Use Git Bash for every shell command:**
+   ```
+   & "C:\Program Files\Git\bin\bash.exe" -c 'source /tmp/kr-helpers.sh && type_text "/help" && curl -s -X POST $KR/enter && sleep 1 && screen'
+   ```
+
+3. **Run scenarios the same way as Linux** — one at a time, observe each frame, make
+   judgments. The ONLY difference is the Git Bash wrapper around each command.
+
+4. **Do NOT try to pipe multi-line bash through PowerShell.** Do NOT use `cat << EOF`.
+   Do NOT write Python scripts. Write files with the `write` tool, execute with Git Bash.
+
+5. **Timeout**: The entire smoke step has a 30-minute timeout. If you're still running
+   scenarios after 25 minutes, stop, write summary-results.md with what you have, and exit.
+
+## Incremental Results (CRITICAL)
+
+Write `summary-results.md` **incrementally** — after every scenario completes, append the
+result to the file. Do NOT wait until all scenarios finish. This way if the process is
+killed mid-run, partial results are still captured.
+
+After each scenario, append immediately:
+```bash
+echo "| $i | $scenario_id | $status | $note |" >> "$OUT_DIR/summary-results.md"
+```
+
+## Per-Scenario Timeout
+
+Do NOT wait more than 45 seconds for any single scenario. If `wait_for_idle` or
+`wait_text` exceeds this, mark the scenario as `TIMEOUT`, capture a frame, and move on.
 
 ## Constraints
 

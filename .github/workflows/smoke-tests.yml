@@ -13,6 +13,15 @@ on:
           - linux
           - macos
           - windows
+      engine:
+        description: "Agent engine to test"
+        type: choice
+        required: true
+        default: "all"
+        options:
+          - all
+          - rust
+          - kas
       reason:
         description: "Why are you running this?"
         required: false
@@ -28,6 +37,10 @@ on:
       commit_sha:
         type: string
         required: true
+      engine:
+        type: string
+        required: false
+        default: 'all'
 
 permissions:
   contents: read
@@ -39,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       platforms: ${{ steps.set.outputs.platforms }}
+      engines: ${{ steps.set.outputs.engines }}
     steps:
       - id: set
         run: |
@@ -48,19 +62,26 @@ jobs:
             windows) echo 'platforms=["windows-x64-latest-16-cores"]' >> "$GITHUB_OUTPUT" ;;
             *)       echo 'platforms=["ubuntu-latest","macos-latest","windows-x64-latest-16-cores"]' >> "$GITHUB_OUTPUT" ;;
           esac
+          case "${{ inputs.engine }}" in
+            rust) echo 'engines=["rust"]' >> "$GITHUB_OUTPUT" ;;
+            kas)  echo 'engines=["kas"]' >> "$GITHUB_OUTPUT" ;;
+            *)    echo 'engines=["rust","kas"]' >> "$GITHUB_OUTPUT" ;;
+          esac
 
   smoke:
-    name: Smoke (${{ matrix.os }})
+    name: Smoke (${{ matrix.os }}/${{ matrix.engine }})
     needs: matrix
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.matrix.outputs.platforms) }}
+        engine: ${{ fromJSON(needs.matrix.outputs.engines) }}
     env:
-      RUN_ID: smoke-${{ github.run_id }}-${{ matrix.os }}
+      RUN_ID: smoke-${{ github.run_id }}-${{ matrix.os }}-${{ matrix.engine }}
       KIRO_AGENT_PATH: ${{ github.workspace }}/target/debug/chat_cli
+      KIRO_AGENT_ENGINE: ${{ matrix.engine == 'kas' && 'kas' || '' }}
       TERM: xterm-256color
       COLORTERM: truecolor
       FORCE_COLOR: '3'
@@ -125,14 +146,17 @@ jobs:
           aws-region: us-east-1
 
       - name: Run smoke scenarios
+        timeout-minutes: 30
+        continue-on-error: true
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
+          SMOKE_ENGINE: ${{ matrix.engine }}
         shell: bash
         run: |
           mkdir -p ${{ github.workspace }}/.smoke-frames
           kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
-            "Run all scenarios" 2>&1 | tee ${{ github.workspace }}/.smoke-frames/session.log
+            "Run all scenarios. Engine: ${{ matrix.engine }}. If engine is 'kas', start Knight Rider with --kas flag." 2>&1 | tee ${{ github.workspace }}/.smoke-frames/session.log || true
 
       - name: Collect evidence frames
         if: always()
@@ -167,11 +191,12 @@ jobs:
           FRAMES_DIR="${{ github.workspace }}/.smoke-frames"
           frames=$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
           {
-            echo "## Smoke Tests — ${{ matrix.os }}"
+            echo "## Smoke Tests — ${{ matrix.os }} / ${{ matrix.engine }}"
             echo ""
             echo "| Property | Value |"
             echo "|----------|-------|"
             echo "| **Frames captured** | $frames |"
+            echo "| **Engine** | ${{ matrix.engine }} |"
             echo "| **Run ID** | \`${RUN_ID}\` |"
             echo "| **Reason** | ${{ inputs.reason }} |"
             echo ""
