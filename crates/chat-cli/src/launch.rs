@@ -160,6 +160,16 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
             .get_bool(crate::database::settings::Setting::TelemetryEnabled)
             .unwrap_or(true);
     cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
+    for env_var in [
+        crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
+        crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
+    ] {
+        if let Ok(value) = std::env::var(env_var)
+            && !value.trim().is_empty()
+        {
+            cmd.env(env_var, value);
+        }
+    }
 
     match agent_engine {
         AgentEngine::Kas => {

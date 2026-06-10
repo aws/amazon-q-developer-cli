@@ -1,0 +1,509 @@
+metrics:
+  - name: cli_session_started_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_minor_bucket, os_type, install_source, client_application]
+  - name: chat_session_started_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_minor_bucket, mode, client_application]
+  - name: active_users_daily
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    attributes: [install_method, client_application, is_internal_amazon]
+  - name: active_users_weekly
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    attributes: [install_method, client_application, is_internal_amazon]
+  - name: active_users_monthly
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+  - name: dau_mau_ratio
+    kind: observable_gauge
+    unit: ratio
+    priority: P0
+    temporality: cumulative
+  - name: new_users_daily
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    attributes: [install_source]
+  - name: client_version_seen
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    series_cap: 2400
+    attributes: [version_full, release_channel, os_type]
+  - name: version_adoption_pct
+    kind: observable_gauge
+    unit: percent
+    priority: P0
+    temporality: cumulative
+    attributes: [version_minor_bucket, release_channel]
+  - name: stale_version_users
+    kind: observable_gauge
+    unit: users
+    priority: P1
+    temporality: cumulative
+    attributes: [staleness_bucket]
+  - name: upgrade_completed_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [from_version_minor_bucket, to_version_minor_bucket, upgrade_trigger]
+  - name: kiro_cli_client_identity
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [anonymous_client_id, install_method, install_date_epoch_day, is_internal_amazon]
+  - name: kiro_cli_daily_heartbeat
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [client_application, install_method]
+  - name: slash_command_invoked_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [command, version_minor_bucket]
+  - name: feature_used_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [feature, version_minor_bucket]
+  - name: feature_unique_users_weekly
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    attributes: [feature]
+  - name: tool_call_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [tool_origin, builtin_tool_name, outcome]
+  - name: tool_using_sessions_pct
+    kind: observable_gauge
+    unit: percent
+    priority: P0
+    temporality: cumulative
+  - name: mcp_server_connected_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [mcp_server_class]
+  - name: model_invocations_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model_class]
+  - name: mode_active_users_weekly
+    kind: observable_gauge
+    unit: users
+    priority: P0
+    temporality: cumulative
+    attributes: [mode]
+  - name: kiro_cli_feature_first_use
+    kind: log_event
+    unit: event
+    priority: P1
+    attributes: [anonymous_client_id, feature_name, session_id, trigger]
+  - name: chat_cli.bedrock.stream.ttft
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [model_class, prompt_size_bucket, tools_enabled]
+  - name: chat_cli.bedrock.stream.duration
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [model_class, completion_reason]
+  - name: chat_cli.bedrock.request.duration
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [model_class, operation, outcome]
+  - name: chat_cli.bedrock.stream.inter_token_latency
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [model_class]
+  - name: chat_cli.startup.duration
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [version_minor_bucket, cold_start, os_type]
+  - name: chat_cli.agent.loop.iteration_duration
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [loop_phase]
+  - name: kiro_cli_user_turn_duration_seconds
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [model_class, chat_conversation_type, is_subagent, mode]
+  - name: kiro_cli_time_to_first_chunk_ms
+    kind: histogram
+    unit: ms
+    priority: P1
+    temporality: delta
+    attributes: [model_class, client_application, is_subagent]
+  - name: chat_cli.session.completed
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [exit_reason, agent_kind]
+  - name: chat_cli.crash.total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [crash_kind, os_type, host_arch]
+  - name: chat_cli.startup.failures
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [failure_stage, os_type]
+  - name: chat_cli.bedrock.request.errors
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model_class, operation, error_kind, status_class]
+  - name: chat_cli.bedrock.empty_response.retries
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model_class, outcome]
+  - name: chat_cli.retry.attempts
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [upstream, retry_reason, attempt_number_bucket]
+  - name: chat_cli.retry.exhausted
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [upstream, final_error_kind]
+  - name: chat_cli.agent.loop.stuck
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [stuck_phase, detection]
+  - name: chat_cli.upstream.dependency.up
+    kind: observable_gauge
+    unit: "1"
+    priority: P0
+    temporality: cumulative
+    attributes: [dependency, partition]
+  - name: chat_cli.slo.success_rate
+    kind: derived
+    unit: "1"
+    priority: P0
+    attributes: [slo_target]
+  - name: chat_cli.slo.availability
+    kind: derived
+    unit: "1"
+    priority: P0
+    attributes: [slo_target]
+  - name: chat_cli.process.memory.rss
+    kind: observable_gauge
+    unit: By
+    priority: P0
+    temporality: cumulative
+    attributes: [version_minor_bucket, agent_kind]
+  - name: chat_cli.process.memory.growth_rate
+    kind: histogram
+    unit: "By/s"
+    priority: P1
+    temporality: delta
+    attributes: [version_minor_bucket, agent_kind]
+  - name: chat_cli.process.cpu.utilization
+    kind: histogram
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_minor_bucket, agent_kind, process_state]
+  - name: chat_cli.process.fds.open
+    kind: observable_gauge
+    unit: "1"
+    priority: P1
+    temporality: cumulative
+    attributes: [version_minor_bucket, agent_kind]
+  - name: chat_cli.process.threads
+    kind: observable_gauge
+    unit: "1"
+    priority: P2
+    temporality: cumulative
+    attributes: [version_minor_bucket, agent_kind]
+  - name: kiro_cli_tokens_consumed
+    kind: counter
+    unit: tokens
+    priority: P0
+    temporality: delta
+    attributes: [model_class, token_type, client_application, is_subagent]
+  - name: kiro_cli_estimated_cost_usd
+    kind: counter
+    unit: USD
+    priority: P0
+    temporality: delta
+    attributes: [model_class, client_application, is_subagent]
+  - name: kiro_cli_pricing_table_active
+    kind: observable_gauge
+    unit: "1"
+    priority: P0
+    temporality: cumulative
+    attributes: []
+  - name: kiro_cli_cache_hit_ratio
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [model_class, chat_conversation_type, client_application]
+  - name: kiro_cli_context_usage_percentage
+    kind: histogram
+    unit: percent
+    priority: P1
+    temporality: delta
+    attributes: [model_class, client_application, is_subagent]
+  - name: kiro_cli_metering_event
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [request_id, model_class, client_application, metering_usage, metering_unit, metering_unit_plural]
+  - name: kiro_cli_user_turn_completed
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [anonymous_client_id, session_id, conversation_id, request_id, message_id, model_class, client_application, result, turn_failure_reason, reason_desc, status_code, time_to_first_chunks_ms, user_prompt_length, assistant_response_length, user_turn_duration_seconds, follow_up_count, message_meta_tags, is_subagent, parent_tool_use_id, request_attempts, total_tokens, uncached_input_tokens, output_tokens, cache_read_input_tokens, cache_write_input_tokens, estimated_cost_usd]
+  - name: kiro_cli_tool_invoked
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [tool_use_id, tool_name, mcp_server_name, model_class]
+  - name: kiro_cli_tool_invocations
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [tool_origin, outcome]
+  - name: kiro_cli_tool_execution_duration_ms
+    kind: histogram
+    unit: ms
+    priority: P1
+    temporality: delta
+    attributes: [tool_origin, is_success]
+  - name: kiro_cli_mcp_server_init
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [mcp_server_name, mcp_server_class, outcome]
+  - name: kiro_cli_mcp_server_init_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [mcp_server_class, outcome]
+  - name: kiro_cli_subagent_invoked
+    kind: log_event
+    unit: event
+    priority: P1
+    attributes: [subagent_name, depth_bucket, model_class]
+  - name: kiro_cli_user_turns
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model_class, client_application, result, is_subagent, mode]
+  - name: session_outcome_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [session_outcome]
+  - name: user_feedback_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [sentiment, surface]
+  - name: message_regenerated_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [model_class]
+  - name: kiro_cli_conversation_completed
+    kind: log_event
+    unit: event
+    priority: P0
+    attributes: [conversation_id, session_id, completion_reason]
+  - name: telemetry_opt_out_respected_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [channel, event_class]
+  - name: telemetry_opt_out_violation_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [channel]
+  - name: pii_redaction_runs_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [redactor, event_class, channel, redaction_result]
+  - name: pii_redaction_matches_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [pii_type, field_class]
+  - name: pii_redaction_errors_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [redactor, error_kind, fail_action]
+  - name: pii_redaction_coverage_ratio
+    kind: derived
+    unit: "1"
+    priority: P0
+  - name: govcloud_channel_disabled_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [channel, partition, reason]
+  - name: govcloud_channel_leak_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [channel]
+  - name: kuts_export_oversize_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [signal]
+  - name: consent_record_integrity_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [check_kind, integrity_result]
+  - name: auth_credential_failure_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [auth_provider, error_code, operation, partition]
+  - name: auth_unexpected_identity_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [expected_partition, actual_partition, operation]
+  - name: tls_validation_failure_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [destination_class, failure_reason]
+  - name: tool_egress_destinations_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [destination_class, scheme, is_allowlisted]
+  - name: telemetry.exporter.send.attempts
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [exporter, signal, export_outcome]
+  - name: telemetry.exporter.send.duration
+    kind: histogram
+    unit: s
+    priority: P0
+    temporality: delta
+    attributes: [exporter, signal]
+  - name: telemetry.exporter.dropped
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [exporter, signal, drop_reason]
+  - name: telemetry.queue.depth
+    kind: observable_gauge
+    unit: "1"
+    priority: P0
+    temporality: cumulative
+    attributes: [exporter, signal]
+  - name: telemetry.batch.size
+    kind: histogram
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [exporter, signal]
+  - name: telemetry.emit.failures
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [subsystem, failure_kind]
+  - name: telemetry.sdk.up
+    kind: observable_gauge
+    unit: "1"
+    priority: P0
+    temporality: cumulative
+    attributes: [partition, os_type, release_channel]
+  - name: telemetry.flush_on_exit.dropped_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [shutdown_path]
+  - name: meta_meter.up
+    kind: observable_gauge
+    unit: "1"
+    priority: P0
+    temporality: cumulative
+    attributes: [partition, os_type]

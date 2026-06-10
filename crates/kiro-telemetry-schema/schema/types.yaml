@@ -1,0 +1,231 @@
+attributes:
+  - name: product
+    allowed_values: [CodewhispererTerminal]
+  - name: version_minor_bucket
+    allowed_values: [current, current-1, current-2, older, _other_]
+  - name: from_version_minor_bucket
+    allowed_values: [current, current-1, current-2, older, _other_]
+  - name: to_version_minor_bucket
+    allowed_values: [current, current-1, current-2, older, _other_]
+  - name: version_full
+    max_distinct: 200
+  - name: os_type
+    allowed_values: [linux, macos, windows, _other_]
+  - name: host_arch
+    allowed_values: [x86_64, aarch64, arm64, _other_]
+  - name: install_source
+    allowed_values: [brew, download, internal, cargo, unknown, _other_]
+  - name: install_method
+    allowed_values: [brew, download, internal, cargo, unknown, _other_]
+  - name: client_application
+    allowed_values: [chat_cli, chat_cli_v2, acp_external, kiro_ide, _other_]
+  - name: is_internal_amazon
+    allowed_values: ["true", "false"]
+  - name: release_channel
+    allowed_values: [stable, beta, _other_]
+  - name: staleness_bucket
+    allowed_values: ["<30d", "30-60", "60-90", ">90", _other_]
+  - name: upgrade_trigger
+    allowed_values: [auto, prompted, manual, _other_]
+  - name: mode
+    allowed_values: [interactive, oneshot, agent, plan, review, tangent, voice, acp_external, generate_agent, _other_]
+  - name: command
+    max_distinct: 64
+  - name: feature
+    max_distinct: 64
+  - name: feature_name
+    metric_allowed: false
+  - name: trigger
+    metric_allowed: false
+  - name: tool_origin
+    allowed_values: [builtin, mcp, custom, subagent_delegate, aws_api, _other_]
+  - name: builtin_tool_name
+    max_distinct: 64
+  - name: tool_name
+    metric_allowed: false
+  - name: mcp_server_name
+    metric_allowed: false
+  - name: mcp_server_class
+    allowed_values: [builtin_fs, builtin_code, builtin_knowledge, official_third_party, user_defined, internal_amazon, _other_]
+  - name: outcome
+    allowed_values: [success, error, denied, cancelled, recovered, still_empty, timeout, auth, protocol, other, _other_]
+  - name: result
+    allowed_values: [success, failed, cancelled, _other_]
+  - name: is_success
+    allowed_values: ["true", "false"]
+  - name: is_subagent
+    allowed_values: ["true", "false"]
+  - name: model_class
+    allowed_values: [anthropic_opus, anthropic_sonnet, anthropic_haiku, openai_gpt5, other, _other_]
+  - name: prompt_size_bucket
+    allowed_values: [small, medium, large, xlarge, _other_]
+  - name: tools_enabled
+    allowed_values: ["true", "false"]
+  - name: completion_reason
+    allowed_values: [stop, tool_use, max_tokens, error, cancelled, _other_]
+  - name: operation
+    allowed_values: [stream, invoke, refresh, login, logout, _other_]
+  - name: chat_conversation_type
+    allowed_values: [interactive, oneshot, subagent, acp, _other_]
+  - name: exit_reason
+    allowed_values: [clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage, _other_]
+  - name: agent_kind
+    allowed_values: [v1, v2, subagent, kas, _other_]
+  - name: crash_kind
+    allowed_values: [panic, segfault, abort, unhandled_signal, _other_]
+  - name: failure_stage
+    allowed_values: [config, db_migrate, runtime, panic, _other_]
+  - name: error_kind
+    allowed_values: [throttling, validation, model_error, server_error, timeout, connection, access_denied, other, _other_]
+  - name: status_class
+    allowed_values: [2xx, 4xx, 5xx, _other_]
+  - name: upstream
+    allowed_values: [bedrock, rts, kas, krs, cognito, _other_]
+  - name: retry_reason
+    allowed_values: [throttled, timeout, connection, empty_response, server_error, other, _other_]
+  - name: attempt_number_bucket
+    allowed_values: ["1", "2", "3+", _other_]
+  - name: final_error_kind
+    allowed_values: [throttling, validation, model_error, server_error, timeout, connection, access_denied, other, _other_]
+  - name: stuck_phase
+    allowed_values: [model_call, tool_exec, parse, render, unknown, _other_]
+  - name: detection
+    allowed_values: [watchdog, heartbeat, _other_]
+  - name: dependency
+    allowed_values: [bedrock, rts, kas, krs, cognito, oauth_idp, _other_]
+  - name: partition
+    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
+  - name: slo_target
+    allowed_values: [turn, session, login, _other_]
+  - name: process_state
+    allowed_values: [streaming, idle, tool_running, compaction, _other_]
+  - name: loop_phase
+    allowed_values: [model_call, tool_exec, parse, render, _other_]
+  - name: token_type
+    allowed_values: [input_uncached, input_cache_read, input_cache_write, output, reasoning, _other_]
+  - name: metering_usage
+    metric_allowed: false
+  - name: metering_unit
+    metric_allowed: false
+  - name: metering_unit_plural
+    metric_allowed: false
+  - name: session_outcome
+    allowed_values: [user_quit, task_completed, error, timeout, crash, _other_]
+  - name: sentiment
+    allowed_values: [positive, negative, neutral, _other_]
+  - name: surface
+    allowed_values: [chat, review, settings, _other_]
+  - name: depth_bucket
+    allowed_values: ["1", "2", "3+", _other_]
+  - name: subagent_name
+    max_distinct: 64
+  - name: channel
+    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, meta_meter, _other_]
+  - name: event_class
+    allowed_values: [metric, log, audit, legacy_event, _other_]
+  - name: redactor
+    allowed_values: [default, _other_]
+  - name: redaction_result
+    allowed_values: [scrubbed, passthrough, error, _other_]
+  - name: pii_type
+    allowed_values: [email, aws_access_key, aws_secret, arn, ipv4, home_path, phone, jwt, credit_card, _other_]
+  - name: field_class
+    allowed_values: [prompt, context, tool_output, file_content, http_header, other, _other_]
+  - name: fail_action
+    allowed_values: [dropped, passthrough, _other_]
+  - name: check_kind
+    allowed_values: [hash, perms, owner, signature, _other_]
+  - name: integrity_result
+    allowed_values: [ok, tampered, missing, unreadable, _other_]
+  - name: auth_provider
+    allowed_values: [builder_id, cognito, sso, _other_]
+  - name: error_code
+    max_distinct: 32
+  - name: expected_partition
+    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
+  - name: actual_partition
+    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
+  - name: destination_class
+    allowed_values: [public_internet, aws_endpoint, internal_amzn, localhost, _other_]
+  - name: failure_reason
+    allowed_values: [cert_expired, bad_hostname, untrusted_root, protocol, other, _other_]
+  - name: scheme
+    allowed_values: [http, https, ws, wss, other, _other_]
+  - name: is_allowlisted
+    allowed_values: ["true", "false"]
+  - name: exporter
+    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, meta_meter, _other_]
+  - name: signal
+    allowed_values: [metrics, logs, traces, _other_]
+  - name: export_outcome
+    allowed_values: [success, retry, dropped, permanent_failure, _other_]
+  - name: drop_reason
+    allowed_values: [queue_full, timeout, opt_out, cardinality, redaction, exporter_error, oversize, _other_]
+  - name: metric_name
+    max_distinct: 64
+  - name: attribute
+    max_distinct: 64
+  - name: subsystem
+    allowed_values: [schema, limiter, wal, exporter, redactor, config, _other_]
+  - name: failure_kind
+    allowed_values: [invalid_schema, io, serialization, unknown_metric, unknown_attribute, _other_]
+  - name: shutdown_path
+    allowed_values: [clean, signal, panic, _other_]
+  - name: reason
+    allowed_values: [expired, oversize, corrupt, govcloud_disabled, _other_]
+  - name: cold_start
+    allowed_values: ["true", "false"]
+  - name: anonymous_client_id
+    metric_allowed: false
+  - name: install_date_epoch_day
+    metric_allowed: false
+  - name: session_id
+    metric_allowed: false
+  - name: conversation_id
+    metric_allowed: false
+  - name: request_id
+    metric_allowed: false
+  - name: tool_use_id
+    metric_allowed: false
+  - name: message_id
+    metric_allowed: false
+  - name: turn_failure_reason
+    metric_allowed: false
+  - name: status_code
+    metric_allowed: false
+  - name: time_to_first_chunks_ms
+    metric_allowed: false
+  - name: user_prompt_length
+    metric_allowed: false
+  - name: assistant_response_length
+    metric_allowed: false
+  - name: user_turn_duration_seconds
+    metric_allowed: false
+  - name: follow_up_count
+    metric_allowed: false
+  - name: message_meta_tags
+    metric_allowed: false
+  - name: parent_tool_use_id
+    metric_allowed: false
+  - name: request_attempts
+    metric_allowed: false
+  - name: total_tokens
+    metric_allowed: false
+  - name: uncached_input_tokens
+    metric_allowed: false
+  - name: output_tokens
+    metric_allowed: false
+  - name: cache_read_input_tokens
+    metric_allowed: false
+  - name: cache_write_input_tokens
+    metric_allowed: false
+  - name: estimated_cost_usd
+    metric_allowed: false
+  - name: panic_location
+    metric_allowed: false
+  - name: host_id_hash
+    metric_allowed: false
+  - name: reason_desc
+    metric_allowed: false
+  - name: error_message
+    metric_allowed: false

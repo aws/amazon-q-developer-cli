@@ -721,6 +721,8 @@ impl ResponseParser {
                                 let _ = self
                                     .event_tx
                                     .send(Ok(ResponseEvent::MeteringUsage {
+                                        request_id: self.response.request_id().map(String::from),
+                                        model: self.model_id.clone(),
                                         value: *value,
                                         unit: unit.clone(),
                                         unit_plural: unit_plural.clone(),
@@ -820,6 +822,8 @@ pub enum ResponseEvent {
     },
     /// Metering usage consumed for this request
     MeteringUsage {
+        request_id: Option<String>,
+        model: Option<String>,
         value: f64,
         unit: String,
         unit_plural: String,

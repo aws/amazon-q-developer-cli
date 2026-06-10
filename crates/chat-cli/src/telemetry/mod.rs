@@ -12,6 +12,7 @@ use core::{
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
+use std::sync::Arc;
 
 use amzn_codewhisperer_client::types::{
     ChatAddMessageEvent,
@@ -38,6 +39,17 @@ use endpoint::StaticEndpoint;
 pub use install_method::{
     InstallMethod,
     get_install_method,
+};
+use kiro_telemetry::{
+    MetricRecord,
+    OtelLogsSink,
+    OtelMetricsSink,
+    OtelMode,
+    OtelProviders,
+    TelemetryClient as OtelTelemetryClient,
+    TelemetryConfig as OtelTelemetryConfig,
+    consent_file_integrity_records,
+    init_otel,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -70,11 +82,17 @@ use crate::os::{
 };
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
+    EmptyResponseRetryOutcome,
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
 };
+use crate::util::consts::env_var::{
+    KIRO_TELEMETRY_OTEL,
+    KIRO_TELEMETRY_OTLP_ENDPOINT,
+};
 use crate::util::env_var::get_cli_client_application;
+use crate::util::paths::GlobalPaths;
 use crate::util::system_info::os_version;
 use crate::util::{
     US_GOV_EAST,
@@ -205,31 +223,30 @@ impl TelemetryThread {
         database: &mut Database,
         region: Option<&str>,
     ) -> Result<Self, TelemetryError> {
-        let telemetry_client = TelemetryClient::new(env, fs, database).await?;
+        // govcloud does not have the infrastructure to support toolkit telemetry
+        let govcloud_partition = region.and_then(govcloud_partition);
+        let telemetry_client = TelemetryClient::new(env, fs, database, govcloud_partition).await?;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
-        // govcloud does not have the infrastructure to support toolkit telemetry
-        let region_supports_toolkit = if let Some(region) = region {
-            !(region == US_GOV_EAST || region == US_GOV_WEST)
-        } else {
-            true
-        };
-
-        let handle = if region_supports_toolkit {
+        let handle = if let Some(partition) = govcloud_partition {
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
-                    telemetry_client.send_event(event).await;
+                    trace!("Dropping toolkit telemetry");
+                    telemetry_client
+                        .send_event_with_legacy_toolkit_disabled(event, partition)
+                        .await;
                 }
+                telemetry_client.flush_otel();
             })
         } else {
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
-                    trace!("Dropping toolkit telemetry");
-                    telemetry_client.send_cw_telemetry_event(&event).await;
+                    telemetry_client.send_event(event).await;
                 }
+                telemetry_client.flush_otel();
             })
         };
 
@@ -370,6 +387,37 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    pub async fn send_metering_event(
+        &self,
+        database: &Database,
+        request_id: Option<String>,
+        model: Option<String>,
+        usage: f64,
+        unit: String,
+        unit_plural: String,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::MeteringEvent {
+            request_id,
+            model,
+            usage,
+            unit,
+            unit_plural,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    pub async fn send_empty_response_retry(
+        &self,
+        database: &Database,
+        model: Option<String>,
+        outcome: EmptyResponseRetryOutcome,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::EmptyResponseRetry { model, outcome });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
     pub fn send_subagent_record_user_turn_completion(
         &self,
         conversation_id: String,
@@ -506,6 +554,7 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         context_file_length: Option<usize>,
+        model: Option<String>,
         result: TelemetryResult,
         reason: Option<String>,
         reason_desc: Option<String>,
@@ -522,6 +571,7 @@ impl TelemetryThread {
             context_file_length,
             request_id,
             message_id,
+            model,
         });
         set_event_metadata(database, &mut telemetry_event).await;
 
@@ -596,22 +646,51 @@ async fn set_event_metadata(database: &Database, event: &mut Event) {
     }
 }
 
+fn govcloud_partition(region: &str) -> Option<&'static str> {
+    match region {
+        US_GOV_EAST | US_GOV_WEST => Some("aws-us-gov"),
+        _ => None,
+    }
+}
+
+fn govcloud_channel_disabled_record(channel: &str, partition: &str) -> MetricRecord {
+    MetricRecord::counter("govcloud_channel_disabled_total", 1)
+        .with_attribute("channel", channel)
+        .with_attribute("partition", partition)
+        .with_attribute("reason", "govcloud_disabled")
+}
+
+fn govcloud_channel_leak_record(channel: &str) -> MetricRecord {
+    MetricRecord::counter("govcloud_channel_leak_total", 1).with_attribute("channel", channel)
+}
+
+fn should_build_toolkit_telemetry_client(telemetry_enabled: bool, govcloud_partition: Option<&str>) -> bool {
+    telemetry_enabled && govcloud_partition.is_none()
+}
+
 #[derive(Debug)]
 struct TelemetryClient {
     client_id: Uuid,
     telemetry_enabled: bool,
+    otel_providers: OtelProviders,
+    otel_telemetry_client: Arc<OtelTelemetryClient>,
     codewhisperer_client: Option<ApiClient>,
     toolkit_telemetry_client: Option<ToolkitTelemetryClient>,
 }
 
 impl TelemetryClient {
-    async fn new(env: &Env, fs: &Fs, database: &mut Database) -> Result<Self, TelemetryError> {
+    async fn new(
+        env: &Env,
+        fs: &Fs,
+        database: &mut Database,
+        govcloud_partition: Option<&str>,
+    ) -> Result<Self, TelemetryError> {
         let telemetry_enabled = !cfg!(test)
             && !crate::util::env_var::is_telemetry_disabled()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
-        // If telemetry is disabled we do not emit using toolkit_telemetry
-        let toolkit_telemetry_client = if telemetry_enabled {
+        // GovCloud must not construct the legacy commercial Toolkit telemetry client.
+        let toolkit_telemetry_client = if should_build_toolkit_telemetry_client(telemetry_enabled, govcloud_partition) {
             Some(ToolkitTelemetryClient::from_conf(
                 Config::builder()
                     .http_client(crate::aws_common::http_client::client())
@@ -659,13 +738,24 @@ impl TelemetryClient {
 
         // cw telemetry is only available with bearer token auth.
         let codewhisperer_client = Some(ApiClient::new(env, fs, database, None).await?);
+        let otel_config = otel_telemetry_config(env, telemetry_enabled);
+        let otel_providers = init_otel(&otel_config);
+        let otel_telemetry_client = Arc::new(
+            OtelTelemetryClient::new(otel_config)
+                .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())))
+                .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers))),
+        );
 
-        Ok(Self {
+        let client = Self {
             client_id: client_id(env, database, telemetry_enabled)?,
             telemetry_enabled,
+            otel_providers,
+            otel_telemetry_client,
             toolkit_telemetry_client,
             codewhisperer_client,
-        })
+        };
+        client.emit_consent_record_integrity();
+        Ok(client)
     }
 
     /// Sends a telemetry event to both the CW and toolkit API's. If the clients do not exist, then
@@ -673,8 +763,123 @@ impl TelemetryClient {
     ///
     /// See [TelemetryClient::new] for which conditions the clients are created for.
     async fn send_event(&self, event: Event) {
+        let legacy_event_type = event.ty.legacy_event_type();
+        if self.otel_exports_enabled() {
+            if let Some(legacy_event_type) = legacy_event_type {
+                trace!(
+                    legacy_event_type = legacy_event_type.as_str(),
+                    "OTel telemetry configured for legacy event"
+                );
+            } else {
+                trace!("OTel telemetry configured for native event");
+            }
+        }
+        self.emit_otel_metric_record(&event);
+        self.emit_otel_log_record(&event);
         self.send_cw_telemetry_event(&event).await;
         self.send_telemetry_toolkit_metric(event).await;
+    }
+
+    async fn send_event_with_legacy_toolkit_disabled(&self, event: Event, partition: &str) {
+        let legacy_event_type = event.ty.legacy_event_type();
+        if self.otel_exports_enabled() {
+            if let Some(legacy_event_type) = legacy_event_type {
+                trace!(
+                    legacy_event_type = legacy_event_type.as_str(),
+                    "OTel telemetry configured for GovCloud legacy event"
+                );
+            } else {
+                trace!("OTel telemetry configured for GovCloud native event");
+            }
+        }
+        if self.toolkit_telemetry_client.is_some() {
+            self.emit_govcloud_channel_leak("legacy_toolkit");
+        }
+        self.emit_govcloud_channel_disabled("legacy_toolkit", partition);
+        self.emit_otel_metric_record(&event);
+        self.emit_otel_log_record(&event);
+        self.send_cw_telemetry_event(&event).await;
+    }
+
+    fn otel_exports_enabled(&self) -> bool {
+        self.otel_telemetry_client.config().exports_enabled()
+    }
+
+    fn flush_otel(&self) {
+        if let Err(err) = self.otel_providers.force_flush() {
+            trace!(%err, "failed to flush no-op OTel provider");
+        }
+    }
+
+    fn emit_otel_metric_record(&self, event: &Event) {
+        if !self.otel_exports_enabled() {
+            return;
+        }
+
+        let records = event.otel_metric_records();
+        if records.is_empty() {
+            if let Some(legacy_event_type) = event.ty.legacy_event_type() {
+                trace!(
+                    legacy_event_type = legacy_event_type.as_str(),
+                    "legacy event maps to OTel log or derived target; metric record not emitted"
+                );
+            } else {
+                trace!("native event maps to OTel log or derived target; metric record not emitted");
+            }
+            return;
+        }
+
+        for record in records {
+            if let Err(err) = self.otel_telemetry_client.emit(record) {
+                trace!(%err, "failed to emit OTel legacy metric record");
+            }
+        }
+    }
+
+    fn emit_otel_log_record(&self, event: &Event) {
+        if !self.otel_exports_enabled() {
+            return;
+        }
+
+        let Some(record) = event.otel_log_record() else {
+            return;
+        };
+
+        if let Err(err) = self.otel_telemetry_client.emit_log(record) {
+            trace!(%err, "failed to emit OTel legacy log record");
+        }
+    }
+
+    fn emit_govcloud_channel_disabled(&self, channel: &str, partition: &str) {
+        if let Err(err) = self
+            .otel_telemetry_client
+            .emit(govcloud_channel_disabled_record(channel, partition))
+        {
+            trace!(%err, channel, partition, "failed to emit GovCloud disabled-channel counter");
+        }
+    }
+
+    fn emit_govcloud_channel_leak(&self, channel: &str) {
+        if let Err(err) = self.otel_telemetry_client.emit(govcloud_channel_leak_record(channel)) {
+            trace!(%err, channel, "failed to emit GovCloud channel leak counter");
+        }
+    }
+
+    fn emit_consent_record_integrity(&self) {
+        if !self.otel_exports_enabled() {
+            return;
+        }
+
+        let Ok(settings_path) = GlobalPaths::settings_path() else {
+            trace!("failed to resolve settings path for consent integrity telemetry");
+            return;
+        };
+
+        for record in consent_file_integrity_records(settings_path) {
+            if let Err(err) = self.otel_telemetry_client.emit(record) {
+                trace!(%err, "failed to emit consent integrity accounting");
+            }
+        }
     }
 
     async fn send_cw_telemetry_event(&self, event: &Event) {
@@ -781,6 +986,7 @@ impl TelemetryClient {
             return;
         };
         let client_id = self.client_id;
+        self.emit_redaction_metric_records(&event);
         let Some(metric_datum) = event.into_metric_datum() else {
             trace!("not sending toolkit metric - metric datum does not exist");
             return;
@@ -804,6 +1010,18 @@ impl TelemetryClient {
             .map_err(DisplayErrorContext)
         {
             error!(%err, ?metric_name, "Failed to post toolkit metric");
+        }
+    }
+
+    fn emit_redaction_metric_records(&self, event: &Event) {
+        if !self.otel_exports_enabled() {
+            return;
+        }
+
+        for record in event.redaction_metric_records("legacy_toolkit") {
+            if let Err(err) = self.otel_telemetry_client.emit(record) {
+                trace!(%err, "failed to emit telemetry redaction accounting");
+            }
         }
     }
 
@@ -833,6 +1051,25 @@ impl TelemetryClient {
             },
         }
     }
+}
+
+/// Default OTLP collector endpoint when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
+const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
+
+fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryConfig {
+    let otel_mode = env
+        .get(KIRO_TELEMETRY_OTEL)
+        .map_or(OtelMode::Off, |value| OtelMode::parse(&value));
+    let otlp_endpoint = env
+        .get(KIRO_TELEMETRY_OTLP_ENDPOINT)
+        .ok()
+        .or_else(|| Some(DEFAULT_OTLP_ENDPOINT.to_string()));
+    let state_dir = GlobalPaths::database_path_static()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+        .unwrap_or_else(|| std::env::temp_dir().join("kiro-cli"));
+
+    OtelTelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir)
 }
 
 pub trait ReasonCode: std::error::Error {
@@ -867,7 +1104,7 @@ mod test {
     #[tokio::test]
     async fn client_context() {
         let mut database = Database::new_default().await.unwrap();
-        let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database)
+        let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database, None)
             .await
             .unwrap();
         let context = client.user_context().unwrap();
@@ -883,6 +1120,80 @@ mod test {
             Some(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff").hyphenated().to_string())
         );
         assert_eq!(context.ide_version.as_deref(), Some(PRODUCT_VERSION));
+        assert!(!client.otel_exports_enabled());
+    }
+
+    #[test]
+    fn otel_config_parses_new_env_controls() {
+        let env = Env::from_slice(&[
+            (KIRO_TELEMETRY_OTEL, "1"),
+            (
+                KIRO_TELEMETRY_OTLP_ENDPOINT,
+                "https://prod.us-east-1.telemetry-v2.kiro.dev",
+            ),
+        ]);
+        let config = otel_telemetry_config(&env, true);
+
+        assert_eq!(config.otel_mode, OtelMode::DualWrite);
+        assert!(config.exports_enabled());
+        assert_eq!(
+            config.otlp_endpoint.as_deref(),
+            Some("https://prod.us-east-1.telemetry-v2.kiro.dev")
+        );
+    }
+
+    #[test]
+    fn govcloud_partition_detects_gov_regions() {
+        assert_eq!(govcloud_partition(US_GOV_EAST), Some("aws-us-gov"));
+        assert_eq!(govcloud_partition(US_GOV_WEST), Some("aws-us-gov"));
+        assert_eq!(govcloud_partition("us-east-1"), None);
+    }
+
+    #[test]
+    fn govcloud_disabled_record_shape() {
+        let record = govcloud_channel_disabled_record("legacy_toolkit", "aws-us-gov");
+
+        assert_eq!(record.name, "govcloud_channel_disabled_total");
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "partition" && attribute.value == "aws-us-gov")
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "reason" && attribute.value == "govcloud_disabled")
+        );
+    }
+
+    #[test]
+    fn govcloud_leak_record_shape() {
+        let record = govcloud_channel_leak_record("legacy_toolkit");
+
+        assert_eq!(record.name, "govcloud_channel_leak_total");
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
+        );
+    }
+
+    #[test]
+    fn govcloud_partition_blocks_legacy_toolkit_client_construction() {
+        assert!(should_build_toolkit_telemetry_client(true, None));
+        assert!(!should_build_toolkit_telemetry_client(false, None));
+        assert!(!should_build_toolkit_telemetry_client(true, Some("aws-us-gov")));
     }
 
     #[tracing_test::traced_test]
@@ -944,7 +1255,7 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_without_optout() {
         let mut database = Database::new_default().await.unwrap();
-        let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database)
+        let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database, None)
             .await
             .unwrap();
         client

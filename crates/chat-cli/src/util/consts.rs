@@ -126,6 +126,12 @@ pub mod env_var {
         Q_TELEMETRY_CLIENT_ID = "Q_TELEMETRY_CLIENT_ID",
         KIRO_TELEMETRY_CLIENT_ID = "KIRO_TELEMETRY_CLIENT_ID",
 
+        /// OpenTelemetry telemetry mode: 0/off, 1/dual-write, or 2/OTel-only
+        KIRO_TELEMETRY_OTEL = "KIRO_TELEMETRY_OTEL",
+
+        /// OpenTelemetry OTLP endpoint override for team-owned ADOT or KUTS dogfood
+        KIRO_TELEMETRY_OTLP_ENDPOINT = "KIRO_TELEMETRY_OTLP_ENDPOINT",
+
         /// Chat shell for Unix systems
         KIRO_CHAT_SHELL = "KIRO_CHAT_SHELL",
 

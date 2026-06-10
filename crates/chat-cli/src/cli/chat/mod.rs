@@ -240,6 +240,7 @@ use crate::telemetry::core::{
     ToolUseEventBuilder,
 };
 use crate::telemetry::{
+    EmptyResponseRetryOutcome,
     ReasonCode,
     TelemetryResult,
     get_error_reason,
@@ -4364,6 +4365,7 @@ impl ChatSession {
 
         let mut tool_uses: Vec<AssistantToolUse> = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
+        let mut completed_response = false;
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
@@ -4382,6 +4384,8 @@ impl ChatSession {
                     match msg_event {
                         parser::ResponseEvent::ThinkingText => {},
                         parser::ResponseEvent::MeteringUsage {
+                            request_id,
+                            model,
                             value,
                             unit,
                             unit_plural,
@@ -4389,6 +4393,10 @@ impl ChatSession {
                             self.conversation
                                 .user_turn_metadata
                                 .add_usage(value, unit.clone(), unit_plural.clone());
+                            os.telemetry
+                                .send_metering_event(&os.database, request_id, model, value, unit, unit_plural)
+                                .await
+                                .ok();
                         },
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
@@ -4456,6 +4464,7 @@ impl ChatSession {
                             }
                             self.conversation.push_assistant_message(os, message, Some(rm.clone()));
                             self.conversation.user_turn_metadata.add_request(rm);
+                            completed_response = true;
                             ended = true;
                         },
                     }
@@ -4470,6 +4479,7 @@ impl ChatSession {
                         .add_request(recv_error.request_metadata.clone());
                     let (reason, reason_desc) = get_error_reason(&recv_error);
                     let status_code = recv_error.status_code();
+                    let response_model = recv_error.request_metadata.model_id.clone();
 
                     match recv_error.source {
                         RecvErrorKind::StreamTimeout { source, duration } => {
@@ -4638,6 +4648,27 @@ impl ChatSession {
                                 empty_response_retried: true,
                             });
                         },
+                        RecvErrorKind::EmptyResponse => {
+                            os.telemetry
+                                .send_empty_response_retry(
+                                    &os.database,
+                                    response_model,
+                                    EmptyResponseRetryOutcome::StillEmpty,
+                                )
+                                .await
+                                .ok();
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                true, // Hard fail -> end the current user turn.
+                            )
+                            .await;
+
+                            return Err(recv_error.into());
+                        },
                         _ => {
                             self.send_chat_telemetry(
                                 os,
@@ -4793,6 +4824,24 @@ impl ChatSession {
 
                 break;
             }
+        }
+
+        if empty_response_retried && completed_response {
+            let model = self
+                .conversation
+                .user_turn_metadata
+                .last_request()
+                .and_then(|request| request.model_id)
+                .or_else(|| {
+                    self.conversation
+                        .model_info
+                        .as_ref()
+                        .map(|model| model.model_id.clone())
+                });
+            os.telemetry
+                .send_empty_response_retry(&os.database, model, EmptyResponseRetryOutcome::Recovered)
+                .await
+                .ok();
         }
 
         if !tool_uses.is_empty() {
@@ -5396,6 +5445,9 @@ impl ChatSession {
             time_to_first_chunk_ms: md
                 .as_ref()
                 .and_then(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0)),
+            request_duration_seconds: md
+                .as_ref()
+                .map(|md| md.stream_end_timestamp_ms.saturating_sub(md.request_start_timestamp_ms) as f64 / 1000.0),
             time_between_chunks_ms: md.as_ref().map(|md| {
                 md.time_between_chunks
                     .iter()
@@ -5472,6 +5524,10 @@ impl ChatSession {
                 &os.database,
                 self.conversation.conversation_id().to_owned(),
                 self.conversation.context_message_length(),
+                self.conversation
+                    .model_info
+                    .as_ref()
+                    .map(|model| model.model_id.clone()),
                 TelemetryResult::Failed,
                 Some(reason),
                 reason_desc,

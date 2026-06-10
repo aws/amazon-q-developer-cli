@@ -5,6 +5,16 @@ use std::time::{
 };
 
 pub use amzn_toolkit_telemetry_client::types::MetricDatum;
+use kiro_telemetry::{
+    EventClass,
+    FieldClass,
+    LegacyEventType,
+    MetricRecord,
+    PiiRedactor,
+    TelemetryLogRecord,
+    legacy_log_record,
+    legacy_metric_record,
+};
 use strum::{
     Display,
     EnumString,
@@ -183,6 +193,7 @@ impl Event {
                         status_code,
                         model,
                         time_to_first_chunk_ms,
+                        request_duration_seconds: _,
                         time_between_chunks_ms,
                         chat_conversation_type,
                         tool_name,
@@ -203,7 +214,7 @@ impl Event {
                     codewhispererterminal_context_file_length: context_file_length.map(|l| l as i64).map(Into::into),
                     result: result.to_string().into(),
                     reason: reason.map(Into::into),
-                    reason_desc: reason_desc.map(Into::into),
+                    reason_desc: redact_optional_telemetry_field(FieldClass::Other, reason_desc).map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     codewhispererterminal_model: model.map(Into::into),
                     codewhispererterminal_time_to_first_chunks_ms: time_to_first_chunk_ms
@@ -270,7 +281,7 @@ impl Event {
                     codewhispererterminal_in_cloudshell: None,
                     result: result.to_string().into(),
                     reason: reason.map(Into::into),
-                    reason_desc: reason_desc.map(Into::into),
+                    reason_desc: redact_optional_telemetry_field(FieldClass::Other, reason_desc).map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     codewhispererterminal_chat_conversation_type: chat_conversation_type.map(Into::into),
                     codewhispererterminal_time_to_first_chunks_ms: Some(
@@ -361,7 +372,7 @@ impl Event {
                     codewhispererterminal_is_tool_use_accepted: Some(is_accepted.into()),
                     codewhispererterminal_is_tool_valid: is_valid.map(CodewhispererterminalIsToolValid),
                     codewhispererterminal_tool_use_is_success: is_success.map(CodewhispererterminalToolUseIsSuccess),
-                    reason_desc: reason_desc.map(Into::into),
+                    reason_desc: redact_optional_telemetry_field(FieldClass::Other, reason_desc).map(Into::into),
                     codewhispererterminal_is_custom_tool: Some(is_custom_tool.into()),
                     codewhispererterminal_custom_tool_input_token_size: input_token_size
                         .map(|s| CodewhispererterminalCustomToolInputTokenSize(s as i64)),
@@ -419,14 +430,25 @@ impl Event {
                     value: None,
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_mcp_server_name: Some(server_name.into()),
-                    codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
-                        .map(CodewhispererterminalMcpServerInitFailureReason),
+                    codewhispererterminal_mcp_server_init_failure_reason: redact_optional_telemetry_field(
+                        FieldClass::Other,
+                        init_failure_reason,
+                    )
+                    .map(CodewhispererterminalMcpServerInitFailureReason),
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
                         number_of_tools as i64,
                     )),
                     codewhispererterminal_client_application: self.client_application.map(Into::into),
-                    codewhispererterminal_mcp_server_all_tool_names: all_tool_names.map(Into::into),
-                    codewhispererterminal_mcp_server_loaded_tool_names: loaded_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tool_names: redact_optional_telemetry_field(
+                        FieldClass::Context,
+                        all_tool_names,
+                    )
+                    .map(Into::into),
+                    codewhispererterminal_mcp_server_loaded_tool_names: redact_optional_telemetry_field(
+                        FieldClass::Context,
+                        loaded_tool_names,
+                    )
+                    .map(Into::into),
                     codewhispererterminal_mcp_server_all_tools_count: Some(
                         CodewhispererterminalMcpServerAllToolsCount(all_tools_count as i64),
                     ),
@@ -504,6 +526,7 @@ impl Event {
                 status_code,
                 request_id,
                 message_id,
+                model: _,
             } => Some(
                 AmazonqMessageResponseError {
                     create_time: self.created_time,
@@ -514,7 +537,7 @@ impl Event {
                     sso_region: self.sso_region.map(Into::into),
                     result: Some(result.to_string().into()),
                     reason: reason.map(Into::into),
-                    reason_desc: reason_desc.map(Into::into),
+                    reason_desc: redact_optional_telemetry_field(FieldClass::Other, reason_desc).map(Into::into),
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     request_id: request_id.map(Into::into),
                     codewhispererterminal_utterance_id: message_id.map(Into::into),
@@ -535,7 +558,9 @@ impl Event {
                     codewhispererterminal_in_cloudshell: None,
                     codewhispererterminal_auth_method: Some(auth_method.into()),
                     oauth_flow: Some(oauth_flow.into()),
-                    codewhispererterminal_error_type: Some(error_type.into()),
+                    codewhispererterminal_error_type: Some(
+                        redact_telemetry_field(FieldClass::Other, error_type).into(),
+                    ),
                     codewhispererterminal_error_code: error_code.map(Into::into),
                 }
                 .into_metric_datum(),
@@ -598,7 +623,7 @@ impl Event {
                         credential_start_url: self.credential_start_url.map(Into::into),
                         result: result.to_string().into(),
                         reason: reason.map(Into::into),
-                        reason_desc: reason_desc.map(Into::into),
+                        reason_desc: redact_optional_telemetry_field(FieldClass::Other, reason_desc).map(Into::into),
                         kirocli_voice_backend: voice_backend,
                         kirocli_voice_input_method: voice_input_method,
                         kirocli_voice_recording_duration_ms: recording_duration_ms.map(Into::into),
@@ -610,8 +635,316 @@ impl Event {
                     .into_metric_datum(),
                 )
             },
+            EventType::MeteringEvent { .. } | EventType::EmptyResponseRetry { .. } => None,
         }
     }
+
+    pub fn redaction_metric_records(&self, channel: &str) -> Vec<MetricRecord> {
+        self.ty.redaction_metric_records(channel)
+    }
+
+    #[allow(dead_code)]
+    pub fn otel_metric_record(&self) -> Option<MetricRecord> {
+        self.otel_metric_records().into_iter().next()
+    }
+
+    pub fn otel_metric_records(&self) -> Vec<MetricRecord> {
+        match &self.ty {
+            EventType::ChatAddedMessage { result, data, .. } => {
+                let mut records = self
+                    .ty
+                    .legacy_event_type()
+                    .and_then(legacy_metric_record)
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                if let Some(record) = stream_ttft_metric_record(data) {
+                    records.push(record);
+                }
+                if let Some(record) = request_duration_metric_record(data, result) {
+                    records.push(record);
+                }
+                records
+            },
+            EventType::EmptyResponseRetry { model, outcome } => {
+                vec![empty_response_retry_metric_record(model, *outcome)]
+            },
+            EventType::MessageResponseError {
+                model,
+                reason,
+                status_code,
+                ..
+            } => vec![request_error_metric_record(model, reason, *status_code)],
+            _ => self
+                .ty
+                .legacy_event_type()
+                .and_then(legacy_metric_record)
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    pub fn otel_log_record(&self) -> Option<TelemetryLogRecord> {
+        if let EventType::MeteringEvent {
+            request_id,
+            model,
+            usage,
+            unit,
+            unit_plural,
+        } = &self.ty
+        {
+            return Some(metering_log_record(
+                request_id,
+                model,
+                &self.client_application,
+                *usage,
+                unit,
+                unit_plural,
+            ));
+        }
+
+        let record = legacy_log_record(self.ty.legacy_event_type()?)?;
+        Some(match &self.ty {
+            EventType::RecordUserTurnCompletion {
+                conversation_id,
+                result,
+                args,
+            } => turn_completion_log_record(record, conversation_id, result, args, &self.client_application),
+            EventType::SubagentInvocation { subagent_name, .. } => {
+                record.with_attribute("subagent_name", subagent_name.clone())
+            },
+            _ => record,
+        })
+    }
+}
+
+fn metering_log_record(
+    request_id: &Option<String>,
+    model: &Option<String>,
+    client_application: &Option<String>,
+    usage: f64,
+    unit: &str,
+    unit_plural: &str,
+) -> TelemetryLogRecord {
+    let mut record = TelemetryLogRecord::new("kiro_cli_metering_event")
+        .with_attribute("metering_usage", usage.to_string())
+        .with_attribute("metering_unit", unit)
+        .with_attribute("metering_unit_plural", unit_plural);
+    if let Some(request_id) = request_id {
+        record = record.with_attribute("request_id", request_id.clone());
+    }
+    if let Some(model) = model {
+        record = record.with_attribute("model_class", model_class(model));
+    }
+    if let Some(client_application) = client_application {
+        record = record.with_attribute("client_application", client_application.clone());
+    }
+    record
+}
+
+fn turn_completion_log_record(
+    mut record: TelemetryLogRecord,
+    conversation_id: &str,
+    result: &TelemetryResult,
+    args: &RecordUserTurnCompletionArgs,
+    client_application: &Option<String>,
+) -> TelemetryLogRecord {
+    record = record
+        .with_attribute("conversation_id", conversation_id.to_string())
+        .with_attribute("result", telemetry_result_attr(result))
+        .with_attribute("is_subagent", args.is_subagent.to_string())
+        .with_attribute("user_prompt_length", args.user_prompt_length.to_string())
+        .with_attribute("assistant_response_length", args.assistant_response_length.to_string())
+        .with_attribute(
+            "user_turn_duration_seconds",
+            args.user_turn_duration_seconds.to_string(),
+        )
+        .with_attribute("follow_up_count", args.follow_up_count.to_string());
+
+    if let Some(value) = comma_join(args.request_ids.iter().filter_map(|id| id.as_deref())) {
+        record = record.with_attribute("request_id", value);
+    }
+    if let Some(value) = comma_join(args.message_ids.iter().map(String::as_str)) {
+        record = record.with_attribute("message_id", value);
+    }
+    if let Some(client_application) = client_application {
+        record = record.with_attribute("client_application", client_application.clone());
+    }
+    if let Some(reason) = &args.reason {
+        record = record.with_attribute(
+            "turn_failure_reason",
+            redact_telemetry_field(FieldClass::Other, reason.clone()),
+        );
+    }
+    if let Some(reason_desc) = redact_optional_telemetry_field(FieldClass::Other, args.reason_desc.clone()) {
+        record = record.with_attribute("reason_desc", reason_desc);
+    }
+    if let Some(status_code) = args.status_code {
+        record = record.with_attribute("status_code", status_code.to_string());
+    }
+    if let Some(value) = format_optional_f64s(&args.time_to_first_chunks_ms) {
+        record = record.with_attribute("time_to_first_chunks_ms", value);
+    }
+    if let Some(value) = comma_join(args.message_meta_tags.iter().map(ToString::to_string)) {
+        record = record.with_attribute("message_meta_tags", value);
+    }
+    if let Some(parent_tool_use_id) = &args.parent_tool_use_id {
+        record = record.with_attribute("parent_tool_use_id", parent_tool_use_id.clone());
+    }
+
+    record
+}
+
+fn comma_join(values: impl IntoIterator<Item = impl AsRef<str>>) -> Option<String> {
+    let values = values
+        .into_iter()
+        .map(|value| value.as_ref().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    (!values.is_empty()).then(|| values.join(","))
+}
+
+fn format_optional_f64s(values: &[Option<f64>]) -> Option<String> {
+    comma_join(values.iter().map(|value| match value {
+        Some(value) => format!("{value:.3}"),
+        None => "null".to_string(),
+    }))
+}
+
+fn model_class(model: &str) -> &'static str {
+    let model = model.to_ascii_lowercase();
+    if model.contains("opus") {
+        "anthropic_opus"
+    } else if model.contains("sonnet") {
+        "anthropic_sonnet"
+    } else if model.contains("haiku") {
+        "anthropic_haiku"
+    } else if model.contains("gpt-5") || model.contains("gpt5") {
+        "openai_gpt5"
+    } else {
+        "other"
+    }
+}
+
+fn empty_response_retry_metric_record(model: &Option<String>, outcome: EmptyResponseRetryOutcome) -> MetricRecord {
+    MetricRecord::counter("chat_cli.bedrock.empty_response.retries", 1)
+        .with_attribute("model_class", model.as_deref().map_or("other", model_class))
+        .with_attribute("outcome", outcome.as_str())
+}
+
+fn request_error_metric_record(
+    model: &Option<String>,
+    reason: &Option<String>,
+    status_code: Option<u16>,
+) -> MetricRecord {
+    MetricRecord::counter("chat_cli.bedrock.request.errors", 1)
+        .with_attribute("model_class", model.as_deref().map_or("other", model_class))
+        .with_attribute("operation", "stream")
+        .with_attribute("error_kind", error_kind_attr(reason.as_deref(), status_code))
+        .with_attribute("status_class", status_class_attr(status_code))
+}
+
+fn error_kind_attr(reason: Option<&str>, status_code: Option<u16>) -> &'static str {
+    let reason = reason.unwrap_or_default().to_ascii_lowercase();
+    if reason.contains("throttl") || reason.contains("quota") {
+        "throttling"
+    } else if reason.contains("accessdenied")
+        || reason.contains("access_denied")
+        || reason.contains("unauthorized")
+        || reason.contains("forbidden")
+    {
+        "access_denied"
+    } else if reason.contains("timeout") || reason.contains("timed out") {
+        "timeout"
+    } else if reason.contains("connection") || reason.contains("network") || reason.contains("dns") {
+        "connection"
+    } else if reason.contains("model") {
+        "model_error"
+    } else if matches!(status_code, Some(500..=599)) {
+        "server_error"
+    } else if matches!(status_code, Some(400..=499)) || reason.contains("validation") || reason.contains("invalid") {
+        "validation"
+    } else {
+        "other"
+    }
+}
+
+fn status_class_attr(status_code: Option<u16>) -> &'static str {
+    match status_code {
+        Some(200..=299) => "2xx",
+        Some(400..=499) => "4xx",
+        Some(500..=599) => "5xx",
+        _ => "_other_",
+    }
+}
+
+fn stream_ttft_metric_record(data: &ChatAddedMessageParams) -> Option<MetricRecord> {
+    let milliseconds = data.time_to_first_chunk_ms?;
+    if !milliseconds.is_finite() || milliseconds <= 0.0 {
+        return None;
+    }
+
+    Some(
+        MetricRecord::histogram("chat_cli.bedrock.stream.ttft", milliseconds / 1000.0)
+            .with_attribute("model_class", data.model.as_deref().map_or("other", model_class))
+            .with_attribute("prompt_size_bucket", prompt_size_bucket(data.context_file_length))
+            .with_attribute("tools_enabled", tools_enabled(&data.chat_conversation_type)),
+    )
+}
+
+fn request_duration_metric_record(data: &ChatAddedMessageParams, result: &TelemetryResult) -> Option<MetricRecord> {
+    let seconds = data.request_duration_seconds?;
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return None;
+    }
+
+    Some(
+        MetricRecord::histogram("chat_cli.bedrock.request.duration", seconds)
+            .with_attribute("model_class", data.model.as_deref().map_or("other", model_class))
+            .with_attribute("operation", "stream")
+            .with_attribute("outcome", request_outcome_attr(result)),
+    )
+}
+
+fn prompt_size_bucket(context_file_length: Option<usize>) -> &'static str {
+    match context_file_length {
+        Some(0..=4_000) => "small",
+        Some(4_001..=20_000) => "medium",
+        Some(20_001..=100_000) => "large",
+        Some(_) => "xlarge",
+        None => "_other_",
+    }
+}
+
+fn tools_enabled(chat_conversation_type: &Option<ChatConversationType>) -> &'static str {
+    if matches!(chat_conversation_type, Some(ChatConversationType::ToolUse)) {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn telemetry_result_attr(result: &TelemetryResult) -> &'static str {
+    match result {
+        TelemetryResult::Succeeded => "success",
+        TelemetryResult::Failed => "failed",
+        TelemetryResult::Cancelled => "cancelled",
+    }
+}
+
+fn request_outcome_attr(result: &TelemetryResult) -> &'static str {
+    match result {
+        TelemetryResult::Succeeded => "success",
+        TelemetryResult::Failed => "error",
+        TelemetryResult::Cancelled => "cancelled",
+    }
+}
+
+fn redact_telemetry_field(field_class: FieldClass, value: String) -> String {
+    PiiRedactor.redact(field_class, &value).text
+}
+
+fn redact_optional_telemetry_field(field_class: FieldClass, value: Option<String>) -> Option<String> {
+    value.map(|value| redact_telemetry_field(field_class, value))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, serde::Serialize, serde::Deserialize)]
@@ -640,6 +973,21 @@ pub enum MessageMetaTag {
     TangentMode,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EmptyResponseRetryOutcome {
+    Recovered,
+    StillEmpty,
+}
+
+impl EmptyResponseRetryOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Recovered => "recovered",
+            Self::StillEmpty => "still_empty",
+        }
+    }
+}
+
 /// Optional fields to add for a chatAddedMessage telemetry event.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct ChatAddedMessageParams {
@@ -651,6 +999,7 @@ pub struct ChatAddedMessageParams {
     pub status_code: Option<u16>,
     pub model: Option<String>,
     pub time_to_first_chunk_ms: Option<f64>,
+    pub request_duration_seconds: Option<f64>,
     pub time_between_chunks_ms: Option<Vec<f64>>,
     pub chat_conversation_type: Option<ChatConversationType>,
     pub tool_name: Option<String>,
@@ -813,6 +1162,8 @@ pub enum EventType {
         request_id: Option<String>,
         message_id: Option<String>,
         context_file_length: Option<usize>,
+        #[serde(default)]
+        model: Option<String>,
     },
     DailyHeartbeat {},
     SubagentInvocation {
@@ -835,6 +1186,93 @@ pub enum EventType {
         model_size: Option<String>,
         auto_submit: Option<bool>,
     },
+    MeteringEvent {
+        request_id: Option<String>,
+        model: Option<String>,
+        usage: f64,
+        unit: String,
+        unit_plural: String,
+    },
+    EmptyResponseRetry {
+        model: Option<String>,
+        outcome: EmptyResponseRetryOutcome,
+    },
+}
+
+impl EventType {
+    pub fn legacy_event_type(&self) -> Option<LegacyEventType> {
+        match self {
+            Self::UserLoggedIn {} => Some(LegacyEventType::UserLoggedIn),
+            Self::AuthFailed { .. } => Some(LegacyEventType::AuthFailed),
+            Self::RefreshCredentials { .. } => Some(LegacyEventType::RefreshCredentials),
+            Self::CliSubcommandExecuted { .. } => Some(LegacyEventType::CliSubcommandExecuted),
+            Self::ChatSlashCommandExecuted { .. } => Some(LegacyEventType::ChatSlashCommandExecuted),
+            Self::ChatStart { .. } => Some(LegacyEventType::ChatStart),
+            Self::ChatEnd { .. } => Some(LegacyEventType::ChatEnd),
+            Self::ChatAddedMessage { .. } => Some(LegacyEventType::ChatAddedMessage),
+            Self::RecordUserTurnCompletion { .. } => Some(LegacyEventType::RecordUserTurnCompletion),
+            Self::TangentModeSession { .. } => Some(LegacyEventType::TangentModeSession),
+            Self::ToolUseSuggested { .. } => Some(LegacyEventType::ToolUseSuggested),
+            Self::AgentContribution { .. } => Some(LegacyEventType::AgentContribution),
+            Self::McpServerInit { .. } => Some(LegacyEventType::McpServerInit),
+            Self::AgentConfigInit { .. } => Some(LegacyEventType::AgentConfigInit),
+            Self::DidSelectProfile { .. } => Some(LegacyEventType::DidSelectProfile),
+            Self::ProfileState { .. } => Some(LegacyEventType::ProfileState),
+            Self::MessageResponseError { .. } => Some(LegacyEventType::MessageResponseError),
+            Self::DailyHeartbeat {} => Some(LegacyEventType::DailyHeartbeat),
+            Self::SubagentInvocation { .. } => Some(LegacyEventType::SubagentInvocation),
+            Self::VoiceInput { .. } => Some(LegacyEventType::VoiceInput),
+            Self::MeteringEvent { .. } => None,
+            Self::EmptyResponseRetry { .. } => None,
+        }
+    }
+
+    fn redaction_metric_records(&self, channel: &str) -> Vec<MetricRecord> {
+        match self {
+            Self::ChatAddedMessage {
+                data: ChatAddedMessageParams { reason_desc, .. },
+                ..
+            }
+            | Self::RecordUserTurnCompletion {
+                args: RecordUserTurnCompletionArgs { reason_desc, .. },
+                ..
+            }
+            | Self::ToolUseSuggested { reason_desc, .. }
+            | Self::MessageResponseError { reason_desc, .. }
+            | Self::VoiceInput { reason_desc, .. } => {
+                redaction_records_for_fields(channel, &[(FieldClass::Other, reason_desc.as_deref())])
+            },
+            Self::McpServerInit {
+                init_failure_reason,
+                all_tool_names,
+                loaded_tool_names,
+                ..
+            } => redaction_records_for_fields(channel, &[
+                (FieldClass::Other, init_failure_reason.as_deref()),
+                (FieldClass::Context, all_tool_names.as_deref()),
+                (FieldClass::Context, loaded_tool_names.as_deref()),
+            ]),
+            Self::AuthFailed { error_type, .. } => {
+                redaction_records_for_fields(channel, &[(FieldClass::Other, Some(error_type.as_str()))])
+            },
+            _ => Vec::new(),
+        }
+    }
+}
+
+fn redaction_records_for_fields(channel: &str, fields: &[(FieldClass, Option<&str>)]) -> Vec<MetricRecord> {
+    let mut records = Vec::new();
+    for (field_class, value) in fields {
+        let Some(value) = value else {
+            continue;
+        };
+        records.extend(
+            PiiRedactor
+                .redact(*field_class, value)
+                .metric_records(EventClass::LegacyEvent, channel),
+        );
+    }
+    records
 }
 
 #[derive(Debug)]
@@ -943,4 +1381,339 @@ pub enum QProfileSwitchIntent {
     Auth,
     Update,
     Reload,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn metadata_value<'a>(datum: &'a MetricDatum, key: &str) -> Option<&'a str> {
+        datum
+            .metadata()
+            .iter()
+            .find(|entry| entry.key() == Some(key))
+            .and_then(|entry| entry.value())
+    }
+
+    fn metric_record<'a>(records: &'a [MetricRecord], name: &str) -> &'a MetricRecord {
+        records
+            .iter()
+            .find(|record| record.name == name)
+            .unwrap_or_else(|| panic!("missing metric record {name}"))
+    }
+
+    fn metric_attr<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
+        record
+            .attributes
+            .iter()
+            .find(|attr| attr.key == key)
+            .map(|attr| attr.value.as_str())
+    }
+
+    fn log_attr<'a>(record: &'a TelemetryLogRecord, key: &str) -> Option<&'a str> {
+        record
+            .attributes
+            .iter()
+            .find(|attr| attr.key == key)
+            .map(|attr| attr.value.as_str())
+    }
+
+    #[test]
+    fn redacts_reason_desc_before_metric_datum() {
+        let event = Event::new(EventType::ChatAddedMessage {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Failed,
+            data: ChatAddedMessageParams {
+                reason_desc: Some("failed for dev@example.com with AKIA1234567890ABCDEF".to_string()),
+                ..Default::default()
+            },
+        });
+
+        let datum = event.into_metric_datum().expect("metric datum should be produced");
+        let reason_desc = metadata_value(&datum, "reasonDesc").expect("reasonDesc should be present");
+
+        assert!(!reason_desc.contains("dev@example.com"));
+        assert!(!reason_desc.contains("AKIA1234567890ABCDEF"));
+        assert!(reason_desc.contains("[REDACTED:email]"));
+        assert!(reason_desc.contains("[REDACTED:aws_access_key]"));
+    }
+
+    #[test]
+    fn redacts_mcp_free_text_before_metric_datum() {
+        let event = Event::new(EventType::McpServerInit {
+            conversation_id: "conversation".to_string(),
+            server_name: "server".to_string(),
+            init_failure_reason: Some("failed under /Users/alice/.kiro/config".to_string()),
+            number_of_tools: 2,
+            all_tool_names: Some("safe_tool, arn:aws:iam::123456789012:user/test".to_string()),
+            loaded_tool_names: Some("AKIA1234567890ABCDEF".to_string()),
+            all_tools_count: 2,
+        });
+
+        let datum = event.into_metric_datum().expect("metric datum should be produced");
+
+        let init_failure = metadata_value(&datum, "codewhispererterminal_mcpServerInitFailureReason")
+            .expect("init failure reason should be present");
+        assert!(!init_failure.contains("/Users/alice"));
+        assert!(init_failure.contains("[REDACTED:home_path]"));
+
+        let all_tool_names = metadata_value(&datum, "codewhispererterminal_mcpServerAllToolNames")
+            .expect("all tool names should be present");
+        assert!(!all_tool_names.contains("arn:aws:iam::123456789012:user/test"));
+        assert!(all_tool_names.contains("[REDACTED:arn]"));
+
+        let loaded_tool_names = metadata_value(&datum, "codewhispererterminal_mcpServerLoadedToolNames")
+            .expect("loaded tool names should be present");
+        assert!(!loaded_tool_names.contains("AKIA1234567890ABCDEF"));
+        assert!(loaded_tool_names.contains("[REDACTED:aws_access_key]"));
+    }
+
+    #[test]
+    fn redacts_auth_error_type_before_metric_datum() {
+        let event = Event::new(EventType::AuthFailed {
+            auth_method: "builder_id".to_string(),
+            oauth_flow: "device".to_string(),
+            error_type: "token for user@example.com was rejected".to_string(),
+            error_code: None,
+        });
+
+        let datum = event.into_metric_datum().expect("metric datum should be produced");
+        let error_type =
+            metadata_value(&datum, "codewhispererterminal_errorType").expect("error type should be present");
+
+        assert!(!error_type.contains("user@example.com"));
+        assert!(error_type.contains("[REDACTED:email]"));
+    }
+
+    #[test]
+    fn produces_redaction_accounting_records() {
+        let event = Event::new(EventType::ChatAddedMessage {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Failed,
+            data: ChatAddedMessageParams {
+                reason_desc: Some("failed for dev@example.com".to_string()),
+                ..Default::default()
+            },
+        });
+
+        let records = event.redaction_metric_records("legacy_toolkit");
+
+        assert!(records.iter().any(|record| {
+            record.name == "pii_redaction_runs_total"
+                && record
+                    .attributes
+                    .iter()
+                    .any(|attr| attr.key == "channel" && attr.value == "legacy_toolkit")
+        }));
+        assert!(records.iter().any(|record| {
+            record.name == "pii_redaction_matches_total"
+                && record
+                    .attributes
+                    .iter()
+                    .any(|attr| attr.key == "pii_type" && attr.value == "email")
+        }));
+    }
+
+    #[test]
+    fn produces_schema_backed_otel_metric_record() {
+        let event = Event::new(EventType::ChatEnd {
+            conversation_id: "conversation".to_string(),
+            model: None,
+        });
+
+        let record = event.otel_metric_record().expect("metric-backed legacy event");
+
+        assert_eq!(record.name, "chat_cli.session.completed");
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+    }
+
+    #[test]
+    fn emits_stream_ttft_metric_from_chat_added_message() {
+        let event = Event::new(EventType::ChatAddedMessage {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Succeeded,
+            data: ChatAddedMessageParams {
+                context_file_length: Some(2_000),
+                model: Some("claude-4-haiku".to_string()),
+                time_to_first_chunk_ms: Some(250.0),
+                request_duration_seconds: Some(1.2),
+                chat_conversation_type: Some(ChatConversationType::ToolUse),
+                ..Default::default()
+            },
+        });
+
+        let records = event.otel_metric_records();
+        let ttft = metric_record(&records, "chat_cli.bedrock.stream.ttft");
+
+        assert_eq!(ttft.value, kiro_telemetry::MetricValue::Histogram(0.25));
+        assert_eq!(metric_attr(ttft, "model_class"), Some("anthropic_haiku"));
+        assert_eq!(metric_attr(ttft, "prompt_size_bucket"), Some("small"));
+        assert_eq!(metric_attr(ttft, "tools_enabled"), Some("true"));
+        let duration = metric_record(&records, "chat_cli.bedrock.request.duration");
+        assert_eq!(duration.value, kiro_telemetry::MetricValue::Histogram(1.2));
+        assert_eq!(metric_attr(duration, "model_class"), Some("anthropic_haiku"));
+        assert_eq!(metric_attr(duration, "operation"), Some("stream"));
+        assert_eq!(metric_attr(duration, "outcome"), Some("success"));
+        assert!(records.iter().any(|record| record.name == "kiro_cli_user_turns"));
+    }
+
+    #[test]
+    fn produces_schema_backed_otel_log_record() {
+        let mut event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Failed,
+            args: RecordUserTurnCompletionArgs {
+                request_ids: vec![Some("request-1".to_string())],
+                message_ids: vec!["message-1".to_string()],
+                reason: Some("ServiceFailure".to_string()),
+                reason_desc: Some("failed for dev@example.com".to_string()),
+                status_code: Some(500),
+                time_to_first_chunks_ms: vec![Some(25.0), None],
+                user_prompt_length: 7,
+                assistant_response_length: 11,
+                user_turn_duration_seconds: 3,
+                follow_up_count: 1,
+                message_meta_tags: vec![MessageMetaTag::Compact],
+                parent_tool_use_id: Some("parent-tool".to_string()),
+                ..Default::default()
+            },
+        });
+        event.client_application = Some("chat_cli".to_string());
+
+        let record = event.otel_log_record().expect("log-backed legacy event");
+
+        assert_eq!(record.name, "kiro_cli_user_turn_completed");
+        assert_eq!(log_attr(&record, "conversation_id"), Some("conversation"));
+        assert_eq!(log_attr(&record, "request_id"), Some("request-1"));
+        assert_eq!(log_attr(&record, "message_id"), Some("message-1"));
+        assert_eq!(log_attr(&record, "client_application"), Some("chat_cli"));
+        assert_eq!(log_attr(&record, "result"), Some("failed"));
+        assert_eq!(log_attr(&record, "turn_failure_reason"), Some("ServiceFailure"));
+        assert_eq!(log_attr(&record, "status_code"), Some("500"));
+        assert_eq!(log_attr(&record, "time_to_first_chunks_ms"), Some("25.000,null"));
+        assert_eq!(log_attr(&record, "user_prompt_length"), Some("7"));
+        assert_eq!(log_attr(&record, "assistant_response_length"), Some("11"));
+        assert_eq!(log_attr(&record, "user_turn_duration_seconds"), Some("3"));
+        assert_eq!(log_attr(&record, "follow_up_count"), Some("1"));
+        assert_eq!(log_attr(&record, "message_meta_tags"), Some("Compact"));
+        assert_eq!(log_attr(&record, "parent_tool_use_id"), Some("parent-tool"));
+        assert_eq!(log_attr(&record, "is_subagent"), Some("false"));
+        assert!(log_attr(&record, "reason_desc").is_some_and(|value| value.contains("[REDACTED:email]")));
+    }
+
+    #[test]
+    fn emits_bounded_request_error_metric() {
+        let event = Event::new(EventType::MessageResponseError {
+            conversation_id: "conversation".to_string(),
+            context_file_length: None,
+            result: TelemetryResult::Failed,
+            reason: Some("ThrottlingException".to_string()),
+            reason_desc: None,
+            status_code: Some(429),
+            request_id: Some("request".to_string()),
+            message_id: Some("message".to_string()),
+            model: Some("claude-4-sonnet".to_string()),
+        });
+
+        let records = event.otel_metric_records();
+        let record = metric_record(&records, "chat_cli.bedrock.request.errors");
+
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert_eq!(metric_attr(record, "model_class"), Some("anthropic_sonnet"));
+        assert_eq!(metric_attr(record, "operation"), Some("stream"));
+        assert_eq!(metric_attr(record, "error_kind"), Some("throttling"));
+        assert_eq!(metric_attr(record, "status_class"), Some("4xx"));
+    }
+
+    #[test]
+    fn exposes_canonical_legacy_event_type() {
+        let event = EventType::VoiceInput {
+            conversation_id: None,
+            result: TelemetryResult::Succeeded,
+            reason: None,
+            reason_desc: None,
+            backend: "LocalWhisper".to_string(),
+            input_method: "PTT".to_string(),
+            recording_duration_ms: None,
+            transcription_duration_ms: None,
+            text_length: None,
+            model_size: None,
+            auto_submit: None,
+        };
+
+        assert_eq!(event.legacy_event_type(), Some(LegacyEventType::VoiceInput));
+    }
+
+    #[test]
+    fn emits_metering_event_as_otel_log_only() {
+        let mut event = Event::new(EventType::MeteringEvent {
+            request_id: Some("request".to_string()),
+            model: Some("claude-4-sonnet".to_string()),
+            usage: 1.25,
+            unit: "credit".to_string(),
+            unit_plural: "credits".to_string(),
+        });
+        event.client_application = Some("chat_cli".to_string());
+
+        assert!(event.into_metric_datum().is_none());
+
+        let mut event = Event::new(EventType::MeteringEvent {
+            request_id: Some("request".to_string()),
+            model: Some("claude-4-sonnet".to_string()),
+            usage: 1.25,
+            unit: "credit".to_string(),
+            unit_plural: "credits".to_string(),
+        });
+        event.client_application = Some("chat_cli".to_string());
+
+        let record = event.otel_log_record().expect("metering event log record");
+
+        assert_eq!(record.name, "kiro_cli_metering_event");
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "request_id" && attr.value == "request")
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "model_class" && attr.value == "anthropic_sonnet")
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "metering_usage" && attr.value == "1.25")
+        );
+    }
+
+    #[test]
+    fn emits_empty_response_retry_as_otel_metric_only() {
+        let event = Event::new(EventType::EmptyResponseRetry {
+            model: Some("claude-4-sonnet".to_string()),
+            outcome: EmptyResponseRetryOutcome::Recovered,
+        });
+
+        assert!(event.clone().into_metric_datum().is_none());
+
+        let record = event.otel_metric_record().expect("empty-response retry metric");
+
+        assert_eq!(record.name, "chat_cli.bedrock.empty_response.retries");
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "model_class" && attr.value == "anthropic_sonnet")
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .any(|attr| attr.key == "outcome" && attr.value == "recovered")
+        );
+        assert!(event.otel_log_record().is_none());
+    }
 }

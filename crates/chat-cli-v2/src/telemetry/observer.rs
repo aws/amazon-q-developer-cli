@@ -20,6 +20,7 @@ use agent::agent_loop::protocol::{
     UserTurnMetadata,
 };
 use agent::agent_loop::types::{
+    MetadataUsage,
     StreamError,
     StreamErrorKind,
 };
@@ -42,6 +43,7 @@ use super::core::{
     Event,
     EventType,
     RecordUserTurnCompletionArgs,
+    estimated_cost_usd,
 };
 use crate::agent::ipc_server::TelemetryEventStore;
 use crate::agent::rts::RtsState;
@@ -234,6 +236,12 @@ struct TurnState {
     request_ids: Vec<Option<String>>,
     time_to_first_chunks_ms: Vec<Option<f64>>,
     assistant_response_length: i64,
+    total_tokens: i64,
+    uncached_input_tokens: i64,
+    output_tokens: i64,
+    cache_read_input_tokens: i64,
+    cache_write_input_tokens: i64,
+    estimated_cost_usd: f64,
     has_tool_use: bool,
     follow_up_count: i64,
     /// Stored from the last failed request for propagation to turn-level telemetry.
@@ -242,6 +250,28 @@ struct TurnState {
     /// `last_error` semantics so a turn that ends with a failed request has both
     /// the error reason and the attempt count for that request.
     last_request_attempts: Option<u32>,
+}
+
+impl TurnState {
+    fn record_usage(&mut self, model: &Option<String>, usage: &MetadataUsage) {
+        let input = usage.input_tokens.unwrap_or(0) as i64;
+        let output = usage.output_tokens.unwrap_or(0) as i64;
+        let cache_read = usage.cache_read_input_tokens.unwrap_or(0) as i64;
+        let total = input + output + cache_read;
+
+        self.total_tokens += total;
+        self.uncached_input_tokens += input;
+        self.output_tokens += output;
+        self.cache_read_input_tokens += cache_read;
+        self.cache_write_input_tokens += usage.cache_write_input_tokens.unwrap_or(0) as i64;
+        self.estimated_cost_usd += estimated_cost_usd(model, kiro_telemetry::TokenUsage {
+            uncached_input_tokens: usage.input_tokens.unwrap_or(0) as u64,
+            cache_read_input_tokens: usage.cache_read_input_tokens.unwrap_or(0) as u64,
+            cache_write_input_tokens: usage.cache_write_input_tokens.unwrap_or(0) as u64,
+            output_tokens: usage.output_tokens.unwrap_or(0) as u64,
+        })
+        .unwrap_or_default();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -438,6 +468,9 @@ impl TelemetryObserver {
         let time_to_first_chunk_ms = metrics
             .and_then(|m| m.time_to_first_chunk)
             .map(|d| d.as_secs_f64() * 1000.0);
+        let request_duration_seconds = metrics
+            .and_then(|m| (m.request_end_time - m.request_start_time).to_std().ok())
+            .map(|d| d.as_secs_f64());
         let time_between_chunks_ms = metrics.and_then(|m| {
             m.time_between_chunks
                 .as_ref()
@@ -446,6 +479,19 @@ impl TelemetryObserver {
         let response_len = metrics.map(|m| m.response_stream_len as i32);
 
         let usage = metadata.stream.as_ref().and_then(|s| s.usage.as_ref());
+
+        if let Some(stream) = metadata.stream.as_ref() {
+            let model = self.context.model();
+            for metering_usage in &stream.metering_usage {
+                self.emit(EventType::MeteringEvent {
+                    request_id: request_id.clone(),
+                    model: model.clone(),
+                    usage: metering_usage.value,
+                    unit: metering_usage.unit.clone(),
+                    unit_plural: metering_usage.unit_plural.clone(),
+                });
+            }
+        }
 
         let tool_use_ids: Vec<String> = metadata.tool_uses.iter().map(|t| t.tool_use_id.clone()).collect();
         let tool_names: Vec<String> = metadata.tool_uses.iter().map(|t| t.name.clone()).collect();
@@ -488,6 +534,7 @@ impl TelemetryObserver {
             status_code: final_status_code,
             model: self.context.model(),
             time_to_first_chunk_ms,
+            request_duration_seconds,
             time_between_chunks_ms,
             chat_conversation_type: Some(if has_tool_use {
                 ChatConversationType::ToolUse
@@ -537,6 +584,7 @@ impl TelemetryObserver {
                 status_code: final_status_code,
                 request_id: request_id.clone(),
                 message_id: message_id.clone(),
+                model: self.context.model(),
             });
             let session = self.sessions.entry(session_id.to_string()).or_default();
             session.turn_state.last_error = Some(ErrorInfo {
@@ -552,6 +600,9 @@ impl TelemetryObserver {
         session.turn_state.request_ids.push(request_id);
         session.turn_state.time_to_first_chunks_ms.push(time_to_first_chunk_ms);
         session.turn_state.assistant_response_length += response_len.unwrap_or(0) as i64;
+        if let Some(usage) = usage {
+            session.turn_state.record_usage(&self.context.model(), usage);
+        }
         // Track attempt count for the latest request in the turn — pairs with `last_error`
         // so a turn that ends with a failed request has both the error reason and attempts.
         // `None` if the transport layer didn't report attempts (e.g. mock clients, validation
@@ -600,6 +651,7 @@ impl TelemetryObserver {
             args: RecordUserTurnCompletionArgs {
                 message_ids: turn.message_ids,
                 request_ids: turn.request_ids,
+                model: self.context.model(),
                 reason,
                 reason_desc,
                 status_code,
@@ -611,6 +663,12 @@ impl TelemetryObserver {
                 }),
                 user_prompt_length: 0, // TODO: track actual prompt length
                 assistant_response_length: turn.assistant_response_length,
+                total_tokens: positive_i64(turn.total_tokens),
+                uncached_input_tokens: positive_i64(turn.uncached_input_tokens),
+                output_tokens: positive_i64(turn.output_tokens),
+                cache_read_input_tokens: positive_i64(turn.cache_read_input_tokens),
+                cache_write_input_tokens: positive_i64(turn.cache_write_input_tokens),
+                estimated_cost_usd: positive_f64(turn.estimated_cost_usd),
                 user_turn_duration_seconds,
                 follow_up_count: turn.follow_up_count,
                 message_meta_tags: vec![], // TODO: populate meta tags for V1 parity
@@ -677,6 +735,14 @@ impl TelemetryObserver {
     }
 }
 
+fn positive_i64(value: i64) -> Option<i64> {
+    (value > 0).then_some(value)
+}
+
+fn positive_f64(value: f64) -> Option<f64> {
+    (value.is_finite() && value > 0.0).then_some(value)
+}
+
 /// Extract reason code from a [`StreamError`], trying downcast first, then fallback.
 fn extract_reason(stream_err: &StreamError) -> (String, String) {
     // For RTS, failing to send the initial request results in [`ConverseStreamError`].
@@ -722,6 +788,8 @@ mod tests {
         MetadataEvent,
         MetadataMetrics,
         MetadataService,
+        MetadataUsage,
+        MeteringUsageInfo,
         Role,
         StreamError,
         StreamErrorKind,
@@ -736,7 +804,17 @@ mod tests {
     }
 
     fn test_rts_state() -> Arc<RtsState> {
-        Arc::new(RtsState::new("conv-123".into()))
+        let state = Arc::new(RtsState::new("conv-123".into()));
+        state.set_model_info(Some(crate::cli::chat::legacy::model::ModelInfo {
+            model_name: None,
+            description: None,
+            model_id: "claude-4-sonnet".to_string(),
+            context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
+            additional_fields: None,
+        }));
+        state
     }
 
     fn make_observer() -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
@@ -754,6 +832,7 @@ mod tests {
     }
 
     fn success_stream_end() -> AgentLoopEventKind {
+        let request_start_time = chrono::Utc::now();
         AgentLoopEventKind::ResponseStreamEnd {
             result: Ok(Message::new(
                 Uuid::new_v4().to_string(),
@@ -765,8 +844,8 @@ mod tests {
                 tool_uses: vec![],
                 stream: Some(MetadataEvent {
                     metrics: Some(MetadataMetrics {
-                        request_start_time: chrono::Utc::now(),
-                        request_end_time: chrono::Utc::now(),
+                        request_start_time,
+                        request_end_time: request_start_time + chrono::Duration::milliseconds(250),
                         time_to_first_chunk: Some(Duration::from_millis(100)),
                         time_between_chunks: Some(vec![Duration::from_millis(10)]),
                         response_stream_len: 42,
@@ -816,6 +895,7 @@ mod tests {
             EventType::ChatAddedMessage { result, data, .. } => {
                 assert_eq!(*result, TelemetryResult::Succeeded);
                 assert_eq!(data.request_id.as_deref(), Some("req-1"));
+                assert_eq!(data.request_duration_seconds, Some(0.25));
                 assert!(data.reason.is_none());
                 assert_eq!(event.app_type.as_deref(), Some("V2"));
             },
@@ -823,6 +903,59 @@ mod tests {
         }
         // No error event
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_metering_stream_emits_metering_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(AgentLoopEventKind::ResponseStreamEnd {
+                result: Ok(Message::new(
+                    Uuid::new_v4().to_string(),
+                    Role::Assistant,
+                    vec![ContentBlock::Text("hello".into())],
+                    None,
+                )),
+                metadata: StreamMetadata {
+                    tool_uses: vec![],
+                    stream: Some(MetadataEvent {
+                        metrics: None,
+                        usage: None,
+                        service: Some(MetadataService {
+                            request_id: Some("req-1".into()),
+                            status_code: Some(200),
+                        }),
+                        metering_usage: vec![MeteringUsageInfo {
+                            value: 2.0,
+                            unit: "credit".into(),
+                            unit_plural: "credits".into(),
+                        }],
+                    }),
+                    request_attempts: None,
+                },
+            }),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::MeteringEvent {
+                request_id,
+                usage,
+                unit,
+                unit_plural,
+                ..
+            } => {
+                assert_eq!(request_id.as_deref(), Some("req-1"));
+                assert_eq!(*usage, 2.0);
+                assert_eq!(unit, "credit");
+                assert_eq!(unit_plural, "credits");
+            },
+            other => panic!("expected MeteringEvent, got {other:?}"),
+        }
+
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(event.ty, EventType::ChatAddedMessage { .. }));
     }
 
     #[test]
@@ -905,6 +1038,73 @@ mod tests {
                 assert_eq!(args.request_ids.len(), 2);
                 assert_eq!(args.user_turn_duration_seconds, 5);
                 assert!(args.reason.is_none());
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_turn_completion_accumulates_token_counts() {
+        let (mut obs, mut rx) = make_observer();
+
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(AgentLoopEventKind::ResponseStreamEnd {
+                result: Ok(Message::new(
+                    Uuid::new_v4().to_string(),
+                    Role::Assistant,
+                    vec![ContentBlock::Text("hello".into())],
+                    None,
+                )),
+                metadata: StreamMetadata {
+                    tool_uses: vec![],
+                    stream: Some(MetadataEvent {
+                        metrics: None,
+                        usage: Some(MetadataUsage {
+                            input_tokens: Some(10),
+                            output_tokens: Some(5),
+                            cache_read_input_tokens: Some(2),
+                            cache_write_input_tokens: Some(3),
+                            context_usage_percentage: None,
+                        }),
+                        service: None,
+                        metering_usage: Vec::new(),
+                    }),
+                    request_attempts: None,
+                },
+            }),
+        );
+        let _ = rx.try_recv(); // addChatMessage
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: None,
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { args, .. } => {
+                assert_eq!(args.total_tokens, Some(17));
+                assert_eq!(args.uncached_input_tokens, Some(10));
+                assert_eq!(args.output_tokens, Some(5));
+                assert_eq!(args.cache_read_input_tokens, Some(2));
+                assert_eq!(args.cache_write_input_tokens, Some(3));
+                assert!(
+                    args.estimated_cost_usd
+                        .is_some_and(|cost| (cost - 0.00010785).abs() < 0.000000001)
+                );
             },
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }

@@ -35,6 +35,7 @@ async-trait.workspace = true
 aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-runtime.workspace = true
+aws-sdk-cloudwatch.workspace = true
 aws-sdk-cognitoidentity.workspace = true
 aws-sdk-ssooidc.workspace = true
 aws-smithy-async.workspace = true
@@ -141,6 +142,7 @@ webpki-roots.workspace = true
 whoami.workspace = true
 winnow.workspace = true
 zip.workspace = true
+kiro-telemetry.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

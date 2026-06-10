@@ -1,0 +1,115 @@
+mappings:
+  - event_type: UserLoggedIn
+    legacy_metric: userLoggedIn
+    otel_metric: cli_session_started_total
+    parity_tolerance: low_volume
+  - event_type: AuthFailed
+    legacy_metric: authFailed
+    otel_metric: auth_credential_failure_total
+    parity_tolerance: low_volume
+  - event_type: RefreshCredentials
+    legacy_metric: refreshCredentials
+    otel_metric: auth_credential_failure_total
+    parity_tolerance: low_volume
+  - event_type: CliSubcommandExecuted
+    legacy_metric: cliSubcommandExecuted
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: ChatSlashCommandExecuted
+    legacy_metric: chatSlashCommandExecuted
+    otel_metric: slash_command_invoked_total
+    parity_tolerance: low_volume
+  - event_type: ChatStart
+    legacy_metric: chatStart
+    otel_metric: chat_session_started_total
+    parity_tolerance: high_volume
+  - event_type: ChatEnd
+    legacy_metric: chatEnd
+    otel_metric: chat_cli.session.completed
+    parity_tolerance: high_volume
+  - event_type: ChatAddedMessage
+    legacy_metric: chatAddMessage
+    otel_metric: kiro_cli_user_turns
+    parity_tolerance: high_volume
+  - event_type: RecordUserTurnCompletion
+    legacy_metric: recordUserTurnCompletion
+    otel_metric: kiro_cli_user_turn_completed
+    parity_tolerance: high_volume
+  - event_type: TangentModeSession
+    legacy_metric: tangentModeSession
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: ToolUseSuggested
+    legacy_metric: toolUseSuggested
+    otel_metric: tool_call_total
+    parity_tolerance: low_volume
+  - event_type: McpServerInit
+    legacy_metric: mcpServerInit
+    otel_metric: kiro_cli_mcp_server_init_total
+    parity_tolerance: low_volume
+  - event_type: AgentConfigInit
+    legacy_metric: agentConfigInit
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: DidSelectProfile
+    legacy_metric: didSelectProfile
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: ProfileState
+    legacy_metric: profileState
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: MessageResponseError
+    legacy_metric: messageResponseError
+    otel_metric: chat_cli.bedrock.request.errors
+    parity_tolerance: high_volume
+  - event_type: DailyHeartbeat
+    legacy_metric: dailyHeartbeat
+    otel_metric: kiro_cli_daily_heartbeat
+    parity_tolerance: high_volume
+  - event_type: SubagentInvocation
+    legacy_metric: subagentInvocation
+    otel_metric: kiro_cli_subagent_invoked
+    parity_tolerance: low_volume
+  - event_type: VoiceInput
+    legacy_metric: voiceInput
+    otel_metric: feature_used_total
+    parity_tolerance: low_volume
+  - event_type: AgentContribution
+    legacy_metric: agentContribution
+    otel_metric: kiro_cli_tokens_consumed
+    parity_tolerance: high_volume
+  - event_type: ProcessHealthMetric
+    legacy_metric: processHealthMetric
+    otel_metric: chat_cli.process.memory.rss
+    parity_tolerance: low_volume
+  - event_type: ModeChanged
+    legacy_metric: modeChanged
+    otel_metric: mode_active_users_weekly
+    parity_tolerance: daily_aggregate
+  - event_type: GoalCompleted
+    legacy_metric: goalCompleted
+    otel_metric: session_outcome_total
+    parity_tolerance: low_volume
+
+critical_alarms:
+  - name: QCLI-FirstTokenLatency
+    legacy_metric: timeToFirstChunk
+    otel_metric: chat_cli.bedrock.stream.ttft
+    parity_tolerance: high_volume
+  - name: QCLI-SuccessRateDown
+    legacy_metric: chatResponseSucceeded
+    otel_metric: chat_cli.slo.success_rate
+    parity_tolerance: high_volume
+  - name: QCLIRTSCallSuccessRate
+    legacy_metric: rtsCallSucceeded
+    otel_metric: chat_cli.bedrock.request.duration
+    parity_tolerance: high_volume
+  - name: QCLIFaultCount
+    legacy_metric: serviceFault
+    otel_metric: chat_cli.bedrock.request.errors
+    parity_tolerance: low_volume
+  - name: QCLIErrorCount
+    legacy_metric: serviceError
+    otel_metric: chat_cli.bedrock.request.errors
+    parity_tolerance: low_volume

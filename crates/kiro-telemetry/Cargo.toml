@@ -1,0 +1,29 @@
+[package]
+name = "kiro-telemetry"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+indexmap.workspace = true
+kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
+libc.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"] }
+prost = "0.14.3"
+tempfile.workspace = true
