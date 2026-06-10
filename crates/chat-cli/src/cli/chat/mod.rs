@@ -742,7 +742,12 @@ impl ChatArgs {
             }
         };
 
-        let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
+        // Whether the user explicitly passed `--model`. An explicit model takes precedence over
+        // a resumed conversation's saved model; otherwise the saved model wins (resolved below,
+        // once we know which conversation is being resumed).
+        let model_explicitly_requested = self.model.is_some();
+
+        let mut model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
             // CLI argument takes highest priority — bail immediately if not found (likely typo)
             if let Some(m) = find_model(&models, requested) {
                 Some(m.model_id.clone())
@@ -837,6 +842,23 @@ impl ChatArgs {
             // Case 1: Brand new conversation
             None
         };
+
+        // Resolve the model now that we know which conversation (if any) is being resumed.
+        // A resumed conversation's saved model takes precedence over the agent/default model,
+        // but an explicit `--model` still wins. This mirrors V2's resume behavior and keeps all
+        // model precedence in one place so `ChatSession::new` just applies the resolved value.
+        if !model_explicitly_requested && let Some(ref session_id) = resume_session_id {
+            let saved_model_id = if session_id.is_empty() {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| os.database.get_conversation_model_id_by_path(cwd).ok().flatten())
+            } else {
+                os.database.get_conversation_model_id_by_id(session_id).ok().flatten()
+            };
+            if let Some(saved_model_id) = saved_model_id {
+                model_id = Some(saved_model_id);
+            }
+        }
 
         // Measure actual terminal rendering width of special prompt characters
         // (λ, ↯) before rustyline takes over the terminal. This detects terminals
@@ -1205,12 +1227,18 @@ impl ChatSession {
                         }
                         cs.agents = agents;
                         cs.code_intelligence_client = code_intelligence_client.clone();
-                        // Conversations saved before model_info tracking was added deserialize
-                        // with model_info = None. Restore from current model_id so that the
-                        // current UserInputMessage carries a non-null modelId.
-                        if cs.model_info.is_none()
-                            && let Some(ref id) = model_id
-                        {
+                        // Apply the model resolved by the caller. On resume, `model_id` already
+                        // reflects the session's saved model (or an explicit `--model` override,
+                        // resolved in `execute`), so this only changes the model when the user
+                        // explicitly selected a different one, or when restoring a legacy
+                        // conversation that has no saved model. Preserve the existing ModelInfo
+                        // when unchanged so we don't drop cached metadata (e.g. context window)
+                        // if the API refresh below fails.
+                        let needs_model_update = match cs.model_info {
+                            Some(ref current) => model_id.as_deref().is_some_and(|id| id != current.model_id),
+                            None => true,
+                        };
+                        if needs_model_update && let Some(ref id) = model_id {
                             cs.model_info = Some(ModelInfo::from_id(id.clone()));
                         }
                         // Refresh model info from the API to pick up any service-side changes

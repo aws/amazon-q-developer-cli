@@ -557,6 +557,47 @@ impl Database {
             .map(|(_, state)| state))
     }
 
+    /// Lightweight lookup of the saved model id for the most recent conversation at `path`.
+    ///
+    /// Uses SQLite's `json_extract` to read just `model_info.model_id` instead of
+    /// deserializing the whole [ConversationState]. Returns `None` if there is no
+    /// conversation, or the conversation has no saved model (e.g. legacy conversations
+    /// saved before model tracking).
+    pub fn get_conversation_model_id_by_path(&self, path: impl AsRef<Path>) -> Result<Option<String>, DatabaseError> {
+        let path = match path.as_ref().to_str() {
+            Some(path) => path,
+            None => return Ok(None),
+        };
+
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT json_extract(value, '$.model_info.model_id') FROM conversations_v2 \
+             WHERE key = ?1 ORDER BY updated_at DESC LIMIT 1",
+        )?;
+
+        match stmt.query_row([path], |row| row.get::<_, Option<String>>(0)) {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Lightweight lookup of the saved model id for a specific conversation id.
+    ///
+    /// See [Self::get_conversation_model_id_by_path] for details.
+    pub fn get_conversation_model_id_by_id(&self, conversation_id: &str) -> Result<Option<String>, DatabaseError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT json_extract(value, '$.model_info.model_id') FROM conversations_v2 WHERE conversation_id = ?1",
+        )?;
+
+        match stmt.query_row([conversation_id], |row| row.get::<_, Option<String>>(0)) {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
     /// Get a specific conversation and its path (cwd) by conversation ID.
     pub fn get_conversation_by_id_with_cwd(
         &self,
@@ -986,6 +1027,50 @@ mod tests {
         let all = db.list_conversations_by_path(&test_path).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].0, "conv-2");
+    }
+
+    #[tokio::test]
+    async fn test_get_conversation_model_id() {
+        use std::path::PathBuf;
+
+        let mut db = Database::new_default().await.unwrap();
+        let test_path = PathBuf::from("/test/model");
+
+        // Conversation with a saved model.
+        let with_model = r#"{"conversation_id":"with-model","next_message":null,"history":[],"valid_history_range":[0,0],"transcript":[],"tools":{},"context_manager":null,"context_message_length":null,"latest_summary":null,"model_info":{"model_id":"claude-sonnet-4","context_window_tokens":200000},"file_line_tracker":{},"checkpoint_manager":null,"mcp_enabled":true,"user_turn_metadata":{"continuation_id":"t1","requests":[],"usage_info":[]}}"#;
+        // Legacy conversation saved before model tracking (model_info = null).
+        let without_model = r#"{"conversation_id":"no-model","next_message":null,"history":[],"valid_history_range":[0,0],"transcript":[],"tools":{},"context_manager":null,"context_message_length":null,"latest_summary":null,"model_info":null,"file_line_tracker":{},"checkpoint_manager":null,"mcp_enabled":true,"user_turn_metadata":{"continuation_id":"t2","requests":[],"usage_info":[]}}"#;
+
+        let with_model: crate::cli::ConversationState = serde_json::from_str(with_model).unwrap();
+        let without_model: crate::cli::ConversationState = serde_json::from_str(without_model).unwrap();
+
+        // By id: saved model is returned.
+        db.set_conversation_by_path(&test_path, &with_model).unwrap();
+        assert_eq!(
+            db.get_conversation_model_id_by_id("with-model").unwrap(),
+            Some("claude-sonnet-4".to_string())
+        );
+
+        // By id: legacy conversation has no saved model.
+        let legacy_path = PathBuf::from("/test/model-legacy");
+        db.set_conversation_by_path(&legacy_path, &without_model).unwrap();
+        assert_eq!(db.get_conversation_model_id_by_id("no-model").unwrap(), None);
+
+        // By path: returns the most recent conversation's saved model.
+        assert_eq!(
+            db.get_conversation_model_id_by_path(&test_path).unwrap(),
+            Some("claude-sonnet-4".to_string())
+        );
+
+        // By path: unknown path returns None.
+        assert_eq!(
+            db.get_conversation_model_id_by_path(PathBuf::from("/does/not/exist"))
+                .unwrap(),
+            None
+        );
+
+        // By id: unknown id returns None.
+        assert_eq!(db.get_conversation_model_id_by_id("missing").unwrap(), None);
     }
 
     #[tokio::test]
