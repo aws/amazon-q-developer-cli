@@ -8,7 +8,17 @@ use agent::tui_commands::{
 use super::CommandContext;
 
 pub async fn execute(_ctx: &CommandContext<'_>) -> CommandResult {
-    let commands = TuiCommand::all_commands();
+    let commands: Vec<TuiCommand> = TuiCommand::all_commands()
+        .into_iter()
+        .filter(|cmd| {
+            // Hide /voice from help when rollout is not enabled (matches advertise_commands)
+            if cmd.name() == "/voice" {
+                return crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice);
+            }
+            true
+        })
+        .collect();
+
     let commands_json: Vec<serde_json::Value> = commands
         .iter()
         .map(|cmd| {
