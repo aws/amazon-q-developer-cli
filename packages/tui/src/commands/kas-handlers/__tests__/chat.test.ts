@@ -139,6 +139,36 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(showAlert.mock.calls[0][0]).toContain('boom');
       expect(showAlert.mock.calls[0][1]).toBe('error');
     });
+
+    it('strips raw newlines from picker option labels', async () => {
+      // Multi-line titles arrive when KAS seeds the title from a first
+      // prompt that contains real newlines. The Ink-based autocomplete
+      // picker renders each option on one row, so embedded `\n`s
+      // mangle the option layout. The label must collapse them.
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'multiline-1',
+            source: 'v3',
+            title: 'fix the bug\nwhere foo crashes\nwhen bar is null',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'cur-id' } as any,
+      });
+      await handleChat(CHAT_CMD, '', ctx);
+      const setActive = ctx._spies.setActiveCommand as any;
+      const arg = setActive.mock.calls[0][0];
+      const label = arg.options[0]!.label as string;
+      expect(label).not.toContain('\n');
+      expect(label).not.toContain('\r');
+      expect(label).toContain('fix the bug');
+    });
   });
 
   describe('save (shells out to chat _ export-session)', () => {

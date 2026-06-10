@@ -119,6 +119,35 @@ describe('handleChat (V2-mode dispatch)', () => {
       expect(true).toBe(true);
     });
 
+    it('strips raw newlines from picker option labels', async () => {
+      // Multi-line titles can arrive when a session was seeded from a
+      // first prompt that contains real newlines. The Ink-based
+      // autocomplete picker renders each option on one row, so embedded
+      // `\n`s mangle the option layout. The label must collapse them.
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'multiline-1',
+            source: 'v2',
+            title: 'fix the bug\nwhere foo crashes\nwhen bar is null',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kiro: { sessionId: null } as any,
+      });
+      await handleChat(CHAT_CMD, '', ctx);
+      const setActive = ctx._spies.setActiveCommand as any;
+      const arg = setActive.mock.calls[0][0];
+      const label = arg.options[0]!.label as string;
+      expect(label).not.toContain('\n');
+      expect(label).not.toContain('\r');
+      expect(label).toContain('fix the bug');
+    });
+
     it('alerts when listing fails', async () => {
       mockListAllSessions.mockResolvedValueOnce({
         ok: false,

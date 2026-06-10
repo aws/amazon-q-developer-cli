@@ -12,6 +12,7 @@ import {
   isActiveEngineSource,
 } from '../../utils/cross-engine-session-id';
 import { formatRelativeTime } from '../../utils/sessions';
+import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -71,7 +72,7 @@ async function showSessionPicker(
       const sourceTag = native ? '' : ` (${s.source})`;
       return {
         value: s.sessionId,
-        label: `${s.title} (${s.sessionId.slice(0, 8)})${sourceTag}`,
+        label: `${sanitizeSessionTitleForDisplay(s.title)} (${s.sessionId.slice(0, 8)})${sourceTag}`,
         description: formatRelativeTime(s.updatedAt),
       };
     });

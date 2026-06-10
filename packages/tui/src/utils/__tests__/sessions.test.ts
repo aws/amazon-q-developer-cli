@@ -91,7 +91,7 @@ describe('sessions', () => {
         msgCount: 5,
         summary: 'fix a bug',
       };
-      const result = formatSessionEntry(entry);
+      const result = formatSessionEntry(entry, 200);
       expect(result).toMatch(/seconds ago \| fix a bug \| 5 msgs$/);
     });
 
@@ -104,40 +104,24 @@ describe('sessions', () => {
         msgCount: 0,
         summary: 'empty session',
       };
-      const result = formatSessionEntry(entry);
+      const result = formatSessionEntry(entry, 200);
       expect(result).not.toContain('msgs');
       expect(result).toContain('empty session');
     });
 
-    it('truncates long summary lines to fit terminal width', () => {
-      const oldColumns = process.stderr.columns;
-      try {
-        Object.defineProperty(process.stderr, 'columns', {
-          value: 40,
-          writable: true,
-          configurable: true,
-        });
-        const entry: V2SessionFsEntry = {
-          sessionId: 'abc',
-          cwd: '/tmp',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date(Date.now() - 30 * 1000).toISOString(),
-          msgCount: 10,
-          summary: 'a'.repeat(200),
-        };
-        const result = formatSessionEntry(entry);
-        // maxLen = 40 - 4 = 36, truncated to 33 + "..."
-        expect(result.length).toBeLessThanOrEqual(36);
-        expect(result).toEndWith('...');
-      } finally {
-        if (oldColumns !== undefined) {
-          Object.defineProperty(process.stderr, 'columns', {
-            value: oldColumns,
-            writable: true,
-            configurable: true,
-          });
-        }
-      }
+    it('truncates long summary lines to fit maxWidth', () => {
+      const entry: V2SessionFsEntry = {
+        sessionId: 'abc',
+        cwd: '/tmp',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date(Date.now() - 30 * 1000).toISOString(),
+        msgCount: 10,
+        summary: 'a'.repeat(200),
+      };
+      const result = formatSessionEntry(entry, 40);
+      // maxLen = 40 - 4 = 36, truncated to 33 + "..."
+      expect(result.length).toBeLessThanOrEqual(36);
+      expect(result).toEndWith('...');
     });
 
     it('shows unknown when updatedAt is empty', () => {
@@ -149,8 +133,41 @@ describe('sessions', () => {
         msgCount: 1,
         summary: 'test',
       };
-      const result = formatSessionEntry(entry);
+      const result = formatSessionEntry(entry, 200);
       expect(result).toStartWith('unknown |');
+    });
+
+    it('strips raw newlines from a multi-line summary', () => {
+      // A multi-line summary would otherwise corrupt the picker's cursor-up
+      // redraw: real `\n`s push subsequent menu items off-screen and break
+      // the line-count math in pickSession's render loop.
+      const entry: V2SessionFsEntry = {
+        sessionId: 'abc',
+        cwd: '/tmp',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date(Date.now() - 30 * 1000).toISOString(),
+        msgCount: 2,
+        summary: 'first line\nsecond line\nthird line',
+      };
+      const result = formatSessionEntry(entry, 200);
+      expect(result).not.toContain('\n');
+      expect(result).not.toContain('\r');
+      expect(result).toContain('first line');
+      expect(result).toContain('second line');
+    });
+
+    it('strips \\r\\n from a Windows-style multi-line summary', () => {
+      const entry: V2SessionFsEntry = {
+        sessionId: 'abc',
+        cwd: '/tmp',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date(Date.now() - 30 * 1000).toISOString(),
+        msgCount: 2,
+        summary: 'a\r\nb',
+      };
+      const result = formatSessionEntry(entry, 200);
+      expect(result).not.toContain('\n');
+      expect(result).not.toContain('\r');
     });
   });
 

@@ -13,6 +13,17 @@ import {
 } from './sessions.js';
 import type { V2SessionFsEntry } from './sessions.js';
 import type { SessionEntry } from './list-all-sessions-cli.js';
+import { sanitizeSessionTitleForDisplay } from './sanitize-title.js';
+
+/**
+ * Current terminal width for the stderr-based picker. Falls back to 80
+ * when unavailable (no TTY or zero-width). Read at render time, not
+ * module load, so SIGWINCH-style resizes in long-running pickers are
+ * picked up on the next redraw.
+ */
+function terminalWidth(): number {
+  return process.stderr.columns || 80;
+}
 
 /**
  * Show an interactive session picker and return the selected session ID.
@@ -50,7 +61,7 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
         const prefix = i === selected ? '\x1b[36m❯\x1b[0m ' : '  ';
-        const text = formatSessionEntry(entries[i]!);
+        const text = formatSessionEntry(entries[i]!, terminalWidth());
         const styled = i === selected ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);
       }
@@ -128,19 +139,27 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
 /**
  * Render one merged-listing entry as a single line for the picker:
  *   "{relative_time} | {title} | {count} msgs"
- * Truncates to terminal width to prevent line wrapping which breaks
- * the picker's redraw.
+ * The line is truncated to `maxWidth` to prevent line wrapping which
+ * breaks the picker's redraw. Callers are responsible for passing the
+ * terminal width; the function is pure so tests don't need to mock
+ * `process.stderr.columns`.
+ *
+ * Exported for unit testing; not used outside this module.
  */
-function formatMergedEntry(entry: SessionEntry): string {
+export function formatMergedEntry(
+  entry: SessionEntry,
+  maxWidth: number
+): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';
-  const title = entry.title || '(no title)';
+  const sanitizedTitle = sanitizeSessionTitleForDisplay(entry.title);
+  const title = sanitizedTitle || '(no title)';
   const line =
     entry.messageCount && entry.messageCount > 0
       ? `${timestamp} | ${title} | ${entry.messageCount} msgs`
       : `${timestamp} | ${title}`;
-  const maxLen = (process.stderr.columns || 80) - 4;
+  const maxLen = maxWidth - 4;
   if (line.length > maxLen) {
     return line.slice(0, maxLen - 3) + '...';
   }
@@ -178,7 +197,7 @@ export async function pickSessionFromEntries(
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
         const prefix = i === selectedIndex ? '\x1b[36m❯\x1b[0m ' : '  ';
-        const text = formatMergedEntry(entries[i]!);
+        const text = formatMergedEntry(entries[i]!, terminalWidth());
         const styled = i === selectedIndex ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);
       }

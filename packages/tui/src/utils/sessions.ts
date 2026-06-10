@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
 import { logger } from './logger.js';
 import { kiroHomePath } from './kiro-home.js';
+import { sanitizeSessionTitleForDisplay } from './sanitize-title.js';
 
 export interface V2SessionFsEntry {
   sessionId: string;
@@ -167,19 +168,24 @@ export function formatRelativeTime(dateStr: string): string {
 
 /**
  * Format a session entry for display in the picker.
- * Truncates to terminal width to prevent line wrapping which breaks picker redraw.
+ * The line is truncated to `maxWidth` to prevent line wrapping which
+ * breaks the picker's redraw. Callers pass the terminal width; the
+ * function is pure so tests don't need to mock `process.stderr.columns`.
  * Format: "{relative_time} | {summary} | {count} msgs"
  */
-export function formatSessionEntry(entry: V2SessionFsEntry): string {
+export function formatSessionEntry(
+  entry: V2SessionFsEntry,
+  maxWidth: number
+): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';
+  const summary = sanitizeSessionTitleForDisplay(entry.summary);
   const line =
     entry.msgCount > 0
-      ? `${timestamp} | ${entry.summary} | ${entry.msgCount} msgs`
-      : `${timestamp} | ${entry.summary}`;
-  // Leave a small buffer beyond the 2-char picker prefix to avoid edge cases
-  const maxLen = (process.stderr.columns || 80) - 4;
+      ? `${timestamp} | ${summary} | ${entry.msgCount} msgs`
+      : `${timestamp} | ${summary}`;
+  const maxLen = maxWidth - 4;
   if (line.length > maxLen) {
     return line.slice(0, maxLen - 3) + '...';
   }

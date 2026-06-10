@@ -298,6 +298,61 @@ describe('/chat command', () => {
     expect(snapshot).toContain('sess-bbb');
   }, 30000);
 
+  it("'/chat' picker collapses raw newlines in multi-line session titles", async () => {
+    // KAS seeds session titles from the first user prompt verbatim.
+    // A multi-line first prompt would otherwise persist real `\n`s in
+    // the title, and the autocomplete picker renders each option on
+    // one row - so embedded newlines mangle the option layout. The
+    // title must render as a single visual line in the picker.
+    kiroHome = realpathSync(
+      mkdtempSync(join(tmpdir(), 'kiro-chat-multiline-'))
+    );
+    tc = new AcpTestCase({
+      testName: 'chat-command-multiline-title',
+      cwd: kiroHome,
+      mockKasSessionListResult: [
+        {
+          sessionId: 'sess-multiline-aaaa',
+          cwd: kiroHome,
+          title: 'fix the bug\nwhere foo crashes\nwhen bar is null',
+          updatedAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+      extraEnv: {
+        KIRO_CHAT_CLI_BIN: REAL_BIN,
+        KIRO_HOME: kiroHome,
+      },
+    });
+    setupHandshake(tc);
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    await tc.sleepMs(300);
+
+    await tc.sendKeys('/chat');
+    await tc.sleepMs(300);
+    await tc.waitForVisibleText('/chat', 5000);
+    await tc.sendKeys('\r');
+
+    // The picker must render the title text. Wait on the first
+    // segment - if sanitization is missing the picker may still
+    // surface the leading line, which is exactly the regression
+    // we want to catch with the layout assertions below.
+    await tc.waitForVisibleText('fix the bug', 5000);
+
+    const lines = tc.getSnapshotFormatted().split('\n');
+    // Find the row carrying the picker option's truncated id
+    // suffix. With sanitization that row also contains the title's
+    // later segments (collapsed to one line); without sanitization
+    // the row only carries the trailing segment because real `\n`s
+    // pushed the leading text up.
+    const optionRow = lines.find((l) => l.includes('sess-mul'));
+    expect(optionRow).toBeDefined();
+    expect(optionRow!).toContain('fix the bug');
+    expect(optionRow!).toContain('when bar is null');
+  }, 30000);
+
   it("'/chat save <path>' surfaces the binary's success path on alert", async () => {
     stub = writeScriptedBinary(
       JSON.stringify({ success: true, path: '/tmp/integ-export.zip' }),
