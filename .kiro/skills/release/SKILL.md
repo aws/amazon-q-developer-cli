@@ -56,6 +56,19 @@ Append a human-readable progress comment to **CORRESPONDENCE** with run links, d
 
 When Step 8 succeeds, resolve the ticket.
 
+## Release Type: Standard vs Hotfix
+
+**Before choosing a path, decide which release type fits.** Surface this question to the user explicitly — don't default silently.
+
+| Release type | When to use | Path |
+|--------------|-------------|------|
+| **Standard** (Steps 1–8 below) | Minor/major releases. Patch releases that bundle multiple fixes, or where you want a public RC for broader verification. | RC build → verify RC → stable build → verify stable → promote |
+| **Hotfix** (skips RC) | A small, isolated, well-understood fix on top of an already-shipped stable version — typically: <br>• A single commit (or a few tightly related commits) <br>• Build/CI/config-only or a clearly scoped runtime fix <br>• Customer-blocking, where the ~60–90 min RC cycle is meaningful overhead | Cherry-pick → stable build → verify on beta → promote. See [Hotfix Process](reference.md#hotfix-process). |
+
+**Default:** when in doubt, ask. If the change is a single isolated commit and there's an open customer-blocking ticket, propose Hotfix. Otherwise propose Standard.
+
+Patch releases (`X.Y.Z+1`) can use *either* path — "patch" describes the version number, not the process. The deciding factor is the size and risk of the change.
+
 ## Release Steps
 
 Based on Current State and the latest WORKLOG state (if a tracking ticket exists), identify the resume point:
@@ -63,15 +76,19 @@ Based on Current State and the latest WORKLOG state (if a tracking ticket exists
 | State | Possible next actions |
 |-------|----------------------|
 | No tracking ticket, no `release/X.Y.Z` branch | Step 1: Cut new release |
-| Branch exists, no RC tag | Step 3: Build RC |
+| Branch exists, no RC tag (Standard) | Step 3: Build RC |
+| Branch exists, no stable tag (Hotfix) | Step 5: Build stable |
 | RC tag exists | Step 3: Build another RC, or Step 5: Build stable |
 | Stable tag exists | Step 7: Promote to prod, or already done |
 
 Ask the user for:
 1. **Target version** (e.g., `2.6.0`)
 2. **Base tag** to branch from — a nightly (e.g., `v2.5.0-nightly.5`) for new releases, or a stable tag (e.g., `v2.5.0`) for patch releases.
+3. **Release type** — Standard (full RC + stable cycle) or Hotfix (skip RC). See above.
 
 Confirm with the user before each major step.
+
+> **Hotfix shortcut:** If the user chose Hotfix, run Steps 1, 2, then **skip directly to Step 5** (build stable) → Step 6 → Step 7 → Step 8.
 
 ### Step 1: Cut Release Branch
 
