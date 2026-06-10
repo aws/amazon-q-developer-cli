@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-26
-  commit: 29f769727
+  validated: 2026-06-10
+  commit: 4b90cad4d
   status: validated
   testable_headless: true
   category: feature
@@ -365,9 +365,9 @@ MCP server configurations. Supports local (stdio), remote (HTTP), and registry s
     "slack": {
       "url": "https://mcp.slack.com/mcp",
       "oauth": {
-        "clientId": "my-slack-app-id"
-      },
-      "oauthScopes": ["search:read", "channels:read"]
+        "clientId": "my-slack-app-id",
+        "oauthScopes": ["search:read", "channels:read"]
+      }
     }
   }
 }
@@ -425,7 +425,8 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `oauth` (optional): OAuth configuration object
   - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration (e.g., Slack, GitHub, Figma)
   - `redirectUri` (optional): Custom redirect URI for OAuth flow
-- `oauthScopes` (optional): OAuth scopes for authentication
+  - `oauthScopes` (optional): OAuth scopes to request from the authorization server (takes priority over top-level `oauthScopes`)
+- `oauthScopes` (optional): OAuth scopes for authentication (fallback; overridden by `oauth.oauthScopes` if both are set)
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
 - `disabledTools` (optional): List of tool names from this server to disable
@@ -438,10 +439,10 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `oauth` (optional): OAuth configuration object (remote registry servers only)
   - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration
   - `redirectUri` (optional): Custom redirect URI for OAuth flow
-  - `oauthScopes` (optional): OAuth scopes to request from the authorization server
-- `oauthScopes` (optional): Top-level OAuth scopes (alternative location to `oauth.oauthScopes`; for remote registry servers only)
+  - `oauthScopes` (optional): OAuth scopes to request from the authorization server (takes priority over top-level `oauthScopes`)
+- `oauthScopes` (optional): Top-level OAuth scopes (fallback; overridden by `oauth.oauthScopes` if both are set; for remote registry servers only)
 
-When neither `oauth.oauthScopes` nor top-level `oauthScopes` is set, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
+When both `oauth.oauthScopes` and top-level `oauthScopes` are specified, the nested `oauth.oauthScopes` takes priority. When neither is set, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
 
 Remote registry server with OAuth scope overrides:
 

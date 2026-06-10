@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Nested `oauthScopes` in MCP server `oauth` config now correctly takes priority over top-level scopes"
+}

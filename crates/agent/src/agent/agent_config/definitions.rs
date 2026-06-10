@@ -1491,6 +1491,62 @@ mod tests {
     }
 
     #[test]
+    fn test_remote_mcp_server_oauth_scopes_nested_in_oauth_config() {
+        let config = serde_json::json!({
+            "url": "https://mcp.slack.com/mcp",
+            "oauth": {
+                "clientId": "my-slack-app-id",
+                "oauthScopes": ["search:read.public", "channels:history"]
+            }
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                // Top-level scopes should be empty (not specified)
+                assert!(remote.oauth_scopes.is_empty());
+                // Nested scopes should be deserialized correctly
+                assert_eq!(
+                    remote.oauth.as_ref().unwrap().oauth_scopes.as_deref(),
+                    Some(["search:read.public".to_string(), "channels:history".to_string()].as_slice())
+                );
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
+    fn test_remote_mcp_server_oauth_scopes_nested_takes_priority_over_top_level() {
+        let config = serde_json::json!({
+            "url": "https://mcp.slack.com/mcp",
+            "oauthScopes": ["top-level-scope"],
+            "oauth": {
+                "clientId": "my-slack-app-id",
+                "oauthScopes": ["nested-scope-a", "nested-scope-b"]
+            }
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                // Both are deserialized
+                assert_eq!(remote.oauth_scopes, vec!["top-level-scope"]);
+                assert_eq!(
+                    remote.oauth.as_ref().unwrap().oauth_scopes.as_deref(),
+                    Some(["nested-scope-a".to_string(), "nested-scope-b".to_string()].as_slice())
+                );
+                // Simulate the resolution logic from service.rs: nested wins
+                let effective = remote
+                    .oauth
+                    .as_ref()
+                    .and_then(|c| c.oauth_scopes.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| remote.oauth_scopes.clone());
+                assert_eq!(effective, vec!["nested-scope-a", "nested-scope-b"]);
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
     fn test_clear_mcp_configs_removes_servers_and_mcp_refs() {
         let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
             "name": "test",

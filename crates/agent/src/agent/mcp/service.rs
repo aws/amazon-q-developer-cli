@@ -158,6 +158,13 @@ impl McpService {
                     disabled_tools: _,
                 } = config;
 
+                // Nested oauth_scopes (more specific) wins; fall back to top-level
+                let effective_scopes = oauth_config
+                    .as_ref()
+                    .and_then(|c| c.oauth_scopes.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| scopes.clone());
+
                 let start_time = Instant::now();
                 info!(?self.server_name, "Launching MCP server");
 
@@ -168,7 +175,7 @@ impl McpService {
                     &self.server_name,
                     url,
                     *timeout,
-                    scopes,
+                    &effective_scopes,
                     &processed_headers,
                     oauth_config,
                     event_tx,

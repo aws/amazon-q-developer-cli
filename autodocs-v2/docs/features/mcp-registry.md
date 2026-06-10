@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 17be3b13
+  validated: 2026-06-10
+  commit: 4b90cad4d
   status: validated
   testable_headless: false
   category: feature
@@ -132,9 +132,9 @@ Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
 - `headers` - HTTP headers (authentication tokens)
 - `timeout` - Request timeout in milliseconds
 - `oauth` - OAuth configuration object (`clientId`, `redirectUri`, `oauthScopes`); useful for servers requiring custom scopes or pre-registered clients (e.g. Atlassian Rovo, Slack)
-- `oauthScopes` - Alternative top-level location for OAuth scopes
+- `oauthScopes` - Alternative top-level location for OAuth scopes (fallback; overridden by `oauth.oauthScopes` if both are set)
 
-When OAuth scopes are not specified, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
+When both `oauth.oauthScopes` and top-level `oauthScopes` are specified, the nested `oauth.oauthScopes` takes priority. When OAuth scopes are not specified in either location, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
 
 Example — remote registry server with custom OAuth scopes:
 
