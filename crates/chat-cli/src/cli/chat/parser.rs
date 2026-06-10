@@ -354,6 +354,11 @@ struct ResponseParser {
     time_to_first_chunk: Option<Duration>,
     time_between_chunks: Vec<Duration>,
     context_usage_percentage: Option<f32>,
+    total_tokens: Option<i32>,
+    uncached_input_tokens: Option<i32>,
+    output_tokens: Option<i32>,
+    cache_read_input_tokens: Option<i32>,
+    cache_write_input_tokens: Option<i32>,
 }
 
 impl ResponseParser {
@@ -393,6 +398,11 @@ impl ResponseParser {
             time_between_chunks: Vec::new(),
             request_metadata,
             context_usage_percentage: None,
+            total_tokens: None,
+            uncached_input_tokens: None,
+            output_tokens: None,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
             cancel_token,
         }
     }
@@ -735,6 +745,19 @@ impl ResponseParser {
                         } => {
                             self.context_usage_percentage = Some(*context_usage_percentage);
                         },
+                        ChatResponseStream::MetadataEvent {
+                            total_tokens,
+                            uncached_input_tokens,
+                            output_tokens,
+                            cache_read_input_tokens,
+                            cache_write_input_tokens,
+                        } => {
+                            set_if_some(&mut self.total_tokens, *total_tokens);
+                            set_if_some(&mut self.uncached_input_tokens, *uncached_input_tokens);
+                            set_if_some(&mut self.output_tokens, *output_tokens);
+                            set_if_some(&mut self.cache_read_input_tokens, *cache_read_input_tokens);
+                            set_if_some(&mut self.cache_write_input_tokens, *cache_write_input_tokens);
+                        },
                         _ => {
                             warn!(?r, "received unexpected event from the response stream");
                         },
@@ -798,7 +821,18 @@ impl ResponseParser {
                 .map(|t| (t.id.clone(), t.name.clone()))
                 .collect::<_>(),
             model_id: self.model_id.clone(),
+            total_tokens: self.total_tokens,
+            uncached_input_tokens: self.uncached_input_tokens,
+            output_tokens: self.output_tokens,
+            cache_read_input_tokens: self.cache_read_input_tokens,
+            cache_write_input_tokens: self.cache_write_input_tokens,
         }
+    }
+}
+
+fn set_if_some<T: Copy>(target: &mut Option<T>, value: Option<T>) {
+    if value.is_some() {
+        *target = value;
     }
 }
 
@@ -861,6 +895,21 @@ pub struct RequestMetadata {
     pub model_id: Option<String>,
     /// Meta tags for the request.
     pub message_meta_tags: Vec<MessageMetaTag>,
+    /// Total tokens reported by the backend for this request.
+    #[serde(default)]
+    pub total_tokens: Option<i32>,
+    /// Uncached input tokens reported by the backend for this request.
+    #[serde(default)]
+    pub uncached_input_tokens: Option<i32>,
+    /// Output tokens reported by the backend for this request.
+    #[serde(default)]
+    pub output_tokens: Option<i32>,
+    /// Cache-read input tokens reported by the backend for this request.
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<i32>,
+    /// Cache-write input tokens reported by the backend for this request.
+    #[serde(default)]
+    pub cache_write_input_tokens: Option<i32>,
 }
 
 fn system_time_to_unix_ms(time: SystemTime) -> u64 {
@@ -1128,6 +1177,50 @@ mod tests {
             matches!(end, Ok(ResponseEvent::EndStream { .. })),
             "expected EndStream after content, got {end:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_response_parser_preserves_metadata_event_token_usage() {
+        let mut events = vec![
+            ChatResponseStream::AssistantResponseEvent {
+                content: "hello".to_string(),
+            },
+            ChatResponseStream::MetadataEvent {
+                total_tokens: Some(20),
+                uncached_input_tokens: Some(10),
+                output_tokens: Some(5),
+                cache_read_input_tokens: Some(3),
+                cache_write_input_tokens: Some(2),
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "message".to_string(),
+            Some("claude-4-sonnet".to_string()),
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        assert!(matches!(parser.recv().await, Ok(ResponseEvent::AssistantText(_))));
+        let end = parser.recv().await;
+
+        match end {
+            Ok(ResponseEvent::EndStream { request_metadata, .. }) => {
+                assert_eq!(request_metadata.total_tokens, Some(20));
+                assert_eq!(request_metadata.uncached_input_tokens, Some(10));
+                assert_eq!(request_metadata.output_tokens, Some(5));
+                assert_eq!(request_metadata.cache_read_input_tokens, Some(3));
+                assert_eq!(request_metadata.cache_write_input_tokens, Some(2));
+            },
+            other => panic!("expected EndStream with token metadata, got {other:?}"),
+        }
     }
 
     /// A stream that delivered only thinking content must complete normally, not as

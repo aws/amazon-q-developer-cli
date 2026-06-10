@@ -5458,6 +5458,11 @@ impl ChatSession {
             tool_use_id: self.conversation.latest_tool_use_ids(),
             tool_name: self.conversation.latest_tool_use_names(),
             assistant_response_length: md.as_ref().map(|md| md.response_size as i32),
+            total_tokens: md.as_ref().and_then(|md| md.total_tokens),
+            uncached_input_tokens: md.as_ref().and_then(|md| md.uncached_input_tokens),
+            output_tokens: md.as_ref().and_then(|md| md.output_tokens),
+            cache_read_input_tokens: md.as_ref().and_then(|md| md.cache_read_input_tokens),
+            cache_write_input_tokens: md.as_ref().and_then(|md| md.cache_write_input_tokens),
             message_meta_tags: {
                 let mut tags = md.as_ref().map(|md| md.message_meta_tags.clone()).unwrap_or_default();
                 if self.conversation.is_in_tangent_mode() {
@@ -5473,6 +5478,15 @@ impl ChatSession {
 
         if is_end_turn {
             let mds = &self.conversation.user_turn_metadata;
+            let positive_token_sum = |select: fn(&RequestMetadata) -> Option<i32>| -> Option<i64> {
+                let sum = mds
+                    .iter()
+                    .filter_map(select)
+                    .filter(|value| *value > 0)
+                    .map(i64::from)
+                    .sum::<i64>();
+                (sum > 0).then_some(sum)
+            };
 
             // Get the user turn duration.
             let start_time = mds.first_request().map(|md| md.request_start_timestamp_ms);
@@ -5495,7 +5509,14 @@ impl ChatSession {
                         .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
                         .collect::<_>(),
                     chat_conversation_type: md.as_ref().and_then(|md| md.chat_conversation_type),
+                    model: md.as_ref().and_then(|md| md.model_id.clone()),
                     assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
+                    total_tokens: positive_token_sum(|md| md.total_tokens),
+                    uncached_input_tokens: positive_token_sum(|md| md.uncached_input_tokens),
+                    output_tokens: positive_token_sum(|md| md.output_tokens),
+                    cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
+                    cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
+                    estimated_cost_usd: None,
                     message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
                     user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
                     user_turn_duration_seconds,

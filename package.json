@@ -17,13 +17,14 @@
     "vite": "7.3.2",
     "@aws/codewhisperer-streaming-client": "1.0.34",
     "fast-xml-parser": "5.7.2",
-    "hono": "4.12.18",
+    "hono": "4.12.21",
     "ip-address": "10.1.1",
     "langsmith": "0.6.0",
     "postcss": "8.5.10",
     "@opentelemetry/exporter-prometheus": "0.217.0",
     "@opentelemetry/sdk-node": "0.217.0",
     "protobufjs": "8.2.0",
+    "shell-quote": "1.8.4",
     "uuid": "^14.0.0",
     "ws": "8.20.1"
   }

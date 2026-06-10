@@ -10,8 +10,11 @@ use kiro_telemetry::{
     FieldClass,
     LegacyEventType,
     MetricRecord,
+    PRICING_TABLE_VERSION,
     PiiRedactor,
     TelemetryLogRecord,
+    TokenUsage,
+    estimate_cost_usd,
     legacy_log_record,
     legacy_metric_record,
 };
@@ -200,6 +203,11 @@ impl Event {
                         tool_use_id,
                         assistant_response_length,
                         message_meta_tags,
+                        total_tokens: _,
+                        uncached_input_tokens: _,
+                        output_tokens: _,
+                        cache_read_input_tokens: _,
+                        cache_write_input_tokens: _,
                     },
             } => Some(
                 CodewhispererterminalAddChatMessage {
@@ -254,6 +262,13 @@ impl Event {
                         time_to_first_chunks_ms,
                         chat_conversation_type,
                         assistant_response_length,
+                        model: _,
+                        total_tokens: _,
+                        uncached_input_tokens: _,
+                        output_tokens: _,
+                        cache_read_input_tokens: _,
+                        cache_write_input_tokens: _,
+                        estimated_cost_usd: _,
                         user_turn_duration_seconds,
                         follow_up_count,
                         user_prompt_length,
@@ -663,6 +678,8 @@ impl Event {
                 if let Some(record) = request_duration_metric_record(data, result) {
                     records.push(record);
                 }
+                records.extend(token_metric_records(&data.model, &self.client_application, false, data));
+                records.extend(cost_metric_records(&data.model, &self.client_application, false, data));
                 records
             },
             EventType::EmptyResponseRetry { model, outcome } => {
@@ -766,6 +783,9 @@ fn turn_completion_log_record(
     if let Some(value) = comma_join(args.message_ids.iter().map(String::as_str)) {
         record = record.with_attribute("message_id", value);
     }
+    if let Some(model) = &args.model {
+        record = record.with_attribute("model_class", model_class(model));
+    }
     if let Some(client_application) = client_application {
         record = record.with_attribute("client_application", client_application.clone());
     }
@@ -789,6 +809,27 @@ fn turn_completion_log_record(
     }
     if let Some(parent_tool_use_id) = &args.parent_tool_use_id {
         record = record.with_attribute("parent_tool_use_id", parent_tool_use_id.clone());
+    }
+    if let Some(total_tokens) = args.total_tokens {
+        record = record.with_attribute("total_tokens", total_tokens.to_string());
+    }
+    if let Some(uncached_input_tokens) = args.uncached_input_tokens {
+        record = record.with_attribute("uncached_input_tokens", uncached_input_tokens.to_string());
+    }
+    if let Some(output_tokens) = args.output_tokens {
+        record = record.with_attribute("output_tokens", output_tokens.to_string());
+    }
+    if let Some(cache_read_input_tokens) = args.cache_read_input_tokens {
+        record = record.with_attribute("cache_read_input_tokens", cache_read_input_tokens.to_string());
+    }
+    if let Some(cache_write_input_tokens) = args.cache_write_input_tokens {
+        record = record.with_attribute("cache_write_input_tokens", cache_write_input_tokens.to_string());
+    }
+    if let Some(estimated_cost_usd) = args
+        .estimated_cost_usd
+        .or_else(|| estimated_cost_usd_from_turn_args(&args.model, args))
+    {
+        record = record.with_attribute("estimated_cost_usd", format!("{estimated_cost_usd:.9}"));
     }
 
     record
@@ -923,6 +964,126 @@ fn tools_enabled(chat_conversation_type: &Option<ChatConversationType>) -> &'sta
     }
 }
 
+fn token_metric_records(
+    model: &Option<String>,
+    client_application: &Option<String>,
+    is_subagent: bool,
+    data: &ChatAddedMessageParams,
+) -> Vec<MetricRecord> {
+    let mut records = Vec::new();
+    push_token_metric(
+        &mut records,
+        model,
+        client_application,
+        is_subagent,
+        "input_uncached",
+        data.uncached_input_tokens,
+    );
+    push_token_metric(
+        &mut records,
+        model,
+        client_application,
+        is_subagent,
+        "input_cache_read",
+        data.cache_read_input_tokens,
+    );
+    push_token_metric(
+        &mut records,
+        model,
+        client_application,
+        is_subagent,
+        "input_cache_write",
+        data.cache_write_input_tokens,
+    );
+    push_token_metric(
+        &mut records,
+        model,
+        client_application,
+        is_subagent,
+        "output",
+        data.output_tokens,
+    );
+    records
+}
+
+fn cost_metric_records(
+    model: &Option<String>,
+    client_application: &Option<String>,
+    is_subagent: bool,
+    data: &ChatAddedMessageParams,
+) -> Vec<MetricRecord> {
+    let Some(cost) = estimated_cost_usd_from_usage(model, token_usage_from_chat_added_message(data)) else {
+        return Vec::new();
+    };
+
+    vec![
+        MetricRecord::counter_f64("kiro_cli_estimated_cost_usd", cost)
+            .with_attribute("model_class", model.as_deref().map_or("other", model_class))
+            .with_attribute("client_application", client_application_attr(client_application))
+            .with_attribute("is_subagent", is_subagent.to_string()),
+        MetricRecord::gauge("kiro_cli_pricing_table_active", PRICING_TABLE_VERSION),
+    ]
+}
+
+fn estimated_cost_usd_from_turn_args(model: &Option<String>, args: &RecordUserTurnCompletionArgs) -> Option<f64> {
+    estimated_cost_usd_from_usage(model, TokenUsage {
+        uncached_input_tokens: positive_i64_to_u64(args.uncached_input_tokens),
+        cache_read_input_tokens: positive_i64_to_u64(args.cache_read_input_tokens),
+        cache_write_input_tokens: positive_i64_to_u64(args.cache_write_input_tokens),
+        output_tokens: positive_i64_to_u64(args.output_tokens),
+    })
+}
+
+fn estimated_cost_usd_from_usage(model: &Option<String>, usage: TokenUsage) -> Option<f64> {
+    let model_class = model.as_deref().map_or("other", model_class);
+    estimate_cost_usd(model_class, usage)
+}
+
+fn token_usage_from_chat_added_message(data: &ChatAddedMessageParams) -> TokenUsage {
+    TokenUsage {
+        uncached_input_tokens: positive_i32_to_u64(data.uncached_input_tokens),
+        cache_read_input_tokens: positive_i32_to_u64(data.cache_read_input_tokens),
+        cache_write_input_tokens: positive_i32_to_u64(data.cache_write_input_tokens),
+        output_tokens: positive_i32_to_u64(data.output_tokens),
+    }
+}
+
+fn positive_i32_to_u64(value: Option<i32>) -> u64 {
+    value.filter(|value| *value > 0).unwrap_or_default() as u64
+}
+
+fn positive_i64_to_u64(value: Option<i64>) -> u64 {
+    value.filter(|value| *value > 0).unwrap_or_default() as u64
+}
+
+fn push_token_metric(
+    records: &mut Vec<MetricRecord>,
+    model: &Option<String>,
+    client_application: &Option<String>,
+    is_subagent: bool,
+    token_type: &'static str,
+    value: Option<i32>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    if value <= 0 {
+        return;
+    }
+
+    records.push(
+        MetricRecord::counter("kiro_cli_tokens_consumed", value as u64)
+            .with_attribute("model_class", model.as_deref().map_or("other", model_class))
+            .with_attribute("token_type", token_type)
+            .with_attribute("client_application", client_application_attr(client_application))
+            .with_attribute("is_subagent", is_subagent.to_string()),
+    );
+}
+
+fn client_application_attr(client_application: &Option<String>) -> &str {
+    client_application.as_deref().unwrap_or("_other_")
+}
+
 fn telemetry_result_attr(result: &TelemetryResult) -> &'static str {
     match result {
         TelemetryResult::Succeeded => "success",
@@ -1006,6 +1167,16 @@ pub struct ChatAddedMessageParams {
     pub tool_use_id: Option<String>,
     pub assistant_response_length: Option<i32>,
     pub message_meta_tags: Vec<MessageMetaTag>,
+    #[serde(default)]
+    pub total_tokens: Option<i32>,
+    #[serde(default)]
+    pub uncached_input_tokens: Option<i32>,
+    #[serde(default)]
+    pub output_tokens: Option<i32>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<i32>,
+    #[serde(default)]
+    pub cache_write_input_tokens: Option<i32>,
 }
 
 /// Optional fields for tangent mode session telemetry event.
@@ -1025,6 +1196,8 @@ pub struct TangentModeSessionArgs {
 pub struct RecordUserTurnCompletionArgs {
     pub request_ids: Vec<Option<String>>,
     pub message_ids: Vec<String>,
+    #[serde(default)]
+    pub model: Option<String>,
     pub reason: Option<String>,
     pub reason_desc: Option<String>,
     pub status_code: Option<u16>,
@@ -1032,6 +1205,18 @@ pub struct RecordUserTurnCompletionArgs {
     pub chat_conversation_type: Option<ChatConversationType>,
     pub user_prompt_length: i64,
     pub assistant_response_length: i64,
+    #[serde(default)]
+    pub total_tokens: Option<i64>,
+    #[serde(default)]
+    pub uncached_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub output_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_write_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub estimated_cost_usd: Option<f64>,
     pub user_turn_duration_seconds: i64,
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,
@@ -1534,10 +1719,14 @@ mod tests {
             result: TelemetryResult::Succeeded,
             data: ChatAddedMessageParams {
                 context_file_length: Some(2_000),
-                model: Some("claude-4-haiku".to_string()),
+                model: Some("claude-4-sonnet".to_string()),
                 time_to_first_chunk_ms: Some(250.0),
                 request_duration_seconds: Some(1.2),
                 chat_conversation_type: Some(ChatConversationType::ToolUse),
+                uncached_input_tokens: Some(10),
+                cache_read_input_tokens: Some(2),
+                cache_write_input_tokens: Some(3),
+                output_tokens: Some(5),
                 ..Default::default()
             },
         });
@@ -1546,15 +1735,52 @@ mod tests {
         let ttft = metric_record(&records, "chat_cli.bedrock.stream.ttft");
 
         assert_eq!(ttft.value, kiro_telemetry::MetricValue::Histogram(0.25));
-        assert_eq!(metric_attr(ttft, "model_class"), Some("anthropic_haiku"));
+        assert_eq!(metric_attr(ttft, "model_class"), Some("anthropic_sonnet"));
         assert_eq!(metric_attr(ttft, "prompt_size_bucket"), Some("small"));
         assert_eq!(metric_attr(ttft, "tools_enabled"), Some("true"));
         let duration = metric_record(&records, "chat_cli.bedrock.request.duration");
         assert_eq!(duration.value, kiro_telemetry::MetricValue::Histogram(1.2));
-        assert_eq!(metric_attr(duration, "model_class"), Some("anthropic_haiku"));
+        assert_eq!(metric_attr(duration, "model_class"), Some("anthropic_sonnet"));
         assert_eq!(metric_attr(duration, "operation"), Some("stream"));
         assert_eq!(metric_attr(duration, "outcome"), Some("success"));
         assert!(records.iter().any(|record| record.name == "kiro_cli_user_turns"));
+
+        let token_records = records
+            .iter()
+            .filter(|record| record.name == "kiro_cli_tokens_consumed")
+            .collect::<Vec<_>>();
+        assert_eq!(token_records.len(), 4);
+        assert!(token_records.iter().any(|record| {
+            record.value == kiro_telemetry::MetricValue::Counter(10)
+                && metric_attr(record, "token_type") == Some("input_uncached")
+        }));
+        assert!(token_records.iter().any(|record| {
+            record.value == kiro_telemetry::MetricValue::Counter(2)
+                && metric_attr(record, "token_type") == Some("input_cache_read")
+        }));
+        assert!(token_records.iter().any(|record| {
+            record.value == kiro_telemetry::MetricValue::Counter(3)
+                && metric_attr(record, "token_type") == Some("input_cache_write")
+        }));
+        assert!(token_records.iter().any(|record| {
+            record.value == kiro_telemetry::MetricValue::Counter(5)
+                && metric_attr(record, "token_type") == Some("output")
+        }));
+
+        let cost = metric_record(&records, "kiro_cli_estimated_cost_usd");
+        assert!(matches!(
+            cost.value,
+            kiro_telemetry::MetricValue::FloatCounter(value) if (value - 0.00010785).abs() < 0.000000001
+        ));
+        assert_eq!(metric_attr(cost, "model_class"), Some("anthropic_sonnet"));
+        assert_eq!(metric_attr(cost, "client_application"), Some("_other_"));
+        assert_eq!(metric_attr(cost, "is_subagent"), Some("false"));
+
+        let pricing_table = metric_record(&records, "kiro_cli_pricing_table_active");
+        assert_eq!(
+            pricing_table.value,
+            kiro_telemetry::MetricValue::Gauge(kiro_telemetry::PRICING_TABLE_VERSION)
+        );
     }
 
     #[test]
@@ -1565,12 +1791,18 @@ mod tests {
             args: RecordUserTurnCompletionArgs {
                 request_ids: vec![Some("request-1".to_string())],
                 message_ids: vec!["message-1".to_string()],
+                model: Some("claude-4-sonnet".to_string()),
                 reason: Some("ServiceFailure".to_string()),
                 reason_desc: Some("failed for dev@example.com".to_string()),
                 status_code: Some(500),
                 time_to_first_chunks_ms: vec![Some(25.0), None],
                 user_prompt_length: 7,
                 assistant_response_length: 11,
+                total_tokens: Some(20),
+                uncached_input_tokens: Some(10),
+                output_tokens: Some(5),
+                cache_read_input_tokens: Some(2),
+                cache_write_input_tokens: Some(3),
                 user_turn_duration_seconds: 3,
                 follow_up_count: 1,
                 message_meta_tags: vec![MessageMetaTag::Compact],
@@ -1586,6 +1818,7 @@ mod tests {
         assert_eq!(log_attr(&record, "conversation_id"), Some("conversation"));
         assert_eq!(log_attr(&record, "request_id"), Some("request-1"));
         assert_eq!(log_attr(&record, "message_id"), Some("message-1"));
+        assert_eq!(log_attr(&record, "model_class"), Some("anthropic_sonnet"));
         assert_eq!(log_attr(&record, "client_application"), Some("chat_cli"));
         assert_eq!(log_attr(&record, "result"), Some("failed"));
         assert_eq!(log_attr(&record, "turn_failure_reason"), Some("ServiceFailure"));
@@ -1598,6 +1831,12 @@ mod tests {
         assert_eq!(log_attr(&record, "message_meta_tags"), Some("Compact"));
         assert_eq!(log_attr(&record, "parent_tool_use_id"), Some("parent-tool"));
         assert_eq!(log_attr(&record, "is_subagent"), Some("false"));
+        assert_eq!(log_attr(&record, "total_tokens"), Some("20"));
+        assert_eq!(log_attr(&record, "uncached_input_tokens"), Some("10"));
+        assert_eq!(log_attr(&record, "output_tokens"), Some("5"));
+        assert_eq!(log_attr(&record, "cache_read_input_tokens"), Some("2"));
+        assert_eq!(log_attr(&record, "cache_write_input_tokens"), Some("3"));
+        assert_eq!(log_attr(&record, "estimated_cost_usd"), Some("0.000107850"));
         assert!(log_attr(&record, "reason_desc").is_some_and(|value| value.contains("[REDACTED:email]")));
     }
 
