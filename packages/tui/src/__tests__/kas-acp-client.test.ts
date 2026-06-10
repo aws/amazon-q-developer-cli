@@ -1073,6 +1073,38 @@ describe('KasAcpClient', () => {
     expect(values).not.toContain('semantic_reviewer');
   });
 
+  it('getCommandOptions("/agent") filters out the bundled autonomous agent', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Default',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'autonomous',
+            name: 'Autonomous',
+            description: 'Self-directed execution',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/agent', '');
+    const values = result.options.map((o: any) => o.value);
+    expect(values).toEqual(['kiro_default']);
+    expect(values).not.toContain('autonomous');
+  });
+
   it('getCommandOptions("/agent") preserves a user/workspace agent that shares a denylisted id', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',

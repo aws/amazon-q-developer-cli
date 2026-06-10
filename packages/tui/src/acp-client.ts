@@ -172,6 +172,15 @@ const AGENT_DENYLIST: Record<string, string> = {
   // under the wire mode id `semantic_reviewer`.
   semantic_reviewer:
     'Internal review-only subagent; not a user-selectable conversational agent.',
+
+  // The autonomous agent is a bundled KAS mode that drives long-running,
+  // self-directed execution rather than an interactive conversational
+  // session. Surfacing it in the user-facing `/agent` picker lets users
+  // switch into a mode that isn't meant for normal chat, so we hide it.
+  // KAS advertises it under the wire mode id `autonomous` (passed through
+  // unchanged by `fromKasModeId`).
+  autonomous:
+    'Bundled self-directed execution mode; not a user-selectable conversational agent.',
 };
 
 /**
