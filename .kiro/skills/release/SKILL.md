@@ -111,8 +111,35 @@ gh workflow run create-release-branch.yml \
 ### Step 2: Cherry-pick & Changelog
 
 - Cherry-pick fixes from `main` to `release/<version>` via PRs (both repos)
-- Update `feed.json` in both repos (chat: `crates/chat-cli/src/cli/feed.json` + `crates/chat-cli-v2/src/cli/feed.json`, autocomplete: `feed.json`)
-- Check for reverts on `main` that need to be applied to the release branch
+- Check for reverts on `main` that need to be applied to the release branch:
+  ```bash
+  git log --oneline origin/release/<version>..origin/main | grep -i "revert"
+  ```
+- Update `feed.json` (see below)
+
+#### Updating feed.json
+
+Feed files: `crates/chat-cli/src/cli/feed.json` + `crates/chat-cli-v2/src/cli/feed.json`
+
+**For a minor release** (nightly base tag):
+
+1. Identify new fragments added since the last stable release:
+   ```bash
+   git diff <last_stable_tag>..<base_tag> --name-only -- .changes/unreleased/
+   ```
+2. Only these fragments go into the new feed.json entry — not everything in `unreleased/`.
+   (`unreleased/` on main accumulates fragments across releases and is never cleaned.)
+3. Insert the new entry into feed.json via text-level insertion after the `0.0.0` placeholder entry.
+   Do NOT re-serialize the entire file — this changes unicode escapes and formatting in old entries.
+4. Move the used fragments to `.changes/released/v<version>/`.
+5. Copy the updated feed.json to both chat-cli and chat-cli-v2 paths.
+6. Submit as a PR against `release/<version>` (branch protection requires PRs).
+
+**For a patch release** (stable base tag):
+
+1. Patch releases have 1–2 cherry-picked fixes. Changelog entries are written by hand
+   or included as fragments alongside the cherry-pick PR.
+2. The same text-level insertion and PR process applies.
 
 ### Step 3: Build RC
 
