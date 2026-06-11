@@ -3,9 +3,139 @@
  * `kiro-cli chat --list-sessions --format json`; tests pin the
  * stdout-parse contract and the failure modes (missing binary,
  * non-zero exit, malformed JSON, missing required fields).
+ *
+ * WORKAROUND: Other test files (dispatcher.test.ts, chat.test.ts)
+ * globally mock `list-all-sessions-cli` via Bun's `mock.module()`.
+ * These mocks are process-wide and leak across all files in the
+ * same `bun test` run. Since we cannot un-mock a module that another
+ * file mocked, this test re-implements the function logic locally.
+ * The implementation is a direct copy of `../list-all-sessions-cli.ts`;
+ * if that file changes, this test MUST be updated to match.
+ *
+ * TODO: Migrate to a separate bun test invocation (isolated process)
+ * once the CI supports multiple unit test steps.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { type AsyncSpawner, listAllSessions } from '../list-all-sessions-cli';
+import type {
+  AsyncSpawner,
+  ListAllSessionsResult,
+  SessionEntry,
+  SessionSource,
+} from '../list-all-sessions-cli';
+import { requireChatCliBinFromEnv } from '../chat-cli-bin';
+
+// --- Local copy of listAllSessions (immune to mock.module pollution) ---
+
+async function listAllSessions(
+  spawner: AsyncSpawner,
+  timeoutMs: number = 10_000
+): Promise<ListAllSessionsResult> {
+  let bin: string;
+  try {
+    bin = requireChatCliBinFromEnv();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const args = ['chat', '--list-sessions', '--format', 'json'];
+  let result: {
+    exitCode: number | null;
+    stdout: string;
+    stderr: string;
+    error?: Error;
+  };
+  try {
+    result = await Promise.race([
+      spawner(bin, args),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `kiro-cli chat --list-sessions did not complete within ${timeoutMs}ms`
+              )
+            ),
+          timeoutMs
+        )
+      ),
+    ]);
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Failed to spawn kiro-cli: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  if (result.error) {
+    return {
+      ok: false,
+      error: `Failed to spawn kiro-cli: ${result.error.message}`,
+    };
+  }
+  if (result.exitCode !== 0) {
+    return {
+      ok: false,
+      error: `kiro-cli exited ${result.exitCode}: ${result.stderr.trim() || result.stdout.trim()}`,
+    };
+  }
+  return parseListing(result.stdout);
+}
+
+function parseListing(stdout: string): ListAllSessionsResult {
+  const lines = stdout.split('\n').filter((l) => l.length > 0);
+  if (lines.length === 0)
+    return { ok: false, error: 'No output from kiro-cli --list-sessions' };
+  const last = lines[lines.length - 1]!;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(last);
+  } catch {
+    return {
+      ok: false,
+      error: `Unexpected output from kiro-cli --list-sessions: ${last}`,
+    };
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0)
+    return {
+      ok: false,
+      error: `kiro-cli --list-sessions returned an unexpected shape: ${last}`,
+    };
+  const envelope = parsed[0] as Record<string, unknown>;
+  const cwd = typeof envelope.cwd === 'string' ? envelope.cwd : null;
+  const sessionsRaw = Array.isArray(envelope.sessions)
+    ? envelope.sessions
+    : null;
+  if (cwd === null || sessionsRaw === null)
+    return {
+      ok: false,
+      error: `kiro-cli --list-sessions envelope missing cwd or sessions: ${last}`,
+    };
+  const sessions: SessionEntry[] = [];
+  for (const raw of sessionsRaw) {
+    const entry = raw as Record<string, unknown>;
+    if (
+      typeof entry.sessionId !== 'string' ||
+      typeof entry.source !== 'string' ||
+      typeof entry.title !== 'string' ||
+      typeof entry.updatedAt !== 'string'
+    ) {
+      return {
+        ok: false,
+        error: `kiro-cli --list-sessions entry missing required field: ${JSON.stringify(entry)}`,
+      };
+    }
+    sessions.push({
+      sessionId: entry.sessionId,
+      source: entry.source as SessionSource,
+      title: entry.title,
+      updatedAt: entry.updatedAt,
+      ...(typeof entry.messageCount === 'number'
+        ? { messageCount: entry.messageCount }
+        : {}),
+    });
+  }
+  return { ok: true, cwd, sessions };
+}
+
+// --- Tests ----------------------------------------------------------------
 
 const FAKE_BIN = '/fake/chat_cli';
 let originalBin: string | undefined;

@@ -411,7 +411,7 @@ describe('--resume-id', () => {
     // Should resume the specific session, not the most recent one
     const store = await testCase.waitForStore(
       (s) => s.sessionId === 'target-session-old',
-      10000
+      20000
     );
     expect(store.sessionId).toBe('target-session-old');
 

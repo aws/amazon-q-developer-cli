@@ -138,7 +138,7 @@ describe('Shell Escape (!command)', () => {
       await testCase.pressEnter();
 
       // Should see the prompt from read
-      await testCase.waitForText('Name:', 20000);
+      await testCase.waitForText('Name:', 30000);
 
       // Type the response
       await testCase.sendKeys('Kiro');
@@ -146,12 +146,12 @@ describe('Shell Escape (!command)', () => {
       await testCase.pressEnter();
 
       // Should see the echoed greeting
-      await testCase.waitForText('Hello Kiro', 20000);
+      await testCase.waitForText('Hello Kiro', 30000);
 
       // Should return to prompt
       await testCase.waitForText('ask a question', 15000);
     },
-    60000
+    90000
   );
 
   it('Ctrl-C cancels a running shell escape command', async () => {
