@@ -86,7 +86,7 @@ const FLAG_DEFS: FlagDef[] = [
     flags: ['--resume-picker', '--list'],
   },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
-  { type: 'skip', flags: ['--tui'] },
+  { type: 'skip', flags: ['--tui', '--v3'] },
   {
     type: 'string',
     key: 'agentEngine',

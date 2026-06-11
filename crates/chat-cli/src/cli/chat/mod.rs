@@ -337,6 +337,9 @@ pub struct ChatArgs {
     /// Agent engine to use: "v1", "v2" (default), or "kas"
     #[arg(long, value_name = "ENGINE")]
     pub agent_engine: Option<AgentEngine>,
+    /// Use the KAS agent engine (shorthand for --agent-engine=kas)
+    #[arg(long, conflicts_with_all = ["legacy_ui", "agent_engine"])]
+    pub v3: bool,
     /// Mode to use with KAS agent: "vibe" (default) or "spec"
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
@@ -349,14 +352,16 @@ pub struct ChatArgs {
 impl ChatArgs {
     /// Resolve the agent engine.
     ///
-    /// Precedence: `--agent-engine` CLI flag > `chat.agentEngine` setting > default.
-    /// Default depends on interactivity: non-interactive defaults to V1,
-    /// interactive defaults to V2.
+    /// Precedence: `--v3` / `--agent-engine` CLI flags > `chat.agentEngine` setting > default.
+    /// `--v3` is a shorthand for `--agent-engine=kas`. Default depends on
+    /// interactivity: non-interactive defaults to V1, interactive defaults to V2.
     ///
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
     pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
-        let engine = if let Some(engine) = self.agent_engine {
+        let engine = if self.v3 {
+            AgentEngine::Kas
+        } else if let Some(engine) = self.agent_engine {
             engine
         } else if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine) {
             if val.eq_ignore_ascii_case("kas") {

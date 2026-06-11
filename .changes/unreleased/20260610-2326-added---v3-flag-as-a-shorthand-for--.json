@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`--v3` flag as a shorthand for `--agent-engine=kas`"
+}

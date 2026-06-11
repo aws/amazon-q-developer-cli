@@ -920,6 +920,9 @@ pub struct Cli {
     /// Launch chat in legacy UI mode
     #[arg(long, visible_alias = "classic")]
     legacy_ui: bool,
+    /// Launch chat with the KAS agent engine (shorthand for --agent-engine=kas)
+    #[arg(long, conflicts_with = "legacy_ui")]
+    v3: bool,
     /// Resume the most recent conversation from this directory
     #[arg(short, long)]
     resume: bool,
@@ -937,6 +940,7 @@ impl Cli {
             RootSubcommand::Chat(ChatArgs {
                 tui: self.tui,
                 legacy_ui: self.legacy_ui,
+                v3: self.v3,
                 resume: self.resume,
                 resume_id: self.resume_id,
                 resume_picker: self.resume_picker,
@@ -1085,6 +1089,7 @@ mod test {
             verbose: 1,
             tui: false,
             legacy_ui: false,
+            v3: false,
             resume: false,
             resume_id: None,
             resume_picker: false,
@@ -1095,6 +1100,7 @@ mod test {
             verbose: 3,
             tui: false,
             legacy_ui: false,
+            v3: false,
             resume: false,
             resume_id: None,
             resume_picker: false,
@@ -1125,6 +1131,7 @@ mod test {
             verbose: 2,
             tui: false,
             legacy_ui: false,
+            v3: false,
             resume: false,
             resume_id: None,
             resume_picker: false,
@@ -1505,6 +1512,44 @@ mod test {
     }
 
     #[test]
+    fn test_chat_with_v3() {
+        assert_parse!(
+            ["chat", "--v3"],
+            RootSubcommand::Chat(ChatArgs {
+                v3: true,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn test_top_level_v3() {
+        assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "--v3"]), Cli {
+            subcommand: None,
+            verbose: 0,
+            tui: false,
+            legacy_ui: false,
+            v3: true,
+            resume: false,
+            resume_id: None,
+            resume_picker: false,
+        });
+    }
+
+    #[test]
+    fn test_v3_conflicts_with_classic() {
+        // --v3 and --classic (alias of --legacy-ui) are mutually exclusive.
+        assert!(Cli::try_parse_from([CHAT_BINARY_NAME, "chat", "--v3", "--classic"]).is_err());
+        assert!(Cli::try_parse_from([CHAT_BINARY_NAME, "--v3", "--classic"]).is_err());
+    }
+
+    #[test]
+    fn test_v3_conflicts_with_agent_engine() {
+        // --v3 is a shorthand for --agent-engine=kas, so combining them is rejected.
+        assert!(Cli::try_parse_from([CHAT_BINARY_NAME, "chat", "--v3", "--agent-engine=v2"]).is_err());
+    }
+
+    #[test]
     fn test_chat_with_list_models() {
         assert_parse!(
             ["chat", "--list-models"],
@@ -1560,6 +1605,29 @@ mod test {
                 ..Default::default()
             };
             assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn v3_flag_resolves_to_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                v3: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn v3_flag_resolves_to_kas_non_interactive() {
+            let os = make_os().await;
+            let mut args = ChatArgs {
+                v3: true,
+                no_interactive: true,
+                input: Some("hello".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+            assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
         }
 
         #[tokio::test]

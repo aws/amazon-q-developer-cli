@@ -167,6 +167,29 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs().input).toBe('Tell me something');
   });
 
+  it('does not swallow positional input after --v3', () => {
+    setArgs('chat', '--v3', 'Tell me something');
+    expect(parseCliArgs().input).toBe('Tell me something');
+  });
+
+  it('skips --v3 without setting unknown fields', () => {
+    setArgs('chat', '--v3');
+    expect(parseCliArgs()).toEqual({
+      trustAllTools: false,
+      noInteractive: false,
+      resume: false,
+      resumePicker: false,
+    });
+  });
+
+  it('does not forward --v3 to ACP args', () => {
+    // --v3 is consumed by Rust (sets KIRO_AGENT_ENGINE=kas); it must not
+    // appear in the ACP arg list.
+    setArgs('chat', '--v3', '--model', 'gpt-4');
+    const acpArgs = buildAcpArgs(parseCliArgs());
+    expect(acpArgs).not.toContain('--v3');
+  });
+
   it('resume flags default to false/undefined', () => {
     setArgs('chat');
     const result = parseCliArgs();
