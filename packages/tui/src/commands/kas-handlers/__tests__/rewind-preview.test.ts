@@ -324,8 +324,14 @@ describe('rewind preview', () => {
       }
       if (current) groups.push(current);
 
-      return turns.map((turn, i) => {
-        const group = groups[i];
+      const sortedIndices = turns.map((t) => t.logIndex).sort((a, b) => a - b);
+      const logIndexToOrdinal = new Map(
+        sortedIndices.map((li, ord) => [li, ord])
+      );
+
+      return turns.map((turn) => {
+        const ordinal = logIndexToOrdinal.get(turn.logIndex);
+        const group = ordinal != null ? groups[ordinal] : undefined;
         if (!group || group.length <= 1) return turn;
         const preview = buildPreview(group.slice(1));
         return { ...turn, responseSnippet: preview || turn.responseSnippet };
@@ -402,6 +408,40 @@ describe('rewind preview', () => {
       expect(result[0]!.responseSnippet).toBe('Done');
       // Second turn: no group[1] exists, falls back
       expect(result[1]!.responseSnippet).toBe('also backend');
+    });
+
+    it('aligns correctly when turns are reversed (newest-first, production order)', () => {
+      const turns = [
+        {
+          logIndex: 1,
+          label: 'fix tests',
+          group: '',
+          responseSnippet: 'old snippet',
+        },
+        {
+          logIndex: 0,
+          label: 'hello',
+          group: '',
+          responseSnippet: 'backend fallback',
+        },
+      ];
+      const messages = [
+        { id: '1', role: MessageRole.User, content: 'hello' },
+        { id: '2', role: MessageRole.Model, content: 'Hi there!' },
+        { id: '3', role: MessageRole.User, content: 'fix tests' },
+        {
+          id: '4',
+          role: MessageRole.ToolUse,
+          content: JSON.stringify({ command: 'npm test' }),
+          name: 'Run Command',
+        },
+        { id: '5', role: MessageRole.Model, content: 'All passing' },
+      ];
+      const result = enrichTurnsWithPreview(turns, messages);
+      // turns[0] is logIndex:1 (fix tests) — must get 'fix tests' preview, not 'hello'
+      expect(result[0]!.responseSnippet).toContain('↳ Run Command npm test');
+      // turns[1] is logIndex:0 (hello) — must get 'hello' preview
+      expect(result[1]!.responseSnippet).toBe('Hi there!');
     });
   });
 });

@@ -31,8 +31,15 @@ export function enrichTurnsWithPreview(
 ): typeof turns {
   const turnGroups = groupByTurn(messages);
 
-  return turns.map((turn, i) => {
-    const group = turnGroups[i];
+  // Build a mapping from logIndex to chronological turn ordinal.
+  // Turns may arrive in any order (e.g. reversed), so sort by logIndex
+  // to determine which logIndex corresponds to which ordinal.
+  const sortedIndices = turns.map((t) => t.logIndex).sort((a, b) => a - b);
+  const logIndexToOrdinal = new Map(sortedIndices.map((li, ord) => [li, ord]));
+
+  return turns.map((turn) => {
+    const ordinal = logIndexToOrdinal.get(turn.logIndex);
+    const group = ordinal != null ? turnGroups[ordinal] : undefined;
     if (!group || group.length <= 1) return turn; // no AI messages
     const userMsg = group[0]!;
     const preview = buildPreview(group.slice(1)); // skip user message
@@ -71,8 +78,13 @@ export function buildPreview(msgs: TurnMessage[]): string {
   if (!hasTools) {
     const model = msgs.find((m) => m.role === MessageRole.Model);
     if (!model) return '';
-    const line = model.content.split('\n').find((l) => l.trim());
-    return line ? truncate(line) : '';
+    const lines: string[] = [];
+    for (const line of model.content.split('\n')) {
+      if (!line.trim()) continue;
+      lines.push(truncate(line));
+      if (lines.length >= 8) break;
+    }
+    return lines.join('\n');
   }
 
   const lines: string[] = [];
