@@ -2,7 +2,6 @@
 // @ts-nocheck
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { AgentEventType, ContentType } from '../../types/agent-events';
-import { isInnerSubagentTool } from '../../components/layout/lite/static-flush';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
@@ -29,12 +28,11 @@ function makeStore() {
 describe('Stream event handler — ToolCall subagent stamping (Bug 1)', () => {
   // Regression guard for the flush/spinner-stall bug: a subagent stage's
   // tool call must be stamped with the STAGE agentName (so static-flush's
-  // isInnerSubagentTool hides it), not the main agent. The acp-client fix
-  // attaches the notification sessionId to the ToolCall event before
-  // broadcasting it to the main store; this test pins the store side of
-  // that contract — given a sessionId for a registered subagent session,
-  // the message's agentName resolves to the stage name and the tool is
-  // treated as an inner subagent tool.
+  // later isInnerSubagentTool helper can hide it), not the main agent. The
+  // acp-client fix attaches the notification sessionId to the ToolCall event
+  // before broadcasting it to the main store; this test pins the store side
+  // of that contract — given a sessionId for a registered subagent session,
+  // the message's agentName resolves to the stage name.
   it('stamps the stage name (inner) when the ToolCall carries a subagent sessionId', async () => {
     const store = makeStore();
     store.setState({ sessionId: 'main-session' });
@@ -55,7 +53,6 @@ describe('Stream event handler — ToolCall subagent stamping (Bug 1)', () => {
     const msg = store.getState().messages.find((m: any) => m.id === 'tc-sub');
     expect(msg).toBeDefined();
     expect(msg!.agentName).toBe('scan');
-    expect(isInnerSubagentTool(msg as any, 'main-agent')).toBe(true);
   });
 
   it('stamps the main agent name (visible) when no sessionId is present', async () => {
@@ -75,7 +72,6 @@ describe('Stream event handler — ToolCall subagent stamping (Bug 1)', () => {
     const msg = store.getState().messages.find((m: any) => m.id === 'tc-main');
     expect(msg).toBeDefined();
     expect(msg!.agentName).toBe('main-agent');
-    expect(isInnerSubagentTool(msg as any, 'main-agent')).toBe(false);
   });
 });
 
