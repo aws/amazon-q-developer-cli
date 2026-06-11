@@ -172,17 +172,19 @@ jobs:
           S3_KEY="${PROFILE_ID}/${PLATFORM}/${FILENAME}"
 
           # Assume the signing role fresh each time
-          # Write credentials to file instead of env vars to avoid
+          # Write JSON to a temp file rather than a bash variable to avoid
           # Windows shell mangling special characters (SignatureDoesNotMatch)
-          CREDS=$(aws sts assume-role \
-            --role-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KiroCli-ArtifactAccessRole" \
+          ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/KiroCli-ArtifactAccessRole"
+          aws sts assume-role \
+            --role-arn "$ROLE_ARN" \
             --role-session-name "WindowsSigning" \
             --external-id "KiroCli" \
             --region us-east-1 \
-            --output json)
-          aws configure set aws_access_key_id "$(echo $CREDS | jq -r .Credentials.AccessKeyId)" --profile signing
-          aws configure set aws_secret_access_key "$(echo $CREDS | jq -r .Credentials.SecretAccessKey)" --profile signing
-          aws configure set aws_session_token "$(echo $CREDS | jq -r .Credentials.SessionToken)" --profile signing
+            --output json > /tmp/sts-creds.json
+          aws configure set aws_access_key_id "$(jq -r .Credentials.AccessKeyId /tmp/sts-creds.json)" --profile signing
+          aws configure set aws_secret_access_key "$(jq -r .Credentials.SecretAccessKey /tmp/sts-creds.json)" --profile signing
+          aws configure set aws_session_token "$(jq -r .Credentials.SessionToken /tmp/sts-creds.json)" --profile signing
+          rm -f /tmp/sts-creds.json
           aws configure set region us-east-1 --profile signing
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           export AWS_PROFILE=signing
