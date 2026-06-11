@@ -40,7 +40,10 @@ export const SessionTool = React.memo(function SessionTool({
 }: SessionToolProps) {
   const { getColor } = useTheme();
 
-  const isCrewTool = name === 'subagent' || name === 'agent_crew';
+  const isCrewTool =
+    name === 'subagent' ||
+    name === 'agent_crew' ||
+    name === 'orchestrate_subagent';
 
   const action = useMemo(() => parseToolArg(content, 'action'), [content]);
   const target = useMemo(() => {

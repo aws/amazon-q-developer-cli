@@ -217,7 +217,9 @@ describe('Stream event handler — ApprovalRequest', () => {
       type: AgentEventType.ApprovalRequest,
       value: {
         toolCall: { toolCallId: 'ap-crew', name: 'shell' },
-        permissionOptions: [{ optionId: 'allow_once', label: 'Allow' }],
+        permissionOptions: [
+          { optionId: 'allow_once', kind: 'allow_once', label: 'Allow' },
+        ],
         resolve,
         sessionId: 'sub-session',
       },
@@ -225,6 +227,30 @@ describe('Stream event handler — ApprovalRequest', () => {
     expect(resolve).toHaveBeenCalledWith({
       outcome: 'selected',
       optionId: 'allow_once',
+    });
+  });
+
+  it('auto-approves crew tools matching by kind (KAS-shaped option)', () => {
+    // KAS uses descriptive optionIds (e.g. 'accept') with kind='allow_once'.
+    // The auto-approve path must match by `kind` so it works for both engines.
+    const store = makeStore();
+    store.setState({ autoApproveCrewTools: true, sessionId: 'main-session' });
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock(() => {});
+    handler({
+      type: AgentEventType.ApprovalRequest,
+      value: {
+        toolCall: { toolCallId: 'ap-crew-kas', name: 'invoke_sub_agent' },
+        permissionOptions: [
+          { optionId: 'accept', kind: 'allow_once', label: 'Allow' },
+        ],
+        resolve,
+        sessionId: 'sub-session',
+      },
+    });
+    expect(resolve).toHaveBeenCalledWith({
+      outcome: 'selected',
+      optionId: 'accept',
     });
   });
 });

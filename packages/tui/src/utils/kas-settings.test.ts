@@ -8,6 +8,7 @@ const CLI_DEFAULTS = {
   codeIntelligence: { enabled: true },
   knowledge: { enabled: true },
   thinking: { enabled: true },
+  subagentOrchestration: { enabled: true },
 };
 
 describe('buildKasSettings', () => {

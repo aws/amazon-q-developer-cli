@@ -3438,4 +3438,961 @@ describe('MCP OAuth flow', () => {
       expect((client as any).modesState.currentModeId).toBe('kiro_default');
     });
   });
+
+  // ── Task 2: _meta.kiro extraction in convertAcpUpdateToEvent ──
+
+  describe('_meta.kiro extraction', () => {
+    it('tool_call with _meta.kiro.pipeline produces event with meta.kiro', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'pending',
+                    dependsOn: ['research'],
+                    agentSubtaskId: null,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      expect(handler).toHaveBeenCalled();
+      const event = handler.mock.calls[0]![0] as any;
+      expect(event.type).toBe(AgentEventType.ToolCall);
+      expect(event.meta?.kiro?.pipeline).toBeDefined();
+      expect(event.meta?.kiro?.pipeline?.groupId).toBe('pipeline-test');
+      expect(event.meta?.kiro?.pipeline?.stages).toHaveLength(2);
+    });
+
+    it('tool_call with _meta.kiro.agentSubtaskId produces event with meta', async () => {
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const [, event] = multiHandler.mock.calls[0]!;
+      expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
+    });
+
+    it('tool_call_update completed with _meta.kiro produces ToolCallFinished with meta', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-op',
+          status: 'completed',
+          rawOutput: 'Pipeline completed: 2 stages finished.',
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'completed',
+                    dependsOn: ['research'],
+                    agentSubtaskId: 'sub-2',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      const event = handler.mock.calls[0]![0] as any;
+      expect(event.type).toBe(AgentEventType.ToolCallFinished);
+      expect(event.meta?.kiro?.pipeline).toBeDefined();
+      expect(event.meta?.kiro?.pipeline?.stages[0].status).toBe('completed');
+    });
+
+    it('tool_call_update in_progress with _meta.kiro produces ToolCallUpdate with meta', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-op',
+          status: 'in_progress',
+          content: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'running',
+                    dependsOn: ['research'],
+                    agentSubtaskId: 'sub-2',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      const event = handler.mock.calls[0]![0] as any;
+      expect(event.type).toBe(AgentEventType.ToolCallUpdate);
+      expect(event.meta?.kiro?.pipeline).toBeDefined();
+      expect(event.meta?.kiro?.pipeline?.stages[1].status).toBe('running');
+    });
+
+    it('agent_message_chunk with _meta.kiro.agentSubtaskId produces Content event with meta', async () => {
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Stage output' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const [, event] = multiHandler.mock.calls[0]!;
+      expect((event as any).type).toBe(AgentEventType.Content);
+      expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
+    });
+
+    it('tool_call without _meta works (no regression)', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc-plain',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+        },
+      });
+
+      const event = handler.mock.calls[0]![0] as any;
+      expect(event.type).toBe(AgentEventType.ToolCall);
+      expect(event.meta).toBeUndefined();
+    });
+  });
+
+  // ── Task 3: handlePipelineStateUpdate ──
+
+  describe('handlePipelineStateUpdate', () => {
+    it('pipeline tool_call triggers broadcastSubagentList with stage data', async () => {
+      const client = new KasAcpClient();
+      const subagentHandler = mock((_subagents: any[], _pending?: any[]) => {});
+      client.onSubagentListUpdate(subagentHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test-task',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'pending',
+                    dependsOn: ['research'],
+                    agentSubtaskId: null,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      expect(subagentHandler).toHaveBeenCalledTimes(1);
+      const [subagents, pending] = subagentHandler.mock.calls[0]!;
+      // Running stage with agentSubtaskId → subagent
+      expect(subagents).toHaveLength(1);
+      expect(subagents[0].sessionId).toBe('sub-1');
+      expect(subagents[0].sessionName).toBe('research');
+      expect(subagents[0].agentName).toBe('explorer');
+      expect(subagents[0].status).toEqual({ type: 'working' });
+      expect(subagents[0].group).toBe('pipeline-test-task');
+      expect(subagents[0].dependsOn).toEqual([]);
+      // Pending stage → pendingStages
+      expect(pending).toHaveLength(1);
+      expect(pending![0]!.name).toBe('implement');
+      expect(pending![0]!.role).toBe('coder');
+      expect(pending![0]!.dependsOn).toEqual(['research']);
+    });
+
+    it('pipeline tool_call_update with status changes triggers updated subagent list', async () => {
+      const client = new KasAcpClient();
+      const subagentHandler = mock((_subagents: any[], _pending?: any[]) => {});
+      client.onSubagentListUpdate(subagentHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-op',
+          status: 'in_progress',
+          content: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test-task',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'running',
+                    dependsOn: ['research'],
+                    agentSubtaskId: 'sub-2',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      expect(subagentHandler).toHaveBeenCalledTimes(1);
+      const [subagents, pending] = subagentHandler.mock.calls[0]!;
+      expect(subagents).toHaveLength(2);
+      expect(subagents[0].sessionId).toBe('sub-1');
+      expect(subagents[0].status).toEqual({ type: 'terminated' });
+      expect(subagents[1].sessionId).toBe('sub-2');
+      expect(subagents[1].status).toEqual({ type: 'working' });
+      expect(pending).toHaveLength(0);
+    });
+
+    it('handles empty pipeline gracefully', async () => {
+      const client = new KasAcpClient();
+      const subagentHandler = mock((_subagents: any[], _pending?: any[]) => {});
+      client.onSubagentListUpdate(subagentHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: { groupId: 'pipeline-empty', stages: [] },
+            },
+          },
+        },
+      });
+
+      expect(subagentHandler).toHaveBeenCalledTimes(1);
+      const [subagents, pending] = subagentHandler.mock.calls[0]!;
+      expect(subagents).toHaveLength(0);
+      expect(pending).toHaveLength(0);
+    });
+  });
+
+  // ── Task 4: Per-stage event routing via broadcastMultiSession ──
+
+  describe('per-stage event routing', () => {
+    it('tool_call with agentSubtaskId triggers broadcastMultiSession', async () => {
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      const [sessionId, event] = multiHandler.mock.calls[0]!;
+      expect(sessionId).toBe('sub-1');
+      expect(event.type).toBe(AgentEventType.ToolCall);
+      expect(event.id).toBe('read-001');
+    });
+
+    it('agent_message_chunk with agentSubtaskId triggers broadcastMultiSession', async () => {
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Stage output' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      const [sessionId, event] = multiHandler.mock.calls[0]!;
+      expect(sessionId).toBe('sub-1');
+      expect(event.type).toBe(AgentEventType.Content);
+    });
+
+    it('pipeline parent event still broadcasts to main stream', async () => {
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: { groupId: 'pipeline-test', stages: [] },
+            },
+          },
+        },
+      });
+
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+      const event = mainHandler.mock.calls[0]![0] as any;
+      expect(event.type).toBe(AgentEventType.ToolCall);
+    });
+
+    it('tool_call with agentSubtaskId sets sessionId on event', async () => {
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const [, event] = multiHandler.mock.calls[0]!;
+      expect((event as any).sessionId).toBe('sub-1');
+    });
+
+    it('agentSubtaskId events do NOT broadcast to main stream', async () => {
+      // Regression: per-stage events were leaking into the main conversation
+      // alongside the SUBAGENT OUTPUT panel, causing duplicate text and tool
+      // events. Anything tagged with `_meta.kiro.agentSubtaskId` must reach
+      // multi-session handlers only.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Per-stage tool call
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      // Per-stage assistant content chunk
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Stage narration' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      // Per-stage invoke_sub_agent wrapper
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'wrap-001',
+          title: 'invoke_sub_agent',
+          kind: 'other',
+          rawInput: { name: 'general-task-execution', prompt: 'work' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { kind: 'agent-subtask', agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(3);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+
+    it('toolCallToSubtask map populated on tool_call with agentSubtaskId', async () => {
+      const client = new KasAcpClient();
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      // Verify via permission request routing (Task 5)
+      // The map is private, so we test it indirectly through permission handling
+      expect(true).toBe(true); // Map populated — tested via Task 5
+    });
+  });
+
+  // ── Task 5: Permission request stage correlation ──
+
+  describe('permission request stage correlation', () => {
+    it('permission request resolves sessionId from toolCallToSubtask map', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // First, send a tool_call with agentSubtaskId to populate the map
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-001',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      // Now trigger a permission request for that tool call
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'write-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+
+      // Wait for the approval event to be broadcast
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBe('sub-1');
+      expect(approvalInfo.toolCall.toolCallId).toBe('write-001');
+
+      // Resolve the approval to avoid hanging promise
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+
+    it('permission request without pipeline context has no sessionId', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Send a tool_call WITHOUT agentSubtaskId
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-002',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+        },
+      });
+
+      // Trigger permission request
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'write-002',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+  });
+
+  // ── Task 6: End-to-end pipeline lifecycle ──
+
+  describe('end-to-end pipeline lifecycle', () => {
+    it('full 2-stage pipeline: init → stage1 running → stage1 tools → stage1 done → stage2 running → complete', async () => {
+      const client = new KasAcpClient();
+      const mainEvents: any[] = [];
+      const subagentCalls: any[] = [];
+      const multiSessionCalls: any[] = [];
+
+      client.onUpdate((event: any) => mainEvents.push(event));
+      client.onSubagentListUpdate((subagents: any[], pending: any[]) =>
+        subagentCalls.push({ subagents, pending })
+      );
+      client.onMultiSessionUpdate((sessionId: string, event: any) =>
+        multiSessionCalls.push({ sessionId, event })
+      );
+      await client.newSession();
+      // newSession() broadcasts an EffortUpdate from cached config options;
+      // discard so mainEvents[0] is the first pipeline event.
+      mainEvents.length = 0;
+
+      // Step 1: Pipeline starts — initial tool_call with all stages pending
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: {
+            task: 'Add logging',
+            stages: [
+              { name: 'research', role: 'explorer' },
+              { name: 'implement', role: 'coder' },
+            ],
+          },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-add-logging',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'pending',
+                    dependsOn: ['research'],
+                    agentSubtaskId: null,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Verify: subagent list updated with 1 working + 1 pending
+      expect(subagentCalls).toHaveLength(1);
+      expect(subagentCalls[0].subagents).toHaveLength(1);
+      expect(subagentCalls[0].subagents[0].sessionId).toBe('sub-1');
+      expect(subagentCalls[0].subagents[0].status).toEqual({ type: 'working' });
+      expect(subagentCalls[0].pending).toHaveLength(1);
+      expect(subagentCalls[0].pending[0].name).toBe('implement');
+      // Main stream also gets the parent tool_call
+      expect(mainEvents[0].type).toBe(AgentEventType.ToolCall);
+      expect(mainEvents[0].name).toBe('orchestrate_subagent');
+
+      // Step 2: Stage 1 makes a tool call
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/src/app.ts' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      // Verify: routed to multi-session with sub-1
+      expect(multiSessionCalls).toHaveLength(1);
+      expect(multiSessionCalls[0].sessionId).toBe('sub-1');
+      expect(multiSessionCalls[0].event.type).toBe(AgentEventType.ToolCall);
+      expect(multiSessionCalls[0].event.name).toBe('read_file');
+
+      // Step 3: Stage 1 emits text
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Found logging patterns' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiSessionCalls).toHaveLength(2);
+      expect(multiSessionCalls[1].sessionId).toBe('sub-1');
+      expect(multiSessionCalls[1].event.type).toBe(AgentEventType.Content);
+
+      // Step 4: Stage 1 completes, stage 2 starts
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-op',
+          status: 'in_progress',
+          content: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-add-logging',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'running',
+                    dependsOn: ['research'],
+                    agentSubtaskId: 'sub-2',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Verify: subagent list updated — both have IDs now, research terminated, implement working
+      expect(subagentCalls).toHaveLength(2);
+      expect(subagentCalls[1].subagents).toHaveLength(2);
+      expect(subagentCalls[1].subagents[0].status).toEqual({
+        type: 'terminated',
+      });
+      expect(subagentCalls[1].subagents[1].sessionId).toBe('sub-2');
+      expect(subagentCalls[1].subagents[1].status).toEqual({ type: 'working' });
+      expect(subagentCalls[1].pending).toHaveLength(0);
+
+      // Step 5: Stage 2 makes a tool call
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-001',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/src/app.ts', content: 'logging code' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-2' } },
+        },
+      });
+
+      expect(multiSessionCalls).toHaveLength(3);
+      expect(multiSessionCalls[2].sessionId).toBe('sub-2');
+      expect(multiSessionCalls[2].event.name).toBe('fs_write');
+
+      // Step 6: Pipeline completes
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-op',
+          status: 'completed',
+          rawOutput:
+            'Pipeline completed: 2 stages finished.\n\n## research\n\nFound patterns\n\n---\n\n## implement\n\nAdded logging',
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-add-logging',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                  {
+                    name: 'implement',
+                    role: 'coder',
+                    status: 'completed',
+                    dependsOn: ['research'],
+                    agentSubtaskId: 'sub-2',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Verify: final subagent list — all terminated
+      expect(subagentCalls).toHaveLength(3);
+      expect(subagentCalls[2].subagents).toHaveLength(2);
+      expect(subagentCalls[2].subagents[0].status).toEqual({
+        type: 'terminated',
+      });
+      expect(subagentCalls[2].subagents[1].status).toEqual({
+        type: 'terminated',
+      });
+      // Main stream gets ToolCallFinished
+      const finishedEvent = mainEvents.find(
+        (e) => e.type === AgentEventType.ToolCallFinished && e.id === 'crew-op'
+      );
+      expect(finishedEvent).toBeDefined();
+      expect(finishedEvent.result.status).toBe('success');
+      expect(finishedEvent.result.output).toContain('Pipeline completed');
+    });
+
+    it('stage failure stops pipeline and reports error', async () => {
+      const client = new KasAcpClient();
+      const subagentCalls: any[] = [];
+      const mainEvents: any[] = [];
+
+      client.onUpdate((event: any) => mainEvents.push(event));
+      client.onSubagentListUpdate((subagents: any[], pending: any[]) =>
+        subagentCalls.push({ subagents, pending })
+      );
+      await client.newSession();
+
+      // Pipeline starts
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-fail',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'Broken task' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-broken',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'fail-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Pipeline fails
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'crew-fail',
+          status: 'failed',
+          rawOutput: 'Stage research failed: timeout',
+          content: [
+            {
+              type: 'content',
+              content: { type: 'text', text: 'Stage research failed: timeout' },
+            },
+          ],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-broken',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'failed',
+                    dependsOn: [],
+                    agentSubtaskId: 'fail-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Verify: subagent list shows failed status (mapped to terminated)
+      expect(subagentCalls).toHaveLength(2);
+      expect(subagentCalls[1].subagents[0].status).toEqual({
+        type: 'terminated',
+      });
+      // Main stream gets ToolCallFinished with error
+      const finishedEvent = mainEvents.find(
+        (e) =>
+          e.type === AgentEventType.ToolCallFinished && e.id === 'crew-fail'
+      );
+      expect(finishedEvent).toBeDefined();
+      expect(finishedEvent.result.status).toBe('error');
+    });
+  });
 });

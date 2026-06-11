@@ -2348,8 +2348,11 @@ export const createAppStore = (props: AppStoreProps) => {
               event.value.sessionId !== mainSessionId
             );
             if (autoApproveCrewTools && isCrewApproval) {
+              // Match by `kind` so KAS approvals (optionId='accept', kind='allow_once')
+              // resolve correctly alongside Rust ones (optionId='allow_once').
               const opt = event.value.permissionOptions.find(
-                (o: { optionId: string }) => o.optionId === 'allow_once'
+                (o: { optionId: string; kind?: string }) =>
+                  o.kind === 'allow_once'
               );
               if (opt) {
                 event.value.resolve({

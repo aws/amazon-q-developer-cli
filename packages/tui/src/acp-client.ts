@@ -29,6 +29,7 @@ import {
   ApprovalOptionId,
   ToolCallStatus,
   type AgentStreamEvent,
+  type KiroMeta,
   type MeteringUsage,
 } from './types/agent-events';
 import type {
@@ -104,6 +105,35 @@ export function unwrapKasMcpOutput(raw: unknown): unknown {
 }
 
 export type AcpSessionUpdate = acp.SessionNotification['update'];
+
+/**
+ * KAS extends ACP session updates with `_meta.kiro` for pipeline metadata,
+ * per-stage event tagging, and command consent context. The base ACP type
+ * has no notion of `_meta`, so we overlay it here for type-safe access.
+ *
+ * Use {@link extractKiroMetaFromUpdate} to read `_meta.kiro` from an
+ * `AcpSessionUpdate` without scattering casts across the codebase.
+ */
+export type KasAcpSessionUpdate = AcpSessionUpdate & {
+  _meta?: { kiro?: KiroMeta } | null;
+};
+
+/** Type-safe `_meta.kiro` accessor for ACP session updates. */
+function extractKiroMetaFromUpdate(
+  update: AcpSessionUpdate
+): KiroMeta | undefined {
+  return (update as KasAcpSessionUpdate)._meta?.kiro;
+}
+
+/**
+ * Read `meta.kiro` from a stream event, narrowing the discriminated union
+ * to event variants that carry metadata (Content, ToolCall, ToolCallFinished).
+ */
+function extractKiroMetaFromEvent(
+  event: AgentStreamEvent
+): KiroMeta | undefined {
+  return 'meta' in event && event.meta ? event.meta.kiro : undefined;
+}
 
 const EXT_METHODS = {
   COMMANDS_AVAILABLE: 'kiro.dev/commands/available',
@@ -1054,12 +1084,15 @@ abstract class BaseAcpClient implements SessionClient {
 
       case 'agent_message_chunk':
         switch (update.content.type) {
-          case 'text':
+          case 'text': {
+            const kiroMeta = extractKiroMetaFromUpdate(update);
             return {
               type: AgentEventType.Content,
               id: crypto.randomUUID(),
               content: { type: ContentType.Text, text: update.content.text },
+              ...(kiroMeta && { meta: { kiro: kiroMeta } }),
             };
+          }
           case 'image':
             return {
               type: AgentEventType.Content,
@@ -1094,18 +1127,23 @@ abstract class BaseAcpClient implements SessionClient {
           path: loc.path,
           line: loc.line ?? undefined,
         }));
+        const kiroMeta = extractKiroMetaFromUpdate(update);
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
-          name: stripMcpTitlePrefix(update.title) || 'unknown',
+          name: kiroMeta?.pipeline
+            ? 'orchestrate_subagent'
+            : stripMcpTitlePrefix(update.title) || 'unknown',
           kind: update.kind ?? undefined,
           args: (update.rawInput as Record<string, unknown>) ?? {},
           toolContent: toolContent.length > 0 ? toolContent : undefined,
           locations: locations.length > 0 ? locations : undefined,
+          ...(kiroMeta && { meta: { kiro: kiroMeta } }),
         };
       }
 
       case 'tool_call_update': {
+        const kiroMetaUpdate = extractKiroMetaFromUpdate(update);
         if (update.status === ToolCallStatus.Completed) {
           const diffContent = (update.content ?? [])
             .filter((c) => c.type === 'diff')
@@ -1123,6 +1161,7 @@ abstract class BaseAcpClient implements SessionClient {
               output: unwrapKasMcpOutput(update.rawOutput),
             },
             toolContent: diffContent.length > 0 ? diffContent : undefined,
+            ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
           };
         }
         if (update.status === ToolCallStatus.Failed) {
@@ -1164,6 +1203,7 @@ abstract class BaseAcpClient implements SessionClient {
               status: 'error',
               error: errorText || 'Tool execution failed',
             },
+            ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
           };
         }
 
@@ -1188,6 +1228,7 @@ abstract class BaseAcpClient implements SessionClient {
           type: AgentEventType.ToolCallUpdate,
           id: update.toolCallId,
           content: { type: ContentType.Text, text: firstText },
+          ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
         };
       }
 
@@ -1931,11 +1972,9 @@ export class KasAcpClient extends BaseAcpClient {
     });
   }
 
-  // NOTE: When subagent support is added for KAS, this method will need to
-  // be reworked. Currently it assumes only one session's listeners exist at a
-  // time (disposing all previous listeners on each call). For subagents we'd
-  // need to key disposables by session ID and route events through
-  // handleSessionUpdate() for proper main-vs-subagent discrimination.
+  // Pipeline support: maps toolCallId → agentSubtaskId for permission routing
+  private toolCallToSubtask: Map<string, string> = new Map();
+
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
   /** Cache of session modes received on session/new and session/load.  This
@@ -2047,21 +2086,6 @@ export class KasAcpClient extends BaseAcpClient {
             });
           }
         }
-        // Intercept config_option_update (KAS-specific) to keep the
-        // local model cache fresh without a round-trip. The agent may
-        // push these notifications when it autonomously changes a
-        // config option (e.g. fallback to a different model after
-        // rate limits) or mirrors a client-initiated change.
-        //
-        // We only refresh the cache here — propagation of the new
-        // current model to the app store happens synchronously
-        // through the executeCommand result flow for user-initiated
-        // switches (see effect handler `updateModel`). Autonomous
-        // agent-side changes will be reflected in the /model menu
-        // the next time the user opens it; we intentionally skip
-        // UI propagation from this path to avoid re-using the
-        // AgentSwitched event channel, which would clobber
-        // currentAgent on the store.
         if (
           (update as { sessionUpdate?: string }).sessionUpdate ===
           'config_option_update'
@@ -2083,10 +2107,34 @@ export class KasAcpClient extends BaseAcpClient {
           this.broadcastEffortFromConfigOptions(configOptions);
         }
         const event = this.convertAcpUpdateToEvent(update);
-        if (event) this.broadcastStreamEvent(event);
+        if (!event) return;
+
+        // Intercept pipeline metadata → emit subagent list update
+        const meta = extractKiroMetaFromEvent(event);
+        if (meta?.pipeline) {
+          this.handlePipelineStateUpdate(meta.pipeline);
+        }
+
+        // Intercept per-stage events → route to multi-session handlers
+        if (meta?.agentSubtaskId) {
+          const subtaskId = meta.agentSubtaskId;
+          if (event.type === AgentEventType.ToolCall) {
+            event.sessionId = subtaskId;
+            this.toolCallToSubtask.set(event.id, subtaskId);
+          }
+          this.broadcastMultiSession(subtaskId, event);
+          // Any event tagged with agentSubtaskId belongs to a sub-agent
+          // (per-stage content, tool calls, or the invoke_sub_agent
+          // wrapper). It must not also reach the main conversation,
+          // otherwise sub-agent narration leaks into the main view as
+          // duplicates of what shows in SUBAGENT OUTPUT.
+          return;
+        }
+
+        this.broadcastStreamEvent(event);
       }),
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
-        return this.handlePermissionRequest(request);
+        return this.handleKasPermissionRequest(request);
       }),
       // Mid-turn steering events arrive as `_kiro/steering/session_update` ext
       // notifications rather than standard `session/update` because the ACP
@@ -2127,6 +2175,61 @@ export class KasAcpClient extends BaseAcpClient {
       event.commands = event.commands.filter((cmd) => !modeIds.has(cmd.name));
     }
     return event;
+  }
+
+  private handlePipelineStateUpdate(pipeline: {
+    groupId: string;
+    stages: Array<{
+      name: string;
+      role: string;
+      status: string;
+      dependsOn: string[];
+      agentSubtaskId: string | null;
+    }>;
+  }): void {
+    const statusMap: Record<string, { type: string }> = {
+      running: { type: 'working' },
+      completed: { type: 'terminated' },
+      failed: { type: 'terminated' },
+    };
+
+    const subagents = pipeline.stages
+      .filter((s) => s.agentSubtaskId != null)
+      .map((s) => ({
+        sessionId: s.agentSubtaskId!,
+        sessionName: s.name,
+        agentName: s.role,
+        status: statusMap[s.status] || { type: 'idle' },
+        group: pipeline.groupId,
+        role: s.role,
+        dependsOn: s.dependsOn,
+      }));
+
+    const pendingStages = pipeline.stages
+      .filter((s) => s.status === 'pending')
+      .map((s) => ({
+        name: s.name,
+        role: s.role,
+        agentName: s.role,
+        group: pipeline.groupId,
+        dependsOn: s.dependsOn,
+      }));
+
+    this.broadcastSubagentList(subagents, pendingStages);
+  }
+
+  private handleKasPermissionRequest(
+    request: any
+  ): Promise<acp.RequestPermissionResponse> {
+    // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
+    const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
+    const subtaskId = this.toolCallToSubtask.get(toolCallId);
+    const enriched = {
+      ...request,
+      toolCall: request.toolCall || { toolCallId },
+      ...(subtaskId && { sessionId: subtaskId }),
+    };
+    return this.handlePermissionRequest(enriched);
   }
 
   /**

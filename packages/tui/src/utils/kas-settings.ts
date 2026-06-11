@@ -25,10 +25,14 @@ export function buildKasSettings(): KasSettings | undefined {
 
   // ─── CLI defaults: tools that were always-on for CLI before settings-driven gating ───
   // These default to enabled unless explicitly disabled by the user.
+  // subagentOrchestration is a wire-protocol negotiation: the TUI implements
+  // pipeline rendering, so it advertises support to KAS unconditionally.
+  // It is intentionally not a user-facing setting.
   const cliDefaults: Record<string, boolean> = {
     codeIntelligence: true,
     knowledge: true,
     thinking: true,
+    subagentOrchestration: true,
   };
 
   // ─── Boolean feature flags → { enabled: bool } ─────────────────────

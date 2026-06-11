@@ -126,6 +126,7 @@ export const SESSION_TOOL_NAMES: Set<string> = new Set([
   'session_management',
   'subagent',
   'agent_crew',
+  'orchestrate_subagent',
   'invoke_sub_agent',
   'subagent_response',
   'Invoke Agent',
@@ -321,10 +322,30 @@ export interface ApprovalRequestInfo {
   resolve: (response: PermissionResponse) => void;
 }
 
+export interface KiroPipelineStage {
+  name: string;
+  role: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  dependsOn: string[];
+  agentSubtaskId: string | null;
+}
+
+export interface KiroMeta {
+  /** Discriminator for per-stage events. The pipeline parent itself has no
+   *  `kind` — it is identified by the presence of `pipeline`. */
+  kind?: 'agent-subtask';
+  agentSubtaskId?: string;
+  pipeline?: {
+    groupId: string;
+    stages: KiroPipelineStage[];
+  };
+}
+
 export interface AgentContentEvent {
   type: AgentEventType.Content;
   id: string;
   content: ContentChunk;
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface AgentThoughtEvent {
@@ -349,12 +370,14 @@ export interface ToolCallEvent {
   locations?: ToolCallLocation[];
   /** Session ID of the subagent that made this tool call (if from a subagent) */
   sessionId?: string;
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface ToolCallUpdateEvent {
   type: AgentEventType.ToolCallUpdate;
   id: string;
   content: ContentChunk;
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface ToolCallFinishedEvent {
@@ -362,6 +385,7 @@ export interface ToolCallFinishedEvent {
   id: string;
   result: ToolCallResult;
   toolContent?: Array<ToolCallDiffContent>;
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface ApprovalRequestEvent {

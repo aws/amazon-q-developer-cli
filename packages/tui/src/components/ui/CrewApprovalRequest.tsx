@@ -43,8 +43,11 @@ export const CrewApprovalRequest: React.FC<{
 
   const approveAll = () => {
     for (const approval of [...approvalQueue]) {
+      // Match by `kind`, not `optionId`. The Rust agent emits both as
+      // 'allow_once'; KAS uses descriptive optionIds like 'accept' with
+      // kind='allow_once'. The semantic field works for both.
       const opt = approval.permissionOptions.find(
-        (o: PermissionOption) => o.optionId === 'allow_once'
+        (o: PermissionOption) => o.kind === 'allow_once'
       );
       if (opt) respondToApproval(opt.optionId, approval);
     }

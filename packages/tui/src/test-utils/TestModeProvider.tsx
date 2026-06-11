@@ -70,6 +70,8 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
               pendingOAuthServers: Object.fromEntries(
                 state.pendingOAuthServers
               ),
+              sessions: Object.fromEntries(state.sessions),
+              sessionMessages: Object.fromEntries(state.sessionMessages),
             } as any,
           };
 
