@@ -67,6 +67,8 @@ describe('lite /theme reflow during stream', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
+    await applyTheme(testCase, 'dark');
+    await testCase.sleepMs(800);
     await applyTheme(testCase, 'light');
     // showThemeMenu's "Theme set to ..." alert auto-hides in ~3s. Don't pin
     // the assertion to that ephemeral string — wait on something durable
@@ -78,7 +80,10 @@ describe('lite /theme reflow during stream', () => {
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: liveContent } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: liveContent },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -111,13 +116,22 @@ describe('lite /theme reflow during stream', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    // Turn 1: streaming response under the dark (default) theme. Wait until
+    // Make the pre-swap baseline explicit. The default theme can vary by
+    // persisted/user settings, but this test needs the first committed row
+    // to be dark so the later light-theme row proves scrollback freezing.
+    await applyTheme(testCase, 'dark');
+    await testCase.sleepMs(800);
+
+    // Turn 1: streaming response under the dark theme. Wait until
     // the stream completes so the agent message commits to <Static>.
     const turn1Content = 'THEME_FROZEN_ROW_DARK_TURN_ONE';
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: turn1Content } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: turn1Content },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);
@@ -144,7 +158,10 @@ describe('lite /theme reflow during stream', () => {
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: turn2Content } },
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: turn2Content },
+        },
       },
     ]);
     await testCase.pushSendMessageResponse(null);

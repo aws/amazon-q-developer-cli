@@ -44,19 +44,19 @@ import { LiteSequence } from './lite/helpers/sequence';
 
 const KR_ENABLED = process.env.KIRO_RUN_KNIGHT_RIDER_TESTS === '1';
 
-describe.skipIf(!KR_ENABLED)('knight rider — lite shell + cancel + recover', () => {
-  let testCase: E2ETestCase | null = null;
+describe.skipIf(!KR_ENABLED)(
+  'knight rider — lite shell + cancel + recover',
+  () => {
+    let testCase: E2ETestCase | null = null;
 
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+    afterEach(async () => {
+      if (testCase) {
+        await testCase.cleanup();
+        testCase = null;
+      }
+    });
 
-  it(
-    'survives shell streaming, mid-stream cancel, and a follow-up turn with append-only intact',
-    async () => {
+    it('survives shell streaming, mid-stream cancel, and a follow-up turn with append-only intact', async () => {
       testCase = await E2ETestCase.builder()
         .withTestName('knight-rider-lite-shell-cancel')
         .withTerminal({ width: 120, height: 40 })
@@ -65,7 +65,6 @@ describe.skipIf(!KR_ENABLED)('knight rider — lite shell + cancel + recover', (
         .launch();
 
       const seq = new LiteSequence(testCase, 'kr-lite-shell-cancel');
-      let dumpDir: string | null = null;
       try {
         await seq.step('boot lite + wait for prompt', async () => {
           await testCase!.waitForText('>', 15000);
@@ -155,29 +154,35 @@ describe.skipIf(!KR_ENABLED)('knight rider — lite shell + cancel + recover', (
         // Turn 3 — long-running streaming response that the user cancels
         // mid-stream. We push 6 short chunks, leave the stream open, and
         // press Ctrl+C while isProcessing is still true.
-        await seq.step('turn 3: 6-chunk stream + Ctrl+C mid-stream', async () => {
-          for (let i = 0; i < 6; i++) {
-            await testCase!.pushSendMessageResponse([
-              {
-                kind: 'event',
-                data: {
-                  kind: 'AssistantResponseEvent',
-                  data: { content: `chunk-${i} ` },
+        await seq.step(
+          'turn 3: 6-chunk stream + Ctrl+C mid-stream',
+          async () => {
+            for (let i = 0; i < 6; i++) {
+              await testCase!.pushSendMessageResponse([
+                {
+                  kind: 'event',
+                  data: {
+                    kind: 'AssistantResponseEvent',
+                    data: { content: `chunk-${i} ` },
+                  },
                 },
-              },
-            ]);
+              ]);
+            }
+            // DO NOT close the stream here — leave it open so the user is
+            // cancelling a real in-flight response.
+            await testCase!.sendKeys('long answer please');
+            await testCase!.sleepMs(100);
+            await testCase!.pressEnter();
+            // Wait for at least one chunk to land so cancel happens
+            // mid-stream rather than pre-stream.
+            await testCase!.waitForText('chunk-2', 15000);
+            await testCase!.pressCtrlC();
+            await testCase!.waitForStoreCondition(
+              (s) => !s.isProcessing,
+              15000
+            );
           }
-          // DO NOT close the stream here — leave it open so the user is
-          // cancelling a real in-flight response.
-          await testCase!.sendKeys('long answer please');
-          await testCase!.sleepMs(100);
-          await testCase!.pressEnter();
-          // Wait for at least one chunk to land so cancel happens
-          // mid-stream rather than pre-stream.
-          await testCase!.waitForText('chunk-2', 15000);
-          await testCase!.pressCtrlC();
-          await testCase!.waitForStoreCondition((s) => !s.isProcessing, 15000);
-        });
+        );
 
         await seq.expect(
           'after Ctrl+C: isProcessing false, no orphan tool entries',
@@ -245,13 +250,12 @@ describe.skipIf(!KR_ENABLED)('knight rider — lite shell + cancel + recover', (
         expect(afterTurn4Snapshot).toContain(turn2Marker);
         expect(afterTurn4Snapshot).toContain(turn4Marker);
       } catch (e) {
-        dumpDir = await seq.dumpHtml();
+        const dumpDir = await seq.dumpHtml();
         if (dumpDir) {
           console.log(`LiteSequence timeline dumped to: ${dumpDir}`);
         }
         throw e;
       }
-    },
-    120000
-  );
-});
+    }, 120000);
+  }
+);

@@ -1,6 +1,6 @@
 /**
  * E2E TestCase for full-stack testing of Kiro CLI.
- * 
+ *
  * Spawns the real `kiro-cli chat` command, enabling dual IPC connections
  * to both TUI (Zustand store) and Rust backend session state.
  */
@@ -12,7 +12,10 @@ import * as path from 'path';
 import type { SerializedAppState } from '../src/test-utils/shared/ipc-types';
 import { PtyManager, TerminalSnapshot } from '../src/test-utils/shared/pty-manager';
 import type { CellAttributes } from '../src/test-utils/shared/pty-manager';
-import { createTestDir, type TestPaths } from '../src/test-utils/shared/test-paths';
+import {
+  createTestDir,
+  type TestPaths,
+} from '../src/test-utils/shared/test-paths';
 import { requireChatCliBin } from '../src/utils/chat-cli-bin';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
 import type { MockStreamItem } from './types/chat-cli';
@@ -35,10 +38,10 @@ interface E2ETestCaseOptions {
 
 /**
  * E2ETestCase provides full-stack E2E testing for the Kiro CLI application.
- * 
+ *
  * Unlike integration tests that mock the ACP layer, E2E tests run the complete
  * stack: TUI -> ACP -> Rust Agent.
- * 
+ *
  * Key features:
  * - Real PTY for authentic terminal behavior
  * - Dual IPC: TUI state (Zustand) + Rust backend session state (AgentSnapshot)
@@ -68,14 +71,19 @@ export class E2ETestCase {
     this.paths = createTestDir(testName);
 
     // Create isolated sandbox directory for sessions, DB, agents
-    this.sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), `kiro-e2e-${testName}-`));
+    this.sandboxDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), `kiro-e2e-${testName}-`)
+    );
     const homeDir = this.sandboxDir;
 
     // Write custom agent configs into sandbox agents dir
     const agentsDir = path.join(homeDir, 'agents');
     fs.mkdirSync(agentsDir, { recursive: true });
     for (const agent of this.options.globalAgentConfigs ?? []) {
-      fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
+      fs.writeFileSync(
+        path.join(agentsDir, `${agent.name}.json`),
+        JSON.stringify(agent.config)
+      );
     }
 
     // Write user settings to $HOME/.kiro/settings/cli.json
@@ -98,14 +106,22 @@ export class E2ETestCase {
     this.sandboxEnv = {
       CI: 'false',
       KIRO_CHAT_UI: 'tui',
+      // Rollout-gated debug/test builds can show the first-launch mode picker
+      // when no mode is specified. E2E tests default to the full TUI and opt
+      // into lite explicitly via withLite().
+      KIRO_UI_MODE: 'tui',
       KIRO_TEST_MODE: '1',
       KIRO_DISABLE_TELEMETRY: '1',
       KIRO_INPUT_METRICS: 'true',
+      FORCE_COLOR: '3',
+      COLORTERM: 'truecolor',
       KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
       KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
-      ...(process.platform === 'win32' ? {
-        KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
-      } : {}),
+      ...(process.platform === 'win32'
+        ? {
+            KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
+          }
+        : {}),
       KIRO_TEST_TUI_JS_PATH: tuiJsPath,
       KIRO_CHAT_CLI_BIN: chatPath,
       KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
@@ -145,8 +161,16 @@ export class E2ETestCase {
   async launch(): Promise<E2ETestCase> {
     // Clean up existing sockets (not needed for Windows named pipes)
     if (process.platform !== 'win32') {
-      try { fs.unlinkSync(this.paths.tuiIpcSocket); } catch { /* ignore */ }
-      try { fs.unlinkSync(this.paths.agentIpcSocket); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(this.paths.tuiIpcSocket);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(this.paths.agentIpcSocket);
+      } catch {
+        /* ignore */
+      }
     }
 
     // Start both IPC servers
@@ -211,7 +235,9 @@ export class E2ETestCase {
     // Save HTML snapshot before cleanup
     try {
       fs.writeFileSync(this.paths.snapshotHtmlFile, this.getSnapshotHtml());
-    } catch { /* ignore if terminal already closed */ }
+    } catch {
+      /* ignore if terminal already closed */
+    }
 
     this.ptyManager.kill();
     this.tuiConnection?.close();
@@ -226,7 +252,7 @@ export class E2ETestCase {
         break;
       } catch (e: any) {
         if (e.code === 'EBUSY' && attempt < 2) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
         // Ignore cleanup errors on last attempt — don't fail the test
@@ -281,7 +307,7 @@ export class E2ETestCase {
   }
 
   async sleepMs(ms: number): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, ms));
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -299,13 +325,14 @@ export class E2ETestCase {
     throw new Error('Timeout waiting for slash commands to be registered');
   }
 
-
   /**
    * Gets TUI application state (Zustand store).
    */
   async getStore(): Promise<SerializedAppState> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
-    const response = await this.tuiConnection.sendCommand({ kind: 'GET_STORE' });
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'GET_STORE',
+    });
     if (response.data.kind !== 'GET_STORE') {
       throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
     }
@@ -333,7 +360,10 @@ export class E2ETestCase {
    */
   async takeHeapSnapshot(filename: string): Promise<string> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
-    const response = await this.tuiConnection.sendCommand({ kind: 'HEAP_SNAPSHOT', filename });
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'HEAP_SNAPSHOT',
+      filename,
+    });
     if (response.data.kind !== 'HEAP_SNAPSHOT') {
       throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
     }
@@ -343,9 +373,17 @@ export class E2ETestCase {
   /**
    * Gets memory usage from within the TUI process (process.memoryUsage()).
    */
-  async getMemoryUsage(): Promise<{ rss: number; heapUsed: number; heapTotal: number; external: number; arrayBuffers: number }> {
+  async getMemoryUsage(): Promise<{
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+    arrayBuffers: number;
+  }> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
-    const response = await this.tuiConnection.sendCommand({ kind: 'MEMORY_USAGE' });
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MEMORY_USAGE',
+    });
     if (response.data.kind !== 'MEMORY_USAGE') {
       throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
     }
@@ -365,7 +403,9 @@ export class E2ETestCase {
    */
   async getAgentState(): Promise<unknown> {
     if (!this.agentConnection) throw new Error('Agent not connected');
-    const response = await this.agentConnection.sendCommand({ kind: 'GET_AGENT_STATE' });
+    const response = await this.agentConnection.sendCommand({
+      kind: 'GET_AGENT_STATE',
+    });
     if (response.data.kind !== 'GET_AGENT_STATE') {
       throw new Error(`Unexpected response: ${JSON.stringify(response)}`);
     }
@@ -461,7 +501,10 @@ export class E2ETestCase {
    * - `events`: Array of MockStreamItem events to add to the response stream
    * - `null`: Signal that the current response is complete (closes the stream)
    */
-  async pushSendMessageResponse(events: MockStreamItem[] | null, options?: { silent?: boolean }): Promise<void> {
+  async pushSendMessageResponse(
+    events: MockStreamItem[] | null,
+    options?: { silent?: boolean }
+  ): Promise<void> {
     if (!this.agentConnection) throw new Error('Agent not connected');
 
     // Get session ID from TUI store
@@ -472,9 +515,11 @@ export class E2ETestCase {
     const cmd = {
       kind: 'PUSH_SEND_MESSAGE_RESPONSE' as const,
       session_id: sessionId,
-      events
+      events,
     };
-    const eventsDesc = events ? `${events.length} events (${JSON.stringify(cmd).length} bytes)` : 'null (end stream)';
+    const eventsDesc = events
+      ? `${events.length} events (${JSON.stringify(cmd).length} bytes)`
+      : 'null (end stream)';
     if (!options?.silent) {
       console.log(`Sending to agent: ${eventsDesc}`);
     }
@@ -482,7 +527,9 @@ export class E2ETestCase {
     const response = await this.agentConnection.sendCommand(cmd);
 
     if (response.data.kind === 'ERROR') {
-      throw new Error(`Failed to push send_message response: ${response.data.error}`);
+      throw new Error(
+        `Failed to push send_message response: ${response.data.error}`
+      );
     }
   }
 
@@ -516,7 +563,10 @@ export class E2ETestCase {
    * Waits for text to be visible on the terminal screen.
    */
   waitForText(text: string, timeout?: number): Promise<void> {
-    return this.ptyManager.waitForVisibleText(text, timeout ?? this.options.timeout);
+    return this.ptyManager.waitForVisibleText(
+      text,
+      timeout ?? this.options.timeout
+    );
   }
 
   /**
@@ -668,7 +718,10 @@ export class E2ETestCaseBuilder {
     });
   }
 
-  withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
+  withGlobalAgentConfig(
+    name: string,
+    config: Record<string, unknown>
+  ): E2ETestCaseBuilder {
     this.options.globalAgentConfigs = this.options.globalAgentConfigs ?? [];
     this.options.globalAgentConfigs.push({ name, config });
     return this;
