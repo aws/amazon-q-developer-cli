@@ -1,9 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { shouldCancelApprovalForKilledStage } from '../subagent-kill.js';
-import {
-  MessageRole,
-  type MessageType,
-} from '../../../../stores/app-store.js';
+import { MessageRole, type MessageType } from '../../../../stores/app-store.js';
 
 function tool(
   id: string,
@@ -23,9 +20,9 @@ function user(id: string): MessageType {
   return { id, role: MessageRole.User, content: 'q' };
 }
 
-function approval(
-  toolCallId: string | null
-): { toolCall: { toolCallId: string | null } } {
+function approval(toolCallId: string | null): {
+  toolCall: { toolCallId: string | null };
+} {
   return { toolCall: { toolCallId } };
 }
 
@@ -40,7 +37,7 @@ describe('shouldCancelApprovalForKilledStage', () => {
     ).toBe(false);
   });
 
-  test('false when the matching tool isn\'t in messages (race)', () => {
+  test("false when the matching tool isn't in messages (race)", () => {
     // Backend may surface the approval RPC slightly before the ToolUse
     // message lands in `messages`. Killing the stage in that window
     // shouldn't drop a different stage's approval — bail safely.

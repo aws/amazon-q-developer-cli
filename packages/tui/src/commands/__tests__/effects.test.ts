@@ -409,7 +409,11 @@ describe('runEffect routing', () => {
     // Direct stdout replace (not spyOn) — spyOn(process.stdout,'write') does
     // not intercept in this runtime; the codebase uses direct assignment
     // (see utils/__tests__/notification.test.ts, shell-escape.test.ts).
-    const cmd: SlashCommand = { name: '/clear', description: '', source: 'backend' };
+    const cmd: SlashCommand = {
+      name: '/clear',
+      description: '',
+      source: 'backend',
+    };
     const ctx = createMockCommandContext();
     (ctx as any).getUiMode = () => 'lite';
     const originalWrite = process.stdout.write;
@@ -431,7 +435,11 @@ describe('runEffect routing', () => {
   });
 
   it('/clear in lite mode (KAS new-session path) does NOT wipe the terminal', () => {
-    const cmd: SlashCommand = { name: '/clear', description: '', source: 'backend' };
+    const cmd: SlashCommand = {
+      name: '/clear',
+      description: '',
+      source: 'backend',
+    };
     const ctx = createMockCommandContext();
     (ctx as any).getUiMode = () => 'lite';
     const result = {

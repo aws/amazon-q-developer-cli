@@ -19,7 +19,9 @@ const themeCmd: SlashCommand = {
 };
 
 /** Create a mock context with getUiMode set to 'lite' (theme command-menu only fires in lite mode). */
-function createLiteMockCtx(...args: Parameters<typeof createMockCommandContext>) {
+function createLiteMockCtx(
+  ...args: Parameters<typeof createMockCommandContext>
+) {
   const ctx = createMockCommandContext(...args);
   (ctx as any).getUiMode = mock(() => 'lite');
   return ctx;
@@ -349,9 +351,7 @@ describe('/theme command', () => {
       expect(colorCall[2]).toBeDefined(); // diff preset
       expect(colorCall[2].id).toBe('colorblind-dark');
 
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(
-        'Accessible'
-      );
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Accessible');
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
       const prefs = loadUserThemePrefs();

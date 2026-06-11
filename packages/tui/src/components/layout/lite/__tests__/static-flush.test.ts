@@ -202,13 +202,7 @@ describe('selectStaticEligible', () => {
       model('m1', { content: '', thinking: 'reasoning payload' }),
       user('u2'),
     ];
-    const out = selectStaticEligible(
-      msgs,
-      false,
-      undefined,
-      'main',
-      true
-    );
+    const out = selectStaticEligible(msgs, false, undefined, 'main', true);
     expect(out.map((m) => m.id)).toEqual(['u1', 'a', 'u2']);
   });
 
@@ -222,13 +216,7 @@ describe('selectStaticEligible', () => {
       user('u1'),
       model('m1', { content: 'hello', thinking: 'reasoning' }),
     ];
-    const out = selectStaticEligible(
-      msgs,
-      false,
-      undefined,
-      'main',
-      true
-    );
+    const out = selectStaticEligible(msgs, false, undefined, 'main', true);
     expect(out.map((m) => m.id)).toEqual(['u1', 'm1']);
   });
 

@@ -55,7 +55,7 @@ describe('previewLine', () => {
     // Combined regression: multi-KB input *and* lots of newlines.
     // Without the pre-slice this would still walk every byte just to
     // collapse whitespace before truncating.
-    const huge = ('paragraph line\n'.repeat(5_000));
+    const huge = 'paragraph line\n'.repeat(5_000);
     const out = previewLine(huge, 60);
     expect(visibleWidth(out)).toBeLessThanOrEqual(60);
     expect(out).not.toContain('\n');

@@ -37,7 +37,10 @@ export type TestCommand =
       events: MockStreamItem[] | null;
     }
   | { kind: 'MOCK_SESSION_UPDATE'; event: AgentStreamEvent }
-  | { kind: 'MOCK_ADD_SESSION'; session: Partial<AgentSession> & { id: string; name: string } }
+  | {
+      kind: 'MOCK_ADD_SESSION';
+      session: Partial<AgentSession> & { id: string; name: string };
+    }
   | { kind: 'MOCK_START_EDITING_QUEUE'; index: number }
   | { kind: 'COMPLETE_TURN' }
   | { kind: 'MOCK_ERROR'; error: string }

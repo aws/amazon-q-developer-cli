@@ -162,7 +162,8 @@ describe('/settings command', () => {
       const labels = arg.options.map((o) => o.label);
       // Either density rows ('default', 'full', 'custom') OR config rows
       // ('Tool calls', 'Show output') depending on detected preset state.
-      const isDensityMenu = labels.includes('default') || labels.includes('full');
+      const isDensityMenu =
+        labels.includes('default') || labels.includes('full');
       const isConfigMenu = labels.includes('Tool calls');
       expect(isDensityMenu || isConfigMenu).toBe(true);
     });

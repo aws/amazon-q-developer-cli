@@ -180,14 +180,8 @@ describe('formatBootIndicator', () => {
     // Boundary check: the user observed "(10.7s)" in the original bug
     // report, so the >1000 cutoff matters for accuracy. 1000 itself
     // stays suppressed; just-over (1001) shows.
-    const at = formatBootIndicator(
-      { label: 'X', elapsed: 1000 },
-      '⠋'
-    );
-    const just = formatBootIndicator(
-      { label: 'X', elapsed: 1001 },
-      '⠋'
-    );
+    const at = formatBootIndicator({ label: 'X', elapsed: 1000 }, '⠋');
+    const just = formatBootIndicator({ label: 'X', elapsed: 1001 }, '⠋');
     // eslint-disable-next-line no-control-regex
     const ansiStrip = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
     expect(ansiStrip(at)).toBe('  ⠋ X…');

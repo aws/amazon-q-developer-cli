@@ -805,8 +805,9 @@ describe('/verbose drilldown menus', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx2 = liteCtx();
     runEffect(verbosityCmd, null, ctx2, 'menu:density');
-    const arg2 = (ctx2._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][])[0]![0] as { options: any[] };
+    const arg2 = (
+      ctx2._spies.setActiveCommand!.mock.calls as unknown as unknown[][]
+    )[0]![0] as { options: any[] };
     const def = arg2.options.find(
       (o) => o.value === 'menu:density:confirm:default'
     ) as any;
