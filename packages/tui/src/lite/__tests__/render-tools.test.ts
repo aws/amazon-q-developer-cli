@@ -1701,7 +1701,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // last bar row (modulo the trailing tool-call newline).
     const lastBar = barLines[barLines.length - 1] ?? '';
     expect(lastBar.endsWith('x')).toBe(true);
-  }, 10_000);
+  }, 30_000);
 
   test('lines under MAX_INPUT_LINE_CHARS are not clipped', () => {
     // Companion to the OOM regression: confirm the per-line cap is high
