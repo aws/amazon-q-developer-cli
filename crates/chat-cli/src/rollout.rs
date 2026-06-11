@@ -149,6 +149,15 @@ fn detect_insider_toolbox() -> bool {
 impl Rollout {
     /// Initialize the global rollout instance. Call once at startup after resolving client_id.
     pub fn init(client_id: Option<Uuid>, start_url: Option<String>) {
+        // E2E tests and local debug builds exercise rollout-gated features
+        // without a real release channel/client cohort. Match the v2 rollout
+        // helper so the Rust launcher can still make a server-authoritative
+        // decision before spawning the TUI.
+        if std::env::var("KIRO_TEST_MODE").is_ok() || cfg!(debug_assertions) {
+            Self::init_for_tests_enable_all();
+            return;
+        }
+
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
         let is_internal = start_url.as_deref().map(str::trim) == Some(AMZN_START_URL);
         let is_nightly = env!("CARGO_PKG_VERSION").contains("-nightly");
@@ -204,6 +213,34 @@ impl Rollout {
     /// Convenience: returns true if the user gets TREATMENT for this feature.
     pub fn is_enabled(feature: Feature) -> bool {
         Self::variation(feature) == Some(TREATMENT)
+    }
+
+    /// Test helper: force the global rollout to allow gated features
+    /// regardless of segment/channel/percent. Idempotent — safe to call
+    /// multiple times. Has no effect if a real `init()` already ran.
+    #[doc(hidden)]
+    pub fn init_for_tests_enable_all() {
+        if INSTANCE.get().is_some() {
+            return;
+        }
+
+        let mut features = HashMap::new();
+        for name in ["tui", "voice", "goal"] {
+            features.insert(name.to_string(), FeatureRollout {
+                description: "test-enabled".to_string(),
+                treatment_percent: 100,
+                segment: Segment::All,
+                channel: Channel::All,
+            });
+        }
+
+        let _ = INSTANCE.set(Rollout {
+            features,
+            client_id: Some(Uuid::nil()),
+            is_internal: true,
+            is_nightly: true,
+            is_insider_toolbox: true,
+        });
     }
 }
 
