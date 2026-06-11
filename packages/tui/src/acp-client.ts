@@ -16,6 +16,7 @@ import {
   isTelemetryEnabled,
 } from './utils/telemetry-identity';
 import { buildKasSettings } from './utils/kas-settings';
+import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
@@ -2322,6 +2323,14 @@ export class KasAcpClient extends BaseAcpClient {
         this.handleMcpGovernanceDisabled({ ...params, apiFailure });
       }
     );
+    // Unified governance state (kiro-agent #1145). MCP is handled above via its
+    // dedicated notification, so here we only consume the web tools toggle.
+    this.kiroClient.onExtNotification('_kiro/governance/state', (params) => {
+      const webTools = webToolsGovernanceFromState(params);
+      if (webTools) {
+        this.handleWebToolsGovernanceDisabled(webTools);
+      }
+    });
 
     const commands = KAS_COMMANDS.map((cmd) => ({
       name: cmd.name,

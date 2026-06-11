@@ -6,6 +6,7 @@
  * - _kiro/customAgent/config_error (agent config parse error)
  * - _kiro/error/rate_limit (rate limit error)
  * - _kiro/mcp/governance_disabled (MCP governance unavailable)
+ * - _kiro/governance/state (unified governance — web tools toggle)
  * - current_mode_update via session/update (mode change push)
  */
 import { describe, it, expect, afterEach } from 'bun:test';
@@ -181,6 +182,79 @@ describe('KAS agent notifications', () => {
     // Should not crash — store should still be accessible
     const store = await tc.getStore();
     expect(store).toBeDefined();
+  });
+
+  it('_kiro/governance/state with webToolsEnabled=false surfaces web tools disabled', async () => {
+    /**
+     * GIVEN  TUI connected (KAS path)
+     * WHEN   server pushes _kiro/governance/state with features.webToolsEnabled=false
+     * THEN   store.initErrors gains a web_tools_governance_disabled entry (apiFailure=false
+     *        for an explicit admin toggle)
+     */
+    tc = new AcpTestCase({ testName: 'governance-state-web-tools-off' });
+    setupHandshake(tc);
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.sleepMs(300);
+
+    tc.mock.notify('_kiro/governance/state', {
+      sessionId: 'notif-session-1',
+      isEnterprise: true,
+      features: {
+        mcpEnabled: true,
+        webToolsEnabled: false,
+        autonomousAgents: true,
+        usageAnalytics: false,
+        promptLogging: false,
+        codeReferenceTracker: false,
+        contentCollection: false,
+      },
+      disabledReason: 'admin_disabled',
+    });
+    await tc.sleepMs(300);
+
+    const store = await tc.getStore();
+    const webToolsErr = store.initErrors.find(
+      (e: { type: string }) => e.type === 'web_tools_governance_disabled'
+    ) as { type: string; apiFailure: boolean } | undefined;
+    expect(webToolsErr).toBeDefined();
+    expect(webToolsErr?.apiFailure).toBe(false);
+  });
+
+  it('_kiro/governance/state with webToolsEnabled=true does not surface a warning', async () => {
+    /**
+     * GIVEN  TUI connected (KAS path)
+     * WHEN   server pushes _kiro/governance/state with features.webToolsEnabled=true
+     * THEN   no web_tools_governance_disabled entry is added
+     */
+    tc = new AcpTestCase({ testName: 'governance-state-web-tools-on' });
+    setupHandshake(tc);
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.sleepMs(300);
+
+    tc.mock.notify('_kiro/governance/state', {
+      sessionId: 'notif-session-1',
+      isEnterprise: true,
+      features: {
+        mcpEnabled: true,
+        webToolsEnabled: true,
+        autonomousAgents: true,
+        usageAnalytics: false,
+        promptLogging: false,
+        codeReferenceTracker: false,
+        contentCollection: false,
+      },
+    });
+    await tc.sleepMs(300);
+
+    const store = await tc.getStore();
+    const webToolsErr = store.initErrors.find(
+      (e: { type: string }) => e.type === 'web_tools_governance_disabled'
+    );
+    expect(webToolsErr).toBeUndefined();
   });
 
   it('current_mode_update via session/update changes store mode', async () => {
