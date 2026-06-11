@@ -54,15 +54,20 @@ export class PtyManager {
    * @param args - Arguments to pass to the command
    */
   spawn(command: string, args: string[]): void {
+    const childEnv = {
+      ...(process.env as Record<string, string>),
+      ...this.options.env,
+    };
+    // The host running tests may export NO_COLOR (Codex does), but the PTY
+    // harness needs deterministic color output for render/color assertions.
+    delete childEnv.NO_COLOR;
+
     this.pty = pty.spawn(command, args, {
       name: 'xterm-color',
       cols: this.options.width,
       rows: this.options.height,
       cwd: this.options.cwd || process.cwd(),
-      env: {
-        ...(process.env as Record<string, string>),
-        ...this.options.env,
-      },
+      env: childEnv,
     });
 
     // Capture output and feed to xterm for parsing
