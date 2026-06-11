@@ -1,7 +1,7 @@
 /**
  * Unit tests for the shared `chat-internal-cli` runner. The shared
- * layer owns binary resolution, JSON-line parsing, error envelope
- * classification, the async spawn timeout, the Buffer-stdout sync
+ * layer owns binary resolution, JSON-line parsing, exit-code
+ * verification, the async spawn timeout, the Buffer-stdout sync
  * branch, and structured spawn-failure errors.
  *
  * Per-subcommand wrappers (`ensure-session-cli`, `session-archive-cli`)
@@ -17,6 +17,7 @@ import {
   runChatInternalAsync,
   runChatInternalSync,
 } from '../chat-internal-cli';
+import { ErrorCode } from '../../types/generated/chat-internal';
 
 const FAKE_BIN = '/fake/chat_cli';
 let originalBin: string | undefined;
@@ -31,9 +32,6 @@ afterEach(() => {
   else process.env.KIRO_CHAT_CLI_BIN = originalBin;
 });
 
-const pickPath = (parsed: Record<string, unknown>): { path: string } | null =>
-  typeof parsed.path === 'string' ? { path: parsed.path } : null;
-
 describe('runChatInternalSync', () => {
   it('parses a successful single-line JSON response', () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
@@ -41,12 +39,18 @@ describe('runChatInternalSync', () => {
       calls.push({ cmd, args });
       return {
         status: 0,
-        stdout: '{"success":true,"path":"/o.zip"}',
+        stdout: '{"kind":"exportSession","data":{"path":"/o.zip"}}',
         stderr: '',
       };
     };
-    const result = runChatInternalSync(['x'], pickPath, spawner);
-    expect(result).toEqual({ ok: true, path: '/o.zip' });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toEqual({
+        kind: 'exportSession',
+        data: { path: '/o.zip' },
+      });
+    }
     expect(calls[0]?.cmd).toBe(FAKE_BIN);
   });
 
@@ -56,61 +60,96 @@ describe('runChatInternalSync', () => {
       stdout:
         '[2025-01-01] DEBUG some log\n' +
         '[2025-01-01] INFO another log\n' +
-        '{"success":true,"path":"/o.zip"}',
+        '{"kind":"exportSession","data":{"path":"/o.zip"}}',
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
-    expect(result).toEqual({ ok: true, path: '/o.zip' });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output.kind).toBe('exportSession');
+    }
   });
 
-  it('surfaces the binary error message on a structured failure JSON', () => {
+  it('returns the error envelope as a typed `error` kind', () => {
     const spawner: SyncSpawner = () => ({
       status: 1,
-      stdout: '{"success":false,"error":"not implemented"}',
+      stdout: '{"kind":"error","data":{"message":"not implemented"}}',
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
-    expect(result).toEqual({ ok: false, error: 'not implemented' });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toEqual({
+        kind: 'error',
+        data: { message: 'not implemented' },
+      });
+    }
   });
 
-  it('carries a machine-readable code on the failure branch when present', () => {
+  it('carries a machine-readable code on the error envelope when present', () => {
     const spawner: SyncSpawner = () => ({
       status: 1,
       stdout:
-        '{"success":false,"error":"session not found: abc","code":"SESSION_NOT_FOUND"}',
+        '{"kind":"error","data":{"message":"session not found: abc","code":"SESSION_NOT_FOUND"}}',
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
-    expect(result).toEqual({
-      ok: false,
-      error: 'session not found: abc',
-      code: 'SESSION_NOT_FOUND',
-    });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.output.kind === 'error') {
+      expect(result.output.data.message).toBe('session not found: abc');
+      expect(result.output.data.code).toBe(ErrorCode.SessionNotFound);
+    }
   });
 
-  it('classifies non-JSON stdout as a structured error', () => {
+  it('classifies non-JSON stdout as a host-side failure', () => {
     const spawner: SyncSpawner = () => ({
       status: 1,
       stdout: 'panic: something',
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
+    const result = runChatInternalSync(['x'], spawner);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/Unexpected output/);
+      expect(result.message).toMatch(/Unexpected output/);
     }
   });
 
-  it('errors when the success JSON is missing the required fields', () => {
+  it('classifies a JSON object missing `kind` as a host-side failure', () => {
     const spawner: SyncSpawner = () => ({
       status: 0,
-      stdout: '{"success":true}',
+      stdout: '{"foo":"bar"}',
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
+    const result = runChatInternalSync(['x'], spawner);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/Malformed/);
+      expect(result.message).toMatch(/Malformed/);
+    }
+  });
+
+  it('classifies a JSON object missing `data` as a host-side failure', () => {
+    const spawner: SyncSpawner = () => ({
+      status: 0,
+      stdout: '{"kind":"exportSession"}',
+      stderr: '',
+    });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/Malformed/);
+    }
+  });
+
+  it('classifies a null `data` as a host-side failure (avoid downstream NPE)', () => {
+    const spawner: SyncSpawner = () => ({
+      status: 0,
+      stdout: '{"kind":"exportSession","data":null}',
+      stderr: '',
+    });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/Malformed/);
     }
   });
 
@@ -121,7 +160,7 @@ describe('runChatInternalSync', () => {
       calls.push({ cmd, args });
       return { status: 0, stdout: '{}', stderr: '' };
     };
-    const result = runChatInternalSync(['x'], pickPath, spawner);
+    const result = runChatInternalSync(['x'], spawner);
     expect(result.ok).toBe(false);
     expect(calls).toHaveLength(0);
   });
@@ -129,18 +168,18 @@ describe('runChatInternalSync', () => {
   /// Sync spawners that surface the spawn failure on `result.error`
   /// (mirrors `child_process.spawnSync` shape) get translated into a
   /// structured failure rather than passing through.
-  it('classifies a spawn-time error result as a structured failure', () => {
+  it('classifies a spawn-time error result as a host-side failure', () => {
     const spawner: SyncSpawner = () => ({
       status: -1,
       stdout: '',
       stderr: '',
       error: Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }),
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
+    const result = runChatInternalSync(['x'], spawner);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/Failed to spawn kiro-cli/);
-      expect(result.error).toContain('ENOENT');
+      expect(result.message).toMatch(/Failed to spawn kiro-cli/);
+      expect(result.message).toContain('ENOENT');
     }
   });
 
@@ -150,11 +189,14 @@ describe('runChatInternalSync', () => {
   it('accepts Buffer stdout and decodes it to string', () => {
     const spawner: SyncSpawner = () => ({
       status: 0,
-      stdout: Buffer.from('{"success":true,"path":"/o.zip"}'),
+      stdout: Buffer.from('{"kind":"exportSession","data":{"path":"/o.zip"}}'),
       stderr: '',
     });
-    const result = runChatInternalSync(['x'], pickPath, spawner);
-    expect(result).toEqual({ ok: true, path: '/o.zip' });
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output.kind).toBe('exportSession');
+    }
   });
 });
 
@@ -162,11 +204,14 @@ describe('runChatInternalAsync', () => {
   it('parses a successful response', async () => {
     const spawner: AsyncSpawner = async () => ({
       status: 0,
-      stdout: '{"success":true,"path":"/o.zip"}',
+      stdout: '{"kind":"exportSession","data":{"path":"/o.zip"}}',
       stderr: '',
     });
-    const result = await runChatInternalAsync(['x'], pickPath, spawner);
-    expect(result).toEqual({ ok: true, path: '/o.zip' });
+    const result = await runChatInternalAsync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output.kind).toBe('exportSession');
+    }
   });
 
   /// A spawner that hangs longer than the timeout produces a
@@ -183,26 +228,72 @@ describe('runChatInternalAsync', () => {
         }, 10_000);
       });
     const start = Date.now();
-    const result = await runChatInternalAsync(['x'], pickPath, spawner, 100);
+    const result = await runChatInternalAsync(['x'], spawner, 100);
     const elapsed = Date.now() - start;
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/did not complete/);
+      expect(result.message).toMatch(/did not complete/);
     }
     expect(elapsed).toBeLessThan(2_000);
     expect(resolved).toBe(false);
   });
 
+  /// On timeout, the spawned child is aborted via the AbortSignal so
+  /// its OS-level process gets killed rather than left running.
+  it('aborts the spawner via signal when the timeout fires', async () => {
+    let aborted = false;
+    const spawner: AsyncSpawner = (_cmd, _args, options) =>
+      new Promise((_, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(new Error('aborted'));
+        });
+      });
+    const result = await runChatInternalAsync(['x'], spawner, 50);
+    expect(result.ok).toBe(false);
+    expect(aborted).toBe(true);
+  });
+
+  /// On the spawn-success path, the timeout's `setTimeout` must be
+  /// cleared so it does not keep the event loop alive (otherwise every
+  /// auth-callback round trip leaks a 30s-pending timer).
+  it('clears the timeout when the spawn resolves quickly', async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const pending = new Set<unknown>();
+    globalThis.setTimeout = ((fn: () => void, ms: number) => {
+      const id = originalSetTimeout(fn, ms);
+      pending.add(id);
+      return id;
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = ((id: unknown) => {
+      pending.delete(id);
+      return originalClearTimeout(id as Parameters<typeof clearTimeout>[0]);
+    }) as typeof clearTimeout;
+    try {
+      const spawner: AsyncSpawner = async () => ({
+        status: 0,
+        stdout: '{"kind":"exportSession","data":{"path":"/o.zip"}}',
+        stderr: '',
+      });
+      await runChatInternalAsync(['x'], spawner, 30_000);
+      expect(pending.size).toBe(0);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+  });
+
   /// A spawner that throws during invocation gets wrapped in a
   /// structured failure rather than propagating to the caller.
-  it('classifies a spawn-time exception as a structured error', async () => {
+  it('classifies a spawn-time exception as a host-side failure', async () => {
     const spawner: AsyncSpawner = async () => {
       throw new Error('ENOENT');
     };
-    const result = await runChatInternalAsync(['x'], pickPath, spawner);
+    const result = await runChatInternalAsync(['x'], spawner);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/Failed to spawn kiro-cli: ENOENT/);
+      expect(result.message).toMatch(/Failed to spawn kiro-cli: ENOENT/);
     }
   });
 });

@@ -2233,6 +2233,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "typed-path",
+ "typeshare",
  "unicode-width 0.2.0",
  "url",
  "urlencoding",

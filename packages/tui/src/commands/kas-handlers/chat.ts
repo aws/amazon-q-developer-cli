@@ -133,7 +133,7 @@ async function loadExistingSession(
   });
   ctx.setLoadingMessage(null);
   if (!ensured.ok) {
-    ctx.showAlert(`Failed to load session: ${ensured.error}`, 'error', 5000);
+    ctx.showAlert(`Failed to load session: ${ensured.message}`, 'error', 5000);
     return;
   }
   const sessionId = ensured.sessionId;
@@ -237,8 +237,8 @@ async function handleChatSave(
     ctx.showAlert(`Saved session to ${result.path}`, 'success', 5000);
     return;
   }
-  logger.error('[chat] export-session failed', { error: result.error });
-  ctx.showAlert(result.error, 'error', 5000);
+  logger.error('[chat] export-session failed', { error: result.message });
+  ctx.showAlert(result.message, 'error', 5000);
 }
 
 /**
@@ -268,8 +268,8 @@ async function handleChatLoad(
   }
   const result = runImportSession({ archivePath, cwd: process.cwd() });
   if (!result.ok) {
-    logger.error('[chat] import-session failed', { error: result.error });
-    ctx.showAlert(result.error, 'error', 5000);
+    logger.error('[chat] import-session failed', { error: result.message });
+    ctx.showAlert(result.message, 'error', 5000);
     return;
   }
   const newSessionId = basename(result.path);

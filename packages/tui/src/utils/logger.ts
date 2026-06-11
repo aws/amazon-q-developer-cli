@@ -13,6 +13,15 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 };
 
 /**
+ * Captured at module load so the logger's last-resort fallback never
+ * resolves through whatever `console.error` currently points to. The
+ * console interceptor (`utils/console-interceptor.ts`) replaces
+ * `console.error` with a redirect into `logger.error`, which would
+ * otherwise loop forever the moment a file write fails.
+ */
+const ORIGINAL_CONSOLE_ERROR = console.error.bind(console);
+
+/**
  * Resolves the default log file path, matching the backend's log directory.
  * Backend uses: $TMPDIR/kiro-log/kiro-chat.log
  * TUI uses:     $TMPDIR/kiro-log/kiro-tui.log
@@ -72,8 +81,10 @@ class Logger {
     try {
       appendFileSync(this.logFile, logLine);
     } catch (error) {
-      // Fallback to console if file write fails
-      console.error('Logger write failed:', error);
+      // Fallback to the captured original console.error so we don't
+      // recurse if the interceptor has already redirected console.error
+      // back into this logger.
+      ORIGINAL_CONSOLE_ERROR('Logger write failed:', error);
     }
   }
 

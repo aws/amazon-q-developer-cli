@@ -12,14 +12,15 @@
  * Driving them through a PTY would only add flake.
  *
  * Output contract:
- * - Success: exit 0, single JSON line `{"success":true,"path":"<abs>"}`
- * - Failure: exit 1, single JSON line `{"success":false,"error":"<msg>"}`
+ * - Success: exit 0, single JSON line `{"kind":"<subcommand>","data":{"path":"<abs>"}}`
+ * - Failure: exit 1, single JSON line `{"kind":"error","data":{"message":"<msg>","code"?:"..."}}`
  *
  * Both shapes go to stdout (never stderr) so the caller always parses
  * with `JSON.parse(stdout)` without disambiguating streams.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import type { CliInternalOutput } from '../src/types/generated/chat-internal';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -48,8 +49,8 @@ interface RunResult {
   stdout: string;
   /** Full captured stderr (binary should never write to stderr on the contract path; populated on panics or pre-flight crashes). */
   stderr: string;
-  /** Last stdout line parsed as the `{result, path?, error?}` JSON contract. */
-  parsed: { success: boolean; path?: string; error?: string };
+  /** Last stdout line parsed as the typed wire contract. */
+  parsed: CliInternalOutput;
 }
 
 function runCli(args: string[]): RunResult {
@@ -63,9 +64,9 @@ function runCli(args: string[]): RunResult {
   }
   // The binary may print other lines (logs); the JSON contract is the LAST line.
   const last = lines[lines.length - 1]!;
-  let parsed: { success: boolean; path?: string; error?: string };
+  let parsed: CliInternalOutput;
   try {
-    parsed = JSON.parse(last);
+    parsed = JSON.parse(last) as CliInternalOutput;
   } catch (cause) {
     throw new Error(
       `last stdout line is not JSON: ${JSON.stringify(last)} (exit=${res.status}, stderr=${res.stderr})`,
@@ -211,14 +212,15 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(0);
-    expect(res.parsed.success).toBe(true);
-    expect(res.parsed.path).toBe(out);
-    expect(res.parsed.error).toBeUndefined();
+    expect(res.parsed.kind).toBe('exportSession');
+    if (res.parsed.kind === 'exportSession') {
+      expect(res.parsed.data.path).toBe(out);
+    }
     expect(existsSync(out)).toBe(true);
     expect(statSync(out).size).toBeGreaterThan(0);
   });
 
-  it('JSON error contract: export with unknown id emits {success:false, error}', () => {
+  it('JSON error contract: export with unknown id emits {kind:error, data:{message}}', () => {
     const sessionsRoot = join(tmp, 'sessions');
     mkdirSync(sessionsRoot);
     const out = join(tmp, 'archive.zip');
@@ -232,14 +234,15 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.success).toBe(false);
-    expect(res.parsed.error).toBeTruthy();
-    expect(typeof res.parsed.error).toBe('string');
-    expect(res.parsed.path).toBeUndefined();
+    expect(res.parsed.kind).toBe('error');
+    if (res.parsed.kind === 'error') {
+      expect(typeof res.parsed.data.message).toBe('string');
+      expect(res.parsed.data.message.length).toBeGreaterThan(0);
+    }
     expect(existsSync(out)).toBe(false);
   });
 
-  it('JSON error contract: import with non-zip file emits {success:false, error}', () => {
+  it('JSON error contract: import with non-zip file emits {kind:error, data:{message}}', () => {
     const fakeArchive = join(tmp, 'not-a-zip.zip');
     writeFileSync(fakeArchive, 'totally not a zip file');
     const sessionsRoot = join(tmp, 'sessions');
@@ -252,8 +255,10 @@ describe('chat _ export-session / import-session', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.success).toBe(false);
-    expect(res.parsed.error).toMatch(/zip/i);
+    expect(res.parsed.kind).toBe('error');
+    if (res.parsed.kind === 'error') {
+      expect(res.parsed.data.message).toMatch(/zip/i);
+    }
   });
 
   it('roundtrip: export -> import lands a valid session whose contents validate against acp-type-covenant schemas', () => {
@@ -276,7 +281,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', sourceRoot,
     ]);
     expect(exportRes.exitCode).toBe(0);
-    expect(exportRes.parsed.success).toBe(true);
+    expect(exportRes.parsed.kind).toBe('exportSession');
 
     // 3. Import into a fresh, empty destination root, under a different cwd
     //    so we exercise the workspacePaths rewrite + bucket re-hash.
@@ -290,10 +295,12 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', destRoot,
     ]);
     expect(importRes.exitCode).toBe(0);
-    expect(importRes.parsed.success).toBe(true);
-    expect(importRes.parsed.path).toBeTruthy();
-
-    const importedDir = importRes.parsed.path!;
+    expect(importRes.parsed.kind).toBe('importSession');
+    if (importRes.parsed.kind !== 'importSession') {
+      throw new Error(`expected importSession kind, got ${JSON.stringify(importRes.parsed)}`);
+    }
+    const importedDir = importRes.parsed.data.path;
+    expect(importedDir).toBeTruthy();
     expect(existsSync(importedDir)).toBe(true);
 
     // Snapshots are KAS-internal checkpoint state. The export filter must
@@ -384,7 +391,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', destRoot,
     ]);
     expect(exportRes2.exitCode).toBe(0);
-    expect(exportRes2.parsed.success).toBe(true);
+    expect(exportRes2.parsed.kind).toBe('exportSession');
     expect(existsSync(archive2)).toBe(true);
   });
 
@@ -406,7 +413,7 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', sessionsRoot,
     ]);
     expect(noForce.exitCode).toBe(1);
-    expect(noForce.parsed.success).toBe(false);
+    expect(noForce.parsed.kind).toBe('error');
     // Pre-existing file untouched.
     expect(readFileSync(out, 'utf8')).toBe('pre-existing content');
 
@@ -419,7 +426,7 @@ describe('chat _ export-session / import-session', () => {
       '--force',
     ]);
     expect(withForce.exitCode).toBe(0);
-    expect(withForce.parsed.success).toBe(true);
+    expect(withForce.parsed.kind).toBe('exportSession');
     expect(statSync(out).size).toBeGreaterThan('pre-existing content'.length);
   });
 
@@ -501,9 +508,12 @@ describe('chat _ export-session / import-session', () => {
       '--base-path', destRoot,
     ]);
     expect(importRes.exitCode).toBe(0);
-
+    expect(importRes.parsed.kind).toBe('importSession');
+    if (importRes.parsed.kind !== 'importSession') {
+      throw new Error(`expected importSession kind, got ${JSON.stringify(importRes.parsed)}`);
+    }
     const importedMeta: SessionMetadata = SessionMetadataSchema.parse(
-      JSON.parse(readFileSync(join(importRes.parsed.path!, 'session.json'), 'utf8')),
+      JSON.parse(readFileSync(join(importRes.parsed.data.path, 'session.json'), 'utf8')),
     );
     expect(importedMeta.parentSessionId).toBeUndefined();
     expect(importedMeta.parentExecutionId).toBeUndefined();

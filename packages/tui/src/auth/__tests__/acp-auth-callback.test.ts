@@ -1,14 +1,16 @@
 /**
  * Unit tests for the `acp-auth-callback` capability.
  *
- * Covers argv assembly, JSON-on-stdout extraction, and error path
- * classification using a fake spawner. The real binary is never invoked
- * here. End-to-end coverage of the `chat _ get-kas-token` subcommand
- * lives in the Rust crate.
+ * The host is responsible for translating any failure path - spawn
+ * error, non-zero exit, parse failure, error envelope, unexpected
+ * response kind - into a single user-facing string. Internal
+ * diagnostics live in `logger` only and never reach the user-visible
+ * ACP error. These tests pin that invariant.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
+  AUTH_ERROR_USER_FACING,
   createGetAccessTokenCapability,
   type AsyncSpawner,
 } from '../acp-auth-callback';
@@ -51,6 +53,15 @@ afterEach(() => {
   else process.env.KIRO_CHAT_CLI_BIN = originalBin;
 });
 
+const SUCCESS_STDOUT = JSON.stringify({
+  kind: 'getKasToken',
+  data: {
+    accessToken: 'at',
+    expiresAt: '2099-01-01T00:00:00Z',
+    profileArn: 'arn:aws:iam::1:profile/x',
+  },
+});
+
 describe('createGetAccessTokenCapability', () => {
   it('registers under the `_kiro/auth/getAccessToken` method', () => {
     const { spawner } = makeSpawner({ status: 0, stdout: '' });
@@ -64,8 +75,7 @@ describe('createGetAccessTokenCapability', () => {
   it('invokes `chat _ get-kas-token` with the canonical argv', async () => {
     const { spawner, calls } = makeSpawner({
       status: 0,
-      stdout:
-        '{"success":true,"accessToken":"at","expiresAt":"2099-01-01T00:00:00Z","profileArn":"arn:aws:iam::1:profile/x"}',
+      stdout: SUCCESS_STDOUT,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
@@ -79,16 +89,14 @@ describe('createGetAccessTokenCapability', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.cmd).toBe(FAKE_BIN);
     // KAS sends `{}` so the argv is fixed: no `--reason` or
-    // `--current-expires-at`. Per `acp-callback-auth-provider.ts`:
-    // "The request payload is intentionally empty".
+    // `--current-expires-at`.
     expect(calls[0]!.args).toEqual(['chat', '_', 'get-kas-token']);
   });
 
   it('ignores any extra fields KAS may send (forward compat)', async () => {
     const { spawner, calls } = makeSpawner({
       status: 0,
-      stdout:
-        '{"success":true,"accessToken":"at","expiresAt":"2099-01-01T00:00:00Z","profileArn":"arn:aws:iam::1:profile/x"}',
+      stdout: SUCCESS_STDOUT,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
@@ -101,45 +109,15 @@ describe('createGetAccessTokenCapability', () => {
     expect(calls[0]!.args).toEqual(['chat', '_', 'get-kas-token']);
   });
 
-  it('forwards profileArn when present in the JSON response', async () => {
+  it('returns the wire-contract shape exactly (no extra fields)', async () => {
     const { spawner } = makeSpawner({
       status: 0,
-      stdout: JSON.stringify({
-        success: true,
-        accessToken: 'at',
-        expiresAt: '2099-01-01T00:00:00Z',
-        profileArn: 'arn:aws:iam::123:profile/x',
-      }),
+      stdout: SUCCESS_STDOUT,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
     const response = await cap.handler({});
 
-    expect(response).toEqual({
-      accessToken: 'at',
-      expiresAt: '2099-01-01T00:00:00Z',
-      profileArn: 'arn:aws:iam::123:profile/x',
-    });
-  });
-
-  it('strips host-internal `success` field; ignores any extra fields chat-cli might emit', async () => {
-    const { spawner } = makeSpawner({
-      status: 0,
-      stdout: JSON.stringify({
-        success: true,
-        accessToken: 'at',
-        expiresAt: '2099-01-01T00:00:00Z',
-        profileArn: 'arn:aws:iam::123:profile/x',
-        // Forward-compat: any extra fields the host emits that aren't part
-        // of the KAS wire contract MUST be dropped on the way out.
-        someOtherField: 'whatever',
-      }),
-    });
-    const cap = createGetAccessTokenCapability(spawner);
-
-    const response = await cap.handler({});
-
-    // Wire contract is `{accessToken, expiresAt, profileArn}`.
     expect(Object.keys(response).sort()).toEqual([
       'accessToken',
       'expiresAt',
@@ -151,11 +129,13 @@ describe('createGetAccessTokenCapability', () => {
     const { spawner } = makeSpawner({
       status: 0,
       stdout: JSON.stringify({
-        success: true,
-        accessToken: 'at',
-        expiresAt: '2099-01-01T00:00:00Z',
-        profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/x',
-        authMethod: 'external_idp',
+        kind: 'getKasToken',
+        data: {
+          accessToken: 'at',
+          expiresAt: '2099-01-01T00:00:00Z',
+          profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/x',
+          authMethod: 'external_idp',
+        },
       }),
     });
     const cap = createGetAccessTokenCapability(spawner);
@@ -174,10 +154,12 @@ describe('createGetAccessTokenCapability', () => {
     const { spawner } = makeSpawner({
       status: 0,
       stdout: JSON.stringify({
-        success: true,
-        accessToken: 'at',
-        expiresAt: '2099-01-01T00:00:00Z',
-        profileArn: 'arn:aws:iam::123:profile/x',
+        kind: 'getKasToken',
+        data: {
+          accessToken: 'at',
+          expiresAt: '2099-01-01T00:00:00Z',
+          profileArn: 'arn:aws:iam::123:profile/x',
+        },
       }),
     });
     const cap = createGetAccessTokenCapability(spawner);
@@ -191,36 +173,18 @@ describe('createGetAccessTokenCapability', () => {
     ]);
   });
 
-  it('throws when the JSON response is missing profileArn', async () => {
-    // chat-cli always emits profileArn (its `AcpCallbackToken.profile_arn`
-    // is `String`, not `Option<String>`). Missing -> contract violation.
-    const { spawner } = makeSpawner({
-      status: 0,
-      stdout: JSON.stringify({
-        success: true,
-        accessToken: 'at',
-        expiresAt: '2099-01-01T00:00:00Z',
-      }),
-    });
-    const cap = createGetAccessTokenCapability(spawner);
-
-    await expect(cap.handler({})).rejects.toThrow(/missing profileArn/);
-  });
-
-  it('throws the parsed error message when the binary exits non-zero', async () => {
+  it('throws the user-facing string on an `error` envelope', async () => {
     const { spawner } = makeSpawner({
       status: 1,
       stdout:
-        '{"success":false,"error":"You are not logged in. Please log in with `kiro-cli login`."}',
+        '{"kind":"error","data":{"message":"You are not logged in. Please log in with `kiro-cli login`."}}',
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow(
-      'You are not logged in. Please log in with `kiro-cli login`.'
-    );
+    await expect(cap.handler({})).rejects.toThrow(AUTH_ERROR_USER_FACING);
   });
 
-  it('throws when the spawn itself fails', async () => {
+  it('throws the user-facing string when the spawn itself fails', async () => {
     const { spawner } = makeSpawner({
       status: -1,
       stdout: '',
@@ -228,17 +192,27 @@ describe('createGetAccessTokenCapability', () => {
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow(/ENOENT/);
+    await expect(cap.handler({})).rejects.toThrow(AUTH_ERROR_USER_FACING);
   });
 
-  it('throws when stdout has no parseable JSON', async () => {
+  it('throws the user-facing string when stdout has no parseable JSON', async () => {
     const { spawner } = makeSpawner({
       status: 1,
       stdout: 'totally broken output with no json',
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow();
+    await expect(cap.handler({})).rejects.toThrow(AUTH_ERROR_USER_FACING);
+  });
+
+  it('throws the user-facing string on an unexpected response kind', async () => {
+    const { spawner } = makeSpawner({
+      status: 0,
+      stdout: '{"kind":"ensureSession","data":{"sessionId":"sess_xxx"}}',
+    });
+    const cap = createGetAccessTokenCapability(spawner);
+
+    await expect(cap.handler({})).rejects.toThrow(AUTH_ERROR_USER_FACING);
   });
 
   it('parses the JSON success even with preceding stdout log lines', async () => {
@@ -247,7 +221,7 @@ describe('createGetAccessTokenCapability', () => {
       stdout:
         '[2025-05-21T17:00:00Z INFO  some::module] preflight ok\n' +
         '[2025-05-21T17:00:00Z DEBUG some::module] computed hash\n' +
-        '{"success":true,"accessToken":"at","expiresAt":"2099-01-01T00:00:00Z","profileArn":"arn:aws:iam::1:profile/x"}',
+        SUCCESS_STDOUT,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
@@ -260,39 +234,36 @@ describe('createGetAccessTokenCapability', () => {
     });
   });
 
-  it('throws when KIRO_CHAT_CLI_BIN is not set', async () => {
+  it('throws the user-facing string when KIRO_CHAT_CLI_BIN is not set', async () => {
     delete process.env.KIRO_CHAT_CLI_BIN;
     const { spawner, calls } = makeSpawner({
       status: 0,
-      stdout:
-        '{"success":true,"accessToken":"at","expiresAt":"2099-01-01T00:00:00Z"}',
+      stdout: SUCCESS_STDOUT,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow(
-      /Failed to find the kiro-cli binary/
-    );
+    await expect(cap.handler({})).rejects.toThrow(AUTH_ERROR_USER_FACING);
     // Spawner must not be invoked when the binary path can't be resolved.
     expect(calls).toHaveLength(0);
   });
 
-  it('throws when JSON response is missing accessToken', async () => {
+  it('does NOT leak underlying chat-cli error message to the caller', async () => {
+    const internalDetails =
+      'auth refresh failed: SQLite error: database is locked';
     const { spawner } = makeSpawner({
-      status: 0,
-      stdout: '{"success":true,"expiresAt":"2099-01-01T00:00:00Z"}',
+      status: 1,
+      stdout: `{"kind":"error","data":{"message":"${internalDetails}"}}`,
     });
     const cap = createGetAccessTokenCapability(spawner);
 
-    await expect(cap.handler({})).rejects.toThrow();
-  });
-
-  it('throws when JSON response is missing expiresAt', async () => {
-    const { spawner } = makeSpawner({
-      status: 0,
-      stdout: '{"success":true,"accessToken":"at"}',
-    });
-    const cap = createGetAccessTokenCapability(spawner);
-
-    await expect(cap.handler({})).rejects.toThrow();
+    let thrownMessage = '';
+    try {
+      await cap.handler({});
+    } catch (e) {
+      thrownMessage = e instanceof Error ? e.message : String(e);
+    }
+    expect(thrownMessage).toBe(AUTH_ERROR_USER_FACING);
+    expect(thrownMessage).not.toContain('SQLite');
+    expect(thrownMessage).not.toContain('database is locked');
   });
 });

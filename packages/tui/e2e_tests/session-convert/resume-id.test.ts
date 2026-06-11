@@ -48,6 +48,7 @@ import { computeWorkspaceHash, SessionPersistence } from '@kiro/agent';
 
 import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
 import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
 import { assertConvertedSession } from './assertions';
 import { assertBasicFsToolsConverted } from './basic-fs-tools-assertions';
 import { kasSessionIdPatternFor, setupAcpHandshake } from './test-helpers';
@@ -102,15 +103,11 @@ function seedV1Session(opts: {
         `stdout: ${result.stdout}\nstderr: ${result.stderr}`
     );
   }
-  const parsed = JSON.parse(result.stdout) as {
-    success: boolean;
-    conversationId?: string;
-    error?: string;
-  };
-  if (!parsed.success || !parsed.conversationId) {
+  const parsed = JSON.parse(result.stdout) as CliInternalOutput;
+  if (parsed.kind !== 'testSeedV1') {
     throw new Error(`test-seed-v1 returned not-ok: ${result.stdout}`);
   }
-  return { conversationId: parsed.conversationId };
+  return { conversationId: parsed.data.conversationId };
 }
 
 describe('--resume-id', () => {

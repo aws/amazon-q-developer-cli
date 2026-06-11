@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Authentication failures now show a clear message instead of raw debug output"
+}

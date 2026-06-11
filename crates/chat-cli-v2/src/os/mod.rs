@@ -17,6 +17,7 @@ use crate::database::{
     Database,
 };
 use crate::telemetry::TelemetryThread;
+use crate::util::log_on_err::LogOnErr;
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
 const UNIX_USER_HOME: &str = "/home/testuser";
@@ -49,7 +50,9 @@ impl Os {
         let env = Env::new();
         let fs = Fs::new();
         let mut database =
-            Database::new_with_workspace(crate::util::paths::WorkspacePaths::settings_path_for_env(&env).ok()).await?;
+            Database::new_with_workspace(crate::util::paths::WorkspacePaths::settings_path_for_env(&env).ok())
+                .await
+                .log_on_err("Os::new: Database::new_with_workspace failed")?;
 
         // For API key users, discover the correct regional endpoint before creating the client.
         let endpoint = if crate::util::env_var::get_api_key().is_some() {
@@ -58,10 +61,16 @@ impl Os {
             None
         };
 
-        let client = ApiClient::new(&env, &fs, &mut database, endpoint).await?;
-        let token = BuilderIdToken::load(&database, None).await?;
+        let client = ApiClient::new(&env, &fs, &mut database, endpoint)
+            .await
+            .log_on_err("Os::new: ApiClient::new failed")?;
+        let token = BuilderIdToken::load(&database, None)
+            .await
+            .log_on_err("Os::new: BuilderIdToken::load failed")?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
+        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region)
+            .await
+            .log_on_err("Os::new: TelemetryThread::new failed")?;
 
         crate::rollout::Rollout::init(
             database.get_client_id().ok().flatten(),

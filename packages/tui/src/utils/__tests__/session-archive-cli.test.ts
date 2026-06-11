@@ -1,11 +1,11 @@
 /**
  * Unit tests for `session-archive-cli`. This wrapper contributes
- * argv assembly on top of `chat-internal-cli`; shared-layer
- * behavior (binary resolution, JSON parsing, error envelopes,
- * Buffer-stdout, spawn errors) is exercised in
- * `chat-internal-cli.test.ts`. Tests here assert argv shape
- * behaviorally via flag/value pairs. Real-binary integration
- * coverage lives in `e2e_tests/session-archive.test.ts`.
+ * argv assembly and result narrowing on top of `chat-internal-cli`;
+ * shared-layer behavior (binary resolution, JSON parsing, exit-code
+ * verification, Buffer-stdout, spawn errors) is exercised in
+ * `chat-internal-cli.test.ts`. Tests here assert argv shape and
+ * the variant-narrowing path. Real-binary integration coverage
+ * lives in `e2e_tests/session-archive.test.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
@@ -14,6 +14,7 @@ import {
   importSession,
   type SyncSpawner,
 } from '../session-archive-cli';
+import { ErrorCode } from '../../types/generated/chat-internal';
 
 interface SpawnerHarness {
   spawner: SyncSpawner;
@@ -51,7 +52,9 @@ afterEach(() => {
 
 describe('exportSession argv', () => {
   it('passes inputs as flag-value pairs to the binary', () => {
-    const { spawner, calls } = makeSpawner('{"success":true,"path":"/o.zip"}');
+    const { spawner, calls } = makeSpawner(
+      '{"kind":"exportSession","data":{"path":"/o.zip"}}'
+    );
     const result = exportSession(
       { sessionId: 'sess1', cwd: '/work', out: '/out.zip', force: false },
       spawner
@@ -66,18 +69,15 @@ describe('exportSession argv', () => {
   });
 
   it('appends --force only when the flag is set', () => {
-    const { spawner: s1, calls: c1 } = makeSpawner(
-      '{"success":true,"path":"/o.zip"}'
-    );
+    const stdout = '{"kind":"exportSession","data":{"path":"/o.zip"}}';
+    const { spawner: s1, calls: c1 } = makeSpawner(stdout);
     exportSession(
       { sessionId: 's', cwd: '/w', out: '/o.zip', force: true },
       s1
     );
     expect(c1[0]!.args).toContain('--force');
 
-    const { spawner: s2, calls: c2 } = makeSpawner(
-      '{"success":true,"path":"/o.zip"}'
-    );
+    const { spawner: s2, calls: c2 } = makeSpawner(stdout);
     exportSession(
       { sessionId: 's', cwd: '/w', out: '/o.zip', force: false },
       s2
@@ -86,19 +86,37 @@ describe('exportSession argv', () => {
   });
 
   it('appends --base-path when provided', () => {
-    const { spawner, calls } = makeSpawner('{"success":true,"path":"/o.zip"}');
+    const { spawner, calls } = makeSpawner(
+      '{"kind":"exportSession","data":{"path":"/o.zip"}}'
+    );
     exportSession(
       { sessionId: 's', cwd: '/w', out: '/o.zip', basePath: '/sessions' },
       spawner
     );
     expect(flagValue(calls[0]!.args, '--base-path')).toBe('/sessions');
   });
+
+  it('translates an `error` envelope into the failure branch', () => {
+    const { spawner } = makeSpawner(
+      '{"kind":"error","data":{"message":"boom","code":"SESSION_NOT_FOUND"}}',
+      1
+    );
+    const result = exportSession(
+      { sessionId: 's', cwd: '/w', out: '/o.zip' },
+      spawner
+    );
+    expect(result).toEqual({
+      ok: false,
+      message: 'boom',
+      code: ErrorCode.SessionNotFound,
+    });
+  });
 });
 
 describe('importSession argv', () => {
   it('passes inputs as flag-value pairs to the binary', () => {
     const { spawner, calls } = makeSpawner(
-      '{"success":true,"path":"/sessions/h/sess_xxx"}'
+      '{"kind":"importSession","data":{"path":"/sessions/h/sess_xxx"}}'
     );
     const result = importSession(
       { archivePath: '/in.zip', cwd: '/work' },
@@ -113,11 +131,27 @@ describe('importSession argv', () => {
   });
 
   it('appends --base-path when provided', () => {
-    const { spawner, calls } = makeSpawner('{"success":true,"path":"/p"}');
+    const { spawner, calls } = makeSpawner(
+      '{"kind":"importSession","data":{"path":"/p"}}'
+    );
     importSession(
       { archivePath: '/in.zip', cwd: '/work', basePath: '/sessions' },
       spawner
     );
     expect(flagValue(calls[0]!.args, '--base-path')).toBe('/sessions');
+  });
+
+  it('rejects an unexpected response kind', () => {
+    const { spawner } = makeSpawner(
+      '{"kind":"ensureSession","data":{"sessionId":"sess_xxx"}}'
+    );
+    const result = importSession(
+      { archivePath: '/in.zip', cwd: '/work' },
+      spawner
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/Unexpected response kind/);
+    }
   });
 });

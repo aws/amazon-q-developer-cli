@@ -8,11 +8,8 @@
  * `chat-internal-cli.ts`.
  */
 
-import {
-  type AsyncSpawner,
-  type RunResult,
-  runChatInternalAsync,
-} from './chat-internal-cli';
+import type { ErrorCode } from '../types/generated/chat-internal';
+import { type AsyncSpawner, runChatInternalAsync } from './chat-internal-cli';
 import type { AgentEngine } from '../agent-engine';
 
 export type { AsyncSpawner };
@@ -34,7 +31,9 @@ export interface EnsureSessionInput {
   cwd: string;
 }
 
-export type EnsureSessionResult = RunResult<{ sessionId: string }>;
+export type EnsureSessionResult =
+  | { ok: true; sessionId: string }
+  | { ok: false; message: string; code?: ErrorCode };
 
 /**
  * Shell out to `chat _ ensure-session`. On success returns the
@@ -57,12 +56,20 @@ export async function ensureSession(
     '--cwd',
     input.cwd,
   ];
-  return runChatInternalAsync(
-    args,
-    (parsed) =>
-      typeof parsed.sessionId === 'string'
-        ? { sessionId: parsed.sessionId }
-        : null,
-    spawner
-  );
+  const r = await runChatInternalAsync(args, spawner);
+  if (!r.ok) return { ok: false, message: r.message };
+  if (r.output.kind === 'error') {
+    return {
+      ok: false,
+      message: r.output.data.message,
+      ...(r.output.data.code ? { code: r.output.data.code } : {}),
+    };
+  }
+  if (r.output.kind !== 'ensureSession') {
+    return {
+      ok: false,
+      message: `Unexpected response kind from kiro-cli: ${r.output.kind}`,
+    };
+  }
+  return { ok: true, sessionId: r.output.data.sessionId };
 }

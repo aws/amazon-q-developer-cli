@@ -4,17 +4,18 @@
  *
  * Each subcommand wrapper (`session-archive-cli`, `ensure-session-cli`,
  * etc.) sits on top of this helper and only contributes the argv shape
- * specific to its subcommand. The output contract, binary resolution,
- * spawner injection, and last-line JSON extraction live here.
+ * specific to its subcommand. Binary resolution, spawner injection,
+ * exit-code verification, and last-line JSON parsing live here.
  *
  * # Output contract
  *
- * The binary prints exactly one JSON line on stdout, exit code mirrors
- * `success`. Both shapes go to stdout (never stderr) so callers always
- * parse with `JSON.parse(lastStdoutLine)` without disambiguating streams.
+ * The binary prints exactly one JSON line on stdout. Wire shape is
+ * the typeshare-shared {@link CliInternalOutput} discriminated union:
  *
- *   Success (exit 0): `{"success": true, ...subcommand-specific fields}`
- *   Failure (exit 1): `{"success": false, "error": "<message>"}`
+ *   `{"kind": "<subcommand>", "data": {...}}`  - subcommand success
+ *   `{"kind": "error",        "data": {message, code?}}`  - failure
+ *
+ * Exit code mirrors the variant: `error` -> 1, anything else -> 0.
  *
  * The binary may emit Rust log lines on stdout before the JSON line
  * when `KIRO_LOG_LEVEL` etc. are active; this module extracts the LAST
@@ -37,12 +38,15 @@
  * assert argv and synthesize JSON output.
  */
 
+import type { CliInternalOutput } from '../types/generated/chat-internal';
 import { requireChatCliBinFromEnv } from './chat-cli-bin';
+import { logger } from './logger';
 
 /** Spawn function shape compatible with `Bun.spawn`-style async APIs. */
 export type AsyncSpawner = (
   cmd: string,
-  args: string[]
+  args: string[],
+  options?: { signal?: AbortSignal }
 ) => Promise<{
   status: number | null;
   stdout: string;
@@ -63,29 +67,45 @@ export type SyncSpawner = (
   error?: Error;
 };
 
-/** Result of parsing the binary's stdout. The success branch carries
- * whatever subcommand-specific fields the binary returned, minus
- * `success`. */
-export type RunResult<T extends object> =
-  | ({ ok: true } & T)
-  | { ok: false; error: string; code?: string };
+/**
+ * Result of running a `chat _` subcommand. The success branch carries
+ * the typed {@link CliInternalOutput} discriminated union; callers
+ * narrow on `output.kind` to handle subcommand-specific data and the
+ * shared `error` variant. The failure branch covers host-side issues
+ * (binary not found, spawn failure, parse failure, timeout).
+ */
+export type RunResult =
+  | { ok: true; output: CliInternalOutput }
+  | { ok: false; message: string };
 
-const DEFAULT_ASYNC_SPAWNER: AsyncSpawner = async (cmd, args) => {
+const DEFAULT_ASYNC_SPAWNER: AsyncSpawner = async (cmd, args, options) => {
   const proc = Bun.spawn([cmd, ...args], {
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  await proc.exited;
-  return {
-    status: proc.exitCode,
-    stdout,
-    stderr,
+  const onAbort = () => {
+    try {
+      proc.kill();
+    } catch {
+      // already exited
+    }
   };
+  options?.signal?.addEventListener('abort', onAbort);
+  try {
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+    return {
+      status: proc.exitCode,
+      stdout,
+      stderr,
+    };
+  } finally {
+    options?.signal?.removeEventListener('abort', onAbort);
+  }
 };
 
 const DEFAULT_SYNC_SPAWNER: SyncSpawner = (cmd, args) => {
@@ -101,123 +121,180 @@ const DEFAULT_SYNC_SPAWNER: SyncSpawner = (cmd, args) => {
   };
 };
 
-function parseLastJsonLine<T extends object>(
-  stdout: string,
-  pickSuccessFields: (parsed: Record<string, unknown>) => T | null
-): RunResult<T> {
-  const lines = stdout.split('\n').filter((l) => l.length > 0);
-  if (lines.length === 0) {
-    return { ok: false, error: 'No output from kiro-cli' };
-  }
-  const last = lines[lines.length - 1]!;
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(last);
-  } catch {
-    return { ok: false, error: `Unexpected output from kiro-cli: ${last}` };
-  }
-  if (parsed.success === true) {
-    const picked = pickSuccessFields(parsed);
-    if (picked === null) {
-      return {
-        ok: false,
-        error: `Malformed kiro-cli response: ${JSON.stringify(parsed)}`,
-      };
-    }
-    return { ok: true, ...picked };
-  }
-  if (typeof parsed.error === 'string') {
-    const code = typeof parsed.code === 'string' ? parsed.code : undefined;
-    return { ok: false, error: parsed.error, ...(code ? { code } : {}) };
-  }
-  return {
-    ok: false,
-    error: `Malformed kiro-cli response: ${JSON.stringify(parsed)}`,
-  };
+function tail(s: string, n: number): string {
+  const lines = s.split('\n').filter((l) => l.length > 0);
+  return lines.slice(-n).join('\n');
 }
 
 /**
- * Run a `chat _ <subcommand>` invocation asynchronously. `pickFields`
- * extracts the subcommand-specific success-shape fields from the
- * parsed JSON; returning `null` from `pickFields` produces a
- * "Malformed kiro-cli response" error.
+ * Extract the last non-empty stdout line and parse as `CliInternalOutput`.
+ * The Rust subcommand prints exactly one JSON line, but may emit
+ * tracing log lines first when `KIRO_LOG_LEVEL` is active.
+ */
+function parseLastJsonLine(stdout: string): RunResult {
+  const lines = stdout.split('\n').filter((l) => l.length > 0);
+  if (lines.length === 0) {
+    return { ok: false, message: 'No output from kiro-cli' };
+  }
+  const last = lines[lines.length - 1]!;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(last);
+  } catch {
+    return { ok: false, message: `Unexpected output from kiro-cli: ${last}` };
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    typeof (parsed as { kind: unknown }).kind !== 'string' ||
+    typeof (parsed as { data: unknown }).data !== 'object' ||
+    (parsed as { data: unknown }).data === null
+  ) {
+    return {
+      ok: false,
+      message: `Malformed kiro-cli response: ${last}`,
+    };
+  }
+  return { ok: true, output: parsed as CliInternalOutput };
+}
+
+function verifyExitCode(
+  argv: string[],
+  status: number | null,
+  output: CliInternalOutput,
+  stderr: string
+): void {
+  const expected = output.kind === 'error' ? 1 : 0;
+  if (status !== expected) {
+    logger.warn('[chat _] exit-code mismatch', {
+      argv: argv.slice(0, 3),
+      status,
+      kind: output.kind,
+      stderr: tail(stderr, 4),
+    });
+  }
+}
+
+/**
+ * Run a `chat _ <subcommand>` invocation asynchronously.
  *
  * `timeoutMs` (default 30s) bounds the spawn. A timeout returns a
  * structured error rather than hanging the caller indefinitely.
  */
-export async function runChatInternalAsync<T extends object>(
+export async function runChatInternalAsync(
   args: string[],
-  pickFields: (parsed: Record<string, unknown>) => T | null,
   spawner: AsyncSpawner = DEFAULT_ASYNC_SPAWNER,
   timeoutMs: number = 30_000
-): Promise<RunResult<T>> {
+): Promise<RunResult> {
   let bin: string;
   try {
     bin = requireChatCliBinFromEnv();
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
-  let result;
+  const start = performance.now();
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let result: Awaited<ReturnType<AsyncSpawner>>;
   try {
     result = await Promise.race([
-      spawner(bin, args),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `kiro-cli ${args.slice(0, 3).join(' ')} did not complete within ${timeoutMs}ms`
-              )
-            ),
-          timeoutMs
-        )
-      ),
+      spawner(bin, args, { signal: controller.signal }),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(
+            new Error(
+              `kiro-cli ${args.slice(0, 3).join(' ')} did not complete within ${timeoutMs}ms`
+            )
+          );
+        }, timeoutMs);
+      }),
     ]);
   } catch (e) {
     return {
       ok: false,
-      error: `Failed to spawn kiro-cli: ${e instanceof Error ? e.message : String(e)}`,
+      message: `Failed to spawn kiro-cli: ${e instanceof Error ? e.message : String(e)}`,
     };
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
   if (result.error) {
     return {
       ok: false,
-      error: `Failed to spawn kiro-cli: ${result.error.message}`,
+      message: `Failed to spawn kiro-cli: ${result.error.message}`,
     };
   }
-  return parseLastJsonLine(result.stdout, pickFields);
+  const durationMs = Math.round(performance.now() - start);
+  const parsed = parseLastJsonLine(result.stdout);
+  if (parsed.ok) {
+    verifyExitCode(args, result.status, parsed.output, result.stderr);
+    logger.info('[chat _] success', {
+      argv: args.slice(0, 3),
+      durationMs,
+      kind: parsed.output.kind,
+    });
+  } else {
+    logger.error('[chat _] parse failed', {
+      argv: args.slice(0, 3),
+      status: result.status,
+      durationMs,
+      stderr: tail(result.stderr, 4),
+    });
+  }
+  return parsed;
 }
 
 /** Synchronous variant of {@link runChatInternalAsync}. */
-export function runChatInternalSync<T extends object>(
+export function runChatInternalSync(
   args: string[],
-  pickFields: (parsed: Record<string, unknown>) => T | null,
   spawner: SyncSpawner = DEFAULT_SYNC_SPAWNER
-): RunResult<T> {
+): RunResult {
   let bin: string;
   try {
     bin = requireChatCliBinFromEnv();
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
-  let result;
+  const start = performance.now();
+  let result: ReturnType<SyncSpawner>;
   try {
     result = spawner(bin, args);
   } catch (e) {
     return {
       ok: false,
-      error: `Failed to spawn kiro-cli: ${e instanceof Error ? e.message : String(e)}`,
+      message: `Failed to spawn kiro-cli: ${e instanceof Error ? e.message : String(e)}`,
     };
   }
   if (result.error) {
     return {
       ok: false,
-      error: `Failed to spawn kiro-cli: ${result.error.message}`,
+      message: `Failed to spawn kiro-cli: ${result.error.message}`,
     };
   }
+  const durationMs = Math.round(performance.now() - start);
   const stdout =
     typeof result.stdout === 'string'
       ? result.stdout
       : result.stdout.toString('utf-8');
-  return parseLastJsonLine(stdout, pickFields);
+  const stderr =
+    typeof result.stderr === 'string'
+      ? result.stderr
+      : result.stderr.toString('utf-8');
+  const parsed = parseLastJsonLine(stdout);
+  if (parsed.ok) {
+    verifyExitCode(args, result.status, parsed.output, stderr);
+    logger.info('[chat _] success', {
+      argv: args.slice(0, 3),
+      durationMs,
+      kind: parsed.output.kind,
+    });
+  } else {
+    logger.error('[chat _] parse failed', {
+      argv: args.slice(0, 3),
+      status: result.status,
+      durationMs,
+      stderr: tail(stderr, 4),
+    });
+  }
+  return parsed;
 }

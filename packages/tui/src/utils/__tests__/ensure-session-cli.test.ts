@@ -1,14 +1,15 @@
 /**
  * Unit tests for `ensure-session-cli`. This wrapper contributes
- * argv assembly on top of `chat-internal-cli`; shared-layer
- * behavior (binary resolution, JSON parsing, error envelopes,
- * etc.) is exercised in `chat-internal-cli.test.ts`. Tests here
- * assert argv shape behaviorally via flag/value pairs, so argv
- * reordering does not break tests.
+ * argv assembly and result narrowing on top of `chat-internal-cli`;
+ * shared-layer behavior (binary resolution, JSON parsing, exit-code
+ * verification, etc.) is exercised in `chat-internal-cli.test.ts`.
+ * Tests here assert argv shape behaviorally via flag/value pairs and
+ * cover the variant-narrowing path.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { ensureSession, type AsyncSpawner } from '../ensure-session-cli';
+import { ErrorCode } from '../../types/generated/chat-internal';
 
 interface SpawnerHarness {
   spawner: AsyncSpawner;
@@ -48,7 +49,7 @@ afterEach(() => {
 describe('ensureSession argv', () => {
   it('passes every input as a flag-value pair to the binary', async () => {
     const { spawner, calls } = makeSpawner(
-      '{"success":true,"sessionId":"sess_uuid"}'
+      '{"kind":"ensureSession","data":{"sessionId":"sess_uuid"}}'
     );
     const result = await ensureSession(
       {
@@ -78,7 +79,7 @@ describe('ensureSession argv', () => {
   it('passes through each source-format variant unchanged', async () => {
     for (const sourceFormat of ['auto', 'classic', 'v2', 'kas'] as const) {
       const { spawner, calls } = makeSpawner(
-        '{"success":true,"sessionId":"sess_uuid"}'
+        '{"kind":"ensureSession","data":{"sessionId":"sess_uuid"}}'
       );
       await ensureSession(
         {
@@ -91,5 +92,26 @@ describe('ensureSession argv', () => {
       );
       expect(flagValue(calls[0]!.args, '--source-format')).toBe(sourceFormat);
     }
+  });
+
+  it('translates an `error` envelope into the failure branch', async () => {
+    const { spawner } = makeSpawner(
+      '{"kind":"error","data":{"message":"session not found: abc","code":"SESSION_NOT_FOUND"}}',
+      1
+    );
+    const result = await ensureSession(
+      {
+        sourceFormat: 'auto',
+        sourceSessionId: 'abc',
+        targetFormat: 'kas',
+        cwd: '/work',
+      },
+      spawner
+    );
+    expect(result).toEqual({
+      ok: false,
+      message: 'session not found: abc',
+      code: ErrorCode.SessionNotFound,
+    });
   });
 });

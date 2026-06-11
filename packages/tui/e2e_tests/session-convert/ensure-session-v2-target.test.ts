@@ -5,14 +5,16 @@
  * to `session/load`; the TUI calls `ensure-session` first to confirm
  * the id resolves. A V2 source is already in the V2 target format, so
  * the subcommand only checks the session exists:
- *   - present id  -> `{success: true, sessionId: "<id>"}`, exit 0
- *   - missing id  -> `{success: false, code: "SESSION_NOT_FOUND"}`, exit 1
+ *   - present id  -> `{kind: "ensureSession", data: {sessionId: "<id>"}}`, exit 0
+ *   - missing id  -> `{kind: "error", data: {code: "SESSION_NOT_FOUND"}}`, exit 1
  *
  * The TUI branches on `SESSION_NOT_FOUND` to fall through to a fresh
  * session silently, matching the backend's own not-found behavior.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
+import { ErrorCode } from '../../src/types/generated/chat-internal';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,7 +28,7 @@ const BIN = requireChatCliBin();
 
 interface RunResult {
   exitCode: number | null;
-  parsed: Record<string, unknown>;
+  parsed: CliInternalOutput;
 }
 
 function runEnsureSession(sessionsDir: string, args: string[]): RunResult {
@@ -41,7 +43,7 @@ function runEnsureSession(sessionsDir: string, args: string[]): RunResult {
       `binary produced no stdout (exit=${res.status}); stderr=${res.stderr}`
     );
   }
-  const parsed = JSON.parse(lines[lines.length - 1]!);
+  const parsed = JSON.parse(lines[lines.length - 1]!) as CliInternalOutput;
   return { exitCode: res.status, parsed };
 }
 
@@ -82,8 +84,10 @@ describe('chat _ ensure-session --target-format v2', () => {
     ]);
 
     expect(res.exitCode).toBe(0);
-    expect(res.parsed.success).toBe(true);
-    expect(res.parsed.sessionId).toBe(BASIC_FS_TOOLS.sessionId);
+    expect(res.parsed.kind).toBe('ensureSession');
+    if (res.parsed.kind === 'ensureSession') {
+      expect(res.parsed.data.sessionId).toBe(BASIC_FS_TOOLS.sessionId);
+    }
   });
 
   it('reports SESSION_NOT_FOUND for a missing V2 session', () => {
@@ -99,7 +103,9 @@ describe('chat _ ensure-session --target-format v2', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.success).toBe(false);
-    expect(res.parsed.code).toBe('SESSION_NOT_FOUND');
+    expect(res.parsed.kind).toBe('error');
+    if (res.parsed.kind === 'error') {
+      expect(res.parsed.data.code).toBe(ErrorCode.SessionNotFound);
+    }
   });
 });

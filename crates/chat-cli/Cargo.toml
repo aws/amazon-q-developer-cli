@@ -123,6 +123,7 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 typed-path.workspace = true
+typeshare.workspace = true
 unicode-width.workspace = true
 url.workspace = true
 uuid.workspace = true

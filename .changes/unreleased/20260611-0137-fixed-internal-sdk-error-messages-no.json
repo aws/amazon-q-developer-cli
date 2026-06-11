@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Internal SDK error messages no longer leak to the terminal during normal operation"
+}

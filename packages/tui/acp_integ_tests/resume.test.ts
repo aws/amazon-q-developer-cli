@@ -58,7 +58,7 @@ interface ScriptedBinaryOptions {
   /**
    * When true, `chat _ ensure-session --source-session-id <id> ...`
    * passes the id through unchanged: emits
-   * `{success: true, sessionId: "<id>"}` and exits 0.
+   * `{kind: "ensureSession", data: {sessionId: "<id>"}}` and exits 0.
    */
   ensureSessionPassthrough?: boolean;
 }
@@ -96,7 +96,7 @@ function writeResumeStub(opts: ScriptedBinaryOptions): ScriptedBinary {
     `fi\n` +
     (passthrough
       ? `if [[ $found_ensure -eq 1 && -n "$ssid" ]]; then\n` +
-        `  printf '{"success": true, "sessionId": "%s", "path": "/dev/null"}\\n' "$ssid"\n` +
+        `  printf '{"kind":"ensureSession","data":{"sessionId":"%s"}}\\n' "$ssid"\n` +
         `  exit 0\n` +
         `fi\n`
       : '') +

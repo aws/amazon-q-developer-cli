@@ -7,12 +7,12 @@
  * subcommand is headless and JSON-on-stdout; spawnSync is the right
  * driver, not the PTY-based `E2ETestCase`.
  *
- * Output contract:
- * - Success (exit 0): `{success: true, sessionId: "<v2-uuid>", messages: [...]}`
- * - Failure (exit 1): `{success: false, error: "<message>"}`
+ * Output contract: typeshare-shared `CliInternalOutput` discriminated
+ * union (`{kind, data}`).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,8 +28,8 @@ interface RunResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
-  /** Last stdout line parsed as JSON. Logs may precede it. */
-  parsed: Record<string, unknown>;
+  /** Last stdout line parsed as the typed wire contract. */
+  parsed: CliInternalOutput;
 }
 
 function runCli(args: string[]): RunResult {
@@ -42,9 +42,9 @@ function runCli(args: string[]): RunResult {
     );
   }
   const last = lines[lines.length - 1]!;
-  let parsed: Record<string, unknown>;
+  let parsed: CliInternalOutput;
   try {
-    parsed = JSON.parse(last);
+    parsed = JSON.parse(last) as CliInternalOutput;
   } catch (cause) {
     throw new Error(
       `last stdout line is not JSON: ${JSON.stringify(last)} (exit=${res.status}, stderr=${res.stderr})`,
@@ -80,8 +80,8 @@ describe('chat _ derive-messages (V2 -> Vec<Message>)', () => {
 
   // Skipped until `derive-messages` is implemented alongside the
   // KAS -> V2 migration flow. The handler today emits
-  // `{success:false, error:"not implemented"}`; this test pins the
-  // success-path payload that the implementation will produce.
+  // `{kind: "error", data: {message: "not implemented"}}`; this test
+  // pins the success-path payload that the implementation will produce.
   it.skip('returns V2 model-context messages on success', () => {
     const sessionsDir = join(tmp, 'v2-sessions');
     seedV2(sessionsDir, BASIC_FS_TOOLS.sessionId, BASIC_FS_TOOLS.fixtureDir);
@@ -95,20 +95,12 @@ describe('chat _ derive-messages (V2 -> Vec<Message>)', () => {
     ]);
 
     expect(res.exitCode).toBe(0);
-    expect(res.parsed.success).toBe(true);
-    expect(res.parsed.error).toBeUndefined();
-    expect(res.parsed.sessionId).toBe(BASIC_FS_TOOLS.sessionId);
-
-    const messages = res.parsed.messages as unknown[];
-    expect(Array.isArray(messages)).toBe(true);
-    // The fixture has 1 user prompt + 7 assistant turns + 6 tool result
-    // turns. V2's `derive_messages` collapses those into model-shaped
-    // user/assistant pairs; assert non-empty here, count-pinning lives
-    // in the parity test.
-    expect(messages.length).toBeGreaterThan(0);
+    // Whatever final variant name `derive-messages` uses, it must not
+    // be `error`. Re-pin the variant + payload shape when implementing.
+    expect(res.parsed.kind).not.toBe('error');
   });
 
-  it('emits {success:false, error} for a missing session id', () => {
+  it('emits {kind:error, data:{message}} for a missing session id', () => {
     const sessionsDir = join(tmp, 'v2-sessions');
     mkdirSync(sessionsDir, { recursive: true });
 
@@ -121,8 +113,10 @@ describe('chat _ derive-messages (V2 -> Vec<Message>)', () => {
     ]);
 
     expect(res.exitCode).toBe(1);
-    expect(res.parsed.success).toBe(false);
-    expect(typeof res.parsed.error).toBe('string');
-    expect(res.parsed.messages).toBeUndefined();
+    expect(res.parsed.kind).toBe('error');
+    if (res.parsed.kind === 'error') {
+      expect(typeof res.parsed.data.message).toBe('string');
+      expect(res.parsed.data.message.length).toBeGreaterThan(0);
+    }
   });
 });

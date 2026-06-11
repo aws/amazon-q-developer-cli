@@ -65,7 +65,6 @@ const mockEnsureSession = mock<
   Promise.resolve({
     ok: true,
     sessionId: input.sourceSessionId,
-    converted: false,
   })
 );
 mock.module('../../../utils/ensure-session-cli', () => ({
@@ -248,7 +247,7 @@ describe('handleChat (KAS-mode dispatch)', () => {
     it('shows an error alert when exportSession reports failure', async () => {
       mockExportSession.mockReturnValue({
         ok: false,
-        error: 'session not found',
+        message: 'session not found',
       });
       const ctx = createMockCommandContext({
         kasCommands: [CHAT_CMD],
@@ -369,7 +368,7 @@ describe('handleChat (KAS-mode dispatch)', () => {
     it('shows error alert and skips loadSession when import fails', async () => {
       mockImportSession.mockReturnValue({
         ok: false,
-        error: 'archive is not a zip',
+        message: 'archive is not a zip',
       });
       const loadSession = mock(() => Promise.resolve({}));
       const ctx = createMockCommandContext({

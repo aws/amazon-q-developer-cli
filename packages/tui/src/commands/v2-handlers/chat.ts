@@ -142,7 +142,7 @@ async function loadExistingSession(
   });
   ctx.setLoadingMessage(null);
   if (!ensured.ok) {
-    ctx.showAlert(`Failed to load session: ${ensured.error}`, 'error', 5000);
+    ctx.showAlert(`Failed to load session: ${ensured.message}`, 'error', 5000);
     return;
   }
   runSessionLoad(ensured.sessionId, ctx, {

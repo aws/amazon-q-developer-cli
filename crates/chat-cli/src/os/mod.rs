@@ -5,6 +5,7 @@ mod env;
 mod fs;
 mod sysinfo;
 
+use chat_cli_v2::util::log_on_err::LogOnErr;
 pub use env::Env;
 use eyre::Result;
 pub use fs::Fs;
@@ -49,7 +50,9 @@ impl Os {
     pub async fn new() -> Result<Self> {
         let env = Env::new();
         let fs = Fs::new();
-        let mut database = Database::new(&env, &fs).await?;
+        let mut database = Database::new(&env, &fs)
+            .await
+            .log_on_err("Os::new: Database::new failed")?;
 
         // For API key users, discover the correct regional endpoint before creating the client.
         let endpoint = if crate::util::env_var::get_api_key().is_some() {
@@ -58,10 +61,16 @@ impl Os {
             None
         };
 
-        let client = ApiClient::new(&env, &fs, &mut database, endpoint).await?;
-        let token = BuilderIdToken::load(&database, None).await?;
+        let client = ApiClient::new(&env, &fs, &mut database, endpoint)
+            .await
+            .log_on_err("Os::new: ApiClient::new failed")?;
+        let token = BuilderIdToken::load(&database, None)
+            .await
+            .log_on_err("Os::new: BuilderIdToken::load failed")?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region).await?;
+        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region)
+            .await
+            .log_on_err("Os::new: TelemetryThread::new failed")?;
         Rollout::init(
             database.get_client_id().ok().flatten(),
             database.get_start_url().ok().flatten(),

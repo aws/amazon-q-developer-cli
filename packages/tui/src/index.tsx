@@ -19,6 +19,7 @@ import { cmuxCleanup } from './utils/cmux.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
 import { ensureSession } from './utils/ensure-session-cli';
+import { ErrorCode } from './types/generated/chat-internal';
 import {
   isResumableSource,
   isActiveEngineSource,
@@ -62,6 +63,12 @@ import {
   refreshFromSession,
   resetTerminalTitle,
 } from './utils/terminal-title';
+import { installConsoleInterceptor } from './utils/console-interceptor';
+
+// Route every `console.*` call through `logger` (file-only). Must run
+// before any third-party code (notably `@agentclientprotocol/sdk`)
+// fires its hardcoded `console.error` and leaks to the user terminal.
+installConsoleInterceptor();
 
 // Tracks which session ID has had its title synced from disk via onTurnSummary,
 // so we only read the file once per session.
@@ -567,12 +574,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
               resolvedSessionId = ensured.sessionId;
             } else {
               logger.warn(
-                `Failed to convert most-recent session for --resume: ${ensured.error}`
+                `Failed to convert most-recent session for --resume: ${ensured.message}`
               );
               appStore
                 .getState()
                 .setAgentError(
-                  `Could not resume most-recent session: ${ensured.error}`,
+                  `Could not resume most-recent session: ${ensured.message}`,
                   'Starting a new session instead.'
                 );
             }
@@ -720,10 +727,10 @@ const startApp = async () => {
             resumePickerSessionId = ensured.sessionId;
           } else {
             logger.warn(
-              `Failed to convert picked session for --resume-picker: ${ensured.error}`
+              `Failed to convert picked session for --resume-picker: ${ensured.message}`
             );
             process.stderr.write(
-              `Could not load picked session: ${ensured.error}. Starting new session.\n`
+              `Could not load picked session: ${ensured.message}. Starting new session.\n`
             );
           }
         }
@@ -747,12 +754,12 @@ const startApp = async () => {
       resumePickerSessionId = ensured.sessionId;
     } else {
       logger.warn(
-        `Failed to resolve session for --resume-id: ${ensured.error}`
+        `Failed to resolve session for --resume-id: ${ensured.message}`
       );
       const detail =
-        ensured.code === 'SESSION_NOT_FOUND'
+        ensured.code === ErrorCode.SessionNotFound
           ? `Failed to find session with id ${cliArgs.resumeId}`
-          : `Failed to resume session ${cliArgs.resumeId}: ${ensured.error}`;
+          : `Failed to resume session ${cliArgs.resumeId}: ${ensured.message}`;
       appStore
         .getState()
         .setAgentError(detail, 'Starting a new session instead.');

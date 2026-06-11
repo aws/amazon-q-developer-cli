@@ -53,9 +53,9 @@ interface ScriptedBinaryOptions {
   /**
    * When true, requests of the form
    * `chat _ ensure-session --source-session-id <id> ...` short-circuit
-   * to `{"success": true, "sessionId": "<id>"}` with exit 0. Used by
-   * tests that need the import / picker flow's auto-format probe to
-   * succeed without standing up real KAS storage.
+   * to `{"kind":"ensureSession","data":{"sessionId":"<id>"}}` with exit 0.
+   * Used by tests that need the import / picker flow's auto-format
+   * probe to succeed without standing up real KAS storage.
    */
   ensureSessionPassthrough?: boolean;
   /**
@@ -135,7 +135,7 @@ function writeScriptedBinary(
           : '') +
         (ensurePassthrough
           ? `if defined FOUND_ENSURE if defined SSID (\r\n` +
-            `  echo {"success": true, "sessionId": "%SSID%"}\r\n` +
+            `  echo {"kind":"ensureSession","data":{"sessionId":"%SSID%"}}\r\n` +
             `  exit /b 0\r\n` +
             `)\r\n`
           : '') +
@@ -175,7 +175,7 @@ function writeScriptedBinary(
           : '') +
         (ensurePassthrough
           ? `if [[ $found_ensure -eq 1 && -n "$ssid" ]]; then\n` +
-            `  printf '{"success": true, "sessionId": "%s"}\\n' "$ssid"\n` +
+            `  printf '{"kind":"ensureSession","data":{"sessionId":"%s"}}\\n' "$ssid"\n` +
             `  exit 0\n` +
             `fi\n`
           : '') +
@@ -355,7 +355,10 @@ describe('/chat command', () => {
 
   it("'/chat save <path>' surfaces the binary's success path on alert", async () => {
     stub = writeScriptedBinary(
-      JSON.stringify({ success: true, path: '/tmp/integ-export.zip' }),
+      JSON.stringify({
+        kind: 'exportSession',
+        data: { path: '/tmp/integ-export.zip' },
+      }),
       0
     );
     tc = new AcpTestCase({
@@ -380,7 +383,10 @@ describe('/chat command', () => {
 
   it("'/chat save <path>' surfaces the binary's error path on alert", async () => {
     stub = writeScriptedBinary(
-      JSON.stringify({ success: false, error: 'session not found' }),
+      JSON.stringify({
+        kind: 'error',
+        data: { message: 'session not found' },
+      }),
       1
     );
     tc = new AcpTestCase({
@@ -405,7 +411,10 @@ describe('/chat command', () => {
     const importedSessionId = 'sess_imported-from-archive-1';
     const importedPath = `/sessions/abc123/${importedSessionId}`;
     stub = writeScriptedBinary({
-      defaultJson: JSON.stringify({ success: true, path: importedPath }),
+      defaultJson: JSON.stringify({
+        kind: 'importSession',
+        data: { path: importedPath },
+      }),
       defaultExitCode: 0,
       ensureSessionPassthrough: true,
     });
@@ -463,7 +472,10 @@ describe('/chat command', () => {
 
   it("'/chat load <path>' surfaces the binary's error path and skips session/load", async () => {
     stub = writeScriptedBinary(
-      JSON.stringify({ success: false, error: 'archive is not a zip' }),
+      JSON.stringify({
+        kind: 'error',
+        data: { message: 'archive is not a zip' },
+      }),
       1
     );
     const archiveDir = mkdtempSync(join(tmpdir(), 'kiro-integ-archive-'));
@@ -516,7 +528,7 @@ describe('/chat command', () => {
       },
     ]);
     stub = writeScriptedBinary({
-      defaultJson: '{"success": false, "error": "unhandled subcommand"}',
+      defaultJson: '{"kind":"error","data":{"message":"unhandled subcommand"}}',
       defaultExitCode: 1,
       listSessionsJson: listingJson,
       ensureSessionPassthrough: true,

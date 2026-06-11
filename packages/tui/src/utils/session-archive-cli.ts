@@ -12,11 +12,8 @@
  * `chat-internal-cli.ts`.
  */
 
-import {
-  type RunResult,
-  type SyncSpawner,
-  runChatInternalSync,
-} from './chat-internal-cli';
+import type { ErrorCode } from '../types/generated/chat-internal';
+import { type SyncSpawner, runChatInternalSync } from './chat-internal-cli';
 
 export type { SyncSpawner };
 
@@ -42,10 +39,32 @@ export interface ImportSessionInput {
   basePath?: string;
 }
 
-export type ArchiveResult = RunResult<{ path: string }>;
+export type ArchiveResult =
+  | { ok: true; path: string }
+  | { ok: false; message: string; code?: ErrorCode };
 
-const pickPath = (parsed: Record<string, unknown>): { path: string } | null =>
-  typeof parsed.path === 'string' ? { path: parsed.path } : null;
+function archiveResultFor(
+  expectedKind: 'exportSession' | 'importSession',
+  args: string[],
+  spawner?: SyncSpawner
+): ArchiveResult {
+  const r = runChatInternalSync(args, spawner);
+  if (!r.ok) return { ok: false, message: r.message };
+  if (r.output.kind === 'error') {
+    return {
+      ok: false,
+      message: r.output.data.message,
+      ...(r.output.data.code ? { code: r.output.data.code } : {}),
+    };
+  }
+  if (r.output.kind !== expectedKind) {
+    return {
+      ok: false,
+      message: `Unexpected response kind from kiro-cli: ${r.output.kind}`,
+    };
+  }
+  return { ok: true, path: r.output.data.path };
+}
 
 export function exportSession(
   input: ExportSessionInput,
@@ -64,7 +83,7 @@ export function exportSession(
   ];
   if (input.basePath) args.push('--base-path', input.basePath);
   if (input.force) args.push('--force');
-  return runChatInternalSync(args, pickPath, spawner);
+  return archiveResultFor('exportSession', args, spawner);
 }
 
 export function importSession(
@@ -81,5 +100,5 @@ export function importSession(
     input.cwd,
   ];
   if (input.basePath) args.push('--base-path', input.basePath);
-  return runChatInternalSync(args, pickPath, spawner);
+  return archiveResultFor('importSession', args, spawner);
 }

@@ -39,7 +39,6 @@ const mockEnsureSession = mock<
   Promise.resolve({
     ok: true,
     sessionId: input.sourceSessionId,
-    converted: false,
   })
 );
 mock.module('../../../utils/ensure-session-cli', () => ({
@@ -122,17 +121,6 @@ describe('handleChat (V2-mode dispatch)', () => {
       expect(setActive).toHaveBeenCalled();
       expect(setActive.mock.calls[0][0].options).toHaveLength(1);
       expect(setActive.mock.calls[0][0].options[0].value).toBe('native-v2');
-    });
-
-    it('tags non-active-engine entries with their source in the label', async () => {
-      // In V2 mode the only non-native source that survives the
-      // resumable filter is `classic` (V2 actually owns classic via
-      // LegacySessionExporter, so it ends up native). The
-      // source-tag branch is exercised in KAS mode where V2 entries
-      // are non-native; see `kas-handlers/__tests__/chat.test.ts`.
-      // This test is intentionally left as a placeholder so the
-      // describe block remains consistent with the KAS suite.
-      expect(true).toBe(true);
     });
 
     it('strips raw newlines from picker option labels', async () => {
@@ -316,7 +304,7 @@ describe('handleChat (V2-mode dispatch)', () => {
     it('alerts when ensureSession fails', async () => {
       mockEnsureSession.mockResolvedValueOnce({
         ok: false,
-        error: 'session not found',
+        message: 'session not found',
       });
       const ctx = createMockCommandContext();
       await handleChat(CHAT_CMD, 'missing-id', ctx);
