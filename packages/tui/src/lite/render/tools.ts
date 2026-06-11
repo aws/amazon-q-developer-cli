@@ -816,8 +816,9 @@ type UnwrappedToolOutput =
  * Known string shapes (returned as `{ kind: 'text' }`):
  *   - Shell:  {items:[{Json:{stdout, stderr, exit_status}}]}
  *             Renders stdout, then "(exit N)" for non-zero, then "[stderr] ..."
- *   - Generic items[0].Text — surface the inner string verbatim.
- *   - Generic items[0].Json with `text` / `content` strings — surface those.
+ *   - Generic items[].Text — surface the inner string(s) verbatim. Multiple
+ *     items are concatenated (a tool may emit several content blocks).
+ *   - Generic items[].Json with `text` / `content` strings — surface those.
  *   - {content:[{text}]} — ACP-style content blocks, surface concatenated text.
  *
  * Unknown shape: returned as `{ kind: 'json', value }` with the most
@@ -832,23 +833,41 @@ function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
 
   // ACP {items: [...]} envelope — the canonical wire shape.
   if (Array.isArray(obj.items) && obj.items.length > 0) {
-    const first = obj.items[0] as Record<string, unknown> | undefined;
-    if (first && typeof first === 'object') {
-      if (typeof first.Text === 'string')
-        return { kind: 'text', value: first.Text };
-      if (first.Json && typeof first.Json === 'object') {
-        const inner = first.Json as Record<string, unknown>;
-        // Shell-shaped Json: render stdout + stderr + exit code.
+    // Resolve the text payload of a single item, or null if it has no known
+    // string shape. Shared by the multi-item and single-item paths below.
+    const itemText = (raw: unknown): string | null => {
+      if (!raw || typeof raw !== 'object') return null;
+      const item = raw as Record<string, unknown>;
+      if (typeof item.Text === 'string') return item.Text;
+      if (item.Json && typeof item.Json === 'object') {
+        const inner = item.Json as Record<string, unknown>;
         const shell = formatShellEnvelope(inner);
-        if (shell != null) return { kind: 'text', value: shell };
-        // Some envelopes nest text directly under Json.
-        if (typeof inner.text === 'string')
-          return { kind: 'text', value: inner.text };
-        if (typeof inner.content === 'string')
-          return { kind: 'text', value: inner.content };
-        // Unknown structured shape — hand the parsed inner up so the caller
-        // can render the key:value tree.
-        return { kind: 'json', value: inner };
+        if (shell != null) return shell;
+        if (typeof inner.text === 'string') return inner.text;
+        if (typeof inner.content === 'string') return inner.content;
+      }
+      return null;
+    };
+
+    // Multi-item: concatenate every item that yields text. A single tool can
+    // return several content blocks (text + text, text + structured); reading
+    // only items[0] silently dropped the rest.
+    if (obj.items.length > 1) {
+      const parts: string[] = [];
+      for (const it of obj.items) {
+        const t = itemText(it);
+        if (t != null) parts.push(t);
+      }
+      if (parts.length > 0) return { kind: 'text', value: parts.join('\n') };
+    } else {
+      const first = obj.items[0] as Record<string, unknown> | undefined;
+      const t = itemText(first);
+      if (t != null) return { kind: 'text', value: t };
+      // Single Json item with an unknown structured shape — hand the parsed
+      // inner up so the caller renders the key:value tree.
+      if (first && typeof first === 'object' && first.Json &&
+          typeof first.Json === 'object') {
+        return { kind: 'json', value: first.Json as Record<string, unknown> };
       }
     }
   }

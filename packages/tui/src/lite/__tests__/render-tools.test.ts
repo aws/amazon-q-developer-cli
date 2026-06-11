@@ -994,6 +994,33 @@ describe('verbose output envelope unwrapping', () => {
     expect(out).not.toContain('"Text"');
   });
 
+  test('multi-item Text envelope concatenates every item (no silent drop)', () => {
+    // A tool can emit several content blocks. Reading only items[0] dropped
+    // the rest; all Text items must surface.
+    const out = stripAnsi(
+      renderMessageToText(
+        toolMsg({
+          name: 'fs_read',
+          content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
+          result: {
+            status: 'success',
+            output: {
+              items: [
+                { Text: 'first block' },
+                { Text: 'second block' },
+                { Json: { text: 'third block' } },
+              ],
+            },
+          },
+        }),
+        'kiro_default'
+      )
+    );
+    expect(out).toContain('first block');
+    expect(out).toContain('second block');
+    expect(out).toContain('third block');
+  });
+
   test('unknown shape: falls back to JSON with literal \\n un-escaped to real newlines', () => {
     const out = stripAnsi(
       renderMessageToText(
