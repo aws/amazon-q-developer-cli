@@ -306,6 +306,7 @@ type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
   meteringUsage: MeteringUsage[];
   turnDurationMs?: number;
+  contextUsagePercentage?: number;
   status?: string;
 };
 
@@ -326,6 +327,15 @@ function normalizeKasTurnCompletionStatus(status: unknown): string | undefined {
   return KAS_TURN_COMPLETION_STATUSES.has(status) ? status : '_other_';
 }
 
+function normalizeKasContextUsagePercentage(
+  meta: KasSessionInfoMeta
+): number | undefined {
+  const percentage = meta.usagePercentage ?? meta.contextUsage?.usagePercentage;
+  return typeof percentage === 'number' && Number.isFinite(percentage)
+    ? percentage
+    : undefined;
+}
+
 function normalizeKasTurnCompletion(
   meta: KasSessionInfoMeta,
   sessionId?: string
@@ -342,7 +352,12 @@ function normalizeKasTurnCompletion(
     }));
   const turnDurationMs =
     typeof meta.elapsedTime === 'number' ? meta.elapsedTime : undefined;
-  if (meteringUsage.length === 0 && turnDurationMs == null) {
+  const contextUsagePercentage = normalizeKasContextUsagePercentage(meta);
+  if (
+    meteringUsage.length === 0 &&
+    turnDurationMs == null &&
+    contextUsagePercentage == null
+  ) {
     return undefined;
   }
   const status = normalizeKasTurnCompletionStatus(meta.status);
@@ -351,6 +366,7 @@ function normalizeKasTurnCompletion(
     ...(sessionId ? { sessionId } : {}),
     meteringUsage,
     ...(turnDurationMs != null ? { turnDurationMs } : {}),
+    ...(contextUsagePercentage != null ? { contextUsagePercentage } : {}),
     ...(status ? { status } : {}),
   };
 }
@@ -1456,6 +1472,18 @@ abstract class BaseAcpClient implements SessionClient {
             // Nothing to show. Returning null keeps the chip cleared.
             return null;
           }
+          if (completion.contextUsagePercentage != null) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.ContextUsage,
+              percent: completion.contextUsagePercentage,
+            });
+          }
+          if (
+            completion.meteringUsage.length === 0 &&
+            completion.turnDurationMs == null
+          ) {
+            return null;
+          }
           return {
             type: AgentEventType.TurnSummary,
             meteringUsage: completion.meteringUsage,
@@ -1484,8 +1512,7 @@ abstract class BaseAcpClient implements SessionClient {
           };
         }
         if (meta?.kind === 'context_usage' || meta?.contextUsage) {
-          const percent =
-            meta?.usagePercentage ?? meta?.contextUsage?.usagePercentage;
+          const percent = normalizeKasContextUsagePercentage(meta);
           if (typeof percent === 'number') {
             this.broadcastStreamEvent({
               type: AgentEventType.ContextUsage,

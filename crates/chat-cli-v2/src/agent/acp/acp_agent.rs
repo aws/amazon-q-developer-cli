@@ -1698,7 +1698,11 @@ impl AcpSession {
         let agent = agent.spawn();
 
         // Create telemetry observer actor
-        let telemetry_context = TelemetryContext::new(Arc::clone(&rts_state), builder.acp_client_info.clone());
+        let telemetry_context = TelemetryContext::new(
+            Arc::clone(&rts_state),
+            builder.acp_client_info.clone(),
+            builder.is_subagent,
+        );
         let telemetry_observer = TelemetryObserver::spawn(
             telemetry_context,
             os.telemetry.clone(),

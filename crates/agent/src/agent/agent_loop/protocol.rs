@@ -273,6 +273,9 @@ pub struct UserTurnMetadata {
     /// Metering usage (credits) accumulated across all requests in this turn
     #[serde(default)]
     pub metering_usage: Vec<super::types::MeteringUsageInfo>,
+    /// Byte length of the original user prompt text for this turn.
+    #[serde(default)]
+    pub user_prompt_length: usize,
 }
 
 /// The reason why a user turn ended

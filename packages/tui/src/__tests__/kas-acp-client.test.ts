@@ -2704,6 +2704,7 @@ describe('KasAcpClient', () => {
               },
             ],
             elapsedTime: 1234,
+            contextUsage: { usagePercentage: 42 },
             status: 'success',
           },
         },
@@ -2728,6 +2729,7 @@ describe('KasAcpClient', () => {
           { value: 500, unit: 'token', unitPlural: 'Tokens' },
         ],
         turnDurationMs: 1234,
+        contextUsagePercentage: 42,
         status: 'success',
       }
     );
@@ -2736,6 +2738,44 @@ describe('KasAcpClient', () => {
     )?.[1] as any;
     expect(telemetryPayload.meteringUsage[0]).not.toHaveProperty('usedTools');
     expect(telemetryPayload.meteringUsage[1]).not.toHaveProperty('usedTools');
+  });
+
+  it('session_info_update kind=turn_completion forwards telemetry context usage without a turn summary', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            contextUsage: { usagePercentage: 66 },
+          },
+        },
+      },
+    });
+
+    expect(handler.mock.calls.map((c) => c[0])).toContainEqual({
+      type: AgentEventType.ContextUsage,
+      percent: 66,
+    });
+    expect(
+      handler.mock.calls
+        .map((c) => c[0])
+        .some((e: any) => e.type === AgentEventType.TurnSummary)
+    ).toBe(false);
+    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/turnCompletion',
+      {
+        sessionId: 'kas-session-1',
+        meteringUsage: [],
+        contextUsagePercentage: 66,
+      }
+    );
   });
 
   it('session_info_update kind=turn_completion drops entries without numeric usage', async () => {

@@ -400,6 +400,8 @@ impl AgentLoop {
             }
         }
 
+        let user_prompt_length = self.stream_states.first().map_or(0, |s| s.user_message.text().len());
+
         UserTurnMetadata {
             loop_id: self.id.clone(),
             result: self.stream_states.last().map(|s| s.make_result()),
@@ -427,6 +429,7 @@ impl AgentLoop {
             output_token_count,
             context_usage_percentage,
             metering_usage,
+            user_prompt_length,
         }
     }
 }
@@ -981,6 +984,41 @@ mod tests {
                 _ => None,
             })
             .expect("expected ResponseStreamEnd event")
+    }
+
+    #[test]
+    fn user_turn_metadata_records_first_prompt_length() {
+        fn ended_stream_state(user_message: Message) -> StreamParseState {
+            let mut state = StreamParseState::new(user_message, None);
+            let mut events = Vec::new();
+            state.next(Some(message_start()), &mut events);
+            state.next(Some(message_stop()), &mut events);
+            state.next(None, &mut events);
+            state
+        }
+
+        let cancel_token = CancellationToken::new();
+        let mut agent_loop = AgentLoop::new(AgentLoopId::new(AgentId::default()), cancel_token);
+        agent_loop.stream_states.push(ended_stream_state(Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text("count me".into())],
+            None,
+        )));
+        agent_loop.stream_states.push(ended_stream_state(Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "tu_1".into(),
+                content: vec![ToolResultContentBlock::Text("do not count me".into())],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        )));
+
+        let metadata = agent_loop.make_user_turn_metadata();
+
+        assert_eq!(metadata.user_prompt_length, "count me".len());
     }
 
     #[test]

@@ -313,7 +313,7 @@ metrics:
     kind: log_event
     unit: event
     priority: P0
-    attributes: [tool_use_id, tool_name, mcp_server_name, model_class]
+    attributes: [tool_use_id, tool_name, mcp_server_name, model_class, is_success, execution_duration_ms]
   - name: kiro_cli_tool_invocations
     kind: counter
     unit: "1"

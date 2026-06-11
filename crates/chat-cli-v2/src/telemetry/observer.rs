@@ -28,11 +28,15 @@ use agent::protocol::{
     AgentEvent,
     InternalEvent,
     PermissionEvalResult,
+    ToolCallFailureReason,
     ToolCallResult,
     UpdateEvent,
 };
 use agent::task_executor::TaskExecutorEvent;
-use agent::tools::ToolKind;
+use agent::tools::{
+    BuiltInTool,
+    ToolKind,
+};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -42,6 +46,7 @@ use super::core::{
     ChatConversationType,
     Event,
     EventType,
+    MessageMetaTag,
     RecordUserTurnCompletionArgs,
     estimated_cost_usd,
 };
@@ -204,15 +209,17 @@ pub struct TelemetryContext {
     pub rts_state: Arc<RtsState>,
     pub app_type: AppType,
     pub client_info: Option<AcpClientInfo>,
+    pub is_subagent: bool,
 }
 
 impl TelemetryContext {
-    pub fn new(rts_state: Arc<RtsState>, client_info: Option<AcpClientInfo>) -> Self {
+    pub fn new(rts_state: Arc<RtsState>, client_info: Option<AcpClientInfo>, is_subagent: bool) -> Self {
         let app_type = client_info.as_ref().map_or(AppType::Acp, |ci| ci.app_type());
         Self {
             rts_state,
             app_type,
             client_info,
+            is_subagent,
         }
     }
 
@@ -220,8 +227,20 @@ impl TelemetryContext {
         self.rts_state.model_id()
     }
 
+    fn client_application(&self) -> &'static str {
+        match self.app_type {
+            AppType::V1 => "chat_cli",
+            AppType::V2 => "chat_cli_v2",
+            AppType::Acp => "acp_external",
+        }
+    }
+
     fn apply_to(&self, event: &mut Event) {
         event.app_type = Some(self.app_type.as_str().to_string());
+        event
+            .client_application
+            .get_or_insert_with(|| self.client_application().to_string());
+        event.is_subagent = self.is_subagent;
         if let Some(ci) = &self.client_info {
             event.acp_client_name = Some(ci.name.as_str().to_string());
             event.acp_client_version = Some(ci.version.as_str().to_string());
@@ -244,6 +263,7 @@ struct TurnState {
     estimated_cost_usd: f64,
     has_tool_use: bool,
     follow_up_count: i64,
+    message_meta_tags: Vec<MessageMetaTag>,
     /// Stored from the last failed request for propagation to turn-level telemetry.
     last_error: Option<ErrorInfo>,
     /// Number of HTTP-level attempts for the last request in the turn. Pairs with
@@ -272,6 +292,12 @@ impl TurnState {
         })
         .unwrap_or_default();
     }
+
+    fn add_message_meta_tag(&mut self, tag: MessageMetaTag) {
+        if !self.message_meta_tags.contains(&tag) {
+            self.message_meta_tags.push(tag);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -285,6 +311,9 @@ struct ErrorInfo {
 #[derive(Debug)]
 struct ToolUseTracker {
     tool_name: String,
+    mcp_server_name: Option<String>,
+    aws_service_name: Option<String>,
+    aws_operation_name: Option<String>,
     is_custom_tool: bool,
     is_trusted: Option<bool>,
     is_accepted: Option<bool>,
@@ -400,8 +429,20 @@ impl TelemetryObserver {
                 }
             },
             AgentEvent::Update(UpdateEvent::ToolCall(tool_call)) => {
+                let (mcp_server_name, aws_service_name, aws_operation_name) = match &tool_call.tool.kind {
+                    ToolKind::Mcp(mcp) => (Some(mcp.server_name.clone()), None, None),
+                    ToolKind::BuiltIn(BuiltInTool::UseAws(use_aws)) => (
+                        None,
+                        Some(use_aws.service_name.clone()),
+                        Some(use_aws.operation_name.clone()),
+                    ),
+                    ToolKind::BuiltIn(_) => (None, None, None),
+                };
                 session.tool_trackers.insert(tool_call.id.clone(), ToolUseTracker {
                     tool_name: tool_call.tool.kind.canonical_tool_name().tool_name().to_string(),
+                    mcp_server_name,
+                    aws_service_name,
+                    aws_operation_name,
                     is_custom_tool: matches!(tool_call.tool.kind, ToolKind::Mcp(_)),
                     is_trusted: None,
                     is_accepted: None,
@@ -441,13 +482,23 @@ impl TelemetryObserver {
                     self.emit_tool_use_suggested(session_id, &tool_call.id, tracker, Some(result), true);
                 }
             },
-            AgentEvent::Update(UpdateEvent::ToolCallFailed { tool_use_id, .. }) => {
+            AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                tool_use_id,
+                tool_name,
+                reason,
+                ..
+            }) => {
                 if let Some(tracker) = session.tool_trackers.remove(tool_use_id) {
                     self.emit_tool_use_suggested(session_id, tool_use_id, tracker, None, false);
+                } else {
+                    self.emit_failed_tool_use_suggested(session_id, tool_use_id, tool_name, reason);
                 }
             },
             AgentEvent::EndTurn(metadata) => {
                 self.handle_end_turn(session_id, metadata);
+            },
+            AgentEvent::Compaction(agent::protocol::CompactionEvent::Started) => {
+                session.turn_state.add_message_meta_tag(MessageMetaTag::Compact);
             },
             _ => {},
         }
@@ -496,6 +547,13 @@ impl TelemetryObserver {
         let tool_use_ids: Vec<String> = metadata.tool_uses.iter().map(|t| t.tool_use_id.clone()).collect();
         let tool_names: Vec<String> = metadata.tool_uses.iter().map(|t| t.name.clone()).collect();
         let has_tool_use = !metadata.tool_uses.is_empty();
+        let message_meta_tags = self
+            .sessions
+            .entry(session_id.to_string())
+            .or_default()
+            .turn_state
+            .message_meta_tags
+            .clone();
 
         let (telemetry_result, reason, reason_desc, err_status_code) = match result {
             Ok(_) => (TelemetryResult::Succeeded, None, None, None),
@@ -552,7 +610,7 @@ impl TelemetryObserver {
                 Some(tool_use_ids.join(","))
             },
             assistant_response_length: response_len,
-            message_meta_tags: vec![], // TODO: populate meta tags (e.g. Compact) for V1 parity
+            message_meta_tags,
             total_tokens: usage.and_then(|u| {
                 // total = uncached_input + cache_read + output
                 // cache_write is a subset of uncached_input, not additive
@@ -641,7 +699,7 @@ impl TelemetryObserver {
             (None, None, None)
         };
 
-        let user_turn_duration_seconds = metadata.turn_duration.map_or(0, |d| d.as_secs() as i64);
+        let user_turn_duration_seconds = whole_turn_duration_seconds(metadata.turn_duration);
 
         let turn = std::mem::take(&mut session.turn_state);
 
@@ -661,7 +719,7 @@ impl TelemetryObserver {
                 } else {
                     ChatConversationType::NotToolUse
                 }),
-                user_prompt_length: 0, // TODO: track actual prompt length
+                user_prompt_length: metadata.user_prompt_length.min(i64::MAX as usize) as i64,
                 assistant_response_length: turn.assistant_response_length,
                 total_tokens: positive_i64(turn.total_tokens),
                 uncached_input_tokens: positive_i64(turn.uncached_input_tokens),
@@ -671,12 +729,22 @@ impl TelemetryObserver {
                 estimated_cost_usd: positive_f64(turn.estimated_cost_usd),
                 user_turn_duration_seconds,
                 follow_up_count: turn.follow_up_count,
-                message_meta_tags: vec![], // TODO: populate meta tags for V1 parity
-                is_subagent: false,        // TODO: derive from session context
+                message_meta_tags: turn.message_meta_tags,
+                is_subagent: self.context.is_subagent,
                 parent_tool_use_id: None,
                 request_attempts: turn.last_request_attempts,
             },
         });
+
+        if let Some(percentage) = metadata.context_usage_percentage
+            && percentage.is_finite()
+            && percentage >= 0.0
+        {
+            self.emit(EventType::ContextUsagePercentage {
+                model: self.context.model(),
+                percentage: percentage as f64,
+            });
+        }
     }
 
     fn emit_tool_use_suggested(
@@ -711,6 +779,7 @@ impl TelemetryObserver {
             user_input_id: None,
             tool_use_id: Some(tool_use_id.to_string()),
             tool_name: Some(tracker.tool_name),
+            mcp_server_name: tracker.mcp_server_name,
             is_accepted,
             is_trusted,
             is_success,
@@ -723,6 +792,38 @@ impl TelemetryObserver {
             model: self.context.model(),
             execution_duration,
             turn_duration,
+            aws_service_name: tracker.aws_service_name,
+            aws_operation_name: tracker.aws_operation_name,
+        });
+    }
+
+    fn emit_failed_tool_use_suggested(
+        &self,
+        session_id: &str,
+        tool_use_id: &str,
+        tool_name: &str,
+        reason: &ToolCallFailureReason,
+    ) {
+        let is_parse_error = matches!(reason, ToolCallFailureReason::ParseError);
+        self.emit(EventType::ToolUseSuggested {
+            conversation_id: session_id.to_string(),
+            utterance_id: None,
+            user_input_id: None,
+            tool_use_id: Some(tool_use_id.to_string()),
+            tool_name: Some(tool_name.to_string()),
+            mcp_server_name: mcp_server_name_from_tool_name(tool_name),
+            is_accepted: is_parse_error,
+            is_trusted: false,
+            is_success: is_parse_error.then_some(false),
+            reason_desc: None,
+            is_valid: Some(!is_parse_error),
+            is_custom_tool: tool_name.starts_with('@'),
+            input_token_size: None,
+            output_token_size: None,
+            custom_tool_call_latency: None,
+            model: self.context.model(),
+            execution_duration: None,
+            turn_duration: None,
             aws_service_name: None,
             aws_operation_name: None,
         });
@@ -741,6 +842,22 @@ fn positive_i64(value: i64) -> Option<i64> {
 
 fn positive_f64(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn mcp_server_name_from_tool_name(tool_name: &str) -> Option<String> {
+    let (server_name, _) = tool_name.strip_prefix('@')?.split_once('/')?;
+    (!server_name.is_empty()).then(|| server_name.to_string())
+}
+
+fn whole_turn_duration_seconds(duration: Option<std::time::Duration>) -> i64 {
+    duration.map_or(0, |duration| {
+        let seconds = duration.as_secs();
+        if seconds == 0 && !duration.is_zero() {
+            1
+        } else {
+            seconds.min(i64::MAX as u64) as i64
+        }
+    })
 }
 
 /// Extract reason code from a [`StreamError`], trying downcast first, then fallback.
@@ -817,11 +934,15 @@ mod tests {
         state
     }
 
-    fn make_observer() -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
+    fn make_observer_with_subagent(is_subagent: bool) -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let client_info = Some(AcpClientInfo::new(KIRO_ACP_CLIENT_NAME.into(), "1.0.0".into()));
-        let ctx = TelemetryContext::new(test_rts_state(), client_info);
+        let ctx = TelemetryContext::new(test_rts_state(), client_info, is_subagent);
         (TelemetryObserver::new_for_test(tx, ctx), rx)
+    }
+
+    fn make_observer() -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
+        make_observer_with_subagent(false)
     }
 
     fn make_loop_event(kind: AgentLoopEventKind) -> AgentEvent {
@@ -898,11 +1019,57 @@ mod tests {
                 assert_eq!(data.request_duration_seconds, Some(0.25));
                 assert!(data.reason.is_none());
                 assert_eq!(event.app_type.as_deref(), Some("V2"));
+                assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
             },
             other => panic!("expected ChatAddedMessage, got {other:?}"),
         }
         // No error event
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_compaction_turn_carries_compact_message_meta_tag() {
+        let (mut obs, mut rx) = make_observer();
+
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::Compaction(agent::protocol::CompactionEvent::Started),
+        );
+        obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::ChatAddedMessage { data, .. } => {
+                assert_eq!(data.message_meta_tags, vec![MessageMetaTag::Compact]);
+            },
+            other => panic!("expected ChatAddedMessage, got {other:?}"),
+        }
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: Some(Duration::from_secs(2)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+            user_prompt_length: 0,
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { args, .. } => {
+                assert_eq!(args.message_meta_tags, vec![MessageMetaTag::Compact]);
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1028,6 +1195,7 @@ mod tests {
             output_token_count: 0,
             context_usage_percentage: None,
             metering_usage: Vec::new(),
+            user_prompt_length: 11,
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -1037,7 +1205,117 @@ mod tests {
                 assert_eq!(*result, TelemetryResult::Succeeded);
                 assert_eq!(args.request_ids.len(), 2);
                 assert_eq!(args.user_turn_duration_seconds, 5);
+                assert_eq!(args.user_prompt_length, 11);
                 assert!(args.reason.is_none());
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_turn_completion_keeps_subsecond_duration() {
+        let (mut obs, mut rx) = make_observer();
+
+        obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+        let _ = rx.try_recv();
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: Some(Duration::from_millis(250)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+            user_prompt_length: 0,
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { args, .. } => {
+                assert_eq!(args.user_turn_duration_seconds, 1);
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_end_turn_emits_context_usage_percentage() {
+        let (mut obs, mut rx) = make_observer_with_subagent(true);
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: Some(Duration::from_secs(1)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: Some(42.5),
+            metering_usage: Vec::new(),
+            user_prompt_length: 0,
+        };
+        obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        assert!(matches!(event.ty, EventType::RecordUserTurnCompletion { .. }));
+
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_subagent);
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
+        match &event.ty {
+            EventType::ContextUsagePercentage { model, percentage } => {
+                assert_eq!(model.as_deref(), Some("claude-4-sonnet"));
+                assert_eq!(*percentage, 42.5);
+            },
+            other => panic!("expected ContextUsagePercentage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_subagent_context_marks_chat_and_turn_telemetry() {
+        let (mut obs, mut rx) = make_observer_with_subagent(true);
+
+        obs.handle_event("subagent-session", &make_loop_event(success_stream_end()));
+
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_subagent);
+        assert!(matches!(event.ty, EventType::ChatAddedMessage { .. }));
+
+        let metadata = UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: Some(Duration::from_secs(1)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+            user_prompt_length: 0,
+        };
+        obs.handle_event("subagent-session", &AgentEvent::EndTurn(metadata));
+
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_subagent);
+        match &event.ty {
+            EventType::RecordUserTurnCompletion { args, .. } => {
+                assert!(args.is_subagent);
             },
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }
@@ -1090,6 +1368,7 @@ mod tests {
             output_token_count: 0,
             context_usage_percentage: None,
             metering_usage: Vec::new(),
+            user_prompt_length: 0,
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -1135,6 +1414,7 @@ mod tests {
             output_token_count: 0,
             context_usage_percentage: None,
             metering_usage: Vec::new(),
+            user_prompt_length: 0,
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -1194,6 +1474,7 @@ mod tests {
             output_token_count: 0,
             context_usage_percentage: None,
             metering_usage: Vec::new(),
+            user_prompt_length: 0,
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -1230,6 +1511,7 @@ mod tests {
             output_token_count: 0,
             context_usage_percentage: None,
             metering_usage: Vec::new(),
+            user_prompt_length: 0,
         };
         obs.handle_event("test-session", &AgentEvent::EndTurn(metadata));
 
@@ -1246,13 +1528,127 @@ mod tests {
     fn test_acp_client_app_type() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let client_info = Some(AcpClientInfo::new("external-client".into(), "2.0".into()));
-        let ctx = TelemetryContext::new(test_rts_state(), client_info);
+        let ctx = TelemetryContext::new(test_rts_state(), client_info, false);
         let mut obs = TelemetryObserver::new_for_test(tx, ctx);
         obs.handle_event("test-session", &make_loop_event(success_stream_end()));
 
         let event = rx.try_recv().unwrap();
         assert_eq!(event.app_type.as_deref(), Some("ACP"));
         assert_eq!(event.acp_client_name.as_deref(), Some("external-client"));
+        assert_eq!(event.client_application.as_deref(), Some("acp_external"));
+    }
+
+    #[test]
+    fn test_use_aws_tool_call_emits_aws_origin_metadata() {
+        let (mut obs, mut rx) = make_observer();
+        let tool_call = agent::protocol::ToolCall {
+            id: "tool-aws".to_string(),
+            tool: agent::tools::Tool {
+                tool_use_purpose: None,
+                kind: ToolKind::BuiltIn(BuiltInTool::UseAws(agent::tools::use_aws::UseAws {
+                    service_name: "s3".to_string(),
+                    operation_name: "ListBuckets".to_string(),
+                    positional_args: None,
+                    parameters: None,
+                    region: "us-east-1".to_string(),
+                    profile_name: None,
+                    label: None,
+                })),
+            },
+            tool_use_block: agent::agent_loop::types::ToolUseBlock {
+                tool_use_id: "tool-aws".to_string(),
+                name: "use_aws".to_string(),
+                input: serde_json::json!({}),
+            },
+        };
+
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::Update(UpdateEvent::ToolCall(tool_call.clone())),
+        );
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::Update(UpdateEvent::ToolCallFinished {
+                tool_call,
+                result: ToolCallResult::Cancelled,
+            }),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::ToolUseSuggested {
+                aws_service_name,
+                aws_operation_name,
+                ..
+            } => {
+                assert_eq!(aws_service_name.as_deref(), Some("s3"));
+                assert_eq!(aws_operation_name.as_deref(), Some("ListBuckets"));
+            },
+            other => panic!("expected ToolUseSuggested, got {other:?}"),
+        }
+
+        let records = event.otel_metric_records();
+        let tool_call = records
+            .iter()
+            .find(|record| record.name == "tool_call_total")
+            .expect("tool_call_total");
+        assert!(
+            tool_call
+                .attributes
+                .iter()
+                .any(|attr| { attr.key == "tool_origin" && attr.value == "aws_api" })
+        );
+    }
+
+    #[test]
+    fn test_failed_tool_call_without_tracker_emits_denied_mcp_telemetry() {
+        let (mut obs, mut rx) = make_observer();
+
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                tool_use_id: "tool-mcp".to_string(),
+                tool_name: "@local-server/custom_tool".to_string(),
+                raw_input: serde_json::json!({}),
+                reason: ToolCallFailureReason::PermissionDenied,
+                error: "denied".to_string(),
+            }),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::ToolUseSuggested {
+                mcp_server_name,
+                is_accepted,
+                is_valid,
+                is_custom_tool,
+                ..
+            } => {
+                assert_eq!(mcp_server_name.as_deref(), Some("local-server"));
+                assert!(!is_accepted);
+                assert_eq!(*is_valid, Some(true));
+                assert!(*is_custom_tool);
+            },
+            other => panic!("expected ToolUseSuggested, got {other:?}"),
+        }
+
+        let records = event.otel_metric_records();
+        let invocations = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_tool_invocations")
+            .expect("kiro_cli_tool_invocations");
+        assert!(
+            invocations
+                .attributes
+                .iter()
+                .any(|attr| { attr.key == "tool_origin" && attr.value == "mcp" })
+        );
+        assert!(
+            invocations
+                .attributes
+                .iter()
+                .any(|attr| { attr.key == "outcome" && attr.value == "denied" })
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -465,6 +465,7 @@ impl TelemetryThread {
             user_input_id: event.user_input_id,
             tool_use_id: event.tool_use_id,
             tool_name: event.tool_name,
+            mcp_server_name: event.mcp_server_name,
             is_accepted: event.is_accepted,
             is_trusted: event.is_trusted,
             is_success: event.is_success,
