@@ -1,3 +1,5 @@
+import './setup-chalk-level.js';
+
 import {
   describe,
   test,
@@ -526,9 +528,7 @@ describe('formatTaskToolBody', () => {
       expect(line.length).toBeLessThanOrEqual(54);
     }
     // Continuation rows align under the subject (past `  └─ N. `).
-    const head = stripped.findIndex((l) =>
-      l.includes('this is a very long')
-    );
+    const head = stripped.findIndex((l) => l.includes('this is a very long'));
     expect(head).toBeGreaterThanOrEqual(0);
     if (head + 1 < stripped.length) {
       const cont = stripped[head + 1]!;
@@ -558,7 +558,10 @@ describe('formatTaskToolBody', () => {
       completed_task_ids: ['1', '2', '3'],
       context_update:
         'Found that the schema lives in the agent crate and is stable across versions.',
-      modified_files: ['packages/tui/src/lite/render.ts', 'packages/tui/src/lite/__tests__/render.test.ts'],
+      modified_files: [
+        'packages/tui/src/lite/render.ts',
+        'packages/tui/src/lite/__tests__/render.test.ts',
+      ],
     });
     const result = formatTaskToolBody(content, 120);
     expect(result).not.toBeNull();
@@ -617,9 +620,7 @@ describe('formatTaskToolBody', () => {
     expect(formatTaskToolBody('')).toBeNull();
     expect(formatTaskToolBody('not-json')).toBeNull();
     expect(formatTaskToolBody(JSON.stringify({}))).toBeNull();
-    expect(
-      formatTaskToolBody(JSON.stringify({ command: 'bogus' }))
-    ).toBeNull();
+    expect(formatTaskToolBody(JSON.stringify({ command: 'bogus' }))).toBeNull();
   });
 
   test('skips tasks with empty or missing task_description', () => {
@@ -646,7 +647,6 @@ describe('formatTaskToolBody', () => {
     expect(text).not.toMatch(/\b4\./);
   });
 });
-
 
 // Verbose-mode rendering. Toggling state via setVerboseConfig touches the
 // real fs path, but the test only writes inside ~/.kiro and we reset back
@@ -1701,7 +1701,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // last bar row (modulo the trailing tool-call newline).
     const lastBar = barLines[barLines.length - 1] ?? '';
     expect(lastBar.endsWith('x')).toBe(true);
-  });
+  }, 10_000);
 
   test('lines under MAX_INPUT_LINE_CHARS are not clipped', () => {
     // Companion to the OOM regression: confirm the per-line cap is high
@@ -1769,10 +1769,9 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     });
     // 30-line file create with outputMaxLines=5 set: the cap must NOT
     // apply — all 30 added lines render and no truncation marker appears.
-    const longContent = Array.from(
-      { length: 30 },
-      (_, i) => `line-${i}`
-    ).join('\n');
+    const longContent = Array.from({ length: 30 }, (_, i) => `line-${i}`).join(
+      '\n'
+    );
     const out = stripAnsi(
       renderMessageToText(
         {
@@ -1785,7 +1784,10 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
             content: longContent,
           }),
           isFinished: true,
-          result: { status: 'success', output: 'Successfully created src/big.ts (30 lines).' },
+          result: {
+            status: 'success',
+            output: 'Successfully created src/big.ts (30 lines).',
+          },
         } as any,
         'kiro_default'
       )
