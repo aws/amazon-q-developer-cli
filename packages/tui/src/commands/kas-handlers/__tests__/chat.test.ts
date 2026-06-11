@@ -1,8 +1,19 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { ListAllSessionsResult } from '../../../utils/list-all-sessions-cli';
+import {
+  __setListAllSessionsOverrideForTests,
+  type ListAllSessionsResult,
+} from '../../../utils/list-all-sessions-cli';
 
 // Mock the session-archive-cli helper at module load. The handler under
 // test calls these to shell out to `kiro-cli chat _ export-session` /
@@ -28,9 +39,18 @@ mock.module('../../../utils/session-archive-cli', () => ({
 const mockListAllSessions = mock<() => Promise<ListAllSessionsResult>>(() =>
   Promise.resolve({ ok: false, error: 'not stubbed' })
 );
-mock.module('../../../utils/list-all-sessions-cli', () => ({
-  listAllSessions: () => mockListAllSessions(),
-}));
+
+beforeEach(() => {
+  __setListAllSessionsOverrideForTests(() => mockListAllSessions());
+});
+
+afterEach(() => {
+  __setListAllSessionsOverrideForTests(undefined);
+});
+
+afterAll(() => {
+  mock.restore();
+});
 
 // Mock ensureSession so bare-id load tests don't spawn a real binary.
 // The handler routes every load through ensure-session with

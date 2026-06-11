@@ -55,6 +55,16 @@ export type AsyncSpawner = (
   error?: Error;
 }>;
 
+let listAllSessionsOverrideForTests:
+  | (() => Promise<ListAllSessionsResult>)
+  | undefined;
+
+export function __setListAllSessionsOverrideForTests(
+  override: (() => Promise<ListAllSessionsResult>) | undefined
+): void {
+  listAllSessionsOverrideForTests = override;
+}
+
 const DEFAULT_SPAWNER: AsyncSpawner = (bin, args) =>
   new Promise((resolve) => {
     const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -84,6 +94,10 @@ export async function listAllSessions(
   spawner: AsyncSpawner = DEFAULT_SPAWNER,
   timeoutMs: number = 10_000
 ): Promise<ListAllSessionsResult> {
+  if (listAllSessionsOverrideForTests) {
+    return listAllSessionsOverrideForTests();
+  }
+
   let bin: string;
   try {
     bin = requireChatCliBinFromEnv();

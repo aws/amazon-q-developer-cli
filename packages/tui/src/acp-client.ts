@@ -259,6 +259,80 @@ type SessionResult = {
   currentAgent?: { name: string; welcomeMessage?: string };
 };
 
+type KasPromptTurnSummary = {
+  usage?: unknown;
+  unit?: unknown;
+  unitPlural?: unknown;
+};
+
+type KasSessionInfoMeta = {
+  kind?: string;
+  conversationSummary?: string;
+  summarization?: {
+    status: string;
+    summary?: { conversationSummary?: string };
+  };
+  contextUsage?: { usagePercentage?: number };
+  usagePercentage?: number;
+  breakdown?: unknown;
+  promptTurnSummaries?: KasPromptTurnSummary[];
+  elapsedTime?: unknown;
+  status?: unknown;
+};
+
+type KasTurnCompletionTelemetryPayload = {
+  sessionId?: string;
+  meteringUsage: MeteringUsage[];
+  turnDurationMs?: number;
+  status?: string;
+};
+
+const KAS_TURN_COMPLETION_STATUSES = new Set([
+  'success',
+  'failed',
+  'cancelled',
+]);
+
+function extractKasSessionInfoMeta(
+  update: AcpSessionUpdate
+): KasSessionInfoMeta | undefined {
+  return (update as { _meta?: { kiro?: KasSessionInfoMeta } })._meta?.kiro;
+}
+
+function normalizeKasTurnCompletionStatus(status: unknown): string | undefined {
+  if (typeof status !== 'string') return undefined;
+  return KAS_TURN_COMPLETION_STATUSES.has(status) ? status : '_other_';
+}
+
+function normalizeKasTurnCompletion(
+  meta: KasSessionInfoMeta,
+  sessionId?: string
+): KasTurnCompletionTelemetryPayload | undefined {
+  const meteringUsage = (meta.promptTurnSummaries ?? [])
+    .filter(
+      (entry): entry is { usage: number } & KasPromptTurnSummary =>
+        typeof entry.usage === 'number'
+    )
+    .map((entry) => ({
+      value: entry.usage,
+      unit: typeof entry.unit === 'string' ? entry.unit : '',
+      unitPlural: typeof entry.unitPlural === 'string' ? entry.unitPlural : '',
+    }));
+  const turnDurationMs =
+    typeof meta.elapsedTime === 'number' ? meta.elapsedTime : undefined;
+  if (meteringUsage.length === 0 && turnDurationMs == null) {
+    return undefined;
+  }
+  const status = normalizeKasTurnCompletionStatus(meta.status);
+
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    meteringUsage,
+    ...(turnDurationMs != null ? { turnDurationMs } : {}),
+    ...(status ? { status } : {}),
+  };
+}
+
 // ─── Shared stdio plumbing ───────────────────────────────────────────
 
 /** Build the parsed-message ReadableStream and ndJson WritableStream from a child process. */
@@ -1350,57 +1424,17 @@ abstract class BaseAcpClient implements SessionClient {
       // not yet mapped to TUI events.
       // (`agent_thought_chunk` is handled above — see ThinkingDisplay pipeline.)
       case 'session_info_update': {
-        const meta = (
-          update as {
-            _meta?: {
-              kiro?: {
-                kind?: string;
-                conversationSummary?: string;
-                summarization?: {
-                  status: string;
-                  summary?: { conversationSummary?: string };
-                };
-                contextUsage?: { usagePercentage?: number };
-                usagePercentage?: number;
-                breakdown?: unknown;
-                // turn_completion fields — see KiroSessionInfoUpdate in
-                // @kiro/acp-type-covenant. KAS emits these at end of turn,
-                // we surface them as TurnSummary so the client can render
-                // metering credits + turn duration.
-                promptTurnSummaries?: Array<{
-                  usage?: number;
-                  unit?: string;
-                  unitPlural?: string;
-                  usedTools?: string[];
-                }>;
-                elapsedTime?: number;
-                status?: string;
-              };
-            };
-          }
-        )._meta?.kiro;
+        const meta = extractKasSessionInfoMeta(update);
         if (meta?.kind === 'turn_completion') {
-          // Map KAS's UsageSummaryEntry shape (`usage` field) to the TUI's
-          // MeteringUsage shape (`value` field). Drop entries that have no
-          // numeric usage — they carry no meaningful metering signal.
-          const meteringUsage = (meta.promptTurnSummaries ?? [])
-            .filter(
-              (entry): entry is { usage: number } & typeof entry =>
-                typeof entry.usage === 'number'
-            )
-            .map((entry) => ({
-              value: entry.usage,
-              unit: entry.unit ?? '',
-              unitPlural: entry.unitPlural ?? '',
-            }));
-          if (meteringUsage.length === 0 && meta.elapsedTime == null) {
+          const completion = normalizeKasTurnCompletion(meta);
+          if (!completion) {
             // Nothing to show. Returning null keeps the chip cleared.
             return null;
           }
           return {
             type: AgentEventType.TurnSummary,
-            meteringUsage,
-            turnDurationMs: meta.elapsedTime,
+            meteringUsage: completion.meteringUsage,
+            turnDurationMs: completion.turnDurationMs,
           };
         }
         if (meta?.kind === 'summarization_completed') {
@@ -2107,6 +2141,7 @@ export class KasAcpClient extends BaseAcpClient {
           // harmless no-op.
           this.broadcastEffortFromConfigOptions(configOptions);
         }
+        this.forwardKasTurnCompletionTelemetry(sessionId, update);
         const event = this.convertAcpUpdateToEvent(update);
         if (!event) return;
 
@@ -3722,12 +3757,47 @@ export class KasAcpClient extends BaseAcpClient {
     return (await this.kiroClient.sendExtMethod(method, params)) as T;
   }
 
-  sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {
-    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
+    this.sendTelemetryNotification(
+      '_kiro.dev/telemetry/processHealth',
+      payload
+    );
   }
 
-  sendModeChanged(_payload: ModeChangedNotification): void {
-    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  sendModeChanged(payload: ModeChangedNotification): void {
+    this.sendTelemetryNotification('_kiro.dev/telemetry/modeChanged', payload);
+  }
+
+  private forwardKasTurnCompletionTelemetry(
+    sessionId: string,
+    update: AcpSessionUpdate
+  ): void {
+    if (update.sessionUpdate !== 'session_info_update') return;
+    const meta = extractKasSessionInfoMeta(update);
+    if (meta?.kind !== 'turn_completion') return;
+    const payload = normalizeKasTurnCompletion(meta, sessionId);
+    if (!payload) return;
+    this.sendTelemetryNotification(
+      '_kiro.dev/telemetry/turnCompletion',
+      payload
+    );
+  }
+
+  private sendTelemetryNotification(
+    method: string,
+    payload:
+      | ProcessHealthSnapshot
+      | ModeChangedNotification
+      | KasTurnCompletionTelemetryPayload
+  ): void {
+    this.kiroClient
+      .sendExtNotification(
+        method,
+        payload as unknown as Record<string, unknown>
+      )
+      .catch((err) =>
+        logger.debug('[kas] telemetry notification failed:', err)
+      );
   }
 }
 

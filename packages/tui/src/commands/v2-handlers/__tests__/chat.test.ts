@@ -1,5 +1,16 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
-import type { ListAllSessionsResult } from '../../../utils/list-all-sessions-cli';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from 'bun:test';
+import {
+  __setListAllSessionsOverrideForTests,
+  type ListAllSessionsResult,
+} from '../../../utils/list-all-sessions-cli';
 import type {
   EnsureSessionInput,
   EnsureSessionResult,
@@ -12,9 +23,14 @@ import type {
 const mockListAllSessions = mock<() => Promise<ListAllSessionsResult>>(() =>
   Promise.resolve({ ok: false, error: 'not stubbed' })
 );
-mock.module('../../../utils/list-all-sessions-cli', () => ({
-  listAllSessions: () => mockListAllSessions(),
-}));
+
+beforeEach(() => {
+  __setListAllSessionsOverrideForTests(() => mockListAllSessions());
+});
+
+afterEach(() => {
+  __setListAllSessionsOverrideForTests(undefined);
+});
 
 // Mock ensureSession so bare-id load tests don't spawn a real binary.
 const mockEnsureSession = mock<

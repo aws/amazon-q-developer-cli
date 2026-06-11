@@ -1,18 +1,32 @@
-import { afterAll, describe, expect, it, mock } from 'bun:test';
-import type { ListAllSessionsResult } from '../../utils/list-all-sessions-cli';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import {
+  __setListAllSessionsOverrideForTests,
+  type ListAllSessionsResult,
+} from '../../utils/list-all-sessions-cli';
 
 // Stub listAllSessions so the KAS-mode /chat path can be exercised
 // without spawning a real binary. The handler's dependency on the
 // merged listing is the contract under test here; the spawn-and-parse
 // contract is covered by `utils/__tests__/list-all-sessions-cli.test.ts`.
-// `afterAll(() => mock.restore())` prevents this stub from leaking
-// into sibling test files when bun loads them in the same process.
 const mockListAllSessions = mock<() => Promise<ListAllSessionsResult>>(() =>
   Promise.resolve({ ok: true, cwd: '/tmp/test', sessions: [] })
 );
-mock.module('../../utils/list-all-sessions-cli', () => ({
-  listAllSessions: () => mockListAllSessions(),
-}));
+
+beforeEach(() => {
+  __setListAllSessionsOverrideForTests(() => mockListAllSessions());
+});
+
+afterEach(() => {
+  __setListAllSessionsOverrideForTests(undefined);
+});
 
 afterAll(() => {
   mock.restore();

@@ -1,12 +1,29 @@
-import { describe, it, expect, mock, afterAll, spyOn } from 'bun:test';
-import type { ListAllSessionsResult } from '../../utils/list-all-sessions-cli';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  beforeEach,
+  afterEach,
+  afterAll,
+  spyOn,
+} from 'bun:test';
+import {
+  __setListAllSessionsOverrideForTests,
+  type ListAllSessionsResult,
+} from '../../utils/list-all-sessions-cli';
 
 const listAllSessionsMock = mock<() => Promise<ListAllSessionsResult>>(() =>
   Promise.resolve({ ok: false, error: 'not stubbed' })
 );
-mock.module('../../utils/list-all-sessions-cli', () => ({
-  listAllSessions: () => listAllSessionsMock(),
-}));
+
+beforeEach(() => {
+  __setListAllSessionsOverrideForTests(() => listAllSessionsMock());
+});
+
+afterEach(() => {
+  __setListAllSessionsOverrideForTests(undefined);
+});
 
 const resolveAgentEngineMock = mock<() => 'kas' | 'v2'>(() => 'v2');
 mock.module('../../agent-engine', () => ({

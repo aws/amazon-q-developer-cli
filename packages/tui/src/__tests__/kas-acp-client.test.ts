@@ -51,6 +51,9 @@ const mockSpawn = mock((_cmd: string, _args: string[], _opts: any) => {
 
 mock.module('child_process', () => ({ spawn: mockSpawn }));
 mock.module('node:child_process', () => ({ spawn: mockSpawn }));
+mock.module('node-machine-id', () => ({
+  machineIdSync: () => 'test-machine-id',
+}));
 
 // --- Mock @kiro/client ---
 let capturedSessionUpdateHandler: any = null;
@@ -117,6 +120,9 @@ const mockKiroSetSessionConfigOption = mock((_req: any) => Promise.resolve());
 const mockKiroSendExtMethod = mock((_method: string, _params: any) =>
   Promise.resolve({})
 );
+const mockKiroSendExtNotification = mock((_method: string, _params: any) =>
+  Promise.resolve()
+);
 const mockKiroListSessions = mock(() =>
   Promise.resolve({ sessions: [] as Array<Record<string, unknown>> })
 );
@@ -135,6 +141,7 @@ const MockKiroClient = class {
   cancel = mockKiroCancel;
   setSessionConfigOption = mockKiroSetSessionConfigOption;
   sendExtMethod = mockKiroSendExtMethod;
+  sendExtNotification = mockKiroSendExtNotification;
   listSessions = mockKiroListSessions;
   onSessionUpdate = mock((_sessionId: string, handler: any) => {
     capturedSessionUpdateHandler = handler;
@@ -235,6 +242,7 @@ function freshMocks() {
   mockKiroCancel.mockClear();
   mockKiroSetSessionConfigOption.mockClear();
   mockKiroSendExtMethod.mockClear();
+  mockKiroSendExtNotification.mockClear();
   mockKiroListSessions.mockClear();
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
@@ -556,6 +564,55 @@ describe('KasAcpClient', () => {
     expect(mockKiroSendExtMethod).toHaveBeenCalledWith('_session/steer/clear', {
       sessionId: 'kas-session-1',
     });
+  });
+
+  it('sendProcessHealthMetrics() forwards KAS telemetry notification', () => {
+    const client = new KasAcpClient();
+    const snapshot = {
+      rssMb: 10,
+      heapUsedMb: 5,
+      peakRssMb: 12,
+      cpuUserPct: 1,
+      cpuSystemPct: 2,
+      lastRenderMs: 3,
+      maxRenderMs: 4,
+      rendersPerMin: 5,
+      fullRedrawsPerMin: 6,
+      yogaNodeCount: 7,
+      eventLoopP99Ms: 8,
+      inputLatencyP95Ms: 9,
+      sessionDurationSec: 10,
+      cpuCores: 11,
+      totalMemoryMb: 12,
+      terminal: 'xterm-256color',
+      sessionId: 'kas-session-1',
+      version: '0.0.0-dev',
+      platform: 'darwin',
+    };
+
+    client.sendProcessHealthMetrics(snapshot);
+
+    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/processHealth',
+      snapshot
+    );
+  });
+
+  it('sendModeChanged() forwards KAS telemetry notification', () => {
+    const client = new KasAcpClient();
+    const payload = {
+      fromMode: 'kiro',
+      toMode: 'kiro_planner',
+      source: 'shiftTab',
+      sessionId: 'kas-session-1',
+    };
+
+    client.sendModeChanged(payload as any);
+
+    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/modeChanged',
+      payload
+    );
   });
 
   // ── executeCommand routing ──
@@ -2491,8 +2548,18 @@ describe('KasAcpClient', () => {
           kiro: {
             kind: 'turn_completion',
             promptTurnSummaries: [
-              { usage: 1.5, unit: 'credit', unitPlural: 'Credits' },
-              { usage: 500, unit: 'token', unitPlural: 'Tokens' },
+              {
+                usage: 1.5,
+                unit: 'credit',
+                unitPlural: 'Credits',
+                usedTools: ['fs_read', 'custom_tool'],
+              },
+              {
+                usage: 500,
+                unit: 'token',
+                unitPlural: 'Tokens',
+                usedTools: ['mcp_tool'],
+              },
             ],
             elapsedTime: 1234,
             status: 'success',
@@ -2510,6 +2577,23 @@ describe('KasAcpClient', () => {
       { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
       { value: 500, unit: 'token', unitPlural: 'Tokens' },
     ]);
+    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/turnCompletion',
+      {
+        sessionId: 'kas-session-1',
+        meteringUsage: [
+          { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
+          { value: 500, unit: 'token', unitPlural: 'Tokens' },
+        ],
+        turnDurationMs: 1234,
+        status: 'success',
+      }
+    );
+    const telemetryPayload = mockKiroSendExtNotification.mock.calls.find(
+      ([method]) => method === '_kiro.dev/telemetry/turnCompletion'
+    )?.[1] as any;
+    expect(telemetryPayload.meteringUsage[0]).not.toHaveProperty('usedTools');
+    expect(telemetryPayload.meteringUsage[1]).not.toHaveProperty('usedTools');
   });
 
   it('session_info_update kind=turn_completion drops entries without numeric usage', async () => {
@@ -2543,6 +2627,38 @@ describe('KasAcpClient', () => {
     expect(summary.meteringUsage).toEqual([
       { value: 2, unit: 'credit', unitPlural: 'Credits' },
     ]);
+  });
+
+  it('session_info_update kind=turn_completion buckets unknown telemetry status', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            promptTurnSummaries: [
+              { usage: 2, unit: 'credit', unitPlural: 'Credits' },
+            ],
+            elapsedTime: 100,
+            status: 'backend:arbitrary-new-status',
+          },
+        },
+      },
+    });
+
+    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/turnCompletion',
+      {
+        sessionId: 'kas-session-1',
+        meteringUsage: [{ value: 2, unit: 'credit', unitPlural: 'Credits' }],
+        turnDurationMs: 100,
+        status: '_other_',
+      }
+    );
   });
 
   it('session_info_update kind=turn_completion fills missing unit/unitPlural with empty string', async () => {
@@ -2599,6 +2715,10 @@ describe('KasAcpClient', () => {
       .map((c) => c[0])
       .find((e: any) => e.type === AgentEventType.TurnSummary);
     expect(summary).toBeUndefined();
+    expect(mockKiroSendExtNotification).not.toHaveBeenCalledWith(
+      '_kiro.dev/telemetry/turnCompletion',
+      expect.anything()
+    );
   });
 
   // ── effortLevel config option → EffortUpdate ──
@@ -3107,6 +3227,15 @@ describe('KasAcpClient — session event handling', () => {
 // ── /mcp command (push model) ──
 
 describe('mcp command (push model)', () => {
+  beforeEach(() => {
+    freshMocks();
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/server.js';
+  });
+
+  afterEach(() => {
+    delete process.env.KIRO_KAS_SERVER_PATH;
+  });
+
   it('executeCommand mcp returns cached servers from notification', async () => {
     const client = new KasAcpClient();
     await client.initialize();
@@ -3277,6 +3406,15 @@ describe('mcp command (push model)', () => {
 // the status notification and broadcasts `McpOauthRequest`.
 
 describe('MCP OAuth flow', () => {
+  beforeEach(() => {
+    freshMocks();
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/server.js';
+  });
+
+  afterEach(() => {
+    delete process.env.KIRO_KAS_SERVER_PATH;
+  });
+
   it('broadcasts McpOauthRequest when status has failedAuthorization + authorizationUrl', async () => {
     const client = new KasAcpClient();
     await client.initialize();
