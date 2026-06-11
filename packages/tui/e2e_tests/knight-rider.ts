@@ -70,13 +70,13 @@ const CMD = arg('cmd');
 const USE_V1 = hasFlag('v1');
 const USE_SYSTEM = hasFlag('system');
 const USE_KAS = hasFlag('kas');
-// --lite forwards through to the spawned kiro-cli/TUI to launch the lite UI
-// layout (LiteLayout) instead of the modern InlineLayout. Without this the
-// default `bun ./src/index.tsx` boots into modern TUI, even if you've set
-// `lite-tui` as your active agent — the agent name and the layout are
-// independent. The flag is forwarded as `--lite` in source/V1 paths and
-// substituted for `--tui` in --system paths (the two are mutually exclusive
-// UI modes).
+// --lite (this harness's own flag) launches the spawned kiro-cli/TUI in the
+// lite UI layout (LiteLayout) instead of the modern InlineLayout. It works by
+// exporting KIRO_UI_MODE=lite to the child (see `extraEnv` below) — the
+// kiro-cli `--lite` CLI flag no longer exists; mode is resolved from the env
+// var / `chat.ui.mode` setting. Without this the default `bun ./src/index.tsx`
+// boots into modern TUI, even if you've set `lite-tui` as your active agent —
+// the agent name and the layout are independent.
 const USE_LITE = hasFlag('lite');
 const KAS_REPO = arg('kas-repo');
 const KAS_REBUILD = hasFlag('kas-rebuild');
@@ -144,18 +144,17 @@ function buildKasServer(repoRoot: string): string {
 
 function resolveCommand(): { cmd: string; env: Record<string, string> } {
   if (CMD) return { cmd: CMD, env: {} };
-  // --lite swaps the UI mode flag for source/system paths. V1's ChatArgs
-  // accepts --lite as of 2592acf65; modern source reads it via cli-args.ts;
-  // system mode swaps --tui for --lite (mutually exclusive).
-  const liteSrc = USE_LITE ? ' --lite' : '';
-  const sysUiFlag = USE_LITE ? '--lite' : '--tui';
-  if (USE_V1) return { cmd: `kiro-cli chat${liteSrc}`, env: {} };
-  if (USE_SYSTEM && USE_KAS) return { cmd: `kiro-cli chat ${sysUiFlag} --agent-engine=kas`, env: {} };
-  if (USE_SYSTEM) return { cmd: `kiro-cli chat ${sysUiFlag}`, env: {} };
+  // Lite mode is driven entirely by KIRO_UI_MODE=lite (set in `extraEnv`
+  // below), not a CLI flag — the `--lite` flag has been removed. Only the
+  // legacy `--tui` flag remains for system mode's explicit-TUI selection.
+  const sysUiFlag = USE_LITE ? '' : ' --tui';
+  if (USE_V1) return { cmd: `kiro-cli chat`, env: {} };
+  if (USE_SYSTEM && USE_KAS) return { cmd: `kiro-cli chat${sysUiFlag} --agent-engine=kas`, env: {} };
+  if (USE_SYSTEM) return { cmd: `kiro-cli chat${sysUiFlag}`, env: {} };
   if (USE_KAS) {
     const serverPath = KAS_REPO ? buildKasServer(KAS_REPO) : undefined;
     return {
-      cmd: `bun ./src/index.tsx${liteSrc}`,
+      cmd: `bun ./src/index.tsx`,
       env: {
         KIRO_AGENT_ENGINE: 'kas',
         KIRO_KAS_NODE_PATH: 'node',
@@ -170,7 +169,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   }
   // Default: run TUI source directly with local Rust binary
   return {
-    cmd: `bun ./src/index.tsx${liteSrc}`,
+    cmd: `bun ./src/index.tsx`,
     env: {
       KIRO_CHAT_CLI_BIN: CARGO_BIN,
       KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
