@@ -6,7 +6,7 @@ import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-import { useAppStore } from '../../../stores/app-store.js';
+import { useAppStoreOptional } from '../../../stores/app-store.js';
 
 export enum MessageType {
   DEVELOPER = 'developer',
@@ -34,7 +34,9 @@ export const Message = React.memo(function Message({
   // after the swap — without retroactively reflowing rows already in
   // <Static>. Reading the store here on each render keeps the cost flat
   // (one selector call) and means new TUI rows match a cold-start TUI.
-  const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
+  // Optional read: Message also renders in Storybook / isolated snapshot tests
+  // with no AppStoreContext provider, where it falls back to TUI chrome.
+  const isLiteUi = useAppStoreOptional((s) => s.uiMode === 'lite', false);
   const messageStatus: StatusType = status || 'active';
 
   // Under wrapDisabled:

@@ -4,6 +4,7 @@ import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 import { renderVerbosityPreview } from '../../../lite/render.js';
 import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
 
@@ -83,12 +84,18 @@ export const VerbosityTruncationEditor: React.FC<{
   const [digitMode, setDigitMode] = useState(false);
 
   // Blink for the value chevron — drives a 500ms toggle. Same trick as the
-  // Menu search input cursor.
+  // Menu search input cursor. Honor /settings allowAnimations: when paused,
+  // hold the chevron steady-on rather than running the interval.
+  const animationPaused = useAnimationPaused();
   const [blink, setBlink] = useState(true);
   useEffect(() => {
+    if (animationPaused) {
+      setBlink(true);
+      return;
+    }
     const id = setInterval(() => setBlink((b) => !b), 500);
     return () => clearInterval(id);
-  }, []);
+  }, [animationPaused]);
 
   // Stash latest committed-on-Enter so the closure passed to useKeypress
   // (which captures state by ref) sees the current value without resubscribing
