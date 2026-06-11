@@ -139,11 +139,11 @@ if (engine === 'kas') {
   env.KIRO_AGENT_ENGINE = 'kas';
   // KAS runs as a node child; the TUI resolves the installed @kiro/agent
   // unless KIRO_KAS_SERVER_PATH overrides it.
-  env.KIRO_AGENT_PATH = 'node';
+  env.KIRO_KAS_NODE_PATH = 'node';
   if (kasServer) env.KIRO_KAS_SERVER_PATH = resolve(process.cwd(), kasServer);
-} else {
-  env.KIRO_AGENT_PATH = CHAT_CLI;
 }
+// V2 / non-KAS: TUI spawns chat_cli using KIRO_CHAT_CLI_BIN (set above);
+// no engine-specific env var is required.
 
 const resumeFixture = fixtures.find((f) => f.name === resumeName);
 const tuiArgs = ['./src/index.tsx'];

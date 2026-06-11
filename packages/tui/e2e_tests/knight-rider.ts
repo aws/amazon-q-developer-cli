@@ -144,7 +144,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
       cmd: 'bun ./src/index.tsx',
       env: {
         KIRO_AGENT_ENGINE: 'kas',
-        KIRO_AGENT_PATH: 'node',
+        KIRO_KAS_NODE_PATH: 'node',
         // KAS launches with `--auth=acp-callback` and asks the TUI for
         // OIDC tokens via `_kiro/auth/getAccessToken`. The TUI handler
         // shells out to this binary for `chat _ get-kas-token`.
@@ -158,7 +158,6 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   return {
     cmd: 'bun ./src/index.tsx',
     env: {
-      KIRO_AGENT_PATH: CARGO_BIN,
       KIRO_CHAT_CLI_BIN: CARGO_BIN,
       KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
     },

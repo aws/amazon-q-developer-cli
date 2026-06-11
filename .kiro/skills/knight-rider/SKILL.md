@@ -29,7 +29,7 @@ sleep 20
 curl -s http://localhost:3001/api/status  # check ready:true
 ```
 
-**IMPORTANT**: The default mode runs `bun ./src/index.tsx` with `KIRO_AGENT_PATH=target/debug/chat_cli`.
+**IMPORTANT**: The default mode runs `bun ./src/index.tsx` with `KIRO_CHAT_CLI_BIN=target/debug/chat_cli`.
 This means local TypeScript changes are picked up immediately (no rebuild needed), but you need a
 Rust binary at `target/debug/chat_cli`. Build it once with `cargo build -p chat_cli` from the repo root.
 
@@ -341,6 +341,6 @@ open "$DIR/index.html"
 | Port 3001 already in use | Kill stale: `for pid in $(lsof -ti:3001 2>/dev/null); do kill $pid 2>/dev/null; done` |
 | Slash command autocomplete not appearing | Ensure you type `/` alone first, then wait 0.5s before typing command name |
 | KAS: "Cannot find package 'twinki'" | Build twinki: `cd packages/twinki/packages/twinki && bun run build` |
-| KAS: "unexpected argument '--experimental-wasm-modules'" | `KIRO_AGENT_PATH` in your shell points to kiro binary, not node. The script now sets `KIRO_AGENT_PATH=node` explicitly — ensure you're using the latest knight-rider.ts |
+| KAS: "unexpected argument '--experimental-wasm-modules'" | The node binary the TUI is spawning is actually a different binary. Check `KIRO_KAS_NODE_PATH` in your shell - the script sets it to `node` explicitly when KAS mode is selected. Ensure you're using the latest knight-rider.ts |
 | KAS: Stuck at "Initializing..." forever | Check if node process spawned: `ps aux \| grep acp-server`. If not, verify `@kiro/agent` is installed and token is valid |
 | KAS: Prompt queued but never processed | KAS hasn't finished initializing. Wait for mode indicator (e.g., `vibe`) in status bar before sending prompts |

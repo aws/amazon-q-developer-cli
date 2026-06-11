@@ -21,10 +21,7 @@ use std::io::{
     Write as _,
     stdout,
 };
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::Path;
 use std::process::ExitCode;
 
 pub use agent::Agent;
@@ -710,16 +707,13 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         bail!("The Kiro agent engine (KAS) is not supported on this system.");
     }
 
-    let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
-        (PathBuf::from("node"), PathBuf::from(kas_server_path))
-    } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
-        paths
-    } else {
-        bail!("KAS assets not embedded and KIRO_KAS_SERVER_PATH not set");
-    };
-
-    // `KIRO_KAS_NODE_PATH` overrides the resolved node (including the embedded one).
-    let node_bin = crate::embedded_tui::kas_node_override(os).unwrap_or(node_bin);
+    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
+    let node_bin = node_bin.ok_or_else(|| {
+        eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
+    })?;
+    let server_js = server_js.ok_or_else(|| {
+        eyre::eyre!("Cannot resolve KAS server: KIRO_KAS_SERVER_PATH not set and embedded server not available")
+    })?;
 
     debug!(
         node = %node_bin.display(),
@@ -766,25 +760,26 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         ),
     );
 
-    let child = cmd
-        .spawn()
-        .with_context(|| format!("failed to spawn KAS: {} {}", node_bin.display(), server_js.display()))?;
+    let child = cmd.spawn().with_context(|| {
+        format!(
+            "failed to spawn KAS: node binary `{}` (server: {})",
+            node_bin.display(),
+            server_js.display()
+        )
+    })?;
 
     Ok(child)
 }
 
 /// Spawn KAS as a persistent WebSocket server on the given port.
 async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
-    let (node_bin, server_js) = if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
-        (PathBuf::from("node"), PathBuf::from(kas_server_path))
-    } else if let Some(paths) = crate::embedded_tui::extract_kas_assets_if_needed(os).await? {
-        paths
-    } else {
-        bail!("KAS assets not available. Install nightly or set KIRO_KAS_SERVER_PATH.");
-    };
-
-    // `KIRO_KAS_NODE_PATH` overrides the resolved node (including the embedded one).
-    let node_bin = crate::embedded_tui::kas_node_override(os).unwrap_or(node_bin);
+    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
+    let node_bin = node_bin.ok_or_else(|| {
+        eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
+    })?;
+    let server_js = server_js.ok_or_else(|| {
+        eyre::eyre!("Cannot resolve KAS server: KIRO_KAS_SERVER_PATH not set and embedded server not available")
+    })?;
 
     debug!(
         "Spawning KAS serve: {} --experimental-wasm-modules {} --transport=ws --auth=acp-callback (port {})",

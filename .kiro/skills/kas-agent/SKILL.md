@@ -23,7 +23,7 @@ Rust CLI (chat_cli)
 
 1. User passes `--agent-engine=kas` CLI flag
 2. `cli/mod.rs` sets `KIRO_AGENT_ENGINE=kas` env var
-3. `embedded_tui.rs` reads env var, sets `KIRO_AGENT_PATH=node` and `KIRO_AGENT_ENGINE=kas` on the bun child process
+3. `launch.rs` resolves the KAS node + server paths and sets `KIRO_KAS_NODE_PATH` and `KIRO_KAS_SERVER_PATH` on the bun child process
 4. TUI's `createAcpClient()` checks `KIRO_AGENT_ENGINE === 'kas'` and returns `KasAcpClient` instead of `RustAcpClient`
 
 ## KAS Server Resolution
@@ -90,7 +90,7 @@ Both implement `SessionClient` (defined in `packages/tui/src/acp-client.ts`).
 | ACP SDK | `sacp` crate | `@agentclientprotocol/sdk` |
 | Protocol | `@agentclientprotocol/sdk` (TS client) | `KiroClient` from `@kiro/client` |
 | Session create | `client.newSession()` | `kiroClient.newSession()` + config options |
-| Spawned by | TUI via `KIRO_AGENT_PATH` | TUI directly via `spawn('node', [...])` |
+| Spawned by | TUI via `KIRO_CHAT_CLI_BIN` | TUI directly via `spawn(<KIRO_KAS_NODE_PATH>, [...])` |
 
 ## Key Differences in Session Lifecycle
 
@@ -121,7 +121,7 @@ KIRO_AGENT_ENGINE=kas bun run dev --skip-rust-build
 
 The dev script automatically:
 - Checks CodeArtifact token expiry and refreshes if needed
-- Skips setting `KIRO_AGENT_PATH` (KAS uses `node` directly)
+- Skips setting node-binary overrides (KAS uses the embedded node when `KIRO_KAS_NODE_PATH` is unset)
 - Sets `KIRO_CHAT_CLI_BIN` so KAS's `_kiro/auth/getAccessToken` callback can shell out to chat-cli for OIDC token resolution.
 
 For manual control or overriding the KAS server path:

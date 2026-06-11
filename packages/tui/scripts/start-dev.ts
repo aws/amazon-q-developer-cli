@@ -87,20 +87,17 @@ function startTUI() {
 
   console.log("Starting TUI...");
 
-  // Start bun with watch mode and KIRO_AGENT_PATH set
-  // Forward any extra CLI args (e.g. --agent <name>) to the TUI process
-  // Use absolute path to entry file so the caller's cwd is preserved
+  // Forward any extra CLI args (e.g. --agent <name>) to the TUI process.
+  // Use absolute path to entry file so the caller's cwd is preserved.
   const entryFile = resolve(import.meta.dir, "../src/index.tsx");
   const bunProcess = spawn(PINNED_BUN, ["--watch", entryFile, ...tuiArgs], {
     stdio: "inherit",
     env: {
       ...process.env,
-      ...(process.env.KIRO_AGENT_ENGINE !== 'kas' && { KIRO_AGENT_PATH: RUST_BIN }),
       // KAS in `--auth=acp-callback` mode shells out to this binary for
       // `chat _ get-kas-token` (host-mediated OIDC refresh). Also used by
-      // /chat save and /chat load. Must be set whether or not KAS is the
-      // active engine because `KasAcpClient` registers the auth capability
-      // unconditionally.
+      // V2's ACP child spawn and /chat save/load. Must be set regardless
+      // of the active engine.
       KIRO_CHAT_CLI_BIN: RUST_BIN,
       JSC_numberOfGCMarkers: "1",
     }

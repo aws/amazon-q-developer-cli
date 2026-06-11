@@ -103,9 +103,9 @@ const getAgentPath = (): string => {
     return '';
   }
 
-  const agentPath = process.env.KIRO_AGENT_PATH;
+  const agentPath = process.env.KIRO_CHAT_CLI_BIN;
   if (!agentPath) {
-    throw new Error('KIRO_AGENT_PATH environment variable not set');
+    throw new Error('KIRO_CHAT_CLI_BIN environment variable not set');
   }
 
   return agentPath;

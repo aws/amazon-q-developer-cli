@@ -111,7 +111,6 @@ export class TestCase {
         KIRO_MOCK_ACP: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
-        KIRO_AGENT_PATH: 'mock-agent-path',
         // Default to the locally-resolved chat_cli (env -> CARGO_TARGET_DIR
         // -> repo target/debug). Tests that explicitly set
         // KIRO_CHAT_CLI_BIN via extraEnv (e.g. stubbed binaries) override

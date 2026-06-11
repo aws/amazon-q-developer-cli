@@ -309,7 +309,7 @@ jobs:
           echo "::warning::Knight Rider did not become ready within 30s"
           cat /tmp/knight-rider.log | tail -20
         env:
-          KIRO_AGENT_PATH: ${{ github.workspace }}/target/debug/chat_cli
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/debug/chat_cli
 
       # ----- plan cache ----------------------------------------------
       - name: Compute scope fingerprint

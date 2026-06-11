@@ -30,7 +30,7 @@ const child = spawn(PINNED_BUN, [
   stdio: "inherit",
   env: {
     ...process.env,
-    KIRO_AGENT_PATH: CARGO_BIN,
+    KIRO_CHAT_CLI_BIN: CARGO_BIN,
     KIRO_INPUT_METRICS: "true",
     KIRO_PERF_METRICS: "true",
     KIRO_TUI_LOG_FILE: "/tmp/kiro-tui-perf.log",

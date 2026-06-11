@@ -107,7 +107,7 @@ export class E2ETestCase {
         KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
       } : {}),
       KIRO_TEST_TUI_JS_PATH: tuiJsPath,
-      KIRO_AGENT_PATH: chatPath,
+      KIRO_CHAT_CLI_BIN: chatPath,
       KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
       KIRO_TUI_LOG_LEVEL: 'trace',
       KIRO_CHAT_LOG_FILE: this.paths.rustLogFile,

@@ -15,6 +15,10 @@ use tracing::{
 };
 
 use crate::os::Os;
+use crate::util::consts::env_var::{
+    KIRO_KAS_NODE_PATH,
+    KIRO_KAS_SERVER_PATH,
+};
 use crate::util::paths::{
     bun_path,
     bun_sha256_path,
@@ -82,7 +86,7 @@ pub async fn extract_tui_assets_if_needed(os: &Os) -> Result<TuiAssetPaths> {
 
 /// Extract embedded KAS assets (node binary + acp-server.js + node_modules) if needed.
 /// Returns the paths to the extracted node binary and acp-server.js, or None if not embedded.
-pub async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, PathBuf)>> {
+async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, PathBuf)>> {
     if NODE_RUNTIME.is_empty() || KAS_BUNDLE.is_empty() {
         return Ok(None);
     }
@@ -153,22 +157,55 @@ pub async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, Pa
         .join("dist")
         .join("server")
         .join("acp-server.js");
+
+    // Canonicalize to ensure absolute paths.
+    let node_extract_path = os
+        .fs
+        .canonicalize(&node_extract_path)
+        .await
+        .with_context(|| format!("failed to canonicalize node path: {}", node_extract_path.display()))?;
+    let server_path = os
+        .fs
+        .canonicalize(&server_path)
+        .await
+        .with_context(|| format!("failed to canonicalize KAS server path: {}", server_path.display()))?;
+
     Ok(Some((node_extract_path, server_path)))
 }
 
-/// Explicit override for the Node.js binary used to run KAS.
+/// Ensures that KAS assets (node runtime, KAS acp-server.js bundle) are extracted to the file
+/// system.
 ///
-/// When `KIRO_KAS_NODE_PATH` is set to a non-empty value it takes precedence
-/// over the embedded Node runtime that ships with release builds, letting
-/// users point KAS at a specific Node.js installation. The chosen Node must be
-/// compatible with the bundled KAS server (see `NODE_VERSION` in
-/// `scripts/const.py` for the version releases are validated against).
-pub fn kas_node_override(os: &Os) -> Option<PathBuf> {
-    os.env
-        .get(crate::util::consts::env_var::KIRO_KAS_NODE_PATH)
+/// Each path is taken from its env var if non-empty, otherwise from the
+/// embedded asset extracted on demand. A `None` return for either part
+/// means neither an env override nor an embedded asset was available
+/// (dev builds without embedded assets).
+///
+/// Extraction is skipped when both env vars are already set.
+pub async fn ensure_kas_assets(os: &Os) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    let node = os
+        .env
+        .get(KIRO_KAS_NODE_PATH)
         .ok()
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    let server = os
+        .env
+        .get(KIRO_KAS_SERVER_PATH)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+
+    let extracted = if node.is_some() && server.is_some() {
+        None
+    } else {
+        extract_kas_assets_if_needed(os).await?
+    };
+    let (extracted_node, extracted_server) = match extracted {
+        Some((n, s)) => (Some(n), Some(s)),
+        None => (None, None),
+    };
+    Ok((node.or(extracted_node), server.or(extracted_server)))
 }
 
 async fn extract_tui_assets_if_needed_impl(

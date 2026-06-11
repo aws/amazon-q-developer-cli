@@ -35,7 +35,7 @@ function buildTUI() {
       stdio: "inherit",
       env: {
         ...process.env,
-        KIRO_AGENT_PATH: CARGO_BIN,
+        KIRO_CHAT_CLI_BIN: CARGO_BIN,
         NODE_ENV: "production"
       }
     });

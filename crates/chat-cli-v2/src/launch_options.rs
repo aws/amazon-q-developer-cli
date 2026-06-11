@@ -122,7 +122,7 @@ pub async fn launch_tui(asset_paths: &TuiAssetPaths) -> Result<ExitCode> {
     let mut child = tokio::process::Command::new(&asset_paths.bun_path)
         .arg(&asset_paths.tui_js_path)
         .args(&args[1..])
-        .env("KIRO_AGENT_PATH", &current_exe)
+        .env(crate::util::consts::env_var::KIRO_CHAT_CLI_BIN, &current_exe)
         // Limit JSC garbage collector to 1 marker thread. By default JSC
         // uses up to min(4, core_count) marker threads on Apple Silicon
         // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).

@@ -1989,7 +1989,7 @@ export class KasAcpClient extends BaseAcpClient {
         );
       }
     }
-    const nodeBin = process.env.KIRO_AGENT_PATH || 'node';
+    const nodeBin = process.env.KIRO_KAS_NODE_PATH || 'node';
     logger.info(`[acp-client] Spawning KAS agent: ${nodeBin} ${kasServerPath}`);
 
     const proc = spawn(

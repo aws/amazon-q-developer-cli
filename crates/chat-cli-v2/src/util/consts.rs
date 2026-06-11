@@ -178,6 +178,11 @@ pub mod env_var {
         /// API key for headless/non-interactive authentication
         KIRO_API_KEY = "KIRO_API_KEY",
 
+        /// Path to the chat_cli (`kiro-cli-chat`) binary. Set by the kiro-cli
+        /// launcher when spawning the TUI. Consumed by the TUI's V1/V2 ACP
+        /// child spawn and by shell-outs that need to invoke chat_cli.
+        KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
+
         /// The session ID of the current Kiro chat session.
         ///
         /// Set on the process environment at session creation so that all child

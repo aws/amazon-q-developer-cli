@@ -18,11 +18,13 @@ use tracing::{
     info,
 };
 
-use crate::embedded_tui::{
-    extract_kas_assets_if_needed,
-    extract_tui_assets_if_needed,
-};
+use crate::embedded_tui::extract_tui_assets_if_needed;
 use crate::os::Os;
+use crate::util::consts::env_var::{
+    KIRO_CHAT_CLI_BIN,
+    KIRO_KAS_NODE_PATH,
+    KIRO_KAS_SERVER_PATH,
+};
 
 /// Launch the session according to the configured options.
 pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
@@ -134,9 +136,10 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
     // Path to chat_cli itself, so the TUI can invoke its headless
     // `chat _ export-session` / `chat _ import-session` subcommands
-    // for /chat save and /chat load. Engine-agnostic: both V2 and KAS
-    // route the slash commands through the same Rust binary.
-    cmd.env("KIRO_CHAT_CLI_BIN", &current_exe);
+    // for /chat save and /chat load, and so V2 spawns the ACP child
+    // from this binary. Engine-agnostic: V2 and KAS both route their
+    // slash commands through the same Rust binary.
+    cmd.env(KIRO_CHAT_CLI_BIN, &current_exe);
 
     // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
     // The parent directory is normally created by extract_tui_assets_if_needed when
@@ -186,35 +189,17 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 
-            // An explicit `KIRO_KAS_NODE_PATH` takes precedence over the
-            // embedded Node runtime so released builds can run KAS with a
-            // user-supplied Node.js. The value is forwarded to the TUI via
-            // `KIRO_AGENT_PATH` (read by `KasAcpClient`). When unset we fall
-            // back to the previous behavior: embedded node, then `node` on
-            // PATH.
-            let node_override = crate::embedded_tui::kas_node_override(os);
-
-            if let Ok(kas_server_path) = std::env::var("KIRO_KAS_SERVER_PATH") {
-                let node = node_override.unwrap_or_else(|| PathBuf::from("node"));
-                cmd.env("KIRO_AGENT_PATH", &node);
-                cmd.env("KIRO_KAS_SERVER_PATH", &kas_server_path);
-                info!(
-                    "Using KAS agent engine, node: {}, server path override: {}",
-                    node.display(),
-                    kas_server_path
-                );
-            } else if let Some((node_bin, server_js)) = extract_kas_assets_if_needed(os).await? {
-                let node = node_override.unwrap_or(node_bin);
-                cmd.env("KIRO_AGENT_PATH", &node);
-                cmd.env("KIRO_KAS_SERVER_PATH", &server_js);
+            let (node, server) = crate::embedded_tui::ensure_kas_assets(os).await?;
+            let node = node.unwrap_or_else(|| PathBuf::from("node"));
+            cmd.env(KIRO_KAS_NODE_PATH, &node);
+            if let Some(server) = server.as_ref() {
+                cmd.env(KIRO_KAS_SERVER_PATH, server);
                 info!(
                     "Using KAS agent engine, node: {}, server: {}",
                     node.display(),
-                    server_js.display()
+                    server.display()
                 );
             } else {
-                let node = node_override.unwrap_or_else(|| PathBuf::from("node"));
-                cmd.env("KIRO_AGENT_PATH", &node);
                 info!(
                     "Using KAS agent engine, node: {}, server resolved from @kiro/agent package",
                     node.display()
@@ -222,7 +207,9 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
             }
         },
         AgentEngine::V2 => {
-            cmd.env("KIRO_AGENT_PATH", &current_exe);
+            // KIRO_CHAT_CLI_BIN (set unconditionally above) is the canonical
+            // path the TUI uses to spawn the V2 ACP child. No additional env
+            // var is needed for V2.
         },
         AgentEngine::V1 => {
             unreachable!("V1 engine does not use the ACP launch path");

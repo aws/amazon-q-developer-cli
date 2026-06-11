@@ -261,7 +261,6 @@ async function main() {
       KIRO_MOCK_ACP: 'true',
       KIRO_TEST_TUI_IPC_SOCKET_PATH: socketPath,
       KIRO_DISABLE_TELEMETRY: '1',
-      KIRO_AGENT_PATH: 'mock-agent-path',
       TERM: 'xterm-color',
     },
   });

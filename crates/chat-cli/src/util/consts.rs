@@ -162,12 +162,40 @@ pub mod env_var {
         /// Chat UI mode override: "legacy" or "tui"
         KIRO_CHAT_UI = "KIRO_CHAT_UI",
 
-        /// Overrides the Node.js binary used to run the KAS agent engine.
-        /// Takes precedence over the embedded Node runtime shipped with
-        /// release builds, letting users point KAS at a specific Node.js
-        /// install. The chosen Node must be compatible with the bundled KAS
-        /// server (see `NODE_VERSION` in `scripts/const.py`).
+        /// Path to the Node.js binary used to run the KAS agent engine.
+        /// Set in two scenarios:
+        ///   * The launcher always sets this on the TUI child to forward
+        ///     the resolved node binary (extracted embedded node, or a
+        ///     user-supplied override).
+        ///   * Users can set it directly to override the embedded Node
+        ///     runtime that ships with release builds and point KAS at a
+        ///     specific Node.js install. The chosen Node must be
+        ///     compatible with the bundled KAS server (see `NODE_VERSION`
+        ///     in `scripts/const.py`).
+        ///
+        /// Read by the TUI's KAS spawn (`acp-client.ts`) and by
+        /// `chat_cli`'s `resolve_kas_paths` for KAS-side subcommands.
         KIRO_KAS_NODE_PATH = "KIRO_KAS_NODE_PATH",
+
+        /// Path to the chat_cli (`kiro-cli-chat`) binary. Set by the kiro-cli
+        /// launcher when spawning the TUI. Consumed by:
+        ///   * the TUI's V1/V2 ACP child spawn (`packages/tui/src/index.tsx`)
+        ///   * shell-outs that need to invoke chat_cli (auth callback,
+        ///     session listing, etc. - see `packages/tui/src/utils/chat-cli-bin.ts`)
+        KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
+
+        /// Path to the KAS ACP server JS entrypoint (`acp-server.js`).
+        /// Set in two scenarios:
+        ///   * The launcher always sets this on the TUI child to forward
+        ///     the resolved server path (extracted embedded server.js, or
+        ///     a user-supplied override).
+        ///   * Users can set it directly to point KAS at a checkout of
+        ///     the `kiro-agent` repo, taking precedence over the bundled
+        ///     server extracted from the binary.
+        ///
+        /// Read by the TUI's KAS spawn (`acp-client.ts`) and by
+        /// `chat_cli`'s `resolve_kas_paths` for KAS-side subcommands.
+        KIRO_KAS_SERVER_PATH = "KIRO_KAS_SERVER_PATH",
 
         /// Used for E2E tests
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
