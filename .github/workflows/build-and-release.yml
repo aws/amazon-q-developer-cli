@@ -318,14 +318,33 @@ jobs:
       branch_name: ${{ needs.prepare.outputs.branch_name }}
       commit_sha: ${{ needs.prepare.outputs.commit_sha }}
 
+  build_windows_retry:
+    name: Windows Build Retry (${{ matrix.environment }})
+    needs: [prepare, generate_embeddings, build_windows]
+    if: failure() && needs.build_windows.result == 'failure'
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.prepare.outputs.channel }}
+      build_timestamp: ${{ needs.prepare.outputs.build_timestamp }}
+      version: ${{ needs.prepare.outputs.version }}
+      release_type: ${{ needs.prepare.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.prepare.outputs.branch_name }}
+      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
+
   smoke_tests:
     name: Smoke Tests
-    needs: [prepare, build_darwin, build_linux, build_windows]
+    needs: [prepare, build_darwin, build_linux, build_windows, build_windows_retry]
     # Non-blocking: runs in parallel with dispatch_autocomplete, does not gate the release
     if: |
+      always() &&
       needs.build_darwin.result == 'success' &&
       needs.build_linux.result == 'success' &&
-      needs.build_windows.result == 'success'
+      (needs.build_windows.result == 'success' || needs.build_windows_retry.result == 'success')
     uses: ./.github/workflows/smoke-tests.yml
     secrets: inherit
     with:
@@ -335,13 +354,14 @@ jobs:
 
   dispatch_autocomplete:
     name: Trigger Autocomplete Build
-    needs: [prepare, build_darwin, build_linux, build_windows]
+    needs: [prepare, build_darwin, build_linux, build_windows, build_windows_retry]
     runs-on: ubuntu-latest
     environment: gamma
     if: |
+      always() &&
       needs.build_darwin.result == 'success' &&
       needs.build_linux.result == 'success' &&
-      needs.build_windows.result == 'success'
+      (needs.build_windows.result == 'success' || needs.build_windows_retry.result == 'success')
     steps:
       - name: Dispatch to autocomplete
         uses: actions/github-script@v7
@@ -382,7 +402,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [tag, prepare, build_darwin, build_linux, build_windows, smoke_tests, dispatch_autocomplete]
+    needs: [tag, prepare, build_darwin, build_linux, build_windows, build_windows_retry, smoke_tests, dispatch_autocomplete]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -406,7 +426,7 @@ jobs:
               echo "|----------|--------|"
               echo "| Darwin | ${{ needs.build_darwin.result == 'success' && '✅' || '❌' }} |"
               echo "| Linux | ${{ needs.build_linux.result == 'success' && '✅' || '❌' }} |"
-              echo "| Windows | ${{ needs.build_windows.result == 'success' && '✅' || '❌' }} |"
+              echo "| Windows | ${{ (needs.build_windows.result == 'success' || needs.build_windows_retry.result == 'success') && '✅' || '❌' }} |"
               echo "| Smoke Tests | ${{ needs.smoke_tests.result == 'success' && '✅' || needs.smoke_tests.result == 'skipped' && '⏭️' || '⚠️' }} |"
               echo "| Autocomplete | ${{ needs.dispatch_autocomplete.result == 'success' && '✅' || needs.dispatch_autocomplete.result == 'skipped' && '⏭️' || '❌' }} |"
             fi
