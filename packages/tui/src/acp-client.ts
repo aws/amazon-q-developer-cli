@@ -2149,6 +2149,19 @@ export class KasAcpClient extends BaseAcpClient {
             });
           }
         }
+        // Intercept config_option_update (KAS-specific) to keep the
+        // local model cache fresh without a round-trip. The agent may
+        // push these notifications when it autonomously changes a
+        // config option (e.g. fallback to a different model after
+        // rate limits), resolves the model list late (e.g. once auth
+        // completes after launch), or mirrors a client-initiated change.
+        //
+        // Model propagation to the app store uses a dedicated, model-only
+        // `ModelUpdate` event (broadcast below) rather than the
+        // `AgentSwitched` channel — so updating the model chip never
+        // clobbers `currentAgent`. User-initiated `/model` switches also
+        // propagate synchronously via the effect handler `updateModel`;
+        // the extra ModelUpdate here is an idempotent no-op for those.
         if (
           (update as { sessionUpdate?: string }).sessionUpdate ===
           'config_option_update'
@@ -2168,6 +2181,20 @@ export class KasAcpClient extends BaseAcpClient {
           // setter is idempotent — re-broadcasting an unchanged value is a
           // harmless no-op.
           this.broadcastEffortFromConfigOptions(configOptions);
+          // Propagate the current model so the model chip self-heals when KAS
+          // resolves the model list late (e.g. after auth completes post-
+          // launch) or changes it autonomously. We use a dedicated
+          // ModelUpdate event (model-only) rather than AgentSwitched so this
+          // never clobbers currentAgent. extractModelFromConfigOptions
+          // returns undefined when no model category/currentValue is present,
+          // in which case we leave the chip unchanged.
+          const model = extractModelFromConfigOptions(configOptions);
+          if (model) {
+            this.broadcastStreamEvent({
+              type: AgentEventType.ModelUpdate,
+              model,
+            });
+          }
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
         const event = this.convertAcpUpdateToEvent(update);

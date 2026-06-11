@@ -38,6 +38,7 @@ export enum AgentEventType {
   WebToolsGovernanceDisabled = 'web_tools_governance_disabled',
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
+  ModelUpdate = 'model_update',
   SteeringQueued = 'steering_queued',
   SteeringConsumed = 'steering_consumed',
   SteeringCleared = 'steering_cleared',
@@ -432,6 +433,17 @@ export interface EffortUpdateEvent {
   effort: string | null;
 }
 
+/**
+ * Model changed server-side (e.g. KAS pushed a config_option_update after a
+ * late, post-auth model enumeration, or an autonomous model fallback). Carries
+ * only the model so it can update the model chip without touching currentAgent
+ * (unlike AgentSwitched, which carries both).
+ */
+export interface ModelUpdateEvent {
+  type: AgentEventType.ModelUpdate;
+  model: { id: string; name: string };
+}
+
 export interface HooksUpdateEvent {
   type: AgentEventType.HooksUpdate;
   hooks: Array<{
@@ -607,5 +619,6 @@ export type AgentStreamEvent =
   | SteeringClearedEvent
   | KasCommandsDiscoveredEvent
   | EffortUpdateEvent
+  | ModelUpdateEvent
   | HooksUpdateEvent
   | GoalStatusEvent;

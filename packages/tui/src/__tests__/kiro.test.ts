@@ -1,6 +1,7 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
+import { createAppStore } from '../stores/app-store';
 
 // --- Mock logger ---
 mock.module('../utils/logger', () => ({
@@ -195,6 +196,53 @@ describe('Kiro', () => {
     const handler = mock(() => {});
     kiro.onAgentUpdate(handler);
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('ModelUpdate event notifies modelHandler only, not agentHandler', async () => {
+    const kiro = new Kiro();
+    const modelHandler = mock(() => {});
+    const agentHandler = mock(() => {});
+    kiro.onModelUpdate(modelHandler);
+    kiro.onAgentUpdate(agentHandler);
+    await kiro.initialize('/path/to/agent');
+
+    expect(mockOnUpdateHandler).not.toBeNull();
+    mockOnUpdateHandler!({
+      type: AgentEventType.ModelUpdate,
+      model: { id: 'gpt-5', name: 'GPT-5' },
+    } as AgentStreamEvent);
+
+    expect(modelHandler).toHaveBeenCalledWith({ id: 'gpt-5', name: 'GPT-5' });
+    // Model-only update must not clobber the current agent.
+    expect(agentHandler).not.toHaveBeenCalled();
+  });
+
+  it('e2e: empty model chip self-heals when a ModelUpdate arrives (wired to store)', async () => {
+    // Reproduces the original bug end-to-end: the model chip is empty on
+    // launch (store.currentModel === null), and a later KAS-pushed model
+    // (surfaced as a ModelUpdate event) must populate it. Wires the Kiro
+    // model handler to the real store exactly as index.tsx does.
+    const store = createAppStore({ kiro: {} as never });
+    const kiro = new Kiro();
+    kiro.onModelUpdate((model: { id: string; name: string }) =>
+      store.getState().setCurrentModel(model)
+    );
+    await kiro.initialize('/path/to/agent');
+
+    // Precondition: chip empty (the symptom).
+    expect(store.getState().currentModel).toBeNull();
+
+    expect(mockOnUpdateHandler).not.toBeNull();
+    mockOnUpdateHandler!({
+      type: AgentEventType.ModelUpdate,
+      model: { id: 'claude-sonnet', name: 'Claude Sonnet' },
+    } as AgentStreamEvent);
+
+    // The chip is now populated — no /model open or agent switch needed.
+    expect(store.getState().currentModel).toEqual({
+      id: 'claude-sonnet',
+      name: 'Claude Sonnet',
+    });
   });
 
   it('executeCommand throws when not initialized', async () => {

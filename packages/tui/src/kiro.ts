@@ -463,6 +463,12 @@ export class Kiro {
             this.modelHandler({ id: event.model, name: event.model });
           }
         }
+        // Model-only update (e.g. KAS resolved the model list late after auth,
+        // or changed it autonomously). Unlike AgentSwitched, this does not
+        // touch currentAgent.
+        if (event.type === AgentEventType.ModelUpdate && this.modelHandler) {
+          this.modelHandler(event.model);
+        }
         // Forward init-time notifications (MCP failures, agent errors, OAuth) to the store
         if (
           (event.type === AgentEventType.McpServerInitFailure ||

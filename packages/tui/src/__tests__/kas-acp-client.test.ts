@@ -1700,6 +1700,77 @@ describe('KasAcpClient', () => {
     expect(activeEntry?.value).toBe('gpt-5');
   });
 
+  it('config_option_update broadcasts a ModelUpdate event so the chip self-heals', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-models',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            currentValue: 'gpt-5',
+            options: [
+              { value: 'claude-4', name: 'Claude 4' },
+              { value: 'gpt-5', name: 'GPT-5' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const modelEvent = events.find((e) => e.type === 'model_update');
+    expect(modelEvent).toBeDefined();
+    expect(modelEvent.model).toEqual({ id: 'gpt-5', name: 'GPT-5' });
+  });
+
+  it('config_option_update does NOT broadcast ModelUpdate when no model category is present', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [{ value: 'claude-4', name: 'Claude 4' }],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-models',
+      update: {
+        sessionUpdate: 'config_option_update',
+        // No `model` category entry (e.g. effort-only update).
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            name: 'Effort',
+            category: 'thought_level',
+            currentValue: 'high',
+            options: [{ value: 'high', name: 'High' }],
+          },
+        ],
+      },
+    });
+
+    expect(events.find((e) => e.type === 'model_update')).toBeUndefined();
+  });
+
   // ── /effort command ──
 
   /**
