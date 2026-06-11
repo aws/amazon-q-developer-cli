@@ -1854,7 +1854,8 @@ abstract class BaseAcpClient implements SessionClient {
         // instead of falling back to the main agent. `convertAcpUpdateToEvent`
         // can't see the notification's sessionId, so the standard `tool_call`
         // path (unlike `tool_call_chunk`) would otherwise broadcast it here
-        // with sessionId undefined — the store then mis-stamps the stage tool
+        // with sessionId undefined — the store then stamps the stage tool
+        // incorrectly
         // as a MAIN-agent tool, leaking it into the lite chat log / static
         // flush (scrollback wedges) and dropping the parent subagent out of
         // the live region's active-tool set (spinner stalls). ToolCallUpdate /

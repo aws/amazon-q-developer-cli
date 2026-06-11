@@ -2621,6 +2621,7 @@ export const createAppStore = (props: AppStoreProps) => {
               clearTimeout(pendingContentFlush);
               pendingContentFlush = null;
             }
+            flushContentToStore();
             // Commit the streaming row so the model speech that preceded the
             // tool call lands in scrollback before the tool row. Without
             // this, the placeholder row keeps empty content in messages
