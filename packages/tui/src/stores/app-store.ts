@@ -9,6 +9,7 @@ import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import { selectVisibleSlashCommands } from './visible-slash-commands';
+import { synthesizeToolUseContent } from './tool-use-synthesis';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -683,12 +684,9 @@ interface BaseAppActions {
   /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
   markMessagesFromHistory: (fromIndex: number) => void;
   /**
-   * Append a message to the queue. Slash commands are deduped against the
-   * current queue contents — a duplicate triggers an "already queued" alert
-   * and the queue is left unchanged. Returns true when the message was
-   * actually appended, false when it was rejected (empty/whitespace, or
-   * dedup'd). Callers that surface their own success alert MUST gate it on
-   * the return value so the alert doesn't overwrite the dedup alert.
+   * Append a message to the queue. Duplicates are allowed (re-queuing the
+   * same slash command is a valid action). Returns true when appended, false
+   * when rejected (empty/whitespace only).
    */
   queueMessage: (content: string) => boolean;
   processQueue: () => Promise<void>;
@@ -987,18 +985,6 @@ export interface AppState {
   messages: MessageType[];
   liveOutputs: Map<string, string[][]>;
   queuedMessages: string[];
-  /**
-   * The slash command currently mid-dispatch from `processQueue`. Set
-   * around the `await get().handleUserInput(...)` and cleared in the
-   * `finally`. During that await, `handleUserInput`'s queue branch can
-   * re-push the same string into `queuedMessages` (when `loadingMessage`
-   * is still non-null from an earlier picker swap), which makes
-   * `queueMessage`'s slash-dedup falsely report "already queued" if the
-   * user submits the same command they see absent from the strip.
-   * `queueMessage` exempts this exact string from the dedup so the
-   * bouncing dispatch window doesn't surface a confusing alert.
-   */
-  dispatchingMessage: string | null;
   editingQueueIndex: number | null;
   /**
    * Pending input restore for queued slash-command drains that opened a
@@ -1484,6 +1470,36 @@ export const useAppStore = <T>(
   return useStore(store, selector);
 };
 
+// Lazily-created throwaway store used only when a component that reads the app
+// store is rendered with no provider (Storybook, isolated snapshot tests).
+// `kiro` is merely stored at creation — its methods only run on user actions
+// that never fire in those contexts — so a null kiro is safe here.
+let _fallbackAppStore: AppStoreApi | null = null;
+const getFallbackAppStore = (): AppStoreApi => {
+  if (!_fallbackAppStore) {
+    _fallbackAppStore = createAppStore({ kiro: null as never });
+  }
+  return _fallbackAppStore;
+};
+
+/**
+ * Like {@link useAppStore} but returns `fallback` when no AppStoreContext
+ * provider is mounted instead of throwing. For shared components (e.g.
+ * Message) that read a single store flag yet are also rendered in isolation
+ * — Storybook, snapshot tests — without the full app provider. Mirrors
+ * useStatusBar's no-provider fallback.
+ */
+export const useAppStoreOptional = <T>(
+  selector: (state: AppState & AppActions) => T,
+  fallback: T
+): T => {
+  const store = useContext(AppStoreContext);
+  // Hooks must run unconditionally: subscribe to the real store when present,
+  // else to the shared fallback so the selector still runs against valid state.
+  const value = useStore(store ?? getFallbackAppStore(), selector);
+  return store ? value : fallback;
+};
+
 const CONTEXT_WARNING_THRESHOLD = 60;
 
 /**
@@ -1588,6 +1604,30 @@ function extractTaskState(
   } catch {
     // Not a task tool or malformed output — ignore
   }
+}
+
+/**
+ * Lite has no NotificationBar mounted, so route a command's failure alerts to
+ * scrollback instead of a transient toast. Successes are dropped (commands that
+ * want to surface a success should call ctx.announceSystem). activeCommand is
+ * cleared only on warn/error: the dispatcher's success path fires showAlert with
+ * the result message even when nothing visible happened, and clearing
+ * unconditionally would clobber a menu a queued slash command just opened
+ * mid-drain (e.g. /agent swap → queued /verbosity opens its picker → success
+ * alert clears it). A failed command's menu shouldn't linger over its error.
+ */
+function applyLiteAlertRouting(
+  ctx: CommandContext,
+  state: AppState & AppActions,
+  set: StoreApi<AppState & AppActions>['setState']
+): void {
+  if (state.uiMode !== 'lite') return;
+  ctx.showAlert = (message, status) => {
+    if (status === 'error' || status === 'warning') {
+      ctx.addSystemMessage(message, false);
+      set({ activeCommand: null });
+    }
+  };
 }
 
 /** Build a CommandContext from the current AppState + setter. */
@@ -1768,7 +1808,6 @@ export const createAppStore = (props: AppStoreProps) => {
     messages: [],
     liveOutputs: new Map(),
     queuedMessages: [],
-    dispatchingMessage: null,
     editingQueueIndex: null,
     queuedInputRestore: null,
     slashCommands: [
@@ -2327,16 +2366,10 @@ export const createAppStore = (props: AppStoreProps) => {
       let streamingMsgId: string | null = null;
 
       /**
-       * Commit the accumulated buffer into the live Model row in `messages`
-       * and clear the streaming slot. Called at every boundary that ends the
-       * live phase: a tool call lands, a user message arrives, the turn
-       * ends, or stopBuffering fires.
-       *
-       * This is the only path that does a `[...state.messages]` copy on
-       * behalf of streaming. Per-chunk updates go through
-       * `flushContentToStore` and only update the `streamingContent` field
-       * — a single primitive write — so subscribers keyed on `messages`
-       * don't invalidate at 60Hz on long responses.
+       * Commit the buffer into the live Model row and clear the streaming slot.
+       * This is the only path that copies [...state.messages] for streaming;
+       * per-chunk updates only mutate the streamingContent primitive so
+       * `messages` subscribers don't invalidate at 60Hz on long responses.
        */
       const commitBufferedContent = () => {
         if (!bufferedContent && !bufferedThinking) {
@@ -2403,29 +2436,20 @@ export const createAppStore = (props: AppStoreProps) => {
       };
 
       /**
-       * Per-chunk flush. On the FIRST chunk of a turn, appends an empty
-       * Model row to `messages` (one [...state.messages] copy per turn) so
-       * layout/order stays correct relative to subsequent tool calls and
-       * captures its id. On every chunk after that, only updates the
-       * `streamingContent` primitive — no messages copy.
-       *
-       * Live readers (LiteLiveRegion, LiteLayout ctxPct, modern TUI's
-       * StreamingMessage) subscribe to `streamingContent` directly and read
-       * the placeholder Model row's id from `streamingMessageId`. The empty
-       * Model row is filtered from the static log by selectStaticEligible
-       * (the `isProcessing && i === messages.length - 1` gate plus the
-       * empty-content gate keep it out of <Static>).
+       * Per-chunk flush. The first chunk of a turn appends a placeholder Model
+       * row (one [...state.messages] copy per turn) and captures its id;
+       * subsequent chunks only update the streamingContent primitive. Live
+       * components subscribe to streamingContent + streamingMessageId; the
+       * placeholder row is filtered from <Static> by selectStaticEligible.
        */
       const flushContentToStore = () => {
         pendingContentFlush = null;
         if (!bufferedContent && !bufferedThinking) return;
 
         if (streamingMsgId == null) {
-          // First flush of this turn — append the placeholder Model row with
-          // the current bufferedContent already inlined. Mid-stream readers of
-          // `messages[i].content` (transcript export, integ tests, anything
-          // that doesn't consult streamingContent) see streamed text as it
-          // arrives, matching origin/main's contract.
+          // First flush of this turn — append the placeholder row with
+          // buffered content inlined so external readers (transcript export,
+          // integ tests) that don't consult streamingContent stay in sync.
           const newId = lastContentEventId ?? crypto.randomUUID();
           streamingMsgId = newId;
           set((state) => ({
@@ -2451,12 +2475,10 @@ export const createAppStore = (props: AppStoreProps) => {
           return;
         }
 
-        // Subsequent chunk — also patch the placeholder row in place so
-        // external readers (transcript export, integ tests reading messages
-        // snapshot) stay in sync with streamingContent. ConversationView
-        // already substitutes streamingContent for message.content when
-        // `message.id === streamingMessageId && isProcessing`, so duplicate
-        // writes here do not double-render in modern TUI.
+        // Subsequent chunk — patch the placeholder row in place for external
+        // readers. ConversationView substitutes streamingContent for
+        // message.content when id === streamingMessageId && isProcessing, so
+        // this in-place write does not double-render in modern TUI.
         const idToPatch = streamingMsgId;
         set((state) => {
           const idx = state.messages.findIndex(
@@ -2622,57 +2644,9 @@ export const createAppStore = (props: AppStoreProps) => {
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
               );
 
-              // Capture `__tool_use_purpose` from the model's untouched
-              // rawInput before the per-shape synthesis below rebuilds a
-              // narrower content. Stash it on the typed `purpose` sibling
-              // so lite's reasoning slot can recover it; modern TUI's
-              // <Tool> excludes the field from its params display anyway,
-              // so omitting it from the synthesized content stays
-              // byte-equivalent for that path.
-              const rawArgs = (event.args ?? {}) as Record<string, unknown>;
-              const purpose =
-                typeof rawArgs.__tool_use_purpose === 'string' &&
-                rawArgs.__tool_use_purpose.trim().length > 0
-                  ? rawArgs.__tool_use_purpose
-                  : undefined;
-
-              let content: string;
-              const toolContentDiff = event.toolContent?.[0];
-              if (toolContentDiff) {
-                const args = event.args as Record<string, unknown>;
-                let command = 'create';
-                if (args.oldStr !== undefined) {
-                  command = 'strReplace';
-                } else if (args.insertLine !== undefined || args.append) {
-                  command = 'insert';
-                }
-                content = JSON.stringify({
-                  command,
-                  path: toolContentDiff.path,
-                  content: toolContentDiff.newText,
-                  oldStr: toolContentDiff.oldText,
-                  newStr: toolContentDiff.newText,
-                  insertLine: args.insertLine,
-                });
-              } else if (event.kind === 'edit') {
-                const args = event.args as Record<string, unknown>;
-                let command = 'create';
-                if (args.oldStr !== undefined) {
-                  command = 'strReplace';
-                } else if (args.insertLine !== undefined || args.append) {
-                  command = 'insert';
-                }
-                content = JSON.stringify({
-                  command,
-                  path: args.path,
-                  content: args.text || args.content || '',
-                  oldStr: args.oldStr,
-                  newStr: args.newStr,
-                  insertLine: args.insertLine,
-                });
-              } else {
-                content = JSON.stringify(event.args);
-              }
+              // Capture purpose + synthesize content. See
+              // synthesizeToolUseContent for the per-shape rules.
+              const { purpose, content } = synthesizeToolUseContent(event);
               // Structured diff for the modern TUI's <Tool> renderer (main's
               // path). Lite parses the synthesized `content` above instead;
               // carrying both keeps each renderer on its own source.
@@ -2734,21 +2708,14 @@ export const createAppStore = (props: AppStoreProps) => {
                   }
                 }
               }
-              // Resolve agent name: use subagent session name if tool call is
-              // from a subagent. When the event carries a sessionId distinct
-              // from the main session — i.e. it came from inside a stage —
-              // we MUST avoid the `currentAgent?.name` fallback. Stamping a
-              // stage tool with the main agent's name makes static-flush.ts's
-              // `isInnerSubagentTool` treat it as a parent-agent tool, which
-              // both shows it in the chat log AND drops it out of
-              // `subagentSummariesById` (the LiteLayout walk filters with
-              // `m.agentName === agentName` to skip parent-side rows). The
-              // bug surfaces when the subagent_list_update for a stage
-              // hasn't landed by the time its first tool call arrives — the
-              // session isn't in `state.sessions` yet, so the lookup misses.
-              // Using the sessionId as a stable placeholder keeps the
-              // inner-subagent distinction, and once the list update lands
-              // the stage's name flows through later resolves anyway.
+              // Resolve agent name. For a stage tool (sessionId differs from
+              // main) we MUST NOT fall back to the main agent's name: lite's
+              // isInnerSubagentTool hides a tool iff agentName !== mainAgentName,
+              // so stamping the main name leaks the stage's tools into the main
+              // live region/scrollback. When the session isn't registered yet
+              // (its first tool call beat the subagent_list_update), stamp the
+              // raw sessionId as a placeholder; addSession backfills the real
+              // name once the update lands.
               const mainSessionId = state.sessionId;
               let agentName: string | undefined;
               if (event.sessionId && event.sessionId !== mainSessionId) {
@@ -3947,26 +3914,7 @@ export const createAppStore = (props: AppStoreProps) => {
         codeData: null,
       });
 
-      // Lite has no NotificationBar mounted; route only failure alerts to
-      // scrollback so the user sees them. Successes are dropped (state
-      // changes worth showing should call ctx.announceSystem instead).
-      //
-      // Only clear activeCommand on warn/error: the dispatcher's "show result
-      // message" step (line 245) fires showAlert with the success-path
-      // result.message even when nothing visible happens here, and clearing
-      // unconditionally clobbers any menu a queued slash command just opened
-      // mid-drain. /agent swap → user queues /verbosity → drain runs and
-      // sets activeCommand to /verbosity → outer dispatcher's success alert
-      // clears it. Failures still close: a failed command's menu shouldn't
-      // linger over its error toast.
-      if (state.uiMode === 'lite') {
-        ctx.showAlert = (message, status) => {
-          if (status === 'error' || status === 'warning') {
-            ctx.addSystemMessage(message, false);
-            set({ activeCommand: null });
-          }
-        };
-      }
+      applyLiteAlertRouting(ctx, state, set);
 
       await executeCommandWithArg(cmdName, arg, ctx);
     },
@@ -3974,35 +3922,10 @@ export const createAppStore = (props: AppStoreProps) => {
     queueMessage: (content: string): boolean => {
       const trimmed = content.trim();
       if (!trimmed) return false;
-      // Slash-command dedup. Interactive pickers (/model, /agent, /effort,
-      // /theme, /chat) re-open the same UI when re-issued — a duplicate in
-      // the queue just makes the user dismiss the picker twice in a row at
-      // drain time. Plain chat messages can legitimately repeat (asking
-      // the same question twice is a real workflow), so the check is
-      // gated on the leading "/". `.includes` is O(n) but the queue
-      // length is bounded by what a user types between turns; comfortably
-      // under the per-render alert dedup threshold elsewhere in this file.
-      if (trimmed.startsWith('/')) {
-        const state = get();
-        // Exclude the in-flight dispatch from the dedup. processQueue
-        // slices the item out before awaiting handleUserInput, but the
-        // queue branch of handleUserInput re-pushes it during the await
-        // when loadingMessage is non-null — making the array briefly
-        // contain a string the user-visible strip has already cleared.
-        // Without this exemption, re-submitting the same command in
-        // that window fires a false-positive "already queued" alert.
-        if (
-          state.queuedMessages.includes(trimmed) &&
-          state.dispatchingMessage !== trimmed
-        ) {
-          state.showTransientAlert({
-            message: `${trimmed} is already queued`,
-            status: 'info',
-            autoHideMs: 2000,
-          });
-          return false;
-        }
-      }
+      // No dedup: queuing the same slash command twice is allowed (the user
+      // may genuinely want to re-run it). The genuine double-send guard lives
+      // in processQueue (`if (isProcessing) return`), not here. Plain chat
+      // messages already repeated freely.
       set((state) => ({ queuedMessages: [...state.queuedMessages, trimmed] }));
       return true;
     },
@@ -4092,12 +4015,7 @@ export const createAppStore = (props: AppStoreProps) => {
         const commandSnapshot = get().commandInputValue;
         const inputSnapshot = get().input;
         const userTypedExtra = commandSnapshot.trim() !== nextMessage.trim();
-        set({ dispatchingMessage: nextMessage });
-        try {
-          await get().handleUserInput(nextMessage);
-        } finally {
-          set({ dispatchingMessage: null });
-        }
+        await get().handleUserInput(nextMessage);
         if (userTypedExtra) {
           const userTypedDuringDispatch = !!get().commandInputValue.trim();
           if (!userTypedDuringDispatch) {
@@ -4464,13 +4382,11 @@ export const createAppStore = (props: AppStoreProps) => {
           }
         }
         newSessions.set(session.id, session);
-        // Backfill: when a stage's first tool call lands BEFORE the
-        // subagent_list_update for that session, the resolver in ToolCall
-        // stamped the message with the raw sessionId as a placeholder name
-        // (see app-store.ts:2192). Now that we have the real session →
-        // name mapping, rewrite those rows so the lite render walk finds
-        // them under the human-readable stage name and the final block
-        // surfaces every stage's summary.
+        // Backfill the placeholder names stamped by the ToolCall handler: when
+        // a stage's first tool call beat this subagent_list_update, its rows
+        // hold the raw sessionId. Now that we have the real name, rewrite them
+        // so isInnerSubagentTool keeps treating them as inner and the stage's
+        // summary block resolves.
         const sessionName = session.name;
         const placeholderId = session.id;
         const needsBackfill =
@@ -5501,11 +5417,8 @@ export const createAppStore = (props: AppStoreProps) => {
           const isKnown = isKnownSlashCommandToken(trimmed, allCommands);
           if (isLite && isKnown) {
             // The queue strip above the divider already shows the new entry
-            // (and "(N queued)") the moment queueMessage returns — a transient
-            // alert echoing the same name reads as a duplicate "queued" row.
-            // queueMessage's slash-dedup path still surfaces its own "already
-            // queued" alert when it rejects a duplicate, so the user gets
-            // feedback in the only case where the strip wouldn't have changed.
+            // (and "(N queued)") the moment queueMessage returns, so no
+            // transient alert is needed.
             state.queueMessage(trimmed);
             // clearInput resets only the lower-level state.input buffer
             // (lines, cursor). PromptInput renders from `commandInputValue`,
@@ -5514,8 +5427,7 @@ export const createAppStore = (props: AppStoreProps) => {
             // visible row keeps showing the just-queued command — and the
             // user's next keystroke appends to it: typing `/model` again
             // produces `/model/model`, which fails isKnownSlashCommandToken
-            // and falls through to chat-message queueing below, defeating
-            // the dedup check (which keys on exact `/model`). The two
+            // and falls through to chat-message queueing below. The two
             // clears together mirror what InlineLayout does at its own
             // submit site (clearInput() + clearCommandInput()) and what
             // the main-path `set` block below does inline.
@@ -5611,21 +5523,7 @@ export const createAppStore = (props: AppStoreProps) => {
         CommandHistory.getInstance().add(trimmed);
         const ctx: CommandContext = buildCommandContext(state, set, get);
 
-        // Lite has no NotificationBar mounted; route only failure alerts to
-        // scrollback so the user sees them. Successes are dropped (state
-        // changes worth showing should call ctx.announceSystem instead).
-        //
-        // Only clear activeCommand on warn/error — see the matching block in
-        // executeCommandWithArg above for why unconditional clearing breaks
-        // the queue-drain flow.
-        if (state.uiMode === 'lite') {
-          ctx.showAlert = (message, status) => {
-            if (status === 'error' || status === 'warning') {
-              ctx.addSystemMessage(message, false);
-              set({ activeCommand: null });
-            }
-          };
-        }
+        applyLiteAlertRouting(ctx, state, set);
 
         // Lite mode: only dispatch when the first whitespace-separated token
         // is an EXACT command-registry match. Typos like "/foozle" and pasted

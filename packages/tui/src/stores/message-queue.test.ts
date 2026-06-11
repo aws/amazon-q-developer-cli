@@ -73,42 +73,19 @@ describe('Message queue', () => {
       expect(store.getState().queuedMessages).toEqual([]);
     });
 
-    it('dedups consecutive slash commands (no double-picker on drain)', () => {
-      // A user typing `/model` twice in quick succession (e.g. unsure
-      // whether the first keystroke landed) would otherwise queue two
-      // copies and re-open the picker twice when the drain fires. The
-      // dedup is queue-time, not drain-time, so the alert lands when the
-      // user has the input focus to read it.
+    it('allows queuing the same slash command twice (no dedup)', () => {
+      // Re-queuing a slash command is a valid action — the user may want
+      // to re-run it (e.g. re-open a picker). Duplicates are kept in FIFO
+      // order rather than rejected.
       const store = createTestStore();
       store.getState().queueMessage('/model');
       store.getState().queueMessage('/model');
-      expect(store.getState().queuedMessages).toEqual(['/model']);
-      // The transient alert is the user's signal that the second queue
-      // attempt was rejected on purpose — without it the second enter
-      // press would feel like a no-op and they'd try again.
-      expect(store.getState().transientAlert).not.toBeNull();
-      expect(store.getState().transientAlert?.status).toBe('info');
-      expect(store.getState().transientAlert?.message).toContain('/model');
+      expect(store.getState().queuedMessages).toEqual(['/model', '/model']);
+      // No rejection alert — the queue strip is the only feedback surface.
+      expect(store.getState().transientAlert).toBeNull();
     });
 
-    it('dedups slash commands matching anywhere in the queue', () => {
-      // Not just consecutive — if `/model` is queued, an /effort lands
-      // between, then a second `/model` should still be dedup'd.
-      // Rationale: the picker UX is the same whether the duplicate
-      // is adjacent or separated; what matters is that draining the
-      // queue doesn't re-open the same picker twice.
-      const store = createTestStore();
-      store.getState().queueMessage('/model');
-      store.getState().queueMessage('/effort');
-      store.getState().queueMessage('/model');
-      expect(store.getState().queuedMessages).toEqual(['/model', '/effort']);
-    });
-
-    it('dedup keys on the full slash-command string (args matter)', () => {
-      // `/model gpt-4` and `/model claude` are different intents — the
-      // dedup keys on the trimmed exact match, so distinct argv'd commands
-      // both queue. Pure `/model` (no args) opens the picker; explicit
-      // arg invocations skip it. The queue should preserve both.
+    it('keeps distinct argv slash commands in order', () => {
       const store = createTestStore();
       store.getState().queueMessage('/model gpt-4');
       store.getState().queueMessage('/model claude');
@@ -118,11 +95,10 @@ describe('Message queue', () => {
       ]);
     });
 
-    it('does NOT dedup chat messages (legitimate workflow to repeat)', () => {
+    it('allows chat messages to repeat (legitimate workflow)', () => {
       // Asking the agent the same question twice is a real workflow —
       // sometimes you want the same prompt run against a now-different
-      // codebase state. Chat-message dedup would silently drop the
-      // second submission, which is worse than letting it run.
+      // codebase state.
       const store = createTestStore();
       store.getState().queueMessage('fix the bug');
       store.getState().queueMessage('fix the bug');
@@ -132,18 +108,12 @@ describe('Message queue', () => {
       ]);
     });
 
-    it('returns true on append, false on dedup or empty', () => {
-      // Callers (like handleUserInput's slash queueing branch) gate
-      // their own follow-up "queued — runs after the current task"
-      // alert on this return value. Without it, the caller's success
-      // alert would override queueMessage's "already queued" dedup
-      // alert and the user would be told their command queued when in
-      // fact it was rejected. Pin the contract here.
+    it('returns true on append, false only on empty', () => {
       const store = createTestStore();
       expect(store.getState().queueMessage('first')).toBe(true);
       expect(store.getState().queueMessage('second')).toBe(true);
       expect(store.getState().queueMessage('/model')).toBe(true);
-      expect(store.getState().queueMessage('/model')).toBe(false); // dedup
+      expect(store.getState().queueMessage('/model')).toBe(true); // dup ok
       expect(store.getState().queueMessage('   ')).toBe(false); // empty
       expect(store.getState().queueMessage('')).toBe(false); // empty
     });
@@ -821,7 +791,9 @@ describe('Message queue', () => {
       expect(store.getState().transientAlert).toBeNull();
     });
 
-    it('still surfaces the dedup alert when the same slash is re-queued', async () => {
+    it('queues a duplicate slash command without any alert', async () => {
+      // Re-issuing a command already in the queue is allowed — it appends
+      // a second copy and surfaces no rejection alert (dedup removed).
       const store = createTestStore();
       store.setState({
         uiMode: 'lite',
@@ -831,32 +803,6 @@ describe('Message queue', () => {
 
       await store.getState().handleUserInput('/verbosity');
 
-      expect(store.getState().queuedMessages).toEqual(['/verbosity']);
-      expect(store.getState().transientAlert).not.toBeNull();
-      expect(store.getState().transientAlert?.message).toContain(
-        'already queued'
-      );
-    });
-
-    it('does not flag "already queued" while the same command is mid-dispatch', () => {
-      const store = createTestStore();
-      // Reproduces the dispatch-window race: processQueue has sliced the
-      // item out (strip renders empty), but handleUserInput's queue
-      // branch has re-pushed it into queuedMessages while
-      // dispatchingMessage holds the in-flight string. A user-driven
-      // re-submit in this window must not surface the dedup alert.
-      store.setState({
-        uiMode: 'lite',
-        slashCommands: [
-          { name: '/verbosity', description: '', source: 'local' as const },
-        ],
-        queuedMessages: ['/verbosity'],
-        dispatchingMessage: '/verbosity',
-      });
-
-      const accepted = store.getState().queueMessage('/verbosity');
-
-      expect(accepted).toBe(true);
       expect(store.getState().queuedMessages).toEqual([
         '/verbosity',
         '/verbosity',
