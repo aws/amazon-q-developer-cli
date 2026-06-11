@@ -45,6 +45,8 @@ export function clipVisibleWidth(s: string, maxChars: number): string {
   let out = '';
   let visible = 0;
   let i = 0;
+  // Iterate by code points (not UTF-16 units) and account for double-width
+  // chars so we never split a surrogate pair (emoji) or overshoot the cap.
   while (i < s.length && visible < maxChars - 1) {
     ansiRe.lastIndex = i;
     const match = ansiRe.exec(s);
@@ -53,9 +55,14 @@ export function clipVisibleWidth(s: string, maxChars: number): string {
       i = match.index + match[0].length;
       continue;
     }
-    out += s[i];
-    visible += 1;
-    i += 1;
+    const cp = s.codePointAt(i)!;
+    const charLen = cp > 0xffff ? 2 : 1;
+    const ch = s.slice(i, i + charLen);
+    const w = visibleWidth(ch);
+    if (visible + w > maxChars - 1) break;
+    out += ch;
+    visible += w;
+    i += charLen;
   }
   return out + '…\x1b[0m';
 }

@@ -785,7 +785,10 @@ export function shouldShowToolOutput(
   toolName: string,
   filtersOverride?: readonly string[]
 ): boolean {
-  const filters = filtersOverride ?? getVerboseConfig().filters;
+  // Fall back to getVerboseFilters() (not getVerboseConfig().filters) so the
+  // cli.json CHAT_TOOLS_FILTERS override applies on the static render path,
+  // which doesn't thread an explicit filtersOverride.
+  const filters = filtersOverride ?? getVerboseFilters();
   if (filters.includes('all')) return true;
   if (filters.includes(toolName)) return true;
   const cat = categorize(toolName);
