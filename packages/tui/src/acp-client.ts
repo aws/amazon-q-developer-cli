@@ -215,6 +215,28 @@ const AGENT_DENYLIST: Record<string, string> = {
 };
 
 /**
+ * Builtin KAS modes hidden from the TUI agent picker and all derived
+ * listings. Unlike AGENT_DENYLIST (which only targets *bundled* agents and
+ * preserves user/workspace overrides), these are reserved builtin mode ids a
+ * user cannot redefine, so they are filtered unconditionally.
+ *
+ * `quick-spec`: the heavyweight spec-generation workflow (formerly
+ * `quick-plan`). The TUI surfaces interactive planning via the `plan` mode
+ * (reached through /plan and Shift+Tab); quick-spec is not offered as a
+ * directly selectable agent.
+ */
+const HIDDEN_BUILTIN_MODES = new Set<string>(['quick-spec']);
+
+/**
+ * Steering commands hidden from the TUI slash-command menu. KAS ships a
+ * builtin `quick-spec` steering document that registers `/quick-spec` to
+ * trigger the spec-generation workflow inline. Product does not want
+ * quick-spec exposed in the TUI (the picker mode is hidden too), so the
+ * inline command is dropped from autocomplete as well.
+ */
+const HIDDEN_STEERING_COMMANDS = new Set<string>(['quick-spec']);
+
+/**
  * Whether the given mode should be hidden from agent listings.
  *
  * The denylist targets KAS's *bundled* agents only. A user- or
@@ -1370,6 +1392,9 @@ abstract class BaseAcpClient implements SessionClient {
               break;
             }
             case 'steering': {
+              if (HIDDEN_STEERING_COMMANDS.has(cmd.name)) {
+                break;
+              }
               const source: SteeringSource =
                 scope === 'global'
                   ? { kind: 'global', ...(path ? { path } : {}) }
@@ -1868,14 +1893,16 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 
 /** Map TUI-facing mode names to KAS wire names. */
 function toKasModeId(tuiModeId: string): string {
-  if (tuiModeId === 'kiro_planner') return 'quick-plan';
+  // The TUI surfaces the planner under the internal name `kiro_planner`; the
+  // agent's read-only planner builtin mode is wire id `plan`.
+  if (tuiModeId === 'kiro_planner') return 'plan';
   if (tuiModeId === 'kiro_default') return 'vibe';
   return tuiModeId;
 }
 
 /** Map KAS wire mode names back to TUI-facing names. */
 function fromKasModeId(kasModeId: string): string {
-  if (kasModeId === 'quick-plan') return 'kiro_planner';
+  if (kasModeId === 'plan') return 'kiro_planner';
   if (kasModeId === 'vibe') return 'kiro_default';
   return kasModeId;
 }
@@ -2043,7 +2070,8 @@ export class KasAcpClient extends BaseAcpClient {
         // reviewer) so they never appear in the /agent menu or any derived
         // listing. User/workspace-defined agents are preserved — see
         // AGENT_DENYLIST and isAgentDenied for the rationale.
-        .filter((m) => !isAgentDenied(m)),
+        // Also drop reserved builtin modes hidden from the TUI (quick-spec).
+        .filter((m) => !isAgentDenied(m) && !HIDDEN_BUILTIN_MODES.has(m.id)),
       currentModeId: modes.currentModeId
         ? fromKasModeId(modes.currentModeId)
         : modes.currentModeId,
@@ -3536,7 +3564,7 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
-  /** /plan — switch to quick-plan mode, optionally send trailing prompt */
+  /** /plan — switch to plan mode, optionally send trailing prompt */
   private async executePlan(prompt?: string): Promise<CommandResult> {
     const result = await this.executeAgentSwap('kiro_planner');
     if (!result.success) return result;

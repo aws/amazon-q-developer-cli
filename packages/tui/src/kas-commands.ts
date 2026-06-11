@@ -177,7 +177,8 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   },
   {
     name: KasCommandName.Plan,
-    description: 'Switch to quick-plan mode for structured spec generation',
+    description:
+      'Switch to plan mode to break ideas into an implementation plan',
   },
   {
     name: KasCommandName.Feedback,

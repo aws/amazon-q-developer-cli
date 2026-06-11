@@ -405,7 +405,7 @@ describe('KasAcpClient', () => {
     expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
       expect.objectContaining({
         configId: 'mode',
-        value: 'quick-plan',
+        value: 'plan',
         sessionId: 'kas-session-1',
       })
     );
@@ -436,7 +436,7 @@ describe('KasAcpClient', () => {
         ([req]: any[]) => req?.configId === 'mode'
       );
       expect(modeCalls.length).toBe(1);
-      expect(modeCalls[0][0].value).toBe('quick-plan');
+      expect(modeCalls[0][0].value).toBe('plan');
     } finally {
       if (prev === undefined) delete process.env.KIRO_MODE;
       else process.env.KIRO_MODE = prev;
@@ -639,13 +639,13 @@ describe('KasAcpClient', () => {
     );
   });
 
-  it('executeCommand("plan") switches to quick-plan mode', async () => {
+  it('executeCommand("plan") switches to plan mode', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
     await client.executeCommand({ command: 'plan' } as any);
     expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
-      expect.objectContaining({ configId: 'mode', value: 'quick-plan' })
+      expect.objectContaining({ configId: 'mode', value: 'plan' })
     );
   });
 
@@ -1160,6 +1160,46 @@ describe('KasAcpClient', () => {
     const values = result.options.map((o: any) => o.value);
     expect(values).toEqual(['kiro_default']);
     expect(values).not.toContain('autonomous');
+  });
+
+  it('getCommandOptions("/agent") hides the quick-spec builtin mode but shows plan', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Default',
+            description: 'General coding assistance',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'plan',
+            name: 'Plan',
+            description: 'Read-only interactive planner',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'quick-spec',
+            name: 'Quick Spec',
+            description: 'Fast spec-generation workflow',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/agent', '');
+    const values = result.options.map((o: any) => o.value);
+    // `plan` is surfaced under the TUI-facing name kiro_planner
+    expect(values).toContain('kiro_planner');
+    expect(values).not.toContain('quick-spec');
+    expect(values).not.toContain('plan');
   });
 
   it('getCommandOptions("/agent") preserves a user/workspace agent that shares a denylisted id', async () => {
@@ -2392,10 +2432,41 @@ describe('KasAcpClient', () => {
     expect(commandsEvent.commands[0].name).toBe('help');
   });
 
-  it('available_commands_update filters out agent-type commands (handled via modes cache)', async () => {
+  it('available_commands_update hides the builtin quick-spec steering command', async () => {
     const client = new KasAcpClient();
     await client.newSession();
 
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'quick-spec',
+            description: 'Fast spec generation',
+            _meta: { kiro: { type: 'steering' } },
+          },
+          {
+            name: 'plan',
+            description: 'Create a plan',
+            _meta: { kiro: { type: 'steering' } },
+          },
+        ],
+      },
+    });
+
+    const steeringEvent = events.find((e) => e.type === 'steering_update');
+    const names = steeringEvent.steering.map((s: any) => s.name);
+    expect(names).toContain('plan');
+    expect(names).not.toContain('quick-spec');
+  });
+
+  it('available_commands_update filters out agent-type commands (handled via modes cache)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
     const events: any[] = [];
     (client as any).broadcastStreamEvent = (event: any) => events.push(event);
 
