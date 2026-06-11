@@ -15,7 +15,7 @@ import {
   type MessageType,
 } from '../../../stores/app-store.js';
 import { usePendingSwap } from './usePendingSwap.js';
-import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
+import { getVerboseFilters, getVerboseDisplay } from '../../../lite/verbose.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   buildRenderTheme,
@@ -468,7 +468,15 @@ export const LiteLiveRegion: React.FC = () => {
   // 150ms spinner cadence would otherwise rewrap output buffers six times a
   // second.
   const display = getVerboseDisplay();
-  const filtersOverride = useMemo(() => getVerboseConfig().filters, []);
+  // getVerboseFilters() (not getVerboseConfig().filters) so the cli.json
+  // CHAT_TOOLS_FILTERS override written by the modern-TUI settings panel
+  // reaches the live render gate. Re-read every render so a mid-session
+  // /verbosity filter change takes effect, but key the memo on the joined
+  // content so the array identity stays stable across spinner ticks (the
+  // downstream memos depend on it; churning it would rewrap output 6×/sec).
+  const filtersKey = getVerboseFilters().join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filtersOverride = useMemo(() => getVerboseFilters(), [filtersKey]);
   const liveBarsByToolId = useMemo(() => {
     const out = new Map<string, string[]>();
     for (const tool of activeTools) {

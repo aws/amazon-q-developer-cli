@@ -15,12 +15,13 @@ describe('/session-id', () => {
     const ctx = createMockCommandContext({
       kiro: { sessionId: 'test-uuid-1234' } as any,
     });
-    (ctx as any).getUiMode = () => 'lite';
 
     runEffect(sessionIdCmd, null, ctx, '');
 
-    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
-      'Session ID: test-uuid-1234'
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'Session ID: test-uuid-1234\nResume with: kiro-cli --resume-id test-uuid-1234',
+      'success',
+      10000
     );
   });
 
@@ -28,12 +29,13 @@ describe('/session-id', () => {
     const ctx = createMockCommandContext({
       kiro: { sessionId: undefined } as any,
     });
-    (ctx as any).getUiMode = () => 'lite';
 
     runEffect(sessionIdCmd, null, ctx, '');
 
-    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
-      'Session ID: none'
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'Session ID: none',
+      'success',
+      10000
     );
   });
 });
