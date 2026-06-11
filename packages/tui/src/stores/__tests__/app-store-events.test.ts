@@ -1541,6 +1541,32 @@ describe('clearCommandInput', () => {
 });
 
 describe('Stream event handler — thinkingMs', () => {
+  it('persists thinkingMs on the think→content first-flush path', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.Thought,
+      id: 'th-content',
+      content: { type: ContentType.Text, text: 'reasoning' },
+    });
+    handler({
+      type: AgentEventType.Content,
+      id: 'content-after-thought',
+      content: { type: ContentType.Text, text: 'answer' },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const model = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model);
+    expect(model).toBeDefined();
+    expect(model!.content).toBe('answer');
+    expect((model as any).thinking).toBe('reasoning');
+    expect(typeof (model as any).thinkingMs).toBe('number');
+    expect((model as any).thinkingMs).toBeGreaterThanOrEqual(0);
+  });
+
   it('persists thinkingMs on the think→tool-call path', async () => {
     const store = makeStore();
     const handler = store.getState().createStreamEventHandler();

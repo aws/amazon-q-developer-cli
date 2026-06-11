@@ -2460,6 +2460,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 role: MessageRole.Model,
                 content: bufferedContent,
                 thinking: bufferedThinking || undefined,
+                thinkingMs: thinkingMs ?? undefined,
                 agentName: state.currentAgent?.name,
               },
             ],
