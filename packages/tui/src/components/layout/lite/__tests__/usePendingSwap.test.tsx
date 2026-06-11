@@ -116,6 +116,16 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 250
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await flush();
+  }
+}
+
 describe('usePendingSwap', () => {
   test('latches onto "Agent changing to <name>" and stores baseAgent', async () => {
     const harness = mountHook({
@@ -128,7 +138,7 @@ describe('usePendingSwap', () => {
     harness.store.setState({
       loadingMessage: 'Agent changing to debug_agent',
     } as any);
-    await flush();
+    await waitFor(() => harness.current()?.name === 'debug_agent');
 
     expect(harness.current()).toEqual({
       name: 'debug_agent',
