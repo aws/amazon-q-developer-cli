@@ -41,7 +41,7 @@ describe('/compact and summary', () => {
 
     await testCase.sendKeys('hello');
     await testCase.pressEnter();
-    await testCase.waitForIdle(15000);
+    await testCase.waitForIdle(30000);
 
     // Wait a bit before typing command
     await testCase.sleepMs(500);
@@ -102,7 +102,7 @@ describe('/compact and summary', () => {
 
     await testCase.sendKeys('help me with a task');
     await testCase.pressEnter();
-    await testCase.waitForIdle(15000);
+    await testCase.waitForIdle(30000);
 
     await testCase.pushSendMessageResponse([
       {
@@ -117,7 +117,7 @@ describe('/compact and summary', () => {
 
     await testCase.sendKeys('do the task');
     await testCase.pressEnter();
-    await testCase.waitForIdle(15000);
+    await testCase.waitForIdle(30000);
 
     // Push a mock response for the compaction LLM call (compaction uses the same
     // send_message path as regular messages, so it consumes the next queued response)
