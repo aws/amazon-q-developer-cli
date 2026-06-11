@@ -214,14 +214,13 @@ describe('parseCliArgs', () => {
     expect(result.resumeId).toBe('abc-123');
   });
 
-  it('parses --lite flag', () => {
-    setArgs('chat', '--lite');
-    expect(parseCliArgs().uiMode).toBe('lite');
-  });
-
-  it('uiMode is undefined when --lite not passed', () => {
-    setArgs('chat');
-    expect(parseCliArgs().uiMode).toBeUndefined();
+  it('ignores the removed --lite flag without error', () => {
+    // `--lite` is no longer a recognized flag (lite mode is reached via
+    // `/lite` or the `chat.ui.mode` setting). An unknown flag must be
+    // skipped gracefully rather than throwing or consuming the next arg.
+    setArgs('chat', '--lite', '--resume-id', 'abc-123');
+    const result = parseCliArgs();
+    expect(result.resumeId).toBe('abc-123');
   });
 });
 

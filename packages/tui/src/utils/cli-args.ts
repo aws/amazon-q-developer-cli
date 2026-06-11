@@ -30,8 +30,6 @@ export interface CliArgs extends AcpSpawnArgs {
   resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker / --list). TUI-only. */
   resumePicker: boolean;
-  /** UI mode override from --lite flag. TUI-only. */
-  uiMode?: 'lite' | 'tui';
   /** Diagnostic mode: print every keypress + parsed sequence and exit. TUI-only. */
   debugKeys: boolean;
 }
@@ -98,8 +96,6 @@ const FLAG_DEFS: FlagDef[] = [
     flags: ['--agent-engine'],
     acp: '--agent-engine',
   },
-  // --lite activates lite UI mode (TUI-only, not forwarded to ACP)
-  { type: 'skip', flags: ['--lite'] },
 ];
 
 // Build a lookup map: flag string → FlagDef (built once at module load)
@@ -150,9 +146,7 @@ export function parseCliArgs(): CliArgs {
       } else if (def.type === 'boolean') {
         (result as any)[def.key] = true;
       } else if (def.type === 'skip') {
-        // Handle --lite specially
-        if (flag === '--lite') result.uiMode = 'lite';
-        else if (def.hasValue && eqValue === undefined) i++; // consume next arg
+        if (def.hasValue && eqValue === undefined) i++; // consume next arg
       }
     } else if (raw.startsWith('-')) {
       // Unknown flag — skip its value if the next arg looks like a value

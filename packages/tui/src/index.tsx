@@ -209,13 +209,9 @@ const wireUpHandlers = () => {
     // as 'loading' so the connecting panel shows them with a spinner. The
     // agent emits commands/available repeatedly during boot — the first one
     // typically lists every server as 'loading', then later announcements
-    // flip individual servers to 'running'/'failed'.
-    //
-    // Timing: we measure elapsed only when we've observed the loading→ready
-    // transition ourselves (prev.status === 'loading'). If a server's first
-    // appearance is already 'running' (it finished before we saw it), we
-    // can't compute a meaningful duration — leave elapsed undefined so the
-    // UI can suppress the timer rather than show a misleading near-zero ms.
+    // flip individual servers to 'running'/'failed'. Individual servers are
+    // no longer rendered; only the "Loading N/M MCP server(s)" aggregate is,
+    // so we track just status + startTime (per-server elapsed/error dropped).
     if (mcpServers && mcpServers.length > 0) {
       const current = appStore.getState().mcpInitStatus;
       const updated = new Map(current);
@@ -233,7 +229,6 @@ const wireUpHandlers = () => {
             updated.set(server.name, {
               status: 'ready',
               startTime: prev.startTime,
-              elapsed: Date.now() - prev.startTime,
             });
           } else if (!prev) {
             updated.set(server.name, {
@@ -242,15 +237,9 @@ const wireUpHandlers = () => {
             });
           }
         } else if (server.status === 'failed' || server.status === 'disabled') {
-          const elapsed =
-            prev?.status === 'loading'
-              ? Date.now() - prev.startTime
-              : undefined;
           updated.set(server.name, {
             status: 'failed',
             startTime: prev?.startTime ?? Date.now(),
-            elapsed,
-            error: server.status === 'disabled' ? 'disabled' : undefined,
           });
         }
       }
@@ -1027,7 +1016,7 @@ const startApp = async () => {
     readBoolSetting(Settings.CHAT_DISABLE_WRAP, false);
 
   type UiMode = 'tui' | 'lite';
-  type UiModeSourceTag = 'envVar' | 'cliArg' | 'setting' | 'default';
+  type UiModeSourceTag = 'envVar' | 'setting' | 'default';
 
   // Lite mode is gated on the Rust-side rollout (Feature::Lite, internal+nightly).
   // The chat-cli-v2 process exports KIRO_LITE_ROLLOUT_ENABLED=1 when the user
@@ -1044,13 +1033,6 @@ const startApp = async () => {
     if (fromEnv === 'lite' || fromEnv === 'tui') {
       const mode = fromEnv === 'lite' && !liteRolloutEnabled ? 'tui' : fromEnv;
       return { mode, source: 'envVar' };
-    }
-    if (cliArgs.uiMode === 'lite' || cliArgs.uiMode === 'tui') {
-      const mode =
-        cliArgs.uiMode === 'lite' && !liteRolloutEnabled
-          ? 'tui'
-          : cliArgs.uiMode;
-      return { mode, source: 'cliArg' };
     }
     const fromSetting = readStringSetting(Settings.CHAT_UI_MODE, '');
     if (fromSetting === 'lite' || fromSetting === 'tui') {
@@ -1108,11 +1090,9 @@ const startApp = async () => {
   const uiModeSourceEnum: UiModeSource =
     uiModeSource === 'envVar'
       ? UiModeSource.EnvVar
-      : uiModeSource === 'cliArg'
-        ? UiModeSource.CliArg
-        : uiModeSource === 'setting'
-          ? UiModeSource.Setting
-          : UiModeSource.Default;
+      : uiModeSource === 'setting'
+        ? UiModeSource.Setting
+        : UiModeSource.Default;
   kiro.sendUiModeSessionStart({
     uiMode,
     uiModeSource: uiModeSourceEnum,
