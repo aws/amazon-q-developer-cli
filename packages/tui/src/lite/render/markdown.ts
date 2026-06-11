@@ -13,7 +13,13 @@ import {
   type Alignment,
 } from '../../utils/table-layout.js';
 import type { Glyphs } from '../../utils/glyphs.js';
-import { resolveGlyphs, resolveTheme, brand, DEFAULT_USER_TAG, type RenderTheme } from './theme.js';
+import {
+  resolveGlyphs,
+  resolveTheme,
+  brand,
+  DEFAULT_USER_TAG,
+  type RenderTheme,
+} from './theme.js';
 import { wrapStyled, stripAnsiQuick, highlightLineSafe } from './text.js';
 
 export function renderUserMessage(text: string, theme?: RenderTheme): string {

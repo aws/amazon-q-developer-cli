@@ -12,8 +12,22 @@ import {
 import { visibleWidth } from '../../utils/text-width.js';
 import { shouldShowToolOutput } from '../verbose.js';
 import type { Glyphs } from '../../utils/glyphs.js';
-import { resolveGlyphs, brand, softSuccessOutput, type RenderTheme } from './theme.js';
-import { wrapAnsiLine, wrapAtWords, wrapKeyedLine, wrapPlainLine, clipChars, clipVisibleWidth, highlightLineSafe, resolveLanguageFromPathLite } from './text.js';
+import {
+  resolveGlyphs,
+  brand,
+  softSuccessOutput,
+  type RenderTheme,
+} from './theme.js';
+import {
+  wrapAnsiLine,
+  wrapAtWords,
+  wrapKeyedLine,
+  wrapPlainLine,
+  clipChars,
+  clipVisibleWidth,
+  highlightLineSafe,
+  resolveLanguageFromPathLite,
+} from './text.js';
 
 export interface ToolCallRenderInfo {
   name: string;
@@ -865,8 +879,12 @@ function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
       if (t != null) return { kind: 'text', value: t };
       // Single Json item with an unknown structured shape — hand the parsed
       // inner up so the caller renders the key:value tree.
-      if (first && typeof first === 'object' && first.Json &&
-          typeof first.Json === 'object') {
+      if (
+        first &&
+        typeof first === 'object' &&
+        first.Json &&
+        typeof first.Json === 'object'
+      ) {
         return { kind: 'json', value: first.Json as Record<string, unknown> };
       }
     }
@@ -1789,4 +1807,3 @@ export function formatTaskToolBody(
   // line carries all the meaning the call has.
   return { command, bodyLines: [] };
 }
-

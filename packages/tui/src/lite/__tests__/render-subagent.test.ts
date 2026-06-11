@@ -14,10 +14,7 @@ import {
   formatSubagentApprovalLines,
   renderSubagentFinalBlock,
 } from '../render.js';
-import {
-  setVerboseConfig,
-  resetVerboseCache,
-} from '../verbose.js';
+import { setVerboseConfig, resetVerboseCache } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 
 // Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
@@ -163,9 +160,7 @@ describe('formatSubagentApprovalLines', () => {
     expect(lines).not.toBeNull();
     const stripped = (lines ?? []).map(stripAnsi);
     const firstIdx = stripped.findIndex((l) => l.includes('First paragraph'));
-    const secondIdx = stripped.findIndex((l) =>
-      l.includes('Second paragraph')
-    );
+    const secondIdx = stripped.findIndex((l) => l.includes('Second paragraph'));
     expect(firstIdx).toBeGreaterThanOrEqual(0);
     expect(secondIdx).toBeGreaterThan(firstIdx);
     // At least one blank row between them — markdown semantic
@@ -182,9 +177,8 @@ describe('formatSubagentApprovalLines', () => {
     // past a wrap boundary. This test pins that contract for stage
     // prompts specifically by forcing a wrap mid-bold and checking the
     // following stage's [name] tag isn't accidentally bolded.
-    const longBold = '**'
-      + 'this is a long bold span that should wrap across a row'
-      + '**';
+    const longBold =
+      '**' + 'this is a long bold span that should wrap across a row' + '**';
     const content = JSON.stringify({
       task: 't',
       stages: [
@@ -516,7 +510,7 @@ describe('display.subagent section toggles', () => {
           toolArgsMode: 'block',
           showElapsed: true,
           showThinkingContent: true,
-        showTasks: true,
+          showTasks: true,
           argsMaxLines: null,
           outputMaxLines: null,
           argsMaxChars: 80,
@@ -552,7 +546,7 @@ describe('display.subagent section toggles', () => {
           toolArgsMode: 'block',
           showElapsed: true,
           showThinkingContent: true,
-        showTasks: true,
+          showTasks: true,
           argsMaxLines: null,
           outputMaxLines: null,
           argsMaxChars: 80,
@@ -589,7 +583,7 @@ describe('display.subagent section toggles', () => {
           toolArgsMode: 'block',
           showElapsed: true,
           showThinkingContent: true,
-        showTasks: true,
+          showTasks: true,
           argsMaxLines: null,
           outputMaxLines: null,
           argsMaxChars: 80,
@@ -624,7 +618,7 @@ describe('display.subagent section toggles', () => {
           toolArgsMode: 'block',
           showElapsed: true,
           showThinkingContent: true,
-        showTasks: true,
+          showTasks: true,
           argsMaxLines: null,
           outputMaxLines: null,
           argsMaxChars: 80,
@@ -812,7 +806,6 @@ describe('renderSubagentFinalBlock verbose mode', () => {
     expect(stripped).toContain('stage timeout');
   });
 });
-
 
 // Markdown rendering for subagent outputs is the same pipeline used by the
 // parent's `renderAgentMessage`. Scope is strict: only stage body text

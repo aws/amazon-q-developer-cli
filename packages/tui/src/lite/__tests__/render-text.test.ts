@@ -1,17 +1,9 @@
-import {
-  describe,
-  test,
-  expect,
-  beforeAll,
-  afterAll,
-} from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import chalk from 'chalk';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import {
-  renderAgentMessage,
-} from '../render.js';
+import { renderAgentMessage } from '../render.js';
 import stripAnsi from 'strip-ansi';
 
 // Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
@@ -41,7 +33,6 @@ afterAll(() => {
 
 // Force chalk colors for consistent test output
 chalk.level = 3;
-
 
 // Surrogate-pair-aware wrap: emoji at U+1F000+ are two UTF-16 code units, but
 // must stay paired across wrap boundaries. The previous code-unit iteration in
