@@ -294,7 +294,8 @@ describe('Multi-line input editing', () => {
     await testCase.sendKeys('previous command');
     await testCase.sleepMs(200);
     await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('ask a question', 10000);
 
     // Press Up to recall history
     await testCase.sendKeys(UP_ARROW);
@@ -328,7 +329,8 @@ describe('Multi-line input editing', () => {
     await testCase.sendKeys('previous command');
     await testCase.sleepMs(200);
     await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('ask a question', 10000);
 
     // Type new input
     await testCase.sendKeys('my current input');

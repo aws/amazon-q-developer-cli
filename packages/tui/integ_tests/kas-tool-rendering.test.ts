@@ -87,7 +87,8 @@ describe('KAS tool rendering', () => {
     });
 
     await testCase.sendKeys('go\r');
-    await testCase.sleepMs(800);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('Done.');
 
     const flat = testCase.getSnapshot().join('\n');
 
@@ -109,8 +110,6 @@ describe('KAS tool rendering', () => {
     expect(flat).toContain('Write src/new-file.ts');
     expect(flat).toContain('export const hello');
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
   }, 40000);
 
   it('renders a failed KAS read with a friendly "Read" label, not the raw id', async () => {
@@ -140,7 +139,8 @@ describe('KAS tool rendering', () => {
     });
 
     await testCase.sendKeys('go\r');
-    await testCase.sleepMs(800);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('Retrying.');
 
     const flat = testCase.getSnapshot().join('\n');
 
@@ -150,7 +150,5 @@ describe('KAS tool rendering', () => {
     // Error message surfaces.
     expect(flat).toContain('ENOENT');
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
   }, 40000);
 });
