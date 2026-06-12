@@ -48,6 +48,21 @@ function createTestStore() {
   return store;
 }
 
+/**
+ * Boot a store in KAS mode. `createAppStore` seeds `kasCommands` from
+ * KAS_COMMANDS when agentEngine === 'kas' (app-store.ts), so KAS-only
+ * commands like `/rewind` live in the `kasCommands` slice and are NOT
+ * mirrored into `slashCommands`. These tests pin that the lite submit/queue
+ * gates recognize those commands via the merged `liteGateCommands` list
+ * rather than leaking them to the model as chat text.
+ */
+function createKasTestStore() {
+  const mockKiro = new Kiro();
+  const store = createAppStore({ kiro: mockKiro, agentEngine: 'kas' });
+  store.setState({ isInitialized: true });
+  return store;
+}
+
 describe('Message queue (backend-driven)', () => {
   describe('queueMessage', () => {
     it('calls kiro.steerMessage with sessionId and trimmed content', () => {
@@ -1112,6 +1127,206 @@ describe('Compaction drains queue', () => {
         '/verbosity',
       ]);
       expect(store.getState().transientAlert).toBeNull();
+    });
+  });
+});
+
+describe('KAS mode lite command gating (regression: KAS-only commands must not leak to the model)', () => {
+  // `/rewind` is the canonical repro: it lives in KAS_COMMANDS → the
+  // `kasCommands` slice, and is NOT advertised into `slashCommands`. Before
+  // the fix, the four lite submit/queue gates checked `slashCommands` only,
+  // so `/rewind` (and /effort, /spec, /model, /knowledge, /plan, …) fell
+  // through and got sent to the LLM as chat text — the panel never opened and
+  // a billed turn was wasted each time. The gates now consult
+  // `liteGateCommands`, which in KAS mode is the merged visible list
+  // (kasCommands ∪ slashCommands ∪ projections) — exactly what the dispatcher
+  // can resolve.
+  const KAS_ONLY_CMD = '/rewind';
+
+  it('sanity: the KAS-only command is in kasCommands but NOT slashCommands', () => {
+    const store = createKasTestStore();
+    const { kasCommands, slashCommands } = store.getState();
+    expect(kasCommands.some((c) => c.name === KAS_ONLY_CMD)).toBe(true);
+    expect(slashCommands.some((c) => c.name === KAS_ONLY_CMD)).toBe(false);
+  });
+
+  describe('Gate 1: queueMessage mid-turn (keeps KAS command in the local queue, not steered)', () => {
+    it('queues a KAS-only slash command locally instead of steering it to the backend', () => {
+      const store = createKasTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: true,
+        activeInterruptMode: 'steer',
+      });
+
+      store.getState().queueMessage(KAS_ONLY_CMD);
+
+      // A known KAS command is treated as a command: it stays in the local
+      // queue (to fire at turn-end) and is NOT routed to steerMessage as a
+      // mid-turn chat message.
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().queuedMessages).toEqual([KAS_ONLY_CMD]);
+    });
+
+    it('still steers a genuine chat message mid-turn (KAS command gating does not catch plain text)', () => {
+      const store = createKasTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: true,
+        activeInterruptMode: 'steer',
+      });
+
+      store.getState().queueMessage('please keep going');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        'please keep going'
+      );
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
+  });
+
+  describe('Gate 2: processQueue drain (dispatches the KAS command, does not send as chat)', () => {
+    it('dispatches a drained KAS-only slash command via handleUserInput instead of sendMessage', async () => {
+      const store = createKasTestStore();
+      const mockSendMessage = mock(() => Promise.resolve());
+      const mockHandleUserInput = mock(async () => {});
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+        queuedMessages: [KAS_ONLY_CMD],
+        sendMessage: mockSendMessage as never,
+        handleUserInput: mockHandleUserInput as never,
+      });
+
+      await store.getState().processQueue();
+
+      // The drain branch recognizes the KAS command and routes it through the
+      // slash-command dispatch path (handleUserInput), NOT sendMessage (which
+      // would deliver it to the model as chat text).
+      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD);
+      expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('emits a [queue] drain row for a KAS-only slash command', async () => {
+      const store = createKasTestStore();
+      const messagesBefore = store.getState().messages.length;
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+        queuedMessages: [KAS_ONLY_CMD],
+      });
+
+      await store.getState().processQueue();
+
+      const drainRow = store.getState().messages[messagesBefore];
+      expect(drainRow?.role).toBe(MessageRole.System);
+      expect(drainRow?.content).toContain(`[queue] ${KAS_ONLY_CMD}`);
+    });
+  });
+
+  describe('Gate 3: handleUserInput while processing (queues KAS command, does not reject or leak)', () => {
+    it('queues a KAS-only slash command locally when processing in lite mode', async () => {
+      const store = createKasTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: true,
+        activeInterruptMode: 'steer',
+      });
+
+      await store.getState().handleUserInput(KAS_ONLY_CMD);
+
+      // Recognized as a command → queued for turn-end, not steered as chat
+      // and not rejected with the "can't be queued" warning.
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().queuedMessages).toEqual([KAS_ONLY_CMD]);
+    });
+  });
+
+  describe('Gate 4: handleUserInput idle (dispatches KAS command, does not send as chat)', () => {
+    it('dispatches a KAS-only slash command via executeCommand instead of sendMessage', async () => {
+      const store = createKasTestStore();
+      const mockSendMessage = mock(() => Promise.resolve());
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: false,
+        sendMessage: mockSendMessage as never,
+      });
+
+      const messagesBefore = store.getState().messages.length;
+      await store.getState().handleUserInput(KAS_ONLY_CMD);
+
+      // The idle lite gate recognizes the KAS command and routes it to
+      // executeCommand (which dispatches via kasCommands ∪ slashCommands).
+      // It must NOT fall through to sendMessage (the leak-to-model path).
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      // Positive signal that the command actually dispatched: handleRewind
+      // with no args + no prior turns surfaces "No previous turns to rewind
+      // to". In lite mode warnings route to a System scrollback row (via
+      // applyLiteAlertRouting → addSystemMessage), not transientAlert. (If
+      // the gate had leaked, sendMessage would have fired and no such row
+      // would appear.)
+      const newRows = store.getState().messages.slice(messagesBefore);
+      expect(
+        newRows.some(
+          (m) =>
+            typeof m.content === 'string' &&
+            m.content.includes('No previous turns')
+        )
+      ).toBe(true);
+    });
+
+    it('still sends an unknown slash token as chat (lite contract preserved in KAS mode)', async () => {
+      const store = createKasTestStore();
+      const mockSendMessage = mock(() => Promise.resolve());
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: false,
+        sendMessage: mockSendMessage as never,
+      });
+
+      await store.getState().handleUserInput('/foozle');
+
+      // Typos and pasted paths are not commands in either slice → they remain
+      // chat messages, exactly as in v2. The fix widens the known set to
+      // include KAS commands; it does not turn every slash token into a
+      // command.
+      expect(mockSendMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe('v2 no-op guard: KAS gating must not change v2 behavior', () => {
+    it('a /rewind-style token unknown to v2 still goes to chat (v2 has no kasCommands)', async () => {
+      // In v2 mode `kasCommands` is empty and `liteGateCommands` returns the
+      // raw `slashCommands` slice — byte-identical to the pre-fix gate. A
+      // token that is not a backend/host v2 command must still be sent as a
+      // chat message.
+      const store = createTestStore(); // v2 store (default engine)
+      const mockSendMessage = mock(() => Promise.resolve());
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: false,
+        sendMessage: mockSendMessage as never,
+      });
+
+      await store.getState().handleUserInput('/rewind');
+
+      expect(store.getState().agentEngine).toBe('v2');
+      expect(mockSendMessage).toHaveBeenCalled();
     });
   });
 });

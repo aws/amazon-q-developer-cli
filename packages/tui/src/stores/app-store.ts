@@ -261,6 +261,7 @@ import {
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
+import { isUserDeniedReason } from '../constants/tool-failure-reasons.js';
 import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
@@ -406,16 +407,9 @@ export type MessageType =
       kind?: ToolKind;
       content: string;
       /**
-       * Model-supplied `__tool_use_purpose` (the per-tool "why") preserved
-       * verbatim from the agent's `rawInput`. Captured at the ACP boundary
-       * BEFORE the synthesis below rebuilds `content` for edit-kind tools
-       * (the rebuild drops `__tool_use_purpose` because the synthesis
-       * enumerates a small fixed field list). Lite TUI surfaces this in
-       * the purple reasoning slot via {@link extractToolReasoning}; the
-       * modern TUI's `<Tool>` already excludes `__tool_use_purpose` from
-       * its params display (see `utils/tool-params.ts` BASE_EXCLUDED), so
-       * carrying the purpose on a sibling field keeps modern-TUI rendering
-       * byte-identical while restoring lite's reasoning surface.
+       * Model-supplied `__tool_use_purpose` (the per-tool "why"), captured at
+       * the ACP boundary before `content` is rebuilt for edit-kind tools (the
+       * rebuild would otherwise drop it). Surfaced by lite's reasoning slot.
        */
       purpose?: string;
       /**
@@ -441,17 +435,6 @@ export type MessageType =
       content: string;
       success: boolean;
     };
-
-/**
- * A conversation "turn" groups a user message with all of the AI-side messages
- * (model responses, tool uses, system notes) that followed it before the next
- * user message. Shared between `ConversationView` and `SessionOutput`.
- */
-export interface ConversationTurn {
-  userMessage: MessageType;
-  aiMessages: MessageType[];
-  isActive: boolean;
-}
 
 /**
  * A conversation "turn" groups a user message with all of the AI-side messages
@@ -1689,6 +1672,29 @@ function applyLiteAlertRouting(
       set({ activeCommand: null });
     }
   };
+}
+
+/**
+ * Command set the lite "dispatch locally vs. send to agent" gate
+ * (`isKnownSlashCommandToken`) should match against.
+ *
+ * In KAS mode the backend advertises commands (`/rewind`, `/usage`, `/spec`,
+ * …) via `kasCommands` that are NOT mirrored into `slashCommands`; gating on
+ * `slashCommands` alone made those tokens fall through the gate and get sent
+ * to the model as chat text instead of dispatching (panel never opens, a
+ * billed turn wasted). `selectVisibleSlashCommands` prepends `kasCommands`
+ * (and folds prompt/skill/steering projections), so it's the correct gate set
+ * in KAS mode.
+ *
+ * v2 is intentionally left on the raw `slashCommands` slice so this is a
+ * provable no-op for the v2 backend: `selectVisibleSlashCommands` would also
+ * fold in prompt/skill projections the v2 gate never recognized before, and
+ * we are not changing v2 behavior here.
+ */
+function liteGateCommands(state: AppState): readonly AvailableCommand[] {
+  return state.agentEngine === 'kas'
+    ? selectVisibleSlashCommands(state)
+    : state.slashCommands;
 }
 
 /** Build a CommandContext from the current AppState + setter. */
@@ -2939,22 +2945,17 @@ export const createAppStore = (props: AppStoreProps) => {
                 const toolMsg = messages[toolMsgIndex];
                 if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
                   logger.debug('[tool-finished]', toolMsg.name, event.id);
-                  // Detect "denied by user" on replay: the SACP layer collapses
+                  // Detect "denied by user" on replay: the V2 backend collapses
                   // user-rejected and actually-failed tool calls into the same
-                  // wire shape (status: Failed, content: error text). The Rust
-                  // backend stamps a canonical reason string for each path —
-                  // recover the distinction by string-matching that text so a
-                  // replayed denial renders with the rejected glyph instead of
-                  // the failed glyph.
+                  // wire shape (status: Failed, content: error text) and tunnels
+                  // the distinction through the reason text. `isUserDeniedReason`
+                  // localizes that V2-specific string coupling (no-op for KAS) so
+                  // a replayed denial renders with the rejected glyph, not failed.
                   const errText =
                     event.result?.status === 'error'
                       ? event.result.error
                       : undefined;
-                  const wasDeniedByUser =
-                    typeof errText === 'string' &&
-                    /denied by the user|rejected because the arguments supplied are forbidden/i.test(
-                      errText
-                    );
+                  const wasDeniedByUser = isUserDeniedReason(errText);
                   // If the user cancelled the tool (e.g. denied approval),
                   // the local cancellation flow already marked the message
                   // as 'cancelled'. Preserve that — don't let a subsequent
@@ -4129,14 +4130,15 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     /**
-     * Stamp `fromHistory: true` on all messages whose index is >= fromIndex.
-     * Called after a /chat resume bulk-replay so the lite renderer can pick
-     * a cheaper preset for those rows. Currently a no-op: the consumer was
-     * removed from the lite renderer in a separate cleanup. Action surface
-     * is retained so call sites in commands/effects.ts don't need editing.
+     * Reserved no-op. Was meant to stamp `fromHistory: true` on replayed rows
+     * (>= fromIndex) after a /chat resume so the lite renderer could pick a
+     * cheaper preset, but the renderer-side consumer was removed and never
+     * re-added. The action + its sole caller (session-load.ts) are kept as a
+     * stable hook so the cheaper-render path can be wired back up without
+     * re-threading the call site; today it does nothing.
      */
     markMessagesFromHistory: (_fromIndex: number) => {
-      // intentional no-op
+      // intentional no-op — see doc comment above
     },
 
     setSlashCommands: (commands: SlashCommand[]) => {
@@ -4260,7 +4262,6 @@ export const createAppStore = (props: AppStoreProps) => {
         isInitialized,
         activeInterruptMode,
         uiMode,
-        slashCommands,
         isProcessing,
       } = get();
 
@@ -4276,7 +4277,8 @@ export const createAppStore = (props: AppStoreProps) => {
       // drain into — to steerMessage would silently lose it.
       if (
         uiMode === 'lite' &&
-        (!isProcessing || isKnownSlashCommandToken(trimmed, slashCommands))
+        (!isProcessing ||
+          isKnownSlashCommandToken(trimmed, liteGateCommands(get())))
       ) {
         set((state) => ({
           queuedMessages: [...state.queuedMessages, trimmed],
@@ -4380,7 +4382,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const isSlash = nextMessage.startsWith('/');
       if (
         isSlash &&
-        isKnownSlashCommandToken(nextMessage, get().slashCommands)
+        isKnownSlashCommandToken(nextMessage, liteGateCommands(get()))
       ) {
         // Emit a scrollback marker so users have a record that a queued
         // slash command ran. Most painful for picker-opening commands
@@ -5899,7 +5901,7 @@ export const createAppStore = (props: AppStoreProps) => {
           // tokens (e.g. "/foozle", pasted "/some/file/path") fall through to
           // chat-message queueing — the lite contract is "first token must
           // exactly match a known command, otherwise it's a message".
-          const allCommands = state.slashCommands;
+          const allCommands = liteGateCommands(state);
           const isLite = state.uiMode === 'lite';
           const isKnown = isKnownSlashCommandToken(trimmed, allCommands);
           if (isLite && isKnown) {
@@ -6018,7 +6020,7 @@ export const createAppStore = (props: AppStoreProps) => {
         // (e.g. "/verbose foozle") still flow through the dispatcher so the
         // command's own handler can show the proper error.
         if (state.uiMode === 'lite') {
-          const allCommands = state.slashCommands;
+          const allCommands = liteGateCommands(state);
           if (isKnownSlashCommandToken(trimmed, allCommands)) {
             await executeCommand(trimmed, ctx);
             return;

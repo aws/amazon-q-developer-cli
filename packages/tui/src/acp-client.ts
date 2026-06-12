@@ -11,6 +11,7 @@ import type {
   SpecResolveSessionResponse,
 } from '@kiro/acp-type-covenant';
 import { logger } from './utils/logger';
+import { isUserCancelledReason } from './constants/tool-failure-reasons';
 import {
   getTelemetryIdentity,
   isTelemetryEnabled,
@@ -1517,17 +1518,15 @@ abstract class BaseAcpClient implements SessionClient {
           }
           this.pendingDisplayError = null;
           // Recover user-cancellation from the canonical reason string the
-          // Rust side tunnels through the failure content (acp_agent.rs
+          // V2 Rust side tunnels through the failure content (acp_agent.rs
           // ToolCallFinished arm for ToolCallResult::Cancelled). ACP's
           // ToolCallStatus only has Completed/Failed, so without this
           // detection a tool the user interrupted lands as a generic FAILED
           // chip — including the parent agent_crew tool when the user hits
-          // Esc mid-pipeline. Mirrors the denied-by-user detection in
+          // Esc mid-pipeline. `isUserCancelledReason` localizes the V2 string
+          // coupling (no-op for KAS); mirrors `isUserDeniedReason` in the
           // app-store.ts ToolCallFinished handler.
-          if (
-            typeof errorText === 'string' &&
-            errorText === 'Tool use was cancelled by the user'
-          ) {
+          if (isUserCancelledReason(errorText)) {
             return {
               type: AgentEventType.ToolCallFinished,
               id: update.toolCallId,

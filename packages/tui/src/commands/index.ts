@@ -6,7 +6,6 @@ import { parseCommand } from '../types/commands.js';
 import type { AvailableCommand } from '../types/commands.js';
 import { dispatch } from './dispatcher.js';
 import type { CommandContext } from './types.js';
-import type { SlashCommand } from '../stores/app-store.js';
 
 export type { CommandContext } from './types.js';
 
@@ -34,7 +33,7 @@ function findCommand<T extends AvailableCommand>(
  */
 export function isKnownSlashCommandToken(
   input: string,
-  commands: SlashCommand[]
+  commands: readonly AvailableCommand[]
 ): boolean {
   const { isCommand, name } = parseCommand(input);
   if (!isCommand) return false;
