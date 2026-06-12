@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveToolId, kindToToolId } from '../agent-events';
+import {
+  resolveToolId,
+  kindToToolId,
+  isParentSubagentTool,
+} from '../agent-events';
 
 describe('resolveToolId', () => {
   it('resolves write tools', () => {
@@ -80,5 +84,29 @@ describe('kindToToolId', () => {
 
   it('returns undefined for other kinds and undefined', () => {
     expect(kindToToolId(undefined)).toBeUndefined();
+  });
+});
+
+describe('isParentSubagentTool', () => {
+  it('recognizes the plain subagent parent', () => {
+    expect(isParentSubagentTool('subagent')).toBe(true);
+  });
+
+  it('recognizes the pipeline parent renamed to orchestrate_subagent', () => {
+    // Regression: a v2 agent_crew pipeline emits the parent as
+    // 'orchestrate_subagent' (kiroMeta.pipeline rename). Lite must still
+    // recognize it as a subagent parent, else grouping/hiding breaks and
+    // per-stage rows flood scrollback.
+    expect(isParentSubagentTool('orchestrate_subagent')).toBe(true);
+    expect(isParentSubagentTool('invoke_sub_agent')).toBe(true);
+    expect(isParentSubagentTool('agent_crew')).toBe(true);
+  });
+
+  it('does not treat response/management tools as parents', () => {
+    expect(isParentSubagentTool('subagent_response')).toBe(false);
+    expect(isParentSubagentTool('session_management')).toBe(false);
+    expect(isParentSubagentTool('fs_read')).toBe(false);
+    expect(isParentSubagentTool(undefined)).toBe(false);
+    expect(isParentSubagentTool(null)).toBe(false);
   });
 });

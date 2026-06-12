@@ -48,3 +48,13 @@ export const Settings = {
   CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
     'chat.keybindings.toggleInterruptBehavior',
 } as const;
+
+/**
+ * Description for the "Display" settings entry, shared by the typed
+ * `/settings display` subcommand router (settings-subcommands.ts) and the
+ * shared settings panel model (settings-panel-model.ts) so both advertise the
+ * same controls — including the "Default UI at startup" (chat.ui.mode) toggle,
+ * which lives in the Display sub-panel for both lite and TUI.
+ */
+export const DISPLAY_SETTINGS_DESCRIPTION =
+  'Default UI at startup, animations, ASCII art, icons, and thinking';

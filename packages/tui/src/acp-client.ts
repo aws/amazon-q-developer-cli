@@ -1364,7 +1364,8 @@ abstract class BaseAcpClient implements SessionClient {
   // ── Shared session update → event conversion ──
 
   protected convertAcpUpdateToEvent(
-    update: AcpSessionUpdate
+    update: AcpSessionUpdate,
+    notifSessionId?: string
   ): AgentStreamEvent | null {
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
@@ -1463,13 +1464,28 @@ abstract class BaseAcpClient implements SessionClient {
           // notification was sent. Synthesize one from rawInput so the TUI
           // can render the tool name and attempted arguments.
           if (update.rawInput !== undefined) {
-            this.broadcastStreamEvent({
+            const synthesized: AgentStreamEvent = {
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
               name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
-            });
+            };
+            // Stamp the originating subagent session so the store resolves the
+            // stage's agentName instead of falling back to the MAIN agent.
+            // When a Failed tool_call_update is the FIRST event the store sees
+            // for this toolCallId (parse error / permission-denied / hook-
+            // rejected — the only paths that carry rawInput here, since the
+            // backend never sent an initial `tool_call`), an unstamped synthesized
+            // event resolves to the main agent. lite's isInnerSubagentTool then
+            // can't hide it, leaking the rejected stage tool into the main
+            // scrollback / static flush. Mirrors handleSessionUpdate's guard at
+            // ~1722 so a genuine main-agent rejected-before-exec tool is
+            // unaffected (notifSessionId absent or === this.sessionId → no stamp).
+            if (notifSessionId && notifSessionId !== this.sessionId) {
+              synthesized.sessionId = notifSessionId;
+            }
+            this.broadcastStreamEvent(synthesized);
           }
           // Prefer a descriptive error from the content block; fall back to
           // rawOutput, then a generic message.
@@ -1839,7 +1855,7 @@ abstract class BaseAcpClient implements SessionClient {
     if (!update) return;
     const notifSessionId = (params as any).sessionId as string | undefined;
     const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
-    const event = this.convertAcpUpdateToEvent(update);
+    const event = this.convertAcpUpdateToEvent(update, notifSessionId);
     if (!event) return;
 
     if (isSubagentEvent) {
@@ -2511,7 +2527,17 @@ export class KasAcpClient extends BaseAcpClient {
           }
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
-        const event = this.convertAcpUpdateToEvent(update);
+        // NOTE: `sessionId` here is the per-listener KAS session, which equals
+        // this.sessionId for the main agent — so the converter's stamp guard
+        // (notifSessionId !== this.sessionId) is a no-op on the KAS main path.
+        // KAS discriminates subagent stages via meta.agentSubtaskId, extracted
+        // from the RETURNED event below — NOT via a per-stage notification
+        // sessionId. So a Failed-tool synthesized broadcast for a denied KAS
+        // *stage* tool is not stamped by this thread-through; that is a separate,
+        // narrower defect tracked apart from the Rust-engine fix. Threaded here
+        // for signature consistency and to correctly stamp if a genuine
+        // subagent-session listener is ever wired.
+        const event = this.convertAcpUpdateToEvent(update, sessionId);
         if (!event) return;
 
         // Intercept pipeline metadata → emit subagent list update
@@ -2565,9 +2591,10 @@ export class KasAcpClient extends BaseAcpClient {
    *  emits commands using the wire ids (e.g. `vibe`), so the filter set
    *  has to include both. */
   protected override convertAcpUpdateToEvent(
-    update: AcpSessionUpdate
+    update: AcpSessionUpdate,
+    notifSessionId?: string
   ): AgentStreamEvent | null {
-    const event = super.convertAcpUpdateToEvent(update);
+    const event = super.convertAcpUpdateToEvent(update, notifSessionId);
     if (
       event?.type === AgentEventType.CommandsUpdate &&
       this.modesState.availableModes.length > 0

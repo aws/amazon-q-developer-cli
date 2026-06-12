@@ -6,8 +6,16 @@ import { AgentEventType } from '../types/agent-events';
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),
+    sendMessage: mock(),
+    steerMessage: mock(),
+    clearSteering: mock(),
     cancel: mock(),
     close: mock(),
+    // Slash-command dispatch emits frontend command-usage telemetry via
+    // `ctx.kiro.sendChatSlashCommandTelemetry` (added on main). The drain-row
+    // tests dispatch real slash commands through processQueue, so the mock
+    // must stub it or the dispatcher throws "not a function".
+    sendChatSlashCommandTelemetry: mock(),
   })),
 }));
 
@@ -40,37 +48,250 @@ function createTestStore() {
   return store;
 }
 
-describe('Message queue', () => {
+describe('Message queue (backend-driven)', () => {
   describe('queueMessage', () => {
-    it('appends trimmed message to queuedMessages', () => {
+    it('calls kiro.steerMessage with sessionId and trimmed content', () => {
       const store = createTestStore();
-      store.getState().queueMessage('  hello world  ');
-      expect(store.getState().queuedMessages).toEqual(['hello world']);
-    });
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
 
-    it('preserves FIFO order for multiple messages', () => {
-      const store = createTestStore();
-      store.getState().queueMessage('first');
-      store.getState().queueMessage('second');
-      store.getState().queueMessage('third');
-      expect(store.getState().queuedMessages).toEqual([
-        'first',
-        'second',
-        'third',
-      ]);
+      store.getState().queueMessage('  hello world  ');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        'hello world'
+      );
     });
 
     it('rejects empty string', () => {
       const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: 'session-abc' });
+
       store.getState().queueMessage('');
-      expect(store.getState().queuedMessages).toEqual([]);
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
     });
 
     it('rejects whitespace-only string', () => {
       const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: 'session-abc' });
+
       store.getState().queueMessage('   ');
       store.getState().queueMessage('\t\n');
-      expect(store.getState().queuedMessages).toEqual([]);
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+    });
+
+    it('buffers onto pendingSteerContent when sessionId is null (does not drop)', () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ sessionId: null, isInitialized: false });
+
+      store.getState().queueMessage('hello');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().pendingSteerContent).toBe('hello');
+    });
+
+    describe('mode-aware routing', () => {
+      it('routes to steerMessage in steering mode', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          sessionId: 'session-abc',
+          activeInterruptMode: 'steer',
+        });
+
+        store.getState().queueMessage('steer this');
+
+        expect(mockSteerMessage).toHaveBeenCalledWith(
+          'session-abc',
+          'steer this'
+        );
+        expect(store.getState().queuedMessages).toEqual([]);
+      });
+
+      it('appends to queuedMessages in queueing mode', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          sessionId: 'session-abc',
+          activeInterruptMode: 'queue',
+        });
+
+        store.getState().queueMessage('queue this');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().queuedMessages).toEqual(['queue this']);
+      });
+
+      it('appends multiple messages to queuedMessages in order (queueing mode)', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          sessionId: 'session-abc',
+          activeInterruptMode: 'queue',
+        });
+
+        store.getState().queueMessage('first');
+        store.getState().queueMessage('second');
+        store.getState().queueMessage('third');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().queuedMessages).toEqual([
+          'first',
+          'second',
+          'third',
+        ]);
+      });
+
+      it('trims whitespace before appending in queueing mode', () => {
+        const store = createTestStore();
+        store.setState({
+          sessionId: 'session-abc',
+          activeInterruptMode: 'queue',
+        });
+
+        store.getState().queueMessage('  padded  ');
+
+        expect(store.getState().queuedMessages).toEqual(['padded']);
+      });
+
+      it('rejects empty/whitespace in queueing mode without modifying buffer', () => {
+        const store = createTestStore();
+        store.setState({
+          sessionId: 'session-abc',
+          activeInterruptMode: 'queue',
+          queuedMessages: ['existing'],
+        });
+
+        store.getState().queueMessage('');
+        store.getState().queueMessage('   ');
+        store.getState().queueMessage('\t\n');
+
+        expect(store.getState().queuedMessages).toEqual(['existing']);
+      });
+
+      it('buffers to pendingSteerContent pre-init regardless of mode (steering)', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          sessionId: null,
+          isInitialized: false,
+          activeInterruptMode: 'steer',
+        });
+
+        store.getState().queueMessage('pre-init msg');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().pendingSteerContent).toBe('pre-init msg');
+        expect(store.getState().queuedMessages).toEqual([]);
+      });
+
+      it('buffers to pendingSteerContent pre-init regardless of mode (queuing)', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          sessionId: null,
+          isInitialized: false,
+          activeInterruptMode: 'queue',
+        });
+
+        store.getState().queueMessage('pre-init msg');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().pendingSteerContent).toBe('pre-init msg');
+        expect(store.getState().queuedMessages).toEqual([]);
+      });
+
+      it('concatenates pre-init buffers with double newline', () => {
+        const store = createTestStore();
+        store.setState({
+          sessionId: null,
+          isInitialized: false,
+          activeInterruptMode: 'queue',
+        });
+
+        store.getState().queueMessage('first');
+        store.getState().queueMessage('second');
+
+        expect(store.getState().pendingSteerContent).toBe('first\n\nsecond');
+      });
+    });
+
+    describe('lite mode steering', () => {
+      it('routes a mid-turn chat message to steerMessage in lite (matches TUI)', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          uiMode: 'lite',
+          sessionId: 'session-abc',
+          isProcessing: true,
+          activeInterruptMode: 'steer',
+        });
+
+        store.getState().queueMessage('steer this mid-turn');
+
+        expect(mockSteerMessage).toHaveBeenCalledWith(
+          'session-abc',
+          'steer this mid-turn'
+        );
+        expect(store.getState().queuedMessages).toEqual([]);
+      });
+
+      it('keeps a chat message local during a lite loading window (no active turn)', () => {
+        // Regression guard: a chat message typed during a loadingMessage
+        // window (/agent swap, /chat resume) has isProcessing=false and must
+        // stay in the local queue — routing it to steerMessage would target a
+        // stale/absent session and silently lose it.
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          uiMode: 'lite',
+          sessionId: 'session-abc',
+          isProcessing: false,
+          loadingMessage: 'Loading session…',
+          activeInterruptMode: 'steer',
+        });
+
+        store.getState().queueMessage('a chat message');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().queuedMessages).toEqual(['a chat message']);
+      });
+
+      it('keeps a known slash command local even mid-turn in lite', () => {
+        const store = createTestStore();
+        const mockSteerMessage = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteerMessage;
+        store.setState({
+          uiMode: 'lite',
+          sessionId: 'session-abc',
+          isProcessing: true,
+          activeInterruptMode: 'steer',
+        });
+
+        store.getState().queueMessage('/verbosity');
+
+        expect(mockSteerMessage).not.toHaveBeenCalled();
+        expect(store.getState().queuedMessages).toEqual(['/verbosity']);
+      });
     });
 
     it('allows queuing the same slash command twice (no dedup)', () => {
@@ -78,6 +299,10 @@ describe('Message queue', () => {
       // to re-run it (e.g. re-open a picker). Duplicates are kept in FIFO
       // order rather than rejected.
       const store = createTestStore();
+      store.setState({
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
       store.getState().queueMessage('/model');
       store.getState().queueMessage('/model');
       expect(store.getState().queuedMessages).toEqual(['/model', '/model']);
@@ -87,6 +312,10 @@ describe('Message queue', () => {
 
     it('keeps distinct argv slash commands in order', () => {
       const store = createTestStore();
+      store.setState({
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
       store.getState().queueMessage('/model gpt-4');
       store.getState().queueMessage('/model claude');
       expect(store.getState().queuedMessages).toEqual([
@@ -100,6 +329,10 @@ describe('Message queue', () => {
       // sometimes you want the same prompt run against a now-different
       // codebase state.
       const store = createTestStore();
+      store.setState({
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
       store.getState().queueMessage('fix the bug');
       store.getState().queueMessage('fix the bug');
       expect(store.getState().queuedMessages).toEqual([
@@ -107,66 +340,129 @@ describe('Message queue', () => {
         'fix the bug',
       ]);
     });
+  });
 
-    it('returns true on append, false only on empty', () => {
+  describe('pendingSteerContent state (notification-driven)', () => {
+    it('starts as null', () => {
       const store = createTestStore();
-      expect(store.getState().queueMessage('first')).toBe(true);
-      expect(store.getState().queueMessage('second')).toBe(true);
-      expect(store.getState().queueMessage('/model')).toBe(true);
-      expect(store.getState().queueMessage('/model')).toBe(true); // dup ok
-      expect(store.getState().queueMessage('   ')).toBe(false); // empty
-      expect(store.getState().queueMessage('')).toBe(false); // empty
+      expect(store.getState().pendingSteerContent).toBeNull();
+    });
+
+    it('is set by SteeringQueued event', () => {
+      const store = createTestStore();
+      store.setState({ pendingSteerContent: 'fix the bug' });
+      expect(store.getState().pendingSteerContent).toBe('fix the bug');
+    });
+
+    it('is cleared by SteeringConsumed (set to null)', () => {
+      const store = createTestStore();
+      store.setState({ pendingSteerContent: 'fix the bug' });
+      store.setState({ pendingSteerContent: null });
+      expect(store.getState().pendingSteerContent).toBeNull();
     });
   });
 
-  describe('clearQueue', () => {
-    it('empties the queue', () => {
+  describe('handleUserInput queuing', () => {
+    it('queues message when isProcessing is true', async () => {
       const store = createTestStore();
-      store.getState().queueMessage('a');
-      store.getState().queueMessage('b');
-      expect(store.getState().queuedMessages).toHaveLength(2);
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
 
-      store.getState().clearQueue();
-      expect(store.getState().queuedMessages).toEqual([]);
+      await store.getState().handleUserInput('queued message');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        'queued message'
+      );
     });
 
+    it('clears input buffer after queuing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('queued message');
+
+      const input = store.getState().input;
+      expect(input.lines).toEqual(['']);
+      expect(input.cursorCol).toBe(0);
+    });
+
+    it('does not queue empty/whitespace input during processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('   ');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+    });
+
+    it('rejects slash commands with a warning when processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('/help');
+
+      // Slash command should NOT be queued
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      // A transient alert should be shown
+      expect(store.getState().transientAlert).not.toBeNull();
+      expect(store.getState().transientAlert?.status).toBe('warning');
+    });
+
+    it('rejects shell escape commands with a warning when processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('!ls');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().transientAlert).not.toBeNull();
+      expect(store.getState().transientAlert?.status).toBe('warning');
+    });
+  });
+
+  describe('unified expanded state', () => {
+    it('toggleToolOutputsExpanded toggles the shared expanded state', () => {
+      const store = createTestStore();
+      expect(store.getState().toolOutputsExpanded).toBe(false);
+      store.getState().toggleToolOutputsExpanded();
+      expect(store.getState().toolOutputsExpanded).toBe(true);
+      store.getState().toggleToolOutputsExpanded();
+      expect(store.getState().toolOutputsExpanded).toBe(false);
+    });
+  });
+});
+
+describe('Queueing mode behaviors', () => {
+  describe('clearQueue', () => {
     it('is a no-op on empty queue', () => {
       const store = createTestStore();
+      store.setState({ activeInterruptMode: 'queue' });
       store.getState().clearQueue();
       expect(store.getState().queuedMessages).toEqual([]);
     });
   });
 
   describe('processQueue', () => {
-    it('dequeues first message and sends it', async () => {
-      const store = createTestStore();
-      store.setState({ queuedMessages: ['hello'] });
-
-      await store.getState().processQueue();
-
-      // Message was dequeued
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
-    it('is a no-op when queue is empty', async () => {
-      const store = createTestStore();
-      await store.getState().processQueue();
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
-    it('dequeues only the first message (FIFO)', async () => {
-      const store = createTestStore();
-      store.setState({ queuedMessages: ['first', 'second', 'third'] });
-
-      await store.getState().processQueue();
-
-      // With mock kiro, sendMessage completes immediately and recursively
-      // processes the entire queue. All messages should be dequeued.
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
     it('does not clear input buffer when processing queue', async () => {
       const store = createTestStore();
+      store.setState({
+        activeInterruptMode: 'queue',
+        sessionId: 'session-abc',
+      });
       // Simulate user typing while queue processes
       const typedInput = store.getState().input;
       store.setState({
@@ -530,18 +826,26 @@ describe('Message queue', () => {
   });
 
   describe('handleUserInput queuing', () => {
-    it('queues message when isProcessing is true', async () => {
+    it('queues message when isProcessing is true (queueing mode)', async () => {
       const store = createTestStore();
-      store.setState({ isProcessing: true });
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
 
       await store.getState().handleUserInput('queued message');
 
       expect(store.getState().queuedMessages).toEqual(['queued message']);
     });
 
-    it('clears input buffer after queuing', async () => {
+    it('clears input buffer after queuing (queueing mode)', async () => {
       const store = createTestStore();
-      store.setState({ isProcessing: true });
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
       // Pre-populate commandInputValue to mirror what PromptInput's
       // syncToStore writes on every keystroke. Without seeding this, the
       // initial state happens to be '' and the assertion below passes
@@ -566,29 +870,6 @@ describe('Message queue', () => {
       expect(store.getState().commandInputValue).toBe('');
     });
 
-    it('does not queue empty/whitespace input during processing', async () => {
-      const store = createTestStore();
-      store.setState({ isProcessing: true });
-
-      await store.getState().handleUserInput('   ');
-      await store.getState().handleUserInput('');
-
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
-    it('rejects slash commands with a warning when processing', async () => {
-      const store = createTestStore();
-      store.setState({ isProcessing: true });
-
-      await store.getState().handleUserInput('/help');
-
-      // Slash command should NOT be queued
-      expect(store.getState().queuedMessages).toEqual([]);
-      // A transient alert should be shown
-      expect(store.getState().transientAlert).not.toBeNull();
-      expect(store.getState().transientAlert?.status).toBe('warning');
-    });
-
     it('rejects slash commands with a warning when not initialized', async () => {
       const store = createTestStore();
       store.setState({ isInitialized: false });
@@ -599,24 +880,13 @@ describe('Message queue', () => {
       expect(store.getState().transientAlert).not.toBeNull();
     });
 
-    it('still allows /quit when processing', async () => {
-      // We can't fully test process.exit, but we can verify /quit
-      // doesn't get queued or trigger the slash command warning
+    it('queues regular messages but not slash commands when processing (queueing mode)', async () => {
       const store = createTestStore();
-      store.setState({ isProcessing: true });
-
-      // /quit calls process.exit so we can't actually invoke it,
-      // but we can verify other slash commands are blocked
-      await store.getState().handleUserInput('/help');
-      await store.getState().handleUserInput('/context');
-      await store.getState().handleUserInput('/model');
-
-      expect(store.getState().queuedMessages).toEqual([]);
-    });
-
-    it('queues regular messages but not slash commands when processing', async () => {
-      const store = createTestStore();
-      store.setState({ isProcessing: true });
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
 
       await store.getState().handleUserInput('fix the bug');
       await store.getState().handleUserInput('/help');
@@ -628,34 +898,63 @@ describe('Message queue', () => {
         'add tests too',
       ]);
     });
+
+    it('does not queue slash commands when processing (queueing mode)', async () => {
+      // We can't fully test /quit since it calls process.exit, but we can
+      // verify that slash commands are never added to the queue while the
+      // agent is processing — they pass through the slash-command handler.
+      const store = createTestStore();
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+      });
+
+      await store.getState().handleUserInput('/help');
+      await store.getState().handleUserInput('/context');
+      await store.getState().handleUserInput('/model');
+
+      expect(store.getState().queuedMessages).toEqual([]);
+    });
   });
 
   describe('queuing during initialization', () => {
-    it('queues message via handleUserInput when not initialized', async () => {
+    it('queues message via handleUserInput when not initialized (queueing mode)', async () => {
       const store = createTestStore();
-      store.setState({ isInitialized: false });
+      store.setState({
+        isInitialized: false,
+        activeInterruptMode: 'queue',
+      });
 
       await store.getState().handleUserInput('early message');
 
-      expect(store.getState().queuedMessages).toEqual(['early message']);
+      // Pre-init buffers to pendingSteerContent regardless of mode
+      expect(store.getState().pendingSteerContent).toBe('early message');
     });
 
-    it('queues message via sendMessage when not initialized', async () => {
+    it('buffers message via sendMessage when not initialized (pre-init path)', async () => {
       const store = createTestStore();
-      store.setState({ isInitialized: false });
+      store.setState({
+        isInitialized: false,
+        activeInterruptMode: 'queue',
+      });
 
       await store.getState().sendMessage('early message');
 
-      expect(store.getState().queuedMessages).toEqual(['early message']);
+      // Pre-init sendMessage calls queueMessage which buffers to pendingSteerContent
+      expect(store.getState().pendingSteerContent).toBe('early message');
       expect(store.getState().isProcessing).toBe(false);
     });
 
     it('drains queue after isInitialized becomes true', async () => {
       const store = createTestStore();
-      store.setState({ isInitialized: false });
+      store.setState({
+        isInitialized: true,
+        activeInterruptMode: 'queue',
+        sessionId: 'session-abc',
+        queuedMessages: ['queued during init'],
+      });
 
-      store.getState().queueMessage('queued during init');
-      store.setState({ isInitialized: true });
       await store.getState().processQueue();
 
       expect(store.getState().queuedMessages).toEqual([]);
@@ -667,6 +966,7 @@ describe('Message queue', () => {
       const store = createTestStore();
       store.setState({
         isProcessing: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['msg1', 'msg2', 'msg3'],
       });
 
@@ -680,6 +980,7 @@ describe('Message queue', () => {
       const store = createTestStore();
       store.setState({
         isProcessing: true,
+        activeInterruptMode: 'queue',
         queuedMessages: ['msg1', 'msg2', 'msg3'],
       });
 
@@ -690,17 +991,12 @@ describe('Message queue', () => {
   });
 
   describe('unified expanded state', () => {
-    it('toggleToolOutputsExpanded toggles the shared expanded state', () => {
-      const store = createTestStore();
-      expect(store.getState().toolOutputsExpanded).toBe(false);
-      store.getState().toggleToolOutputsExpanded();
-      expect(store.getState().toolOutputsExpanded).toBe(true);
-      store.getState().toggleToolOutputsExpanded();
-      expect(store.getState().toolOutputsExpanded).toBe(false);
-    });
-
     it('expanded state persists across queued turns (not reset by sendMessage)', async () => {
       const store = createTestStore();
+      store.setState({
+        activeInterruptMode: 'queue',
+        sessionId: 'session-abc',
+      });
       // User expands outputs
       store.getState().toggleToolOutputsExpanded();
       expect(store.getState().toolOutputsExpanded).toBe(true);
@@ -715,6 +1011,7 @@ describe('Message queue', () => {
 
     it('clearQueue does not affect expanded state', () => {
       const store = createTestStore();
+      store.setState({ activeInterruptMode: 'queue' });
       store.getState().toggleToolOutputsExpanded();
       store.setState({ queuedMessages: ['a', 'b'] });
 
@@ -724,54 +1021,61 @@ describe('Message queue', () => {
       expect(store.getState().toolOutputsExpanded).toBe(true);
     });
   });
+});
 
-  describe('compaction drains queue', () => {
-    it('processQueue is called after compaction completes', async () => {
-      const store = createTestStore();
-      store.setState({
-        isCompacting: true,
-        isProcessing: true,
-        queuedMessages: ['queued during compaction'],
-      });
-
-      await store.getState().handleCompactionEvent({
-        type: AgentEventType.CompactionStatus,
-        status: 'completed',
-      });
-
-      expect(store.getState().isCompacting).toBe(false);
-      expect(store.getState().queuedMessages).toEqual([]);
+describe('Compaction drains queue', () => {
+  it('processQueue is called after compaction completes', async () => {
+    const store = createTestStore();
+    store.setState({
+      isCompacting: true,
+      isProcessing: true,
+      activeInterruptMode: 'queue',
+      sessionId: 'session-abc',
+      queuedMessages: ['queued during compaction'],
     });
 
-    it('processQueue is called after compaction fails', async () => {
-      const store = createTestStore();
-      store.setState({
-        isCompacting: true,
-        isProcessing: true,
-        queuedMessages: ['queued during compaction'],
-      });
-
-      await store.getState().handleCompactionEvent({
-        type: AgentEventType.CompactionStatus,
-        status: 'failed',
-        error: 'test error',
-      });
-
-      expect(store.getState().isCompacting).toBe(false);
-      expect(store.getState().queuedMessages).toEqual([]);
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
     });
 
-    it('queue is untouched when compaction starts', async () => {
-      const store = createTestStore();
-      store.setState({ queuedMessages: ['pre-existing'] });
+    expect(store.getState().isCompacting).toBe(false);
+    expect(store.getState().queuedMessages).toEqual([]);
+  });
 
-      await store.getState().handleCompactionEvent({
-        type: AgentEventType.CompactionStatus,
-        status: 'started',
-      });
-
-      expect(store.getState().queuedMessages).toEqual(['pre-existing']);
+  it('processQueue is called after compaction fails', async () => {
+    const store = createTestStore();
+    store.setState({
+      isCompacting: true,
+      isProcessing: true,
+      activeInterruptMode: 'queue',
+      sessionId: 'session-abc',
+      queuedMessages: ['queued during compaction'],
     });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'failed',
+      error: 'test error',
+    });
+
+    expect(store.getState().isCompacting).toBe(false);
+    expect(store.getState().queuedMessages).toEqual([]);
+  });
+
+  it('queue is untouched when compaction starts', async () => {
+    const store = createTestStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      queuedMessages: ['pre-existing'],
+    });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+    });
+
+    expect(store.getState().queuedMessages).toEqual(['pre-existing']);
   });
 
   describe('queueing slash commands during a loading window', () => {

@@ -715,54 +715,18 @@ describe('reopenSettingsMenu', () => {
     expect(store.getState().activeCommand).toBeNull();
   });
 
-  it('opens the lite settings command-menu in lite mode', () => {
+  it('opens the same SettingsPanel in lite mode (1:1 with TUI)', () => {
+    // Lite now renders the shared SettingsPanel (via <BackendPanels>) rather
+    // than a bespoke command-menu, so reopenSettingsMenu flips the same flag
+    // in both modes. The lite-only verbosity row is gated inside the panel's
+    // model (settings-panel-model.ts), not via activeCommand.
     const mockKiro = new Kiro();
     const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
 
     store.getState().reopenSettingsMenu();
 
-    const meta = store.getState().activeCommand!.command.meta!;
-    expect(meta.inputType).toBe('selection');
-    expect(meta.searchable).toBe(false);
-  });
-
-  it('mirrors every registered subcommand as a menu option', async () => {
-    // Dynamic import so we read the same registry the action uses.
-    const { settingsSubcommands } =
-      await import('../commands/settings-subcommands.js');
-    const mockKiro = new Kiro();
-    // uiMode='lite' so the assertion sees every registered subcommand —
-    // reopenSettingsMenu filters lite-only entries (e.g. verbosity) out
-    // when uiMode is 'tui' (the store's default), and we want to verify
-    // the menu mirrors the full registry, not the tui-filtered subset.
-    const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
-
-    store.getState().reopenSettingsMenu();
-
-    const { options } = store.getState().activeCommand!;
-    // Top-level menu only shows subcommands without ':' (sub-options are nested)
-    const topLevel = settingsSubcommands.filter((s) => !s.value.includes(':'));
-    expect(options).toHaveLength(topLevel.length);
-    for (let i = 0; i < topLevel.length; i++) {
-      expect(options[i]!.value).toBe(topLevel[i]!.value);
-      expect(options[i]!.label).toBe(topLevel[i]!.label);
-    }
-  });
-
-  it('is a no-op when the /settings command is not registered (lite)', () => {
-    const mockKiro = new Kiro();
-    const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
-
-    // Remove /settings from slashCommands (e.g. in a stripped-down test harness).
-    store.setState({
-      slashCommands: store
-        .getState()
-        .slashCommands.filter((c) => c.name !== '/settings'),
-    });
-
-    store.getState().reopenSettingsMenu();
-
-    // Should gracefully do nothing rather than throw or set a bad activeCommand.
+    expect(store.getState().showSettingsPanel).toBe(true);
+    // No command-menu coupling in either mode.
     expect(store.getState().activeCommand).toBeNull();
   });
 });
