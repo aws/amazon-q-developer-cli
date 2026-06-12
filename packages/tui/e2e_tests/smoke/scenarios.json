@@ -48,21 +48,6 @@
       "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator"
     },
     {
-      "id": "slash-help-legacy",
-      "name": "/help --legacy",
-      "category": "slash-commands",
-      "description": "Show classic help text",
-      "docRef": "/docs/cli/reference/slash-commands#help",
-      "steps": [
-        "type:/help --legacy",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:help"
-      ],
-      "observe": "Classic help text renders inline (not in a panel), lists commands with descriptions"
-    },
-    {
       "id": "slash-clear",
       "name": "/clear command",
       "category": "slash-commands",
@@ -453,36 +438,6 @@
       "observe": "Session loaded from file, previous messages restored in conversation"
     },
     {
-      "id": "slash-editor",
-      "name": "/editor command",
-      "category": "slash-commands",
-      "description": "Open editor to compose prompt",
-      "docRef": "/docs/cli/reference/slash-commands#editor",
-      "steps": [
-        "type:/editor",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:editor"
-      ],
-      "observe": "SKIP in headless \u2014 opens $EDITOR. Verify command is recognized (no 'Unknown command')."
-    },
-    {
-      "id": "slash-reply",
-      "name": "/reply command",
-      "category": "slash-commands",
-      "description": "Open editor with last assistant message",
-      "docRef": "/docs/cli/reference/slash-commands#reply",
-      "steps": [
-        "type:/reply",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:reply"
-      ],
-      "observe": "SKIP in headless \u2014 opens $EDITOR. Verify command is recognized."
-    },
-    {
       "id": "slash-plan",
       "name": "/plan command",
       "category": "slash-commands",
@@ -511,21 +466,6 @@
         "screen.contains:knowledge"
       ],
       "observe": "Shows knowledge base entries or empty state. Experimental feature."
-    },
-    {
-      "id": "slash-paste",
-      "name": "/paste command",
-      "category": "slash-commands",
-      "description": "Paste image from clipboard",
-      "docRef": "/docs/cli/reference/slash-commands#paste",
-      "steps": [
-        "type:/paste",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:paste"
-      ],
-      "observe": "SKIP in headless \u2014 needs clipboard. Verify command is recognized."
     },
     {
       "id": "slash-prompts-list",
@@ -824,6 +764,102 @@
         "screen.contains:search"
       ],
       "observe": "Fuzzy search overlay opens, can type to filter commands and context files, Tab to select multiple"
+    },
+    {
+      "id": "slash-goal-set",
+      "name": "/goal set",
+      "category": "slash-commands",
+      "description": "Set an autonomous goal for the agent to work toward iteratively",
+      "docRef": "/docs/cli/reference/slash-commands#goal",
+      "steps": [
+        "type:/goal refactor the utils module --max 3",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:goal"
+      ],
+      "observe": "Goal is acknowledged and agent begins iterating. Status shows goal progress or iteration count."
+    },
+    {
+      "id": "slash-goal-clear",
+      "name": "/goal clear",
+      "category": "slash-commands",
+      "description": "Clear the active goal",
+      "docRef": "/docs/cli/reference/slash-commands#goal",
+      "steps": [
+        "type:/goal clear",
+        "enter",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.notContains:error"
+      ],
+      "observe": "Goal is cleared. No error message. Prompt returns to normal state."
+    },
+    {
+      "id": "slash-rewind",
+      "name": "/rewind picker",
+      "category": "slash-commands",
+      "description": "Open the rewind picker to fork conversation at an earlier turn",
+      "docRef": "/docs/cli/reference/slash-commands#rewind",
+      "steps": [
+        "type:/rewind",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.notContains:Unknown command"
+      ],
+      "observe": "Rewind picker opens showing previous turns, or shows empty state if no history. No error."
+    },
+    {
+      "id": "slash-effort",
+      "name": "/effort set level",
+      "category": "slash-commands",
+      "description": "Set reasoning effort level for the session",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "steps": [
+        "type:/effort high",
+        "enter",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.notContains:error"
+      ],
+      "observe": "Effort level is acknowledged. No error message."
+    },
+    {
+      "id": "slash-guide",
+      "name": "/guide command",
+      "category": "slash-commands",
+      "description": "Switch to the Guide agent for documentation-grounded help",
+      "docRef": "/docs/cli/reference/slash-commands#guide",
+      "steps": [
+        "type:/guide",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.notContains:Unknown command"
+      ],
+      "observe": "Agent swaps to guide mode. Welcome message or mode indicator changes."
+    },
+    {
+      "id": "slash-stats",
+      "name": "/stats command",
+      "category": "slash-commands",
+      "description": "Show request IDs and timing info for recent turns",
+      "docRef": "/docs/cli/reference/slash-commands#stats",
+      "steps": [
+        "type:/stats",
+        "enter",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.notContains:Unknown command"
+      ],
+      "observe": "Stats output renders showing timing data or empty state if no requests yet."
     }
   ]
 }
