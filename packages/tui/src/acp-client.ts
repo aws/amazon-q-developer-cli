@@ -2552,11 +2552,17 @@ export class KasAcpClient extends BaseAcpClient {
     const currentModelEntry = this.currentModelId
       ? this.modelOptions.find((m) => m.value === this.currentModelId)
       : undefined;
+    // A selected-but-unavailable model (e.g. a `chat.defaultModel` this user
+    // can't access) shows no chip — matching V2's `extractModel` — rather than
+    // a misleading "Auto" fallback. The `r` fallback only applies when no
+    // model was selected at all.
     const currentModel = currentModelEntry
       ? { id: currentModelEntry.value, name: currentModelEntry.name }
-      : (extractModelFromConfigOptions(
-          (r as { configOptions?: unknown }).configOptions
-        ) ?? extractModel(r.models));
+      : this.currentModelId
+        ? undefined
+        : (extractModelFromConfigOptions(
+            (r as { configOptions?: unknown }).configOptions
+          ) ?? extractModel(r.models));
 
     return {
       sessionId: sid,

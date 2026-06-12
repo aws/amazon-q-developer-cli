@@ -398,6 +398,49 @@ describe('KasAcpClient', () => {
     );
   });
 
+  it('newSession() with an unavailable initialModel reports no model (no stale "Auto" fallback)', async () => {
+    // KAS accepts an unavailable model id and echoes it as currentValue, but
+    // it's absent from the options list → chip shows nothing (matches V2),
+    // not a misleading "Auto".
+    const prevMode = process.env.KIRO_MODE;
+    delete process.env.KIRO_MODE;
+    try {
+      mockKiroSetSessionConfigOption.mockImplementation((req: any) => {
+        if (req?.configId === 'model') {
+          return Promise.resolve({
+            configOptions: [
+              {
+                type: 'select',
+                id: 'model',
+                category: 'model',
+                currentValue: 'claude-opus-4.8', // accepted but unavailable
+                options: [{ value: 'm1', name: 'Test Model' }],
+              },
+            ],
+          });
+        }
+        return Promise.resolve();
+      });
+
+      const client = new KasAcpClient({ initialModel: 'claude-opus-4.8' });
+      const result = await client.newSession();
+
+      // The model option was set with the requested (invalid) id...
+      expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
+        expect.objectContaining({ configId: 'model', value: 'claude-opus-4.8' })
+      );
+      // ...but since it isn't in the available list, no chip is shown.
+      expect(result.currentModel).toBeUndefined();
+    } finally {
+      // Restore the default implementation (mockClear does not reset it).
+      mockKiroSetSessionConfigOption.mockImplementation(() =>
+        Promise.resolve()
+      );
+      if (prevMode === undefined) delete process.env.KIRO_MODE;
+      else process.env.KIRO_MODE = prevMode;
+    }
+  });
+
   it('newSession() applies initialAgent via setSessionConfigOption(mode)', async () => {
     const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
     await client.newSession();
