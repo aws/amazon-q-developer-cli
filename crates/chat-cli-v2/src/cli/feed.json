@@ -12,6 +12,46 @@
     },
     {
       "type": "release",
+      "date": "2026-06-11",
+      "version": "2.7.0",
+      "title": "Version 2.7.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Queue steering: send mid-turn messages to redirect the agent at tool boundaries. Use Ctrl+S to switch between steering and queueing."
+        },
+        {
+          "type": "added",
+          "description": "`/goal` command for goal-driven iterative agent loops that require that the agent verifies the task before marking it complete"
+        },
+        {
+          "type": "added",
+          "description": "`chat.terminalTitle` setting to show or hide the session title in the terminal tab"
+        },
+        {
+          "type": "changed",
+          "description": "`/settings` and its sub-commands use a consistent overlay frame, footer hints, and ESC back-navigation"
+        },
+        {
+          "type": "changed",
+          "description": "`/settings theme` `Custom` is now a step-by-step wizard with a live preview that matches the real conversation rendering"
+        },
+        {
+          "type": "added",
+          "description": "Enriched `/rewind` preview with tool call details and context usage per turn"
+        },
+        {
+          "type": "fixed",
+          "description": "Custom agents now inherit default resources (steering, skills, AGENTS.md) like built-in agents"
+        },
+        {
+          "type": "fixed",
+          "description": "Windows executable paths for `bun` and `node` now include `.exe` extension"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-06-04",
       "version": "2.6.0",
       "title": "Version 2.6.0",
