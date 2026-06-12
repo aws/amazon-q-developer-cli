@@ -2317,6 +2317,7 @@ dependencies = [
  "insta",
  "jsonschema 0.30.0",
  "kiro-telemetry",
+ "kiro-telemetry-host",
  "libc",
  "mimalloc",
  "mock-mcp-server",
@@ -5494,6 +5495,20 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "kiro-telemetry-collector"
+version = "0.0.0-dev"
+
+[[package]]
+name = "kiro-telemetry-host"
+version = "0.0.0-dev"
+dependencies = [
+ "eyre",
+ "kiro-telemetry",
+ "serde",
+ "strum 0.27.2",
 ]
 
 [[package]]

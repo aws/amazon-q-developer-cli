@@ -8,10 +8,16 @@ use agent_client_protocol::{
 };
 use amzn_codewhisperer_streaming_client::types::builders::AssistantResponseEventBuilder;
 use chat_cli_v2::agent::acp::extensions::methods;
+use chat_cli_v2::telemetry::core::EventLegacyExt;
 use common::{
     AcpTestClient,
     AcpTestHarness,
     AcpTestHarnessBuilder,
+};
+use kiro_telemetry::metric;
+use kiro_telemetry::testing::{
+    expect_metric,
+    expect_metric_attrs,
 };
 use ntest::timeout;
 use serial_test::serial;
@@ -60,14 +66,7 @@ async fn new_session_waits_for_mcp_server_initialization() {
     use mock_mcp_server::prebuild_bin;
     use sacp::schema::McpServerStdio;
 
-    prebuild_bin().expect("failed to build mock-mcp-server");
-
-    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/mock-mcp-server");
+    let binary_path = prebuild_bin().expect("failed to build mock-mcp-server");
 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
 
@@ -1009,14 +1008,7 @@ async fn mcp_stdio_server_tool_call() {
     use sacp::schema::McpServerStdio;
 
     // Ensure mock-mcp-server binary is built
-    prebuild_bin().expect("failed to build mock-mcp-server");
-
-    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/mock-mcp-server");
+    let binary_path = prebuild_bin().expect("failed to build mock-mcp-server");
 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
 
@@ -2097,14 +2089,7 @@ async fn sigterm_cleans_up_mcp_child_processes() {
     use nix::unistd::Pid;
     use sacp::schema::McpServerStdio;
 
-    prebuild_bin().expect("failed to build mock-mcp-server");
-
-    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/mock-mcp-server");
+    let binary_path = prebuild_bin().expect("failed to build mock-mcp-server");
 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
 
@@ -2284,14 +2269,7 @@ async fn set_mode_preserves_session_injected_mcp_servers() {
     use mock_mcp_server::prebuild_bin;
     use sacp::schema::McpServerStdio;
 
-    prebuild_bin().expect("failed to build mock-mcp-server");
-
-    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/mock-mcp-server");
+    let binary_path = prebuild_bin().expect("failed to build mock-mcp-server");
 
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/mcp_configs/stdio_server.jsonl");
 
@@ -3084,14 +3062,7 @@ async fn empty_mcp_tool_content_invokes_zero_arg_tool_without_retry() {
     use sacp::schema::McpServerStdio;
 
     // Ensure mock-mcp-server binary is built
-    prebuild_bin().expect("failed to build mock-mcp-server");
-
-    let binary_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/debug/mock-mcp-server");
+    let binary_path = prebuild_bin().expect("failed to build mock-mcp-server");
 
     // Zero-arg MCP tool config — `properties: {}` is the schema shape that triggers
     // the LLM-side quirk the test case documents.
@@ -3228,6 +3199,130 @@ async fn effort_command_e2e() {
         additional_fields["output_config"]["effort"], "low",
         "effort should be 'low' in the request"
     );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn command_execute_emits_chat_slash_command_telemetry() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("command_execute_emits_chat_slash_command_telemetry")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("execute_command for effort failed");
+    assert!(result.success, "effort execute should succeed: {}", result.message);
+
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            events.iter().any(|event| {
+                matches!(
+                    &event.ty,
+                    chat_cli_v2::telemetry::core::EventType::ChatSlashCommandExecuted {
+                        command,
+                        subcommand,
+                        result,
+                        ..
+                    } if command == "/effort"
+                        && subcommand.is_none()
+                        && *result == chat_cli_v2::telemetry::TelemetryResult::Succeeded
+                )
+            })
+        })
+        .await;
+
+    let event = events
+        .iter()
+        .find(|event| {
+            matches!(
+                &event.ty,
+                chat_cli_v2::telemetry::core::EventType::ChatSlashCommandExecuted { command, .. }
+                    if command == "/effort"
+            )
+        })
+        .expect("expected /effort telemetry event");
+
+    let record = event.otel_metric_record().expect("slash command metric");
+    expect_metric(std::slice::from_ref(&record), metric::slash_command_invoked("/effort"));
+    expect_metric_attrs(&record, &[("command", "/effort")]);
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn prompt_emits_chat_session_started_telemetry_once() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("prompt_emits_chat_session_started_telemetry_once")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/two_simple_responses.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), "hello")
+        .await
+        .expect("first prompt failed");
+    client
+        .prompt_text(session_id.clone(), "again")
+        .await
+        .expect("second prompt failed");
+
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            let start_count = events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        &event.ty,
+                        chat_cli_v2::telemetry::core::EventType::ChatSessionStarted { .. }
+                    )
+                })
+                .count();
+            let turn_count = events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        &event.ty,
+                        chat_cli_v2::telemetry::core::EventType::ChatAddedMessage { .. }
+                    )
+                })
+                .count();
+            start_count >= 1 && turn_count >= 2
+        })
+        .await;
+
+    let start_events = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.ty,
+                chat_cli_v2::telemetry::core::EventType::ChatSessionStarted { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(start_events.len(), 1);
+
+    let record = start_events[0]
+        .otel_metric_record()
+        .expect("chat session started metric");
+    expect_metric(
+        std::slice::from_ref(&record),
+        metric::chat_session_started(metric::Mode::AcpExternal, metric::ClientApplication::AcpExternal),
+    );
+    expect_metric_attrs(&record, &[
+        ("mode", "acp_external"),
+        ("client_application", "acp_external"),
+    ]);
 }
 
 /// E2E: per-model additional field defaults from settings file.

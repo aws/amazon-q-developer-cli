@@ -10,6 +10,9 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+test-support = ["dep:opentelemetry-proto", "dep:prost"]
+
 [dependencies]
 indexmap.workspace = true
 kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
@@ -17,6 +20,8 @@ libc.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
+opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"], optional = true }
+prost = { version = "0.14.3", optional = true }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +32,7 @@ tracing.workspace = true
 opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"] }
 prost = "0.14.3"
 tempfile.workspace = true
+
+[[example]]
+name = "catalog_smoke"
+required-features = ["test-support"]

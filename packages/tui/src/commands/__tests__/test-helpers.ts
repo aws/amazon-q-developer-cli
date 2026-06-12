@@ -55,6 +55,7 @@ export function createMockCommandContext(
     ),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
     sendModeChanged: mock(() => undefined),
+    sendChatSlashCommandTelemetry: mock(() => undefined),
   };
 
   return {

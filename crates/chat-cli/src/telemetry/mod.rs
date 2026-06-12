@@ -50,6 +50,7 @@ use kiro_telemetry::{
     TelemetryConfig as OtelTelemetryConfig,
     consent_file_integrity_records,
     init_otel,
+    metric,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -133,7 +134,9 @@ impl From<ApiClientError> for TelemetryError {
     }
 }
 
+#[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
 const PRODUCT: &str = "CodeWhisperer";
+#[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
 const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// A IDE toolkit telemetry stage
@@ -205,6 +208,7 @@ impl Clone for TelemetrySender {
 pub struct TelemetryThread {
     handle: Option<JoinHandle<()>>,
     tx: TelemetrySender,
+    telemetry_client: Option<Arc<TelemetryClient>>,
 }
 
 impl Clone for TelemetryThread {
@@ -212,6 +216,7 @@ impl Clone for TelemetryThread {
         Self {
             handle: None,
             tx: self.tx.clone(),
+            telemetry_client: None,
         }
     }
 }
@@ -225,11 +230,12 @@ impl TelemetryThread {
     ) -> Result<Self, TelemetryError> {
         // govcloud does not have the infrastructure to support toolkit telemetry
         let govcloud_partition = region.and_then(govcloud_partition);
-        let telemetry_client = TelemetryClient::new(env, fs, database, govcloud_partition).await?;
+        let telemetry_client = Arc::new(TelemetryClient::new(env, fs, database, govcloud_partition).await?);
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
         let handle = if let Some(partition) = govcloud_partition {
+            let telemetry_client = Arc::clone(&telemetry_client);
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
@@ -241,6 +247,7 @@ impl TelemetryThread {
                 telemetry_client.flush_otel();
             })
         } else {
+            let telemetry_client = Arc::clone(&telemetry_client);
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
@@ -253,10 +260,12 @@ impl TelemetryThread {
         Ok(Self {
             handle: Some(handle),
             tx,
+            telemetry_client: Some(telemetry_client),
         })
     }
 
     pub async fn finish(self) -> Result<(), TelemetryError> {
+        let telemetry_client = self.telemetry_client.as_ref().map(Arc::clone);
         drop(self.tx);
         if let Some(handle) = self.handle {
             match tokio::time::timeout(std::time::Duration::from_millis(1000), handle).await {
@@ -270,12 +279,38 @@ impl TelemetryThread {
                 },
             }
         }
+        if let Some(telemetry_client) = telemetry_client {
+            telemetry_client.flush_otel();
+        }
 
         Ok(())
     }
 
     pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
+    }
+
+    pub async fn send_cli_session_started(
+        &self,
+        database: &Database,
+        client_application: metric::ClientApplication,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = cli_session_started_event(client_application);
+        set_event_metadata(database, &mut telemetry_event).await;
+
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    pub async fn send_cli_session_completed(
+        &self,
+        database: &Database,
+        exit_reason: metric::ExitReason,
+        agent_kind: metric::AgentKind,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = cli_session_completed_event(exit_reason, agent_kind);
+        set_event_metadata(database, &mut telemetry_event).await;
+
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     pub fn send_auth_failed(
@@ -646,6 +681,39 @@ async fn set_event_metadata(database: &Database, event: &mut Event) {
     }
 }
 
+fn cli_session_started_event(client_application: metric::ClientApplication) -> Event {
+    let mut event = Event::new(EventType::CliSessionStarted {
+        os_type: metric::OsType::from_name(cli_os_type()),
+        install_source: metric::InstallSource::from_name(install_source()),
+    });
+    event.set_client_application_kind(client_application);
+    event
+}
+
+fn cli_session_completed_event(exit_reason: metric::ExitReason, agent_kind: metric::AgentKind) -> Event {
+    Event::new(EventType::CliSessionCompleted {
+        exit_reason,
+        agent_kind,
+    })
+}
+
+fn cli_os_type() -> &'static str {
+    match std::env::consts::OS {
+        "linux" => "linux",
+        "macos" => "macos",
+        "windows" => "windows",
+        _ => "_other_",
+    }
+}
+
+fn install_source() -> &'static str {
+    match get_install_method() {
+        InstallMethod::Brew => "brew",
+        InstallMethod::Toolbox(_) => "internal",
+        InstallMethod::Unknown => "unknown",
+    }
+}
+
 fn govcloud_partition(region: &str) -> Option<&'static str> {
     match region {
         US_GOV_EAST | US_GOV_WEST => Some("aws-us-gov"),
@@ -654,26 +722,34 @@ fn govcloud_partition(region: &str) -> Option<&'static str> {
 }
 
 fn govcloud_channel_disabled_record(channel: &str, partition: &str) -> MetricRecord {
-    MetricRecord::counter("govcloud_channel_disabled_total", 1)
-        .with_attribute("channel", channel)
-        .with_attribute("partition", partition)
-        .with_attribute("reason", "govcloud_disabled")
+    metric::govcloud_channel_disabled(
+        metric::TelemetryChannel::from_name(channel),
+        metric::Partition::from_name(partition),
+        metric::PostureReason::GovcloudDisabled,
+    )
 }
 
 fn govcloud_channel_leak_record(channel: &str) -> MetricRecord {
-    MetricRecord::counter("govcloud_channel_leak_total", 1).with_attribute("channel", channel)
+    metric::govcloud_channel_leak(metric::TelemetryChannel::from_name(channel))
 }
 
 fn should_build_toolkit_telemetry_client(telemetry_enabled: bool, govcloud_partition: Option<&str>) -> bool {
-    telemetry_enabled && govcloud_partition.is_none()
+    telemetry_enabled && govcloud_partition.is_none() && cfg!(feature = "legacy_toolkit_sink")
+}
+
+fn should_build_codewhisperer_telemetry_client() -> bool {
+    cfg!(feature = "legacy_codewhisperer_sink")
 }
 
 #[derive(Debug)]
 struct TelemetryClient {
+    #[cfg_attr(not(feature = "legacy_toolkit_sink"), allow(dead_code))]
     client_id: Uuid,
+    #[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
     telemetry_enabled: bool,
     otel_providers: OtelProviders,
     otel_telemetry_client: Arc<OtelTelemetryClient>,
+    #[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
     codewhisperer_client: Option<ApiClient>,
     toolkit_telemetry_client: Option<ToolkitTelemetryClient>,
 }
@@ -737,7 +813,11 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = Some(ApiClient::new(env, fs, database, None).await?);
+        let codewhisperer_client = if should_build_codewhisperer_telemetry_client() {
+            Some(ApiClient::new(env, fs, database, None).await?)
+        } else {
+            None
+        };
         let otel_config = otel_telemetry_config(env, telemetry_enabled);
         let otel_providers = init_otel(&otel_config);
         let otel_telemetry_client = Arc::new(
@@ -776,8 +856,17 @@ impl TelemetryClient {
         }
         self.emit_otel_metric_record(&event);
         self.emit_otel_log_record(&event);
+        #[cfg(feature = "legacy_codewhisperer_sink")]
         self.send_cw_telemetry_event(&event).await;
+        #[cfg(not(feature = "legacy_codewhisperer_sink"))]
+        trace!("legacy CodeWhisperer telemetry sink disabled by cargo feature");
+        #[cfg(feature = "legacy_toolkit_sink")]
         self.send_telemetry_toolkit_metric(event).await;
+        #[cfg(not(feature = "legacy_toolkit_sink"))]
+        {
+            let _ = event;
+            trace!("legacy Toolkit telemetry sink disabled by cargo feature");
+        }
     }
 
     async fn send_event_with_legacy_toolkit_disabled(&self, event: Event, partition: &str) {
@@ -798,7 +887,10 @@ impl TelemetryClient {
         self.emit_govcloud_channel_disabled("legacy_toolkit", partition);
         self.emit_otel_metric_record(&event);
         self.emit_otel_log_record(&event);
+        #[cfg(feature = "legacy_codewhisperer_sink")]
         self.send_cw_telemetry_event(&event).await;
+        #[cfg(not(feature = "legacy_codewhisperer_sink"))]
+        trace!("legacy CodeWhisperer telemetry sink disabled by cargo feature");
     }
 
     fn otel_exports_enabled(&self) -> bool {
@@ -882,6 +974,7 @@ impl TelemetryClient {
         }
     }
 
+    #[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
     async fn send_cw_telemetry_event(&self, event: &Event) {
         let Some(codewhisperer_client) = self.codewhisperer_client.clone() else {
             trace!("not sending cw metric - client does not exist");
@@ -980,6 +1073,7 @@ impl TelemetryClient {
         }
     }
 
+    #[cfg_attr(not(feature = "legacy_toolkit_sink"), allow(dead_code))]
     async fn send_telemetry_toolkit_metric(&self, event: Event) {
         let Some(toolkit_telemetry_client) = self.toolkit_telemetry_client.clone() else {
             trace!("not sending toolkit metric - client does not exist");
@@ -1013,18 +1107,20 @@ impl TelemetryClient {
         }
     }
 
+    #[cfg_attr(not(feature = "legacy_toolkit_sink"), allow(dead_code))]
     fn emit_redaction_metric_records(&self, event: &Event) {
         if !self.otel_exports_enabled() {
             return;
         }
 
-        for record in event.redaction_metric_records("legacy_toolkit") {
+        for record in event.redaction_metric_records(kiro_telemetry::metric::TelemetryChannel::LegacyToolkit) {
             if let Err(err) = self.otel_telemetry_client.emit(record) {
                 trace!(%err, "failed to emit telemetry redaction accounting");
             }
         }
     }
 
+    #[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
     fn user_context(&self) -> Option<UserContext> {
         let operating_system = match std::env::consts::OS {
             "linux" => OperatingSystem::Linux,
@@ -1143,6 +1239,45 @@ mod test {
     }
 
     #[test]
+    fn cli_session_started_event_sets_launch_dimensions() {
+        let event = cli_session_started_event(metric::ClientApplication::ChatCliV3);
+
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
+        match event.ty {
+            EventType::CliSessionStarted {
+                os_type,
+                install_source,
+            } => {
+                assert!(matches!(
+                    os_type,
+                    metric::OsType::Linux | metric::OsType::Macos | metric::OsType::Windows | metric::OsType::Other
+                ));
+                assert!(matches!(
+                    install_source,
+                    metric::InstallSource::Brew | metric::InstallSource::Internal | metric::InstallSource::Unknown
+                ));
+            },
+            _ => panic!("expected CLI session-started event"),
+        }
+    }
+
+    #[test]
+    fn cli_session_completed_event_sets_exit_dimensions() {
+        let event = cli_session_completed_event(metric::ExitReason::Clean, metric::AgentKind::Kas);
+
+        match event.ty {
+            EventType::CliSessionCompleted {
+                exit_reason,
+                agent_kind,
+            } => {
+                assert_eq!(exit_reason, metric::ExitReason::Clean);
+                assert_eq!(agent_kind, metric::AgentKind::Kas);
+            },
+            _ => panic!("expected CLI session-completed event"),
+        }
+    }
+
+    #[test]
     fn govcloud_partition_detects_gov_regions() {
         assert_eq!(govcloud_partition(US_GOV_EAST), Some("aws-us-gov"));
         assert_eq!(govcloud_partition(US_GOV_WEST), Some("aws-us-gov"));
@@ -1190,10 +1325,37 @@ mod test {
     }
 
     #[test]
-    fn govcloud_partition_blocks_legacy_toolkit_client_construction() {
-        assert!(should_build_toolkit_telemetry_client(true, None));
+    fn legacy_sink_feature_flags_control_client_construction() {
+        assert_eq!(
+            should_build_toolkit_telemetry_client(true, None),
+            cfg!(feature = "legacy_toolkit_sink")
+        );
         assert!(!should_build_toolkit_telemetry_client(false, None));
         assert!(!should_build_toolkit_telemetry_client(true, Some("aws-us-gov")));
+        assert_eq!(
+            should_build_codewhisperer_telemetry_client(),
+            cfg!(feature = "legacy_codewhisperer_sink")
+        );
+    }
+
+    #[tokio::test]
+    async fn cloned_telemetry_thread_does_not_retain_client() {
+        let mut database = Database::new_default().await.unwrap();
+        let thread = TelemetryThread::new(
+            &Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "0")]),
+            &Fs::new(),
+            &mut database,
+            None,
+        )
+        .await
+        .unwrap();
+        let clone = thread.clone();
+
+        assert!(thread.telemetry_client.is_some());
+        assert!(clone.telemetry_client.is_none());
+
+        clone.finish().await.unwrap();
+        thread.finish().await.unwrap();
     }
 
     #[tracing_test::traced_test]

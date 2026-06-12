@@ -137,6 +137,8 @@ pub enum CliInternalOutput {
     /// `test-seed-v1`.
     #[serde(rename_all = "camelCase")]
     TestSeedV1 { conversation_id: String },
+    /// `emit-telemetry`.
+    EmitTelemetry {},
     /// Any subcommand's failure path.
     Error {
         message: String,
@@ -174,6 +176,10 @@ impl CliInternalOutput {
         Self::TestSeedV1 {
             conversation_id: conversation_id.into(),
         }
+    }
+
+    fn emit_telemetry() -> Self {
+        Self::EmitTelemetry {}
     }
 
     fn error(message: impl Into<String>, code: Option<ErrorCode>) -> Self {
@@ -237,6 +243,8 @@ pub enum InternalChatSubcommand {
     /// Seed a V1 conversation row into a sandbox SQLite from a fixture
     /// JSON file. Refuses to run unless `KIRO_TEST_DB_PATH` is set.
     TestSeedV1(TestSeedV1Args),
+    /// Emit a telemetry event through the Rust host pipeline.
+    EmitTelemetry(EmitTelemetryArgs),
 }
 
 impl ChatCommand {
@@ -248,6 +256,7 @@ impl ChatCommand {
             Self::Internal(InternalChatSubcommand::EnsureSession(args)) => Ok(args.execute().await),
             Self::Internal(InternalChatSubcommand::DeriveMessages(args)) => Ok(args.execute()),
             Self::Internal(InternalChatSubcommand::TestSeedV1(args)) => Ok(args.execute().await),
+            Self::Internal(InternalChatSubcommand::EmitTelemetry(args)) => Ok(args.execute().await),
         }
     }
 }
@@ -663,8 +672,157 @@ impl TestSeedV1Args {
     }
 }
 
+// ─── emit-telemetry ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum InternalTelemetryEvent {
+    /// KAS active mode changed in the TUI.
+    #[value(name = "kas-mode-changed")]
+    ModeChanged,
+    /// KAS slash command executed in the TUI.
+    #[value(name = "kas-chat-slash-command")]
+    ChatSlashCommand,
+    /// KAS first user prompt in a chat session.
+    #[value(name = "kas-chat-session-started")]
+    ChatSessionStarted,
+    /// KAS process-health snapshot payload.
+    #[value(name = "kas-process-health")]
+    ProcessHealth,
+    /// KAS session_info_update kind=turn_completion payload.
+    #[value(name = "kas-turn-completion")]
+    TurnCompletion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct EmitTelemetryArgs {
+    /// Telemetry event payload type.
+    #[arg(long, value_enum)]
+    pub event: InternalTelemetryEvent,
+    /// JSON payload for the selected event type.
+    #[arg(long)]
+    pub payload_json: String,
+}
+
+impl EmitTelemetryArgs {
+    async fn execute(self) -> ExitCode {
+        match self.run().await {
+            Ok(()) => emit(&CliInternalOutput::emit_telemetry()),
+            Err(err) => emit(&CliInternalOutput::error(err, None)),
+        }
+    }
+
+    async fn run(self) -> Result<(), String> {
+        match self.event {
+            InternalTelemetryEvent::ModeChanged => self.emit_kas_mode_changed().await,
+            InternalTelemetryEvent::ChatSlashCommand => self.emit_kas_chat_slash_command().await,
+            InternalTelemetryEvent::ChatSessionStarted => self.emit_kas_chat_session_started().await,
+            InternalTelemetryEvent::ProcessHealth => self.emit_kas_process_health().await,
+            InternalTelemetryEvent::TurnCompletion => self.emit_kas_turn_completion().await,
+        }
+    }
+
+    fn kas_mode_changed_payload(&self) -> Result<chat_cli_v2::agent::acp::schema::ModeChangedNotification, String> {
+        serde_json::from_str(&self.payload_json).map_err(|e| format!("invalid telemetry payload: {e}"))
+    }
+
+    fn kas_process_health_payload(&self) -> Result<chat_cli_v2::agent::acp::schema::ProcessHealthPayload, String> {
+        serde_json::from_str(&self.payload_json).map_err(|e| format!("invalid telemetry payload: {e}"))
+    }
+
+    fn kas_turn_completion_payload(
+        &self,
+    ) -> Result<chat_cli_v2::agent::acp::schema::TurnCompletionTelemetryPayload, String> {
+        serde_json::from_str(&self.payload_json).map_err(|e| format!("invalid telemetry payload: {e}"))
+    }
+
+    fn kas_chat_slash_command_payload(
+        &self,
+    ) -> Result<chat_cli_v2::agent::acp::schema::ChatSlashCommandTelemetryPayload, String> {
+        serde_json::from_str(&self.payload_json).map_err(|e| format!("invalid telemetry payload: {e}"))
+    }
+
+    fn kas_chat_session_started_payload(
+        &self,
+    ) -> Result<chat_cli_v2::agent::acp::schema::ChatSessionStartedTelemetryPayload, String> {
+        serde_json::from_str(&self.payload_json).map_err(|e| format!("invalid telemetry payload: {e}"))
+    }
+
+    async fn emit_kas_mode_changed(self) -> Result<(), String> {
+        let payload = self.kas_mode_changed_payload()?;
+        let os = chat_cli_v2::os::Os::new()
+            .await
+            .map_err(|e| format!("failed to initialize telemetry host: {e}"))?;
+        chat_cli_v2::agent::acp::acp_agent::emit_kas_mode_changed_telemetry(&os.telemetry, payload);
+        os.telemetry
+            .finish()
+            .await
+            .map_err(|e| format!("failed to flush telemetry: {e}"))?;
+        Ok(())
+    }
+
+    async fn emit_kas_chat_slash_command(self) -> Result<(), String> {
+        let payload = self.kas_chat_slash_command_payload()?;
+        let os = chat_cli_v2::os::Os::new()
+            .await
+            .map_err(|e| format!("failed to initialize telemetry host: {e}"))?;
+        chat_cli_v2::agent::acp::acp_agent::emit_kas_chat_slash_command_telemetry(&os.telemetry, &os.database, payload)
+            .await;
+        os.telemetry
+            .finish()
+            .await
+            .map_err(|e| format!("failed to flush telemetry: {e}"))?;
+        Ok(())
+    }
+
+    async fn emit_kas_chat_session_started(self) -> Result<(), String> {
+        let payload = self.kas_chat_session_started_payload()?;
+        let os = chat_cli_v2::os::Os::new()
+            .await
+            .map_err(|e| format!("failed to initialize telemetry host: {e}"))?;
+        chat_cli_v2::agent::acp::acp_agent::emit_kas_chat_session_started_telemetry(
+            &os.telemetry,
+            &os.database,
+            payload,
+        )
+        .await;
+        os.telemetry
+            .finish()
+            .await
+            .map_err(|e| format!("failed to flush telemetry: {e}"))?;
+        Ok(())
+    }
+
+    async fn emit_kas_process_health(self) -> Result<(), String> {
+        let p = self.kas_process_health_payload()?;
+        let os = chat_cli_v2::os::Os::new()
+            .await
+            .map_err(|e| format!("failed to initialize telemetry host: {e}"))?;
+        chat_cli_v2::agent::acp::acp_agent::emit_kas_process_health_telemetry(&os.telemetry, p);
+        os.telemetry
+            .finish()
+            .await
+            .map_err(|e| format!("failed to flush telemetry: {e}"))?;
+        Ok(())
+    }
+
+    async fn emit_kas_turn_completion(self) -> Result<(), String> {
+        let payload = self.kas_turn_completion_payload()?;
+        let os = chat_cli_v2::os::Os::new()
+            .await
+            .map_err(|e| format!("failed to initialize telemetry host: {e}"))?;
+        chat_cli_v2::agent::acp::acp_agent::emit_kas_turn_completion_telemetry(&os.telemetry, &os.database, payload)
+            .await;
+        os.telemetry
+            .finish()
+            .await
+            .map_err(|e| format!("failed to flush telemetry: {e}"))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use chat_cli_v2::telemetry::EventLegacyExt;
     use serde_json::json;
 
     use super::*;
@@ -703,6 +861,13 @@ mod tests {
             parsed,
             json!({"kind": "testSeedV1", "data": {"conversationId": "conv-1"}})
         );
+    }
+
+    #[test]
+    fn emit_telemetry_serializes_with_empty_data() {
+        let json_str = serde_json::to_string(&CliInternalOutput::emit_telemetry()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed, json!({"kind": "emitTelemetry", "data": {}}));
     }
 
     #[test]
@@ -853,5 +1018,149 @@ mod tests {
             .err()
             .expect("missing session should error");
         assert_eq!(err.code, Some(ErrorCode::SessionNotFound));
+    }
+
+    #[test]
+    fn emit_telemetry_parses_kas_turn_completion_payload() {
+        assert_eq!(
+            InternalTelemetryEvent::from_str("kas-mode-changed", true).ok(),
+            Some(InternalTelemetryEvent::ModeChanged)
+        );
+        assert_eq!(
+            InternalTelemetryEvent::from_str("kas-process-health", true).ok(),
+            Some(InternalTelemetryEvent::ProcessHealth)
+        );
+        assert_eq!(
+            InternalTelemetryEvent::from_str("kas-turn-completion", true).ok(),
+            Some(InternalTelemetryEvent::TurnCompletion)
+        );
+        assert_eq!(
+            InternalTelemetryEvent::from_str("kas-chat-slash-command", true).ok(),
+            Some(InternalTelemetryEvent::ChatSlashCommand)
+        );
+        assert_eq!(
+            InternalTelemetryEvent::from_str("kas-chat-session-started", true).ok(),
+            Some(InternalTelemetryEvent::ChatSessionStarted)
+        );
+
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::TurnCompletion,
+            payload_json: serde_json::json!({
+                "sessionId": "kas-session-1",
+                "modelId": "m1",
+                "meteringUsage": [
+                    { "value": 1.5, "unit": "credit", "unitPlural": "Credits" }
+                ],
+                "turnDurationMs": 1234.0,
+                "contextUsagePercentage": 42.0,
+                "status": "success"
+            })
+            .to_string(),
+        };
+
+        let payload = args.kas_turn_completion_payload().expect("payload should parse");
+        assert_eq!(payload.session_id.as_deref(), Some("kas-session-1"));
+        assert_eq!(payload.model_id.as_deref(), Some("m1"));
+
+        let events = chat_cli_v2::agent::acp::acp_agent::kas_turn_completion_events(payload);
+        assert_eq!(events.len(), 4);
+    }
+
+    #[test]
+    fn emit_telemetry_parses_kas_chat_slash_command_payload() {
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::ChatSlashCommand,
+            payload_json: serde_json::json!({
+                "sessionId": "kas-session-1",
+                "command": "/chat",
+                "subcommand": "save",
+                "success": true
+            })
+            .to_string(),
+        };
+
+        let payload = args.kas_chat_slash_command_payload().expect("payload should parse");
+        assert_eq!(payload.session_id.as_deref(), Some("kas-session-1"));
+        assert_eq!(payload.command, "/chat");
+        assert_eq!(payload.subcommand.as_deref(), Some("save"));
+        assert!(payload.success);
+    }
+
+    #[test]
+    fn emit_telemetry_parses_kas_chat_session_started_payload() {
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::ChatSessionStarted,
+            payload_json: serde_json::json!({
+                "sessionId": "kas-session-1",
+                "mode": "kiro_planner"
+            })
+            .to_string(),
+        };
+
+        let payload = args.kas_chat_session_started_payload().expect("payload should parse");
+        assert_eq!(payload.session_id.as_deref(), Some("kas-session-1"));
+        assert_eq!(payload.mode.as_deref(), Some("kiro_planner"));
+
+        let event = chat_cli_v2::agent::acp::acp_agent::kas_chat_session_started_event(payload);
+        let record = event.otel_metric_record().expect("chat session start metric");
+        assert_eq!(record.name, "chat_session_started_total");
+        assert_eq!(
+            kiro_telemetry::testing::metric_attr(&record, "client_application"),
+            Some("chat_cli_v3")
+        );
+    }
+
+    #[test]
+    fn emit_telemetry_parses_kas_mode_changed_payload() {
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::ModeChanged,
+            payload_json: serde_json::json!({
+                "fromMode": "kiro",
+                "toMode": "kiro_planner",
+                "source": "shiftTab",
+                "sessionId": "kas-session-1"
+            })
+            .to_string(),
+        };
+
+        let payload = args.kas_mode_changed_payload().expect("payload should parse");
+        assert_eq!(payload.from_mode, "kiro");
+        assert_eq!(payload.to_mode, "kiro_planner");
+        assert_eq!(payload.session_id.as_deref(), Some("kas-session-1"));
+    }
+
+    #[test]
+    fn emit_telemetry_parses_kas_process_health_payload() {
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::ProcessHealth,
+            payload_json: serde_json::json!({
+                "agentKind": "kas",
+                "rssMb": 128.0,
+                "cpuUserPct": 12.5,
+                "cpuSystemPct": 7.5,
+                "version": "2.4.0",
+                "platform": "darwin"
+            })
+            .to_string(),
+        };
+
+        let payload = args.kas_process_health_payload().expect("payload should parse");
+        assert_eq!(payload.agent_kind.as_deref(), Some("kas"));
+        assert_eq!(payload.rss_mb, Some(128.0));
+        assert_eq!(payload.cpu_user_pct, Some(12.5));
+        assert_eq!(payload.cpu_system_pct, Some(7.5));
+    }
+
+    #[test]
+    fn emit_telemetry_rejects_malformed_payload_json() {
+        let args = EmitTelemetryArgs {
+            event: InternalTelemetryEvent::TurnCompletion,
+            payload_json: "{not json".to_string(),
+        };
+
+        let err = args
+            .kas_turn_completion_payload()
+            .expect_err("payload should fail to parse");
+        assert!(err.starts_with("invalid telemetry payload:"));
     }
 }

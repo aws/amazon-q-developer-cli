@@ -36,6 +36,7 @@ jobs:
           scan-args: |-
             --lockfile=bun.lock
             --lockfile=osv-scanner:osv-scanner-custom.json
+            --config=osv-scanner.toml
             --format=table
             --output=osv-results.txt
 
@@ -51,6 +52,7 @@ jobs:
           scan-args: |-
             --lockfile=bun.lock
             --lockfile=osv-scanner:osv-scanner-custom.json
+            --config=osv-scanner.toml
             --format=sarif
             --output=osv-results.sarif
 

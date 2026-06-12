@@ -2,7 +2,6 @@ pub mod cognito;
 pub mod core;
 pub mod definitions;
 pub mod endpoint;
-mod install_method;
 pub mod observer;
 
 use core::{
@@ -37,12 +36,7 @@ use amzn_toolkit_telemetry_client::{
 use aws_credential_types::provider::SharedCredentialsProvider;
 use cognito::CognitoProvider;
 use endpoint::StaticEndpoint;
-pub use install_method::{
-    InstallMethod,
-    get_install_method,
-};
 use kiro_telemetry::{
-    MetricRecord,
     OtelLogsSink,
     OtelMetricsSink,
     OtelMode,
@@ -51,6 +45,11 @@ use kiro_telemetry::{
     TelemetryConfig as OtelTelemetryConfig,
     consent_file_integrity_records,
     init_otel,
+    metric,
+};
+pub use kiro_telemetry_host::{
+    InstallMethod,
+    get_install_method,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -72,6 +71,10 @@ use crate::api_client::{
 use crate::auth::builder_id::get_start_url_and_region;
 use crate::aws_common::app_name;
 use crate::cli::RootSubcommand;
+use crate::constants::{
+    BREW_CASK_NAME,
+    CLI_NAME,
+};
 use crate::database::settings::Setting;
 use crate::database::{
     Database,
@@ -84,6 +87,7 @@ use crate::os::{
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EmptyResponseRetryOutcome,
+    EventLegacyExt,
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
@@ -300,7 +304,22 @@ impl TelemetryThread {
     }
 
     pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::DailyHeartbeat {}))?)
+        self.send_daily_heartbeat_with_client_application(get_cli_client_application())
+    }
+
+    fn send_daily_heartbeat_with_client_application(
+        &self,
+        client_application: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::DailyHeartbeat {
+            install_method: Some(get_install_method(BREW_CASK_NAME, CLI_NAME).to_string()),
+        });
+        if let Some(client_app) = client_application {
+            event.set_client_application(client_app);
+        } else {
+            event.set_client_application_kind(metric::ClientApplication::ChatCliV2);
+        }
+        Ok(self.tx.send(event)?)
     }
 
     pub async fn send_cli_subcommand_executed(
@@ -664,6 +683,7 @@ impl TelemetryThread {
     #[allow(clippy::too_many_arguments)]
     pub fn send_process_health_snapshot(
         &self,
+        agent_kind: metric::AgentKind,
         rss_mb: f64,
         heap_used_mb: f64,
         peak_rss_mb: f64,
@@ -685,6 +705,7 @@ impl TelemetryThread {
         platform: String,
     ) -> Result<(), TelemetryError> {
         let event = Event::new(EventType::ProcessHealthMetric {
+            agent_kind,
             rss_mb,
             heap_used_mb,
             peak_rss_mb,
@@ -749,19 +770,12 @@ fn govcloud_partition(region: &str) -> Option<&'static str> {
     }
 }
 
-fn govcloud_channel_disabled_record(channel: &str, partition: &str) -> MetricRecord {
-    MetricRecord::counter("govcloud_channel_disabled_total", 1)
-        .with_attribute("channel", channel)
-        .with_attribute("partition", partition)
-        .with_attribute("reason", "govcloud_disabled")
-}
-
-fn govcloud_channel_leak_record(channel: &str) -> MetricRecord {
-    MetricRecord::counter("govcloud_channel_leak_total", 1).with_attribute("channel", channel)
-}
-
 fn should_build_toolkit_telemetry_client(telemetry_enabled: bool, govcloud_partition: Option<&str>) -> bool {
-    telemetry_enabled && govcloud_partition.is_none()
+    telemetry_enabled && govcloud_partition.is_none() && cfg!(feature = "legacy_toolkit_sink")
+}
+
+fn should_build_codewhisperer_telemetry_client() -> bool {
+    cfg!(feature = "legacy_codewhisperer_sink")
 }
 
 #[derive(Debug)]
@@ -833,7 +847,11 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = Some(ApiClient::new(env, fs, database, None).await?);
+        let codewhisperer_client = if should_build_codewhisperer_telemetry_client() {
+            Some(ApiClient::new(env, fs, database, None).await?)
+        } else {
+            None
+        };
         let otel_config = otel_telemetry_config(env, telemetry_enabled);
         let otel_providers = init_otel(&otel_config);
         let otel_telemetry_client = Arc::new(
@@ -872,8 +890,17 @@ impl TelemetryClient {
         }
         self.emit_otel_metric_record(&event);
         self.emit_otel_log_record(&event);
+        #[cfg(feature = "legacy_codewhisperer_sink")]
         self.send_cw_telemetry_event(&event).await;
+        #[cfg(not(feature = "legacy_codewhisperer_sink"))]
+        trace!("legacy CodeWhisperer telemetry sink disabled by cargo feature");
+        #[cfg(feature = "legacy_toolkit_sink")]
         self.send_telemetry_toolkit_metric(event).await;
+        #[cfg(not(feature = "legacy_toolkit_sink"))]
+        {
+            let _ = event;
+            trace!("legacy Toolkit telemetry sink disabled by cargo feature");
+        }
     }
 
     async fn send_event_with_legacy_toolkit_disabled(&self, event: Event, partition: &str) {
@@ -894,7 +921,10 @@ impl TelemetryClient {
         self.emit_govcloud_channel_disabled("legacy_toolkit", partition);
         self.emit_otel_metric_record(&event);
         self.emit_otel_log_record(&event);
+        #[cfg(feature = "legacy_codewhisperer_sink")]
         self.send_cw_telemetry_event(&event).await;
+        #[cfg(not(feature = "legacy_codewhisperer_sink"))]
+        trace!("legacy CodeWhisperer telemetry sink disabled by cargo feature");
     }
 
     fn otel_exports_enabled(&self) -> bool {
@@ -949,14 +979,18 @@ impl TelemetryClient {
     fn emit_govcloud_channel_disabled(&self, channel: &str, partition: &str) {
         if let Err(err) = self
             .otel_telemetry_client
-            .emit(govcloud_channel_disabled_record(channel, partition))
+            .emit(metric::govcloud_channel_disabled_record(
+                metric::GovcloudChannelDisabled::from_names(channel, partition),
+            ))
         {
             trace!(%err, channel, partition, "failed to emit GovCloud disabled-channel counter");
         }
     }
 
     fn emit_govcloud_channel_leak(&self, channel: &str) {
-        if let Err(err) = self.otel_telemetry_client.emit(govcloud_channel_leak_record(channel)) {
+        if let Err(err) = self.otel_telemetry_client.emit(metric::govcloud_channel_leak_record(
+            metric::GovcloudChannelLeak::from_name(channel),
+        )) {
             trace!(%err, channel, "failed to emit GovCloud channel leak counter");
         }
     }
@@ -1114,7 +1148,7 @@ impl TelemetryClient {
             return;
         }
 
-        for record in event.redaction_metric_records("legacy_toolkit") {
+        for record in event.redaction_metric_records(kiro_telemetry::metric::TelemetryChannel::LegacyToolkit) {
             if let Err(err) = self.otel_telemetry_client.emit(record) {
                 trace!(%err, "failed to emit telemetry redaction accounting");
             }
@@ -1168,31 +1202,26 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryCon
     OtelTelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir)
 }
 
-pub trait ReasonCode: std::error::Error {
-    fn reason_code(&self) -> String;
-}
-
-/// Returns a generic error reason + reason description pair.
-pub fn get_error_reason<E>(error: &E) -> (String, String)
-where
-    E: ReasonCode + 'static,
-{
-    let mut err_chain = eyre::Chain::new(error);
-    let reason_desc = if err_chain.len() > 1 {
-        format!(
-            "'{}' caused by: {}",
-            error,
-            err_chain.next_back().map_or("UNKNOWN".to_string(), |e| e.to_string())
-        )
-    } else {
-        error.to_string()
-    };
-
-    (error.reason_code(), reason_desc)
-}
+pub use kiro_telemetry_host::ReasonCode;
+// Re-exported for parity with the `chat-cli` (V1) crate API even though no V2 caller currently
+// uses it. The `bin` target sees this as an unused re-export, so we silence the lint.
+#[allow(unused_imports)]
+pub use kiro_telemetry_host::get_error_reason;
 
 #[cfg(test)]
 mod test {
+    use kiro_telemetry::testing::{
+        InMemoryTelemetry,
+        expect_log,
+        expect_log_attrs,
+        expect_metric,
+        expect_metric_attrs,
+        in_memory_telemetry,
+    };
+    use kiro_telemetry::{
+        log as telemetry_log,
+        metric,
+    };
     use uuid::uuid;
 
     use super::*;
@@ -1247,49 +1276,287 @@ mod test {
 
     #[test]
     fn govcloud_disabled_record_shape() {
-        let record = govcloud_channel_disabled_record("legacy_toolkit", "aws-us-gov");
+        let record = metric::govcloud_channel_disabled_record(metric::GovcloudChannelDisabled::from_names(
+            "legacy_toolkit",
+            "aws-us-gov",
+        ));
 
-        assert_eq!(record.name, "govcloud_channel_disabled_total");
-        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
-        );
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "partition" && attribute.value == "aws-us-gov")
-        );
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "reason" && attribute.value == "govcloud_disabled")
+        expect_metric(
+            std::slice::from_ref(&record),
+            metric::govcloud_channel_disabled_from_names("legacy_toolkit", "aws-us-gov"),
         );
     }
 
     #[test]
     fn govcloud_leak_record_shape() {
-        let record = govcloud_channel_leak_record("legacy_toolkit");
+        let record = metric::govcloud_channel_leak_record(metric::GovcloudChannelLeak::from_name("legacy_toolkit"));
 
-        assert_eq!(record.name, "govcloud_channel_leak_total");
-        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
+        expect_metric(
+            std::slice::from_ref(&record),
+            metric::govcloud_channel_leak_from_name("legacy_toolkit"),
         );
     }
 
     #[test]
-    fn govcloud_partition_blocks_legacy_toolkit_client_construction() {
-        assert!(should_build_toolkit_telemetry_client(true, None));
+    fn legacy_sink_feature_flags_control_client_construction() {
+        assert_eq!(
+            should_build_toolkit_telemetry_client(true, None),
+            cfg!(feature = "legacy_toolkit_sink")
+        );
         assert!(!should_build_toolkit_telemetry_client(false, None));
         assert!(!should_build_toolkit_telemetry_client(true, Some("aws-us-gov")));
+        assert_eq!(
+            should_build_codewhisperer_telemetry_client(),
+            cfg!(feature = "legacy_codewhisperer_sink")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_event_emits_otel_metrics_to_configured_sink() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let InMemoryTelemetry {
+            providers,
+            client: otel_telemetry_client,
+            sink,
+        } = in_memory_telemetry(OtelTelemetryConfig::new(
+            true,
+            OtelMode::DualWrite,
+            None,
+            tempdir.path().to_path_buf(),
+        ));
+        let client = TelemetryClient {
+            client_id: Uuid::nil(),
+            telemetry_enabled: true,
+            otel_providers: providers,
+            otel_telemetry_client,
+            codewhisperer_client: None,
+            toolkit_telemetry_client: None,
+        };
+        let mut event = Event::new(EventType::ChatAddedMessage {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Succeeded,
+            data: ChatAddedMessageParams {
+                model: Some("claude-4-sonnet".to_string()),
+                time_to_first_chunk_ms: Some(250.0),
+                request_duration_seconds: Some(1.5),
+                output_tokens: Some(7),
+                ..Default::default()
+            },
+        });
+        event.client_application = Some("chat_cli_v2".to_string());
+
+        client.send_event(event).await;
+        client
+            .send_event(Event::new(EventType::McpServerInit {
+                conversation_id: "conversation".to_string(),
+                server_name: "local-server".to_string(),
+                init_failure_reason: None,
+                number_of_tools: 2,
+                all_tool_names: Some("read,write".to_string()),
+                loaded_tool_names: Some("read,write".to_string()),
+                all_tools_count: 2,
+            }))
+            .await;
+        client
+            .send_event(Event::new(EventType::GoalCompleted {
+                conversation_id: Some("conversation".to_string()),
+                terminal_state: "completed".to_string(),
+                iterations: 2,
+                max_iterations: 4,
+                duration_sec: 12,
+            }))
+            .await;
+        client
+            .send_event(Event::new(EventType::ChatSlashCommandExecuted {
+                conversation_id: "conversation".to_string(),
+                command: "/model".to_string(),
+                subcommand: Some("list".to_string()),
+                result: TelemetryResult::Succeeded,
+                reason: None,
+            }))
+            .await;
+        client
+            .send_event(Event::new(EventType::CliSubcommandExecuted {
+                subcommand: "version".to_string(),
+            }))
+            .await;
+
+        let records = sink.records();
+        let turn_record = expect_metric(
+            &records,
+            metric::user_turns(
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV2,
+                metric::ResultKind::Success,
+                false,
+                metric::Mode::Interactive,
+            ),
+        );
+        expect_metric_attrs(turn_record, &[
+            ("model_class", "anthropic_sonnet"),
+            ("client_application", "chat_cli_v2"),
+            ("result", "success"),
+            ("mode", "interactive"),
+        ]);
+        let invocation_record = expect_metric(&records, metric::model_invocation(metric::ModelClass::AnthropicSonnet));
+        expect_metric_attrs(invocation_record, &[("model_class", "anthropic_sonnet")]);
+        expect_metric(
+            &records,
+            metric::time_to_first_chunk_ms(
+                250.0,
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV2,
+                false,
+            ),
+        );
+        expect_metric(
+            &records,
+            metric::bedrock_stream_ttft(
+                0.25,
+                metric::ModelClass::AnthropicSonnet,
+                metric::PromptSizeBucket::Other,
+                false,
+            ),
+        );
+        expect_metric(
+            &records,
+            metric::bedrock_stream_duration(
+                1.5,
+                metric::ModelClass::AnthropicSonnet,
+                telemetry_log::CompletionReason::Stop,
+            ),
+        );
+        expect_metric(
+            &records,
+            metric::bedrock_request_duration(
+                1.5,
+                metric::ModelClass::AnthropicSonnet,
+                metric::Operation::Stream,
+                metric::Outcome::Success,
+            ),
+        );
+        expect_metric(
+            &records,
+            metric::tokens_consumed(
+                7,
+                metric::ModelClass::AnthropicSonnet,
+                metric::TokenType::Output,
+                metric::ClientApplication::ChatCliV2,
+                false,
+            ),
+        );
+        let mcp_record = expect_metric(
+            &records,
+            metric::mcp_server_init_total(metric::McpServerClass::UserDefined, metric::Outcome::Success),
+        );
+        expect_metric_attrs(mcp_record, &[
+            ("mcp_server_class", "user_defined"),
+            ("outcome", "success"),
+        ]);
+        expect_metric(
+            &records,
+            metric::mcp_server_connected_total(metric::McpServerClass::UserDefined),
+        );
+        expect_metric(&records, metric::session_outcome(metric::SessionOutcome::TaskCompleted));
+        let slash_record = expect_metric(&records, metric::slash_command_invoked("/model"));
+        expect_metric_attrs(slash_record, &[("command", "/model")]);
+        let feature_record = expect_metric(&records, metric::feature_used("version"));
+        expect_metric_attrs(feature_record, &[("feature", "version")]);
+
+        let log_records = sink.log_records();
+        let mcp_log = expect_log(
+            &log_records,
+            telemetry_log::mcp_server_init(
+                "local-server",
+                metric::McpServerClass::UserDefined,
+                metric::Outcome::Success,
+            ),
+        );
+        expect_log_attrs(mcp_log, &[
+            ("mcp_server_name", "local-server"),
+            ("mcp_server_class", "user_defined"),
+            ("outcome", "success"),
+        ]);
+    }
+
+    #[tokio::test]
+    async fn govcloud_disabled_send_path_emits_posture_metric() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let InMemoryTelemetry {
+            providers,
+            client: otel_telemetry_client,
+            sink,
+        } = in_memory_telemetry(OtelTelemetryConfig::new(
+            true,
+            OtelMode::DualWrite,
+            None,
+            tempdir.path().to_path_buf(),
+        ));
+        let client = TelemetryClient {
+            client_id: Uuid::nil(),
+            telemetry_enabled: true,
+            otel_providers: providers,
+            otel_telemetry_client,
+            codewhisperer_client: None,
+            toolkit_telemetry_client: None,
+        };
+
+        client
+            .send_event_with_legacy_toolkit_disabled(
+                Event::new(EventType::ModelInvocation {
+                    model: Some("claude-4-sonnet".to_string()),
+                }),
+                "aws-us-gov",
+            )
+            .await;
+
+        let records = sink.records();
+        expect_metric(
+            &records,
+            metric::govcloud_channel_disabled_record(metric::GovcloudChannelDisabled::from_names(
+                "legacy_toolkit",
+                "aws-us-gov",
+            )),
+        );
+        expect_metric(
+            &records,
+            metric::model_invocation_record(metric::ModelInvocation::from_id(Some("claude-4-sonnet"))),
+        );
+    }
+
+    #[tokio::test]
+    async fn daily_heartbeat_send_path_defaults_to_v2_client_application() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread = TelemetryThread {
+            handle: None,
+            tx: TelemetrySender::Strong(tx),
+        };
+
+        thread
+            .send_daily_heartbeat_with_client_application(None)
+            .expect("daily heartbeat should be sent");
+
+        let event = rx.recv().await.expect("daily heartbeat event should be queued");
+
+        assert_eq!(
+            event.client_application.as_deref(),
+            Some(metric::ClientApplication::ChatCliV2.as_str())
+        );
+        let record = event.otel_metric_record().expect("daily heartbeat metric");
+        expect_metric(
+            std::slice::from_ref(&record),
+            metric::daily_heartbeat_record(metric::DailyHeartbeat::from_names(
+                Some(metric::ClientApplication::ChatCliV2.as_str()),
+                event_install_method(&event).as_deref(),
+            )),
+        );
+    }
+
+    fn event_install_method(event: &Event) -> Option<String> {
+        match &event.ty {
+            EventType::DailyHeartbeat { install_method } => install_method.clone(),
+            other => panic!("expected daily heartbeat event, got {other:?}"),
+        }
     }
 
     #[tracing_test::traced_test]
@@ -1382,6 +1649,7 @@ mod test {
         };
 
         let event = Event::new(EventType::ProcessHealthMetric {
+            agent_kind: metric::AgentKind::V2,
             rss_mb: 142.0,
             heap_used_mb: 87.0,
             peak_rss_mb: 205.0,
@@ -1441,6 +1709,7 @@ mod test {
         };
 
         let event = Event::new(EventType::ProcessHealthMetric {
+            agent_kind: metric::AgentKind::V2,
             rss_mb: 100.0,
             heap_used_mb: 50.0,
             peak_rss_mb: 150.0,

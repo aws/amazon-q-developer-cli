@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Kiro local telemetry
+    orgId: 1
+    folder: Kiro
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

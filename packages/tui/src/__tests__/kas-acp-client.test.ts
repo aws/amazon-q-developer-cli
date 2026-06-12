@@ -224,6 +224,15 @@ function writeTestCliJson(data: Record<string, unknown>) {
 function readTestCliJson(): Record<string, unknown> {
   return JSON.parse(readFileSync(testCliJsonPath(), 'utf-8'));
 }
+
+const mockEmitKasTelemetry = mock((_event: string, _payload: unknown) =>
+  Promise.resolve({ ok: true })
+);
+
+mock.module('../utils/kas-telemetry-cli', () => ({
+  emitKasTelemetry: mockEmitKasTelemetry,
+}));
+
 afterAll(() => {
   teardownTestHome();
   mock.restore();
@@ -243,6 +252,7 @@ function freshMocks() {
   mockKiroSetSessionConfigOption.mockClear();
   mockKiroSendExtMethod.mockClear();
   mockKiroSendExtNotification.mockClear();
+  mockEmitKasTelemetry.mockClear();
   mockKiroListSessions.mockClear();
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
@@ -549,6 +559,23 @@ describe('KasAcpClient', () => {
     );
   });
 
+  it('prompt() forwards chat session start telemetry once per session', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    await client.prompt([{ type: 'text', text: 'hello' } as any]);
+    await client.prompt([{ type: 'text', text: 'again' } as any]);
+
+    const startCalls = mockEmitKasTelemetry.mock.calls.filter(
+      ([event]: any[]) => event === 'kas-chat-session-started'
+    );
+    expect(startCalls).toHaveLength(1);
+    expect(startCalls[0]).toEqual([
+      'kas-chat-session-started',
+      { sessionId: 'kas-session-1' },
+    ]);
+  });
+
   it('cancel() calls kiroClient.cancel with sessionId', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -635,13 +662,13 @@ describe('KasAcpClient', () => {
 
     client.sendProcessHealthMetrics(snapshot);
 
-    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/processHealth',
-      snapshot
-    );
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-process-health', {
+      ...snapshot,
+      agentKind: 'kas',
+    });
   });
 
-  it('sendModeChanged() forwards KAS telemetry notification', () => {
+  it('sendModeChanged() forwards KAS telemetry through the host bridge', () => {
     const client = new KasAcpClient();
     const payload = {
       fromMode: 'kiro',
@@ -652,9 +679,30 @@ describe('KasAcpClient', () => {
 
     client.sendModeChanged(payload as any);
 
-    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/modeChanged',
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith(
+      'kas-mode-changed',
       payload
+    );
+  });
+
+  it('sendChatSlashCommandTelemetry() forwards KAS command usage through the host bridge', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    client.sendChatSlashCommandTelemetry({
+      command: '/chat',
+      subcommand: 'save',
+      success: true,
+    });
+
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith(
+      'kas-chat-slash-command',
+      {
+        command: '/chat',
+        subcommand: 'save',
+        success: true,
+        sessionId: 'kas-session-1',
+      }
     );
   });
 
@@ -2748,6 +2796,10 @@ describe('KasAcpClient', () => {
             ],
             elapsedTime: 1234,
             contextUsage: { usagePercentage: 42 },
+            inputTokens: 10,
+            outputTokens: 5,
+            cacheReadInputTokens: 2,
+            cacheWriteInputTokens: 3,
             status: 'success',
           },
         },
@@ -2763,21 +2815,25 @@ describe('KasAcpClient', () => {
       { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
       { value: 500, unit: 'token', unitPlural: 'Tokens' },
     ]);
-    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/turnCompletion',
-      {
-        sessionId: 'kas-session-1',
-        meteringUsage: [
-          { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
-          { value: 500, unit: 'token', unitPlural: 'Tokens' },
-        ],
-        turnDurationMs: 1234,
-        contextUsagePercentage: 42,
-        status: 'success',
-      }
-    );
-    const telemetryPayload = mockKiroSendExtNotification.mock.calls.find(
-      ([method]) => method === '_kiro.dev/telemetry/turnCompletion'
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-turn-completion', {
+      sessionId: 'kas-session-1',
+      modelId: 'm1',
+      meteringUsage: [
+        { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
+        { value: 500, unit: 'token', unitPlural: 'Tokens' },
+      ],
+      turnDurationMs: 1234,
+      contextUsagePercentage: 42,
+      totalTokens: 17,
+      uncachedInputTokens: 10,
+      outputTokens: 5,
+      cacheReadInputTokens: 2,
+      cacheWriteInputTokens: 3,
+      status: 'success',
+      usedTools: ['fs_read', 'custom_tool', 'mcp_tool'],
+    });
+    const telemetryPayload = mockEmitKasTelemetry.mock.calls.find(
+      ([event]) => event === 'kas-turn-completion'
     )?.[1] as any;
     expect(telemetryPayload.meteringUsage[0]).not.toHaveProperty('usedTools');
     expect(telemetryPayload.meteringUsage[1]).not.toHaveProperty('usedTools');
@@ -2811,14 +2867,12 @@ describe('KasAcpClient', () => {
         .map((c) => c[0])
         .some((e: any) => e.type === AgentEventType.TurnSummary)
     ).toBe(false);
-    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/turnCompletion',
-      {
-        sessionId: 'kas-session-1',
-        meteringUsage: [],
-        contextUsagePercentage: 66,
-      }
-    );
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-turn-completion', {
+      sessionId: 'kas-session-1',
+      modelId: 'm1',
+      meteringUsage: [],
+      contextUsagePercentage: 66,
+    });
   });
 
   it('session_info_update kind=turn_completion drops entries without numeric usage', async () => {
@@ -2854,7 +2908,7 @@ describe('KasAcpClient', () => {
     ]);
   });
 
-  it('session_info_update kind=turn_completion buckets unknown telemetry status', async () => {
+  it('session_info_update kind=turn_completion forwards unknown telemetry status', async () => {
     const client = new KasAcpClient();
     await client.newSession();
 
@@ -2875,15 +2929,13 @@ describe('KasAcpClient', () => {
       },
     });
 
-    expect(mockKiroSendExtNotification).toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/turnCompletion',
-      {
-        sessionId: 'kas-session-1',
-        meteringUsage: [{ value: 2, unit: 'credit', unitPlural: 'Credits' }],
-        turnDurationMs: 100,
-        status: '_other_',
-      }
-    );
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-turn-completion', {
+      sessionId: 'kas-session-1',
+      modelId: 'm1',
+      meteringUsage: [{ value: 2, unit: 'credit', unitPlural: 'Credits' }],
+      turnDurationMs: 100,
+      status: 'backend:arbitrary-new-status',
+    });
   });
 
   it('session_info_update kind=turn_completion fills missing unit/unitPlural with empty string', async () => {
@@ -2916,7 +2968,7 @@ describe('KasAcpClient', () => {
     ]);
   });
 
-  it('session_info_update kind=turn_completion with no metering and no duration is suppressed', async () => {
+  it('session_info_update kind=turn_completion forwards status-only telemetry', async () => {
     const client = new KasAcpClient();
     const handler = mock((_event: any) => {});
     client.onUpdate(handler);
@@ -2940,10 +2992,52 @@ describe('KasAcpClient', () => {
       .map((c) => c[0])
       .find((e: any) => e.type === AgentEventType.TurnSummary);
     expect(summary).toBeUndefined();
-    expect(mockKiroSendExtNotification).not.toHaveBeenCalledWith(
-      '_kiro.dev/telemetry/turnCompletion',
-      expect.anything()
-    );
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-turn-completion', {
+      sessionId: 'kas-session-1',
+      modelId: 'm1',
+      meteringUsage: [],
+      status: 'success',
+    });
+  });
+
+  it('session_info_update kind=turn_completion forwards token-only telemetry', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            tokenUsage: {
+              inputTokens: 20,
+              outputTokens: 8,
+              cachedTokens: 4,
+              cacheWriteInputTokens: 3,
+            },
+          },
+        },
+      },
+    });
+
+    const summary = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.TurnSummary);
+    expect(summary).toBeUndefined();
+    expect(mockEmitKasTelemetry).toHaveBeenCalledWith('kas-turn-completion', {
+      sessionId: 'kas-session-1',
+      modelId: 'm1',
+      meteringUsage: [],
+      totalTokens: 32,
+      uncachedInputTokens: 20,
+      outputTokens: 8,
+      cacheReadInputTokens: 4,
+      cacheWriteInputTokens: 3,
+    });
   });
 
   // ── effortLevel config option → EffortUpdate ──

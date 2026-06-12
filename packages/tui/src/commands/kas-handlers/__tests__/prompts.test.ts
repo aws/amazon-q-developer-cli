@@ -56,7 +56,7 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       const opts = setActive.mock.calls[0][0].options;
       expect(opts.map((o: any) => o.value)).toEqual(
         // sort: group asc (skill, steering, workspace), label asc within
-        ['tdd', 'conventions', 'summarize']
+        ['skill:tdd', 'steering:conventions', 'prompt:summarize']
       );
     });
 
@@ -70,8 +70,8 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       await handlePrompts(PROMPTS_CMD, '', ctx);
       const setActive = ctx._spies.setActiveCommand as any;
       const opts = setActive.mock.calls[0][0].options;
-      const search = opts.find((o: any) => o.value === 'search');
-      const review = opts.find((o: any) => o.value === 'review');
+      const search = opts.find((o: any) => o.value === 'prompt:search');
+      const review = opts.find((o: any) => o.value === 'prompt:review');
       expect(search.group).toBe('github');
       expect(review.group).toBe('workspace');
     });
@@ -86,8 +86,12 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       await handlePrompts(PROMPTS_CMD, '', ctx);
       const opts = (ctx._spies.setActiveCommand as any).mock.calls[0][0]
         .options;
-      expect(opts.find((o: any) => o.value === 'tdd').group).toBe('skill');
-      expect(opts.find((o: any) => o.value === 'plan').group).toBe('steering');
+      expect(opts.find((o: any) => o.value === 'skill:tdd').group).toBe(
+        'skill'
+      );
+      expect(opts.find((o: any) => o.value === 'steering:plan').group).toBe(
+        'steering'
+      );
     });
 
     it('formats arg hints only for prompts', async () => {
@@ -100,8 +104,12 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       await handlePrompts(PROMPTS_CMD, '', ctx);
       const opts = (ctx._spies.setActiveCommand as any).mock.calls[0][0]
         .options;
-      expect(opts.find((o: any) => o.value === 'search').hint).toBe('<topic>');
-      expect(opts.find((o: any) => o.value === 'tdd').hint).toBeUndefined();
+      expect(opts.find((o: any) => o.value === 'prompt:search').hint).toBe(
+        '<topic>'
+      );
+      expect(
+        opts.find((o: any) => o.value === 'skill:tdd').hint
+      ).toBeUndefined();
     });
 
     it('alerts when nothing is advertised', async () => {
@@ -127,10 +135,27 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       const ctx = createMockCommandContext({
         kasCommands: [PROMPTS_CMD],
       });
-      await handlePrompts(PROMPTS_CMD, 'summarize', ctx);
+      await handlePrompts(PROMPTS_CMD, 'prompt:summarize', ctx);
       const sendMessage = ctx._spies.sendMessage as any;
       expect(sendMessage).toHaveBeenCalledWith('/summarize');
+      expect(ctx.kiro.sendChatSlashCommandTelemetry).toHaveBeenCalledWith({
+        command: '/prompt',
+        success: true,
+      });
       expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+    });
+
+    it('emits the selected entity category for skill picker entries', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [PROMPTS_CMD],
+      });
+      await handlePrompts(PROMPTS_CMD, 'skill:tdd', ctx);
+
+      expect(ctx._spies.sendMessage).toHaveBeenCalledWith('/tdd');
+      expect(ctx.kiro.sendChatSlashCommandTelemetry).toHaveBeenCalledWith({
+        command: '/skill',
+        success: true,
+      });
     });
   });
 });

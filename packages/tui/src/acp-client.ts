@@ -21,7 +21,10 @@ import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { SessionClient } from './types/session-client';
+import type {
+  ChatSlashCommandTelemetryPayload,
+  SessionClient,
+} from './types/session-client';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
 import type { ModeChangedNotification } from './types/generated/chat-cli';
 import {
@@ -61,6 +64,7 @@ import { resolveAgentEngine } from './agent-engine';
 import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
+import { emitKasTelemetry } from './utils/kas-telemetry-cli';
 
 const TUI_VERSION: string = packageJson.version;
 
@@ -285,9 +289,20 @@ type KasPromptTurnSummary = {
   usage?: unknown;
   unit?: unknown;
   unitPlural?: unknown;
+  usedTools?: unknown;
 };
 
-type KasSessionInfoMeta = {
+type KasTokenUsageMeta = {
+  totalTokens?: unknown;
+  inputTokens?: unknown;
+  uncachedInputTokens?: unknown;
+  outputTokens?: unknown;
+  cachedTokens?: unknown;
+  cacheReadInputTokens?: unknown;
+  cacheWriteInputTokens?: unknown;
+};
+
+type KasSessionInfoMeta = KasTokenUsageMeta & {
   kind?: string;
   conversationSummary?: string;
   summarization?: {
@@ -298,23 +313,27 @@ type KasSessionInfoMeta = {
   usagePercentage?: number;
   breakdown?: unknown;
   promptTurnSummaries?: KasPromptTurnSummary[];
+  tokenUsage?: unknown;
+  usage?: unknown;
+  metrics?: unknown;
   elapsedTime?: unknown;
   status?: unknown;
 };
 
 type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
+  modelId?: string;
   meteringUsage: MeteringUsage[];
   turnDurationMs?: number;
   contextUsagePercentage?: number;
+  totalTokens?: number;
+  uncachedInputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheWriteInputTokens?: number;
   status?: string;
+  usedTools?: string[];
 };
-
-const KAS_TURN_COMPLETION_STATUSES = new Set([
-  'success',
-  'failed',
-  'cancelled',
-]);
 
 function extractKasSessionInfoMeta(
   update: AcpSessionUpdate
@@ -323,8 +342,7 @@ function extractKasSessionInfoMeta(
 }
 
 function normalizeKasTurnCompletionStatus(status: unknown): string | undefined {
-  if (typeof status !== 'string') return undefined;
-  return KAS_TURN_COMPLETION_STATUSES.has(status) ? status : '_other_';
+  return typeof status === 'string' ? status : undefined;
 }
 
 function normalizeKasContextUsagePercentage(
@@ -336,9 +354,97 @@ function normalizeKasContextUsagePercentage(
     : undefined;
 }
 
+function isKasMetaRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeKasTokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function kasTokenSources(meta: KasSessionInfoMeta): Record<string, unknown>[] {
+  const sources: Record<string, unknown>[] = [];
+  if (isKasMetaRecord(meta.tokenUsage)) sources.push(meta.tokenUsage);
+  if (isKasMetaRecord(meta.usage)) sources.push(meta.usage);
+  if (isKasMetaRecord(meta.metrics)) sources.push(meta.metrics);
+  sources.push(meta as Record<string, unknown>);
+  return sources;
+}
+
+function firstKasTokenCount(
+  meta: KasSessionInfoMeta,
+  names: string[]
+): number | undefined {
+  for (const source of kasTokenSources(meta)) {
+    for (const name of names) {
+      const value = normalizeKasTokenCount(source[name]);
+      if (value !== undefined) return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeKasTurnTokenCounts(
+  meta: KasSessionInfoMeta
+): Omit<
+  KasTurnCompletionTelemetryPayload,
+  | 'sessionId'
+  | 'modelId'
+  | 'meteringUsage'
+  | 'turnDurationMs'
+  | 'contextUsagePercentage'
+  | 'status'
+> {
+  const uncachedInputTokens = firstKasTokenCount(meta, [
+    'uncachedInputTokens',
+    'inputTokens',
+  ]);
+  const outputTokens = firstKasTokenCount(meta, ['outputTokens']);
+  const cacheReadInputTokens = firstKasTokenCount(meta, [
+    'cacheReadInputTokens',
+    'cachedTokens',
+  ]);
+  const cacheWriteInputTokens = firstKasTokenCount(meta, [
+    'cacheWriteInputTokens',
+  ]);
+  const derivedTotal =
+    uncachedInputTokens !== undefined ||
+    outputTokens !== undefined ||
+    cacheReadInputTokens !== undefined
+      ? (uncachedInputTokens ?? 0) +
+        (outputTokens ?? 0) +
+        (cacheReadInputTokens ?? 0)
+      : undefined;
+  const totalTokens = firstKasTokenCount(meta, ['totalTokens']) ?? derivedTotal;
+
+  return {
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(uncachedInputTokens !== undefined ? { uncachedInputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(cacheReadInputTokens !== undefined ? { cacheReadInputTokens } : {}),
+    ...(cacheWriteInputTokens !== undefined ? { cacheWriteInputTokens } : {}),
+  };
+}
+
+function normalizeKasUsedTools(meta: KasSessionInfoMeta): string[] {
+  const seen = new Set<string>();
+  for (const summary of meta.promptTurnSummaries ?? []) {
+    if (!Array.isArray(summary.usedTools)) continue;
+    for (const tool of summary.usedTools) {
+      if (typeof tool !== 'string') continue;
+      const name = tool.trim();
+      if (name.length > 0) seen.add(name);
+    }
+  }
+  return Array.from(seen);
+}
+
 function normalizeKasTurnCompletion(
   meta: KasSessionInfoMeta,
-  sessionId?: string
+  sessionId?: string,
+  modelId?: string
 ): KasTurnCompletionTelemetryPayload | undefined {
   const meteringUsage = (meta.promptTurnSummaries ?? [])
     .filter(
@@ -353,21 +459,29 @@ function normalizeKasTurnCompletion(
   const turnDurationMs =
     typeof meta.elapsedTime === 'number' ? meta.elapsedTime : undefined;
   const contextUsagePercentage = normalizeKasContextUsagePercentage(meta);
+  const tokenCounts = normalizeKasTurnTokenCounts(meta);
+  const status = normalizeKasTurnCompletionStatus(meta.status);
+  const usedTools = normalizeKasUsedTools(meta);
   if (
     meteringUsage.length === 0 &&
     turnDurationMs == null &&
-    contextUsagePercentage == null
+    contextUsagePercentage == null &&
+    Object.keys(tokenCounts).length === 0 &&
+    !status &&
+    usedTools.length === 0
   ) {
     return undefined;
   }
-  const status = normalizeKasTurnCompletionStatus(meta.status);
 
   return {
     ...(sessionId ? { sessionId } : {}),
+    ...(modelId ? { modelId } : {}),
     meteringUsage,
     ...(turnDurationMs != null ? { turnDurationMs } : {}),
     ...(contextUsagePercentage != null ? { contextUsagePercentage } : {}),
+    ...tokenCounts,
     ...(status ? { status } : {}),
+    ...(usedTools.length > 0 ? { usedTools } : {}),
   };
 }
 
@@ -809,6 +923,9 @@ abstract class BaseAcpClient implements SessionClient {
   }
   abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
   abstract sendModeChanged(payload: ModeChangedNotification): void;
+  abstract sendChatSlashCommandTelemetry(
+    payload: ChatSlashCommandTelemetryPayload
+  ): void;
 
   // ── Shared methods ──
 
@@ -1836,10 +1953,10 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 
   sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
     this.connection
-      .extNotification(
-        this.ext('kiro.dev/telemetry/processHealth'),
-        payload as unknown as Record<string, unknown>
-      )
+      .extNotification(this.ext('kiro.dev/telemetry/processHealth'), {
+        ...payload,
+        agentKind: 'v2',
+      } as unknown as Record<string, unknown>)
       .catch(() => {});
   }
 
@@ -1849,6 +1966,17 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
         this.ext('kiro.dev/telemetry/modeChanged'),
         payload as unknown as Record<string, unknown>
       )
+      .catch(() => {});
+  }
+
+  sendChatSlashCommandTelemetry(
+    payload: ChatSlashCommandTelemetryPayload
+  ): void {
+    this.connection
+      .extNotification(this.ext('kiro.dev/telemetry/chatSlashCommand'), {
+        ...payload,
+        sessionId: this.sessionId,
+      } as unknown as Record<string, unknown>)
       .catch(() => {});
   }
 
@@ -1939,6 +2067,7 @@ export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
   private mcpRegistryCache: McpServerInfo[] = [];
+  private chatSessionStartedSessions = new Set<string>();
 
   /**
    * Initial agent name (KAS "mode") to apply on the next `newSession`.
@@ -2560,6 +2689,9 @@ export class KasAcpClient extends BaseAcpClient {
         : (extractModelFromConfigOptions(
             (r as { configOptions?: unknown }).configOptions
           ) ?? extractModel(r.models));
+    if (!this.currentModelId && currentModel) {
+      this.currentModelId = currentModel.id;
+    }
 
     return {
       sessionId: sid,
@@ -2588,7 +2720,14 @@ export class KasAcpClient extends BaseAcpClient {
     );
 
     this.captureModes(r as { modes?: CachedModesState | null | undefined });
+    const configModel = extractModelFromConfigOptions(
+      (r as { configOptions?: unknown }).configOptions
+    );
+    const legacyModel = extractModel(r.models);
     this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
+    if (!configModel && legacyModel) {
+      this.currentModelId = legacyModel.id;
+    }
     this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
     this.broadcastEffortFromConfigOptions(
       (r as { configOptions?: unknown }).configOptions
@@ -2596,10 +2735,7 @@ export class KasAcpClient extends BaseAcpClient {
 
     return {
       sessionId,
-      currentModel:
-        extractModelFromConfigOptions(
-          (r as { configOptions?: unknown }).configOptions
-        ) ?? extractModel(r.models),
+      currentModel: configModel ?? legacyModel,
       // TODO: Remove cast once @kiro/client adds `modes` to LoadSessionResponse
       currentAgent: extractCurrentAgent(
         (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
@@ -2610,6 +2746,8 @@ export class KasAcpClient extends BaseAcpClient {
   async prompt(messages: acp.ContentBlock[]): Promise<void> {
     if (!this.sessionId)
       throw new Error('cannot send prompt without an active session');
+
+    this.emitChatSessionStartedOnce(this.sessionId);
 
     // Race prompt against process exit to detect KAS crashes
     const { promise: crashed, unsubscribe } = this.processExitPromise();
@@ -3844,14 +3982,58 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
-    this.sendTelemetryNotification(
-      '_kiro.dev/telemetry/processHealth',
-      payload
-    );
+    void emitKasTelemetry('kas-process-health', {
+      ...payload,
+      agentKind: 'kas',
+    })
+      .then((result) => {
+        if (!result.ok) {
+          logger.debug('[kas] telemetry bridge failed:', result.message);
+        }
+      })
+      .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
   }
 
   sendModeChanged(payload: ModeChangedNotification): void {
-    this.sendTelemetryNotification('_kiro.dev/telemetry/modeChanged', payload);
+    void emitKasTelemetry('kas-mode-changed', payload)
+      .then((result) => {
+        if (!result.ok) {
+          logger.debug('[kas] telemetry bridge failed:', result.message);
+        }
+      })
+      .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
+  }
+
+  sendChatSlashCommandTelemetry(
+    payload: ChatSlashCommandTelemetryPayload
+  ): void {
+    void emitKasTelemetry('kas-chat-slash-command', {
+      ...payload,
+      sessionId: this.sessionId,
+    })
+      .then((result) => {
+        if (!result.ok) {
+          logger.debug('[kas] telemetry bridge failed:', result.message);
+        }
+      })
+      .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
+  }
+
+  private emitChatSessionStartedOnce(sessionId: string): void {
+    if (this.chatSessionStartedSessions.has(sessionId)) return;
+    this.chatSessionStartedSessions.add(sessionId);
+    void emitKasTelemetry('kas-chat-session-started', {
+      sessionId,
+      ...(this.modesState.currentModeId
+        ? { mode: this.modesState.currentModeId }
+        : {}),
+    })
+      .then((result) => {
+        if (!result.ok) {
+          logger.debug('[kas] telemetry bridge failed:', result.message);
+        }
+      })
+      .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
   }
 
   private forwardKasTurnCompletionTelemetry(
@@ -3861,29 +4043,19 @@ export class KasAcpClient extends BaseAcpClient {
     if (update.sessionUpdate !== 'session_info_update') return;
     const meta = extractKasSessionInfoMeta(update);
     if (meta?.kind !== 'turn_completion') return;
-    const payload = normalizeKasTurnCompletion(meta, sessionId);
-    if (!payload) return;
-    this.sendTelemetryNotification(
-      '_kiro.dev/telemetry/turnCompletion',
-      payload
+    const payload = normalizeKasTurnCompletion(
+      meta,
+      sessionId,
+      this.currentModelId
     );
-  }
-
-  private sendTelemetryNotification(
-    method: string,
-    payload:
-      | ProcessHealthSnapshot
-      | ModeChangedNotification
-      | KasTurnCompletionTelemetryPayload
-  ): void {
-    this.kiroClient
-      .sendExtNotification(
-        method,
-        payload as unknown as Record<string, unknown>
-      )
-      .catch((err) =>
-        logger.debug('[kas] telemetry notification failed:', err)
-      );
+    if (!payload) return;
+    void emitKasTelemetry('kas-turn-completion', payload)
+      .then((result) => {
+        if (!result.ok) {
+          logger.debug('[kas] telemetry bridge failed:', result.message);
+        }
+      })
+      .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
   }
 }
 

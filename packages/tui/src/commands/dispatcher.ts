@@ -12,7 +12,7 @@ import type { AvailableCommand, TuiCommand } from '../types/commands.js';
 import { runEffect } from './effects.js';
 import { kasHandlers } from './kas-handlers/index.js';
 import { handleChat as handleV2Chat } from './v2-handlers/chat.js';
-import { isKasCommand } from '../kas-commands.js';
+import { isKasCommand, KasCommandName } from '../kas-commands.js';
 import { startPTTRecording } from './voice-helper.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 
@@ -44,7 +44,18 @@ export async function dispatch(
   if (ctx.agentEngine === 'kas' && isKasCommand(cmd)) {
     const handler = kasHandlers[cmd.name];
     if (handler) {
-      await handler(cmd, args, ctx, options);
+      const handlerEmitsTelemetry = kasHandlerEmitsCommandUsage(cmd.name, args);
+      try {
+        await handler(cmd, args, ctx, options);
+        if (!handlerEmitsTelemetry) {
+          emitFrontendCommandUsage(cmd, args, ctx, true);
+        }
+      } catch (error) {
+        if (!handlerEmitsTelemetry) {
+          emitFrontendCommandUsage(cmd, args, ctx, false);
+        }
+        throw error;
+      }
       return;
     }
   }
@@ -53,7 +64,14 @@ export async function dispatch(
   // (picker, save/load delegation, new, ensure-session conversion)
   // when the active engine is V2. Mirrors the KAS intercept above.
   if (cmd.name === '/chat') {
-    await handleV2Chat(cmd, args, ctx, options);
+    const shouldEmit = !isV2ChatBackendDelegated(args);
+    try {
+      await handleV2Chat(cmd, args, ctx, options);
+      if (shouldEmit) emitFrontendCommandUsage(cmd, args, ctx, true);
+    } catch (error) {
+      if (shouldEmit) emitFrontendCommandUsage(cmd, args, ctx, false);
+      throw error;
+    }
     return;
   }
 
@@ -62,6 +80,7 @@ export async function dispatch(
   if (type === 'prompt' || type === 'skill' || type === 'steering') {
     const message = args ? `/${cmdName} ${args}` : `/${cmdName}`;
     await ctx.sendMessage(message);
+    emitFrontendCommandUsage(cmd, args, ctx, true);
     return;
   }
 
@@ -124,7 +143,10 @@ export async function dispatch(
       ctx.setVoiceLevel(null);
       const msg = error instanceof Error ? error.message : 'Voice input failed';
       ctx.showAlert(msg, 'error', 3000);
+      emitFrontendCommandUsage(cmd, args, ctx, false);
+      return;
     }
+    emitFrontendCommandUsage(cmd, args, ctx, true);
     return;
   }
 
@@ -137,12 +159,14 @@ export async function dispatch(
         ctx.setLoadingMessage(null);
         if (options.length > 0) {
           ctx.setActiveCommand({ command: cmd, options });
+          emitFrontendCommandUsage(cmd, args, ctx, true);
           return;
         }
         if (cmdName === 'effort') {
           // Fall through to execute — backend returns a descriptive error
         } else {
           ctx.showAlert(`No options available for /${cmdName}`, 'error', 3000);
+          emitFrontendCommandUsage(cmd, args, ctx, false);
           return;
         }
       } catch {
@@ -181,9 +205,15 @@ export async function dispatch(
       const message = extractRpcErrorMessage(error, 'Command failed');
       ctx.setLoadingMessage(null);
       ctx.showAlert(message, 'error');
+      if (shouldEmitFrontendCommandUsage(ctx, isLocal)) {
+        emitFrontendCommandUsage(cmd, args, ctx, false);
+      }
       return;
     }
     ctx.setLoadingMessage(null);
+  }
+  if (shouldEmitFrontendCommandUsage(ctx, isLocal)) {
+    emitFrontendCommandUsage(cmd, args, ctx, result?.success ?? true);
   }
 
   // 3. Run effect
@@ -198,4 +228,73 @@ export async function dispatch(
   ) {
     ctx.showAlert(result.message, result.success ? 'success' : 'error', 5000);
   }
+}
+
+function shouldEmitFrontendCommandUsage(
+  ctx: CommandContext,
+  isLocal: boolean
+): boolean {
+  return ctx.agentEngine === 'kas' || isLocal;
+}
+
+function kasHandlerEmitsCommandUsage(
+  commandName: string,
+  args: string
+): boolean {
+  return (
+    commandName === KasCommandName.Prompts &&
+    /^(prompt|skill|steering):/.test(args.trim())
+  );
+}
+
+function isV2ChatBackendDelegated(args: string): boolean {
+  const token = firstArgToken(args);
+  return token === 'save' || token === 'load';
+}
+
+function emitFrontendCommandUsage(
+  cmd: AvailableCommand,
+  args: string,
+  ctx: CommandContext,
+  success: boolean
+): void {
+  const command = telemetryCommandName(cmd);
+  const subcommand = telemetrySubcommand(cmd, args);
+  ctx.kiro.sendChatSlashCommandTelemetry({
+    command,
+    ...(subcommand && { subcommand }),
+    success,
+    ...(!success && { reason: 'CommandFailed' }),
+  });
+}
+
+function telemetryCommandName(cmd: AvailableCommand): string {
+  const type = cmd.meta?.type;
+  if (type === 'prompt' || type === 'skill' || type === 'steering') {
+    return `/${type}`;
+  }
+  return cmd.name.toLowerCase();
+}
+
+function telemetrySubcommand(
+  cmd: AvailableCommand,
+  args: string
+): string | undefined {
+  const token = firstArgToken(args);
+  if (!token) return undefined;
+
+  return knownSubcommand(token, cmd.meta?.subcommands ?? []);
+}
+
+function firstArgToken(args: string): string | undefined {
+  return args.trim().split(/\s+/, 1)[0]?.toLowerCase();
+}
+
+function knownSubcommand(
+  token: string,
+  allowed: readonly string[]
+): string | undefined {
+  return allowed.some((value) => value.toLowerCase() === token)
+    ? token
+    : undefined;
 }

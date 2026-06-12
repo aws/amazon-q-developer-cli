@@ -18,7 +18,7 @@ attributes:
   - name: install_method
     allowed_values: [brew, download, internal, cargo, unknown, _other_]
   - name: client_application
-    allowed_values: [chat_cli, chat_cli_v2, acp_external, kiro_ide, _other_]
+    allowed_values: [chat_cli, chat_cli_v2, chat_cli_v3, acp_external, kiro_ide, _other_]
   - name: is_internal_amazon
     allowed_values: ["true", "false"]
   - name: release_channel
@@ -97,7 +97,7 @@ attributes:
     allowed_values: [aws, aws-us-gov, aws-cn, _other_]
   - name: slo_target
     allowed_values: [turn, session, login, _other_]
-  - name: process_state
+  - name: state
     allowed_values: [streaming, idle, tool_running, compaction, _other_]
   - name: loop_phase
     allowed_values: [model_call, tool_exec, parse, render, _other_]

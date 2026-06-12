@@ -17,15 +17,18 @@ use agent::agent_loop::protocol::{
     LoopEndReason,
     LoopError,
     StreamMetadata,
+    StreamResult,
     UserTurnMetadata,
 };
 use agent::agent_loop::types::{
     MetadataUsage,
     StreamError,
     StreamErrorKind,
+    StreamEvent,
 };
 use agent::protocol::{
     AgentEvent,
+    InitializeUpdateEvent,
     InternalEvent,
     PermissionEvalResult,
     ToolCallFailureReason,
@@ -37,6 +40,7 @@ use agent::tools::{
     BuiltInTool,
     ToolKind,
 };
+use kiro_telemetry::metric;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -227,19 +231,19 @@ impl TelemetryContext {
         self.rts_state.model_id()
     }
 
-    fn client_application(&self) -> &'static str {
+    fn client_application(&self) -> metric::ClientApplication {
         match self.app_type {
-            AppType::V1 => "chat_cli",
-            AppType::V2 => "chat_cli_v2",
-            AppType::Acp => "acp_external",
+            AppType::V1 => metric::ClientApplication::ChatCli,
+            AppType::V2 => metric::ClientApplication::ChatCliV2,
+            AppType::Acp => metric::ClientApplication::AcpExternal,
         }
     }
 
     fn apply_to(&self, event: &mut Event) {
         event.app_type = Some(self.app_type.as_str().to_string());
-        event
-            .client_application
-            .get_or_insert_with(|| self.client_application().to_string());
+        if event.client_application.is_none() {
+            event.set_client_application_kind(self.client_application());
+        }
         event.is_subagent = self.is_subagent;
         if let Some(ci) = &self.client_info {
             event.acp_client_name = Some(ci.name.as_str().to_string());
@@ -345,6 +349,8 @@ struct SessionState {
 #[derive(Clone)]
 pub struct TelemetryObserverHandle {
     tx: mpsc::UnboundedSender<SessionEvent>,
+    event_tx: mpsc::UnboundedSender<Event>,
+    context: TelemetryContext,
 }
 
 impl TelemetryObserverHandle {
@@ -353,6 +359,11 @@ impl TelemetryObserverHandle {
             session_id,
             agent_event,
         });
+    }
+
+    pub fn send_telemetry_event(&self, mut event: Event) {
+        self.context.apply_to(&mut event);
+        let _ = self.event_tx.send(event);
     }
 }
 
@@ -395,6 +406,8 @@ impl TelemetryObserver {
 
         // Actor task: SessionEvent -> process -> Event
         let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<SessionEvent>();
+        let handle_event_tx = event_tx.clone();
+        let handle_context = context.clone();
         let mut observer = Self {
             event_tx,
             context,
@@ -406,7 +419,11 @@ impl TelemetryObserver {
             }
         });
 
-        TelemetryObserverHandle { tx: agent_tx }
+        TelemetryObserverHandle {
+            tx: agent_tx,
+            event_tx: handle_event_tx,
+            context: handle_context,
+        }
     }
 
     #[cfg(test)]
@@ -420,13 +437,23 @@ impl TelemetryObserver {
 
     /// Process an [`AgentEvent`] and emit telemetry.
     fn handle_event(&mut self, session_id: &str, event: &AgentEvent) {
+        if let AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(mcp_event)) | AgentEvent::Mcp(mcp_event) = event
+        {
+            self.handle_mcp_event(session_id, mcp_event);
+            return;
+        }
+
         let session = self.sessions.entry(session_id.to_string()).or_default();
 
         match event {
-            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
-                if let AgentLoopEventKind::ResponseStreamEnd { result, metadata } = &loop_event.kind {
+            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => match &loop_event.kind {
+                AgentLoopEventKind::ResponseStreamEnd { result, metadata } => {
                     self.handle_response_stream_end(session_id, result, metadata);
-                }
+                },
+                AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(warning))) => {
+                    self.handle_retry_warning(warning);
+                },
+                _ => {},
             },
             AgentEvent::Update(UpdateEvent::ToolCall(tool_call)) => {
                 let (mcp_server_name, aws_service_name, aws_operation_name) = match &tool_call.tool.kind {
@@ -502,6 +529,44 @@ impl TelemetryObserver {
             },
             _ => {},
         }
+    }
+
+    fn handle_mcp_event(&self, session_id: &str, event: &agent::mcp::McpServerEvent) {
+        match event {
+            agent::mcp::McpServerEvent::Initialized { server_name, .. } => {
+                self.emit(EventType::McpServerInit {
+                    conversation_id: session_id.to_string(),
+                    server_name: server_name.clone(),
+                    init_failure_reason: None,
+                    number_of_tools: 0,
+                    all_tool_names: None,
+                    loaded_tool_names: None,
+                    all_tools_count: 0,
+                });
+            },
+            agent::mcp::McpServerEvent::InitializeError { server_name, error } => {
+                self.emit(EventType::McpServerInit {
+                    conversation_id: session_id.to_string(),
+                    server_name: server_name.clone(),
+                    init_failure_reason: Some(error.clone()),
+                    number_of_tools: 0,
+                    all_tool_names: None,
+                    loaded_tool_names: None,
+                    all_tools_count: 0,
+                });
+            },
+            agent::mcp::McpServerEvent::Initializing { .. }
+            | agent::mcp::McpServerEvent::OauthRequest { .. }
+            | agent::mcp::McpServerEvent::ToolListChanged { .. } => {},
+        }
+    }
+
+    fn handle_retry_warning(&self, warning: &agent::agent_loop::types::RetryWarningEvent) {
+        self.emit(EventType::RetryAttempt {
+            upstream: metric::Upstream::Rts,
+            retry_reason: metric::RetryReason::Other,
+            attempt: warning.attempt,
+        });
     }
 
     fn handle_response_stream_end(
@@ -644,6 +709,12 @@ impl TelemetryObserver {
                 message_id: message_id.clone(),
                 model: self.context.model(),
             });
+            if metadata.request_attempts.is_some_and(|attempts| attempts > 1) {
+                self.emit(EventType::RetryExhausted {
+                    upstream: metric::Upstream::Rts,
+                    final_error_kind: metric::ErrorKind::from_reason(reason.as_deref(), final_status_code),
+                });
+            }
             let session = self.sessions.entry(session_id.to_string()).or_default();
             session.turn_state.last_error = Some(ErrorInfo {
                 reason: reason.unwrap_or_default(),
@@ -731,6 +802,7 @@ impl TelemetryObserver {
                 follow_up_count: turn.follow_up_count,
                 message_meta_tags: turn.message_meta_tags,
                 is_subagent: self.context.is_subagent,
+                emit_user_turn_counter: false,
                 parent_tool_use_id: None,
                 request_attempts: turn.last_request_attempts,
             },
@@ -897,6 +969,7 @@ mod tests {
         LoopEndReason,
         LoopError,
         StreamMetadata,
+        StreamResult,
         UserTurnMetadata,
     };
     use agent::agent_loop::types::{
@@ -907,14 +980,17 @@ mod tests {
         MetadataService,
         MetadataUsage,
         MeteringUsageInfo,
+        RetryWarningEvent,
         Role,
         StreamError,
         StreamErrorKind,
+        StreamEvent,
     };
     use agent::types::AgentId;
     use uuid::Uuid;
 
     use super::*;
+    use crate::telemetry::core::EventLegacyExt;
 
     fn test_loop_id() -> agent::agent_loop::AgentLoopId {
         agent::agent_loop::AgentLoopId::new(AgentId::default())
@@ -1025,6 +1101,104 @@ mod tests {
         }
         // No error event
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn mcp_initialize_update_emits_mcp_server_init_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(agent::mcp::McpServerEvent::Initialized {
+                server_name: "code".to_string(),
+                serve_duration: Duration::from_millis(25),
+                list_tools_duration: Some(Duration::from_millis(10)),
+                list_prompts_duration: None,
+            })),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::McpServerInit {
+                conversation_id,
+                server_name,
+                init_failure_reason,
+                number_of_tools,
+                all_tool_names,
+                loaded_tool_names,
+                all_tools_count,
+            } => {
+                assert_eq!(conversation_id, "test-session");
+                assert_eq!(server_name, "code");
+                assert!(init_failure_reason.is_none());
+                assert_eq!(*number_of_tools, 0);
+                assert!(all_tool_names.is_none());
+                assert!(loaded_tool_names.is_none());
+                assert_eq!(*all_tools_count, 0);
+            },
+            other => panic!("expected McpServerInit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mcp_runtime_error_emits_failed_mcp_server_init_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &AgentEvent::Mcp(agent::mcp::McpServerEvent::InitializeError {
+                server_name: "local-server".to_string(),
+                error: "request timed out while listing tools".to_string(),
+            }),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::McpServerInit {
+                conversation_id,
+                server_name,
+                init_failure_reason,
+                ..
+            } => {
+                assert_eq!(conversation_id, "test-session");
+                assert_eq!(server_name, "local-server");
+                assert_eq!(
+                    init_failure_reason.as_deref(),
+                    Some("request timed out while listing tools")
+                );
+            },
+            other => panic!("expected McpServerInit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn retry_warning_emits_retry_attempt_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(
+                RetryWarningEvent {
+                    attempt: 3,
+                    max_attempts: 4,
+                    delay_secs: 1.0,
+                    message: "Retrying in 1s (attempt 3/4)".to_string(),
+                },
+            )))),
+        );
+
+        let event = rx.try_recv().unwrap();
+        assert_eq!(event.app_type.as_deref(), Some("V2"));
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
+        match &event.ty {
+            EventType::RetryAttempt {
+                upstream,
+                retry_reason,
+                attempt,
+            } => {
+                assert_eq!(*upstream, metric::Upstream::Rts);
+                assert_eq!(*retry_reason, metric::RetryReason::Other);
+                assert_eq!(*attempt, 3);
+            },
+            other => panic!("expected RetryAttempt, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1151,6 +1325,49 @@ mod tests {
             },
             other => panic!("expected MessageResponseError, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn failed_retried_request_emits_retry_exhausted_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(error_stream_end_with_attempts(StreamErrorKind::Throttling, 3)),
+        );
+
+        assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
+        assert!(matches!(
+            rx.try_recv().unwrap().ty,
+            EventType::MessageResponseError { .. }
+        ));
+
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::RetryExhausted {
+                upstream,
+                final_error_kind,
+            } => {
+                assert_eq!(*upstream, metric::Upstream::Rts);
+                assert_eq!(*final_error_kind, metric::ErrorKind::Throttling);
+            },
+            other => panic!("expected RetryExhausted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn first_attempt_failure_does_not_emit_retry_exhausted_event() {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(error_stream_end_with_attempts(StreamErrorKind::ServiceFailure, 1)),
+        );
+
+        assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
+        assert!(matches!(
+            rx.try_recv().unwrap().ty,
+            EventType::MessageResponseError { .. }
+        ));
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
@@ -1459,6 +1676,10 @@ mod tests {
         );
         let _ = rx.try_recv(); // addChatMessage
         let _ = rx.try_recv(); // messageResponseError
+        assert!(matches!(rx.try_recv().unwrap().ty, EventType::RetryExhausted {
+            final_error_kind: metric::ErrorKind::Throttling,
+            ..
+        }));
 
         let metadata = UserTurnMetadata {
             loop_id: test_loop_id(),

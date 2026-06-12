@@ -158,6 +158,9 @@ mod tests {
         TelemetryLogRecord,
     };
 
+    // Raw records are intentional here: these tests exercise the limiter paths
+    // that run after construction and cover malformed or overflow-bound inputs.
+
     #[test]
     fn accepts_known_metric_with_valid_attribute() {
         validate_metric_record(

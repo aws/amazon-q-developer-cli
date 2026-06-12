@@ -3,10 +3,14 @@ mod client;
 mod config;
 mod consent;
 mod legacy;
+pub mod log;
+pub mod metric;
 mod otel;
 mod pricing;
 mod record;
 mod redaction;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 
 pub use cardinality::{
     LimitError,
@@ -15,7 +19,6 @@ pub use cardinality::{
 };
 pub use client::{
     EmitOutcome,
-    EventClass,
     InMemorySink,
     TelemetryClient,
     TelemetryError,
@@ -26,8 +29,6 @@ pub use config::{
     TelemetryConfig,
 };
 pub use consent::{
-    ConsentCheckKind,
-    ConsentIntegrityResult,
     consent_file_integrity_records,
     consent_record_integrity_record,
 };
@@ -37,9 +38,21 @@ pub use kiro_telemetry_schema::{
 };
 pub use legacy::{
     LegacyOtelTarget,
+    emits_legacy_tool_call_total,
+    emits_legacy_user_turn_counter,
     legacy_log_record,
     legacy_metric_record,
     legacy_otel_target,
+};
+pub use metric::{
+    ConsentCheckKind,
+    ConsentIntegrityResult,
+    EventClass,
+    FieldClass,
+    MetricBuildError,
+    MetricBuilder,
+    PiiType,
+    RedactionResult,
 };
 pub use otel::{
     OtelLogsSink,
@@ -61,12 +74,9 @@ pub use record::{
     TelemetryLogRecord,
 };
 pub use redaction::{
-    FieldClass,
     PiiRedactor,
-    PiiType,
     RedactionFinding,
     RedactionOutcome,
-    RedactionResult,
 };
 
 pub fn meter() -> opentelemetry::metrics::Meter {

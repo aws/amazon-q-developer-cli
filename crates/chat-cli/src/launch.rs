@@ -13,6 +13,11 @@ use eyre::{
     Result,
     bail,
 };
+use kiro_telemetry::metric::{
+    AgentKind,
+    ClientApplication,
+    ExitReason,
+};
 use tracing::{
     debug,
     info,
@@ -38,8 +43,11 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
         trust_tools,
     } = options;
 
-    if let Interactivity::NonInteractive { input } = interactivity {
-        return launch_acp_non_interactive(
+    emit_cli_session_started(os, agent_engine).await;
+
+    let mut cli_session_completion_emitted = false;
+    let result = if let Interactivity::NonInteractive { input } = interactivity {
+        launch_acp_non_interactive(
             os,
             agent_engine,
             mode,
@@ -48,11 +56,82 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
             agent,
             model,
             trust_tools,
+            &mut cli_session_completion_emitted,
         )
-        .await;
+        .await
+    } else {
+        launch_acp_interactive(os, agent_engine, mode, &mut cli_session_completion_emitted).await
+    };
+
+    if should_emit_launch_error_completion(&result, cli_session_completion_emitted) {
+        emit_cli_session_completed(os, agent_engine, ExitReason::Crash).await;
     }
 
-    launch_acp_interactive(os, agent_engine, mode).await
+    result
+}
+
+async fn emit_cli_session_started(os: &Os, agent_engine: AgentEngine) {
+    if matches!(agent_engine, AgentEngine::V1) {
+        return;
+    }
+
+    if let Err(err) = os
+        .telemetry
+        .send_cli_session_started(&os.database, client_application_for_agent_engine(agent_engine))
+        .await
+    {
+        debug!(%err, ?agent_engine, "failed to emit CLI session-start telemetry");
+    }
+}
+
+async fn emit_cli_session_completed(os: &Os, agent_engine: AgentEngine, exit_reason: ExitReason) {
+    if matches!(agent_engine, AgentEngine::V1) {
+        return;
+    }
+
+    if let Err(err) = os
+        .telemetry
+        .send_cli_session_completed(&os.database, exit_reason, agent_kind_for_agent_engine(agent_engine))
+        .await
+    {
+        debug!(%err, ?agent_engine, ?exit_reason, "failed to emit CLI session-completion telemetry");
+    }
+}
+
+fn client_application_for_agent_engine(agent_engine: AgentEngine) -> ClientApplication {
+    match agent_engine {
+        AgentEngine::V1 => ClientApplication::ChatCli,
+        AgentEngine::V2 => ClientApplication::ChatCliV2,
+        AgentEngine::Kas => ClientApplication::ChatCliV3,
+    }
+}
+
+fn agent_kind_for_agent_engine(agent_engine: AgentEngine) -> AgentKind {
+    match agent_engine {
+        AgentEngine::V1 => AgentKind::V1,
+        AgentEngine::V2 => AgentKind::V2,
+        AgentEngine::Kas => AgentKind::Kas,
+    }
+}
+
+fn exit_reason_for_status(status: Option<&std::process::ExitStatus>) -> ExitReason {
+    match status {
+        None => ExitReason::UserInterrupt,
+        Some(status) if status.success() => ExitReason::Clean,
+        Some(_) => ExitReason::Crash,
+    }
+}
+
+fn exit_reason_for_exit_code(exit_code: ExitCode) -> ExitReason {
+    if exit_code == ExitCode::SUCCESS {
+        ExitReason::Clean
+    } else {
+        ExitReason::Crash
+    }
+}
+
+fn should_emit_launch_error_completion(result: &Result<ExitCode>, completion_emitted: bool) -> bool {
+    result.is_err() && !completion_emitted
 }
 
 /// Determine the `FORCE_COLOR` value to pass to the bun/chalk process.
@@ -99,7 +178,12 @@ fn resolve_force_color(
 }
 
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
-async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option<AgentMode>) -> Result<ExitCode> {
+async fn launch_acp_interactive(
+    os: &Os,
+    agent_engine: AgentEngine,
+    mode: Option<AgentMode>,
+    cli_session_completion_emitted: &mut bool,
+) -> Result<ExitCode> {
     let asset_paths = extract_tui_assets_if_needed(os).await?;
 
     let args: Vec<String> = std::env::args().collect();
@@ -166,6 +250,7 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
     for env_var in [
         crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
         crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
+        crate::util::consts::env_var::KIRO_TELEMETRY_EXPORT_INTERVAL_MS,
     ] {
         if let Ok(value) = std::env::var(env_var)
             && !value.trim().is_empty()
@@ -263,9 +348,14 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
         }
     }
 
+    let exit_reason = exit_reason_for_status(status.as_ref());
     let exit_code = status
+        .as_ref()
         .and_then(|s| s.code())
         .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
+
+    emit_cli_session_completed(os, agent_engine, exit_reason).await;
+    *cli_session_completion_emitted = true;
 
     Ok(exit_code)
 }
@@ -273,7 +363,7 @@ async fn launch_acp_interactive(os: &Os, agent_engine: AgentEngine, mode: Option
 /// Drive a non-interactive V2 session.
 #[allow(clippy::too_many_arguments)]
 async fn launch_acp_non_interactive(
-    _os: &Os,
+    os: &Os,
     agent_engine: AgentEngine,
     mode: Option<AgentMode>,
     input: String,
@@ -281,6 +371,7 @@ async fn launch_acp_non_interactive(
     agent: Option<String>,
     model: Option<String>,
     trust_tools: Option<Vec<String>>,
+    cli_session_completion_emitted: &mut bool,
 ) -> Result<ExitCode> {
     use agent_client_protocol::{
         self as acp,
@@ -534,6 +625,12 @@ async fn launch_acp_non_interactive(
         .await;
 
     let _ = child.kill().await;
+    let exit_reason = match result.as_ref() {
+        Ok(exit_code) => exit_reason_for_exit_code(*exit_code),
+        Err(_) => ExitReason::Crash,
+    };
+    emit_cli_session_completed(os, agent_engine, exit_reason).await;
+    *cli_session_completion_emitted = true;
     result
 }
 
@@ -595,5 +692,50 @@ mod tests {
         );
         // NO_COLOR still wins
         assert_eq!(resolve_force_color(true, None, None, true), None);
+    }
+
+    #[test]
+    fn kas_launches_use_v3_client_application() {
+        assert_eq!(
+            client_application_for_agent_engine(AgentEngine::V2),
+            ClientApplication::ChatCliV2
+        );
+        assert_eq!(
+            client_application_for_agent_engine(AgentEngine::Kas),
+            ClientApplication::ChatCliV3
+        );
+    }
+
+    #[test]
+    fn v2_and_kas_launches_use_engine_agent_kind() {
+        assert_eq!(agent_kind_for_agent_engine(AgentEngine::V2), AgentKind::V2);
+        assert_eq!(agent_kind_for_agent_engine(AgentEngine::Kas), AgentKind::Kas);
+    }
+
+    #[test]
+    fn maps_launch_exit_to_session_completion_reason() {
+        assert_eq!(exit_reason_for_exit_code(ExitCode::SUCCESS), ExitReason::Clean);
+        assert_eq!(exit_reason_for_exit_code(ExitCode::FAILURE), ExitReason::Crash);
+        assert_eq!(exit_reason_for_status(None), ExitReason::UserInterrupt);
+    }
+
+    #[test]
+    fn emits_completion_for_launch_errors_until_completion_is_recorded() {
+        let failed: Result<ExitCode> = Err(eyre::eyre!("setup failed"));
+        let succeeded: Result<ExitCode> = Ok(ExitCode::SUCCESS);
+
+        assert!(should_emit_launch_error_completion(&failed, false));
+        assert!(!should_emit_launch_error_completion(&failed, true));
+        assert!(!should_emit_launch_error_completion(&succeeded, false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_signaled_child_exit_to_crash() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let status = std::process::ExitStatus::from_raw(9);
+
+        assert_eq!(exit_reason_for_status(Some(&status)), ExitReason::Crash);
     }
 }

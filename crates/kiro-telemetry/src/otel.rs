@@ -41,6 +41,7 @@ use opentelemetry_sdk::metrics::{
 use tracing::warn;
 
 use crate::client::TelemetryError;
+use crate::config::otel_export_interval_from_env;
 use crate::{
     Attribute,
     MetricRecord,
@@ -128,7 +129,7 @@ fn build_otlp_http_providers(endpoint: &str) -> Result<OtelProviders, openteleme
         .build()?;
 
     let reader = PeriodicReader::builder(metric_exporter)
-        .with_interval(Duration::from_secs(60))
+        .with_interval(otel_export_interval_from_env())
         .build();
     let meter_provider = SdkMeterProvider::builder()
         .with_reader(reader)
@@ -185,62 +186,58 @@ impl OtelMetricsSink {
 
     fn counter(&self, name: &str) -> Result<Counter<u64>, TelemetryError> {
         let mut instruments = self.instruments.lock().expect("otel instrument cache mutex poisoned");
-        match instruments.entry(name.to_string()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let counter = self.meter.u64_counter(name.to_string()).build();
-                entry.insert(OtelInstrument::Counter(counter.clone()));
-                Ok(counter)
-            },
-            std::collections::hash_map::Entry::Occupied(entry) => match entry.get() {
+        if let Some(instrument) = instruments.get(name) {
+            return match instrument {
                 OtelInstrument::Counter(counter) => Ok(counter.clone()),
                 _ => Err(instrument_kind_error(name)),
-            },
+            };
         }
+
+        let counter = self.meter.u64_counter(name.to_string()).build();
+        instruments.insert(name.to_string(), OtelInstrument::Counter(counter.clone()));
+        Ok(counter)
     }
 
     fn f64_counter(&self, name: &str) -> Result<Counter<f64>, TelemetryError> {
         let mut instruments = self.instruments.lock().expect("otel instrument cache mutex poisoned");
-        match instruments.entry(name.to_string()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let counter = self.meter.f64_counter(name.to_string()).build();
-                entry.insert(OtelInstrument::FloatCounter(counter.clone()));
-                Ok(counter)
-            },
-            std::collections::hash_map::Entry::Occupied(entry) => match entry.get() {
+        if let Some(instrument) = instruments.get(name) {
+            return match instrument {
                 OtelInstrument::FloatCounter(counter) => Ok(counter.clone()),
                 _ => Err(instrument_kind_error(name)),
-            },
+            };
         }
+
+        let counter = self.meter.f64_counter(name.to_string()).build();
+        instruments.insert(name.to_string(), OtelInstrument::FloatCounter(counter.clone()));
+        Ok(counter)
     }
 
     fn histogram(&self, name: &str) -> Result<Histogram<f64>, TelemetryError> {
         let mut instruments = self.instruments.lock().expect("otel instrument cache mutex poisoned");
-        match instruments.entry(name.to_string()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let histogram = self.meter.f64_histogram(name.to_string()).build();
-                entry.insert(OtelInstrument::Histogram(histogram.clone()));
-                Ok(histogram)
-            },
-            std::collections::hash_map::Entry::Occupied(entry) => match entry.get() {
+        if let Some(instrument) = instruments.get(name) {
+            return match instrument {
                 OtelInstrument::Histogram(histogram) => Ok(histogram.clone()),
                 _ => Err(instrument_kind_error(name)),
-            },
+            };
         }
+
+        let histogram = self.meter.f64_histogram(name.to_string()).build();
+        instruments.insert(name.to_string(), OtelInstrument::Histogram(histogram.clone()));
+        Ok(histogram)
     }
 
     fn gauge(&self, name: &str) -> Result<Gauge<f64>, TelemetryError> {
         let mut instruments = self.instruments.lock().expect("otel instrument cache mutex poisoned");
-        match instruments.entry(name.to_string()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let gauge = self.meter.f64_gauge(name.to_string()).build();
-                entry.insert(OtelInstrument::Gauge(gauge.clone()));
-                Ok(gauge)
-            },
-            std::collections::hash_map::Entry::Occupied(entry) => match entry.get() {
+        if let Some(instrument) = instruments.get(name) {
+            return match instrument {
                 OtelInstrument::Gauge(gauge) => Ok(gauge.clone()),
                 _ => Err(instrument_kind_error(name)),
-            },
+            };
         }
+
+        let gauge = self.meter.f64_gauge(name.to_string()).build();
+        instruments.insert(name.to_string(), OtelInstrument::Gauge(gauge.clone()));
+        Ok(gauge)
     }
 }
 
@@ -333,20 +330,6 @@ fn static_log_event_name(name: &str) -> Result<&'static str, TelemetryError> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::io::{
-        BufRead,
-        BufReader,
-        Read,
-        Write,
-    };
-    use std::net::{
-        TcpListener,
-        TcpStream,
-    };
-    use std::sync::mpsc;
-    use std::time::Instant;
-
     use opentelemetry::KeyValue;
     use opentelemetry::logs::LoggerProvider as _;
     use opentelemetry::metrics::MeterProvider as _;
@@ -356,12 +339,21 @@ mod tests {
         SdkLogRecord,
         SdkLoggerProvider,
     };
-    use prost::Message as _;
 
     use super::*;
+    use crate::testing::{
+        OtlpTestCollector,
+        expect_otlp_log,
+        expect_otlp_log_resource_attribute,
+        expect_otlp_metric,
+        expect_otlp_metric_resource_attribute,
+        expect_otlp_request,
+    };
     use crate::{
         OtelMode,
         TelemetryConfig,
+        log,
+        metric,
     };
 
     #[test]
@@ -439,25 +431,29 @@ mod tests {
         let client = crate::TelemetryClient::new(config).with_sink(sink);
 
         client
-            .emit(crate::MetricRecord::counter("chat_cli.session.completed", 1))
+            .emit(metric::cli_session_completed(
+                metric::ExitReason::Clean,
+                metric::AgentKind::V2,
+            ))
             .expect("counter emit should succeed");
         client
-            .emit(
-                crate::MetricRecord::counter_f64("kiro_cli_estimated_cost_usd", 0.00042)
-                    .with_attribute("model_class", "anthropic_sonnet")
-                    .with_attribute("client_application", "chat_cli_v2")
-                    .with_attribute("is_subagent", "false"),
-            )
+            .emit(metric::estimated_cost_usd(
+                0.00042,
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV2,
+                false,
+            ))
             .expect("float counter emit should succeed");
         client
-            .emit(crate::MetricRecord::histogram("chat_cli.bedrock.stream.ttft", 0.25))
+            .emit(metric::bedrock_stream_ttft(
+                0.25,
+                metric::ModelClass::AnthropicSonnet,
+                metric::PromptSizeBucket::Small,
+                false,
+            ))
             .expect("histogram emit should succeed");
         client
-            .emit(
-                crate::MetricRecord::gauge("meta_meter.up", 1.0)
-                    .with_attribute("partition", "aws")
-                    .with_attribute("os_type", "macos"),
-            )
+            .emit(metric::meta_meter_up(metric::Partition::Aws, metric::OsType::Macos))
             .expect("gauge emit should succeed");
 
         providers.force_flush().expect("noop provider flush should succeed");
@@ -476,6 +472,37 @@ mod tests {
         let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
 
         let sink = std::sync::Arc::new(OtelLogsSink::new(logger_provider.logger("kiro-telemetry-test-logs")));
+        let client = crate::TelemetryClient::new(config).with_sink(sink);
+
+        client
+            .emit_log(
+                log::subagent_invoked("code-review")
+                    .model_class(Some(metric::ModelClass::AnthropicSonnet))
+                    .build(),
+            )
+            .expect("log emit should succeed");
+
+        let logs = records.lock().expect("capture log mutex poisoned");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].event_name(), Some("kiro_cli_subagent_invoked"));
+        assert!(sdk_log_has_string_attr(&logs[0], "model_class", "anthropic_sonnet"));
+    }
+
+    #[test]
+    fn otel_logs_sink_buckets_raw_legacy_log_dimensions() {
+        let config = TelemetryConfig {
+            enabled: true,
+            otel_mode: OtelMode::DualWrite,
+            otlp_endpoint: None,
+            state_dir: std::env::temp_dir(),
+        };
+        let processor = CaptureLogProcessor::default();
+        let records = processor.records.clone();
+        let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
+
+        let sink = std::sync::Arc::new(OtelLogsSink::new(
+            logger_provider.logger("kiro-telemetry-test-raw-logs"),
+        ));
         let client = crate::TelemetryClient::new(config).with_sink(sink);
 
         client
@@ -513,10 +540,7 @@ mod tests {
 
     #[test]
     fn otlp_http_exporter_sends_decodable_metric_and_log_payloads() {
-        use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
-        use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
-
-        let collector = MockOtlpCollector::start(2);
+        let collector = OtlpTestCollector::start(2);
         let config = TelemetryConfig {
             enabled: true,
             otel_mode: OtelMode::DualWrite,
@@ -532,264 +556,51 @@ mod tests {
             )))
             .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&providers)));
 
+        let expected_metric = metric::cli_session_completed(metric::ExitReason::Clean, metric::AgentKind::V2);
+        let expected_log = log::subagent_invoked("review")
+            .model_class(Some(metric::ModelClass::AnthropicSonnet))
+            .build();
+
         client
-            .emit(
-                crate::MetricRecord::counter("chat_cli.session.completed", 1)
-                    .with_attribute("exit_reason", "user_exit")
-                    .with_attribute("agent_kind", "interactive"),
-            )
+            .emit(expected_metric.clone())
             .expect("metric emit should succeed");
-        client
-            .emit_log(
-                crate::TelemetryLogRecord::new("kiro_cli_subagent_invoked")
-                    .with_attribute("subagent_name", "review")
-                    .with_attribute("model_class", "anthropic_sonnet"),
-            )
-            .expect("log emit should succeed");
+        client.emit_log(expected_log.clone()).expect("log emit should succeed");
 
         providers.force_flush().expect("otlp provider flush should succeed");
         let requests = collector.collect();
         providers.shutdown().expect("otlp provider shutdown should succeed");
 
-        let metrics = requests
-            .iter()
-            .find(|request| request.path == "/v1/metrics")
-            .expect("metrics request");
+        let metrics = expect_otlp_request(&requests, "/v1/metrics");
         assert_eq!(metrics.content_type.as_deref(), Some("application/x-protobuf"));
-        let metrics = ExportMetricsServiceRequest::decode(metrics.body.as_slice()).expect("decode metrics request");
-        assert_metric_resource_attribute(
-            &metrics,
+        expect_otlp_metric_resource_attribute(
+            &requests,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
         );
-        let metric_names = exported_metric_names(&metrics);
-        assert!(
-            metric_names.iter().any(|name| *name == "chat_cli.session.completed"),
-            "missing metric in OTLP payload: {metric_names:?}"
-        );
+        expect_otlp_metric(&requests, &expected_metric);
 
-        let logs = requests
-            .iter()
-            .find(|request| request.path == "/v1/logs")
-            .expect("logs request");
+        let logs = expect_otlp_request(&requests, "/v1/logs");
         assert_eq!(logs.content_type.as_deref(), Some("application/x-protobuf"));
-        let logs = ExportLogsServiceRequest::decode(logs.body.as_slice()).expect("decode logs request");
-        assert_log_resource_attribute(
-            &logs,
+        expect_otlp_log_resource_attribute(
+            &requests,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
         );
-        let log_event_names = exported_log_event_names(&logs);
-        assert!(
-            log_event_names.iter().any(|name| *name == "kiro_cli_subagent_invoked"),
-            "missing log event in OTLP payload: {log_event_names:?}"
-        );
-    }
-
-    fn exported_metric_names(
-        request: &opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest,
-    ) -> Vec<String> {
-        request
-            .resource_metrics
-            .iter()
-            .flat_map(|resource_metrics| &resource_metrics.scope_metrics)
-            .flat_map(|scope_metrics| &scope_metrics.metrics)
-            .map(|metric| metric.name.clone())
-            .collect()
-    }
-
-    fn exported_log_event_names(
-        request: &opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest,
-    ) -> Vec<String> {
-        request
-            .resource_logs
-            .iter()
-            .flat_map(|resource_logs| &resource_logs.scope_logs)
-            .flat_map(|scope_logs| &scope_logs.log_records)
-            .map(|record| record.event_name.clone())
-            .collect()
-    }
-
-    fn assert_metric_resource_attribute(
-        request: &opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest,
-        key: &str,
-        expected: &str,
-    ) {
-        assert!(
-            request
-                .resource_metrics
-                .iter()
-                .any(|resource_metrics| { resource_has_attribute(resource_metrics.resource.as_ref(), key, expected) }),
-            "missing metric resource attribute {key}={expected}"
-        );
-    }
-
-    fn assert_log_resource_attribute(
-        request: &opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest,
-        key: &str,
-        expected: &str,
-    ) {
-        assert!(
-            request
-                .resource_logs
-                .iter()
-                .any(|resource_logs| { resource_has_attribute(resource_logs.resource.as_ref(), key, expected) }),
-            "missing log resource attribute {key}={expected}"
-        );
-    }
-
-    fn resource_has_attribute(
-        resource: Option<&opentelemetry_proto::tonic::resource::v1::Resource>,
-        key: &str,
-        expected: &str,
-    ) -> bool {
-        use opentelemetry_proto::tonic::common::v1::any_value::Value;
-
-        resource.is_some_and(|resource| {
-            resource.attributes.iter().any(|attribute| {
-                attribute.key == key
-                    && matches!(
-                        attribute.value.as_ref().and_then(|value| value.value.as_ref()),
-                        Some(Value::StringValue(value)) if value == expected
-                    )
-            })
-        })
-    }
-
-    #[derive(Debug)]
-    struct CapturedRequest {
-        path: String,
-        content_type: Option<String>,
-        body: Vec<u8>,
-    }
-
-    struct MockOtlpCollector {
-        endpoint: String,
-        expected_requests: usize,
-        rx: mpsc::Receiver<CapturedRequest>,
-    }
-
-    impl MockOtlpCollector {
-        fn start(expected_requests: usize) -> Self {
-            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind mock OTLP collector");
-            listener.set_nonblocking(true).expect("set mock collector nonblocking");
-            let endpoint = format!("http://{}", listener.local_addr().expect("collector local addr"));
-            let (tx, rx) = mpsc::channel();
-
-            std::thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(10);
-                let mut accepted = 0;
-                while accepted < expected_requests && Instant::now() < deadline {
-                    match listener.accept() {
-                        Ok((stream, _)) => {
-                            if let Ok(request) = read_http_request(stream) {
-                                let _ = tx.send(request);
-                                accepted += 1;
-                            }
-                        },
-                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                            std::thread::sleep(Duration::from_millis(10));
-                        },
-                        Err(_) => break,
-                    }
-                }
-            });
-
-            Self {
-                endpoint,
-                expected_requests,
-                rx,
-            }
-        }
-
-        fn endpoint(&self) -> String {
-            self.endpoint.clone()
-        }
-
-        fn collect(self) -> Vec<CapturedRequest> {
-            (0..self.expected_requests)
-                .map(|_| {
-                    self.rx
-                        .recv_timeout(Duration::from_secs(5))
-                        .expect("mock collector request")
-                })
-                .collect()
-        }
-    }
-
-    fn read_http_request(mut stream: TcpStream) -> std::io::Result<CapturedRequest> {
-        let mut reader = BufReader::new(stream.try_clone()?);
-        let mut request_line = String::new();
-        reader.read_line(&mut request_line)?;
-        let path = request_line.split_whitespace().nth(1).unwrap_or("").to_string();
-
-        let mut headers = HashMap::new();
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line)?;
-            let trimmed = line.trim_end_matches(['\r', '\n']);
-            if trimmed.is_empty() {
-                break;
-            }
-            if let Some((name, value)) = trimmed.split_once(':') {
-                headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
-            }
-        }
-
-        let body = if headers
-            .get("transfer-encoding")
-            .is_some_and(|value| value.eq_ignore_ascii_case("chunked"))
-        {
-            read_chunked_body(&mut reader)?
-        } else {
-            let content_length = headers
-                .get("content-length")
-                .and_then(|value| value.parse::<usize>().ok())
-                .unwrap_or(0);
-            let mut body = vec![0; content_length];
-            reader.read_exact(&mut body)?;
-            body
-        };
-
-        stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")?;
-        stream.flush()?;
-
-        Ok(CapturedRequest {
-            path,
-            content_type: headers.get("content-type").cloned(),
-            body,
-        })
-    }
-
-    fn read_chunked_body(reader: &mut BufReader<TcpStream>) -> std::io::Result<Vec<u8>> {
-        let mut body = Vec::new();
-        loop {
-            let mut size_line = String::new();
-            reader.read_line(&mut size_line)?;
-            let size = usize::from_str_radix(size_line.trim().split(';').next().unwrap_or("0"), 16).unwrap_or(0);
-            if size == 0 {
-                loop {
-                    let mut trailer = String::new();
-                    reader.read_line(&mut trailer)?;
-                    if trailer.trim_end_matches(['\r', '\n']).is_empty() {
-                        break;
-                    }
-                }
-                break;
-            }
-
-            let start = body.len();
-            body.resize(start + size, 0);
-            reader.read_exact(&mut body[start..])?;
-            let mut crlf = [0; 2];
-            reader.read_exact(&mut crlf)?;
-        }
-        Ok(body)
+        expect_otlp_log(&requests, &expected_log);
     }
 
     #[derive(Debug, Default, Clone)]
     struct CaptureLogProcessor {
         records: std::sync::Arc<std::sync::Mutex<Vec<SdkLogRecord>>>,
+    }
+
+    fn sdk_log_has_string_attr(record: &SdkLogRecord, expected_key: &str, expected_value: &str) -> bool {
+        record.attributes_iter().any(|(key, value)| {
+            matches!(
+                (key.as_str(), value),
+                (actual_key, AnyValue::String(value)) if actual_key == expected_key && value.as_str() == expected_value
+            )
+        })
     }
 
     impl LogProcessor for CaptureLogProcessor {

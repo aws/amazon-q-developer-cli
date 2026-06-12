@@ -2,93 +2,16 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::{
+use crate::MetricRecord;
+use crate::metric::{
+    self,
     EventClass,
-    MetricRecord,
+    FieldClass,
+    PiiType,
+    RedactionResult,
+    Redactor,
+    TelemetryChannel,
 };
-
-const REDACTOR_NAME: &str = "default";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FieldClass {
-    Prompt,
-    Context,
-    ToolOutput,
-    FileContent,
-    HttpHeader,
-    Other,
-}
-
-impl FieldClass {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Prompt => "prompt",
-            Self::Context => "context",
-            Self::ToolOutput => "tool_output",
-            Self::FileContent => "file_content",
-            Self::HttpHeader => "http_header",
-            Self::Other => "other",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PiiType {
-    Email,
-    AwsAccessKey,
-    AwsSecret,
-    Arn,
-    Ipv4,
-    HomePath,
-    Phone,
-    Jwt,
-    CreditCard,
-}
-
-impl PiiType {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Email => "email",
-            Self::AwsAccessKey => "aws_access_key",
-            Self::AwsSecret => "aws_secret",
-            Self::Arn => "arn",
-            Self::Ipv4 => "ipv4",
-            Self::HomePath => "home_path",
-            Self::Phone => "phone",
-            Self::Jwt => "jwt",
-            Self::CreditCard => "credit_card",
-        }
-    }
-
-    const fn placeholder(self) -> &'static str {
-        match self {
-            Self::Email => "[REDACTED:email]",
-            Self::AwsAccessKey => "[REDACTED:aws_access_key]",
-            Self::AwsSecret => "[REDACTED:aws_secret]",
-            Self::Arn => "[REDACTED:arn]",
-            Self::Ipv4 => "[REDACTED:ipv4]",
-            Self::HomePath => "[REDACTED:home_path]",
-            Self::Phone => "[REDACTED:phone]",
-            Self::Jwt => "[REDACTED:jwt]",
-            Self::CreditCard => "[REDACTED:credit_card]",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RedactionResult {
-    Scrubbed,
-    Passthrough,
-}
-
-impl RedactionResult {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Scrubbed => "scrubbed",
-            Self::Passthrough => "passthrough",
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RedactionFinding {
@@ -105,21 +28,20 @@ pub struct RedactionOutcome {
 }
 
 impl RedactionOutcome {
-    pub fn metric_records(&self, event_class: EventClass, channel: &str) -> Vec<MetricRecord> {
+    pub fn metric_records(&self, event_class: EventClass, channel: TelemetryChannel) -> Vec<MetricRecord> {
         let mut records = Vec::with_capacity(self.findings.len() + 1);
-        records.push(
-            MetricRecord::counter("pii_redaction_runs_total", 1)
-                .with_attribute("redactor", REDACTOR_NAME)
-                .with_attribute("event_class", event_class.as_str())
-                .with_attribute("channel", channel)
-                .with_attribute("redaction_result", self.result.as_str()),
-        );
+        records.push(metric::pii_redaction_run(
+            Redactor::Default,
+            event_class,
+            channel,
+            self.result,
+        ));
 
-        records.extend(self.findings.iter().map(|finding| {
-            MetricRecord::counter("pii_redaction_matches_total", finding.count)
-                .with_attribute("pii_type", finding.pii_type.as_str())
-                .with_attribute("field_class", finding.field_class.as_str())
-        }));
+        records.extend(
+            self.findings
+                .iter()
+                .map(|finding| metric::pii_redaction_match(finding.count, finding.pii_type, finding.field_class)),
+        );
         records
     }
 }
@@ -232,7 +154,7 @@ mod tests {
         assert!(outcome.text.contains("[REDACTED:aws_access_key]"));
         assert!(outcome.text.contains("[REDACTED:arn]"));
 
-        let records = outcome.metric_records(EventClass::Log, "otel");
+        let records = outcome.metric_records(EventClass::Log, TelemetryChannel::Otel);
         assert_eq!(records[0].name, "pii_redaction_runs_total");
         assert!(
             records[0]
@@ -266,7 +188,7 @@ mod tests {
         assert_eq!(outcome.text, "ordinary bounded telemetry value");
         assert!(outcome.findings.is_empty());
 
-        let records = outcome.metric_records(EventClass::Metric, "otel");
+        let records = outcome.metric_records(EventClass::Metric, TelemetryChannel::Otel);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "pii_redaction_runs_total");
         assert!(

@@ -621,10 +621,15 @@ mod tests {
     #[test]
     fn product_code_uses_telemetry_facade_for_metric_emission() {
         let root = workspace_root();
-        let scan_roots = [
+        let product_roots = [
             root.join("crates/chat-cli/src"),
             root.join("crates/chat-cli-v2/src"),
             root.join("crates/agent/src"),
+        ];
+        let scan_roots = [
+            product_roots[0].clone(),
+            product_roots[1].clone(),
+            product_roots[2].clone(),
             root.join("crates/kiro-telemetry/src"),
         ];
         let registry = Registry::parse().expect("schema should load");
@@ -651,6 +656,32 @@ mod tests {
                     key
                 );
             }
+        }
+
+        for file in rust_files(&product_roots) {
+            let content = fs::read_to_string(&file).expect("read Rust source");
+            for pattern in raw_product_telemetry_constructors() {
+                assert!(
+                    !content.contains(pattern),
+                    "{} bypasses typed telemetry constructors with `{}`",
+                    file.display(),
+                    pattern
+                );
+            }
+
+            let aliases = raw_telemetry_constructor_aliases(&content);
+            assert!(
+                aliases.is_empty(),
+                "{} aliases raw telemetry constructors: {aliases:?}",
+                file.display()
+            );
+
+            let record_literals = raw_telemetry_record_literals(&content);
+            assert!(
+                record_literals.is_empty(),
+                "{} handrolls telemetry records with struct literals: {record_literals:?}",
+                file.display()
+            );
         }
     }
 
@@ -698,10 +729,7 @@ mod tests {
             let Some(rest) = trimmed.strip_prefix('"') else {
                 continue;
             };
-            let Some(end_quote) = rest.find('"') else {
-                continue;
-            };
-            keys.push(rest[..end_quote].to_string());
+            keys.push(rest.chars().take_while(|ch| *ch != '"').collect());
         }
         keys
     }
@@ -720,5 +748,108 @@ mod tests {
         ]
         .into_iter()
         .collect()
+    }
+
+    fn raw_product_telemetry_constructors() -> &'static [&'static str] {
+        &[
+            "metric::counter(",
+            "metric::counter_f64(",
+            "metric::histogram(",
+            "metric::gauge(",
+            "MetricRecord::counter(",
+            "MetricRecord::counter_f64(",
+            "MetricRecord::histogram(",
+            "MetricRecord::gauge(",
+            "MetricBuilder",
+            "kiro_telemetry::log::event",
+            "kiro_telemetry::log::LogBuilder",
+            "use kiro_telemetry::log::event",
+            "use kiro_telemetry::log::{event",
+            "use kiro_telemetry::log::{ event",
+            "log::event(",
+            "LogBuilder",
+            "TelemetryLogRecord::new(",
+        ]
+    }
+
+    fn raw_telemetry_constructor_aliases(content: &str) -> Vec<String> {
+        content
+            .lines()
+            .filter_map(|line| {
+                let normalized = line.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !normalized.starts_with("use ") {
+                    return None;
+                }
+
+                let aliases_telemetry_crate = normalized.contains("use kiro_telemetry as ")
+                    || normalized.contains("use kiro_telemetry::{self as ");
+                let aliases_log_module = normalized.contains("kiro_telemetry::log as ")
+                    || (normalized.starts_with("use kiro_telemetry::{") && normalized.contains("log as "));
+                let aliases_log_constructor = normalized.contains("kiro_telemetry::log::event as ")
+                    || normalized.contains("kiro_telemetry::log::LogBuilder as ")
+                    || (normalized.starts_with("use kiro_telemetry::log::{")
+                        && (normalized.contains("event as ") || normalized.contains("LogBuilder as ")));
+
+                (aliases_telemetry_crate || aliases_log_module || aliases_log_constructor).then_some(normalized)
+            })
+            .collect()
+    }
+
+    fn raw_telemetry_record_literals(content: &str) -> Vec<String> {
+        content
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                let uses_literal = [
+                    "MetricRecord {",
+                    "MetricRecord{",
+                    "TelemetryLogRecord {",
+                    "TelemetryLogRecord{",
+                ]
+                .iter()
+                .any(|literal| {
+                    trimmed.starts_with(literal)
+                        || trimmed.contains(&format!("= {literal}"))
+                        || trimmed.contains(&format!("return {literal}"))
+                        || trimmed.contains(&format!("Some({literal}"))
+                        || trimmed.contains(&format!("Ok({literal}"))
+                        || trimmed.contains(&format!("vec![{literal}"))
+                });
+
+                uses_literal.then_some(trimmed.to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn raw_telemetry_constructor_alias_detector_flags_escape_hatches() {
+        let aliases = raw_telemetry_constructor_aliases(
+            r#"
+use kiro_telemetry as telemetry;
+use kiro_telemetry::log as ktlog;
+use kiro_telemetry::{metric, log as telemetry_log};
+use kiro_telemetry::log::{event as raw_event, CompletionReason};
+use kiro_telemetry::metric as typed_metric;
+"#,
+        );
+
+        assert_eq!(aliases.len(), 4);
+    }
+
+    #[test]
+    fn raw_telemetry_record_literal_detector_ignores_return_types() {
+        let literals = raw_telemetry_record_literals(
+            r#"
+fn valid_return_type() -> MetricRecord {
+    metric::model_invocation(metric::ModelClass::AnthropicSonnet)
+}
+
+fn invalid_literal() -> MetricRecord {
+    MetricRecord { name: "raw".into(), value: MetricValue::Counter(1), timestamp_unix_millis: 0, attributes: vec![], resource_attributes: vec![] }
+}
+"#,
+        );
+
+        assert_eq!(literals.len(), 1);
     }
 }

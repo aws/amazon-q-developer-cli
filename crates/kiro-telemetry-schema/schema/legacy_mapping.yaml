@@ -25,7 +25,7 @@ mappings:
     parity_tolerance: high_volume
   - event_type: ChatEnd
     legacy_metric: chatEnd
-    otel_metric: chat_cli.session.completed
+    otel_metric: kiro_cli_conversation_completed
     parity_tolerance: high_volume
   - event_type: ChatAddedMessage
     legacy_metric: chatAddMessage

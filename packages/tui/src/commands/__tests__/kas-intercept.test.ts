@@ -42,7 +42,11 @@ const CHAT_CMD: SlashCommand = {
   name: '/chat',
   description: 'x',
   source: 'backend',
-  meta: { inputType: 'selection', local: true },
+  meta: {
+    inputType: 'selection',
+    local: true,
+    subcommands: ['new', 'save', 'load'],
+  },
 };
 const CONTEXT_CMD: SlashCommand = {
   name: '/context',
@@ -53,6 +57,11 @@ const CONTEXT_CMD: SlashCommand = {
     subcommands: ['show', 'add', 'remove', 'clear'],
   },
 };
+const PROMPTS_CMD: KasCommand = {
+  name: KasCommandName.Prompts,
+  description: 'x',
+  meta: { inputType: 'selection' },
+};
 
 describe('dispatcher KAS intercept', () => {
   it("agentEngine='kas' + /chat: skips backend executeCommand and runs KAS handler", async () => {
@@ -60,11 +69,13 @@ describe('dispatcher KAS intercept', () => {
     const exec = mock(() =>
       Promise.resolve({ success: true, message: '', data: undefined })
     );
+    const telemetry = mock(() => undefined);
     const ctx = createMockCommandContext({
       slashCommands: [CHAT_CMD],
       kiro: {
         sessionId: 'cur',
         executeCommand: exec,
+        sendChatSlashCommandTelemetry: telemetry,
       } as any,
     });
     ctx.agentEngine = 'kas';
@@ -72,6 +83,10 @@ describe('dispatcher KAS intercept', () => {
     // KAS handler shells out to listAllSessions; rust backend not touched.
     expect(mockListAllSessions.mock.calls.length).toBe(1);
     expect((exec as any).mock.calls.length).toBe(0);
+    expect(telemetry).toHaveBeenCalledWith({
+      command: '/chat',
+      success: true,
+    });
   });
 
   it("agentEngine='v2' + /chat save: falls through to V2 backend executeCommand", async () => {
@@ -82,11 +97,13 @@ describe('dispatcher KAS intercept', () => {
         data: undefined,
       })
     );
+    const telemetry = mock(() => undefined);
     const ctx = createMockCommandContext({
       slashCommands: [CHAT_CMD],
       kiro: {
         sessionId: 'cur',
         executeCommand: exec,
+        sendChatSlashCommandTelemetry: telemetry,
       } as any,
     });
     ctx.agentEngine = 'v2';
@@ -95,6 +112,29 @@ describe('dispatcher KAS intercept', () => {
     expect((exec as any).mock.calls[0][0]).toEqual({
       command: 'chat',
       args: { value: 'save' },
+    });
+    expect(telemetry).not.toHaveBeenCalled();
+  });
+
+  it("agentEngine='v2' + /chat new: emits frontend-owned command usage", async () => {
+    const telemetry = mock(() => undefined);
+    const newSession = mock(() =>
+      Promise.resolve({ sessionId: 'v2-session-1' })
+    );
+    const ctx = createMockCommandContext({
+      slashCommands: [CHAT_CMD],
+      kiro: {
+        sessionId: 'cur',
+        newSession,
+        sendChatSlashCommandTelemetry: telemetry,
+      } as any,
+    });
+    ctx.agentEngine = 'v2';
+    await dispatch(CHAT_CMD, 'new hello', ctx);
+    expect(telemetry).toHaveBeenCalledWith({
+      command: '/chat',
+      subcommand: 'new',
+      success: true,
     });
   });
 
@@ -110,6 +150,55 @@ describe('dispatcher KAS intercept', () => {
     ctx.agentEngine = 'kas';
     await dispatch(MODEL_CMD, 'some-model', ctx);
     expect(ctx.kiro.executeCommand).toHaveBeenCalled();
+  });
+
+  it("agentEngine='kas' + local /help command: emits frontend-owned command usage", async () => {
+    const telemetry = mock(() => undefined);
+    const HELP_CMD: KasCommand = {
+      name: KasCommandName.Help,
+      description: 'x',
+      meta: { inputType: 'panel' },
+    };
+    const ctx = createMockCommandContext({
+      kasCommands: [HELP_CMD],
+      kiro: {
+        sendChatSlashCommandTelemetry: telemetry,
+      } as any,
+    });
+    ctx.agentEngine = 'kas';
+    await dispatch(HELP_CMD, '', ctx);
+    expect(ctx._spies.setShowHelpPanel).toHaveBeenCalled();
+    expect(telemetry).toHaveBeenCalledWith({
+      command: '/help',
+      success: true,
+    });
+  });
+
+  it("agentEngine='kas' + /prompts skill selection: emits selected category once", async () => {
+    const telemetry = mock(() => undefined);
+    const ctx = createMockCommandContext({
+      kasCommands: [PROMPTS_CMD],
+      skills: [
+        {
+          name: 'review',
+          description: 'review skill',
+          source: { kind: 'workspace' },
+        },
+      ],
+      kiro: {
+        sendChatSlashCommandTelemetry: telemetry,
+      } as any,
+    });
+    ctx.agentEngine = 'kas';
+
+    await dispatch(PROMPTS_CMD, 'skill:review', ctx);
+
+    expect(ctx._spies.sendMessage).toHaveBeenCalledWith('/review');
+    expect(telemetry).toHaveBeenCalledTimes(1);
+    expect(telemetry).toHaveBeenCalledWith({
+      command: '/skill',
+      success: true,
+    });
   });
 
   it("agentEngine='kas' + /context add: handler is invoked and forwards args via typed contextAdd", async () => {

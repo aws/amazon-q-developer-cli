@@ -17,6 +17,8 @@ use kiro_telemetry::{
     estimate_cost_usd,
     legacy_log_record,
     legacy_metric_record,
+    log as telemetry_log,
+    metric,
 };
 use strum::{
     Display,
@@ -98,6 +100,10 @@ impl Event {
 
     pub fn set_client_application(&mut self, client_application: String) {
         self.client_application = Some(client_application);
+    }
+
+    pub fn set_client_application_kind(&mut self, client_application: metric::ClientApplication) {
+        self.client_application = Some(client_application.as_str().to_string());
     }
 
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
@@ -650,11 +656,14 @@ impl Event {
                     .into_metric_datum(),
                 )
             },
-            EventType::MeteringEvent { .. } | EventType::EmptyResponseRetry { .. } => None,
+            EventType::CliSessionStarted { .. }
+            | EventType::CliSessionCompleted { .. }
+            | EventType::MeteringEvent { .. }
+            | EventType::EmptyResponseRetry { .. } => None,
         }
     }
 
-    pub fn redaction_metric_records(&self, channel: &str) -> Vec<MetricRecord> {
+    pub fn redaction_metric_records(&self, channel: metric::TelemetryChannel) -> Vec<MetricRecord> {
         self.ty.redaction_metric_records(channel)
     }
 
@@ -665,6 +674,20 @@ impl Event {
 
     pub fn otel_metric_records(&self) -> Vec<MetricRecord> {
         match &self.ty {
+            EventType::UserLoggedIn {} => Vec::new(),
+            EventType::ChatEnd { .. } => Vec::new(),
+            EventType::CliSessionStarted {
+                os_type,
+                install_source,
+            } => vec![cli_session_started_metric_record(
+                *os_type,
+                *install_source,
+                &self.client_application,
+            )],
+            EventType::CliSessionCompleted {
+                exit_reason,
+                agent_kind,
+            } => vec![cli_session_completed_metric_record(*exit_reason, *agent_kind)],
             EventType::ChatAddedMessage { result, data, .. } => {
                 let mut records = self
                     .ty
@@ -721,17 +744,26 @@ impl Event {
 
         let record = legacy_log_record(self.ty.legacy_event_type()?)?;
         Some(match &self.ty {
+            EventType::ChatEnd { conversation_id, .. } => conversation_completed_log_record(record, conversation_id),
             EventType::RecordUserTurnCompletion {
                 conversation_id,
                 result,
                 args,
-            } => turn_completion_log_record(record, conversation_id, result, args, &self.client_application),
+            } => turn_completion_log_record(conversation_id, result, args, &self.client_application),
             EventType::SubagentInvocation { subagent_name, .. } => {
-                record.with_attribute("subagent_name", subagent_name.clone())
+                telemetry_log::subagent_invoked(subagent_name.as_str()).build()
             },
             _ => record,
         })
     }
+}
+
+fn conversation_completed_log_record(_record: TelemetryLogRecord, conversation_id: &str) -> TelemetryLogRecord {
+    telemetry_log::conversation_completed(
+        conversation_id.to_string(),
+        conversation_id.to_string(),
+        telemetry_log::CompletionReason::Stop,
+    )
 }
 
 fn metering_log_record(
@@ -742,97 +774,71 @@ fn metering_log_record(
     unit: &str,
     unit_plural: &str,
 ) -> TelemetryLogRecord {
-    let mut record = TelemetryLogRecord::new("kiro_cli_metering_event")
-        .with_attribute("metering_usage", usage.to_string())
-        .with_attribute("metering_unit", unit)
-        .with_attribute("metering_unit_plural", unit_plural);
-    if let Some(request_id) = request_id {
-        record = record.with_attribute("request_id", request_id.clone());
-    }
-    if let Some(model) = model {
-        record = record.with_attribute("model_class", model_class(model));
-    }
-    if let Some(client_application) = client_application {
-        record = record.with_attribute("client_application", client_application.clone());
-    }
-    record
+    telemetry_log::metering_event(
+        request_id.as_deref(),
+        model
+            .as_deref()
+            .map(|model| metric::ModelClass::from_model_id(Some(model))),
+        client_application
+            .as_deref()
+            .map(|value| metric::ClientApplication::from_name(Some(value))),
+        usage,
+        unit,
+        unit_plural,
+    )
 }
 
 fn turn_completion_log_record(
-    mut record: TelemetryLogRecord,
     conversation_id: &str,
     result: &TelemetryResult,
     args: &RecordUserTurnCompletionArgs,
     client_application: &Option<String>,
 ) -> TelemetryLogRecord {
-    record = record
-        .with_attribute("conversation_id", conversation_id.to_string())
-        .with_attribute("result", telemetry_result_attr(result))
-        .with_attribute("is_subagent", args.is_subagent.to_string())
-        .with_attribute("user_prompt_length", args.user_prompt_length.to_string())
-        .with_attribute("assistant_response_length", args.assistant_response_length.to_string())
-        .with_attribute(
-            "user_turn_duration_seconds",
-            args.user_turn_duration_seconds.to_string(),
-        )
-        .with_attribute("follow_up_count", args.follow_up_count.to_string());
-
-    if let Some(value) = comma_join(args.request_ids.iter().filter_map(|id| id.as_deref())) {
-        record = record.with_attribute("request_id", value);
-    }
-    if let Some(value) = comma_join(args.message_ids.iter().map(String::as_str)) {
-        record = record.with_attribute("message_id", value);
-    }
-    if let Some(model) = &args.model {
-        record = record.with_attribute("model_class", model_class(model));
-    }
-    if let Some(client_application) = client_application {
-        record = record.with_attribute("client_application", client_application.clone());
-    }
-    if let Some(reason) = &args.reason {
-        record = record.with_attribute(
-            "turn_failure_reason",
-            redact_telemetry_field(FieldClass::Other, reason.clone()),
-        );
-    }
-    if let Some(reason_desc) = redact_optional_telemetry_field(FieldClass::Other, args.reason_desc.clone()) {
-        record = record.with_attribute("reason_desc", reason_desc);
-    }
-    if let Some(status_code) = args.status_code {
-        record = record.with_attribute("status_code", status_code.to_string());
-    }
-    if let Some(value) = format_optional_f64s(&args.time_to_first_chunks_ms) {
-        record = record.with_attribute("time_to_first_chunks_ms", value);
-    }
-    if let Some(value) = comma_join(args.message_meta_tags.iter().map(ToString::to_string)) {
-        record = record.with_attribute("message_meta_tags", value);
-    }
-    if let Some(parent_tool_use_id) = &args.parent_tool_use_id {
-        record = record.with_attribute("parent_tool_use_id", parent_tool_use_id.clone());
-    }
-    if let Some(total_tokens) = args.total_tokens {
-        record = record.with_attribute("total_tokens", total_tokens.to_string());
-    }
-    if let Some(uncached_input_tokens) = args.uncached_input_tokens {
-        record = record.with_attribute("uncached_input_tokens", uncached_input_tokens.to_string());
-    }
-    if let Some(output_tokens) = args.output_tokens {
-        record = record.with_attribute("output_tokens", output_tokens.to_string());
-    }
-    if let Some(cache_read_input_tokens) = args.cache_read_input_tokens {
-        record = record.with_attribute("cache_read_input_tokens", cache_read_input_tokens.to_string());
-    }
-    if let Some(cache_write_input_tokens) = args.cache_write_input_tokens {
-        record = record.with_attribute("cache_write_input_tokens", cache_write_input_tokens.to_string());
-    }
-    if let Some(estimated_cost_usd) = args
+    let failure_reason = args
+        .reason
+        .clone()
+        .map(|reason| redact_telemetry_field(FieldClass::Other, reason));
+    let estimated_cost_usd = args
         .estimated_cost_usd
-        .or_else(|| estimated_cost_usd_from_turn_args(&args.model, args))
-    {
-        record = record.with_attribute("estimated_cost_usd", format!("{estimated_cost_usd:.9}"));
-    }
+        .or_else(|| estimated_cost_usd_from_turn_args(&args.model, args));
 
-    record
+    telemetry_log::user_turn_completed(
+        conversation_id,
+        telemetry_result_kind(result),
+        args.is_subagent,
+        args.user_prompt_length,
+        args.assistant_response_length,
+        args.user_turn_duration_seconds,
+        args.follow_up_count,
+    )
+    .request_id(comma_join(args.request_ids.iter().filter_map(|id| id.as_deref())))
+    .message_id(comma_join(args.message_ids.iter().map(String::as_str)))
+    .model_class(
+        args.model
+            .as_deref()
+            .map(|model| metric::ModelClass::from_model_id(Some(model))),
+    )
+    .client_application(
+        client_application
+            .as_deref()
+            .map(|value| metric::ClientApplication::from_name(Some(value))),
+    )
+    .turn_failure_reason(failure_reason)
+    .reason_desc(redact_optional_telemetry_field(
+        FieldClass::Other,
+        args.reason_desc.clone(),
+    ))
+    .status_code(args.status_code)
+    .time_to_first_chunks_ms(format_optional_f64s(&args.time_to_first_chunks_ms))
+    .message_meta_tags(comma_join(args.message_meta_tags.iter().map(ToString::to_string)))
+    .parent_tool_use_id(args.parent_tool_use_id.clone())
+    .total_tokens(args.total_tokens)
+    .uncached_input_tokens(args.uncached_input_tokens)
+    .output_tokens(args.output_tokens)
+    .cache_read_input_tokens(args.cache_read_input_tokens)
+    .cache_write_input_tokens(args.cache_write_input_tokens)
+    .estimated_cost_usd(estimated_cost_usd)
+    .build()
 }
 
 fn comma_join(values: impl IntoIterator<Item = impl AsRef<str>>) -> Option<String> {
@@ -851,25 +857,12 @@ fn format_optional_f64s(values: &[Option<f64>]) -> Option<String> {
     }))
 }
 
-fn model_class(model: &str) -> &'static str {
-    let model = model.to_ascii_lowercase();
-    if model.contains("opus") {
-        "anthropic_opus"
-    } else if model.contains("sonnet") {
-        "anthropic_sonnet"
-    } else if model.contains("haiku") {
-        "anthropic_haiku"
-    } else if model.contains("gpt-5") || model.contains("gpt5") {
-        "openai_gpt5"
-    } else {
-        "other"
-    }
-}
-
 fn empty_response_retry_metric_record(model: &Option<String>, outcome: EmptyResponseRetryOutcome) -> MetricRecord {
-    MetricRecord::counter("chat_cli.bedrock.empty_response.retries", 1)
-        .with_attribute("model_class", model.as_deref().map_or("other", model_class))
-        .with_attribute("outcome", outcome.as_str())
+    let outcome = match outcome {
+        EmptyResponseRetryOutcome::Recovered => metric::Outcome::Recovered,
+        EmptyResponseRetryOutcome::StillEmpty => metric::Outcome::StillEmpty,
+    };
+    metric::empty_response_retry(metric::ModelClass::from_model_id(model.as_deref()), outcome)
 }
 
 fn request_error_metric_record(
@@ -877,45 +870,28 @@ fn request_error_metric_record(
     reason: &Option<String>,
     status_code: Option<u16>,
 ) -> MetricRecord {
-    MetricRecord::counter("chat_cli.bedrock.request.errors", 1)
-        .with_attribute("model_class", model.as_deref().map_or("other", model_class))
-        .with_attribute("operation", "stream")
-        .with_attribute("error_kind", error_kind_attr(reason.as_deref(), status_code))
-        .with_attribute("status_class", status_class_attr(status_code))
+    metric::bedrock_request_error(
+        metric::ModelClass::from_model_id(model.as_deref()),
+        metric::Operation::Stream,
+        metric::ErrorKind::from_reason(reason.as_deref(), status_code),
+        metric::StatusClass::from_status_code(status_code),
+    )
 }
 
-fn error_kind_attr(reason: Option<&str>, status_code: Option<u16>) -> &'static str {
-    let reason = reason.unwrap_or_default().to_ascii_lowercase();
-    if reason.contains("throttl") || reason.contains("quota") {
-        "throttling"
-    } else if reason.contains("accessdenied")
-        || reason.contains("access_denied")
-        || reason.contains("unauthorized")
-        || reason.contains("forbidden")
-    {
-        "access_denied"
-    } else if reason.contains("timeout") || reason.contains("timed out") {
-        "timeout"
-    } else if reason.contains("connection") || reason.contains("network") || reason.contains("dns") {
-        "connection"
-    } else if reason.contains("model") {
-        "model_error"
-    } else if matches!(status_code, Some(500..=599)) {
-        "server_error"
-    } else if matches!(status_code, Some(400..=499)) || reason.contains("validation") || reason.contains("invalid") {
-        "validation"
-    } else {
-        "other"
-    }
+fn cli_session_started_metric_record(
+    os_type: metric::OsType,
+    install_source: metric::InstallSource,
+    client_application: &Option<String>,
+) -> MetricRecord {
+    metric::cli_session_started_record(metric::CliSessionStarted::new(
+        os_type,
+        install_source,
+        metric::ClientApplication::from_name(client_application.as_deref()),
+    ))
 }
 
-fn status_class_attr(status_code: Option<u16>) -> &'static str {
-    match status_code {
-        Some(200..=299) => "2xx",
-        Some(400..=499) => "4xx",
-        Some(500..=599) => "5xx",
-        _ => "_other_",
-    }
+fn cli_session_completed_metric_record(exit_reason: metric::ExitReason, agent_kind: metric::AgentKind) -> MetricRecord {
+    metric::cli_session_completed_record(metric::CliSessionCompleted::new(exit_reason, agent_kind))
 }
 
 fn stream_ttft_metric_record(data: &ChatAddedMessageParams) -> Option<MetricRecord> {
@@ -924,12 +900,12 @@ fn stream_ttft_metric_record(data: &ChatAddedMessageParams) -> Option<MetricReco
         return None;
     }
 
-    Some(
-        MetricRecord::histogram("chat_cli.bedrock.stream.ttft", milliseconds / 1000.0)
-            .with_attribute("model_class", data.model.as_deref().map_or("other", model_class))
-            .with_attribute("prompt_size_bucket", prompt_size_bucket(data.context_file_length))
-            .with_attribute("tools_enabled", tools_enabled(&data.chat_conversation_type)),
-    )
+    Some(metric::bedrock_stream_ttft(
+        milliseconds / 1000.0,
+        metric::ModelClass::from_model_id(data.model.as_deref()),
+        metric::PromptSizeBucket::from_context_file_length(data.context_file_length),
+        tools_enabled(&data.chat_conversation_type),
+    ))
 }
 
 fn request_duration_metric_record(data: &ChatAddedMessageParams, result: &TelemetryResult) -> Option<MetricRecord> {
@@ -938,30 +914,16 @@ fn request_duration_metric_record(data: &ChatAddedMessageParams, result: &Teleme
         return None;
     }
 
-    Some(
-        MetricRecord::histogram("chat_cli.bedrock.request.duration", seconds)
-            .with_attribute("model_class", data.model.as_deref().map_or("other", model_class))
-            .with_attribute("operation", "stream")
-            .with_attribute("outcome", request_outcome_attr(result)),
-    )
+    Some(metric::bedrock_request_duration(
+        seconds,
+        metric::ModelClass::from_model_id(data.model.as_deref()),
+        metric::Operation::Stream,
+        request_outcome(result),
+    ))
 }
 
-fn prompt_size_bucket(context_file_length: Option<usize>) -> &'static str {
-    match context_file_length {
-        Some(0..=4_000) => "small",
-        Some(4_001..=20_000) => "medium",
-        Some(20_001..=100_000) => "large",
-        Some(_) => "xlarge",
-        None => "_other_",
-    }
-}
-
-fn tools_enabled(chat_conversation_type: &Option<ChatConversationType>) -> &'static str {
-    if matches!(chat_conversation_type, Some(ChatConversationType::ToolUse)) {
-        "true"
-    } else {
-        "false"
-    }
+fn tools_enabled(chat_conversation_type: &Option<ChatConversationType>) -> bool {
+    matches!(chat_conversation_type, Some(ChatConversationType::ToolUse))
 }
 
 fn token_metric_records(
@@ -976,7 +938,7 @@ fn token_metric_records(
         model,
         client_application,
         is_subagent,
-        "input_uncached",
+        metric::TokenType::InputUncached,
         data.uncached_input_tokens,
     );
     push_token_metric(
@@ -984,7 +946,7 @@ fn token_metric_records(
         model,
         client_application,
         is_subagent,
-        "input_cache_read",
+        metric::TokenType::InputCacheRead,
         data.cache_read_input_tokens,
     );
     push_token_metric(
@@ -992,7 +954,7 @@ fn token_metric_records(
         model,
         client_application,
         is_subagent,
-        "input_cache_write",
+        metric::TokenType::InputCacheWrite,
         data.cache_write_input_tokens,
     );
     push_token_metric(
@@ -1000,7 +962,7 @@ fn token_metric_records(
         model,
         client_application,
         is_subagent,
-        "output",
+        metric::TokenType::Output,
         data.output_tokens,
     );
     records
@@ -1017,11 +979,13 @@ fn cost_metric_records(
     };
 
     vec![
-        MetricRecord::counter_f64("kiro_cli_estimated_cost_usd", cost)
-            .with_attribute("model_class", model.as_deref().map_or("other", model_class))
-            .with_attribute("client_application", client_application_attr(client_application))
-            .with_attribute("is_subagent", is_subagent.to_string()),
-        MetricRecord::gauge("kiro_cli_pricing_table_active", PRICING_TABLE_VERSION),
+        metric::estimated_cost_usd(
+            cost,
+            metric::ModelClass::from_model_id(model.as_deref()),
+            metric::ClientApplication::from_name(client_application.as_deref()),
+            is_subagent,
+        ),
+        metric::pricing_table_active(PRICING_TABLE_VERSION),
     ]
 }
 
@@ -1035,8 +999,8 @@ fn estimated_cost_usd_from_turn_args(model: &Option<String>, args: &RecordUserTu
 }
 
 fn estimated_cost_usd_from_usage(model: &Option<String>, usage: TokenUsage) -> Option<f64> {
-    let model_class = model.as_deref().map_or("other", model_class);
-    estimate_cost_usd(model_class, usage)
+    let model_class = metric::ModelClass::from_model_id(model.as_deref());
+    estimate_cost_usd(model_class.as_str(), usage)
 }
 
 fn token_usage_from_chat_added_message(data: &ChatAddedMessageParams) -> TokenUsage {
@@ -1061,7 +1025,7 @@ fn push_token_metric(
     model: &Option<String>,
     client_application: &Option<String>,
     is_subagent: bool,
-    token_type: &'static str,
+    token_type: metric::TokenType,
     value: Option<i32>,
 ) {
     let Some(value) = value else {
@@ -1071,32 +1035,28 @@ fn push_token_metric(
         return;
     }
 
-    records.push(
-        MetricRecord::counter("kiro_cli_tokens_consumed", value as u64)
-            .with_attribute("model_class", model.as_deref().map_or("other", model_class))
-            .with_attribute("token_type", token_type)
-            .with_attribute("client_application", client_application_attr(client_application))
-            .with_attribute("is_subagent", is_subagent.to_string()),
-    );
+    records.push(metric::tokens_consumed(
+        value as u64,
+        metric::ModelClass::from_model_id(model.as_deref()),
+        token_type,
+        metric::ClientApplication::from_name(client_application.as_deref()),
+        is_subagent,
+    ));
 }
 
-fn client_application_attr(client_application: &Option<String>) -> &str {
-    client_application.as_deref().unwrap_or("_other_")
-}
-
-fn telemetry_result_attr(result: &TelemetryResult) -> &'static str {
+fn telemetry_result_kind(result: &TelemetryResult) -> metric::ResultKind {
     match result {
-        TelemetryResult::Succeeded => "success",
-        TelemetryResult::Failed => "failed",
-        TelemetryResult::Cancelled => "cancelled",
+        TelemetryResult::Succeeded => metric::ResultKind::Success,
+        TelemetryResult::Failed => metric::ResultKind::Failed,
+        TelemetryResult::Cancelled => metric::ResultKind::Cancelled,
     }
 }
 
-fn request_outcome_attr(result: &TelemetryResult) -> &'static str {
+fn request_outcome(result: &TelemetryResult) -> metric::Outcome {
     match result {
-        TelemetryResult::Succeeded => "success",
-        TelemetryResult::Failed => "error",
-        TelemetryResult::Cancelled => "cancelled",
+        TelemetryResult::Succeeded => metric::Outcome::Success,
+        TelemetryResult::Failed => metric::Outcome::Error,
+        TelemetryResult::Cancelled => metric::Outcome::Cancelled,
     }
 }
 
@@ -1138,15 +1098,6 @@ pub enum MessageMetaTag {
 pub enum EmptyResponseRetryOutcome {
     Recovered,
     StillEmpty,
-}
-
-impl EmptyResponseRetryOutcome {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Recovered => "recovered",
-            Self::StillEmpty => "still_empty",
-        }
-    }
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
@@ -1238,6 +1189,14 @@ pub struct AgentConfigInitArgs {
 #[serde(tag = "type")]
 pub enum EventType {
     UserLoggedIn {},
+    CliSessionStarted {
+        os_type: metric::OsType,
+        install_source: metric::InstallSource,
+    },
+    CliSessionCompleted {
+        exit_reason: metric::ExitReason,
+        agent_kind: metric::AgentKind,
+    },
     AuthFailed {
         auth_method: String,
         oauth_flow: String,
@@ -1388,6 +1347,8 @@ impl EventType {
     pub fn legacy_event_type(&self) -> Option<LegacyEventType> {
         match self {
             Self::UserLoggedIn {} => Some(LegacyEventType::UserLoggedIn),
+            Self::CliSessionStarted { .. } => None,
+            Self::CliSessionCompleted { .. } => None,
             Self::AuthFailed { .. } => Some(LegacyEventType::AuthFailed),
             Self::RefreshCredentials { .. } => Some(LegacyEventType::RefreshCredentials),
             Self::CliSubcommandExecuted { .. } => Some(LegacyEventType::CliSubcommandExecuted),
@@ -1412,7 +1373,7 @@ impl EventType {
         }
     }
 
-    fn redaction_metric_records(&self, channel: &str) -> Vec<MetricRecord> {
+    fn redaction_metric_records(&self, channel: metric::TelemetryChannel) -> Vec<MetricRecord> {
         match self {
             Self::ChatAddedMessage {
                 data: ChatAddedMessageParams { reason_desc, .. },
@@ -1445,7 +1406,10 @@ impl EventType {
     }
 }
 
-fn redaction_records_for_fields(channel: &str, fields: &[(FieldClass, Option<&str>)]) -> Vec<MetricRecord> {
+fn redaction_records_for_fields(
+    channel: metric::TelemetryChannel,
+    fields: &[(FieldClass, Option<&str>)],
+) -> Vec<MetricRecord> {
     let mut records = Vec::new();
     for (field_class, value) in fields {
         let Some(value) = value else {
@@ -1570,6 +1534,11 @@ pub enum QProfileSwitchIntent {
 
 #[cfg(test)]
 mod tests {
+    use kiro_telemetry::testing::{
+        expect_metric_record as metric_record,
+        metric_attr,
+    };
+
     use super::*;
 
     fn metadata_value<'a>(datum: &'a MetricDatum, key: &str) -> Option<&'a str> {
@@ -1578,21 +1547,6 @@ mod tests {
             .iter()
             .find(|entry| entry.key() == Some(key))
             .and_then(|entry| entry.value())
-    }
-
-    fn metric_record<'a>(records: &'a [MetricRecord], name: &str) -> &'a MetricRecord {
-        records
-            .iter()
-            .find(|record| record.name == name)
-            .unwrap_or_else(|| panic!("missing metric record {name}"))
-    }
-
-    fn metric_attr<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
-        record
-            .attributes
-            .iter()
-            .find(|attr| attr.key == key)
-            .map(|attr| attr.value.as_str())
     }
 
     fn log_attr<'a>(record: &'a TelemetryLogRecord, key: &str) -> Option<&'a str> {
@@ -1681,7 +1635,7 @@ mod tests {
             },
         });
 
-        let records = event.redaction_metric_records("legacy_toolkit");
+        let records = event.redaction_metric_records(metric::TelemetryChannel::LegacyToolkit);
 
         assert!(records.iter().any(|record| {
             record.name == "pii_redaction_runs_total"
@@ -1701,15 +1655,80 @@ mod tests {
 
     #[test]
     fn produces_schema_backed_otel_metric_record() {
+        let event = Event::new(EventType::EmptyResponseRetry {
+            model: None,
+            outcome: EmptyResponseRetryOutcome::Recovered,
+        });
+
+        let record = event.otel_metric_record().expect("schema-backed metric event");
+
+        assert_eq!(record.name, "chat_cli.bedrock.empty_response.retries");
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+    }
+
+    #[test]
+    fn emits_cli_session_started_metric_with_bounded_dimensions() {
+        let mut event = Event::new(EventType::CliSessionStarted {
+            os_type: metric::OsType::Macos,
+            install_source: metric::InstallSource::Internal,
+        });
+        event.client_application = Some("chat_cli_v2".to_string());
+
+        let records = event.otel_metric_records();
+        let record = metric_record(&records, "cli_session_started_total");
+
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert_eq!(metric_attr(record, "version_minor_bucket"), Some("current"));
+        assert_eq!(metric_attr(record, "os_type"), Some("macos"));
+        assert_eq!(metric_attr(record, "install_source"), Some("internal"));
+        assert_eq!(metric_attr(record, "client_application"), Some("chat_cli_v2"));
+    }
+
+    #[test]
+    fn does_not_count_user_login_as_cli_session_start() {
+        let event = Event::new(EventType::UserLoggedIn {});
+
+        assert!(event.otel_metric_records().is_empty());
+    }
+
+    #[test]
+    fn emits_cli_session_completed_metric_with_bounded_dimensions() {
+        let event = Event::new(EventType::CliSessionCompleted {
+            exit_reason: metric::ExitReason::Clean,
+            agent_kind: metric::AgentKind::Kas,
+        });
+
+        let records = event.otel_metric_records();
+        let record = metric_record(&records, "chat_cli.session.completed");
+
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+        assert_eq!(metric_attr(record, "exit_reason"), Some("clean"));
+        assert_eq!(metric_attr(record, "agent_kind"), Some("kas"));
+    }
+
+    #[test]
+    fn does_not_count_chat_end_as_cli_session_completion() {
         let event = Event::new(EventType::ChatEnd {
             conversation_id: "conversation".to_string(),
             model: None,
         });
 
-        let record = event.otel_metric_record().expect("metric-backed legacy event");
+        assert!(event.otel_metric_records().is_empty());
+    }
 
-        assert_eq!(record.name, "chat_cli.session.completed");
-        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
+    #[test]
+    fn emits_conversation_completed_log_from_chat_end() {
+        let event = Event::new(EventType::ChatEnd {
+            conversation_id: "conversation".to_string(),
+            model: None,
+        });
+
+        let record = event.otel_log_record().expect("conversation completion log");
+
+        assert_eq!(record.name, "kiro_cli_conversation_completed");
+        assert_eq!(log_attr(&record, "conversation_id"), Some("conversation"));
+        assert_eq!(log_attr(&record, "session_id"), Some("conversation"));
+        assert_eq!(log_attr(&record, "completion_reason"), Some("stop"));
     }
 
     #[test]
@@ -1838,6 +1857,22 @@ mod tests {
         assert_eq!(log_attr(&record, "cache_write_input_tokens"), Some("3"));
         assert_eq!(log_attr(&record, "estimated_cost_usd"), Some("0.000107850"));
         assert!(log_attr(&record, "reason_desc").is_some_and(|value| value.contains("[REDACTED:email]")));
+    }
+
+    #[test]
+    fn emits_subagent_invoked_fact_log() {
+        let event = Event::new(EventType::SubagentInvocation {
+            parent_conversation_id: "parent-conversation".to_string(),
+            subagent_name: "code-review".to_string(),
+            builtin_tool_uses: 2,
+            mcp_tool_uses: 1,
+            parent_tool_use_id: "parent-tool".to_string(),
+        });
+
+        let record = event.otel_log_record().expect("subagent fact log");
+
+        assert_eq!(record.name, "kiro_cli_subagent_invoked");
+        assert_eq!(log_attr(&record, "subagent_name"), Some("code-review"));
     }
 
     #[test]

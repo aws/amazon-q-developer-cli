@@ -14,6 +14,7 @@ import packageJson from '../../package.json';
 const INTERVAL_MS = 60_000;
 
 export interface ProcessHealthSnapshot {
+  agentKind?: 'v2' | 'kas';
   rssMb: number;
   heapUsedMb: number;
   peakRssMb: number;

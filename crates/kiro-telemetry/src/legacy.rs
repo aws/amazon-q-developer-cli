@@ -8,6 +8,7 @@ use kiro_telemetry_schema::{
 use crate::{
     MetricRecord,
     TelemetryLogRecord,
+    metric,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,10 +31,23 @@ pub fn legacy_otel_target(event_type: LegacyEventType) -> Option<LegacyOtelTarge
 pub fn legacy_metric_record(event_type: LegacyEventType) -> Option<MetricRecord> {
     let target = legacy_otel_target(event_type)?;
     match target.metric_kind {
-        MetricKind::Counter => Some(MetricRecord::counter(target.metric_name, 1)),
-        MetricKind::ObservableGauge => Some(MetricRecord::gauge(target.metric_name, 1.0)),
+        MetricKind::Counter => Some(metric::expect_valid(metric::counter(target.metric_name, 1))),
+        MetricKind::ObservableGauge => Some(metric::expect_valid(metric::gauge(target.metric_name, 1.0))),
         MetricKind::Histogram | MetricKind::LogEvent | MetricKind::Derived => None,
     }
+}
+
+pub fn emits_legacy_user_turn_counter(event_type: LegacyEventType) -> bool {
+    matches_counter_target(event_type, "kiro_cli_user_turns")
+}
+
+pub fn emits_legacy_tool_call_total(event_type: LegacyEventType) -> bool {
+    matches_counter_target(event_type, "tool_call_total")
+}
+
+fn matches_counter_target(event_type: LegacyEventType, metric_name: &str) -> bool {
+    legacy_otel_target(event_type)
+        .is_some_and(|target| target.metric_kind == MetricKind::Counter && target.metric_name == metric_name)
 }
 
 pub fn legacy_log_record(event_type: LegacyEventType) -> Option<TelemetryLogRecord> {
@@ -69,9 +83,13 @@ mod tests {
 
     #[test]
     fn creates_metric_records_for_metric_shaped_targets() {
-        let counter = legacy_metric_record(LegacyEventType::ChatEnd).expect("counter target");
-        assert_eq!(counter.name, "chat_cli.session.completed");
+        let counter = legacy_metric_record(LegacyEventType::ToolUseSuggested).expect("counter target");
+        assert_eq!(counter.name, "tool_call_total");
         assert_eq!(counter.value, MetricValue::Counter(1));
+        assert!(emits_legacy_tool_call_total(LegacyEventType::ToolUseSuggested));
+        assert!(!emits_legacy_tool_call_total(LegacyEventType::ChatAddedMessage));
+        assert!(emits_legacy_user_turn_counter(LegacyEventType::ChatAddedMessage));
+        assert!(!emits_legacy_user_turn_counter(LegacyEventType::ToolUseSuggested));
 
         let gauge = legacy_metric_record(LegacyEventType::ModeChanged).expect("gauge target");
         assert_eq!(gauge.name, "mode_active_users_weekly");
@@ -84,5 +102,8 @@ mod tests {
 
         let log = legacy_log_record(LegacyEventType::RecordUserTurnCompletion).expect("log target");
         assert_eq!(log.name, "kiro_cli_user_turn_completed");
+
+        let conversation = legacy_log_record(LegacyEventType::ChatEnd).expect("log target");
+        assert_eq!(conversation.name, "kiro_cli_conversation_completed");
     }
 }

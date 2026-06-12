@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
+
+const DEFAULT_OTEL_EXPORT_INTERVAL: Duration = Duration::from_secs(60);
+const KIRO_TELEMETRY_EXPORT_INTERVAL_MS: &str = "KIRO_TELEMETRY_EXPORT_INTERVAL_MS";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OtelMode {
@@ -74,6 +78,17 @@ impl TelemetryConfig {
     }
 }
 
+pub(crate) fn otel_export_interval_from_env() -> Duration {
+    otel_export_interval_from_millis(std::env::var(KIRO_TELEMETRY_EXPORT_INTERVAL_MS).ok().as_deref())
+}
+
+pub(crate) fn otel_export_interval_from_millis(value: Option<&str>) -> Duration {
+    value
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|milliseconds| *milliseconds > 0)
+        .map_or(DEFAULT_OTEL_EXPORT_INTERVAL, Duration::from_millis)
+}
+
 fn matches_disabled(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
@@ -111,5 +126,19 @@ mod tests {
 
         assert_eq!(config.otel_mode, OtelMode::OtelOnly);
         assert!(!config.exports_enabled());
+    }
+
+    #[test]
+    fn parses_export_interval_override() {
+        assert_eq!(otel_export_interval_from_millis(Some("5000")), Duration::from_secs(5));
+        assert_eq!(
+            otel_export_interval_from_millis(Some("0")),
+            DEFAULT_OTEL_EXPORT_INTERVAL
+        );
+        assert_eq!(
+            otel_export_interval_from_millis(Some("not-a-number")),
+            DEFAULT_OTEL_EXPORT_INTERVAL
+        );
+        assert_eq!(otel_export_interval_from_millis(None), DEFAULT_OTEL_EXPORT_INTERVAL);
     }
 }

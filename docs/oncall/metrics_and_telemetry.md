@@ -44,6 +44,16 @@ All telemetry events have their schema defined in: [telemetry_definitions.json](
 * When tracking errors, `addChatMessage` is a subset of the errors emitted by `messageResponseError`
 * `messageResponseError` contains _all_ application errors, not just errors related to API requests (e.g., ctrl+c handling)
 
+## Performance Guardrails
+
+Telemetry emission runs on request, turn, tool-use, and process-health paths, so new metrics should be cheap when disabled and bounded when enabled.
+
+* Prefer schema-aware constructors in `kiro_telemetry::metric` and `kiro_telemetry::log` over hand-built attribute strings. The constructors centralize bucketing for dynamic dimensions such as model id, tool name, feature name, command name, MCP server, status code, and KAS/V3 attribution.
+* Add high-frequency measurements as accumulated turn/session summaries where possible. Avoid per-token, per-render, or per-stream-chunk emission unless the product signal genuinely requires that cardinality and cost.
+* Keep dynamic dimensions bucketed before emission. The shared cardinality limiter still protects the exporter, but typed constructors should map unknown or unbounded values to `_other_` before hot paths fan out.
+* Direct meta-meter accounting is enabled only when the direct meta-meter task is running. Product metrics still emit normally, but the client avoids accumulating unpublished local accounting records.
+* Export-size validation uses a conservative cheap estimate first and only serializes records that may exceed the limit. Logs with large free-form fields should still be redacted and summarized before they reach the telemetry client.
+
 ## Understanding Errors
 
 ### Result Field Values

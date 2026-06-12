@@ -23,14 +23,32 @@ export async function handlePrompts(
   if (!trimmed) {
     return showPromptsPicker(ctx, cmd);
   }
-  // Synthetic dispatch from the picker: `args` is the picked entry name.
-  await ctx.sendMessage(`/${trimmed}`);
+  const selection = resolveSelection(trimmed, ctx);
+  try {
+    await ctx.sendMessage(`/${selection.name}`);
+    if (selection.source === 'picker') {
+      emitSelectionTelemetry(ctx, selection.type, true);
+    }
+  } catch (error) {
+    if (selection.source === 'picker') {
+      emitSelectionTelemetry(ctx, selection.type, false);
+    }
+    throw error;
+  }
 }
 
 type PickerEntry =
   | { type: 'prompt'; entry: PromptEntry }
   | { type: 'skill'; entry: SkillEntry }
   | { type: 'steering'; entry: SteeringEntry };
+
+type Selection = {
+  name: string;
+  source: 'picker' | 'manual';
+  type: PickerEntry['type'];
+};
+
+const PICKER_VALUE_SEPARATOR = ':';
 
 function showPromptsPicker(ctx: CommandContext, cmd: KasCommand): void {
   const entries: PickerEntry[] = [
@@ -61,7 +79,7 @@ function showPromptsPicker(ctx: CommandContext, cmd: KasCommand): void {
             : entry.source.kind
           : type;
       return {
-        value: entry.name,
+        value: pickerValue(type, entry.name),
         label: `/${entry.name}`,
         description: entry.description ?? '',
         group,
@@ -75,4 +93,50 @@ function showPromptsPicker(ctx: CommandContext, cmd: KasCommand): void {
     );
 
   ctx.setActiveCommand({ command: cmd, options });
+}
+
+function pickerValue(type: PickerEntry['type'], name: string): string {
+  return `${type}${PICKER_VALUE_SEPARATOR}${name}`;
+}
+
+function resolveSelection(raw: string, ctx: CommandContext): Selection {
+  const encoded = decodePickerValue(raw);
+  if (encoded) {
+    return { ...encoded, source: 'picker' };
+  }
+
+  if (ctx.skills.some((entry) => entry.name === raw)) {
+    return { name: raw, source: 'manual', type: 'skill' };
+  }
+  if (ctx.steering.some((entry) => entry.name === raw)) {
+    return { name: raw, source: 'manual', type: 'steering' };
+  }
+  return { name: raw, source: 'manual', type: 'prompt' };
+}
+
+function decodePickerValue(
+  raw: string
+): Pick<Selection, 'name' | 'type'> | null {
+  const splitAt = raw.indexOf(PICKER_VALUE_SEPARATOR);
+  if (splitAt <= 0) return null;
+
+  const type = raw.slice(0, splitAt);
+  const name = raw.slice(splitAt + 1);
+  if (!name) return null;
+  if (type === 'prompt' || type === 'skill' || type === 'steering') {
+    return { type, name };
+  }
+  return null;
+}
+
+function emitSelectionTelemetry(
+  ctx: CommandContext,
+  type: PickerEntry['type'],
+  success: boolean
+): void {
+  ctx.kiro.sendChatSlashCommandTelemetry({
+    command: `/${type}`,
+    success,
+    ...(!success && { reason: 'CommandFailed' }),
+  });
 }

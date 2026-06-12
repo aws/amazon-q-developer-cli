@@ -1,0 +1,8 @@
+[package]
+name = "kiro-telemetry-collector"
+version = "0.0.0-dev"
+edition = "2024"
+publish = false
+description = "Manages a local OpenTelemetry Collector binary for kiro-cli"
+
+[dependencies]

@@ -2,49 +2,14 @@ use std::fs;
 use std::path::Path;
 
 use crate::MetricRecord;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConsentCheckKind {
-    Hash,
-    Perms,
-    Owner,
-    Signature,
-}
-
-impl ConsentCheckKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Hash => "hash",
-            Self::Perms => "perms",
-            Self::Owner => "owner",
-            Self::Signature => "signature",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConsentIntegrityResult {
-    Ok,
-    Tampered,
-    Missing,
-    Unreadable,
-}
-
-impl ConsentIntegrityResult {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Ok => "ok",
-            Self::Tampered => "tampered",
-            Self::Missing => "missing",
-            Self::Unreadable => "unreadable",
-        }
-    }
-}
+use crate::metric::{
+    self,
+    ConsentCheckKind,
+    ConsentIntegrityResult,
+};
 
 pub fn consent_record_integrity_record(check_kind: ConsentCheckKind, result: ConsentIntegrityResult) -> MetricRecord {
-    MetricRecord::counter("consent_record_integrity_total", 1)
-        .with_attribute("check_kind", check_kind.as_str())
-        .with_attribute("integrity_result", result.as_str())
+    metric::consent_record_integrity(check_kind, result)
 }
 
 pub fn consent_file_integrity_records(path: impl AsRef<Path>) -> Vec<MetricRecord> {
@@ -121,22 +86,15 @@ fn owner_result(_metadata: &fs::Metadata) -> ConsentIntegrityResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn attr_value<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
-        record
-            .attributes
-            .iter()
-            .find(|attribute| attribute.key == key)
-            .map(|attribute| attribute.value.as_str())
-    }
+    use crate::testing::metric_attr;
 
     #[test]
     fn builds_schema_backed_consent_integrity_record() {
         let record = consent_record_integrity_record(ConsentCheckKind::Perms, ConsentIntegrityResult::Ok);
 
         assert_eq!(record.name, "consent_record_integrity_total");
-        assert_eq!(attr_value(&record, "check_kind"), Some("perms"));
-        assert_eq!(attr_value(&record, "integrity_result"), Some("ok"));
+        assert_eq!(metric_attr(&record, "check_kind"), Some("perms"));
+        assert_eq!(metric_attr(&record, "integrity_result"), Some("ok"));
     }
 
     #[test]
@@ -148,7 +106,7 @@ mod tests {
         assert!(
             records
                 .iter()
-                .all(|record| attr_value(record, "integrity_result") == Some("missing"))
+                .all(|record| metric_attr(record, "integrity_result") == Some("missing"))
         );
     }
 
@@ -161,8 +119,8 @@ mod tests {
         let records = consent_file_integrity_records(path);
 
         assert!(records.iter().any(|record| {
-            attr_value(record, "check_kind") == Some("hash")
-                && attr_value(record, "integrity_result") == Some("tampered")
+            metric_attr(record, "check_kind") == Some("hash")
+                && metric_attr(record, "integrity_result") == Some("tampered")
         }));
     }
 
@@ -184,7 +142,7 @@ mod tests {
         assert!(
             records
                 .iter()
-                .all(|record| attr_value(record, "integrity_result") == Some("ok"))
+                .all(|record| metric_attr(record, "integrity_result") == Some("ok"))
         );
     }
 
@@ -201,8 +159,8 @@ mod tests {
         let records = consent_file_integrity_records(path);
 
         assert!(records.iter().any(|record| {
-            attr_value(record, "check_kind") == Some("perms")
-                && attr_value(record, "integrity_result") == Some("tampered")
+            metric_attr(record, "check_kind") == Some("perms")
+                && metric_attr(record, "integrity_result") == Some("tampered")
         }));
     }
 }

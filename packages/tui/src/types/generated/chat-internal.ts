@@ -43,6 +43,9 @@ export type CliInternalOutput =
 	| { kind: "testSeedV1", data: {
 	conversationId: string;
 }}
+	/** `emit-telemetry`. */
+	| { kind: "emitTelemetry", data: {
+}}
 	/** Any subcommand's failure path. */
 	| { kind: "error", data: {
 	message: string;
@@ -68,4 +71,3 @@ export enum Provider {
 	Google = "Google",
 	Github = "Github",
 }
-

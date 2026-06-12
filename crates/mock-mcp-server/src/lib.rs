@@ -278,6 +278,13 @@ fn find_binary() -> Option<PathBuf> {
         }
     }
 
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        let debug_binary = PathBuf::from(target_dir).join("debug/mock-mcp-server");
+        if debug_binary.exists() {
+            return Some(debug_binary);
+        }
+    }
+
     // Check target/debug relative to workspace root
     if let Some(manifest_dir) = find_cargo_manifest_dir() {
         if let Some(workspace_root) = manifest_dir.parent().and_then(|p| p.parent()) {

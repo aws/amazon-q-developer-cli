@@ -57,6 +57,13 @@ export interface KasContextMutationResponse {
   message?: string;
 }
 
+export interface ChatSlashCommandTelemetryPayload {
+  command: string;
+  subcommand?: string;
+  success: boolean;
+  reason?: string;
+}
+
 /**
  * Light abstraction over the Agent Client Protocol (ACP) for interacting with the Kiro CLI agent.
  */
@@ -317,6 +324,14 @@ export interface SessionClient {
    * a round-trip to the agent. KAS-only.
    */
   getCachedContextBreakdown?(): ContextBreakdownData | null;
+
+  /**
+   * Sends slash-command usage telemetry.
+   * Fire-and-forget — implementations should not throw.
+   */
+  sendChatSlashCommandTelemetry?(
+    payload: ChatSlashCommandTelemetryPayload
+  ): void;
 }
 
 /**

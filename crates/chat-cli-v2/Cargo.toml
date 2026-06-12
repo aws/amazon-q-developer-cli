@@ -16,7 +16,9 @@ path = "eval/tool_search_eval.rs"
 workspace = true
 
 [features]
-default = ["voice"]
+default = ["voice", "legacy_codewhisperer_sink", "legacy_toolkit_sink"]
+legacy_codewhisperer_sink = []
+legacy_toolkit_sink = []
 voice = ["dep:voice"]
 wayland = ["arboard/wayland-data-control"]
 
@@ -143,6 +145,7 @@ whoami.workspace = true
 winnow.workspace = true
 zip.workspace = true
 kiro-telemetry.workspace = true
+kiro-telemetry-host.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
@@ -166,6 +169,7 @@ winreg.workspace = true
 assert_cmd.workspace = true
 aws-smithy-mocks.workspace = true
 criterion.workspace = true
+kiro-telemetry = { workspace = true, features = ["test-support"] }
 mock-mcp-server = { path = "../mock-mcp-server" }
 mockito.workspace = true
 ntest = "0.9"

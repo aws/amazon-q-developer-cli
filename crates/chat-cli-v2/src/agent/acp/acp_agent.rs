@@ -1,5 +1,8 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -51,6 +54,7 @@ use agent::tools::{
 };
 use agent::tui_commands::{
     CommandOptionsResponse,
+    CommandResult,
     TuiCommand,
 };
 use agent::types::{
@@ -172,11 +176,20 @@ use crate::cli::chat::legacy::model::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::telemetry::core::{
+    Event,
+    RecordUserTurnCompletionArgs,
+    estimated_cost_usd,
+};
 use crate::telemetry::observer::{
     AcpClientInfo,
     TelemetryContext,
     TelemetryObserver,
     TelemetryObserverHandle,
+};
+use crate::telemetry::{
+    EventType,
+    TelemetryResult,
 };
 use crate::util::consts::env_var::KIRO_TEST_MODE;
 use crate::util::paths::PathResolver;
@@ -1006,6 +1019,7 @@ struct AcpSession {
     /// Sender back to self — used by background tasks (goal re-injection)
     /// to notify the actor of async outcomes without blocking the event loop.
     self_tx: mpsc::Sender<AcpSessionRequest>,
+    chat_session_started_emitted: bool,
 }
 
 impl AcpSession {
@@ -1433,6 +1447,32 @@ impl AcpSession {
         );
     }
 
+    fn emit_chat_slash_command_telemetry(&self, command: String, subcommand: Option<String>, result: &CommandResult) {
+        self.telemetry_observer
+            .send_telemetry_event(Event::new(EventType::ChatSlashCommandExecuted {
+                conversation_id: self.session_id_str.clone(),
+                command,
+                subcommand,
+                result: if result.success {
+                    TelemetryResult::Succeeded
+                } else {
+                    TelemetryResult::Failed
+                },
+                reason: (!result.success).then(|| "CommandFailed".to_string()),
+            }));
+    }
+
+    fn emit_chat_session_started_once(&mut self) {
+        if self.chat_session_started_emitted || self.is_subagent {
+            return;
+        }
+        self.chat_session_started_emitted = true;
+        self.telemetry_observer
+            .send_telemetry_event(Event::new(EventType::ChatSessionStarted {
+                mode: kiro_telemetry::metric::Mode::from_name(&self.current_agent_name),
+            }));
+    }
+
     /// Extract metadata from a completed response stream and push to the ring buffer.
     fn record_request_stats(
         &self,
@@ -1743,6 +1783,7 @@ impl AcpSession {
             request_stats: Default::default(),
             goal_controller: restored_goal,
             self_tx,
+            chat_session_started_emitted: false,
         })
     }
 
@@ -1764,12 +1805,18 @@ impl AcpSession {
                 Ok(AgentEvent::Initialized) => {
                     return Ok(());
                 },
-                Ok(AgentEvent::InitializeUpdate(init_event)) => match init_event {
-                    agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) => {
-                        if let Err(e) = self.handle_mcp_event(mcp_event).await {
-                            error!("Failed to handle MCP event during initialization: {}", e);
-                        }
-                    },
+                Ok(AgentEvent::InitializeUpdate(init_event)) => {
+                    self.telemetry_observer.send_event(
+                        self.session_id_str.clone(),
+                        AgentEvent::InitializeUpdate(init_event.clone()),
+                    );
+                    match init_event {
+                        agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) => {
+                            if let Err(e) = self.handle_mcp_event(mcp_event).await {
+                                error!("Failed to handle MCP event during initialization: {}", e);
+                            }
+                        },
+                    }
                 },
                 Ok(event) => {
                     warn!("Unexpected event during initialization: {:?}", event);
@@ -1974,11 +2021,14 @@ impl AcpSession {
                 if let Some(route) = slash_router::parse(&request.prompt) {
                     match route {
                         slash_router::SlashRoute::Action(command) => {
+                            let telemetry_command = command.name().to_string();
+                            let telemetry_subcommand = tui_command_telemetry_subcommand(&command);
                             let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
                                 || matches!(&command, TuiCommand::Guide(_));
                             let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                             let ctx = self.command_context();
                             let result = super::commands::execute(command, &ctx).await;
+                            self.emit_chat_slash_command_telemetry(telemetry_command, telemetry_subcommand, &result);
 
                             // Mirror ExecuteCommand: update current_agent_name on successful swap
                             if is_agent_swap
@@ -2036,6 +2086,7 @@ impl AcpSession {
                             self.handle_goal_or_respond(result, request_cx);
                         },
                         slash_router::SlashRoute::Prompt { name, args, original } => {
+                            self.emit_chat_session_started_once();
                             self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
                             let agent = self.agent.clone();
                             let cwd = self.cwd.clone();
@@ -2106,6 +2157,7 @@ impl AcpSession {
                 }
 
                 // Normal prompt - no slash command
+                self.emit_chat_session_started_once();
                 let agent = self.agent.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_prompt_request(request, agent).await {
@@ -2231,6 +2283,8 @@ impl AcpSession {
                 }
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
+                let telemetry_command = command.name().to_string();
+                let telemetry_subcommand = tui_command_telemetry_subcommand(&command);
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
                     || matches!(&command, TuiCommand::Plan(_))
                     || matches!(&command, TuiCommand::Guide(_));
@@ -2249,6 +2303,7 @@ impl AcpSession {
                     has_data = result.data.is_some(),
                     "ExecuteCommand: result received"
                 );
+                self.emit_chat_slash_command_telemetry(telemetry_command, telemetry_subcommand, &result);
 
                 if is_agent_swap
                     && result.success
@@ -4147,12 +4202,7 @@ pub async fn execute(
                 let telemetry_thread = Some(os.telemetry.clone());
                 async move |notif: super::schema::ModeChangedNotification, _cx: ConnectionTo<sacp::Client>| {
                     if let Some(ref telemetry) = telemetry_thread {
-                        let _ = telemetry.send_mode_changed(
-                            notif.from_mode,
-                            notif.to_mode,
-                            notif.source,
-                            notif.session_id,
-                        );
+                        emit_kas_mode_changed_telemetry(telemetry, notif);
                     }
                     Ok(())
                 }
@@ -4163,6 +4213,7 @@ pub async fn execute(
             {
                 let session_tx = session_manager_handle.clone();
                 let telemetry_thread = Some(os.telemetry.clone());
+                let database = os.database.clone();
                 async move |message: Dispatch, _cx: ConnectionTo<sacp::Client>| {
                     let method = message.method().to_string();
 
@@ -4255,31 +4306,40 @@ pub async fn execute(
                                 match serde_json::from_value::<ProcessHealthPayload>(notif.params().clone()) {
                                     Ok(p) => {
                                         if let Some(ref telemetry) = telemetry_thread {
-                                            let _ = telemetry.send_process_health_snapshot(
-                                                p.rss_mb.unwrap_or(0.0),
-                                                p.heap_used_mb.unwrap_or(0.0),
-                                                p.peak_rss_mb.unwrap_or(0.0),
-                                                p.cpu_user_pct.unwrap_or(0.0),
-                                                p.cpu_system_pct.unwrap_or(0.0),
-                                                p.last_render_ms.unwrap_or(0.0),
-                                                p.max_render_ms.unwrap_or(0.0),
-                                                p.renders_per_min.unwrap_or(0),
-                                                p.full_redraws_per_min.unwrap_or(0),
-                                                p.yoga_node_count.unwrap_or(0),
-                                                p.event_loop_p99_ms,
-                                                p.input_latency_p95_ms,
-                                                p.session_duration_sec.unwrap_or(0),
-                                                p.cpu_cores.unwrap_or(0),
-                                                p.total_memory_mb.unwrap_or(0),
-                                                p.terminal.unwrap_or_default(),
-                                                p.session_id,
-                                                p.version,
-                                                p.platform,
-                                            );
+                                            emit_kas_process_health_telemetry(telemetry, p);
                                         }
                                     },
                                     Err(e) => {
                                         debug!("Failed to deserialize processHealth payload: {e}");
+                                    },
+                                }
+                                return Ok(sacp::Handled::Yes);
+                            },
+                            "_kiro.dev/telemetry/turnCompletion" => {
+                                use super::schema::TurnCompletionTelemetryPayload;
+                                match serde_json::from_value::<TurnCompletionTelemetryPayload>(notif.params().clone()) {
+                                    Ok(payload) => {
+                                        if let Some(ref telemetry) = telemetry_thread {
+                                            emit_kas_turn_completion_telemetry(telemetry, &database, payload).await;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        debug!("Failed to deserialize turnCompletion payload: {e}");
+                                    },
+                                }
+                                return Ok(sacp::Handled::Yes);
+                            },
+                            "_kiro.dev/telemetry/chatSlashCommand" => {
+                                use super::schema::ChatSlashCommandTelemetryPayload;
+                                match serde_json::from_value::<ChatSlashCommandTelemetryPayload>(notif.params().clone())
+                                {
+                                    Ok(payload) => {
+                                        if let Some(ref telemetry) = telemetry_thread {
+                                            emit_kas_chat_slash_command_telemetry(telemetry, &database, payload).await;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        debug!("Failed to deserialize chatSlashCommand payload: {e}");
                                     },
                                 }
                                 return Ok(sacp::Handled::Yes);
@@ -4448,6 +4508,64 @@ fn send_agent_load_notifications(
     }
 }
 
+fn tui_command_telemetry_subcommand(command: &TuiCommand) -> Option<String> {
+    let value = match command {
+        TuiCommand::Model(args) => args.model_name.as_deref(),
+        TuiCommand::Agent(args) => args.agent_name.as_deref(),
+        TuiCommand::Context(args) => args.subcommand.as_deref(),
+        TuiCommand::Mcp(args) => args.subcommand.as_deref(),
+        TuiCommand::Tools(args) => args.subcommand.as_deref(),
+        TuiCommand::Knowledge(args) => args.subcommand.as_deref(),
+        TuiCommand::Chat(args) => args.subcommand.as_deref(),
+        TuiCommand::Code(args) => args.subcommand.as_deref(),
+        TuiCommand::Stats(args) => args.subcommand.as_deref(),
+        TuiCommand::Goal(args) => args.subcommand.as_deref(),
+        _ => None,
+    };
+    known_subcommand(value, &command.subcommands())
+}
+
+fn known_subcommand(value: Option<&str>, allowed: &[&str]) -> Option<String> {
+    let token = value?.split_whitespace().next()?.to_ascii_lowercase();
+    allowed.contains(&token.as_str()).then_some(token)
+}
+
+#[cfg(test)]
+mod command_usage_telemetry_tests {
+    use agent::tui_commands::{
+        AgentArgs,
+        ChatArgs,
+        ModelArgs,
+        TuiCommand,
+    };
+
+    use super::tui_command_telemetry_subcommand;
+
+    #[test]
+    fn subcommand_extraction_uses_tui_command_registry() {
+        let model = TuiCommand::Model(ModelArgs {
+            model_name: Some("set-current-as-default".to_string()),
+        });
+        let chat = TuiCommand::Chat(ChatArgs {
+            subcommand: Some("new hello".to_string()),
+        });
+        let agent = TuiCommand::Agent(AgentArgs {
+            agent_name: Some("swap reviewer".to_string()),
+        });
+        let model_selection = TuiCommand::Model(ModelArgs {
+            model_name: Some("claude-sonnet-4".to_string()),
+        });
+
+        assert_eq!(
+            tui_command_telemetry_subcommand(&model).as_deref(),
+            Some("set-current-as-default")
+        );
+        assert_eq!(tui_command_telemetry_subcommand(&chat).as_deref(), Some("new"));
+        assert_eq!(tui_command_telemetry_subcommand(&agent).as_deref(), Some("swap"));
+        assert_eq!(tui_command_telemetry_subcommand(&model_selection), None);
+    }
+}
+
 fn to_session_mode_state(current: String, agents: Vec<AgentInfo>) -> SessionModeState {
     let modes = agents
         .into_iter()
@@ -4481,6 +4599,350 @@ fn to_session_model_state(current: String, models: Vec<ModelInfo>) -> SessionMod
     SessionModelState::new(current, acp_models)
 }
 
+pub async fn emit_kas_turn_completion_telemetry(
+    telemetry: &crate::telemetry::TelemetryThread,
+    database: &crate::database::Database,
+    payload: super::schema::TurnCompletionTelemetryPayload,
+) {
+    for mut event in kas_turn_completion_events(payload) {
+        crate::telemetry::set_event_metadata(database, &mut event).await;
+        if let Err(err) = telemetry.send_event(event) {
+            debug!("Failed to send KAS turn completion telemetry: {err}");
+        }
+    }
+}
+
+pub fn emit_kas_mode_changed_telemetry(
+    telemetry: &crate::telemetry::TelemetryThread,
+    payload: super::schema::ModeChangedNotification,
+) {
+    if let Err(err) = telemetry.send_event(kas_mode_changed_event(payload)) {
+        debug!("Failed to send KAS mode change telemetry: {err}");
+    }
+}
+
+pub async fn emit_kas_chat_slash_command_telemetry(
+    telemetry: &crate::telemetry::TelemetryThread,
+    database: &crate::database::Database,
+    payload: super::schema::ChatSlashCommandTelemetryPayload,
+) {
+    let mut event = kas_chat_slash_command_event(payload);
+    crate::telemetry::set_event_metadata(database, &mut event).await;
+    if let Err(err) = telemetry.send_event(event) {
+        debug!("Failed to send KAS slash command telemetry: {err}");
+    }
+}
+
+pub async fn emit_kas_chat_session_started_telemetry(
+    telemetry: &crate::telemetry::TelemetryThread,
+    database: &crate::database::Database,
+    payload: super::schema::ChatSessionStartedTelemetryPayload,
+) {
+    let mut event = kas_chat_session_started_event(payload);
+    crate::telemetry::set_event_metadata(database, &mut event).await;
+    if let Err(err) = telemetry.send_event(event) {
+        debug!("Failed to send KAS chat session telemetry: {err}");
+    }
+}
+
+pub fn emit_kas_process_health_telemetry(
+    telemetry: &crate::telemetry::TelemetryThread,
+    payload: super::schema::ProcessHealthPayload,
+) {
+    if let Err(err) = telemetry.send_event(kas_process_health_event(payload)) {
+        debug!("Failed to send KAS process health telemetry: {err}");
+    }
+}
+
+pub fn kas_mode_changed_event(payload: super::schema::ModeChangedNotification) -> Event {
+    kas_telemetry_event(EventType::ModeChanged {
+        from_mode: payload.from_mode,
+        to_mode: payload.to_mode,
+        source: payload.source,
+        session_id: payload.session_id,
+    })
+}
+
+pub fn kas_chat_slash_command_event(payload: super::schema::ChatSlashCommandTelemetryPayload) -> Event {
+    kas_telemetry_event(EventType::ChatSlashCommandExecuted {
+        conversation_id: payload.session_id.unwrap_or_default(),
+        command: payload.command,
+        subcommand: payload.subcommand,
+        result: if payload.success {
+            TelemetryResult::Succeeded
+        } else {
+            TelemetryResult::Failed
+        },
+        reason: payload.reason,
+    })
+}
+
+pub fn kas_chat_session_started_event(payload: super::schema::ChatSessionStartedTelemetryPayload) -> Event {
+    kas_telemetry_event(EventType::ChatSessionStarted {
+        mode: kiro_telemetry::metric::Mode::from_chat_session(None, payload.mode.as_deref()),
+    })
+}
+
+pub fn kas_process_health_event(payload: super::schema::ProcessHealthPayload) -> Event {
+    kas_telemetry_event(EventType::ProcessHealthMetric {
+        agent_kind: payload.agent_kind.as_deref().map_or(
+            kiro_telemetry::metric::AgentKind::Kas,
+            kiro_telemetry::metric::AgentKind::from_name,
+        ),
+        rss_mb: payload.rss_mb.unwrap_or(0.0),
+        heap_used_mb: payload.heap_used_mb.unwrap_or(0.0),
+        peak_rss_mb: payload.peak_rss_mb.unwrap_or(0.0),
+        cpu_user_pct: payload.cpu_user_pct.unwrap_or(0.0),
+        cpu_system_pct: payload.cpu_system_pct.unwrap_or(0.0),
+        last_render_ms: payload.last_render_ms.unwrap_or(0.0),
+        max_render_ms: payload.max_render_ms.unwrap_or(0.0),
+        renders_per_min: payload.renders_per_min.unwrap_or(0),
+        full_redraws_per_min: payload.full_redraws_per_min.unwrap_or(0),
+        yoga_node_count: payload.yoga_node_count.unwrap_or(0),
+        event_loop_p99_ms: payload.event_loop_p99_ms,
+        input_latency_p95_ms: payload.input_latency_p95_ms,
+        session_duration_sec: payload.session_duration_sec.unwrap_or(0),
+        cpu_cores: payload.cpu_cores.unwrap_or(0),
+        total_memory_mb: payload.total_memory_mb.unwrap_or(0),
+        terminal: payload.terminal.unwrap_or_default(),
+        session_id: payload.session_id,
+        version: payload.version,
+        platform: payload.platform,
+    })
+}
+
+pub fn kas_turn_completion_events(payload: super::schema::TurnCompletionTelemetryPayload) -> Vec<Event> {
+    let model = payload.model_id.clone();
+    let conversation_id = payload.session_id.clone().unwrap_or_default();
+    let has_token_usage = kas_has_token_usage(&payload);
+    let has_model_invocation = !payload.metering_usage.is_empty()
+        || payload.turn_duration_ms.is_some()
+        || payload.status.is_some()
+        || has_token_usage;
+    let mut events = Vec::new();
+
+    for usage in payload.metering_usage.iter().filter(|usage| usage.value.is_finite()) {
+        events.push(kas_telemetry_event(EventType::MeteringEvent {
+            request_id: None,
+            model: model.clone(),
+            usage: usage.value,
+            unit: usage.unit.clone(),
+            unit_plural: usage.unit_plural.clone(),
+        }));
+    }
+
+    if let Some(percentage) = payload.context_usage_percentage
+        && percentage.is_finite()
+        && percentage >= 0.0
+    {
+        events.push(kas_telemetry_event(EventType::ContextUsagePercentage {
+            model: model.clone(),
+            percentage,
+        }));
+    }
+
+    events.extend(kas_tool_invocation_events(
+        &conversation_id,
+        &model,
+        &payload.used_tools,
+    ));
+
+    let should_emit_turn_completion = !payload.metering_usage.is_empty()
+        || payload.turn_duration_ms.is_some()
+        || payload.status.is_some()
+        || has_token_usage;
+    if should_emit_turn_completion {
+        let result = kas_turn_result(payload.status);
+        let (reason, reason_desc) = kas_turn_failure_reason(payload.status);
+        let token_usage = kas_token_usage(&payload);
+        events.push(kas_telemetry_event(EventType::RecordUserTurnCompletion {
+            conversation_id,
+            result,
+            args: RecordUserTurnCompletionArgs {
+                model: model.clone(),
+                reason,
+                reason_desc,
+                total_tokens: kas_total_tokens(&payload),
+                uncached_input_tokens: positive_token_count(payload.uncached_input_tokens),
+                output_tokens: positive_token_count(payload.output_tokens),
+                cache_read_input_tokens: positive_token_count(payload.cache_read_input_tokens),
+                cache_write_input_tokens: positive_token_count(payload.cache_write_input_tokens),
+                estimated_cost_usd: kas_estimated_cost_usd(&model, token_usage),
+                user_turn_duration_seconds: kas_turn_duration_seconds(payload.turn_duration_ms),
+                emit_user_turn_counter: true,
+                ..Default::default()
+            },
+        }));
+    }
+
+    if has_model_invocation {
+        events.push(kas_telemetry_event(EventType::ModelInvocation { model }));
+    }
+
+    events
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct KasToolTelemetry {
+    tool_name: String,
+    mcp_server_name: Option<String>,
+    is_custom_tool: bool,
+}
+
+fn kas_tool_invocation_events(conversation_id: &str, model: &Option<String>, used_tools: &[String]) -> Vec<Event> {
+    let mut seen = HashSet::new();
+    let mut events = Vec::new();
+
+    for raw_tool_name in used_tools {
+        let Some(tool) = kas_tool_telemetry(raw_tool_name) else {
+            continue;
+        };
+        let dedupe_key = format!(
+            "{}\0{}",
+            tool.mcp_server_name.as_deref().unwrap_or_default(),
+            tool.tool_name
+        );
+        if !seen.insert(dedupe_key) {
+            continue;
+        }
+
+        events.push(kas_telemetry_event(EventType::ToolUseSuggested {
+            conversation_id: conversation_id.to_string(),
+            utterance_id: None,
+            user_input_id: None,
+            tool_use_id: None,
+            tool_name: Some(tool.tool_name),
+            mcp_server_name: tool.mcp_server_name,
+            is_accepted: true,
+            is_trusted: true,
+            is_success: Some(true),
+            reason_desc: None,
+            is_valid: Some(true),
+            is_custom_tool: tool.is_custom_tool,
+            input_token_size: None,
+            output_token_size: None,
+            custom_tool_call_latency: None,
+            model: model.clone(),
+            execution_duration: None,
+            turn_duration: None,
+            aws_service_name: None,
+            aws_operation_name: None,
+        }));
+    }
+
+    events
+}
+
+fn kas_tool_telemetry(raw_tool_name: &str) -> Option<KasToolTelemetry> {
+    let tool_name = raw_tool_name.trim();
+    if tool_name.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = tool_name.strip_prefix('@')
+        && let Some((server_name, mcp_tool_name)) = rest.split_once('/')
+    {
+        let server_name = server_name.trim();
+        let mcp_tool_name = mcp_tool_name.trim();
+        if !server_name.is_empty() && !mcp_tool_name.is_empty() {
+            return Some(KasToolTelemetry {
+                tool_name: mcp_tool_name.to_string(),
+                mcp_server_name: Some(server_name.to_string()),
+                is_custom_tool: true,
+            });
+        }
+    }
+
+    Some(KasToolTelemetry {
+        tool_name: tool_name.to_string(),
+        mcp_server_name: None,
+        is_custom_tool: BuiltInToolName::from_str(tool_name).is_err(),
+    })
+}
+
+fn kas_telemetry_event(ty: EventType) -> Event {
+    let mut event = Event::new(ty);
+    event.set_client_application_kind(kiro_telemetry::metric::ClientApplication::ChatCliV3);
+    event.app_type = Some("KAS".to_string());
+    event
+}
+
+fn kas_turn_result(status: Option<super::schema::TurnCompletionStatus>) -> TelemetryResult {
+    match status {
+        Some(super::schema::TurnCompletionStatus::Failed | super::schema::TurnCompletionStatus::Other) => {
+            TelemetryResult::Failed
+        },
+        Some(super::schema::TurnCompletionStatus::Cancelled) => TelemetryResult::Cancelled,
+        Some(super::schema::TurnCompletionStatus::Success) | None => TelemetryResult::Succeeded,
+    }
+}
+
+fn kas_turn_failure_reason(status: Option<super::schema::TurnCompletionStatus>) -> (Option<String>, Option<String>) {
+    match status {
+        Some(super::schema::TurnCompletionStatus::Failed) => (
+            Some("KasTurnFailed".to_string()),
+            Some("KAS reported turn failure".to_string()),
+        ),
+        Some(super::schema::TurnCompletionStatus::Other) => (
+            Some("KasTurnUnknownStatus".to_string()),
+            Some("KAS reported an unknown turn status".to_string()),
+        ),
+        _ => (None, None),
+    }
+}
+
+fn kas_turn_duration_seconds(turn_duration_ms: Option<f64>) -> i64 {
+    let Some(milliseconds) = turn_duration_ms else {
+        return 0;
+    };
+    if !milliseconds.is_finite() || milliseconds <= 0.0 {
+        return 0;
+    }
+    let seconds = (milliseconds / 1000.0).floor().min(i64::MAX as f64) as i64;
+    if seconds == 0 { 1 } else { seconds }
+}
+
+fn kas_has_token_usage(payload: &super::schema::TurnCompletionTelemetryPayload) -> bool {
+    kas_total_tokens(payload).is_some()
+        || positive_token_count(payload.uncached_input_tokens).is_some()
+        || positive_token_count(payload.output_tokens).is_some()
+        || positive_token_count(payload.cache_read_input_tokens).is_some()
+        || positive_token_count(payload.cache_write_input_tokens).is_some()
+}
+
+fn kas_total_tokens(payload: &super::schema::TurnCompletionTelemetryPayload) -> Option<i64> {
+    positive_token_count(payload.total_tokens).or_else(|| {
+        let total = positive_token_count(payload.uncached_input_tokens).unwrap_or_default()
+            + positive_token_count(payload.output_tokens).unwrap_or_default()
+            + positive_token_count(payload.cache_read_input_tokens).unwrap_or_default();
+        (total > 0).then_some(total)
+    })
+}
+
+fn positive_token_count(value: Option<i64>) -> Option<i64> {
+    value.filter(|value| *value > 0)
+}
+
+fn kas_token_usage(payload: &super::schema::TurnCompletionTelemetryPayload) -> kiro_telemetry::TokenUsage {
+    kiro_telemetry::TokenUsage {
+        uncached_input_tokens: positive_token_count(payload.uncached_input_tokens).unwrap_or_default() as u64,
+        cache_read_input_tokens: positive_token_count(payload.cache_read_input_tokens).unwrap_or_default() as u64,
+        cache_write_input_tokens: positive_token_count(payload.cache_write_input_tokens).unwrap_or_default() as u64,
+        output_tokens: positive_token_count(payload.output_tokens).unwrap_or_default() as u64,
+    }
+}
+
+fn kas_estimated_cost_usd(model: &Option<String>, usage: kiro_telemetry::TokenUsage) -> Option<f64> {
+    if usage.uncached_input_tokens == 0
+        && usage.cache_read_input_tokens == 0
+        && usage.cache_write_input_tokens == 0
+        && usage.output_tokens == 0
+    {
+        return None;
+    }
+    estimated_cost_usd(model, usage)
+}
+
 fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
     match mime {
         "image/png" => Some(ImageFormat::Png),
@@ -4488,6 +4950,446 @@ fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
         "image/gif" => Some(ImageFormat::Gif),
         "image/webp" => Some(ImageFormat::Webp),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod kas_turn_completion_telemetry_tests {
+    use kiro_telemetry::testing::{
+        expect_log,
+        expect_metric,
+        log_attr,
+    };
+    use kiro_telemetry::{
+        TokenUsage,
+        log as telemetry_log,
+        metric,
+    };
+
+    use super::kas_turn_completion_events;
+    use crate::agent::acp::schema::{
+        ChatSessionStartedTelemetryPayload,
+        ChatSlashCommandTelemetryPayload,
+        ModeChangeSource,
+        ModeChangedNotification,
+        ProcessHealthPayload,
+        TurnCompletionMeteringUsage,
+        TurnCompletionStatus,
+        TurnCompletionTelemetryPayload,
+    };
+    use crate::telemetry::core::{
+        Event,
+        EventLegacyExt,
+    };
+    use crate::telemetry::{
+        EventType,
+        TelemetryResult,
+    };
+
+    fn assert_kas_attribution(event: &Event) {
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
+        assert_eq!(event.app_type.as_deref(), Some("KAS"));
+    }
+
+    #[test]
+    fn kas_bridge_events_use_v3_attribution() {
+        let mode = super::kas_mode_changed_event(ModeChangedNotification {
+            from_mode: "kiro".to_string(),
+            to_mode: "kiro_planner".to_string(),
+            source: ModeChangeSource::ShiftTab,
+            session_id: Some("kas-session-1".to_string()),
+        });
+        let slash = super::kas_chat_slash_command_event(ChatSlashCommandTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            command: "/chat".to_string(),
+            subcommand: Some("save".to_string()),
+            success: true,
+            reason: None,
+        });
+        let session = super::kas_chat_session_started_event(ChatSessionStartedTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            mode: Some("kiro_planner".to_string()),
+        });
+        let process = super::kas_process_health_event(ProcessHealthPayload {
+            agent_kind: Some("kas".to_string()),
+            rss_mb: Some(128.0),
+            heap_used_mb: None,
+            peak_rss_mb: None,
+            cpu_user_pct: Some(12.5),
+            cpu_system_pct: Some(7.5),
+            last_render_ms: None,
+            max_render_ms: None,
+            renders_per_min: None,
+            full_redraws_per_min: None,
+            yoga_node_count: None,
+            event_loop_p99_ms: None,
+            input_latency_p95_ms: None,
+            session_duration_sec: None,
+            cpu_cores: None,
+            total_memory_mb: None,
+            terminal: None,
+            session_id: Some("kas-session-1".to_string()),
+            version: "2.4.0".to_string(),
+            platform: "darwin".to_string(),
+        });
+
+        for event in [&mode, &slash, &session, &process] {
+            assert_kas_attribution(event);
+        }
+
+        let session_start = session.otel_metric_record().expect("chat session start metric");
+        expect_metric(
+            std::slice::from_ref(&session_start),
+            metric::chat_session_started(metric::Mode::Plan, metric::ClientApplication::ChatCliV3),
+        );
+
+        let process_records = process.otel_metric_records();
+        expect_metric(
+            &process_records,
+            metric::process_memory_rss(
+                128.0 * 1024.0 * 1024.0,
+                metric::VersionMinorBucket::Current,
+                metric::AgentKind::Kas,
+            ),
+        );
+    }
+
+    #[test]
+    fn kas_process_health_defaults_missing_agent_kind_to_kas() {
+        let process = super::kas_process_health_event(ProcessHealthPayload {
+            agent_kind: None,
+            rss_mb: Some(128.0),
+            heap_used_mb: None,
+            peak_rss_mb: None,
+            cpu_user_pct: Some(12.5),
+            cpu_system_pct: Some(7.5),
+            last_render_ms: None,
+            max_render_ms: None,
+            renders_per_min: None,
+            full_redraws_per_min: None,
+            yoga_node_count: None,
+            event_loop_p99_ms: None,
+            input_latency_p95_ms: None,
+            session_duration_sec: None,
+            cpu_cores: None,
+            total_memory_mb: None,
+            terminal: None,
+            session_id: Some("kas-session-1".to_string()),
+            version: "2.4.0".to_string(),
+            platform: "darwin".to_string(),
+        });
+
+        match process.ty {
+            EventType::ProcessHealthMetric { agent_kind, .. } => {
+                assert_eq!(agent_kind, metric::AgentKind::Kas);
+            },
+            _ => panic!("expected process health event"),
+        }
+    }
+
+    #[test]
+    fn kas_turn_completion_emits_metering_context_and_turn_events() {
+        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            model_id: Some("claude-4-sonnet".to_string()),
+            metering_usage: vec![TurnCompletionMeteringUsage {
+                value: 1.5,
+                unit: "credit".to_string(),
+                unit_plural: "Credits".to_string(),
+            }],
+            turn_duration_ms: Some(1234.0),
+            context_usage_percentage: Some(42.0),
+            total_tokens: None,
+            uncached_input_tokens: Some(10),
+            output_tokens: Some(5),
+            cache_read_input_tokens: Some(2),
+            cache_write_input_tokens: Some(3),
+            status: Some(TurnCompletionStatus::Success),
+            used_tools: Vec::new(),
+        });
+
+        assert_eq!(events.len(), 4);
+        assert!(
+            events
+                .iter()
+                .all(|event| event.client_application.as_deref() == Some("chat_cli_v3"))
+        );
+        assert!(events.iter().all(|event| event.app_type.as_deref() == Some("KAS")));
+
+        let metering = events[0].otel_log_record().expect("metering log");
+        expect_log(
+            std::slice::from_ref(&metering),
+            telemetry_log::metering_event_record(telemetry_log::MeteringEventLog::from_names(
+                None,
+                Some("claude-4-sonnet"),
+                Some("chat_cli_v3"),
+                1.5,
+                "credit",
+                "Credits",
+            )),
+        );
+
+        let context_usage = events[1].otel_metric_record().expect("context usage metric");
+        expect_metric(
+            std::slice::from_ref(&context_usage),
+            metric::context_usage_percentage(
+                42.0,
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV3,
+                false,
+            ),
+        );
+
+        match &events[2].ty {
+            EventType::RecordUserTurnCompletion {
+                conversation_id,
+                result,
+                args,
+            } => {
+                assert_eq!(conversation_id, "kas-session-1");
+                assert_eq!(*result, TelemetryResult::Succeeded);
+                assert_eq!(args.model.as_deref(), Some("claude-4-sonnet"));
+                assert_eq!(args.total_tokens, Some(17));
+                assert_eq!(args.uncached_input_tokens, Some(10));
+                assert_eq!(args.output_tokens, Some(5));
+                assert_eq!(args.cache_read_input_tokens, Some(2));
+                assert_eq!(args.cache_write_input_tokens, Some(3));
+                assert!(
+                    args.estimated_cost_usd
+                        .is_some_and(|cost| (cost - 0.00010785).abs() < 0.000000001)
+                );
+                assert_eq!(args.user_turn_duration_seconds, 1);
+                assert!(args.emit_user_turn_counter);
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+        let turn_log = events[2].otel_log_record().expect("turn completion log");
+        assert_eq!(log_attr(&turn_log, "total_tokens"), Some("17"));
+        assert_eq!(log_attr(&turn_log, "uncached_input_tokens"), Some("10"));
+        assert_eq!(log_attr(&turn_log, "output_tokens"), Some("5"));
+        assert_eq!(log_attr(&turn_log, "cache_read_input_tokens"), Some("2"));
+        assert_eq!(log_attr(&turn_log, "cache_write_input_tokens"), Some("3"));
+        assert_eq!(log_attr(&turn_log, "estimated_cost_usd"), Some("0.000107850"));
+        let turn_records = events[2].otel_metric_records();
+        let invocation = metric::InvocationContext::new(
+            metric::ModelClass::AnthropicSonnet,
+            metric::ClientApplication::ChatCliV3,
+            false,
+        );
+        expect_metric(
+            &turn_records,
+            metric::user_turns_for_invocation(invocation, metric::ResultKind::Success, metric::Mode::Interactive),
+        );
+        expect_metric(
+            &turn_records,
+            metric::user_turn_duration_seconds_for_invocation(
+                1.0,
+                invocation,
+                metric::ChatConversationKind::Interactive,
+                metric::Mode::Interactive,
+            ),
+        );
+        expect_metric(
+            &turn_records,
+            metric::tokens_consumed(
+                10,
+                metric::ModelClass::AnthropicSonnet,
+                metric::TokenType::InputUncached,
+                metric::ClientApplication::ChatCliV3,
+                false,
+            ),
+        );
+        expect_metric(
+            &turn_records,
+            metric::estimated_cost_usd(
+                invocation
+                    .estimated_cost_usd(TokenUsage {
+                        uncached_input_tokens: 10,
+                        cache_read_input_tokens: 2,
+                        cache_write_input_tokens: 3,
+                        output_tokens: 5,
+                    })
+                    .expect("sonnet pricing is known"),
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV3,
+                false,
+            ),
+        );
+
+        let invocation = events[3].otel_metric_record().expect("model invocation metric");
+        expect_metric(
+            std::slice::from_ref(&invocation),
+            metric::model_invocation(metric::ModelClass::AnthropicSonnet),
+        );
+    }
+
+    #[test]
+    fn kas_context_only_payload_does_not_emit_empty_turn_completion() {
+        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            model_id: Some("claude-4-sonnet".to_string()),
+            metering_usage: Vec::new(),
+            turn_duration_ms: None,
+            context_usage_percentage: Some(66.0),
+            total_tokens: None,
+            uncached_input_tokens: None,
+            output_tokens: None,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            status: None,
+            used_tools: Vec::new(),
+        });
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0].ty, EventType::ContextUsagePercentage { .. }));
+    }
+
+    #[test]
+    fn kas_unknown_turn_status_maps_to_failed_fact_row() {
+        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            model_id: Some("claude-4-sonnet".to_string()),
+            metering_usage: Vec::new(),
+            turn_duration_ms: Some(50.0),
+            context_usage_percentage: None,
+            total_tokens: None,
+            uncached_input_tokens: None,
+            output_tokens: None,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            status: Some(TurnCompletionStatus::Other),
+            used_tools: Vec::new(),
+        });
+
+        assert_eq!(events.len(), 2);
+        match &events[0].ty {
+            EventType::RecordUserTurnCompletion { result, args, .. } => {
+                assert_eq!(*result, TelemetryResult::Failed);
+                assert_eq!(args.reason.as_deref(), Some("KasTurnUnknownStatus"));
+                assert_eq!(args.reason_desc.as_deref(), Some("KAS reported an unknown turn status"));
+                assert_eq!(args.user_turn_duration_seconds, 1);
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+        assert!(matches!(events[1].ty, EventType::ModelInvocation { .. }));
+    }
+
+    #[test]
+    fn kas_turn_completion_emits_tool_usage_metrics_and_facts() {
+        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            model_id: Some("claude-4-sonnet".to_string()),
+            metering_usage: Vec::new(),
+            turn_duration_ms: None,
+            context_usage_percentage: None,
+            total_tokens: None,
+            uncached_input_tokens: None,
+            output_tokens: None,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            status: None,
+            used_tools: vec![
+                "fs_read".to_string(),
+                "@local/echo".to_string(),
+                "custom_tool".to_string(),
+                "fs_read".to_string(),
+                " ".to_string(),
+            ],
+        });
+
+        assert_eq!(events.len(), 3);
+        assert!(
+            events
+                .iter()
+                .all(|event| event.client_application.as_deref() == Some("chat_cli_v3"))
+        );
+
+        let builtin_records = events[0].otel_metric_records();
+        expect_metric(
+            &builtin_records,
+            metric::tool_call_total(metric::ToolOrigin::Builtin, Some("fs_read"), metric::Outcome::Success),
+        );
+        expect_metric(
+            &builtin_records,
+            metric::tool_invocations(metric::ToolOrigin::Builtin, metric::Outcome::Success),
+        );
+        let builtin_log = events[0].otel_log_record().expect("builtin tool log");
+        assert_eq!(log_attr(&builtin_log, "tool_name"), Some("fs_read"));
+        assert_eq!(log_attr(&builtin_log, "model_class"), Some("anthropic_sonnet"));
+
+        let mcp_records = events[1].otel_metric_records();
+        expect_metric(
+            &mcp_records,
+            metric::tool_call_total(metric::ToolOrigin::Mcp, None, metric::Outcome::Success),
+        );
+        let mcp_log = events[1].otel_log_record().expect("mcp tool log");
+        assert_eq!(log_attr(&mcp_log, "tool_name"), Some("echo"));
+        assert_eq!(log_attr(&mcp_log, "mcp_server_name"), Some("local"));
+
+        let custom_log = events[2].otel_log_record().expect("custom tool log");
+        assert_eq!(log_attr(&custom_log, "tool_name"), Some("custom_tool"));
+        assert_eq!(log_attr(&custom_log, "mcp_server_name"), None);
+    }
+
+    #[test]
+    fn kas_token_only_payload_emits_turn_fact_and_metrics() {
+        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
+            session_id: Some("kas-session-1".to_string()),
+            model_id: Some("claude-4-sonnet".to_string()),
+            metering_usage: Vec::new(),
+            turn_duration_ms: None,
+            context_usage_percentage: None,
+            total_tokens: None,
+            uncached_input_tokens: Some(10),
+            output_tokens: Some(5),
+            cache_read_input_tokens: Some(2),
+            cache_write_input_tokens: Some(3),
+            status: None,
+            used_tools: Vec::new(),
+        });
+
+        assert_eq!(events.len(), 2);
+        match &events[0].ty {
+            EventType::RecordUserTurnCompletion { result, args, .. } => {
+                assert_eq!(*result, TelemetryResult::Succeeded);
+                assert_eq!(args.total_tokens, Some(17));
+                assert!(args.estimated_cost_usd.is_some());
+            },
+            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
+        }
+
+        let records = events[0].otel_metric_records();
+        expect_metric(
+            &records,
+            metric::tokens_consumed(
+                5,
+                metric::ModelClass::AnthropicSonnet,
+                metric::TokenType::Output,
+                metric::ClientApplication::ChatCliV3,
+                false,
+            ),
+        );
+        expect_metric(
+            &records,
+            metric::estimated_cost_usd(
+                metric::InvocationContext::new(
+                    metric::ModelClass::AnthropicSonnet,
+                    metric::ClientApplication::ChatCliV3,
+                    false,
+                )
+                .estimated_cost_usd(TokenUsage {
+                    uncached_input_tokens: 10,
+                    cache_read_input_tokens: 2,
+                    cache_write_input_tokens: 3,
+                    output_tokens: 5,
+                })
+                .expect("sonnet pricing is known"),
+                metric::ModelClass::AnthropicSonnet,
+                metric::ClientApplication::ChatCliV3,
+                false,
+            ),
+        );
+        assert!(matches!(events[1].ty, EventType::ModelInvocation { .. }));
     }
 }
 

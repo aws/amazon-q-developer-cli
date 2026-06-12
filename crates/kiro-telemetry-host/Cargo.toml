@@ -1,0 +1,15 @@
+[package]
+name = "kiro-telemetry-host"
+version = "0.0.0-dev"
+edition = "2024"
+publish = false
+description = "Shared host for kiro-cli telemetry: TelemetryThread, Event types, HostConfig"
+
+[lints]
+workspace = true
+
+[dependencies]
+eyre.workspace = true
+kiro-telemetry.workspace = true
+serde.workspace = true
+strum.workspace = true

@@ -178,7 +178,8 @@ impl CurrentEnvironment {
             .ok()
             .map(|path| path.to_string_lossy().replace(&username, "/USER"));
 
-        let install_method = crate::telemetry::get_install_method();
+        let install_method =
+            crate::telemetry::get_install_method(crate::constants::BREW_CASK_NAME, crate::constants::CLI_NAME);
 
         let in_ssh = crate::util::system_info::in_ssh();
         let in_ci = crate::util::system_info::in_ci();

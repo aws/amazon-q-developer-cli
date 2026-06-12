@@ -132,6 +132,9 @@ pub mod env_var {
         /// OpenTelemetry OTLP endpoint override for team-owned ADOT or KUTS dogfood
         KIRO_TELEMETRY_OTLP_ENDPOINT = "KIRO_TELEMETRY_OTLP_ENDPOINT",
 
+        /// OpenTelemetry export interval override for local development
+        KIRO_TELEMETRY_EXPORT_INTERVAL_MS = "KIRO_TELEMETRY_EXPORT_INTERVAL_MS",
+
         /// Chat shell for Unix systems
         KIRO_CHAT_SHELL = "KIRO_CHAT_SHELL",
 

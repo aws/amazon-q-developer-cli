@@ -15,6 +15,7 @@ import type {
   ListSessionsResponse,
   KasContextShowResponse,
   KasContextMutationResponse,
+  ChatSlashCommandTelemetryPayload,
 } from './types/session-client';
 import type { ModeChangedNotification } from './types/generated/chat-cli';
 import type { ContextBreakdownData } from './stores/app-store';
@@ -333,6 +334,13 @@ export class Kiro {
   sendModeChanged(payload: ModeChangedNotification): void {
     if (!this.sessionClient) return;
     this.sessionClient.sendModeChanged?.(payload);
+  }
+
+  sendChatSlashCommandTelemetry(
+    payload: ChatSlashCommandTelemetryPayload
+  ): void {
+    if (!this.sessionClient) return;
+    this.sessionClient.sendChatSlashCommandTelemetry?.(payload);
   }
 
   async terminateSession(sessionId: string): Promise<void> {
