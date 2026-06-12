@@ -142,14 +142,12 @@ pub(crate) async fn handle_internal_prompt(
                     }
                 },
                 AgentEvent::Stop(AgentStopReason::Cancelled) => {
-                    // If the subagent already emitted SubagentSummary before
-                    // cancellation landed (model produced summary, then user
-                    // pressed Esc / sibling kill cascaded a parent cancel),
-                    // honor that result instead of dropping it. Mirrors the
-                    // salvage path in agent::end_current_turn that synthesizes
-                    // SubagentSummary from a still-pending summary tool's args
-                    // when cancellation interrupts execution between the
-                    // assistant message landing and execute() running.
+                    // If the subagent's summary tool already ran and emitted
+                    // SubagentSummary before cancellation landed (model produced
+                    // summary, execute() broadcast it, then the user pressed Esc
+                    // / a sibling kill cascaded a parent cancel), honor that
+                    // result instead of dropping it. If no summary was emitted,
+                    // the cancelled subagent simply has no result to report.
                     if let Some(s) = summary {
                         return Ok(s);
                     }

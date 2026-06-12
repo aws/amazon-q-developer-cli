@@ -908,30 +908,28 @@ async fn test_cancel_with_pending_tool_uses() {
     assert!(has_interruption_text, "expected interruption message");
 }
 
-/// Regression test for the lite-mode subagent kill bug: when a subagent emits
-/// the `summary` tool with full taskResult and then a sibling kill cascades a
-/// parent cancel before the summary tool's execute() runs, the broadcast that
-/// would normally deliver SubagentSummary never fires — so the parent
-/// agent_crew result reads "No result" for that stage even though the model
-/// produced it. The fix in agent::end_current_turn salvages the args from the
-/// pending summary tool_use and broadcasts SubagentSummary before stamping
-/// the cancelled tool_result; that means the orchestrator's internal_prompt
-/// loop sees the summary event in its broadcast queue and (with the matching
-/// fix in subagent_tool.rs) returns Ok(summary) on Stop(Cancelled).
+/// Subagent summary delivery vs. cancellation.
+///
+/// `Summary::execute()` is the only natural emitter of `SubagentSummary`. If a
+/// subagent is cancelled before that tool runs, no `SubagentSummary` is emitted
+/// and any in-flight result is dropped. That is the accepted behavior: a
+/// cancelled subagent has no result to report, and the orchestrator surfaces
+/// "[Cancelled by user]" for the stage rather than the model's partial work.
+/// This test pins both halves of that contract:
+///   1. cancel during `SendingRequest` (before any assistant content streams)
+///      emits no `SubagentSummary`, and
+///   2. a turn that streams the summary tool to completion still broadcasts
+///      `SubagentSummary` via the natural `execute()` path.
 #[tokio::test]
-async fn test_cancel_with_pending_summary_emits_summary_event() {
+async fn test_cancel_drops_pending_summary_but_natural_execute_broadcasts() {
     let _ = tracing_subscriber::fmt::try_init();
 
     // Subagent stream: text + summary tool use, no end_turn. We delay the
     // first chunk so the cancel deterministically lands during the
     // SendingRequest stage — the agent has not yet started streaming any
-    // content, the assistant message with the summary tool_use has not been
-    // appended yet, and there's nothing to salvage. This exercises the
-    // baseline cancellation path without races against the model. A
-    // separate, harder-to-stage test would specifically pin the cancel
-    // between the toolUse contentBlockStop and execute_tools spawning, but
-    // the salvage code path is unit-covered by serde_json::from_value of
-    // the captured tool_use.input.
+    // content and the assistant message with the summary tool_use has not been
+    // appended yet. This exercises the baseline cancellation path without races
+    // against the model.
     let response_stream = parse_response_streams(include_str!("./mock_responses/summary_tool.jsonl"))
         .await
         .unwrap();
@@ -958,7 +956,8 @@ async fn test_cancel_with_pending_summary_emits_summary_event() {
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
     // Cancellation during SendingRequest with no assistant message yet
-    // should produce no SubagentSummary (nothing to salvage).
+    // should produce no SubagentSummary — the cancelled subagent reports no
+    // result.
     let saw_summary_during_request = test
         .agent_events()
         .iter()
@@ -973,8 +972,8 @@ async fn test_cancel_with_pending_summary_emits_summary_event() {
     );
 
     // Now drive a second turn that DOES stream the summary tool_use to
-    // completion — verifies the natural execute() broadcast still works
-    // (regression check for the salvage edit not breaking the happy path).
+    // completion — verifies the natural execute() broadcast works when the
+    // tool actually runs (the happy path).
     let mut test2 = TestCase::builder()
         .test_name("summary tool natural execute broadcasts summary")
         .with_default_agent_config()
