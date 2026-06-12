@@ -2423,12 +2423,9 @@ export class KasAcpClient extends BaseAcpClient {
         }
       }
     );
-    this.kiroClient.onExtNotification(
-      '_kiro/customAgent/config_error',
-      (params) => {
-        this.handleAgentConfigError(params);
-      }
-    );
+    // Agent config_error notifications suppressed — KAS recursive agent search
+    // produces false positives (non-agent files in .kiro/agents/ subfolders).
+    // Reverted flat-search fix needs follow-up: https://github.com/kiro-team/kiro-agent/pull/1191
     this.kiroClient.onExtNotification('_kiro/error/rate_limit', (params) => {
       this.handleRateLimitError(params);
     });

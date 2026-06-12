@@ -106,11 +106,11 @@ describe('KAS agent notifications', () => {
     expect(store.currentAgent?.name).toBe('kiro_default');
   });
 
-  it('_kiro/customAgent/config_error surfaces error in store', async () => {
+  it('_kiro/customAgent/config_error is suppressed (no-op)', async () => {
     /**
      * GIVEN  TUI connected
      * WHEN   server pushes _kiro/customAgent/config_error
-     * THEN   error message is available in store alerts
+     * THEN   no error is surfaced (suppressed due to false positives)
      */
     tc = new AcpTestCase({ testName: 'agent-config-error' });
     setupHandshake(tc);
@@ -125,14 +125,9 @@ describe('KAS agent notifications', () => {
     });
     await tc.sleepMs(300);
 
-    // The error should surface — check visible text or store alert
-    const snap = tc.getSnapshotFormatted();
-    // Agent config errors are shown as alerts in the TUI
-    expect(
-      snap.includes('Invalid YAML') ||
-        snap.includes('config') ||
-        snap.includes('error')
-    ).toBe(true);
+    const store = await tc.getStore();
+    expect(store.initErrors).toHaveLength(0);
+    expect(store.transientAlert).toBeNull();
   });
 
   it('_kiro/error/rate_limit surfaces rate limit message via transientAlert', async () => {

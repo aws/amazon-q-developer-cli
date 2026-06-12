@@ -3728,14 +3728,14 @@ describe('MCP OAuth flow', () => {
       expect(kc._extNotifHandlers['_kiro/customAgent/not_found']).toBeDefined();
     });
 
-    it('registers handlers for _kiro/customAgent/config_error', async () => {
+    it('does NOT register handler for _kiro/customAgent/config_error (suppressed)', async () => {
       const client = new KasAcpClient();
       await client.initialize();
       await client.newSession();
       const kc = (client as any).kiroClient;
       expect(
         kc._extNotifHandlers['_kiro/customAgent/config_error']
-      ).toBeDefined();
+      ).toBeUndefined();
     });
 
     it('registers handlers for _kiro/error/rate_limit', async () => {
