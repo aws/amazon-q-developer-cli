@@ -2241,6 +2241,7 @@ dependencies = [
  "voice",
  "walkdir",
  "webpki-roots",
+ "which 8.0.2",
  "whoami",
  "windows 0.61.3",
  "windows-sys 0.59.0",

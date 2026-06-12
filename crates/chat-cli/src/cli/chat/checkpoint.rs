@@ -385,18 +385,29 @@ pub fn truncate_message(s: &str, max_len: usize) -> String {
 
 pub const CHECKPOINT_MESSAGE_MAX_LENGTH: usize = 60;
 
+/// Resolves the full path to the git binary.
+/// On Windows, bare command names resolve CWD first (CWE-426), so we use
+/// `which` to find the real binary from PATH only.
+fn resolve_git_path() -> Result<PathBuf> {
+    which::which("git").map_err(|_| eyre!("git not found in PATH"))
+}
+
 fn is_git_installed() -> bool {
-    Command::new("git")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
+    resolve_git_path().is_ok_and(|git| {
+        Command::new(git)
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    })
 }
 
 fn is_in_git_repo() -> bool {
-    Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output()
-        .is_ok_and(|o| o.status.success())
+    resolve_git_path().is_ok_and(|git| {
+        Command::new(git)
+            .args(["rev-parse", "--is-inside-work-tree"])
+            .output()
+            .is_ok_and(|o| o.status.success())
+    })
 }
 
 fn configure_git(shadow_path: &str) -> Result<()> {
@@ -439,7 +450,8 @@ fn stage_commit_tag(shadow_path: &str, work_tree: &Path, message: &str, tag: &st
 }
 
 fn run_git(dir: &Path, work_tree: Option<&Path>, args: &[&str]) -> Result<Output> {
-    let mut cmd = Command::new("git");
+    let git = resolve_git_path()?;
+    let mut cmd = Command::new(git);
     cmd.arg(format!("--git-dir={}", dir.display()));
 
     if let Some(work_tree_path) = work_tree {

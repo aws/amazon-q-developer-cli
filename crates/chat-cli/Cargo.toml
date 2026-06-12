@@ -131,6 +131,7 @@ url.workspace = true
 uuid.workspace = true
 walkdir.workspace = true
 webpki-roots.workspace = true
+which.workspace = true
 whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
