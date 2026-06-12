@@ -20,6 +20,8 @@ import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
+import { createOpenExternalUrlCapability } from './capabilities/open-external-url';
+import { createSecretStorageCapabilities } from './capabilities/secret-storage';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type {
   ChatSlashCommandTelemetryPayload,
@@ -2067,6 +2069,7 @@ export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
   private mcpRegistryCache: McpServerInfo[] = [];
+  private pendingOAuthServerNames: Set<string> = new Set();
   private chatSessionStartedSessions = new Set<string>();
 
   /**
@@ -2180,7 +2183,11 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient = new KiroClient({
       stream: finalStream,
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
-      capabilities: [createGetAccessTokenCapability()],
+      capabilities: [
+        createGetAccessTokenCapability(),
+        createOpenExternalUrlCapability(),
+        ...createSecretStorageCapabilities(),
+      ],
       clientMeta: {
         telemetryEnabled: isTelemetryEnabled(),
         ...(isTelemetryEnabled() && { telemetry: getTelemetryIdentity() }),
@@ -3446,6 +3453,13 @@ export class KasAcpClient extends BaseAcpClient {
     return (this.cachedBreakdown as ContextBreakdownData | null) ?? null;
   }
 
+  async resetMcpServer(serverName: string, startOAuth: boolean): Promise<void> {
+    await this.kiroClient.sendExtMethod('_kiro/mcp/resetServer', {
+      serverName,
+      startOAuth,
+    });
+  }
+
   private async executeCode(subcommand: string): Promise<CommandResult> {
     const validSubcommands = ['status', 'init', 'overview'];
     const cmd = subcommand.trim().split(/\s+/)[0] || 'status';
@@ -3695,13 +3709,33 @@ export class KasAcpClient extends BaseAcpClient {
         };
       });
 
-      // Broadcast OAuth URL for servers that need authentication
+      // Broadcast OAuth URL for servers that need authentication,
+      // and clear pending OAuth for servers that have connected.
+      const stillPendingAuth = new Set<string>();
       for (const server of servers) {
         if (server.failedAuthorization && server.authorizationUrl) {
+          stillPendingAuth.add(server.name);
+          this.pendingOAuthServerNames.add(server.name);
           this.broadcastStreamEvent({
             type: AgentEventType.McpOauthRequest,
             serverName: server.name,
             oauthUrl: server.authorizationUrl,
+          });
+        }
+      }
+      // Emit McpServerInitialized only for servers transitioning from
+      // pending-OAuth to connected (not for every connected server on
+      // every notification).
+      for (const server of servers) {
+        if (
+          this.pendingOAuthServerNames.has(server.name) &&
+          !stillPendingAuth.has(server.name) &&
+          server.status === 'connected'
+        ) {
+          this.pendingOAuthServerNames.delete(server.name);
+          this.broadcastStreamEvent({
+            type: AgentEventType.McpServerInitialized,
+            serverName: server.name,
           });
         }
       }

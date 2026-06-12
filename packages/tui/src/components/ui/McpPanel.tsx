@@ -19,6 +19,7 @@ interface McpPanelProps {
   mode: string;
   onClose: () => void;
   onAction?: (serverNames: string[]) => Promise<void>;
+  onAuthenticate?: (serverName: string) => void;
 }
 
 const GAP = 2;
@@ -31,6 +32,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   mode,
   onClose,
   onAction,
+  onAuthenticate,
 }) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
@@ -172,7 +174,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
         const hasOAuth = pendingOAuthUrls.has(server.name);
         let detail: string;
         if (hasOAuth) {
-          detail = `${server.status} · Enter to copy OAuth URL`;
+          detail = `${server.status} · Enter to authenticate`;
         } else if (server.status === 'failed' && reason) {
           detail = reason;
         } else {
@@ -251,14 +253,16 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     }
   );
 
-  // In status view (non-interactive), handle Enter to copy OAuth URL
+  // In status view (non-interactive), handle Enter to authenticate OAuth server
   useInput((_input: string, key: { return: boolean }) => {
     if (!key.return || isInteractive) return;
     const server = filtered[cursorIndex];
-    if (server) {
-      const url = pendingOAuthUrls.get(server.name);
-      if (url) {
-        void copyToSystemClipboard(url);
+    if (server && pendingOAuthUrls.has(server.name)) {
+      if (onAuthenticate) {
+        onAuthenticate(server.name);
+      } else {
+        const url = pendingOAuthUrls.get(server.name);
+        if (url) void copyToSystemClipboard(url);
       }
     }
   });

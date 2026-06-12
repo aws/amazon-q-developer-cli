@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "MCP OAuth flow now opens browser directly instead of copying URL to clipboard"
+}

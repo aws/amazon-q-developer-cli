@@ -3896,6 +3896,97 @@ describe('MCP OAuth flow', () => {
     });
   });
 
+  describe('McpServerInitialized transition logic', () => {
+    it('emits McpServerInitialized only when server transitions from pending-OAuth to connected', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const events: any[] = [];
+      client.onUpdate((e: any) => events.push(e));
+
+      // First: server needs auth
+      (client as any).handleMcpStatusNotification({
+        servers: [
+          {
+            name: 'notion',
+            status: 'failed',
+            failedAuthorization: true,
+            authorizationUrl: 'https://example.com/oauth',
+          },
+        ],
+      });
+
+      events.length = 0;
+
+      // Second: server is now connected (completed OAuth)
+      (client as any).handleMcpStatusNotification({
+        servers: [{ name: 'notion', status: 'connected', tools: [] }],
+      });
+
+      const initEvents = events.filter(
+        (e) => e.type === AgentEventType.McpServerInitialized
+      );
+      expect(initEvents).toHaveLength(1);
+      expect(initEvents[0].serverName).toBe('notion');
+    });
+
+    it('does NOT emit McpServerInitialized for servers that were never pending OAuth', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const events: any[] = [];
+      client.onUpdate((e: any) => events.push(e));
+
+      // Server connects without ever being in OAuth state
+      (client as any).handleMcpStatusNotification({
+        servers: [{ name: 'local-mcp', status: 'connected', tools: [] }],
+      });
+
+      const initEvents = events.filter(
+        (e) => e.type === AgentEventType.McpServerInitialized
+      );
+      expect(initEvents).toHaveLength(0);
+    });
+
+    it('does NOT re-emit McpServerInitialized on repeated connected status', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const events: any[] = [];
+      client.onUpdate((e: any) => events.push(e));
+
+      // Transition: auth-required → connected
+      (client as any).handleMcpStatusNotification({
+        servers: [
+          {
+            name: 'notion',
+            status: 'failed',
+            failedAuthorization: true,
+            authorizationUrl: 'https://example.com/oauth',
+          },
+        ],
+      });
+      (client as any).handleMcpStatusNotification({
+        servers: [{ name: 'notion', status: 'connected', tools: [] }],
+      });
+
+      events.length = 0;
+
+      // Third notification: still connected — should NOT re-emit
+      (client as any).handleMcpStatusNotification({
+        servers: [{ name: 'notion', status: 'connected', tools: [] }],
+      });
+
+      const initEvents = events.filter(
+        (e) => e.type === AgentEventType.McpServerInitialized
+      );
+      expect(initEvents).toHaveLength(0);
+    });
+  });
+
   // ── Task 2: _meta.kiro extraction in convertAcpUpdateToEvent ──
 
   describe('_meta.kiro extraction', () => {

@@ -968,7 +968,7 @@ export const InlineLayout: React.FC = () => {
               : (loadingMessage ??
                 transientAlert?.message ??
                 (pendingOAuthServers.size > 0
-                  ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to copy URL`
+                  ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to authenticate`
                   : undefined) ??
                 summarizeInitErrors(
                   initErrors.filter(
@@ -1009,7 +1009,7 @@ export const InlineLayout: React.FC = () => {
             transientAlert?.action
               ? `${transientAlert.action.key}: ${transientAlert.action.label}`
               : pendingOAuthServers.size > 0
-                ? 'Ctrl+y: Copy URL'
+                ? 'Ctrl+y: Authenticate'
                 : undefined
           }
         />
@@ -1189,6 +1189,9 @@ export const InlineLayout: React.FC = () => {
                 pendingOAuthUrls={pendingOAuthServers}
                 mode={mcpMode}
                 onClose={handleCloseMcpPanel}
+                onAuthenticate={(serverName) => {
+                  kiro.resetMcpServer(serverName, true).catch(() => {});
+                }}
                 onAction={async (serverNames: string[]) => {
                   const action = mcpMode === 'add' ? 'add' : 'remove';
                   await kiro.executeCommand({

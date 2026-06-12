@@ -123,10 +123,11 @@ export const AppContainer: React.FC = () => {
       return;
     }
 
-    const firstOAuthUrl =
+    const firstOAuthEntry =
       pendingOAuthServers.size > 0
-        ? (pendingOAuthServers.entries().next().value as [string, string])[1]
+        ? (pendingOAuthServers.entries().next().value as [string, string])
         : null;
+    const firstOAuthUrl = firstOAuthEntry ? firstOAuthEntry[1] : null;
 
     const state: AppKeypressState = {
       mode,
@@ -162,12 +163,20 @@ export const AppContainer: React.FC = () => {
       acceptSurveyPrompt: () => {
         if (surveyPrompt) openSurveyPanel(surveyPrompt.survey);
       },
-      copyOAuthUrl: (url) => {
-        if (copyToSystemClipboard(url)) {
+      copyOAuthUrl: (_url) => {
+        const serverName = firstOAuthEntry?.[0];
+        if (serverName) {
           showTransientAlert({
-            message: 'OAuth URL copied to clipboard',
+            message: `Authenticating MCP server "${serverName}"...`,
             status: 'info',
             autoHideMs: 3000,
+          });
+          kiro.resetMcpServer(serverName, true).catch(() => {
+            showTransientAlert({
+              message: `Failed to start OAuth for "${serverName}"`,
+              status: 'error',
+              autoHideMs: 5000,
+            });
           });
         }
       },
