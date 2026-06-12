@@ -5,7 +5,10 @@ import {
   categorize,
   type VerboseDisplayConfig,
 } from '../verbose.js';
-import { TASK_TOOL_NAMES } from '../../types/agent-events.js';
+import {
+  TASK_TOOL_NAMES,
+  isParentSubagentTool,
+} from '../../types/agent-events.js';
 import { needsLeadingBlankByRole } from '../blank-rules.js';
 import type { Glyphs } from '../../utils/glyphs.js';
 import { isErrorContent, type RenderTheme } from './theme.js';
@@ -320,7 +323,7 @@ export function renderMessageToText(
       // it in full with no truncation. Per-stage tool calls (Read/Grep/etc.)
       // are hidden from the chat log entirely — they live only in the
       // footer activity strip while running.
-      if (msg.name === 'subagent') {
+      if (isParentSubagentTool(msg.name)) {
         const elapsed =
           msg.startTime && msg.finishTime
             ? msg.finishTime - msg.startTime
