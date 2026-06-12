@@ -5510,6 +5510,7 @@ dependencies = [
  "kiro-telemetry",
  "serde",
  "strum 0.27.2",
+ "typeshare",
 ]
 
 [[package]]

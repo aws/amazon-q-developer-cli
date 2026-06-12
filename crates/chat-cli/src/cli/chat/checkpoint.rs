@@ -389,7 +389,7 @@ pub const CHECKPOINT_MESSAGE_MAX_LENGTH: usize = 60;
 /// On Windows, bare command names resolve CWD first (CWE-426), so we use
 /// `which` to find the real binary from PATH only.
 fn resolve_git_path() -> Result<PathBuf> {
-    which::which("git").map_err(|_| eyre!("git not found in PATH"))
+    which::which("git").map_err(|e| eyre!("git not found in PATH: {e}"))
 }
 
 fn is_git_installed() -> bool {

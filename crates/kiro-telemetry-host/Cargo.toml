@@ -13,3 +13,4 @@ eyre.workspace = true
 kiro-telemetry.workspace = true
 serde.workspace = true
 strum.workspace = true
+typeshare.workspace = true
