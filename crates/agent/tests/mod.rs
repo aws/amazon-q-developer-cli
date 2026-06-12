@@ -916,10 +916,10 @@ async fn test_cancel_with_pending_tool_uses() {
 /// cancelled subagent has no result to report, and the orchestrator surfaces
 /// "[Cancelled by user]" for the stage rather than the model's partial work.
 /// This test pins both halves of that contract:
-///   1. cancel during `SendingRequest` (before any assistant content streams)
-///      emits no `SubagentSummary`, and
-///   2. a turn that streams the summary tool to completion still broadcasts
-///      `SubagentSummary` via the natural `execute()` path.
+///   1. cancel during `SendingRequest` (before any assistant content streams) emits no
+///      `SubagentSummary`, and
+///   2. a turn that streams the summary tool to completion still broadcasts `SubagentSummary` via
+///      the natural `execute()` path.
 #[tokio::test]
 async fn test_cancel_drops_pending_summary_but_natural_execute_broadcasts() {
     let _ = tracing_subscriber::fmt::try_init();
