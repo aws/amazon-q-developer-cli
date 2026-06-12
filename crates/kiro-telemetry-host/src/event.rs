@@ -625,3 +625,33 @@ fn redaction_records_for_fields(
     }
     records
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trips a camelCase wire-format enum through both serde JSON and
+    /// strum's FromStr/Display, so a `rename_all`/variant drift fails the test.
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str::<$ty>(&quoted).unwrap());
+            assert_eq!($variant, $text.parse::<$ty>().unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
+
+    #[test]
+    fn test_ui_mode_source_ser_deser() {
+        test_ser_deser!(UiModeSource, UiModeSource::EnvVar, "envVar");
+        test_ser_deser!(UiModeSource, UiModeSource::Setting, "setting");
+        test_ser_deser!(UiModeSource, UiModeSource::Default, "default");
+    }
+
+    #[test]
+    fn test_mode_change_source_ser_deser() {
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
+    }
+}

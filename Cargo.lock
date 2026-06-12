@@ -5508,6 +5508,7 @@ dependencies = [
  "eyre",
  "kiro-telemetry",
  "serde",
+ "serde_json",
  "strum 0.27.2",
 ]
 
