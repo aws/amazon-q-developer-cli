@@ -1748,8 +1748,12 @@ impl Agent {
             .any(|s| s.selected.as_ref().is_some_and(|id| id.is_reject()));
 
         if any_denied {
-            let mut content = Vec::new();
-            let mut results = HashMap::new();
+            // Carry forward parse-error results synthesized before approval (siblings
+            // of the tools awaiting approval) so the model sees a tool_result for every
+            // tool_use it emitted; otherwise enforce_conversation_invariants back-fills
+            // a false "cancelled by the user" result for the parse-error sibling.
+            let mut content = state.pre_built_content.clone();
+            let mut results = state.pre_built_results.clone();
             for (tool_use_id, approval_state) in &state.needs_approval {
                 let reason = match &approval_state.selected {
                     Some(id) if id.is_allow() => "Tool use was approved, but did not execute",

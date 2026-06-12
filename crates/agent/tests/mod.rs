@@ -1564,6 +1564,98 @@ async fn test_parse_error_preserves_parsed_ok_siblings() {
     );
 }
 
+/// When a model batch mixes a parse-error tool with a sibling the user then
+/// DENIES, the parse-error result (held aside in `pre_built_*`) must still be
+/// threaded into the outbound batch. Regression test for the user-deny branch
+/// of `handle_approval_result`, which previously rebuilt the batch solely from
+/// `needs_approval` and dropped the parse-error sibling — leaving its tool_use
+/// with no tool_result, so enforce_conversation_invariants back-filled a false
+/// "Tool use was cancelled by the user" message for a tool the user never saw.
+#[tokio::test]
+async fn test_parse_error_preserved_when_sibling_denied() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("parse error preserved when sibling denied")
+        .with_default_agent_config()
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/parse_error_with_denied_sibling.jsonl"))
+                .await
+                .unwrap(),
+        )
+        // Not trust-all: the fs_write pauses for approval, which we reject.
+        .with_tool_use_approvals([SendApprovalResultArgs {
+            id: "tooluse_write".into(),
+            result: ApprovalResult {
+                option_id: PermissionOptionId::RejectOnce,
+                reason: None,
+                trust_option: None,
+            },
+        }])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("write hello.py and list the missing dir".to_string())
+        .await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (initial + tool_results after deny), got {}",
+        requests.len()
+    );
+
+    // The follow-up request after the deny must contain a tool_result for BOTH
+    // tool_uses the model emitted: the denied write AND the parse-error read.
+    let follow_up = &requests[1];
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_write" && matches!(tr.status, ToolResultStatus::Error)),
+        "follow-up should include an error tool_result for the denied tooluse_write"
+    );
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_bad" && matches!(tr.status, ToolResultStatus::Error)),
+        "follow-up should include the parse-error tool_result for tooluse_bad — \
+         dropping it is the bug this test guards against"
+    );
+
+    // The parse-error result must carry the real validation message, NOT the
+    // synthetic "Tool use was cancelled by the user" text that
+    // enforce_conversation_invariants would back-fill if the result were dropped.
+    let bad_result_text = follow_up
+        .messages()
+        .last()
+        .expect("last message should exist")
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::ToolResult(tr) if tr.tool_use_id == "tooluse_bad" => Some(
+                tr.content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ToolResultContentBlock::Text(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .expect("tooluse_bad must have a tool_result");
+    assert!(
+        !bad_result_text.contains("Tool use was cancelled by the user"),
+        "parse error must not be misreported as user cancellation; got: {bad_result_text}"
+    );
+    assert!(
+        bad_result_text.to_ascii_lowercase().contains("directory")
+            || bad_result_text.contains("Failed to parse the tool use"),
+        "parse error should describe the validation failure; got: {bad_result_text}"
+    );
+}
+
 /// Tests that an empty response (messageStart + messageStop + metadata, no
 /// text/tools/thinking) triggers exactly one retry. When the retry succeeds, the agent
 /// completes normally.

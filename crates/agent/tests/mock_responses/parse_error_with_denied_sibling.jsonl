@@ -1,0 +1,23 @@
+// Response 1: Assistant emits 2 tool uses in parallel — an fs_write (which
+// requires approval) plus an fs_read against a nonexistent directory. The
+// read fails parse-time validation (Directory not found) and is held aside
+// as a pre-built parse-error result, while the write proceeds to approval.
+// The test then DENIES the write, exercising the user-deny branch of
+// handle_approval_result.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Writing the file and listing the dir."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_write","name":"write"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"command\": \"create\", \"path\": \"hello.py\", \"content\": \"print(\\\"hi\\\")\"}"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_bad","name":"read"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Directory\", \"path\": \"definitely-does-not-exist-xyzzy\"}]}"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"parse-error-denied-sibling","statusCode":null}}}}
+
+// Response 2: end turn after the model receives the merged tool_results
+// (one "denied by the user" for the write + one parse error for the read).
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Understood, I won't write the file."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:20.610411Z","requestEndTime":"2025-10-29T17:26:23.069210Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":5},"usage":null,"service":{"requestId":"parse-error-denied-sibling-end","statusCode":null}}}}
