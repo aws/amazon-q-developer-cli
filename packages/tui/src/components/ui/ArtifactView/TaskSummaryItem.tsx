@@ -1,8 +1,9 @@
 import React from 'react';
-import { Box, CURSOR_MARKER } from './../../../renderer.js';
+import { Box } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
+import { cursorColumn } from './cursorColumn.js';
 import type { HighLevelTask } from '../../../utils/spec-artifact-parser/index.js';
 
 interface Props {
@@ -23,7 +24,7 @@ export const TaskSummaryItem: React.FC<Props> = ({
   const accent = getColor('accent');
   const success = getColor('success');
 
-  const cursor = selected ? CURSOR_MARKER : ' ';
+  const cursor = cursorColumn(selected);
   // Use checkmark/dotEmpty from glyphs so ASCII mode falls back automatically.
   const box = task.checked ? glyphs.checkmark : glyphs.dotEmpty;
   const label = task.number ? `${task.number}. ${task.title}` : task.title;

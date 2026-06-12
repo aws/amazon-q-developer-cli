@@ -78,9 +78,10 @@ function firstParagraph(bodyLines: string[]): string {
  *
  * Overview fallback chain:
  *   1. First paragraph of `## Introduction` (when its body is non-empty)
- *   2. First paragraph of `## Architecture Overview` (when non-empty)
- *   3. First non-empty paragraph of the document body, excluding the H1 title
- *   4. Empty string
+ *   2. First paragraph of `## Overview` (when its body is non-empty)
+ *   3. First paragraph of `## Architecture Overview` (when non-empty)
+ *   4. First non-empty PROSE paragraph of the body (all headings excluded)
+ *   5. Empty string
  *
  * Sections are H2 headings with non-empty bodies, in source order.
  */
@@ -97,38 +98,31 @@ export function extractDesign(source: string): {
   const h2s = findH2Headings(lines);
 
   // ── Overview ────────────────────────────────────────────────
+  // Source priority: Introduction → Overview → Architecture Overview, then
+  // the first prose paragraph of the document body.
   let overview = '';
-  const intro = h2s.find((h) => h.title.toLowerCase() === 'introduction');
-  const arch = h2s.find(
-    (h) => h.title.toLowerCase() === 'architecture overview'
-  );
-
-  if (intro) {
-    const next = h2s[h2s.indexOf(intro) + 1];
-    const body = sectionBodyLines(sliceSection(lines, intro, next));
-    if (hasNonEmptyBody(body)) {
-      overview = firstParagraph(body);
-    }
-  }
-
-  if (!overview && arch) {
-    const next = h2s[h2s.indexOf(arch) + 1];
-    const body = sectionBodyLines(sliceSection(lines, arch, next));
+  const overviewHeadingTitles = [
+    'introduction',
+    'overview',
+    'architecture overview',
+  ];
+  for (const title of overviewHeadingTitles) {
+    if (overview) break;
+    const heading = h2s.find((h) => h.title.toLowerCase() === title);
+    if (!heading) continue;
+    const next = h2s[h2s.indexOf(heading) + 1];
+    const body = sectionBodyLines(sliceSection(lines, heading, next));
     if (hasNonEmptyBody(body)) {
       overview = firstParagraph(body);
     }
   }
 
   if (!overview) {
-    // First non-empty paragraph excluding the H1 title.
-    const body: string[] = [];
-    for (const line of lines) {
-      // Drop H1 entirely; keep everything else (including H2/H3 lines, since
-      // the requirement is to take "the first non-empty paragraph of the
-      // document body excluding the H1 title").
-      if (line.startsWith('# ') && !line.startsWith('## ')) continue;
-      body.push(line);
-    }
+    // First non-empty PROSE paragraph of the body. Drop every ATX heading
+    // (H1–H6), not just the H1 title, so the overview is never a bare heading
+    // line like "## Overview" (which would otherwise be picked up here when a
+    // doc's overview heading isn't one of the named ones above).
+    const body = lines.filter((line) => !/^#{1,6}\s/.test(line));
     overview = firstParagraph(body);
   }
 

@@ -12,6 +12,7 @@ import { Message, MessageType } from '../chat/message/Message';
 import { StreamingMessage } from '../chat/message/StreamingMessage';
 import { ShellOutputMessage } from '../chat/message/ShellOutputMessage';
 import { ToolUseMessage } from './ToolUseMessage';
+import { HideToolArgsContext } from './HideToolArgsContext.js';
 import { SubagentToolPanel } from './SubagentToolPanel.js';
 import { ThinkingMessage } from '../chat/message/ThinkingMessage';
 import { ThinkingDisplay } from '../chat/message/ThinkingDisplay';
@@ -101,20 +102,23 @@ const StaticMessage = React.memo(function StaticMessage({
     // Skip subagent tool calls — they are rendered via SubagentToolPanel
     if (isSubagentToolCall(message, mainAgentName)) return null;
 
+    // Spec mode hides tool args/diff/output to keep the conversation clean.
     return (
-      <ToolUseMessage
-        id={message.id}
-        name={message.name}
-        kind={message.kind}
-        content={message.content}
-        diff={message.diff}
-        isFinished={true}
-        isStatic={true}
-        status={message.status}
-        result={message.result}
-        locations={message.locations}
-        barColor={agentBarColor}
-      />
+      <HideToolArgsContext.Provider value={mainAgentName === 'spec'}>
+        <ToolUseMessage
+          id={message.id}
+          name={message.name}
+          kind={message.kind}
+          content={message.content}
+          diff={message.diff}
+          isFinished={true}
+          isStatic={true}
+          status={message.status}
+          result={message.result}
+          locations={message.locations}
+          barColor={agentBarColor}
+        />
+      </HideToolArgsContext.Provider>
     );
   }
   if (message.role === MessageRole.Model) {
@@ -207,7 +211,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   );
 
   return (
-    <>
+    <HideToolArgsContext.Provider value={mainAgentName === 'spec'}>
       {tailMessages.map((message, index) => {
         const prevRole = resolvePrevRole(tailMessages, index, prevFlushedRole);
 
@@ -321,7 +325,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           <TurnUsageSummary text={summaryText} />
         </Box>
       )}
-    </>
+    </HideToolArgsContext.Provider>
   );
 });
 

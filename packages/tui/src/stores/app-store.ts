@@ -3093,7 +3093,8 @@ export const createAppStore = (props: AppStoreProps) => {
 
         set((state) => ({
           messages: state.messages.map((msg) => {
-            if (msg.role === MessageRole.ToolUse && msg.id === toolCallId) {
+            if (msg.role !== MessageRole.ToolUse) return msg;
+            if (msg.id === toolCallId) {
               return {
                 ...msg,
                 status: isRejected
@@ -3102,7 +3103,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 isFinished: isRejected ? true : msg.isFinished,
               };
             }
-            if (msg.role === MessageRole.ToolUse && cascadeIds.has(msg.id)) {
+            if (cascadeIds.has(msg.id)) {
               return { ...msg, status: ToolUseStatus.Approved };
             }
             return msg;

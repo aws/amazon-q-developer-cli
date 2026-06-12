@@ -290,4 +290,52 @@ describe('KAS permission consent flow', () => {
     await tc.pressEnter();
     await responsePromise;
   }, 30000);
+
+  it('renders a user_input question (markdown body, no "requires approval")', async () => {
+    tc = new AcpTestCase({ testName: 'consent-user-input-question' });
+    setupHandshake(tc);
+    tc.mock.on('session/prompt', () => ({ stopReason: 'end_turn' }));
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    await tc.sleepMs(300);
+
+    // A spec design question: reuses the requestPermission channel but carries
+    // no tool (no `_meta.kiro.toolId`), so it renders as a question rather than
+    // a tool approval. Title is markdown.
+    const responsePromise = tc.mock.request('session/request_permission', {
+      sessionId: 'test-session-1',
+      toolCall: {
+        toolCallId: 'tc-question',
+        title: '**Requirement 7.3:** What should happen on retry?',
+        status: 'pending',
+      },
+      options: [
+        {
+          kind: 'allow_once',
+          name: 'Always return an error',
+          optionId: 'opt-a',
+        },
+        {
+          kind: 'allow_once',
+          name: 'Only after retries exhausted',
+          optionId: 'opt-b',
+        },
+      ],
+    });
+
+    await tc.waitForStore((s) => s.pendingApproval !== null, 5000);
+    await tc.sleepMs(200);
+
+    // Question text is shown; the markdown header text renders (bold marker
+    // consumed, not shown raw). The "requires approval" wording is absent.
+    await tc.waitForVisibleText('Requirement 7.3', 3000);
+    const snapshot = tc.getSnapshotFormatted();
+    expect(snapshot).not.toContain('requires approval');
+    expect(snapshot).toContain('Question');
+
+    await tc.pressEnter();
+    await responsePromise;
+  }, 30000);
 });

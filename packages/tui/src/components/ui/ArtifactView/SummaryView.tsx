@@ -37,7 +37,7 @@ export const SummaryView: React.FC<Props> = ({ view }) => {
     return (
       <Box flexDirection="column">
         {summary.overview.length > 0 && (
-          <Box marginBottom={1} flexDirection="column">
+          <Box marginBottom={1} marginLeft={1} flexDirection="column">
             <Text>{dim('Overview')}</Text>
             <Text>{summary.overview}</Text>
           </Box>

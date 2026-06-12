@@ -45,6 +45,13 @@ import {
 } from '../../types/agent-events.js';
 import { getToolLabel } from '../../types/tool-status.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
+import { useExpandableOutput } from '../../hooks/useExpandableOutput.js';
+import { useHideToolArgs } from './HideToolArgsContext.js';
+import {
+  collapsedToolPreview,
+  isCollapsibleTool,
+} from '../../utils/collapsed-tool-view.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -80,6 +87,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     agentLabelColor,
   }) {
     const { getColor, wrapDisabled } = useTheme();
+    const glyphs = useGlyphs();
     const keybindings = useKeybindings();
     // Map tool status to StatusBar status icon
     const statusIcon: StatusType | undefined = useMemo(() => {
@@ -141,19 +149,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   }
 );
 
-/** Inner component — lives inside StatusBar to access requestRemeasure */
-const ToolUseContent = React.memo(function ToolUseContent({
-  id,
-  name,
-  kind,
-  content,
-  diff,
-  isFinished,
-  status,
-  result,
-  isStatic,
-  locations,
-}: {
+interface ToolContentProps {
   id: string;
   name: string;
   kind?: ToolKind;
@@ -164,7 +160,79 @@ const ToolUseContent = React.memo(function ToolUseContent({
   result?: ToolResult;
   isStatic: boolean;
   locations?: ToolCallLocation[];
-}) {
+}
+
+/**
+ * Inner component — routes between the collapsed (spec mode) and full tool
+ * renders. Spec mode hides verbose args/diff/command/output by default to keep
+ * the conversation uncluttered; Ctrl+O expands to the full render. Every other
+ * mode defaults to the full render, byte-identical to before.
+ */
+const ToolUseContent = React.memo(function ToolUseContent(
+  props: ToolContentProps
+) {
+  const hideArgs = useHideToolArgs();
+  if (hideArgs && isCollapsibleTool(props.content)) {
+    return <CollapsedToolEntry {...props} />;
+  }
+  return <FullToolContent {...props} />;
+});
+
+/**
+ * Spec-mode collapsed render: a title + the first line of the primary arg
+ * (e.g. a spawned subagent's prompt), with a "ctrl+o to expand" affordance.
+ * Expansion reuses the global `toolOutputsExpanded` flag (shared with tool
+ * output expansion), so a single Ctrl+O reveals the full render below.
+ */
+const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
+  props: ToolContentProps
+) {
+  const { name, kind, content, isStatic } = props;
+  const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  // Register this entry as Ctrl+O-expandable and read the shared expanded flag.
+  const { expanded } = useExpandableOutput({
+    totalItems: 2,
+    previewCount: 1,
+    isStatic,
+  });
+
+  if (expanded) return <FullToolContent {...props} />;
+
+  const { title, target, preview } = collapsedToolPreview(name, kind, content);
+  const muted = getColor('muted');
+  const hint = getColor('secondary');
+  const showMeta = !!preview || !isStatic;
+
+  return (
+    <Box flexDirection="column">
+      <StatusInfo title={title} target={target} />
+      {showMeta && (
+        <Box marginLeft={2}>
+          <Text wrap="wrap">
+            {muted(`${glyphs.cornerBottomLeftRound} `)}
+            {preview && muted(preview)}
+            {!isStatic && hint(`${preview ? ' ' : ''}(ctrl+o to expand)`)}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+});
+
+/** Full tool render — lives inside StatusBar to access requestRemeasure */
+const FullToolContent = React.memo(function FullToolContent({
+  id,
+  name,
+  kind,
+  content,
+  diff,
+  isFinished,
+  status,
+  result,
+  isStatic,
+  locations,
+}: ToolContentProps) {
   const { requestRemeasure } = useStatusBar();
 
   // A tool is only visually complete if it's finished AND no longer pending approval

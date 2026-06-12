@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box, CURSOR_MARKER } from './../../../renderer.js';
+import { Box } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { cursorColumn } from './cursorColumn.js';
 import type { DesignSection } from '../../../utils/spec-artifact-parser/index.js';
 
 interface Props {
@@ -14,7 +15,7 @@ export const DesignSummaryItem: React.FC<Props> = ({ section, selected }) => {
   const primary = getColor('primary');
   const accent = getColor('accent');
 
-  const cursor = selected ? CURSOR_MARKER : ' ';
+  const cursor = cursorColumn(selected);
   return (
     <Box>
       <Text>{cursor}</Text>

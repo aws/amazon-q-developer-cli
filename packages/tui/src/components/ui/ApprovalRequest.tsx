@@ -5,6 +5,7 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { Panel } from './panel/Panel.js';
 import { Menu } from './menu/Menu.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { PromptInput } from '../chat/prompt-bar/PromptInput.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { useApprovalState, useConversationState } from '../../stores/selectors';
@@ -190,8 +191,17 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       : (pendingApproval.toolCall.title ?? 'Tool');
 
   const prefix = subagentName ? `${subagentName} > ` : '';
-  const title =
-    mode === 'drill-in'
+  // Some permission requests aren't tool approvals — notably user_input
+  // questions (e.g. spec design questions), which reuse the requestPermission
+  // channel but carry no tool. KAS stamps `_meta.kiro.toolId` on real tool
+  // approvals and omits it for questions, so a missing toolId means "question":
+  // render the (markdown) question text as the body and title it "Question"
+  // rather than "<title> requires approval".
+  const isQuestion = agentEngine === 'kas' && !pendingApproval.toolId;
+  const questionText = pendingApproval.toolCall.title ?? '';
+  const title = isQuestion
+    ? `${prefix}Question`
+    : mode === 'drill-in'
       ? `${prefix}${toolName} requires approval · Modify request`
       : page === 'trust'
         ? `${prefix}${toolName} requires approval · trust options`
@@ -263,7 +273,17 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   };
 
   let footerLeft: React.ReactNode | undefined;
-  if (mode === 'dropdown' && focusedOnTrust) {
+  if (isQuestion) {
+    // A user_input question is multiple-choice only — no edit affordance — so
+    // the single (outer) footer carries just the navigate/select hints.
+    footerLeft = (
+      <Text>
+        {primary('↑↓')} {secondary('to navigate')}
+        {secondary(' · ')}
+        {primary('↵')} {secondary('to select')}
+      </Text>
+    );
+  } else if (mode === 'dropdown' && focusedOnTrust) {
     footerLeft = (
       <Text>
         {primary('Enter')} {secondary('to see more options')}
@@ -281,12 +301,20 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     <Panel
       title={title}
       onClose={handleClose}
-      onTabSwitch={mode === 'dropdown' ? handleTabSwitch : undefined}
+      onTabSwitch={
+        !isQuestion && mode === 'dropdown' ? handleTabSwitch : undefined
+      }
       showTabHint={false}
       hideTitleDivider={true}
       footerLeft={footerLeft}
+      closeHintLabel={isQuestion ? 'to cancel' : undefined}
     >
       <Box flexDirection="column">
+        {isQuestion && questionText && (
+          <Box marginBottom={1}>
+            <MarkdownRenderer content={questionText} color={primary} />
+          </Box>
+        )}
         {consentContext &&
           (consentContext.capability || consentContext.resource) && (
             <Box marginBottom={1}>

@@ -2,7 +2,7 @@ import React from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { CURSOR_MARKER } from './../../../renderer.js';
+import { cursorColumn } from './cursorColumn.js';
 import type { RequirementItem } from '../../../utils/spec-artifact-parser/index.js';
 
 interface Props {
@@ -27,7 +27,7 @@ export const RequirementSummaryItem: React.FC<Props> = ({ item, selected }) => {
     userStoryDisplay = '';
   }
 
-  const cursor = selected ? CURSOR_MARKER : ' ';
+  const cursor = cursorColumn(selected);
   const numberLabel = `Requirement ${item.number}`;
 
   return (

@@ -1587,6 +1587,7 @@ abstract class BaseAcpClient implements SessionClient {
           })),
           trustOptions: meta?.trustOptions,
           consentContext: meta?.kiro?.consent,
+          toolId: meta?.kiro?.toolId,
           resolve: (userResponse: {
             outcome: string;
             optionId?: string;

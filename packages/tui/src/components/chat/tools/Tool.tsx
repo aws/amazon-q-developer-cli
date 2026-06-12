@@ -10,6 +10,8 @@ import { ToolMeta } from './ToolMeta.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
+import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
+import { useHideToolArgs } from '../../ui/HideToolArgsContext.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import type { ToolCallLocation } from '../../../types/agent-events.js';
 
@@ -122,6 +124,17 @@ export const Tool = React.memo(function Tool({
     unit: 'lines',
   });
 
+  // In spec mode, render all tool titles via MarkdownRenderer (questions get
+  // proper formatting; plain names render identically). Non-spec keeps
+  // StatusInfo with its shimmer loading animation.
+  const hideArgs = useHideToolArgs();
+  const renderTitle = () =>
+    hideArgs ? (
+      <MarkdownRenderer content={name} color={getColor('primary')} />
+    ) : (
+      <StatusInfo title={name} shimmer={!isFinished} />
+    );
+
   const renderMeta = () => <ToolMeta params={params} />;
 
   const renderLocations = () => {
@@ -140,7 +153,7 @@ export const Tool = React.memo(function Tool({
     if (errorMessage) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderTitle()}
           {renderMeta()}
           {renderLocations()}
           <Box marginLeft={2}>
@@ -154,7 +167,7 @@ export const Tool = React.memo(function Tool({
     if (isStatic || !hasOutput) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderTitle()}
           {renderMeta()}
           {renderLocations()}
         </Box>
@@ -165,7 +178,7 @@ export const Tool = React.memo(function Tool({
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={name} shimmer={!isFinished} />
+          {renderTitle()}
           {renderMeta()}
           {renderLocations()}
           <Box marginLeft={2} flexDirection="column">
@@ -180,7 +193,7 @@ export const Tool = React.memo(function Tool({
     // Collapsed view: show preview + hint
     return (
       <Box flexDirection="column">
-        <StatusInfo title={name} shimmer={!isFinished} />
+        {renderTitle()}
         {renderMeta()}
         {renderLocations()}
         <Box marginLeft={2} flexDirection="column">

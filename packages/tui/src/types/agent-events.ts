@@ -317,6 +317,13 @@ export interface ConsentContext {
 export interface ApprovalRequestInfo {
   sessionId?: string;
   toolCall: { toolCallId: string; title?: string };
+  /**
+   * The tool being approved, from `_meta.kiro.toolId`. Present for real tool
+   * approvals; absent for `user_input` questions, which reuse the permission
+   * channel but have no underlying tool. Clients branch on this to render a
+   * question instead of an approval.
+   */
+  toolId?: string;
   permissionOptions: PermissionOption[];
   trustOptions?: TrustOption[];
   consentContext?: ConsentContext;

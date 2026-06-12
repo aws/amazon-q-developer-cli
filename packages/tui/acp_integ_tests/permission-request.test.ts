@@ -84,6 +84,10 @@ describe('permission request + session info updates', () => {
           },
           { kind: 'reject_once', name: 'Deny', optionId: 'reject_once' },
         ],
+        // Real KAS stamps `_meta.kiro.toolId` on tool approvals (and omits it
+        // for user_input questions); include it so this renders as a tool
+        // approval ("requires approval") rather than a question.
+        _meta: { kiro: { toolId: 'tool-1' } },
       });
 
       return response as PromptResponse;
@@ -231,6 +235,8 @@ describe('permission request + session info updates', () => {
               optionId: 'reject_once',
             },
           ],
+          // Tool approval carries `_meta.kiro.toolId` (see approve test).
+          _meta: { kiro: { toolId: 'tool-2' } },
         }
       );
 

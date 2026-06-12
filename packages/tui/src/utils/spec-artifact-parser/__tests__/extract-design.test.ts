@@ -31,6 +31,36 @@ describe('extractDesign', () => {
       expect(out.overview).toBe('Intro paragraph one.');
     });
 
+    it('uses the Overview heading body, not the raw "## Overview" line', () => {
+      const md = [
+        '# Design',
+        '',
+        '## Overview',
+        '',
+        'This design covers the X system.',
+        '',
+        '## Architecture',
+        'arch body',
+      ].join('\n');
+      const out = extractDesign(md);
+      expect(out.overview).toBe('This design covers the X system.');
+    });
+
+    it('fallback skips heading lines (never returns a bare heading)', () => {
+      // No recognised overview heading; the first H2 is a custom one. The
+      // overview must be its prose, not the "## Custom Section" heading line.
+      const md = [
+        '# Design',
+        '',
+        '## Custom Section',
+        '',
+        'Prose under the custom section.',
+        '',
+      ].join('\n');
+      const out = extractDesign(md);
+      expect(out.overview).toBe('Prose under the custom section.');
+    });
+
     it('falls back to Architecture Overview when Introduction is missing', () => {
       const md = [
         '# Design',
