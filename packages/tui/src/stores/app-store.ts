@@ -409,6 +409,8 @@ export type MessageType =
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
       liveOutput?: string[];
+      /** True when this tool call originated from a subagent session (event.sessionId set). */
+      isSubagentTool?: boolean;
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
@@ -2215,6 +2217,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     diff,
                     locations: event.locations,
                     agentName,
+                    ...(event.sessionId && { isSubagentTool: true }),
                     ...(isNotReady && {
                       isFinished: true,
                       result: {
@@ -2282,17 +2285,10 @@ export const createAppStore = (props: AppStoreProps) => {
                       }
                     : toolMsg.diff;
                   messages[toolMsgIndex] = {
-                    id: toolMsg.id,
-                    role: MessageRole.ToolUse,
-                    name: toolMsg.name,
-                    kind: toolMsg.kind,
-                    content: toolMsg.content,
+                    ...toolMsg,
                     diff,
                     isFinished: true,
-                    status: toolMsg.status,
                     result: event.result,
-                    locations: toolMsg.locations,
-                    agentName: toolMsg.agentName,
                   };
                 }
               }

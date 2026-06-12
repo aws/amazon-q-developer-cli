@@ -3099,6 +3099,14 @@ export class KasAcpClient extends BaseAcpClient {
         configId: 'mode',
         value: toKasModeId(agentName),
       });
+      // Keep the cached current mode in sync. Mode switches via
+      // setSessionConfigOption return the new state in the response (not via a
+      // current_mode_update push), so this cache would otherwise stay stale.
+      // A stale cache makes the current_mode_update dedup in
+      // wireSessionListeners incorrectly skip the AgentSwitched broadcast for a
+      // later agent-initiated switch back to this mode, leaving the header chip
+      // out of sync (e.g. after switch_to_execution hands off plan → execution).
+      this.modesState = { ...this.modesState, currentModeId: agentName };
       return {
         success: true,
         message: `Switched to ${agentName}`,

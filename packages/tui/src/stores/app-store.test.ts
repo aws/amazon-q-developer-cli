@@ -701,3 +701,69 @@ describe('reopenSettingsMenu', () => {
     expect(store.getState().activeCommand).toBeNull();
   });
 });
+
+describe('isSubagentTool flag survives ToolCall create → ToolCall update → ToolCallFinished', () => {
+  function createStore() {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({ isInitialized: true });
+    return store;
+  }
+
+  it('preserves isSubagentTool through update and finished rebuilds', async () => {
+    const store = createStore();
+    // Pre-populate a subagent session so sessionId resolves
+    store.setState({
+      sessions: new Map([
+        [
+          'subagent-session-1',
+          { name: 'worker', type: 'ephemeral', status: 'running' } as any,
+        ],
+      ]),
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+
+    // Create: subagent tool call (has sessionId → isSubagentTool:true)
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tool-1',
+      name: 'bash',
+      args: { command: 'echo hi' },
+      sessionId: 'subagent-session-1',
+    });
+
+    const afterCreate = store
+      .getState()
+      .messages.find((m) => m.id === 'tool-1');
+    expect(afterCreate?.role).toBe(MessageRole.ToolUse);
+    expect((afterCreate as any).isSubagentTool).toBe(true);
+
+    // Update: re-emit with new args (existingIndex path)
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tool-1',
+      name: 'bash',
+      args: { command: 'echo hi', extra: true },
+      sessionId: 'subagent-session-1',
+    });
+
+    const afterUpdate = store
+      .getState()
+      .messages.find((m) => m.id === 'tool-1');
+    expect((afterUpdate as any).isSubagentTool).toBe(true);
+
+    // Finished: must not drop isSubagentTool
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tool-1',
+      result: { status: 'success', output: '' },
+    });
+
+    const afterFinished = store
+      .getState()
+      .messages.find((m) => m.id === 'tool-1');
+    expect((afterFinished as any).isSubagentTool).toBe(true);
+    expect((afterFinished as any).isFinished).toBe(true);
+  });
+});
