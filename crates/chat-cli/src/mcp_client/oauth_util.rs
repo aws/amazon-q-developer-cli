@@ -157,6 +157,27 @@ pub struct ReauthContext {
     pub os: Os,
 }
 
+/// Writes OAuth credentials to disk with owner-only permissions.
+///
+/// Credentials contain OAuth tokens (access/refresh), so on Unix the file is
+/// restricted to `0600` (read/write for the owner only) to prevent other users
+/// on the system from reading them.
+async fn write_credentials_securely(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let path = path.as_ref();
+    tokio::fs::write(path, contents).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+    }
+    // TODO(windows): Windows has no Unix mode bits, so credentials are not yet
+    // restricted to the current user on that platform. The equivalent requires
+    // removing NTFS ACL inheritance and granting access only to the current
+    // user (e.g. via `icacls` or the Win32 security APIs). Scoped out for a
+    // follow-up: https://taskei.amazon.dev/tasks/55e07d56-8b05-410f-a093-0beef0ca1162
+    Ok(())
+}
+
 /// Refreshes an OAuth token and persists the new credentials to disk.
 ///
 /// This is a standalone function used during connection setup when a token
@@ -170,7 +191,7 @@ pub async fn refresh_and_persist_token(
     tokio::fs::create_dir_all(parent_path).await?;
 
     let cred_as_bytes = serde_json::to_string_pretty(&cred)?;
-    tokio::fs::write(cred_full_path, &cred_as_bytes).await?;
+    write_credentials_securely(cred_full_path, &cred_as_bytes).await?;
 
     Ok(())
 }
@@ -294,7 +315,7 @@ impl AuthClientWrapper {
                 );
                 e
             })?;
-            tokio::fs::write(&auth_client_wrapper_clone.cred_full_path, &cred_as_str)
+            write_credentials_securely(&auth_client_wrapper_clone.cred_full_path, &cred_as_str)
                 .await
                 .map_err(|e| {
                     error!("## mcp: reauthorize failed to write credentials for {}: {e}", ctx.url);
@@ -569,7 +590,7 @@ async fn get_auth_manager(
             let cred_parent_path = cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
             tokio::fs::create_dir_all(cred_parent_path).await?;
             let reg_as_str = serde_json::to_string_pretty(&credentials)?;
-            tokio::fs::write(cred_full_path, &reg_as_str).await?;
+            write_credentials_securely(cred_full_path, &reg_as_str).await?;
 
             Ok(am)
         },
