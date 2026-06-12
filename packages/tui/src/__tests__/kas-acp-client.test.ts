@@ -286,7 +286,7 @@ describe('resolveFeedbackUrl', () => {
       'https://taskei.amazon.dev/tasks/create?template=a05ddcbb-e4c6-4783-8eca-ef46ae5d7ef6'
     );
     expect(resolveFeedbackUrl('issue', true)).toBe(
-      'https://taskei.amazon.dev/tasks/create?template=c0312360-3f55-432d-a6d2-e3060ad2cc59'
+      'https://taskei.amazon.dev/tasks/create?template=5389200f-f825-4261-98ec-04bc84572fab'
     );
   });
 
