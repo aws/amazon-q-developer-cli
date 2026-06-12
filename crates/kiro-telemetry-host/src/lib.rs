@@ -23,6 +23,7 @@ pub use event::{
     RecordUserTurnCompletionArgs,
     TangentModeSessionArgs,
     TelemetryResult,
+    UiModeSource,
 };
 pub use install_method::{
     InstallMethod,

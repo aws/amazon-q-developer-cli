@@ -1,4 +1,8 @@
 #![allow(dead_code)]
+// The ACP agent's `execute()` async state machine is large enough that its
+// layout computation exceeds rustc's default query depth (128). Raise the
+// limit so the future's type can be laid out.
+#![recursion_limit = "256"]
 
 mod agent;
 mod api_client;
