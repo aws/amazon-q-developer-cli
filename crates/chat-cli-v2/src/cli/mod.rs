@@ -441,12 +441,6 @@ impl Cli {
                 // SAFETY: single-threaded at this point — TUI subprocess hasn't spawned yet.
                 unsafe { std::env::set_var("KIRO_INTERNAL", "1") };
             }
-            // Bridge Feature::Lite rollout (internal + nightly) to the TUI subprocess.
-            // The TS resolveUiMode() reads this to decide whether to honor lite-mode requests.
-            if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Lite) {
-                // SAFETY: single-threaded at this point — TUI subprocess hasn't spawned yet.
-                unsafe { std::env::set_var("KIRO_LITE_ROLLOUT_ENABLED", "1") };
-            }
             crate::launch_options::launch_tui(&asset_paths).await
         } else {
             subcommand.execute(&mut os).await
