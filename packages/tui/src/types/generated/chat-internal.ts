@@ -33,6 +33,7 @@ export type CliInternalOutput =
 	expiresAt: string;
 	profileArn: string;
 	authMethod?: AuthMethod;
+	provider?: Provider;
 }}
 	/** `ensure-session`. */
 	| { kind: "ensureSession", data: {
@@ -52,5 +53,19 @@ export type CliInternalOutput =
 export enum ErrorCode {
 	/** Source session id was not found in any searched store. */
 	SessionNotFound = "SESSION_NOT_FOUND",
+}
+
+/**
+ * Sign-in provider advertised to KAS in `_kiro/auth/getAccessToken`. KAS's
+ * `GovernanceService` treats only `Enterprise` / `ExternalIdp` as
+ * enterprise-managed (others skip the GetProfile call). Mirrors
+ * `chat_cli_v2::auth::kas_token::KasProvider`; convert via `From`.
+ */
+export enum Provider {
+	Enterprise = "Enterprise",
+	ExternalIdp = "ExternalIdp",
+	BuilderId = "BuilderId",
+	Google = "Google",
+	Github = "Github",
 }
 

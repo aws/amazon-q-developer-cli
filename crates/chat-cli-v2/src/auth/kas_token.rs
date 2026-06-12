@@ -24,7 +24,10 @@ use crate::auth::builder_id::{
     TokenType,
 };
 use crate::auth::external_idp::ExternalIdpToken;
-use crate::auth::social::SocialToken;
+use crate::auth::social::{
+    SocialProvider,
+    SocialToken,
+};
 use crate::database::Database;
 
 /// Method dispatched to ACP `Client::ext_method` after the runtime strips the
@@ -41,6 +44,34 @@ pub enum KasAuthMethod {
     /// `TokenType: EXTERNAL_IDP`.
     #[serde(rename = "external_idp")]
     ExternalIdp,
+}
+
+/// Sign-in provider advertised to KAS in the `_kiro/auth/getAccessToken`
+/// response. KAS's `GovernanceService` uses this to decide whether the user is
+/// under enterprise governance — only `Enterprise` and `ExternalIdp` are
+/// treated as enterprise-managed; everything else (Builder ID, social) skips
+/// the GetProfile call entirely.
+///
+/// Distinct from [`KasAuthMethod`], which only drives the `TokenType` request
+/// header. `profileArn` cannot be used for this decision because every
+/// acp-callback token carries one (Builder ID gets a hardcoded routing ARN).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum KasProvider {
+    /// IAM Identity Center — enterprise-managed.
+    #[serde(rename = "Enterprise")]
+    Enterprise,
+    /// External IdP federation — enterprise-managed.
+    #[serde(rename = "ExternalIdp")]
+    ExternalIdp,
+    /// Builder ID free tier — not enterprise.
+    #[serde(rename = "BuilderId")]
+    BuilderId,
+    /// Social sign-in (Google) — not enterprise.
+    #[serde(rename = "Google")]
+    Google,
+    /// Social sign-in (GitHub) — not enterprise.
+    #[serde(rename = "Github")]
+    Github,
 }
 
 /// Token data returned to KAS for the `_kiro/auth/getAccessToken`
@@ -67,6 +98,10 @@ pub struct AcpCallbackToken {
     /// types that need none (Builder ID / IdC / Social); omitted from the wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_method: Option<KasAuthMethod>,
+    /// Sign-in provider KAS uses to decide enterprise governance. `None` is
+    /// omitted from the wire; resolved tokens always set it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<KasProvider>,
 }
 
 /// Resolve the highest-priority token in the SQLite store, refreshing it
@@ -92,18 +127,20 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
             expires_at: format_time(&token.expires_at),
             profile_arn: profile_arn_from_db(database)?,
             auth_method: Some(KasAuthMethod::ExternalIdp),
+            provider: Some(KasProvider::ExternalIdp),
         }));
     }
     if let Some(token) = BuilderIdToken::coordinated_refresh(database, None).await? {
-        let profile_arn = match token.token_type() {
-            TokenType::BuilderId => BUILDER_ID_PROFILE_ARN.to_string(),
-            TokenType::IamIdentityCenter => profile_arn_from_db(database)?,
+        let (profile_arn, provider) = match token.token_type() {
+            TokenType::BuilderId => (BUILDER_ID_PROFILE_ARN.to_string(), KasProvider::BuilderId),
+            TokenType::IamIdentityCenter => (profile_arn_from_db(database)?, KasProvider::Enterprise),
         };
         return Ok(Some(AcpCallbackToken {
             access_token: token.access_token.0.clone(),
             expires_at: format_time(&token.expires_at),
             profile_arn,
             auth_method: None,
+            provider: Some(provider),
         }));
     }
     if let Some(token) = SocialToken::coordinated_refresh(database).await? {
@@ -111,11 +148,16 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
         // token reaching here must carry one. Treat absence as the same
         // unrecoverable failure we surface elsewhere.
         let profile_arn = token.profile_arn.clone().ok_or(AuthError::ProfileNotSelected)?;
+        let provider = match token.provider {
+            SocialProvider::Google => KasProvider::Google,
+            SocialProvider::Github => KasProvider::Github,
+        };
         return Ok(Some(AcpCallbackToken {
             access_token: token.access_token.0.clone(),
             expires_at: format_time(&token.expires_at),
             profile_arn,
             auth_method: None,
+            provider: Some(provider),
         }));
     }
     Ok(None)
@@ -306,6 +348,7 @@ mod tests {
         // back to the AuthProfile row written by `select_profile_interactive`.
         assert_eq!(token.profile_arn, idc_profile().arn);
         assert_eq!(token.auth_method, Some(KasAuthMethod::ExternalIdp));
+        assert_eq!(token.provider, Some(KasProvider::ExternalIdp));
     }
 
     /// BuilderId free-tier (`start_url = None`) MUST return the canonical
@@ -328,6 +371,7 @@ mod tests {
         assert_eq!(token.access_token, "builder-access-tok");
         assert_eq!(token.profile_arn, BUILDER_ID_PROFILE_ARN);
         assert_eq!(token.auth_method, None);
+        assert_eq!(token.provider, Some(KasProvider::BuilderId));
     }
 
     /// IdC (BuilderId with non-default `start_url`) MUST source the profile
@@ -353,6 +397,7 @@ mod tests {
         assert_eq!(token.access_token, "idc-access-tok");
         assert_eq!(token.profile_arn, idc_profile().arn);
         assert_eq!(token.auth_method, None);
+        assert_eq!(token.provider, Some(KasProvider::Enterprise));
     }
 
     #[tokio::test]
@@ -376,6 +421,7 @@ mod tests {
             "arn:aws:codewhisperer:us-east-1:111122223333:profile/Social"
         );
         assert_eq!(token.auth_method, None);
+        assert_eq!(token.provider, Some(KasProvider::Google));
     }
 
     /// IdC user logged in but `database.get_auth_profile()` returns None
@@ -437,6 +483,7 @@ mod tests {
             expires_at: "2099-01-01T00:00:00Z".into(),
             profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
             auth_method: None,
+            provider: None,
         };
         let json = serde_json::to_value(&token).unwrap();
         assert!(json.get("refreshToken").is_none(), "{json}");
@@ -459,9 +506,11 @@ mod tests {
             expires_at: "2099-01-01T00:00:00Z".into(),
             profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
             auth_method: Some(KasAuthMethod::ExternalIdp),
+            provider: Some(KasProvider::ExternalIdp),
         };
         let json = serde_json::to_value(&token).unwrap();
         assert_eq!(json.get("authMethod").and_then(|v| v.as_str()), Some("external_idp"));
+        assert_eq!(json.get("provider").and_then(|v| v.as_str()), Some("ExternalIdp"));
         assert!(json.get("auth_method").is_none(), "must be camelCase: {json}");
     }
 

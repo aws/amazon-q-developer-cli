@@ -87,11 +87,19 @@ async function runGetKasToken(
   const authMethod = r.output.data.authMethod
     ? { authMethod: r.output.data.authMethod }
     : {};
+  // Forward the sign-in `provider` so KAS's GovernanceService can decide
+  // enterprise status (only Enterprise / ExternalIdp are governed). Without
+  // it KAS falls back to profileArn presence and misclassifies Builder ID /
+  // social users as enterprise, fail-closing governance.
+  const provider = r.output.data.provider
+    ? { provider: r.output.data.provider }
+    : {};
   return {
     accessToken: r.output.data.accessToken,
     expiresAt: r.output.data.expiresAt,
     profileArn: r.output.data.profileArn,
     ...authMethod,
+    ...provider,
   };
 }
 

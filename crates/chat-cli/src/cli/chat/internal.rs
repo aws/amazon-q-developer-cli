@@ -30,6 +30,7 @@ use chat_cli_v2::agent::session::SessionDb;
 use chat_cli_v2::auth::kas_token::{
     AcpCallbackToken,
     KasAuthMethod,
+    KasProvider,
     resolve_kas_token_for_callback,
 };
 use chat_cli_v2::database::Database;
@@ -77,6 +78,37 @@ impl From<KasAuthMethod> for AuthMethod {
     }
 }
 
+/// Sign-in provider advertised to KAS in `_kiro/auth/getAccessToken`. KAS's
+/// `GovernanceService` treats only `Enterprise` / `ExternalIdp` as
+/// enterprise-managed (others skip the GetProfile call). Mirrors
+/// `chat_cli_v2::auth::kas_token::KasProvider`; convert via `From`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare]
+pub enum Provider {
+    #[serde(rename = "Enterprise")]
+    Enterprise,
+    #[serde(rename = "ExternalIdp")]
+    ExternalIdp,
+    #[serde(rename = "BuilderId")]
+    BuilderId,
+    #[serde(rename = "Google")]
+    Google,
+    #[serde(rename = "Github")]
+    Github,
+}
+
+impl From<KasProvider> for Provider {
+    fn from(v: KasProvider) -> Self {
+        match v {
+            KasProvider::Enterprise => Self::Enterprise,
+            KasProvider::ExternalIdp => Self::ExternalIdp,
+            KasProvider::BuilderId => Self::BuilderId,
+            KasProvider::Google => Self::Google,
+            KasProvider::Github => Self::Github,
+        }
+    }
+}
+
 /// Single JSON line emitted by every `chat _` subcommand. Wire shape:
 /// `{ "kind": "...", "data": {...} }`. Variant names match
 /// [`InternalChatSubcommand`] 1:1, plus an `Error` variant for failure.
@@ -96,6 +128,8 @@ pub enum CliInternalOutput {
         profile_arn: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         auth_method: Option<AuthMethod>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<Provider>,
     },
     /// `ensure-session`.
     #[serde(rename_all = "camelCase")]
@@ -126,6 +160,7 @@ impl CliInternalOutput {
             expires_at: token.expires_at.clone(),
             profile_arn: token.profile_arn.clone(),
             auth_method: token.auth_method.map(AuthMethod::from),
+            provider: token.provider.map(Provider::from),
         }
     }
 
@@ -677,6 +712,7 @@ mod tests {
             expires_at: "2099-01-01T00:00:00Z".into(),
             profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
             auth_method: None,
+            provider: None,
         };
         let json_str = serde_json::to_string(&CliInternalOutput::get_kas_token(&token)).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -700,12 +736,17 @@ mod tests {
             expires_at: "2099-01-01T00:00:00Z".into(),
             profile_arn: "arn:aws:codewhisperer:us-east-1:1:profile/x".into(),
             auth_method: Some(KasAuthMethod::ExternalIdp),
+            provider: Some(KasProvider::ExternalIdp),
         };
         let json_str = serde_json::to_string(&CliInternalOutput::get_kas_token(&token)).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(
             parsed["data"]["authMethod"],
             serde_json::Value::String("external_idp".into())
+        );
+        assert_eq!(
+            parsed["data"]["provider"],
+            serde_json::Value::String("ExternalIdp".into())
         );
     }
 
