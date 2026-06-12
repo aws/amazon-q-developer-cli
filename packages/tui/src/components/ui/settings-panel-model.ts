@@ -14,7 +14,10 @@
  */
 
 import type { ExplorerRow } from './Explorer.js';
-import { Settings } from '../../constants/settings.js';
+import {
+  Settings,
+  DISPLAY_SETTINGS_DESCRIPTION,
+} from '../../constants/settings.js';
 import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
@@ -31,10 +34,14 @@ export type ScreenType = Screen['type'];
 
 export type TopChoice =
   | 'display'
+  | 'verbosity'
   | 'theme'
   | 'terminal'
   | 'keybindings'
   | 'history';
+
+/** UI mode — gates lite-only rows (e.g. verbosity) in {@link buildRows}. */
+export type UiMode = 'tui' | 'lite';
 export type HistoryChoice = 'session' | 'global';
 export type TerminalChoice = 'newlines' | 'interrupt';
 export type InterruptChoice = 'steer' | 'queue';
@@ -63,6 +70,9 @@ export type SelectResult =
 export type PanelAction =
   // Open a different overlay (theme/keybindings/display) — ESC returns here.
   | { type: 'open-panel'; panel: 'display' | 'theme' | 'keybindings' }
+  // Open the lite-only /verbosity command-menu (dispatched via handleUserInput);
+  // ESC out of that menu returns here. Lite-only row.
+  | { type: 'open-verbosity' }
   // Run the async terminal newline setup flow, then close.
   | { type: 'run-terminal-setup' }
   // Persist the history scope, then close.
@@ -127,12 +137,18 @@ export interface TopItem {
   description: string;
 }
 
-/** Top-level menu rows. */
+/**
+ * Top-level menu rows shown in BOTH modes.
+ *
+ * The lite-only `verbosity` row is NOT here — it's spliced in by
+ * {@link buildRows} when `uiMode === 'lite'` (see {@link VERBOSITY_ITEM}), so
+ * TUI users never see a row whose handler errors with "lite mode only".
+ */
 export const TOP_ITEMS: readonly TopItem[] = [
   {
     id: 'display',
     label: 'Display',
-    description: 'Control animations, ASCII art, and icons',
+    description: DISPLAY_SETTINGS_DESCRIPTION,
   },
   {
     id: 'theme',
@@ -155,6 +171,18 @@ export const TOP_ITEMS: readonly TopItem[] = [
     description: 'Prompt history scope (session or global)',
   },
 ];
+
+/**
+ * Lite-only verbosity row, inserted right after Display in lite mode. Its
+ * renderer controls only run inside <LiteLayout>, so it must not surface in
+ * TUI. Selecting it opens the rich /verbosity command-menu (see the
+ * `open-verbosity` action in {@link resolveSelect}).
+ */
+export const VERBOSITY_ITEM: TopItem = {
+  id: 'verbosity',
+  label: 'Verbosity',
+  description: 'Tool args, reasoning, output filters, density (lite mode only)',
+};
 
 /** Terminal sub-screen rows. */
 export const TERMINAL_ITEMS: readonly {
@@ -186,14 +214,21 @@ function withActiveMarker(label: string, isActive: boolean): string {
  */
 export function buildRows(
   screen: Screen,
-  settings: SettingsSnapshot
+  settings: SettingsSnapshot,
+  uiMode?: UiMode
 ): ExplorerRow[] {
   switch (screen.type) {
-    case 'top':
-      return TOP_ITEMS.map((item) => ({
+    case 'top': {
+      // Splice the lite-only verbosity row in after Display; TUI never sees it.
+      const topItems =
+        uiMode === 'lite'
+          ? [TOP_ITEMS[0]!, VERBOSITY_ITEM, ...TOP_ITEMS.slice(1)]
+          : TOP_ITEMS;
+      return topItems.map((item) => ({
         id: item.id,
         values: { label: item.label, description: item.description },
       }));
+    }
     case 'terminal':
       return TERMINAL_ITEMS.map((item) => ({
         id: item.id,
@@ -258,6 +293,8 @@ export function resolveSelect(screen: Screen, id: string): SelectResult | null {
             kind: 'action',
             action: { type: 'open-panel', panel: 'display' },
           };
+        case 'verbosity':
+          return { kind: 'action', action: { type: 'open-verbosity' } };
         case 'theme':
           return {
             kind: 'action',
@@ -320,6 +357,41 @@ export function appliesOnSelect(screen: Screen): boolean {
 /** Breadcrumb title for the given screen. */
 export function screenTitle(screen: Screen): string {
   return SCREEN_CONFIG[screen.type].title;
+}
+
+/**
+ * Breadcrumb title for the lite `/verbosity` menu, derived from the menu's
+ * `previewKey`. Verbosity is rendered by CommandMenu (not the Explorer-based
+ * SettingsPanel) because of its live preview + truncation editor, so it can't
+ * use {@link screenTitle}; this maps each sub-screen to the same
+ * `/settings – verbosity – <sub>` breadcrumb the other settings show in their
+ * panel header, deepening one level per drilldown.
+ *
+ * `previewKey` values come from the verbosity effect's `openMenuWith(..., key)`
+ * calls: `top` (root), `density`, `tool`, `subagent`, `output`, `truncation`
+ * (and `truncation:args` / `truncation:output`), plus the numeric-editor keys
+ * `truncation:<field>:edit`. Unknown / undefined keys fall back to the root
+ * breadcrumb so the header never reads as a bare command name.
+ */
+export function verbosityBreadcrumb(previewKey?: string): string {
+  const ROOT = '/settings – verbosity';
+  if (!previewKey || previewKey === 'top') return ROOT;
+  const SUB_LABEL: Record<string, string> = {
+    density: 'density',
+    tool: 'tool calls',
+    subagent: 'subagent',
+    output: 'output',
+    truncation: 'truncation',
+    'truncation:args': 'truncation',
+    'truncation:output': 'truncation',
+  };
+  // Numeric-editor keys look like `truncation:argsLines:edit` — they live under
+  // the truncation screen, so show the truncation breadcrumb.
+  if (/^truncation:.*:edit$/.test(previewKey)) {
+    return `${ROOT} – truncation`;
+  }
+  const sub = SUB_LABEL[previewKey];
+  return sub ? `${ROOT} – ${sub}` : ROOT;
 }
 
 /** Sub-screen prompt shown under the title (top screen has none). */

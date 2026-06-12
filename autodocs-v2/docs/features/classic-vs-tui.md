@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 33b3c338
+  validated: 2026-06-13
+  commit: ed1d467b6
   status: validated
   testable_headless: false
   category: feature

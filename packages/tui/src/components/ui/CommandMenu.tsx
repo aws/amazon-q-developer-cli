@@ -36,6 +36,7 @@ import { PromptsMenu } from './menu/PromptsMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
 import { VerbosityPreviewPane } from './menu/VerbosityPreviewPane.js';
 import { VerbosityTruncationEditor } from './menu/VerbosityTruncationEditor.js';
+import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
 import {
   DENSITY_DISPLAY,
@@ -527,14 +528,14 @@ export const CommandMenu: React.FC = () => {
       handleUserInput(themeReturn === '' ? '/theme' : `/theme ${themeReturn}`);
       return;
     }
-    if (returnToSettings) {
-      setSettingsReturnOnEscape(false);
-      // Re-open /settings directly. Going through handleUserInput here caused
-      // the process to exit for reasons not fully understood — likely races
-      // with the in-flight overlay close.
-      reopenSettingsMenu();
-      return;
-    }
+    // verbose BEFORE settings: when the user is inside a /verbosity sub-level,
+    // `verboseReturnOnEscape` holds the parent route (the verbosity handler
+    // clears it to null at the top menu). ESC must step up ONE verbosity level
+    // here rather than jumping all the way back to /settings. Only once the
+    // user has ESC'd back to the verbosity top menu (verboseReturn === null)
+    // does `returnToSettings` fire and re-open /settings. Without this order a
+    // /settings → Verbosity entry would set settingsReturnOnEscape and every
+    // ESC inside verbosity would collapse straight to /settings.
     if (verboseReturn) {
       setVerboseReturnOnEscape(null);
       // Re-dispatch /verbosity with the saved parent route. We lean on the
@@ -542,6 +543,15 @@ export const CommandMenu: React.FC = () => {
       // registered there and unlike /settings we don't race a panel close —
       // the menu just reopens.
       handleUserInput(`/verbosity ${verboseReturn}`);
+      return;
+    }
+    if (returnToSettings) {
+      setSettingsReturnOnEscape(false);
+      // Re-open /settings directly. Going through handleUserInput here caused
+      // the process to exit for reasons not fully understood — likely races
+      // with the in-flight overlay close.
+      reopenSettingsMenu();
+      return;
     }
   }, [
     activeTrigger,
@@ -841,6 +851,23 @@ export const CommandMenu: React.FC = () => {
         /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
       );
 
+    // Lite /verbosity gets the same panel chrome as the other settings: a
+    // `/settings – verbosity – <sub>` breadcrumb header + divider above the
+    // menu/preview/editor, deepening one level per drilldown. LiteLayout hides
+    // the input row while this menu is active (see isLiteVerbosityMenu there),
+    // so the breadcrumb sits where the input box was — matching display/theme/
+    // terminal/etc. Gated to lite: in TUI /verbosity is filtered out entirely.
+    const isLiteVerbosityMenu =
+      uiMode === 'lite' && activeCommand.command.name === '/verbosity';
+    const verbosityHeader = isLiteVerbosityMenu ? (
+      <Box flexDirection="column">
+        <Box paddingX={1}>
+          <Text>{getColor('primary')(verbosityBreadcrumb(previewKey))}</Text>
+        </Box>
+        <Divider />
+      </Box>
+    ) : null;
+
     if (truncEditMatch) {
       const which = truncEditMatch[1] as
         | 'argsLines'
@@ -858,16 +885,19 @@ export const CommandMenu: React.FC = () => {
         } as const
       )[which];
       return (
-        <VerbosityTruncationEditor
-          which={which}
-          onCommit={(value) => {
-            clearCommandInput();
-            executeCommandWithArg(
-              `set:${settingKey}:${value === null ? 'null' : value}`
-            );
-          }}
-          onCancel={handleActiveCommandClose}
-        />
+        <Box flexDirection="column">
+          {verbosityHeader}
+          <VerbosityTruncationEditor
+            which={which}
+            onCommit={(value) => {
+              clearCommandInput();
+              executeCommandWithArg(
+                `set:${settingKey}:${value === null ? 'null' : value}`
+              );
+            }}
+            onCancel={handleActiveCommandClose}
+          />
+        </Box>
       );
     }
 
@@ -896,22 +926,26 @@ export const CommandMenu: React.FC = () => {
     // when the open command is /verbosity).
     if (previewMode === 'expanded' && verbosityPreviewKey) {
       return (
-        <VerbosityPreviewPane
-          which={verbosityPreviewKey}
-          displayOverride={
-            draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined
-          }
-          filtersOverride={
-            draftPreset ? DENSITY_FILTERS[draftPreset] : undefined
-          }
-          onCollapse={() => setPreviewMode('mini')}
-          onHide={() => setPreviewMode('hidden')}
-        />
+        <Box flexDirection="column">
+          {verbosityHeader}
+          <VerbosityPreviewPane
+            which={verbosityPreviewKey}
+            displayOverride={
+              draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined
+            }
+            filtersOverride={
+              draftPreset ? DENSITY_FILTERS[draftPreset] : undefined
+            }
+            onCollapse={() => setPreviewMode('mini')}
+            onHide={() => setPreviewMode('hidden')}
+          />
+        </Box>
       );
     }
 
     return (
       <Box flexDirection="column">
+        {verbosityHeader}
         <Menu
           key={activeCommandKey}
           initialIndex={activeCommand.initialIndex}

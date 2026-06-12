@@ -18,6 +18,7 @@ import {
   appliesOnSelect,
   screenTitle,
   screenDescription,
+  verbosityBreadcrumb,
   type Screen,
   type SettingsSnapshot,
 } from '../settings-panel-model.js';
@@ -28,13 +29,19 @@ const defaultSnapshot: SettingsSnapshot = {
 };
 
 /** Pull the id list off a screen's rows for terse reachability assertions. */
-function rowIds(screen: Screen, snap: SettingsSnapshot = defaultSnapshot) {
-  return buildRows(screen, snap).map((r) => r.id);
+function rowIds(
+  screen: Screen,
+  snap: SettingsSnapshot = defaultSnapshot,
+  uiMode?: 'tui' | 'lite'
+) {
+  return buildRows(screen, snap, uiMode).map((r) => r.id);
 }
 
 describe('settings-panel-model', () => {
   describe('top-level menu', () => {
-    it('exposes the five top items in order', () => {
+    it('exposes the five shared top items in order (tui / no uiMode)', () => {
+      // verbosity is lite-only and must NOT appear in tui (or when uiMode is
+      // omitted) — its handler errors with "lite mode only".
       expect(rowIds({ type: 'top' })).toEqual([
         'display',
         'theme',
@@ -42,6 +49,31 @@ describe('settings-panel-model', () => {
         'keybindings',
         'history',
       ]);
+      expect(rowIds({ type: 'top' }, defaultSnapshot, 'tui')).toEqual([
+        'display',
+        'theme',
+        'terminal',
+        'keybindings',
+        'history',
+      ]);
+    });
+
+    it('splices the lite-only verbosity row in after display (lite)', () => {
+      expect(rowIds({ type: 'top' }, defaultSnapshot, 'lite')).toEqual([
+        'display',
+        'verbosity',
+        'theme',
+        'terminal',
+        'keybindings',
+        'history',
+      ]);
+    });
+
+    it('selecting verbosity opens the verbosity command-menu', () => {
+      expect(resolveSelect({ type: 'top' }, 'verbosity')).toEqual({
+        kind: 'action',
+        action: { type: 'open-verbosity' },
+      });
     });
 
     it('Terminal item advertises interrupt behaviour in its description', () => {
@@ -225,6 +257,47 @@ describe('settings-panel-model', () => {
       expect(screenDescription({ type: 'terminal' })).toBeTruthy();
       expect(screenDescription({ type: 'terminal:interrupt' })).toBeTruthy();
       expect(screenDescription({ type: 'history' })).toBeTruthy();
+    });
+  });
+
+  describe('verbosityBreadcrumb', () => {
+    it('roots at /settings – verbosity for the top menu / unknown / undefined', () => {
+      expect(verbosityBreadcrumb('top')).toBe('/settings – verbosity');
+      expect(verbosityBreadcrumb(undefined)).toBe('/settings – verbosity');
+      expect(verbosityBreadcrumb('bogus')).toBe('/settings – verbosity');
+    });
+
+    it('deepens one level per sub-screen', () => {
+      expect(verbosityBreadcrumb('density')).toBe(
+        '/settings – verbosity – density'
+      );
+      expect(verbosityBreadcrumb('tool')).toBe(
+        '/settings – verbosity – tool calls'
+      );
+      expect(verbosityBreadcrumb('subagent')).toBe(
+        '/settings – verbosity – subagent'
+      );
+      expect(verbosityBreadcrumb('output')).toBe(
+        '/settings – verbosity – output'
+      );
+    });
+
+    it('maps every truncation flavor (incl. numeric editor) to the truncation breadcrumb', () => {
+      expect(verbosityBreadcrumb('truncation')).toBe(
+        '/settings – verbosity – truncation'
+      );
+      expect(verbosityBreadcrumb('truncation:args')).toBe(
+        '/settings – verbosity – truncation'
+      );
+      expect(verbosityBreadcrumb('truncation:output')).toBe(
+        '/settings – verbosity – truncation'
+      );
+      expect(verbosityBreadcrumb('truncation:argsLines:edit')).toBe(
+        '/settings – verbosity – truncation'
+      );
+      expect(verbosityBreadcrumb('truncation:outputChars:edit')).toBe(
+        '/settings – verbosity – truncation'
+      );
     });
   });
 });

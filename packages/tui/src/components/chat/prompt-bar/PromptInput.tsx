@@ -998,9 +998,16 @@ export const PromptInput = React.memo(function PromptInput({
             }
             return;
           }
-          // When processing, dismiss menus and submit directly (for queuing
-          // or slash command rejection — the menus aren't useful here).
+          // When processing, submit directly for queuing / slash-command
+          // rejection. But the slash/file dropdown stays mounted during
+          // streaming, and twinki's broadcasting useInput fires the Menu's
+          // onSelect for this SAME Enter — and the Menu already queues the
+          // highlighted, *completed* command (e.g. /settings). Bail here when a
+          // menu is up so PromptInput doesn't ALSO queue the raw typed prefix
+          // (e.g. /set, which isn't even a known command and would queue as a
+          // chat message / steer). Without this, a single Enter double-queues.
           if (isProcessing) {
+            if (slashMenuVisible || filePickerVisible) return;
             const content = buildContent(segments);
             // Don't submit whitespace-only prompts, but preserve indentation
             // (e.g. pasted code) in the submitted content.

@@ -30,6 +30,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     pendingApproval,
     approvalMode: mode,
     respondToApproval,
+    cancelApproval,
     setApprovalMode,
     sessionId: mainSessionId,
     sessions,
