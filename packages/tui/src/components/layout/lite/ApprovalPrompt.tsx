@@ -7,6 +7,7 @@ import {
 } from '../../../stores/app-store.js';
 import {
   ApprovalOptionId,
+  isParentSubagentTool,
   type PermissionOption,
   type TrustOption,
 } from '../../../types/agent-events.js';
@@ -291,7 +292,7 @@ export function ApprovalPrompt({
   const toolArgsLines = (() => {
     if (writeDiffLines) return null;
     if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
-    if (toolMsg.name === 'subagent') {
+    if (isParentSubagentTool(toolMsg.name)) {
       return formatSubagentApprovalLines(
         toolMsg.content,
         process.stdout.columns,

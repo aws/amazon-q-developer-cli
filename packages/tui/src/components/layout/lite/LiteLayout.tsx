@@ -5,7 +5,7 @@
  * - <Static> for finalized messages (append-only scrollback)
  * - Live region = streaming + footer pinned at bottom
  * - Uses shared PromptInput for full keybinding/history/shell-escape support
- * - CommandMenu renders ABOVE input for slash command dropdown
+ * - CommandMenu renders BELOW input for slash command dropdown (matches TUI)
  * - Compact tool call rendering with error tree
  *
  * Append-only contract: every entry pushed into `staticItems` is keyed by a
@@ -77,6 +77,7 @@ import {
 } from '../../../hooks/useGlyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 import { getAgentColor } from '../../../utils/agentColors.js';
+import { isParentSubagentTool } from '../../../types/agent-events.js';
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
 import chalk from 'chalk';
@@ -156,6 +157,7 @@ export const LiteLayout: React.FC = () => {
   const activeCommand = useAppStore((s) => s.activeCommand);
   const setActiveCommand = useAppStore((s) => s.setActiveCommand);
   const clearCommandInput = useAppStore((s) => s.clearCommandInput);
+  const uiMode = useAppStore((s) => s.uiMode);
   const queuedInputRestore = useAppStore((s) => s.queuedInputRestore);
   const applyQueuedInputRestore = useAppStore((s) => s.applyQueuedInputRestore);
   const mcpInitStatus = useAppStore((s) => s.mcpInitStatus);
@@ -203,6 +205,8 @@ export const LiteLayout: React.FC = () => {
     showRewindExplorer,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
+    showThemePanel,
+    showSettingsPanel,
     artifactViewOpen,
   } = useUIState();
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
@@ -234,8 +238,19 @@ export const LiteLayout: React.FC = () => {
     showRewindExplorer ||
     showKeybindingsPanel ||
     showDisplaySettingsPanel ||
+    showThemePanel ||
+    showSettingsPanel ||
     !!artifactViewOpen ||
     showSurveyPanel;
+
+  // The lite /verbosity menu is rendered by <CommandMenu> (not a backend
+  // panel) because of its live preview + truncation editor, but it presents
+  // like the other settings: CommandMenu draws a `/settings – verbosity`
+  // breadcrumb header, and we hide the `> ` input row below so that header
+  // occupies the input position — matching display/theme/terminal/etc. Gated
+  // to lite (in TUI /verbosity is filtered out of the menu entirely).
+  const verbosityMenuActive =
+    uiMode === 'lite' && activeCommand?.command.name === '/verbosity';
 
   const pendingSwap = usePendingSwap();
   const pendingAgentName = pendingSwap?.name ?? null;
@@ -755,8 +770,8 @@ export const LiteLayout: React.FC = () => {
       : brand('  KIRO');
     // One rotating "Did you know" tip — picked deterministically per day
     // so frequent restarts don't flicker between nudges. Surfaces features
-    // that aren't obvious from the input prompt (truncation, /theme, trust
-    // scoping, etc.).
+    // that aren't obvious from the input prompt (verbosity, default UI,
+    // subagent kill, /tui swap, etc.).
     const tipLine = formatTipLine(pickTip());
     return `${kiroArt}\n${chalk.dim(`  v${version} · lite`)}\n${tipLine}`;
   }, [allowAsciiArt]);
@@ -1093,7 +1108,8 @@ export const LiteLayout: React.FC = () => {
   // no-subagent path stays O(0) past the check.
   const hasAnySubagentTool = useMemo(() => {
     for (const m of messages) {
-      if (m.role === MessageRole.ToolUse && m.name === 'subagent') return true;
+      if (m.role === MessageRole.ToolUse && isParentSubagentTool(m.name))
+        return true;
     }
     return false;
   }, [messages]);
@@ -1298,7 +1314,8 @@ export const LiteLayout: React.FC = () => {
       for (const m of messages) {
         if (m.role !== MessageRole.ToolUse) continue;
         const isParentSubagent =
-          m.name === 'subagent' && (!m.agentName || m.agentName === agentName);
+          isParentSubagentTool(m.name) &&
+          (!m.agentName || m.agentName === agentName);
         if (isParentSubagent) {
           activeParentId = m.id;
           if (!subagentSummariesById.has(m.id))
@@ -1529,7 +1546,9 @@ export const LiteLayout: React.FC = () => {
 
     const anyParentSubagentRunning = messages.some(
       (m) =>
-        m.role === MessageRole.ToolUse && m.name === 'subagent' && !m.isFinished
+        m.role === MessageRole.ToolUse &&
+        isParentSubagentTool(m.name) &&
+        !m.isFinished
     );
     // Final outputs are only built when a parent subagent is in flight (see
     // the guard at the rows assembly below). Bail before walking sessions +
@@ -2265,7 +2284,6 @@ export const LiteLayout: React.FC = () => {
               {chalk.dim(' · enter saves · ctrl+x deletes · esc cancels')}
             </Text>
           )}
-          <CommandMenu />
           {transientAlert && (
             <Text>
               {colorTransientAlert(
@@ -2273,9 +2291,6 @@ export const LiteLayout: React.FC = () => {
                 transientAlert.status
               )}
             </Text>
-          )}
-          {exitSequence > 0 && (
-            <Text>{chalk.dim('Press Ctrl+C or Ctrl+D again to exit')}</Text>
           )}
           {/* Input row — `> ` glyph and surrounding box pick up the user's
               prompt preset colors so /theme actually re-skins the lite input.
@@ -2292,25 +2307,42 @@ export const LiteLayout: React.FC = () => {
               that's only 2 cols wide. The Text inside PromptInput then has
               no real width to wrap against, so >3-line input runs off the
               right edge of the terminal. PromptBar uses the same pattern. */}
-          <Box flexDirection="row" width="100%" backgroundColor={promptBgHex}>
-            <Text>
-              {isShellEscape ? getColor('brand')('! ') : promptGlyph('> ')}
-            </Text>
-            <Box flexGrow={1} flexShrink={1}>
-              <PromptInput
-                onSubmit={handleSubmit}
-                isProcessing={isProcessing}
-                triggerRules={TRIGGER_RULES}
-                onTriggerDetected={handleTriggerDetected}
-                placeholder={
-                  isShellEscape
-                    ? 'bash is waiting for input · ctrl+c to interrupt'
-                    : 'ask a question, or type / for commands'
-                }
-                suppressArrows={subagentOpenIndex != null}
-              />
+          {/* Input row is hidden while the lite /verbosity menu is active:
+              that menu presents as a panel (breadcrumb header + chrome drawn
+              by CommandMenu below), so the header takes the input's place —
+              matching how the other settings replace the input area. */}
+          {!verbosityMenuActive && (
+            <Box flexDirection="row" width="100%" backgroundColor={promptBgHex}>
+              <Text>
+                {isShellEscape ? getColor('brand')('! ') : promptGlyph('> ')}
+              </Text>
+              <Box flexGrow={1} flexShrink={1}>
+                <PromptInput
+                  onSubmit={handleSubmit}
+                  isProcessing={isProcessing}
+                  triggerRules={TRIGGER_RULES}
+                  onTriggerDetected={handleTriggerDetected}
+                  placeholder={
+                    isShellEscape
+                      ? 'bash is waiting for input · ctrl+c to interrupt'
+                      : 'ask a question, or type / for commands'
+                  }
+                  suppressArrows={subagentOpenIndex != null}
+                />
+              </Box>
             </Box>
-          </Box>
+          )}
+          {/* Slash-command dropdown + /settings menu render BELOW the input,
+              matching the modern TUI (PromptBar renders <PromptInput> first,
+              then CommandMenu as a child beneath it). CommandMenu self-renders
+              null when no command/trigger is active, so it's safe to mount
+              unconditionally here. The lite /verbosity menu draws its own
+              breadcrumb header (panel chrome); with the input row hidden above,
+              it occupies the input position like the other settings panels. */}
+          <CommandMenu />
+          {exitSequence > 0 && (
+            <Text>{chalk.dim('Press Ctrl+C or Ctrl+D again to exit')}</Text>
+          )}
         </Box>
       )}
 

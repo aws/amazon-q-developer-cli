@@ -40,6 +40,8 @@ export interface BackendPanelHandlers {
   handleCloseRewindExplorer: () => void;
   handleCloseKeybindingsPanel: () => void;
   handleCloseDisplaySettingsPanel: () => void;
+  handleCloseThemePanel: () => void;
+  handleCloseSettingsPanel: () => void;
   handleTabFromContext: () => Promise<void>;
   handleTabFromUsage: () => Promise<void>;
   handleRefreshCodePanel: () => Promise<void>;
@@ -61,6 +63,8 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
     setShowRewindExplorer,
     setShowKeybindingsPanel,
     setShowDisplaySettingsPanel,
+    setShowThemePanel,
+    setShowSettingsPanel,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
   } = useUIActions();
@@ -169,6 +173,39 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
     reopenSettingsMenu,
   ]);
 
+  const handleCloseThemePanel = useCallback(() => {
+    setShowThemePanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    // Return to /settings menu if this panel was opened from there.
+    if (settingsReturnOnEscape) {
+      setSettingsReturnOnEscape(false);
+      reopenSettingsMenu();
+    }
+  }, [
+    setShowThemePanel,
+    setActiveCommand,
+    clearCommandInput,
+    settingsReturnOnEscape,
+    setSettingsReturnOnEscape,
+    reopenSettingsMenu,
+  ]);
+
+  const handleCloseSettingsPanel = useCallback(() => {
+    // Top-level /settings close. Always clears the back-flag so the next
+    // overlay open starts fresh — avoids a stale `settingsReturnOnEscape`
+    // bouncing the user into /settings unexpectedly.
+    setShowSettingsPanel(false);
+    setActiveCommand(null);
+    clearCommandInput();
+    setSettingsReturnOnEscape(false);
+  }, [
+    setShowSettingsPanel,
+    setActiveCommand,
+    clearCommandInput,
+    setSettingsReturnOnEscape,
+  ]);
+
   const handleTabFromContext = useCallback(async () => {
     try {
       const result = await kiro.executeCommand({
@@ -248,6 +285,8 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
     handleCloseRewindExplorer,
     handleCloseKeybindingsPanel,
     handleCloseDisplaySettingsPanel,
+    handleCloseThemePanel,
+    handleCloseSettingsPanel,
     handleTabFromContext,
     handleTabFromUsage,
     handleRefreshCodePanel,

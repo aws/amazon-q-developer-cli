@@ -64,8 +64,7 @@ describe('/settings command', () => {
       // The TUI /settings UI lives in <SettingsPanel> (an Explorer-based
       // overlay), not in the slash-command active-command machinery.
       // Bare /settings in TUI mode just flips the panel state on; the
-      // panel itself owns the row list and routing. (Lite keeps its
-      // command-menu — see the lite-mode test below.)
+      // panel itself owns the row list and routing.
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
       // Default mock getUiMode returns 'tui'.
       await dispatch(settingsCmd, '', ctx);
@@ -76,27 +75,20 @@ describe('/settings command', () => {
       expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
     });
 
-    it('opens the lite command-menu (not the panel) in lite mode', async () => {
-      // Lite preserves its /settings command-menu — it carries lite-only
-      // entries (e.g. verbosity) the SettingsPanel doesn't have — so bare
-      // /settings in lite mode opens the command-menu, not the panel.
+    it('opens the same SettingsPanel overlay in lite mode (1:1 with TUI)', async () => {
+      // Lite now renders the SAME shared SettingsPanel (via <BackendPanels>)
+      // instead of a bespoke command-menu — so breadcrumb titles, panel
+      // heights, and ESC-back match TUI. The lite-only verbosity row is added
+      // inside the panel's model (settings-panel-model.ts), gated on uiMode,
+      // not via the command-menu. So bare /settings in lite flips the panel
+      // flag, exactly like TUI, and does NOT open a command-menu.
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
       (ctx as any).getUiMode = () => 'lite';
       await dispatch(settingsCmd, '', ctx);
 
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      expect(ctx._spies.setShowSettingsPanel!).not.toHaveBeenCalled();
-    });
-
-    it('shows lite-only entries in the menu when in lite mode', async () => {
-      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
-      (ctx as any).getUiMode = () => 'lite';
-      await dispatch(settingsCmd, '', ctx);
-
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const { options } = call[0];
-      const values = options.map((o: { value: string }) => o.value);
-      expect(values).toContain('verbosity');
+      expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
+      expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
+      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
     });
   });
 
@@ -166,6 +158,26 @@ describe('/settings command', () => {
         labels.includes('default') || labels.includes('full');
       const isConfigMenu = labels.includes('Tool calls');
       expect(isDensityMenu || isConfigMenu).toBe(true);
+    });
+
+    it('forwards a trailing section into /settings verbosity <section> (lite)', async () => {
+      // Nested typed access: `/settings verbosity truncation` should drill
+      // straight into the verbosity truncation menu, mirroring the breadcrumb.
+      // The verbosity subcommand forwards the tail to verbosityConfig, which
+      // opens the truncation sub-menu (back-link encodes the section).
+      const ctx = createMockCommandContext({
+        slashCommands: [settingsCmd, verbosityCmd],
+      });
+      (ctx as any).getUiMode = () => 'lite';
+      await dispatch(settingsCmd, 'verbosity truncation', ctx);
+
+      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+      const call = ctx._spies.setActiveCommand!.mock.calls.at(-1)!;
+      const arg = call[0] as { options: Array<{ value: string }> };
+      const values = arg.options.map((o) => o.value);
+      expect(values).toContain('menu:top:truncation');
+      // Still primes the ESC-back-to-/settings flag.
+      expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalledWith(true);
     });
 
     it('shows an error for an unknown subcommand', async () => {

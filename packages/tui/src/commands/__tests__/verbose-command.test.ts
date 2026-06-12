@@ -62,14 +62,6 @@ const verbosityCmd: SlashCommand = {
   meta: { local: true, liteOnly: true },
 };
 
-// Backward-compat alias used by alias-specific tests below.
-const verboseAliasCmd: SlashCommand = {
-  name: '/verbose',
-  description: '',
-  source: 'local' as const,
-  meta: { local: true, liteOnly: true, hidden: true },
-};
-
 function liteCtx() {
   const ctx = createMockCommandContext({ slashCommands: [verbosityCmd] });
   // Override the default 'tui' to 'lite' so the verbosity handler's lite-only
@@ -78,7 +70,7 @@ function liteCtx() {
   return ctx;
 }
 
-describe('/verbose lite-mode gate', () => {
+describe('/verbosity lite-mode gate', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -98,7 +90,7 @@ describe('/verbose lite-mode gate', () => {
   });
 });
 
-describe('/verbose top menu and status', () => {
+describe('/verbosity top menu and status', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -173,21 +165,21 @@ describe('/verbose top menu and status', () => {
     expect(labels).toContain('Tool calls');
   });
 
-  it('/verbose on sets filters to ["all"]', () => {
+  it('/verbosity on sets filters to ["all"]', () => {
     setVerboseConfig({ filters: [] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'on');
     expect(getVerboseConfig().filters).toEqual(['all']);
   });
 
-  it('/verbose off sets filters to []', () => {
+  it('/verbosity off sets filters to []', () => {
     setVerboseConfig({ filters: ['all'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'off');
     expect(getVerboseConfig().filters).toEqual([]);
   });
 
-  it('/verbose status announces filters without an ON/OFF prefix', () => {
+  it('/verbosity status announces filters without an ON/OFF prefix', () => {
     const ctx = liteCtx();
     setVerboseConfig({ filters: ['shell', 'mcp'] });
     runEffect(verbosityCmd, null, ctx, 'status');
@@ -202,13 +194,13 @@ describe('/verbose top menu and status', () => {
   });
 });
 
-describe('/verbose filter mutations', () => {
+describe('/verbosity filter mutations', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('/verbose only <list> replaces filters', () => {
+  it('/verbosity only <list> replaces filters', () => {
     const ctx = liteCtx();
     runEffect(
       verbosityCmd,
@@ -222,14 +214,14 @@ describe('/verbose filter mutations', () => {
     expect(f).not.toContain('all');
   });
 
-  it('/verbose all resets filters', () => {
+  it('/verbosity all resets filters', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'all');
     expect(getVerboseConfig().filters).toEqual(['all']);
   });
 
-  it('/verbose add appends without dropping existing', () => {
+  it('/verbosity add appends without dropping existing', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'add mcp');
@@ -238,7 +230,7 @@ describe('/verbose filter mutations', () => {
     expect(f).toContain('mcp');
   });
 
-  it('/verbose add from "all" baseline collapses to the new tokens', () => {
+  it('/verbosity add from "all" baseline collapses to the new tokens', () => {
     setVerboseConfig({ filters: ['all'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'add shell');
@@ -250,7 +242,7 @@ describe('/verbose filter mutations', () => {
     expect(f).not.toContain('all');
   });
 
-  it('/verbose remove drops listed tokens', () => {
+  it('/verbosity remove drops listed tokens', () => {
     setVerboseConfig({ filters: ['shell', 'mcp', 'read'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'remove mcp');
@@ -302,7 +294,7 @@ describe('/verbose filter mutations', () => {
   });
 });
 
-describe('/verbose config interactive menu', () => {
+describe('/verbosity config interactive menu', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -382,7 +374,7 @@ describe('/verbose config interactive menu', () => {
   });
 });
 
-describe('/verbose density presets', () => {
+describe('/verbosity density presets', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -466,7 +458,7 @@ describe('/verbose density presets', () => {
   });
 });
 
-describe('/verbose display flag toggles (set:)', () => {
+describe('/verbosity display flag toggles (set:)', () => {
   beforeEach(() => {
     setVerboseConfig({
       filters: ['all'],
@@ -552,7 +544,7 @@ describe('/verbose display flag toggles (set:)', () => {
   });
 });
 
-describe('/verbose preset confirmation gate (replaces standalone reset)', () => {
+describe('/verbosity preset confirmation gate (replaces standalone reset)', () => {
   beforeEach(() => {
     resetVerboseCache();
     // Custom shape so bare /verbosity opens the config menu — keeps the
@@ -664,7 +656,7 @@ describe('/verbose preset confirmation gate (replaces standalone reset)', () => 
   });
 });
 
-describe('/verbose drilldown menus', () => {
+describe('/verbosity drilldown menus', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -685,6 +677,41 @@ describe('/verbose drilldown menus', () => {
     // back-link present so the user can return to the top menu without esc.
     // The back-link encodes the source key so the cursor lands on "Tool calls".
     expect(values).toContain('menu:top:tool');
+  });
+
+  it('friendly section names jump straight into their sub-menu', () => {
+    // Mirrors the breadcrumb so nested menus are reachable as typed
+    // subcommands: `/verbosity truncation`, `/verbosity tool`, etc. open the
+    // same menu as the internal `menu:<section>` route. `density` is
+    // intentionally excluded (bare `density` is the CLI set-preset form).
+    const cases: Array<[string, string]> = [
+      ['tool', 'menu:top:tool'],
+      ['tools', 'menu:top:tool'],
+      ['tool calls', 'menu:top:tool'],
+      ['subagent', 'menu:top:subagent'],
+      ['output', 'menu:top:output'],
+      ['truncation', 'menu:top:truncation'],
+    ];
+    for (const [arg, backLink] of cases) {
+      const ctx = liteCtx();
+      runEffect(verbosityCmd, null, ctx, arg);
+      const calls = ctx._spies.setActiveCommand!.mock
+        .calls as unknown as unknown[][];
+      expect(calls.length).toBeGreaterThan(0);
+      const opened = calls[calls.length - 1]![0] as { options: any[] };
+      const values = opened.options.map((o) => o.value);
+      // The back-link encodes the section, proving we opened that sub-menu.
+      expect(values).toContain(backLink);
+    }
+  });
+
+  it('bare "density" stays the CLI set-preset form, not a menu jump', () => {
+    // Guard the deliberate exclusion: `density` without a preset errors
+    // rather than opening the density menu.
+    const ctx = liteCtx();
+    runEffect(verbosityCmd, null, ctx, 'density');
+    const alerts = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
+    expect(alerts[0]![0]).toContain('density needs a preset');
   });
 
   it('menu:subagent lists steps + nested rows + responses + full output toggle', () => {
@@ -832,7 +859,7 @@ describe('/verbose drilldown menus', () => {
   });
 });
 
-describe('/verbose ESC navigation flag', () => {
+describe('/verbosity ESC navigation flag', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -903,7 +930,7 @@ describe('/verbose ESC navigation flag', () => {
   });
 });
 
-describe('/verbose cursor positioning (initialIndex)', () => {
+describe('/verbosity cursor positioning (initialIndex)', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -975,7 +1002,7 @@ describe('/verbose cursor positioning (initialIndex)', () => {
   });
 });
 
-describe('/verbose Truncation submenu', () => {
+describe('/verbosity Truncation submenu', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -1199,7 +1226,7 @@ describe('/verbose Truncation submenu', () => {
   });
 });
 
-describe('/verbose top menu Output filters row summary', () => {
+describe('/verbosity top menu Output filters row summary', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -1242,7 +1269,7 @@ describe('/verbose top menu Output filters row summary', () => {
   });
 });
 
-describe('/verbose long filter announcement (count-based truncation)', () => {
+describe('/verbosity long filter announcement (count-based truncation)', () => {
   let originalColumns: number | undefined;
 
   beforeEach(() => {
@@ -1296,7 +1323,7 @@ describe('/verbose long filter announcement (count-based truncation)', () => {
   });
 });
 
-describe('/verbose top menu Subagent row summary', () => {
+describe('/verbosity top menu Subagent row summary', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -1413,7 +1440,7 @@ describe('/verbose top menu Subagent row summary', () => {
   });
 });
 
-describe('/verbose unknown-token soft warnings', () => {
+describe('/verbosity unknown-token soft warnings', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: [] });
@@ -1451,7 +1478,7 @@ describe('/verbose unknown-token soft warnings', () => {
   });
 });
 
-describe('/verbose unknown subcommand', () => {
+describe('/verbosity unknown subcommand', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
@@ -1464,45 +1491,36 @@ describe('/verbose unknown subcommand', () => {
     expect(calls[0]![0]).toContain('Unknown /verbosity subcommand');
     expect(calls[0]![1]).toBe('error');
   });
-
-  it('uses canonical /verbosity in error messages even when invoked via /verbose alias', () => {
-    const ctx = liteCtx();
-    // Invoke via the alias command — error should still cite the canonical
-    // /verbosity name, not the alias the user happened to type.
-    runEffect(verboseAliasCmd, null, ctx, 'wat-is-this');
-    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(calls[0]![0]).toContain('Unknown /verbosity subcommand');
-  });
 });
 
-describe('/verbose case-insensitive command verbs', () => {
+describe('/verbosity case-insensitive command verbs', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('/verbose ON works the same as /verbose on', () => {
+  it('/verbosity ON works the same as /verbosity on', () => {
     setVerboseConfig({ filters: [] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'ON');
     expect(getVerboseConfig().filters).toEqual(['all']);
   });
 
-  it('/verbose OFF works the same as /verbose off', () => {
+  it('/verbosity OFF works the same as /verbosity off', () => {
     setVerboseConfig({ filters: ['all'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'OFF');
     expect(getVerboseConfig().filters).toEqual([]);
   });
 
-  it('/verbose ALL works the same as /verbose all', () => {
+  it('/verbosity ALL works the same as /verbosity all', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'ALL');
     expect(getVerboseConfig().filters).toEqual(['all']);
   });
 
-  it('/verbose Status works the same as /verbose status', () => {
+  it('/verbosity Status works the same as /verbosity status', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'Status');
@@ -1512,13 +1530,13 @@ describe('/verbose case-insensitive command verbs', () => {
     expect(getVerboseConfig().filters).toEqual(['shell']);
   });
 
-  it('/verbose DENSITY lean applies the preset (verb is case-insensitive)', () => {
+  it('/verbosity DENSITY lean applies the preset (verb is case-insensitive)', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'DENSITY lean');
     expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
   });
 
-  it('/verbose ONLY shell preserves filter token case', () => {
+  it('/verbosity ONLY shell preserves filter token case', () => {
     const ctx = liteCtx();
     // The verb is uppercase but the filter token must reach the saved
     // config exactly as typed — MCP tool names are case-sensitive.
@@ -1526,7 +1544,7 @@ describe('/verbose case-insensitive command verbs', () => {
     expect(getVerboseConfig().filters).toContain('mcp__SomeCase__tool');
   });
 
-  it('/verbose only Shell keeps the original Shell capitalization in saved filters', () => {
+  it('/verbosity only Shell keeps the original Shell capitalization in saved filters', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'only Shell');
     // Filter token should NOT be lowercased — preserves what the user typed.
@@ -1535,26 +1553,26 @@ describe('/verbose case-insensitive command verbs', () => {
   });
 });
 
-describe('/verbose density colon form (Bug D)', () => {
+describe('/verbosity density colon form (Bug D)', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('/verbose density:lean is accepted as a CLI form', () => {
+  it('/verbosity density:lean is accepted as a CLI form', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:lean');
     expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
   });
 
-  it('/verbose density:minimal is accepted', () => {
+  it('/verbosity density:minimal is accepted', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:minimal');
     expect(getVerboseConfig().display!.toolArgsMode).toBe('off');
     expect(getVerboseConfig().display!.showToolReasoning).toBe(false);
   });
 
-  it('/verbose density:custom (unknown preset) surfaces an error alert', () => {
+  it('/verbosity density:custom (unknown preset) surfaces an error alert', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:custom');
     const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
@@ -1562,7 +1580,7 @@ describe('/verbose density colon form (Bug D)', () => {
     expect(calls[0]![1]).toBe('error');
   });
 
-  it('/verbose DENSITY:lean is accepted (case-insensitive verb)', () => {
+  it('/verbosity DENSITY:lean is accepted (case-insensitive verb)', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'DENSITY:lean');
     expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
@@ -1619,53 +1637,5 @@ describe('help merge gates liteOnly commands', () => {
     const call = ctx._spies.setShowHelpPanel!.mock.calls[0]!;
     const merged = call[1] as Array<{ name: string }>;
     expect(merged.find((c) => c.name === '/verbosity')).toBeDefined();
-  });
-});
-
-// Backward-compat: /verbose still routes through the same dispatcher branch
-// as /verbosity. Functionality is identical regardless of which alias the
-// user typed.
-describe('/verbose alias for /verbosity', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: ['all'] });
-  });
-
-  it('/verbose config opens the same config menu as /verbosity config', () => {
-    const ctx = liteCtx();
-    runEffect(verboseAliasCmd, null, ctx, 'config');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    expect(calls.length).toBe(1);
-    const arg = calls[0]![0] as { command: SlashCommand; options: any[] };
-    // Header chip always reflects the canonical /verbosity command, not
-    // the alias the user typed. The verbosityConfig handler resolves the
-    // canonical SlashCommand from the registry so CommandMenu's
-    // `command.name === '/verbosity'` checks (Ctrl+P preview toggle,
-    // density-row draft highlight) work identically across direct entry,
-    // the legacy /verbose alias, and /settings → verbosity. Mirrors how
-    // /theme keeps the chip as /theme regardless of how it was reached.
-    expect(arg.command.name).toBe('/verbosity');
-    const labels = arg.options.map((o) => o.label);
-    expect(labels).toContain('Tool calls');
-    expect(labels).toContain('Show output');
-  });
-
-  it('/verbose on toggles via the alias', () => {
-    setVerboseConfig({ filters: [] });
-    const ctx = liteCtx();
-    runEffect(verboseAliasCmd, null, ctx, 'on');
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  it('/verbose status announces the same shape as /verbosity status', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verboseAliasCmd, null, ctx, 'status');
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    expect(calls.length).toBe(1);
-    const msg = calls[0]![0] as string;
-    expect(msg).toContain('shell');
   });
 });

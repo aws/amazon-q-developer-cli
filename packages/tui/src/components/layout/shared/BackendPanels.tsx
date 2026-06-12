@@ -26,6 +26,8 @@ import { ChangelogPanel } from '../../ui/ChangelogPanel.js';
 import { Explorer } from '../../ui/Explorer.js';
 import { KeybindingsPanel } from '../../ui/KeybindingsPanel.js';
 import { DisplaySettingsPanel } from '../../ui/DisplaySettingsPanel.js';
+import { ThemePanel } from '../../ui/ThemePanel.js';
+import { SettingsPanel } from '../../ui/SettingsPanel.js';
 import { ArtifactView } from '../../ui/ArtifactView/index.js';
 import { SurveyPanel } from '../../ui/SurveyPanel.js';
 import {
@@ -65,6 +67,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     hooksList,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
+    showThemePanel,
+    showSettingsPanel,
     showKnowledgePanel,
     knowledgeEntries,
     knowledgeStatus,
@@ -202,6 +206,12 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
         <DisplaySettingsPanel
           onClose={handlers.handleCloseDisplaySettingsPanel}
         />
+      )}
+      {showThemePanel && (
+        <ThemePanel onClose={handlers.handleCloseThemePanel} />
+      )}
+      {showSettingsPanel && (
+        <SettingsPanel onClose={handlers.handleCloseSettingsPanel} />
       )}
       {showKnowledgePanel && (
         <KnowledgePanel

@@ -182,6 +182,7 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
+      debugKeys: false,
     });
   });
 

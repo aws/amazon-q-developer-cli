@@ -49,10 +49,7 @@ import {
   serializeConversation,
   type TranscriptFormat,
 } from '../utils/serialize-conversation.js';
-import {
-  findSettingsSubcommand,
-  buildSettingsActiveCommand,
-} from './settings-subcommands.js';
+import { findSettingsSubcommand } from './settings-subcommands.js';
 import {
   getVerboseConfig,
   getVerboseDisplay,
@@ -169,7 +166,6 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   tui: 'switchToTui',
   lite: 'switchToLite',
   verbosity: 'verbosityConfig',
-  verbose: 'verbosityConfig',
   changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
@@ -1503,7 +1499,33 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
    */
   showSettingsMenu: (_result, ctx, cmd, args) => {
     if (args) {
-      const sub = findSettingsSubcommand(args);
+      const resolveEffect = (name: string) => {
+        const handler = effectHandlers[name as EffectName];
+        if (!handler) {
+          throw new Error(`Unknown effect handler: ${name}`);
+        }
+        return handler;
+      };
+      // Exact match first — preserves the colon-form values
+      // (e.g. `terminal:interrupt:steer`) the menu rows dispatch directly.
+      let sub = findSettingsSubcommand(args);
+      let arg = '';
+      // Fall back to "subcommand + trailing section", e.g.
+      // `/settings verbosity truncation`. The first space-delimited word is the
+      // subcommand; the rest is forwarded so the handler can drill straight
+      // into a nested menu (mirrors the breadcrumb so nested menus are
+      // reachable as typed subcommands).
+      if (!sub) {
+        const space = args.indexOf(' ');
+        if (space !== -1) {
+          const head = args.slice(0, space);
+          const candidate = findSettingsSubcommand(head);
+          if (candidate) {
+            sub = candidate;
+            arg = args.slice(space + 1).trim();
+          }
+        }
+      }
       if (!sub) {
         ctx.showAlert(`Unknown settings subcommand: ${args}`, 'error', 3000);
         return true;
@@ -1512,25 +1534,19 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         sub.handle({
           ctx,
           settingsCommand: cmd,
-          resolveEffect: (name) => {
-            const handler = effectHandlers[name as EffectName];
-            if (!handler) {
-              throw new Error(`Unknown effect handler: ${name}`);
-            }
-            return handler;
-          },
+          resolveEffect,
+          arg,
         })
       );
       return true;
     }
 
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.setActiveCommand(buildSettingsActiveCommand(cmd, ctx.getUiMode?.()));
-    } else {
-      // Bare /settings opens the SettingsPanel overlay; the panel handles
-      // its own item rendering and routing to sub-panels.
-      ctx.setShowSettingsPanel(true);
-    }
+    // Bare /settings opens the shared SettingsPanel overlay in BOTH modes;
+    // the panel handles its own item rendering and routing to sub-panels.
+    // Lite renders the same panel via <BackendPanels> so the two modes stay
+    // 1:1 (breadcrumb titles, panel heights, ESC-back). The lite-only
+    // `verbosity` row is added inside the panel's model, gated on uiMode.
+    ctx.setShowSettingsPanel(true);
     return true;
   },
 
@@ -1592,8 +1608,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   /**
-   * /verbosity: configure lite-mode rendering. (Also reachable as the
-   * legacy alias /verbose — both route here.)
+   * /verbosity: configure lite-mode rendering.
    *
    * The interactive menu is a sectioned drilldown:
    *   top → density preset, sub-menus (Tool calls, Subagent,
@@ -1620,16 +1635,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // menu's command chip and CommandMenu's `command.name === '/verbosity'`
     // detection (Ctrl+P preview toggle, density-row draft highlight, stale
     // state reset) work identically regardless of how the handler was
-    // reached — direct typing, the legacy `/verbose` alias, or `/settings
-    // verbosity`. Without this, entering via /settings produces an
-    // activeCommand whose name is `/settings`, and CommandMenu's checks
-    // silently fail.
+    // reached — direct typing or `/settings verbosity`. Without this, entering
+    // via /settings produces an activeCommand whose name is `/settings`, and
+    // CommandMenu's checks silently fail.
     //
     // Mirrors the showThemeMenu pattern at the top of that handler:
     // resolve the canonical cmd, bail silently if not registered (a
     // production-impossible case kept defensive for tests). Suppressed in
-    // tests that only register the alias / settings cmd — those tests fall
-    // back to `cmd`, the legacy behavior.
+    // tests that only register the settings cmd — those tests fall back to
+    // `cmd`, the legacy behavior.
     const verbosityCmd =
       ctx.slashCommands.find((c) => c.name === '/verbosity') ?? cmd;
 
@@ -2276,6 +2290,33 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
       if (editMatch) {
         openTruncationEditor(editMatch[1] as TruncationField);
+        return true;
+      }
+    }
+
+    // Friendly section names — let users jump straight into a sub-menu by its
+    // breadcrumb name, both as `/verbosity <section>` and (forwarded by the
+    // settings router) `/settings verbosity <section>`. Mirrors the nested
+    // breadcrumb so the menus are discoverable as typed subcommands. The first
+    // word was already lowercased by the case-folding above, so multi-word
+    // forms like "tool calls" compare in lower case here.
+    //
+    // `density` is intentionally NOT here: bare `density` is the existing CLI
+    // form (`density <preset>`) handled below, and the density menu is already
+    // the smart-entry default for bare `/verbosity` on a preset.
+    {
+      const SECTION_OPENERS: Record<string, () => void> = {
+        tool: openToolMenu,
+        tools: openToolMenu,
+        'tool calls': openToolMenu,
+        subagent: openSubagentMenu,
+        subagents: openSubagentMenu,
+        output: openOutputMenu,
+        truncation: openTruncationMenu,
+      };
+      const opener = SECTION_OPENERS[trimmed];
+      if (opener) {
+        opener();
         return true;
       }
     }
