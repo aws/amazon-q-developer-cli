@@ -82,7 +82,6 @@ jobs:
 
   notarize-node:
     name: Notarize Node (${{ inputs.environment }})
-    if: inputs.channel == 'nightly' || inputs.branch_name == 'feature/kas-migration-v2'
     runs-on: macos-latest-xlarge
     environment: ${{ inputs.environment }}
     steps:
@@ -203,7 +202,6 @@ jobs:
           echo "✓ Downloaded notarized bun binary (${{ matrix.bun_arch }})"
 
       - name: Download notarized node (per-arch)
-        if: inputs.channel == 'nightly' || inputs.branch_name == 'feature/kas-migration-v2'
         run: |
           BRANCH_NAME="${{ inputs.branch_name }}"
           COMMIT_ID="${{ inputs.commit_sha }}"
@@ -257,7 +255,7 @@ jobs:
       - name: Build macOS ${{ matrix.arch }} binary
         env:
           AMAZON_Q_BUILD_TARGET_TRIPLE: ${{ matrix.target }}
-          INCLUDE_KAS_BUNDLE: ${{ inputs.channel == 'nightly' || inputs.branch_name == 'feature/kas-migration-v2' }}
+          INCLUDE_KAS_BUNDLE: "true"
           KIRO_VERSION: ${{ inputs.version }}
         run: |
           python3 ./scripts/main.py build \

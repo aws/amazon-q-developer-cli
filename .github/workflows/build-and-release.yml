@@ -213,7 +213,7 @@ jobs:
           TAG="${{ needs.tag.outputs.tag }}"
           VERSION="${TAG#v}"
 
-          # Determine channel (downstream builds use this for KAS bundling and autocomplete routing)
+          # Determine channel (downstream builds use this for autocomplete routing)
           if [[ "$VERSION" == *"-nightly."* ]]; then
             CHANNEL="nightly"
           elif [[ "${{ github.ref_name }}" == feature/* ]]; then
