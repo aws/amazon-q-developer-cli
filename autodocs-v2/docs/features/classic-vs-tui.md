@@ -1,21 +1,21 @@
 ---
 doc_meta:
-  validated: 2026-06-13
-  commit: ed1d467b6
+  validated: 2026-06-05
+  commit: 8a53bd9d9
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
-  related: [help, theme, spawn, feedback]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
+  related: [help, theme, spawn, feedback, lite-mode]
 ---
 
 ## Overview
 
-Kiro CLI has two interfaces: the new TUI (default) and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, while classic mode is the original Rust-based experience.
+Kiro CLI has three interfaces: the new TUI (default), lite mode, and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI panels, lite mode is a lightweight scrollback-friendly alternative, and classic mode is the original Rust-based experience.
 
-Switch to classic mode anytime with `kiro-cli --classic`.
+Switch to classic mode anytime with `kiro-cli --classic`. Switch to lite mode with `/lite` mid-session, or set it as your default via `/settings → display` (requires nightly build with lite rollout enabled).
 
 ## What's New in the TUI
 
@@ -135,9 +135,19 @@ kiro-cli --classic
 kiro-cli chat --legacy-mode
 ```
 
+### Use Lite Mode
+
+Switch mid-session:
+```
+/lite        Switch TUI → lite
+/tui         Switch lite → TUI
+```
+
+Lite mode can also be set as the default via `/settings → display → Default UI` or by setting `chat.ui.mode` to `"lite"` in `~/.kiro/settings/cli.json`.
+
 ### Session Compatibility
 
-Sessions saved in the TUI can be loaded in classic mode and vice versa via `/chat save` and `/chat load`. However, TUI sessions created during a TUI session are not available in classic mode's session picker.
+Sessions saved in the TUI can be loaded in classic mode and vice versa via `/chat save` and `/chat load`. However, TUI sessions created during a TUI session are not available in classic mode's session picker. Lite and TUI mode share the same session format — switching between them mid-session preserves all history.
 
 ## Related
 
@@ -145,3 +155,4 @@ Sessions saved in the TUI can be loaded in classic mode and vice versa via `/cha
 - [/guide](../slash-commands/guide.md) — Conversational help
 - [/theme](../slash-commands/theme.md) — Theme customization
 - [/feedback](../slash-commands/feedback.md) — Submit feedback
+- [Lite Mode](lite-mode.md) — Lightweight scrollback-friendly mode
