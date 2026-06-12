@@ -18,17 +18,21 @@ indexmap.workspace = true
 kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
 libc.workspace = true
 opentelemetry.workspace = true
+opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"], optional = true }
 prost = { version = "0.14.3", optional = true }
 regex.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
+futures.workspace = true
 opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"] }
 prost = "0.14.3"
 tempfile.workspace = true

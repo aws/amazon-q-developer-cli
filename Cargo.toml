@@ -119,6 +119,7 @@ objc2 = "0.5.2"
 objc2-app-kit = { version = "0.2.2", features = ["NSWorkspace"] }
 objc2-foundation = { version = "0.2.2", features = ["NSString", "NSURL"] }
 opentelemetry = "~0.32.0"
+opentelemetry-http = "~0.32.0"
 opentelemetry-otlp = { version = "~0.32.0", features = ["http-proto", "reqwest-blocking-client", "metrics", "logs"] }
 opentelemetry-proto = "~0.32.0"
 opentelemetry_sdk = { version = "~0.32.1", features = ["metrics", "logs", "rt-tokio"] }

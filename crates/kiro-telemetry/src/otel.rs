@@ -4,7 +4,12 @@ use std::time::{
     Duration,
     UNIX_EPOCH,
 };
+use std::{
+    fmt,
+    thread,
+};
 
+use async_trait::async_trait;
 use opentelemetry::logs::{
     AnyValue,
     LogRecord as _,
@@ -22,11 +27,19 @@ use opentelemetry::{
     KeyValue,
     global,
 };
+use opentelemetry_http::{
+    Bytes,
+    HttpClient,
+    HttpError,
+    Request,
+    Response,
+};
 use opentelemetry_otlp::{
     LogExporter,
     MetricExporter,
     Protocol,
     WithExportConfig,
+    WithHttpConfig,
 };
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::{
@@ -42,6 +55,7 @@ use tracing::warn;
 
 use crate::client::TelemetryError;
 use crate::config::otel_export_interval_from_env;
+use crate::metric::TelemetrySignal;
 use crate::{
     Attribute,
     MetricRecord,
@@ -50,6 +64,151 @@ use crate::{
     TelemetryLogRecord,
     TelemetrySink,
 };
+
+const KIRO_MACHINE_ID_HEADER: &str = "x-kiro-machineid";
+const KUTS_MAX_REQUEST_BODY_BYTES: usize = 1_048_576;
+const KUTS_MAX_EXPORT_RETRIES: usize = 3;
+const KUTS_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
+const KUTS_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Debug)]
+struct KutsHttpClient {
+    inner: reqwest::blocking::Client,
+    retry_policy: KutsRetryPolicy,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct KutsRetryPolicy {
+    max_retries: usize,
+    initial_delay: Duration,
+    max_delay: Duration,
+}
+
+impl Default for KutsRetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: KUTS_MAX_EXPORT_RETRIES,
+            initial_delay: KUTS_RETRY_INITIAL_DELAY,
+            max_delay: KUTS_RETRY_MAX_DELAY,
+        }
+    }
+}
+
+impl KutsHttpClient {
+    fn new() -> Self {
+        Self {
+            inner: reqwest::blocking::Client::builder()
+                .http1_only()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|err| {
+                    warn!(%err, "failed to build OTLP HTTP client; using reqwest defaults");
+                    reqwest::blocking::Client::new()
+                }),
+            retry_policy: KutsRetryPolicy::default(),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_retry_policy(retry_policy: KutsRetryPolicy) -> Self {
+        Self {
+            retry_policy,
+            ..Self::new()
+        }
+    }
+
+    fn send_once(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        let reqwest_request: reqwest::blocking::Request = request.try_into()?;
+        let mut response = self.inner.execute(reqwest_request)?;
+        let status = response.status();
+        let headers = std::mem::take(response.headers_mut());
+        let mut http_response = Response::builder().status(status.as_u16()).body(response.bytes()?)?;
+        *http_response.headers_mut() = headers;
+        Ok(http_response)
+    }
+}
+
+#[async_trait]
+impl HttpClient for KutsHttpClient {
+    async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        let signal = telemetry_signal_from_path(request.uri().path());
+        let body_len = request.body().len();
+        if body_len > KUTS_MAX_REQUEST_BODY_BYTES {
+            record_kuts_oversize(signal);
+            return Err(kuts_http_error(format!(
+                "OTLP {signal:?} payload is {body_len} bytes; KUTS limit is {KUTS_MAX_REQUEST_BODY_BYTES} bytes"
+            )));
+        }
+
+        let mut retries = 0;
+        let mut backoff = self.retry_policy.initial_delay;
+        loop {
+            let response = self.send_once(request.clone())?;
+            if !is_retryable_status(response.status().as_u16()) || retries >= self.retry_policy.max_retries {
+                return Ok(response);
+            }
+
+            let delay = retry_delay(&response, backoff, self.retry_policy.max_delay);
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+            backoff = next_backoff(backoff, self.retry_policy.max_delay);
+            retries += 1;
+        }
+    }
+}
+
+#[derive(Debug)]
+struct KutsHttpError(String);
+
+impl fmt::Display for KutsHttpError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for KutsHttpError {}
+
+fn kuts_http_error(message: String) -> HttpError {
+    Box::new(KutsHttpError(message))
+}
+
+fn is_retryable_status(status: u16) -> bool {
+    status == 429 || (500..=599).contains(&status)
+}
+
+fn retry_delay(response: &Response<Bytes>, fallback: Duration, max_delay: Duration) -> Duration {
+    response
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(fallback, Duration::from_secs)
+        .min(max_delay)
+}
+
+fn next_backoff(current: Duration, max_delay: Duration) -> Duration {
+    current.saturating_mul(2).min(max_delay)
+}
+
+fn telemetry_signal_from_path(path: &str) -> TelemetrySignal {
+    if path.ends_with("/v1/logs") {
+        TelemetrySignal::Logs
+    } else {
+        TelemetrySignal::Metrics
+    }
+}
+
+fn record_kuts_oversize(signal: TelemetrySignal) {
+    let record = crate::metric::kuts_export_oversize(signal);
+    let MetricValue::Counter(value) = record.value else {
+        return;
+    };
+    global::meter("kiro-telemetry")
+        .u64_counter(record.name)
+        .build()
+        .add(value, &otel_attributes(&record.attributes));
+}
 
 #[derive(Clone, Debug)]
 pub struct OtelProviders {
@@ -92,7 +251,7 @@ pub fn init_otel(config: &TelemetryConfig) -> OtelProviders {
     if config.exports_enabled()
         && let Some(endpoint) = config.otlp_endpoint.as_deref()
     {
-        match build_otlp_http_providers(endpoint) {
+        match build_otlp_http_providers(config, endpoint) {
             Ok(providers) => return providers,
             Err(err) => warn!(%err, "failed to initialize OTLP telemetry exporter; falling back to no-op"),
         }
@@ -112,20 +271,19 @@ pub fn init_noop_otel(_config: &TelemetryConfig) -> OtelProviders {
     }
 }
 
-fn build_otlp_http_providers(endpoint: &str) -> Result<OtelProviders, opentelemetry_otlp::ExporterBuildError> {
-    let resource = telemetry_resource();
+fn build_otlp_http_providers(
+    config: &TelemetryConfig,
+    endpoint: &str,
+) -> Result<OtelProviders, opentelemetry_otlp::ExporterBuildError> {
+    let resource = telemetry_resource(config);
     let metric_exporter = MetricExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(signal_endpoint(endpoint, "/v1/metrics"))
         .with_timeout(Duration::from_secs(30))
+        .with_http_client(otlp_http_client())
+        .with_headers(otlp_headers(config))
         .with_temporality(Temporality::Delta)
-        .build()?;
-    let log_exporter = LogExporter::builder()
-        .with_http()
-        .with_protocol(Protocol::HttpBinary)
-        .with_endpoint(signal_endpoint(endpoint, "/v1/logs"))
-        .with_timeout(Duration::from_secs(30))
         .build()?;
 
     let reader = PeriodicReader::builder(metric_exporter)
@@ -135,10 +293,19 @@ fn build_otlp_http_providers(endpoint: &str) -> Result<OtelProviders, openteleme
         .with_reader(reader)
         .with_resource(resource.clone())
         .build();
-    let logger_provider = SdkLoggerProvider::builder()
-        .with_batch_exporter(log_exporter)
-        .with_resource(resource)
-        .build();
+    let mut logger_provider_builder = SdkLoggerProvider::builder().with_resource(resource);
+    if config.otlp_logs_enabled() {
+        let log_exporter = LogExporter::builder()
+            .with_http()
+            .with_protocol(Protocol::HttpBinary)
+            .with_endpoint(signal_endpoint(endpoint, "/v1/logs"))
+            .with_timeout(Duration::from_secs(30))
+            .with_http_client(otlp_http_client())
+            .with_headers(otlp_headers(config))
+            .build()?;
+        logger_provider_builder = logger_provider_builder.with_batch_exporter(log_exporter);
+    }
+    let logger_provider = logger_provider_builder.build();
 
     global::set_meter_provider(meter_provider.clone());
     Ok(OtelProviders {
@@ -148,10 +315,14 @@ fn build_otlp_http_providers(endpoint: &str) -> Result<OtelProviders, openteleme
     })
 }
 
-fn telemetry_resource() -> Resource {
+fn telemetry_resource(config: &TelemetryConfig) -> Resource {
     Resource::builder()
         .with_service_name("kiro-cli")
         .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
+        .with_attribute(KeyValue::new(
+            "deployment.environment",
+            config.deployment_environment.clone(),
+        ))
         .with_attribute(KeyValue::new("os.type", std::env::consts::OS))
         .with_attribute(KeyValue::new("host.arch", std::env::consts::ARCH))
         .with_attribute(KeyValue::new(
@@ -169,6 +340,14 @@ fn signal_endpoint(endpoint: &str, signal_path: &str) -> String {
         .or_else(|| endpoint.trim_end_matches('/').strip_suffix("/v1/logs"))
         .unwrap_or_else(|| endpoint.trim_end_matches('/'));
     format!("{}/{}", base, signal_path.trim_start_matches('/'))
+}
+
+fn otlp_headers(config: &TelemetryConfig) -> HashMap<String, String> {
+    HashMap::from([(KIRO_MACHINE_ID_HEADER.to_string(), config.machine_id.clone())])
+}
+
+fn otlp_http_client() -> KutsHttpClient {
+    KutsHttpClient::new()
 }
 
 pub struct OtelMetricsSink {
@@ -356,14 +535,24 @@ mod tests {
         metric,
     };
 
+    const TEST_MACHINE_ID: &str = "ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e";
+    const TEST_DEPLOYMENT_ENVIRONMENT: &str = "test";
+
+    fn test_config(
+        enabled: bool,
+        otel_mode: OtelMode,
+        otlp_endpoint: Option<String>,
+        otlp_logs_enabled: bool,
+    ) -> TelemetryConfig {
+        TelemetryConfig::new(enabled, otel_mode, otlp_endpoint, std::env::temp_dir())
+            .with_otlp_logs_enabled(otlp_logs_enabled)
+            .with_machine_id(TEST_MACHINE_ID)
+            .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT)
+    }
+
     #[test]
     fn noop_otel_provider_accepts_counter_adds() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::Off,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(true, OtelMode::Off, None, true);
 
         let providers = init_noop_otel(&config);
         let counter = global::meter("kiro-telemetry-test")
@@ -377,12 +566,7 @@ mod tests {
 
     #[test]
     fn init_otel_stays_noop_without_endpoint() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(true, OtelMode::DualWrite, None, true);
 
         let providers = init_otel(&config);
 
@@ -392,12 +576,12 @@ mod tests {
 
     #[test]
     fn init_otel_builds_otlp_http_when_endpoint_configured() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: Some("http://localhost:4318".to_string()),
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(
+            true,
+            OtelMode::DualWrite,
+            Some("http://localhost:4318".to_string()),
+            true,
+        );
 
         let providers = init_otel(&config);
 
@@ -419,12 +603,7 @@ mod tests {
 
     #[test]
     fn otel_metrics_sink_accepts_metric_records() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(true, OtelMode::DualWrite, None, true);
 
         let providers = init_noop_otel(&config);
         let sink = std::sync::Arc::new(OtelMetricsSink::new(global::meter("kiro-telemetry-test-sink")));
@@ -461,12 +640,7 @@ mod tests {
 
     #[test]
     fn otel_logs_sink_accepts_log_records() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(true, OtelMode::DualWrite, None, true);
         let processor = CaptureLogProcessor::default();
         let records = processor.records.clone();
         let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
@@ -490,12 +664,7 @@ mod tests {
 
     #[test]
     fn otel_logs_sink_buckets_raw_legacy_log_dimensions() {
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config = test_config(true, OtelMode::DualWrite, None, true);
         let processor = CaptureLogProcessor::default();
         let records = processor.records.clone();
         let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
@@ -541,12 +710,7 @@ mod tests {
     #[test]
     fn otlp_http_exporter_sends_decodable_metric_and_log_payloads() {
         let collector = OtlpTestCollector::start(2);
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: Some(collector.endpoint()),
-            state_dir: tempfile::tempdir().expect("tempdir").path().to_path_buf(),
-        };
+        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()), true);
         let providers = init_otel(&config);
         assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
 
@@ -572,6 +736,11 @@ mod tests {
 
         let metrics = expect_otlp_request(&requests, "/v1/metrics");
         assert_eq!(metrics.content_type.as_deref(), Some("application/x-protobuf"));
+        assert_eq!(
+            metrics.headers.get(KIRO_MACHINE_ID_HEADER).map(String::as_str),
+            Some(TEST_MACHINE_ID)
+        );
+        expect_otlp_metric_resource_attribute(&requests, "deployment.environment", TEST_DEPLOYMENT_ENVIRONMENT);
         expect_otlp_metric_resource_attribute(
             &requests,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
@@ -581,12 +750,100 @@ mod tests {
 
         let logs = expect_otlp_request(&requests, "/v1/logs");
         assert_eq!(logs.content_type.as_deref(), Some("application/x-protobuf"));
+        assert_eq!(
+            logs.headers.get(KIRO_MACHINE_ID_HEADER).map(String::as_str),
+            Some(TEST_MACHINE_ID)
+        );
+        expect_otlp_log_resource_attribute(&requests, "deployment.environment", TEST_DEPLOYMENT_ENVIRONMENT);
         expect_otlp_log_resource_attribute(
             &requests,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
         );
         expect_otlp_log(&requests, &expected_log);
+    }
+
+    #[test]
+    fn otlp_http_exporter_skips_logs_when_disabled() {
+        let collector = OtlpTestCollector::start(1);
+        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()), false);
+        let providers = init_otel(&config);
+        assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
+
+        let client = crate::TelemetryClient::new(config)
+            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(
+                providers.meter_provider().meter("kiro-telemetry-metrics-only-test"),
+            )))
+            .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&providers)));
+
+        client
+            .emit(metric::cli_session_completed(
+                metric::ExitReason::Clean,
+                metric::AgentKind::V2,
+            ))
+            .expect("metric emit should succeed");
+        let log_outcome = client
+            .emit_log(log::conversation_completed(
+                "session-1",
+                "conversation-1",
+                log::CompletionReason::Stop,
+            ))
+            .expect("log emit should not fail");
+        assert!(!log_outcome.emitted);
+
+        providers.force_flush().expect("otlp provider flush should succeed");
+        let requests = collector.collect();
+        providers.shutdown().expect("otlp provider shutdown should succeed");
+
+        expect_otlp_request(&requests, "/v1/metrics");
+        assert!(
+            requests.iter().all(|request| !request.is_logs()),
+            "logs disabled should not send /v1/logs requests"
+        );
+    }
+
+    #[test]
+    fn kuts_http_client_retries_429_and_5xx_statuses() {
+        let collector = OtlpTestCollector::start_with_statuses(vec![429, 500, 200]);
+        let client = KutsHttpClient::with_retry_policy(KutsRetryPolicy {
+            max_retries: 3,
+            initial_delay: Duration::ZERO,
+            max_delay: Duration::ZERO,
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!("{}/v1/metrics", collector.endpoint()))
+            .body(Bytes::from_static(b"test-payload"))
+            .expect("test request");
+
+        let response =
+            futures::executor::block_on(client.send_bytes(request)).expect("retry should eventually succeed");
+        assert_eq!(response.status().as_u16(), 200);
+
+        let requests = collector.collect();
+        assert_eq!(requests.len(), 3);
+        assert!(requests.iter().all(|request| request.is_metrics()));
+    }
+
+    #[test]
+    fn kuts_http_client_rejects_oversize_payload_before_send() {
+        let collector = OtlpTestCollector::start(0);
+        let client = KutsHttpClient::with_retry_policy(KutsRetryPolicy {
+            max_retries: 0,
+            initial_delay: Duration::ZERO,
+            max_delay: Duration::ZERO,
+        });
+        let request = Request::builder()
+            .method("POST")
+            .uri("http://127.0.0.1:9/v1/metrics")
+            .body(Bytes::from(vec![0_u8; KUTS_MAX_REQUEST_BODY_BYTES + 1]))
+            .expect("test request");
+
+        let err = futures::executor::block_on(client.send_bytes(request)).expect_err("oversize payload should fail");
+        assert!(err.to_string().contains("KUTS limit"));
+
+        let requests = collector.collect_timeout(Duration::from_millis(50));
+        assert!(requests.is_empty(), "oversize payload should not hit the collector");
     }
 
     #[derive(Debug, Default, Clone)]

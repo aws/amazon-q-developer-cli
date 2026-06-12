@@ -5482,15 +5482,19 @@ dependencies = [
 name = "kiro-telemetry"
 version = "0.0.0-dev"
 dependencies = [
+ "async-trait",
+ "futures",
  "indexmap 2.14.0",
  "kiro-telemetry-schema",
  "libc",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
  "regex",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "tempfile",

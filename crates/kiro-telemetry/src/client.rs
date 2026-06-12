@@ -123,7 +123,7 @@ impl TelemetryClient {
     }
 
     pub fn emit_log(&self, record: TelemetryLogRecord) -> Result<EmitOutcome, TelemetryError> {
-        if !self.config.exports_enabled() {
+        if !self.config.otlp_logs_enabled() {
             return Ok(EmitOutcome { emitted: false });
         }
 
@@ -182,17 +182,14 @@ mod tests {
     use crate::{
         MetricRecord,
         OtelMode,
+        log,
     };
 
     #[test]
     fn opt_out_short_circuits_before_sink() {
         let sink = Arc::new(InMemorySink::default());
-        let config = TelemetryConfig {
-            enabled: false,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config =
+            TelemetryConfig::new(false, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
@@ -206,12 +203,8 @@ mod tests {
     #[test]
     fn enabled_client_emits_known_record() {
         let sink = Arc::new(InMemorySink::default());
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config =
+            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
@@ -225,12 +218,8 @@ mod tests {
     #[test]
     fn unknown_metric_returns_schema_error() {
         let sink = Arc::new(InMemorySink::default());
-        let config = TelemetryConfig {
-            enabled: true,
-            otel_mode: OtelMode::DualWrite,
-            otlp_endpoint: None,
-            state_dir: std::env::temp_dir(),
-        };
+        let config =
+            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let err = client
@@ -239,5 +228,24 @@ mod tests {
 
         assert!(matches!(err, TelemetryError::Schema(LimitError::UnknownMetric(_))));
         assert!(sink.records().is_empty());
+    }
+
+    #[test]
+    fn otlp_logs_disabled_short_circuits_before_sink() {
+        let sink = Arc::new(InMemorySink::default());
+        let config =
+            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(false);
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+
+        let outcome = client
+            .emit_log(log::conversation_completed(
+                "session-1",
+                "conversation-1",
+                log::CompletionReason::Stop,
+            ))
+            .expect("log emit should not fail");
+
+        assert!(!outcome.emitted);
+        assert!(sink.log_records().is_empty());
     }
 }
