@@ -224,7 +224,7 @@ export const InlineLayout: React.FC = () => {
     pendingApproval,
     noInteractive,
   } = useProcessingState();
-  const { cancelApproval, approvalMode } = useApprovalState();
+  const { respondToApproval, approvalMode } = useApprovalState();
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
   const trustAllToolsAccepted = useAppStore(
@@ -907,8 +907,12 @@ export const InlineLayout: React.FC = () => {
       }
 
       if (approvalMode === 'drill-in') {
-        cancelApproval();
-        if (value.trim()) handleUserInput(value.trim());
+        const feedback = value.trim().slice(0, 1000);
+        respondToApproval(
+          'reject_once',
+          undefined,
+          feedback ? { feedback } : undefined
+        );
         return;
       }
       if (value.trim().toLowerCase() === '/kiro') {
@@ -922,7 +926,7 @@ export const InlineLayout: React.FC = () => {
       replaceQueuedMessage,
       cancelEditingQueue,
       approvalMode,
-      cancelApproval,
+      respondToApproval,
       handleUserInput,
     ]
   );

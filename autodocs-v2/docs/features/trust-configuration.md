@@ -3,10 +3,10 @@ doc_meta:
   title: Trust Configuration
   description: Configure tool auto-approval at session, agent, and directory levels
   category: feature
-  keywords: [trust, auto-approve, allowedTools, permissions, tools, security, batch, cascade, web_fetch, url, trusted, blocked]
+  keywords: [trust, auto-approve, allowedTools, permissions, tools, security, batch, cascade, web_fetch, url, trusted, blocked, rejection, feedback, drill-in]
   related: [agent-configuration, tools, chat]
-  validated: 2026-05-26
-  commit: 29f769727
+  validated: 2026-06-13
+  commit: ed1d467b6
   status: validated
   testable_headless: true
 ---
@@ -79,6 +79,19 @@ For example, if the agent queues 5 `execute_bash` calls and you trust the first 
 This cascade only applies to full tool trust ("Allow Always"). It does not cascade when:
 - Using "Allow Once" — only approves the single invocation
 - Using path-specific trust — only approves the specific path/command pattern
+
+### Rejection Feedback
+
+When you reject a tool call, you can type feedback explaining why. This feedback is:
+- Sent to the agent as part of the rejection reason, so it can adjust its approach
+- Displayed below the rejected tool in your conversation history
+
+For example, if the agent tries to write to a file you want left alone, reject and type:
+```
+Don't modify that file — it's generated and will be overwritten
+```
+
+The agent receives this as: "User denied tool execution. Feedback: Don't modify that file — it's generated and will be overwritten" and can adapt accordingly.
 
 ## Agent-Level Trust
 

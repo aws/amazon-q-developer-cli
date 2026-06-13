@@ -1740,6 +1740,7 @@ impl Agent {
             )));
         };
         approval_state.selected = Some(args.result.option_id);
+        approval_state.rejection_reason = args.result.reason.clone();
 
         // Check if any tool was denied - if so, return all results to the model
         let any_denied = state
@@ -1752,13 +1753,16 @@ impl Agent {
             let mut results = HashMap::new();
             for (tool_use_id, approval_state) in &state.needs_approval {
                 let reason = match &approval_state.selected {
-                    Some(id) if id.is_allow() => "Tool use was approved, but did not execute",
-                    Some(id) if id.is_reject() => "Tool use was denied by the user.",
-                    _ => "Tool use was not executed",
+                    Some(id) if id.is_allow() => "Tool use was approved, but did not execute".to_string(),
+                    Some(id) if id.is_reject() => approval_state
+                        .rejection_reason
+                        .clone()
+                        .unwrap_or_else(|| "Tool use was denied by the user.".to_string()),
+                    _ => "Tool use was not executed".to_string(),
                 };
                 content.push(ContentBlock::ToolResult(ToolResultBlock {
                     tool_use_id: tool_use_id.clone(),
-                    content: vec![ToolResultContentBlock::Text(reason.to_string())],
+                    content: vec![ToolResultContentBlock::Text(reason.clone())],
                     status: ToolResultStatus::Error,
                 }));
                 let tool = state
@@ -1768,7 +1772,7 @@ impl Agent {
                     .map(|(_, t)| t);
                 results.insert(tool_use_id.clone(), LogToolResult {
                     tool: tool.map(|t| Box::new(t.clone())),
-                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason.to_string())),
+                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason)),
                 });
             }
             let pending = PendingUserMessage::new_tool_results(content.clone(), results);
@@ -3183,6 +3187,7 @@ impl Agent {
             needs_approval_map.insert(tool_use_id.clone(), ApprovalState {
                 options: options.clone(),
                 selected: None,
+                rejection_reason: None,
             });
         }
         self.set_active_state(ActiveState::WaitingForApproval(WaitingForApproval {
@@ -4312,6 +4317,9 @@ pub struct ApprovalState {
     pub options: Vec<PermissionOption>,
     /// The option selected by the user, if any
     pub selected: Option<PermissionOptionId>,
+    /// Optional rejection reason (user feedback from drill-in edit)
+    #[serde(default)]
+    pub rejection_reason: Option<String>,
 }
 
 /// State for tools waiting for user approval.

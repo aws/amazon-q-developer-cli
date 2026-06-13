@@ -3313,7 +3313,13 @@ async fn handle_approval_request(
                         .unwrap_or_else(|_| agent::protocol::PermissionOptionId::Custom(other.to_string())),
                 };
                 let reason = if option_id.is_reject() {
-                    Some("User denied tool execution".to_string())
+                    selected
+                        .meta
+                        .as_ref()
+                        .and_then(|m| m.get("feedback"))
+                        .and_then(|v| v.as_str())
+                        .map(|f| format!("User denied tool execution. Feedback: {}", f))
+                        .or(Some("User denied tool execution".to_string()))
                 } else {
                     None
                 };
