@@ -4,6 +4,11 @@
     "treatment_percent": 50,
     "segment": "internal"
   },
+  "kas": {
+    "description": "KAS agent engine (--v3) - internal only initially",
+    "treatment_percent": 100,
+    "segment": "internal"
+  },
   "voice": {
     "description": "Voice input mode - internal nightly only initially",
     "treatment_percent": 100,
