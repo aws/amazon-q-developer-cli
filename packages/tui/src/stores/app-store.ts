@@ -3534,11 +3534,19 @@ export const createAppStore = (props: AppStoreProps) => {
       });
       set({ cancelInProgress: cancelPromise, wasCancelled: true });
 
-      // Capture whether there are pending messages (steer or queue) to decide
-      // whether to show "Cancelled streaming" toast or suppress it (since a
-      // new turn will start immediately from processQueue).
+      // Capture the pending steer CONTENT (not just a boolean) before issuing
+      // cancel. `kiro.cancel()` makes the backend drop its queued steer and
+      // emit `SteeringCleared`, whose handler sets `pendingSteerContent: null`
+      // (see the SteeringCleared case in createStreamEventHandler). Without
+      // capturing it here, by the time `processQueue()` runs below the steer
+      // is already gone and the user's mid-turn message is silently lost —
+      // even though the intended UX is "cancel = redirect": the steer should
+      // replay as a fresh prompt immediately after the interrupt. We re-seed
+      // it after cancel resolves so processQueue's steer-first replay fires.
+      // (`queuedMessages` is a local buffer and survives cancel untouched.)
+      const capturedSteer = get().pendingSteerContent;
       const hasPendingMessages =
-        get().pendingSteerContent != null || get().queuedMessages.length > 0;
+        capturedSteer != null || get().queuedMessages.length > 0;
 
       try {
         // Dispose the active stream event handler FIRST, before anything
@@ -3570,6 +3578,18 @@ export const createAppStore = (props: AppStoreProps) => {
           currentAbortController.abort();
           set({ currentAbortController: null });
         }
+
+        // Flip isProcessing OFF now, before the (potentially slow) backend
+        // round-trip below. `kiro.cancel()` awaits the in-flight prompt with
+        // a 5s timeout race (see Kiro.cancel) — if the agent hung mid-tool,
+        // that's a multi-second block. Leaving isProcessing=true across it
+        // means a fresh prompt the user types right after Ctrl+C ("cancel =
+        // redirect") gets misrouted by handleUserInput into the STEER/queue
+        // path (default interrupt mode is STEER) and sent as `_session/steer`
+        // against a session that's being torn down — silently lost. Resetting
+        // here lets the next prompt route as a normal `session/prompt`. The
+        // `finally` below still clears it as the belt-and-suspenders safety net.
+        set({ isProcessing: false });
 
         // Cancel any pending approval
         get().cancelApproval();
@@ -3663,6 +3683,15 @@ export const createAppStore = (props: AppStoreProps) => {
         });
         resolveCancelPromise!();
         set({ cancelInProgress: null });
+      }
+
+      // Re-seed the steer the backend's SteeringCleared wiped during cancel,
+      // so processQueue's steer-first replay sends it as a fresh prompt. Only
+      // restore if nothing newer arrived in the meantime (a fresh steer typed
+      // during the cancel await wins). Without this, the captured steer is
+      // lost — the bug this guards against.
+      if (capturedSteer != null && get().pendingSteerContent == null) {
+        set({ pendingSteerContent: capturedSteer });
       }
 
       // Drain pending messages after cancel resolves. processQueue handles
