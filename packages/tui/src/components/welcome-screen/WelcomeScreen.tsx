@@ -35,25 +35,46 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         paddingX={2}
       >
         {agentEngine !== 'kas' ? (
-          <Text>
-            {primary('Welcome to the new Kiro CLI UX! ')}
-            {brand('/tui')}
-            {primary(' to learn more, ')}
-            {brand('/feedback')}
-            {primary(' for thoughts.')}
-          </Text>
+          <>
+            <Text>
+              {primary('An early release of ')}
+              {brand('Kiro CLI V3')}
+              {primary(' is now available! Try it out: ')}
+              {brand('kiro-cli --v3')}
+            </Text>
+            <Text>{primary(' ')}</Text>
+            <Text>
+              {primary(
+                "What's new: Specs, expanded hooks, and an improved trust model."
+              )}
+            </Text>
+            <Text>
+              {primary(
+                'Migration tooling to bring your V2 configurations to V3 is coming soon.'
+              )}
+            </Text>
+            <Text>{brand('https://kiro.dev/changelog/cli')}</Text>
+            <Text>{primary(' ')}</Text>
+            <Text>
+              {primary('Share feedback anytime with ')}
+              {brand('/feedback')}
+              {primary('.')}
+            </Text>
+          </>
         ) : (
-          <Text>
-            {primary('Welcome to the new Kiro CLI UX! ')}
-            {brand('/feedback')}
-            {primary(' for thoughts.')}
-          </Text>
+          <>
+            <Text>
+              {primary('Welcome to the new Kiro CLI UX! ')}
+              {brand('/feedback')}
+              {primary(' for thoughts.')}
+            </Text>
+            <Text>
+              {primary('Prefer the classic experience? Relaunch with ')}
+              {brand('kiro-cli --classic')}
+              {primary('.')}
+            </Text>
+          </>
         )}
-        <Text>
-          {primary('Prefer the classic experience? Relaunch with ')}
-          {brand('kiro-cli --classic')}
-          {primary('.')}
-        </Text>
       </Box>
     </Box>
   );

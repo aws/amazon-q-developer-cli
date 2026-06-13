@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Welcome screen announces Kiro CLI V3 availability with `--v3` launch flag"
+}
