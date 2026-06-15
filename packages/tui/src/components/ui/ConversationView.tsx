@@ -825,6 +825,14 @@ export const ConversationView = React.memo(function ConversationView() {
           <WelcomeScreen agent="kiro" mcpServers={[]} animate={shouldAnimate} />
         </Box>
       )}
+      {/* Terminal banner: display-only env var message at session start */}
+      {isInitialLoad && process.env.ASBX_KIRO_TERMINAL_BANNER && (
+        <Box marginY={1}>
+          <StatusBar status="info">
+            <Text>{process.env.ASBX_KIRO_TERMINAL_BANNER}</Text>
+          </StatusBar>
+        </Box>
+      )}
       {/* Announcement: dynamic (Ctrl+O works) until first user message, then unmounted */}
       {!_hadUserMessage && <WelcomeMessageBar />}
 
@@ -833,8 +841,17 @@ export const ConversationView = React.memo(function ConversationView() {
           {(item) => {
             if (item.type === 'welcome') {
               return (
-                <Box key={item.id} marginBottom={1}>
-                  <WelcomeScreen agent="kiro" mcpServers={[]} animate={false} />
+                <Box key={item.id} flexDirection="column">
+                  <Box marginBottom={1}>
+                    <WelcomeScreen agent="kiro" mcpServers={[]} animate={false} />
+                  </Box>
+                  {process.env.ASBX_KIRO_TERMINAL_BANNER && (
+                    <Box marginY={1}>
+                      <StatusBar status="info">
+                        <Text>{process.env.ASBX_KIRO_TERMINAL_BANNER}</Text>
+                      </StatusBar>
+                    </Box>
+                  )}
                 </Box>
               );
             }

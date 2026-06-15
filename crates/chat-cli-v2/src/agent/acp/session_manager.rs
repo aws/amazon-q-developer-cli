@@ -355,6 +355,17 @@ impl SessionManagerBuilder {
                 });
             }
 
+            let mandatory_mcp_names: Vec<String> = std::env::var("ASBX_KIRO_MANDATORY_MCPS")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    s.split(',')
+                        .map(|n| n.trim().to_string())
+                        .filter(|n| !n.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+
             let mut session_manager = SessionManager::new(
                 agent_configs,
                 agent_config_errors,
@@ -371,6 +382,7 @@ impl SessionManagerBuilder {
                 web_tools_enabled,
                 mcp_enabled,
                 mcp_api_failure,
+                mandatory_mcp_names,
             );
 
             loop {
@@ -467,6 +479,9 @@ pub struct SessionManager {
     /// API-failure fail-closed path (`true`). Forwarded to the TUI so it can show
     /// the correct user-facing message.
     mcp_api_failure: bool,
+    /// MCP server names from ASBX_KIRO_MANDATORY_MCPS that must always be loaded,
+    /// bypass tool filtering, and survive agent swaps.
+    mandatory_mcp_names: Vec<String>,
 }
 
 /// An agent config error with optional file path.
@@ -498,6 +513,7 @@ impl SessionManager {
         web_tools_enabled: bool,
         mcp_enabled: bool,
         mcp_api_failure: bool,
+        mandatory_mcp_names: Vec<String>,
     ) -> Self {
         Self {
             sessions: HashMap::new(),
@@ -527,6 +543,7 @@ impl SessionManager {
             web_tools_enabled,
             mcp_enabled,
             mcp_api_failure,
+            mandatory_mcp_names,
         }
     }
 
@@ -801,6 +818,7 @@ impl SessionManager {
                     .trust_tools(self.trust_tools.clone())
                     .web_tools_enabled(self.web_tools_enabled)
                     .mcp_enabled(self.mcp_enabled)
+                    .mandatory_mcp_names(self.mandatory_mcp_names.clone())
                     .acp_client_info(self.acp_client_info.clone())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))

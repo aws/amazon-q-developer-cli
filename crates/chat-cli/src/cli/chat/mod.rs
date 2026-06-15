@@ -678,6 +678,29 @@ impl ChatArgs {
             agents
         };
 
+        // Ensure mandatory MCP server tools are always visible and allowed
+        let mandatory_mcp_names: Vec<String> = std::env::var("ASBX_KIRO_MANDATORY_MCPS")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|n| n.trim().to_string())
+                    .filter(|n| !n.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !mandatory_mcp_names.is_empty()
+            && let Some(agent) = agents.get_active_mut()
+        {
+            for name in &mandatory_mcp_names {
+                let tool_pattern = format!("@{}/*", name);
+                if !agent.tools.contains(&tool_pattern) {
+                    agent.tools.push(tool_pattern.clone());
+                }
+                agent.allowed_tools.insert(tool_pattern);
+            }
+        }
+
         // Fetch registry data for ToolManager if in registry mode
         let registry_data = if mcp_enabled && mcp_registry_url.is_some() {
             if let Some(registry_url) = &mcp_registry_url {
@@ -2406,6 +2429,14 @@ impl ChatSession {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
         if self.interactive {
+            // Display terminal banner if set (e.g., by sandbox launcher).
+            // This is unconditional — not gated by ChatGreetingEnabled.
+            if let Ok(banner) = std::env::var("ASBX_KIRO_TERMINAL_BANNER")
+                && !banner.is_empty()
+            {
+                execute!(self.stderr, style::Print(&banner), style::Print("\n"))?;
+            }
+
             if os
                 .database
                 .settings

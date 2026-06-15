@@ -742,6 +742,8 @@ pub struct AcpSessionBuilder<'a> {
     /// Whether MCP is enabled by governance (Kiro console MCP toggle).
     /// Fail-closed default — callers MUST set this from resolved governance.
     mcp_enabled: bool,
+    /// MCP server names that bypass tool_search deferral (from ASBX_KIRO_MANDATORY_MCPS).
+    mandatory_mcp_names: Vec<String>,
     /// Optional MCP registry forwarded to [`agent::Agent::new`]. The agent
     /// applies the registry to its config before launching MCP servers and
     /// re-applies on swap / refresh.
@@ -781,6 +783,7 @@ impl<'a> Default for AcpSessionBuilder<'a> {
             // Fail-closed: governance must be explicitly enabled by caller.
             web_tools_enabled: false,
             mcp_enabled: false,
+            mandatory_mcp_names: Vec::new(),
             mcp_registry: None,
         }
     }
@@ -899,6 +902,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn mcp_enabled(mut self, enabled: bool) -> Self {
         self.mcp_enabled = enabled;
+        self
+    }
+
+    pub fn mandatory_mcp_names(mut self, names: Vec<String>) -> Self {
+        self.mandatory_mcp_names = names;
         self
     }
 
@@ -1640,6 +1648,7 @@ impl AcpSession {
             s.settings.trust_all_tools = builder.trust_all_tools;
             s.settings.web_tools_enabled = builder.web_tools_enabled;
             s.settings.mcp_enabled = builder.mcp_enabled;
+            s.settings.mandatory_mcp_names = builder.mandatory_mcp_names;
             if let Some(tools) = builder.trust_tools {
                 for tool in &tools {
                     if !tool.starts_with('@') && tool.parse::<agent::tools::BuiltInToolName>().is_err() {
