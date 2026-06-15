@@ -189,77 +189,65 @@ type CachedModesState = {
 };
 
 /**
- * Agents (KAS modes) that should never surface in the `/agent` menu or any
- * agent listing, keyed by their KAS mode id.
+ * The only KAS *bundled* agents that may surface in the `/agent` menu or any
+ * derived agent listing, keyed by their `fromKasModeId`-normalized id.
  *
- * Each entry MUST carry a comment explaining why it is being removed so that
- * future maintainers know whether the exclusion is still warranted.
+ * This is an allowlist rather than a denylist: KAS ships a growing set of
+ * bundled modes (e.g. semantic_reviewer, autonomous, quick-spec, bug-fix),
+ * most of which are internal or non-conversational and should not be
+ * user-selectable. Allowlisting means any current or future bundled mode that
+ * isn't one of these three is hidden by default, so a newly added bundled
+ * mode can't leak into the picker.
  *
- * Note: ids are compared after `fromKasModeId` normalization, i.e. the same
- * form stored in `modesState.availableModes`. Denial is scoped to
- * bundled agents (see `isAgentDenied`) so a user/workspace config that
- * deliberately defines an agent under one of these ids is preserved.
+ * Entries (normalized ids):
+ *   - `kiro_default`: the general coding agent (wire id `vibe`, shown as "Kiro").
+ *   - `kiro_planner`: the interactive read-only planner (wire id `plan`).
+ *   - `spec`: the spec-driven workflow agent (wire id `spec`).
+ *
+ * Ids are compared after `fromKasModeId` normalization, i.e. the same form
+ * stored in `modesState.availableModes`. The allowlist is scoped to *bundled*
+ * agents only (see `isAgentHidden`); user/workspace-defined agents are always
+ * shown so a config the user opted into is never silently dropped.
  */
-const AGENT_DENYLIST: Record<string, string> = {
-  // The semantic reviewer is an internal review-only subagent invoked
-  // programmatically (e.g. by the autonomous planner's review loop). It is
-  // not a general-purpose conversational agent, so exposing it in the
-  // user-facing `/agent` picker is confusing and lets users switch into a
-  // mode that isn't meant to drive an interactive session. KAS advertises it
-  // under the wire mode id `semantic_reviewer`.
-  semantic_reviewer:
-    'Internal review-only subagent; not a user-selectable conversational agent.',
-
-  // The autonomous agent is a bundled KAS mode that drives long-running,
-  // self-directed execution rather than an interactive conversational
-  // session. Surfacing it in the user-facing `/agent` picker lets users
-  // switch into a mode that isn't meant for normal chat, so we hide it.
-  // KAS advertises it under the wire mode id `autonomous` (passed through
-  // unchanged by `fromKasModeId`).
-  autonomous:
-    'Bundled self-directed execution mode; not a user-selectable conversational agent.',
-};
+const BUILTIN_AGENT_ALLOWLIST = new Set<string>([
+  'kiro_default',
+  'kiro_planner',
+  'spec',
+]);
 
 /**
- * Builtin KAS modes hidden from the TUI agent picker and all derived
- * listings. Unlike AGENT_DENYLIST (which only targets *bundled* agents and
- * preserves user/workspace overrides), these are reserved builtin mode ids a
- * user cannot redefine, so they are filtered unconditionally.
- *
- * `quick-spec`: the heavyweight spec-generation workflow (formerly
- * `quick-plan`). The TUI surfaces interactive planning via the `plan` mode
- * (reached through /plan and Shift+Tab); quick-spec is not offered as a
- * directly selectable agent.
+ * Steering commands hidden from the TUI slash-command menu. KAS ships
+ * built-in steering documents that register inline slash commands to trigger
+ * bundled workflows (e.g. `/quick-spec`, `/architecture-selection`,
+ * `/bug-fix`). Product does not surface these bundled workflows in the TUI
+ * (their picker modes are hidden too — see BUILTIN_AGENT_ALLOWLIST), so the
+ * inline commands are dropped from autocomplete as well. User/workspace
+ * steering documents are unaffected.
  */
-const HIDDEN_BUILTIN_MODES = new Set<string>(['quick-spec']);
-
-/**
- * Steering commands hidden from the TUI slash-command menu. KAS ships a
- * builtin `quick-spec` steering document that registers `/quick-spec` to
- * trigger the spec-generation workflow inline. Product does not want
- * quick-spec exposed in the TUI (the picker mode is hidden too), so the
- * inline command is dropped from autocomplete as well.
- */
-const HIDDEN_STEERING_COMMANDS = new Set<string>(['quick-spec']);
+const HIDDEN_STEERING_COMMANDS = new Set<string>([
+  'quick-spec',
+  'architecture-selection',
+  'bug-fix',
+]);
 
 /**
  * Whether the given mode should be hidden from agent listings.
  *
- * The denylist targets KAS's *bundled* agents only. A user- or
- * workspace-defined agent that happens to share a denylisted id (e.g. a
- * workspace `semantic_reviewer` that overrides the bundled one) is
- * intentionally left visible — the user opted into defining it, so we must
- * not silently drop it. Modes with no source metadata are treated as
- * non-bundled and therefore never denied.
+ * The allowlist targets KAS's *bundled* agents only. A user- or
+ * workspace-defined agent is always shown — the user opted into defining it,
+ * so we must not silently drop it, even if it shares an id with a bundled
+ * mode. Modes with no source metadata are treated as non-bundled and are
+ * therefore always shown too. A bundled mode is hidden unless its normalized
+ * id is on `BUILTIN_AGENT_ALLOWLIST`.
  */
-function isAgentDenied(mode: {
+function isAgentHidden(mode: {
   id: string;
   _meta?: Record<string, unknown> | null;
 }): boolean {
-  if (!Object.prototype.hasOwnProperty.call(AGENT_DENYLIST, mode.id)) {
+  if (getModeSource(mode._meta) !== 'bundled') {
     return false;
   }
-  return getModeSource(mode._meta) === 'bundled';
+  return !BUILTIN_AGENT_ALLOWLIST.has(mode.id);
 }
 
 function extractCurrentAgent(
@@ -2230,12 +2218,12 @@ export class KasAcpClient extends BaseAcpClient {
             name: id === 'kiro_default' ? 'Kiro' : m.name,
           };
         })
-        // Drop denylisted bundled agents (e.g. the bundled semantic
-        // reviewer) so they never appear in the /agent menu or any derived
-        // listing. User/workspace-defined agents are preserved — see
-        // AGENT_DENYLIST and isAgentDenied for the rationale.
-        // Also drop reserved builtin modes hidden from the TUI (quick-spec).
-        .filter((m) => !isAgentDenied(m) && !HIDDEN_BUILTIN_MODES.has(m.id)),
+        // Hide bundled agents that aren't on the built-in allowlist (e.g.
+        // semantic_reviewer, autonomous, quick-spec, bug-fix) so they never
+        // appear in the /agent menu or any derived listing. User/workspace
+        // agents are always preserved — see BUILTIN_AGENT_ALLOWLIST and
+        // isAgentHidden for the rationale.
+        .filter((m) => !isAgentHidden(m)),
       currentModeId: modes.currentModeId
         ? fromKasModeId(modes.currentModeId)
         : modes.currentModeId,

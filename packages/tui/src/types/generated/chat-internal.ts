@@ -71,3 +71,4 @@ export enum Provider {
 	Google = "Google",
 	Github = "Github",
 }
+

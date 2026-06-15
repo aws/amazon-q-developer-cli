@@ -819,6 +819,73 @@ describe('KasAcpClient', () => {
     expect(spec.name).toBe('Spec');
   });
 
+  it('captureModes allows only the built-in agents (kiro/plan/spec) and keeps user agents', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [
+          {
+            id: 'vibe',
+            name: 'Default',
+            description: 'General coding',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'plan',
+            name: 'Plan',
+            description: 'Interactive planner',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'spec',
+            name: 'Spec',
+            description: 'Spec mode',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'bug-fix',
+            name: 'Bug Fix',
+            description: 'Bug fixing workflow',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'autonomous',
+            name: 'Autonomous',
+            description: 'Self-directed execution',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'quick-spec',
+            name: 'Quick Spec',
+            description: 'Fast spec-generation workflow',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'my-agent',
+            name: 'My Agent',
+            description: 'Custom workspace agent',
+            _meta: { kiro: { source: 'workspace' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+    const state = (client as any).modesState;
+    // Only the three allowlisted built-ins survive (vibe → kiro_default,
+    // plan → kiro_planner, spec), plus the user/workspace agent. Any other
+    // bundled mode (bug-fix, autonomous, quick-spec) is hidden.
+    expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
+      'kiro_default',
+      'kiro_planner',
+      'spec',
+      'my-agent',
+    ]);
+  });
+
   it('agent swap of kiro_default sends "vibe" on the wire (toKasModeId)', async () => {
     const client = new KasAcpClient();
     await client.initialize();
@@ -1860,6 +1927,50 @@ describe('KasAcpClient', () => {
     });
 
     expect(events.find((e) => e.type === 'model_update')).toBeUndefined();
+  });
+
+  it('available_commands_update hides built-in steering commands (quick-spec, architecture-selection, bug-fix) but keeps user steering', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'quick-spec',
+            description: 'Spec-generation workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'architecture-selection',
+            description: 'Architecture selection workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'bug-fix',
+            description: 'Bug fixing workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'my-steering',
+            description: 'A user steering doc',
+            _meta: { kiro: { type: 'steering', scope: 'workspace' } },
+          },
+        ],
+      },
+    });
+
+    const steeringEvent = events.find(
+      (e) => e.type === AgentEventType.SteeringUpdate
+    );
+    expect(steeringEvent).toBeDefined();
+    const names = steeringEvent.steering.map((s: { name: string }) => s.name);
+    expect(names).toEqual(['my-steering']);
   });
 
   // ── /effort command ──
@@ -3381,7 +3492,7 @@ describe('KasAcpClient — getCommandOptions', () => {
               id: 'coder',
               name: 'Coder',
               description: 'Write code',
-              _meta: { kiro: { source: 'bundled' } },
+              _meta: { kiro: { source: 'workspace' } },
             },
             { id: 'planner', name: 'Planner', description: 'Plan', _meta: {} },
           ],

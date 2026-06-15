@@ -843,7 +843,11 @@ export const ConversationView = React.memo(function ConversationView() {
               return (
                 <Box key={item.id} flexDirection="column">
                   <Box marginBottom={1}>
-                    <WelcomeScreen agent="kiro" mcpServers={[]} animate={false} />
+                    <WelcomeScreen
+                      agent="kiro"
+                      mcpServers={[]}
+                      animate={false}
+                    />
                   </Box>
                   {process.env.ASBX_KIRO_TERMINAL_BANNER && (
                     <Box marginY={1}>
