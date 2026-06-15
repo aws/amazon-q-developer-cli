@@ -135,6 +135,7 @@ pub enum ModeChangeSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumString, Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
+#[typeshare]
 pub enum UiModeSource {
     /// Resolved from the `KIRO_UI_MODE` env var.
     EnvVar,
