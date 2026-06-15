@@ -3406,6 +3406,16 @@ export const createAppStore = (props: AppStoreProps) => {
               pendingContentFlush = null;
               flushContentToStore();
             }
+            // Commit the prior turn's streaming row and release streamingMsgId
+            // before injecting the steer's user bubble. Without this, the
+            // sticky streamingMsgId still points at turn 1's row, so the next
+            // Content chunk ("Reply to steer") PATCHES that already-finalized
+            // row instead of appending a new Model row under the steer bubble —
+            // the reply never renders. Mirrors the UserMessage and ToolCall
+            // turn-boundary handlers, which both commit/release here.
+            if (streamingMsgId != null) {
+              commitBufferedContent();
+            }
             bufferedContent = '';
             lastContentEventId = null;
 
