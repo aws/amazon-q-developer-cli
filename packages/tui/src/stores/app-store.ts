@@ -409,6 +409,8 @@ export type MessageType =
       locations?: Array<{ path: string; line?: number }>;
       agentName?: string;
       liveOutput?: string[];
+      /** True when this tool call originated from a subagent session (event.sessionId set). */
+      isSubagentTool?: boolean;
     }
   | { id: string; role: MessageRole.System; content: string; success: boolean };
 
@@ -2215,6 +2217,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     diff,
                     locations: event.locations,
                     agentName,
+                    ...(event.sessionId && { isSubagentTool: true }),
                     ...(isNotReady && {
                       isFinished: true,
                       result: {
@@ -2282,17 +2285,10 @@ export const createAppStore = (props: AppStoreProps) => {
                       }
                     : toolMsg.diff;
                   messages[toolMsgIndex] = {
-                    id: toolMsg.id,
-                    role: MessageRole.ToolUse,
-                    name: toolMsg.name,
-                    kind: toolMsg.kind,
-                    content: toolMsg.content,
+                    ...toolMsg,
                     diff,
                     isFinished: true,
-                    status: toolMsg.status,
                     result: event.result,
-                    locations: toolMsg.locations,
-                    agentName: toolMsg.agentName,
                   };
                 }
               }
@@ -3091,8 +3087,12 @@ export const createAppStore = (props: AppStoreProps) => {
         );
         const nextApproval = remainingQueue[0] ?? null;
 
-        set((state) => ({
-          messages: state.messages.map((msg) => {
+        const feedbackText = (_meta as Record<string, unknown>)?.feedback as
+          | string
+          | undefined;
+
+        set((state) => {
+          const updatedMessages = state.messages.map((msg) => {
             if (msg.role !== MessageRole.ToolUse) return msg;
             if (msg.id === toolCallId) {
               return {
@@ -3107,15 +3107,29 @@ export const createAppStore = (props: AppStoreProps) => {
               return { ...msg, status: ToolUseStatus.Approved };
             }
             return msg;
-          }),
-          approvalQueue: remainingQueue,
-          pendingApproval:
-            state.pendingApproval === approval ||
-            cascadeIds.has(state.pendingApproval?.toolCall.toolCallId ?? '')
-              ? nextApproval
-              : state.pendingApproval,
-          approvalMode: 'dropdown',
-        }));
+          });
+
+          // Show feedback as a user message in scrollback (display-only, not sent as prompt)
+          if (isRejected && feedbackText) {
+            updatedMessages.push({
+              id: crypto.randomUUID(),
+              role: MessageRole.User,
+              content: feedbackText,
+              agentName: state.currentAgent?.name,
+            });
+          }
+
+          return {
+            messages: updatedMessages,
+            approvalQueue: remainingQueue,
+            pendingApproval:
+              state.pendingApproval === approval ||
+              cascadeIds.has(state.pendingApproval?.toolCall.toolCallId ?? '')
+                ? nextApproval
+                : state.pendingApproval,
+            approvalMode: 'dropdown',
+          };
+        });
 
         // Build _meta for the response, including KAS consent if applicable
         let resolvedMeta = _meta;

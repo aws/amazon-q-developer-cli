@@ -62,15 +62,64 @@ export const Glob = React.memo(function Glob({
 }: GlobProps) {
   const { getColor } = useTheme();
 
-  // Parse glob pattern from content (tool args)
+  // Parse glob pattern from content (tool args).
+  // KAS sends `query` instead of `pattern` for file_search.
   const globPattern = useMemo(
-    () => parseToolArg(content, 'pattern'),
+    () => parseToolArg(content, 'pattern') ?? parseToolArg(content, 'query'),
     [content]
   );
 
   // Parse glob output from result
   const globOutput = useMemo((): GlobOutput | null => {
-    const { obj } = unwrapResultOutput(result);
+    const { obj, text } = unwrapResultOutput(result);
+
+    // KAS sends results as plain text in `message`: "You searched for X and
+    // received...\n---\nfile1\nfile2\n---\n[trailing message]". Structured
+    // output (filePaths/totalFiles) is the V2/legacy shape. Only text-parse
+    // when there is NO structured signal — otherwise the V2 no-files `message`
+    // (e.g. "No files found matching pattern: …") gets hijacked as a fake file.
+    const hasStructured =
+      !!obj &&
+      (Array.isArray(obj.filePaths) || typeof obj.totalFiles === 'number');
+    const rawText = hasStructured
+      ? null
+      : (text ?? (obj && typeof obj.message === 'string' ? obj.message : null));
+    if (rawText) {
+      const parts = rawText.split(/^---$/m);
+      if (parts.length >= 2) {
+        // Successfully parsed the delimited format.
+        const fileBlock = parts[1]?.trim() ?? '';
+        const filePaths = fileBlock
+          ? fileBlock.split('\n').filter((l) => l.trim())
+          : [];
+        const trailing = parts[2]?.trim();
+        // Only the header (segment before the first ---) signals truncation;
+        // scanning the whole text false-positives on a file path with
+        // "incomplete" in it.
+        const truncated = (parts[0] ?? '').includes('incomplete');
+        return {
+          filePaths,
+          totalFiles: filePaths.length,
+          truncated,
+          message: trailing || undefined,
+        };
+      }
+      // No --- delimiters: strip a leading "You searched for…" header line so
+      // the envelope doesn't leak, then either report no matches or treat the
+      // remaining lines as file paths (so the expandable preview still works).
+      const body = rawText.replace(/^You searched for[^\n]*\n?/, '');
+      if (/no (matches|results)|not found/i.test(body)) {
+        return { filePaths: [], totalFiles: 0, truncated: false };
+      }
+      const lines = body.split('\n').filter((l) => l.trim());
+      return {
+        filePaths: lines,
+        totalFiles: lines.length,
+        truncated: false,
+        message: undefined,
+      };
+    }
+
     if (!obj) return null;
 
     return {
@@ -86,7 +135,7 @@ export const Glob = React.memo(function Glob({
   const title = getToolLabel('glob');
 
   const params = useMemo(
-    () => formatToolParams(content, ['pattern']),
+    () => formatToolParams(content, ['pattern', 'query', 'explanation']),
     [content]
   );
   const filePaths = globOutput?.filePaths || [];
@@ -107,9 +156,12 @@ export const Glob = React.memo(function Glob({
   // Build secondary summary text (shown on second line)
   const getSecondarySummary = (): string | null => {
     if (!globOutput || !isFinished) return null;
-    if (globOutput.message) return globOutput.message;
-    if (globOutput.totalFiles === 0) return 'no matches';
-    return `${globOutput.totalFiles} file${globOutput.totalFiles !== 1 ? 's' : ''}`;
+    // No files: show the backend message (e.g. "no matches") if any.
+    if (globOutput.totalFiles === 0) return globOutput.message || 'no matches';
+    // Files present: show the count, noting truncation so the user knows to
+    // refine. The raw "Refine your search…" trailer is folded into this.
+    const count = `${globOutput.totalFiles} file${globOutput.totalFiles !== 1 ? 's' : ''}`;
+    return globOutput.truncated ? `${count} (showing first results)` : count;
   };
 
   const target = globPattern ? `"${globPattern}"` : undefined;
@@ -140,8 +192,8 @@ export const Glob = React.memo(function Glob({
       );
     }
 
-    // No files found or message
-    if (globOutput.totalFiles === 0 || globOutput.message) {
+    // No files found — show only the summary (e.g. "no matches").
+    if (globOutput.totalFiles === 0) {
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />

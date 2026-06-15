@@ -74,15 +74,77 @@ export const Grep = React.memo(function Grep({
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
 
-  // Parse search pattern from content (tool args)
+  // Parse search pattern from content (tool args).
+  // KAS sends `query` instead of `pattern` for grep_search.
   const searchPattern = useMemo(
-    () => parseToolArg(content, 'pattern'),
+    () => parseToolArg(content, 'pattern') ?? parseToolArg(content, 'query'),
     [content]
   );
 
   // Parse grep output from result
   const grepOutput = useMemo((): GrepOutput | null => {
-    const { obj } = unwrapResultOutput(result);
+    const { obj, text } = unwrapResultOutput(result);
+
+    // KAS sends results as plain text in `message`. Format (from kiro-agent
+    // grep-search): a header line followed by per-file blocks:
+    //   You searched for <q> and received the following results:
+    //   <filepath>
+    //   <lineNo>:<matched line>      (":" = match, "-" = context)
+    //   <lineNo>-<context line>
+    //   <filepath>
+    //   ...
+    // Only text-parse when there is NO structured signal — otherwise the V2
+    // no-results shape (numMatches/numFiles/results) with an optional `message`
+    // would be hijacked and misparsed as a fake file.
+    const hasStructured =
+      !!obj &&
+      (typeof obj.numMatches === 'number' ||
+        typeof obj.numFiles === 'number' ||
+        Array.isArray(obj.results));
+    const rawText = hasStructured
+      ? null
+      : (text ?? (obj && typeof obj.message === 'string' ? obj.message : null));
+    if (rawText) {
+      // Drop the "You searched for … results:" header line if present. Strip
+      // only the first line (colon-safe): a query containing ":" (e.g. "TODO:")
+      // must not truncate the header mid-line and leak a fragment as a file.
+      const body = rawText.replace(/^You searched for[^\n]*\n?/, '');
+      if (/no matches found/i.test(body)) {
+        return { numMatches: 0, numFiles: 0, truncated: false };
+      }
+      const lineRe = /^(\d+)([:-])(.*)$/;
+      const results: GrepFileResult[] = [];
+      let current: GrepFileResult | null = null;
+      let totalMatches = 0;
+      let truncated = /\.\.\.\s*\+?\d+\s*more/i.test(rawText);
+      for (const line of body.split('\n')) {
+        if (!line.trim()) continue;
+        if (/\.\.\.\s*\+?\d+\s*more/i.test(line)) {
+          truncated = true;
+          continue;
+        }
+        const m = line.match(lineRe);
+        if (m && current) {
+          current.matches!.push(expandTabs(line));
+          if (m[2] === ':') {
+            current.count += 1;
+            totalMatches += 1;
+          }
+        } else if (!m) {
+          // A non-numbered line is a file path header.
+          current = { file: line.trim(), count: 0, matches: [] };
+          results.push(current);
+        }
+      }
+      return {
+        numMatches: totalMatches,
+        numFiles: results.length,
+        truncated,
+        results: results.length > 0 ? results : undefined,
+        message: undefined,
+      };
+    }
+
     if (!obj) return null;
 
     return {
@@ -102,17 +164,33 @@ export const Grep = React.memo(function Grep({
   const title = getToolLabel('grep');
 
   const params = useMemo(
-    () => formatToolParams(content, ['pattern']),
+    () => formatToolParams(content, ['pattern', 'query', 'explanation']),
     [content]
   );
   const results = grepOutput?.results || [];
 
+  // Expandability must account for BOTH dimensions: more files than the
+  // preview shows, AND per-file matches beyond PREVIEW_MATCHES_PER_FILE.
+  // Keying only on file count missed the common case of many matches in a
+  // few files (ctrl+o never registered). Count total vs. shown match lines.
+  const totalMatchLines = results.reduce(
+    (sum, f) => sum + (f.matches?.length ?? 0),
+    0
+  );
+  const shownMatchLines = results
+    .slice(0, PREVIEW_FILES)
+    .reduce(
+      (sum, f) =>
+        sum + Math.min(f.matches?.length ?? 0, PREVIEW_MATCHES_PER_FILE),
+      0
+    );
+
   // Use expandable output hook
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: results.length,
-    previewCount: PREVIEW_FILES,
+    totalItems: totalMatchLines,
+    previewCount: shownMatchLines,
     isStatic,
-    unit: 'files',
+    unit: 'matches',
   });
 
   // Extract filename from path
@@ -123,9 +201,9 @@ export const Grep = React.memo(function Grep({
   // Build secondary summary text (shown on second line)
   const getSecondarySummary = (): string | null => {
     if (!grepOutput || !isFinished) return null;
-    if (grepOutput.message) return grepOutput.message;
-    if (grepOutput.numMatches === 0) return 'no matches';
-    return `${grepOutput.numMatches} match${grepOutput.numMatches !== 1 ? 'es' : ''} in ${grepOutput.numFiles} file${grepOutput.numFiles !== 1 ? 's' : ''}`;
+    if (grepOutput.numMatches === 0) return grepOutput.message || 'no matches';
+    const count = `${grepOutput.numMatches} match${grepOutput.numMatches !== 1 ? 'es' : ''} in ${grepOutput.numFiles} file${grepOutput.numFiles !== 1 ? 's' : ''}`;
+    return grepOutput.truncated ? `${count} (showing first results)` : count;
   };
 
   const target = searchPattern ? `"${searchPattern}"` : undefined;
@@ -156,8 +234,8 @@ export const Grep = React.memo(function Grep({
       );
     }
 
-    // No matches found or message
-    if (grepOutput.numMatches === 0 || grepOutput.message) {
+    // No matches found — show only the summary.
+    if (grepOutput.numMatches === 0) {
       return (
         <Box flexDirection="column">
           <StatusInfo title={title} target={target} shimmer={!isFinished} />

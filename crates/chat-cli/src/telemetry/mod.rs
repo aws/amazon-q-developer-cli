@@ -13,6 +13,7 @@ use core::{
 };
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use amzn_codewhisperer_client::types::{
     ChatAddMessageEvent,
@@ -91,6 +92,7 @@ pub use crate::telemetry::core::{
 use crate::util::consts::env_var::{
     KIRO_TELEMETRY_OTEL,
     KIRO_TELEMETRY_OTLP_ENDPOINT,
+    KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
 };
 use crate::util::env_var::get_cli_client_application;
 use crate::util::paths::GlobalPaths;
@@ -208,7 +210,6 @@ impl Clone for TelemetrySender {
 pub struct TelemetryThread {
     handle: Option<JoinHandle<()>>,
     tx: TelemetrySender,
-    telemetry_client: Option<Arc<TelemetryClient>>,
 }
 
 impl Clone for TelemetryThread {
@@ -216,7 +217,6 @@ impl Clone for TelemetryThread {
         Self {
             handle: None,
             tx: self.tx.clone(),
-            telemetry_client: None,
         }
     }
 }
@@ -230,12 +230,11 @@ impl TelemetryThread {
     ) -> Result<Self, TelemetryError> {
         // govcloud does not have the infrastructure to support toolkit telemetry
         let govcloud_partition = region.and_then(govcloud_partition);
-        let telemetry_client = Arc::new(TelemetryClient::new(env, fs, database, govcloud_partition).await?);
+        let telemetry_client = TelemetryClient::new(env, fs, database, govcloud_partition).await?;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
         let handle = if let Some(partition) = govcloud_partition {
-            let telemetry_client = Arc::clone(&telemetry_client);
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
@@ -247,7 +246,6 @@ impl TelemetryThread {
                 telemetry_client.flush_otel();
             })
         } else {
-            let telemetry_client = Arc::clone(&telemetry_client);
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
@@ -260,15 +258,17 @@ impl TelemetryThread {
         Ok(Self {
             handle: Some(handle),
             tx,
-            telemetry_client: Some(telemetry_client),
         })
     }
 
     pub async fn finish(self) -> Result<(), TelemetryError> {
-        let telemetry_client = self.telemetry_client.as_ref().map(Arc::clone);
+        self.finish_with_timeout(Duration::from_millis(1000)).await
+    }
+
+    async fn finish_with_timeout(self, timeout: Duration) -> Result<(), TelemetryError> {
         drop(self.tx);
         if let Some(handle) = self.handle {
-            match tokio::time::timeout(std::time::Duration::from_millis(1000), handle).await {
+            match tokio::time::timeout(timeout, handle).await {
                 Ok(result) => {
                     if let Err(e) = result {
                         return Err(TelemetryError::Join(e));
@@ -278,9 +278,6 @@ impl TelemetryThread {
                     // Ignore timeout errors
                 },
             }
-        }
-        if let Some(telemetry_client) = telemetry_client {
-            telemetry_client.flush_otel();
         }
 
         Ok(())
@@ -818,16 +815,19 @@ impl TelemetryClient {
         } else {
             None
         };
-        let otel_config = otel_telemetry_config(env, telemetry_enabled);
+        let client_id = client_id(env, database, telemetry_enabled)?;
+        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id);
         let otel_providers = init_otel(&otel_config);
-        let otel_telemetry_client = Arc::new(
-            OtelTelemetryClient::new(otel_config)
-                .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())))
-                .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers))),
-        );
+        let mut otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
+            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
+        if otel_config.otlp_logs_enabled() {
+            otel_telemetry_client =
+                otel_telemetry_client.with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers)));
+        }
+        let otel_telemetry_client = Arc::new(otel_telemetry_client);
 
         let client = Self {
-            client_id: client_id(env, database, telemetry_enabled)?,
+            client_id,
             telemetry_enabled,
             otel_providers,
             otel_telemetry_client,
@@ -1152,7 +1152,7 @@ impl TelemetryClient {
 /// Default OTLP collector endpoint when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
 const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
 
-fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryConfig {
+fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: Uuid) -> OtelTelemetryConfig {
     let otel_mode = env
         .get(KIRO_TELEMETRY_OTEL)
         .map_or(OtelMode::Off, |value| OtelMode::parse(&value));
@@ -1165,7 +1165,13 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryCon
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
         .unwrap_or_else(|| std::env::temp_dir().join("kiro-cli"));
 
+    let otlp_logs_enabled = env
+        .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
+        .is_ok_and(|value| value.trim() != "0");
+
     OtelTelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir)
+        .with_otlp_logs_enabled(otlp_logs_enabled)
+        .with_machine_id(client_id.hyphenated().to_string())
 }
 
 pub trait ReasonCode: std::error::Error {
@@ -1227,15 +1233,29 @@ mod test {
                 KIRO_TELEMETRY_OTLP_ENDPOINT,
                 "https://prod.us-east-1.telemetry-v2.kiro.dev",
             ),
+            (KIRO_TELEMETRY_OTLP_LOGS_ENABLED, "0"),
         ]);
-        let config = otel_telemetry_config(&env, true);
+        let client_id = uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
+        let config = otel_telemetry_config(&env, true, client_id);
 
         assert_eq!(config.otel_mode, OtelMode::DualWrite);
         assert!(config.exports_enabled());
+        assert!(!config.otlp_logs_enabled());
+        assert_eq!(config.machine_id, client_id.hyphenated().to_string());
+        assert_eq!(config.deployment_environment, "prod");
         assert_eq!(
             config.otlp_endpoint.as_deref(),
             Some("https://prod.us-east-1.telemetry-v2.kiro.dev")
         );
+    }
+
+    #[test]
+    fn otel_config_defaults_kuts_logs_off() {
+        let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "2")]);
+        let config = otel_telemetry_config(&env, true, uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"));
+
+        assert!(config.exports_enabled());
+        assert!(!config.otlp_logs_enabled());
     }
 
     #[test]
@@ -1339,7 +1359,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn cloned_telemetry_thread_does_not_retain_client() {
+    async fn cloned_telemetry_thread_can_finish_before_original() {
         let mut database = Database::new_default().await.unwrap();
         let thread = TelemetryThread::new(
             &Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "0")]),
@@ -1351,11 +1371,21 @@ mod test {
         .unwrap();
         let clone = thread.clone();
 
-        assert!(thread.telemetry_client.is_some());
-        assert!(clone.telemetry_client.is_none());
-
         clone.finish().await.unwrap();
         thread.finish().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn telemetry_thread_finish_returns_after_timeout_when_worker_is_stuck() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let thread = TelemetryThread {
+            handle: Some(tokio::spawn(async {
+                std::future::pending::<()>().await;
+            })),
+            tx: TelemetrySender::Strong(tx),
+        };
+
+        thread.finish_with_timeout(Duration::from_millis(1)).await.unwrap();
     }
 
     #[tracing_test::traced_test]

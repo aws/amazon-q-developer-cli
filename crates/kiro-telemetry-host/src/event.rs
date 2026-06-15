@@ -27,6 +27,7 @@ use strum::{
     Display,
     EnumString,
 };
+use typeshare::typeshare;
 
 /// A serializable telemetry event that can be sent or queued.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,6 +117,7 @@ impl From<EmptyResponseRetryOutcome> for metric::Outcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumString, Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
+#[typeshare]
 pub enum ModeChangeSource {
     /// User pressed Shift+Tab to toggle in/out of `kiro_planner`.
     ShiftTab,

@@ -8,7 +8,6 @@ use agent_client_protocol::{
 };
 use amzn_codewhisperer_streaming_client::types::builders::AssistantResponseEventBuilder;
 use chat_cli_v2::agent::acp::extensions::methods;
-use chat_cli_v2::telemetry::core::EventLegacyExt;
 use common::{
     AcpTestClient,
     AcpTestHarness,
@@ -19,6 +18,7 @@ use kiro_telemetry::testing::{
     expect_metric,
     expect_metric_attrs,
 };
+use kiro_telemetry_legacy::event_to_otel_metric_record;
 use ntest::timeout;
 use serial_test::serial;
 use tokio::time::sleep;
@@ -3249,7 +3249,7 @@ async fn command_execute_emits_chat_slash_command_telemetry() {
         })
         .expect("expected /effort telemetry event");
 
-    let record = event.otel_metric_record().expect("slash command metric");
+    let record = event_to_otel_metric_record(&event).expect("slash command metric");
     expect_metric(std::slice::from_ref(&record), metric::slash_command_invoked("/effort"));
     expect_metric_attrs(&record, &[("command", "/effort")]);
 }
@@ -3312,9 +3312,7 @@ async fn prompt_emits_chat_session_started_telemetry_once() {
         .collect::<Vec<_>>();
     assert_eq!(start_events.len(), 1);
 
-    let record = start_events[0]
-        .otel_metric_record()
-        .expect("chat session started metric");
+    let record = event_to_otel_metric_record(start_events[0]).expect("chat session started metric");
     expect_metric(
         std::slice::from_ref(&record),
         metric::chat_session_started(metric::Mode::AcpExternal, metric::ClientApplication::AcpExternal),

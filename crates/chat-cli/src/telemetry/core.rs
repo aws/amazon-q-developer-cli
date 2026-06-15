@@ -15,10 +15,12 @@ use kiro_telemetry::{
     TelemetryLogRecord,
     TokenUsage,
     estimate_cost_usd,
-    legacy_log_record,
-    legacy_metric_record,
     log as telemetry_log,
     metric,
+};
+use kiro_telemetry_legacy::{
+    legacy_log_record,
+    legacy_metric_record,
 };
 use strum::{
     Display,

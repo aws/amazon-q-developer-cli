@@ -131,6 +131,7 @@ url.workspace = true
 uuid.workspace = true
 walkdir.workspace = true
 webpki-roots.workspace = true
+which.workspace = true
 whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
@@ -139,6 +140,7 @@ zip.workspace = true
 rmcp.workspace = true
 chat-cli-ui.workspace = true
 kiro-telemetry.workspace = true
+kiro-telemetry-legacy.workspace = true
 voice = { workspace = true, optional = true }
 serde_yaml.workspace = true
 urlencoding = "2.1.3"

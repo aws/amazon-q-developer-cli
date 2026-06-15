@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Drill-in feedback on tool rejection now reaches the model in the same turn instead of being lost or requiring a separate prompt"
+}

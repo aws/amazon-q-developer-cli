@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Resolve full path to git binary"
+}

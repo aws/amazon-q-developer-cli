@@ -326,6 +326,13 @@ export interface SessionClient {
   getCachedContextBreakdown?(): ContextBreakdownData | null;
 
   /**
+   * Resets an MCP server connection, optionally starting the OAuth flow.
+   * When startOAuth is true, KAS creates a local redirect server and opens
+   * the browser with the correct redirect URI.
+   */
+  resetMcpServer?(serverName: string, startOAuth: boolean): Promise<void>;
+
+  /**
    * Sends slash-command usage telemetry.
    * Fire-and-forget — implementations should not throw.
    */

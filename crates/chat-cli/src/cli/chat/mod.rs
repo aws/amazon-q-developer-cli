@@ -358,7 +358,7 @@ impl ChatArgs {
     ///
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
-    pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
+    pub fn resolve_agent_engine(&self, os: &Os, rollout: &crate::rollout::Rollout) -> Result<AgentEngine> {
         let engine = if self.v3 {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
@@ -392,6 +392,9 @@ impl ChatArgs {
                  Use --agent-engine=v2 or remove --tui."
             );
         }
+
+        // Gate KAS (the `--v3` engine) behind the `kas` rollout feature.
+        validate_engine_availability(engine, rollout.is_enabled(crate::rollout::Feature::Kas))?;
 
         Ok(engine)
     }
@@ -5834,12 +5837,44 @@ async fn save_agent_config(
     Ok(())
 }
 
+/// Returns an error if the resolved engine is not available to this user.
+///
+/// KAS (the `--v3` engine) is gated behind the `kas` rollout feature. When the
+/// feature is not enabled for the current user, requesting it via any path
+/// (`--v3`, `--agent-engine=kas`, or the `chat.agentEngine` setting) is rejected.
+fn validate_engine_availability(engine: AgentEngine, kas_enabled: bool) -> Result<()> {
+    if engine == AgentEngine::Kas && !kas_enabled {
+        bail!("V3 is currently not supported for your system");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::*;
     use crate::cli::agent::Agent;
+
+    #[test]
+    fn test_kas_blocked_when_not_enabled() {
+        let err = validate_engine_availability(AgentEngine::Kas, false).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("V3 is currently not supported for your system")
+        );
+    }
+
+    #[test]
+    fn test_kas_allowed_when_enabled() {
+        assert!(validate_engine_availability(AgentEngine::Kas, true).is_ok());
+    }
+
+    #[test]
+    fn test_non_kas_engines_always_available() {
+        assert!(validate_engine_availability(AgentEngine::V2, false).is_ok());
+        assert!(validate_engine_availability(AgentEngine::V1, false).is_ok());
+    }
 
     async fn get_test_agents(os: &Os) -> Agents {
         const AGENT_PATH: &str = "/persona/TestAgent.json";

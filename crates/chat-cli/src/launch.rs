@@ -214,7 +214,7 @@ async fn launch_acp_interactive(
         // can't force lite on by exporting the var in their shell.
         .env(
             "KIRO_LITE_ROLLOUT_ENABLED",
-            if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Lite) {
+            if crate::rollout::rollout().is_enabled(crate::rollout::Feature::Lite) {
                 "1"
             } else {
                 "0"
@@ -271,6 +271,7 @@ async fn launch_acp_interactive(
         crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
         crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
         crate::util::consts::env_var::KIRO_TELEMETRY_EXPORT_INTERVAL_MS,
+        crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
     ] {
         if let Ok(value) = std::env::var(env_var)
             && !value.trim().is_empty()

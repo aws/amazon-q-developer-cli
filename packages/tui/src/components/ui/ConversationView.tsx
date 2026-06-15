@@ -50,16 +50,8 @@ function resolvePrevRole(
 }
 
 /** Returns true if a tool-use message belongs to a subagent (not the main turn agent). */
-function isSubagentToolCall(
-  msg: StoreMessageType,
-  mainAgentName: string | undefined
-): boolean {
-  return (
-    msg.role === MessageRole.ToolUse &&
-    !!msg.agentName &&
-    !!mainAgentName &&
-    msg.agentName !== mainAgentName
-  );
+function isSubagentToolCall(msg: StoreMessageType): boolean {
+  return msg.role === MessageRole.ToolUse && !!msg.isSubagentTool;
 }
 
 const SystemMessage = React.memo(function SystemMessage({
@@ -100,7 +92,7 @@ const StaticMessage = React.memo(function StaticMessage({
   }
   if (message.role === MessageRole.ToolUse) {
     // Skip subagent tool calls — they are rendered via SubagentToolPanel
-    if (isSubagentToolCall(message, mainAgentName)) return null;
+    if (isSubagentToolCall(message)) return null;
 
     // Spec mode hides tool args/diff/output to keep the conversation clean.
     return (
@@ -190,11 +182,10 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   // Find the last message that isn't a subagent tool call (those are hidden in rendering)
   const lastVisibleMsg = useMemo(() => {
     for (let i = tailMessages.length - 1; i >= 0; i--) {
-      if (!isSubagentToolCall(tailMessages[i]!, mainAgentName))
-        return tailMessages[i];
+      if (!isSubagentToolCall(tailMessages[i]!)) return tailMessages[i];
     }
     return undefined;
-  }, [tailMessages, mainAgentName]);
+  }, [tailMessages]);
   const hasActiveContent = lastVisibleMsg
     ? (lastVisibleMsg.role === MessageRole.ToolUse &&
         !lastVisibleMsg.isFinished) ||
@@ -227,7 +218,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         }
         if (message.role === MessageRole.ToolUse) {
           // Skip subagent tool calls — rendered via SubagentToolPanel
-          if (isSubagentToolCall(message, mainAgentName)) return null;
+          if (isSubagentToolCall(message)) return null;
 
           const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
           return (

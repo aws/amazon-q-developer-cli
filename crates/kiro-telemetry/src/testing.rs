@@ -361,6 +361,7 @@ pub fn catalog_log_records() -> Vec<TelemetryLogRecord> {
 #[derive(Debug)]
 pub struct CapturedOtlpRequest {
     pub path: String,
+    pub headers: HashMap<String, String>,
     pub content_type: Option<String>,
     pub body: Vec<u8>,
 }
@@ -383,17 +384,24 @@ pub struct OtlpTestCollector {
 
 impl OtlpTestCollector {
     pub fn start(expected_requests: usize) -> Self {
+        Self::start_with_statuses(vec![200; expected_requests])
+    }
+
+    pub fn start_with_statuses(statuses: Vec<u16>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind mock OTLP collector");
         listener.set_nonblocking(true).expect("set mock collector nonblocking");
         let endpoint = format!("http://{}", listener.local_addr().expect("collector local addr"));
         let (tx, rx) = mpsc::channel();
+        let expected_requests = statuses.len();
 
         std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(10);
+            let mut statuses = statuses.into_iter();
             while Instant::now() < deadline {
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        if let Ok(request) = read_http_request(stream) {
+                        let status = statuses.next().unwrap_or(200);
+                        if let Ok(request) = read_http_request(stream, status) {
                             let _ = tx.send(request);
                         }
                     },
@@ -759,7 +767,7 @@ pub fn expect_log(records: &[TelemetryLogRecord], expected: TelemetryLogRecord) 
     })
 }
 
-fn read_http_request(mut stream: TcpStream) -> std::io::Result<CapturedOtlpRequest> {
+fn read_http_request(mut stream: TcpStream, status: u16) -> std::io::Result<CapturedOtlpRequest> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -793,11 +801,22 @@ fn read_http_request(mut stream: TcpStream) -> std::io::Result<CapturedOtlpReque
         body
     };
 
-    stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")?;
+    let reason = match status {
+        200 => "OK",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "Status",
+    };
+    write!(
+        stream,
+        "HTTP/1.1 {status} {reason}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    )?;
     stream.flush()?;
 
     Ok(CapturedOtlpRequest {
         path,
+        headers: headers.clone(),
         content_type: headers.get("content-type").cloned(),
         body,
     })
@@ -969,12 +988,10 @@ mod tests {
     #[test]
     fn in_memory_telemetry_captures_emitted_records() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
-        let harness = in_memory_telemetry(TelemetryConfig::new(
-            true,
-            crate::OtelMode::DualWrite,
-            None,
-            tempdir.path().to_path_buf(),
-        ));
+        let harness = in_memory_telemetry(
+            TelemetryConfig::new(true, crate::OtelMode::DualWrite, None, tempdir.path().to_path_buf())
+                .with_otlp_logs_enabled(true),
+        );
 
         harness
             .client

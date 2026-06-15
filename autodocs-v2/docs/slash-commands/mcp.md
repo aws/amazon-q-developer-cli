@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 17be3b13
+  validated: 2026-06-12
+  commit: b7417f5c8
   status: validated
   testable_headless: false
   category: slash_command
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
-  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist]
+  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate]
   related: [cmd-mcp, agent-config, mcp-registry]
 ---
 
@@ -17,7 +17,7 @@ See MCP server loaded and manage MCP servers.
 
 ## Overview
 
-The `/mcp` command displays status of MCP servers and provides subcommands to manage them. Shows server state, authentication requirements, available tools, and OAuth URLs if needed.
+The `/mcp` command displays status of MCP servers and provides subcommands to manage them. Shows server state, authentication requirements, and available tools. When a server requires OAuth, you can authenticate directly from the panel.
 
 ## Usage
 
@@ -58,7 +58,7 @@ Shows for each server:
 - Server name and command
 - Status (initialized, loading, needs auth)
 - Available tools
-- OAuth URL (if authentication required)
+- Authentication action (if OAuth required — press Enter to authenticate)
 
 ## Related
 
@@ -81,8 +81,7 @@ Shows for each server:
   Tools: git_status, git_commit, git_log
 
 @github (mcp-server-github)
-  Status: ⚠ Needs authentication
-  OAuth URL: https://github.com/login/oauth/...
+  Status: ⚠ Needs authentication · Enter to authenticate
   Tools: (not loaded)
 ```
 
@@ -123,7 +122,7 @@ Select MCP server to remove:
 
 **Symptom**: Server shows "loading" or "needs auth"  
 **Cause**: Server starting or requires OAuth  
-**Solution**: Wait for initialization or complete OAuth flow
+**Solution**: Wait for initialization or press Enter on the server in the `/mcp` panel to start authentication. Outside the panel, press Ctrl+y when the status bar shows an OAuth prompt. The browser will open automatically for you to complete the OAuth flow.
 
 ### Issue: No Servers Shown
 

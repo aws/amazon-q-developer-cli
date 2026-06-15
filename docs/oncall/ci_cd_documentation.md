@@ -63,10 +63,13 @@ The chat binary - the core CLI functionality.
 
 | Workflow | Purpose | Trigger |
 |----------|---------|---------|
-| `build-kiro-cli.yml` | Main orchestrator - builds chat binary for all platforms | Schedule (daily 6:21 UTC), push, manual |
-| `build-darwin.yml` | Builds macOS universal binary | Called by build-kiro-cli.yml |
-| `build-linux.yml` | Builds Linux binaries (4 targets) | Called by build-kiro-cli.yml |
-| `sync-nightly-branch.yml` | Syncs main → nightly branch | Push to main |
+| `build-and-release.yml` | **Current orchestrator** (Release SOP 2.0) - computes tag, builds chat for all platforms, dispatches autocomplete | Schedule (06:30 + 18:30 UTC), manual |
+| `cut-release.yml` | Creates `release/X.Y.Z` branch from a base tag (Release SOP 1.0) | Manual |
+| `build-darwin.yml` | Builds macOS universal binary | Called by build-and-release.yml |
+| `build-linux.yml` | Builds Linux binaries (4 targets) | Called by build-and-release.yml |
+| `build-windows.yml` | Builds Windows binary + MSI | Called by build-and-release.yml |
+| `generate-embeddings.yml` | Generates autodocs embeddings | Called by build-and-release.yml |
+| `smoke-tests.yml` | Non-blocking post-build validation (rust + kas engines) | Called by build-and-release.yml |
 | `nightly-release-notification.yml` | Sends Slack notification for nightly releases | Called by autocomplete or manual |
 | `notify-slack.yml` | Generic Slack notification helper | Called by other workflows |
 | `rust.yml` | CI - Clippy, tests, fmt, deny | Push, PR |
@@ -77,21 +80,23 @@ The chat binary - the core CLI functionality.
 | `check-bun-version.yml` | Checks for new Bun releases, opens issue if outdated | Schedule (daily 9 UTC), manual |
 | `osv-scan.yml` | OSV vulnerability scanning (bun.lock, bundled Bun binary) | PR, push to main, schedule (daily 9 UTC), manual |
 
+> **Deprecated:** `build-kiro-cli.yml` was the previous orchestrator (daily 6:21 UTC schedule + push). Its schedule and push triggers are commented out; it remains for manual `workflow_dispatch` only during the transition. Do not rely on it to know whether a nightly is running - check `build-and-release.yml` instead.
+
 ### kiro-cli-autocomplete (Desktop Repository)
 
 The desktop application that bundles the chat binary.
 
 | Workflow | Purpose | Trigger |
 |----------|---------|---------|
-| `build-kiro-cli.yml` | Main orchestrator - builds autocomplete for all platforms | workflow_call, workflow_dispatch, push |
+| `build-kiro-cli.yml` | Builds autocomplete for all platforms | workflow_call, workflow_dispatch, push |
 | `build-darwin.yml` | Builds macOS app (signed & notarized) | Called by build-kiro-cli.yml |
 | `build-linux.yml` | Builds Linux packages (5 variants) | Called by build-kiro-cli.yml |
-| `release-nightly.yml` | Full nightly release pipeline | workflow_dispatch (from chat repo) |
-| `release-kiro-cli.yml` | Manual release to CloudFront/Toolbox | Manual |
+| `release-non-prod.yml` | Non-prod (nightly/beta/feature) release pipeline (Release SOP 2.2). Renamed from `release-nightly.yml` | workflow_dispatch (from chat repo) |
+| `create-release-branch.yml` | Creates `release/X.Y.Z` branch (mirror of chat's cut-release) | Manual |
+| `promote-to-prod.yml` | Promotes a release branch from gamma to prod (Release SOP 3.0) | Manual |
 | `release-kiro-cli-prod.yml` | Production release | Manual |
 | `release-toolbox.yml` | Releases to internal toolbox | Called by release workflows |
 | `release-cloudfront.yml` | Releases to public CloudFront | Called by release workflows |
-| `sync-nightly-branch.yml` | Syncs main → nightly branch | Push to main |
 | `rust.yml` | CI - Clippy, tests, fmt, deny | Push, PR |
 | `typescript.yml` | CI - TypeScript tests and lint | Push, PR |
 | `npm-publish.yml` | Publishes npm packages | Manual |
@@ -102,129 +107,93 @@ The desktop application that bundles the chat binary.
 
 ## Nightly Build System
 
-The nightly build runs automatically every day at **6:21 UTC** and follows this flow:
+Nightlies are driven by **`build-and-release.yml`** ("Release SOP: 2.0 Build and Trigger Release") in the **chat repo** - a single tag-based orchestrator that replaced the old two-phase `build-kiro-cli.yml` + `release-nightly.yml` flow.
+
+**Schedule:** twice daily via cron - `30 6 * * *` (11:30 PM PST) and `30 18 * * *` (11:30 AM PST). It can also be run manually via `workflow_dispatch` with an `increment` input (`nightly` / `rc` / `stable` / `feature`).
+
+A scheduled run computes the next tag, pushes it, builds all platforms, and dispatches the autocomplete release - all coordinated from this one workflow.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         NIGHTLY BUILD FLOW                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+PHASE 1: Tag + Build (kiro-cli repo, build-and-release.yml)
+═══════════════════════════════════════════════════════════
 
-PHASE 1: Chat Build (kiro-cli repo)
-═══════════════════════════════════
+  schedule (06:30 / 18:30 UTC) or workflow_dispatch
+           │
+           ▼
+  tag (Create Tag)
+   - "Check if main advanced since last nightly tag" → skips if no new commits
+   - Computes next tag, e.g. vX.Y.Z-nightly.N, and pushes it
+           │
+           ▼
+  prepare (Derive Release Metadata)
+   - Derives version, channel, branch_name, build_timestamp, environment matrix
+   - channel: nightly | stable | <feature-slug>
+           │
+           ├─────────────┬──────────────┬───────────────┐
+           ▼             ▼              ▼               ▼
+  generate_embeddings  build_darwin  build_linux   build_windows (+ build_windows_retry)
+   (autodocs)          (universal)   (4 targets)   (binary + MSI)
+           │             │              │               │
+           └─────────────┴──────┬───────┴───────────────┘
+                                ▼
+              (all platform builds succeeded?)
+                    │                        │
+                    ▼                        ▼
+            smoke_tests              dispatch_autocomplete
+          (non-blocking,            (gamma env, uses
+           rust + kas engines)       AUTOCOMPLETE_TRIGGER_TOKEN)
+                                            │
+                                            ▼
 
-  ┌──────────────────┐
-  │ Schedule Trigger │  cron: "21 6 * * *" (6:21 UTC daily)
-  │ (or manual)      │
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ check_nightly_   │  Skips if last commit was a nightly bump
-  │ skip             │  (prevents infinite loops)
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ determine_branch │  Sets branch to "nightly" for scheduled builds
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ UpdateVersion    │  Bumps version: X.Y.Z-nightly.N → X.Y.Z-nightly.N+1
-  │ Number           │  Creates git tag: chat-vX.Y.Z-nightly.N
-  └────────┬─────────┘
-           │
-           ├─────────────────────────────────────┐
-           ▼                                     ▼
-  ┌──────────────────┐                  ┌──────────────────┐
-  │ TriggerDarwin    │                  │ TriggerLinux     │
-  │ Build (gamma)    │                  │ Build (gamma)    │
-  │                  │                  │ - x86_64-gnu     │
-  │ macos-latest     │                  │ - x86_64-musl    │
-  │ universal binary │                  │ - aarch64-gnu    │
-  └────────┬─────────┘                  │ - aarch64-musl   │
-           │                            └────────┬─────────┘
-           │                                     │
-           │         ┌───────────────────────────┘
-           │         │
-           ▼         ▼
-  ┌──────────────────┐
-  │ Both builds      │  Uploads to S3:
-  │ succeed?         │  s3://{bucket}/chat/nightly/{commit}/{target}/
-  └────────┬─────────┘
-           │ YES
-           ▼
-  ┌──────────────────┐
-  │ TriggerAuto-     │  Uses AUTOCOMPLETE_TRIGGER_TOKEN (gamma env)
-  │ completeBuild    │  Calls: release-nightly.yml in kiro-cli-autocomplete
-  └────────┬─────────┘
-           │
-           ▼
+PHASE 2: Autocomplete Release (kiro-cli-autocomplete repo)
+══════════════════════════════════════════════════════════
 
-PHASE 2: Autocomplete Build (kiro-cli-autocomplete repo)
-════════════════════════════════════════════════════════
-
-  ┌──────────────────┐
-  │ release-nightly  │  Triggered by chat repo with:
-  │ .yml             │  - chat_version
-  │                  │  - chat_binary_commit
-  │                  │  - chat_build_timestamp
-  └────────┬─────────┘
+  release-non-prod.yml (dispatched with release_quality, chat_binary_commit,
+  chat_version, chat_build_timestamp, trigger_source=chat-build)
+   - channel→release_quality mapping: nightly→nightly, stable→beta, feature→<slug>
            │
            ▼
-  ┌──────────────────┐
-  │ SyncVersion      │  Updates Cargo.toml to match chat version
-  │ FromChat         │  Commits: "Release: Sync version to X.Y.Z from chat repo"
-  │                  │  Creates git tag: vX.Y.Z-nightly.N
-  └────────┬─────────┘
-           │
-           ├─────────────────────────────────────┐
-           ▼                                     ▼
-  ┌──────────────────┐                  ┌──────────────────┐
-  │ TriggerDarwin    │                  │ TriggerLinux     │
-  │ Build            │                  │ Build            │
-  │                  │                  │                  │
-  │ Downloads chat   │                  │ Downloads chat   │
-  │ binary from S3   │                  │ binary from S3   │
-  │                  │                  │                  │
-  │ Signs & notarizes│                  │ Builds:          │
-  │ .dmg             │                  │ - .deb           │
-  └────────┬─────────┘                  │ - .appimage      │
-           │                            │ - .tar.gz        │
-           │                            └────────┬─────────┘
-           │                                     │
-           ▼                                     ▼
-  ┌──────────────────────────────────────────────────────┐
-  │ Uploads to S3:                                        │
-  │ s3://{bucket}/autocomplete/nightly/{commit}/{platform}│
-  └────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-  ┌──────────────────┐
-  │ release_toolbox  │  Invokes Lambda to publish to internal toolbox
-  └────────┬─────────┘
+  Sync version from chat → build Darwin (sign+notarize) + Linux
+   - Downloads the chat binary from S3
            │
            ▼
-  ┌──────────────────┐
-  │ notify_slack     │  Uses CHAT_TRIGGER_TOKEN to trigger
-  │                  │  nightly-release-notification.yml in kiro-cli
-  └──────────────────┘
+  release_toolbox → GitHub release (with build manifest) → notify_slack
+   (Slack notification triggers nightly-release-notification.yml in chat repo
+    via CHAT_TRIGGER_TOKEN)
 ```
+
+> **Where do I look to know if a nightly/release is building right now?**
+> The chat-repo orchestrator is the single source of truth:
+> ```bash
+> gh run list --repo kiro-team/kiro-cli \
+>   --workflow="Release SOP: 2.0 Build and Trigger Release" --limit 5
+> ```
+> A `schedule` trigger on `main` is a nightly; a `workflow_dispatch` on `release/X.Y.Z` is a cut release. Ignore `build-kiro-cli.yml` runs - that workflow is deprecated.
+
+### KAS Bundling
+
+The KAS (Kiro Agent Server) bundle is embedded in builds via the `INCLUDE_KAS_BUNDLE` env var consumed by `scripts/build.py`. As of June 2026 KAS ships in **all** builds (nightly, rc, stable, feature) on all platforms - `INCLUDE_KAS_BUNDLE` is hardcoded to `"true"` in `build-darwin.yml`, `build-linux.yml`, and `build-windows.yml`, and the Darwin `notarize-node` job runs unconditionally (Node is required for the KAS bundle). Previously KAS was gated to nightly-only (`channel == 'nightly'`).
 
 ### Version Numbering
 
-- **Nightly**: `X.Y.Z-nightly.N` (e.g., `1.24.2-nightly.4`)
-- **Stable**: `X.Y.Z` (e.g., `1.24.0`)
-- **Insider**: Same as stable, built from feature branches
+Versions come from git tags computed by `build-and-release.yml`:
+
+- **Nightly**: `vX.Y.Z-nightly.N` - from `main` (e.g., `v2.6.2-nightly.1`)
+- **RC**: `vX.Y.Z-rc.N` - from `release/X.Y.Z`
+- **Stable**: `vX.Y.Z` - from `release/X.Y.Z` (e.g., `v2.6.0`)
+- **Feature**: `vX.Y.Z-{slug}.N` - from `feature/{slug}`
+
+Chat and autocomplete tag in lockstep at the same version.
 
 ### Branch Strategy
 
-| Branch | Purpose | Nightly Builds |
+| Branch | Purpose | Tag computed |
 |--------|---------|----------------|
-| `main` | Development | Synced to nightly |
-| `nightly` | Nightly releases | Yes |
-| `prod` | Production releases | No |
-| `feature/*` | Feature development | Insider builds |
+| `main` | Development; source of nightlies | `-nightly.N` (gamma only) |
+| `release/X.Y.Z` | Release stabilization | `-rc.N`, then `vX.Y.Z` (gamma + prod) |
+| `feature/{slug}` | Feature development | `-{slug}.N` (gamma only) |
+
+> The old standalone `nightly` and `prod` long-lived branches are no longer part of the flow; releases branch from tags via `cut-release.yml`.
 
 ---
 
@@ -232,34 +201,26 @@ PHASE 2: Autocomplete Build (kiro-cli-autocomplete repo)
 
 ### Nightly Release (Automatic)
 
-Triggered daily at 6:21 UTC or manually.
+Computed and built twice daily (06:30 + 18:30 UTC) by `build-and-release.yml` on `main`.
 
 ```
-Chat Build → Autocomplete Build → Toolbox Release → Slack Notification
+Tag (-nightly.N) → Chat Build (all platforms, gamma) → dispatch_autocomplete
+  → release-non-prod.yml (build + toolbox + GitHub release) → Slack Notification
 ```
 
-### Manual Release (release-kiro-cli.yml)
+### Cut a Release (Release SOP 1.0)
 
-For releasing specific versions to CloudFront or Toolbox.
+1. `cut-release.yml` (chat) + `create-release-branch.yml` (autocomplete) - create the
+   `release/X.Y.Z` branch from a base tag.
+   **Inputs:** `version` (e.g. `2.5.0`), `base_tag` (e.g. `v2.4.1-nightly.14`).
+2. Run `build-and-release.yml` (Release SOP 2.0) on the `release/X.Y.Z` branch with
+   `increment=rc` (or `stable`) to tag and build gamma + prod artifacts.
 
-**Inputs:**
-- `commit`: Git commit SHA
-- `version`: Version string
-- `channel`: stable/nightly
-- `environment`: gamma-release/prod-release
-- `release_to_cloudfront`: Boolean
-- `release_to_toolbox`: Boolean
+### Promote to Production (Release SOP 3.0)
 
-### Production Release (release-kiro-cli-prod.yml)
-
-Simplified workflow for production releases.
-
-**Inputs:**
-- `commit`: Git commit SHA
-- `version`: Version string
-- `channel`: stable (default)
-- `release_to_cloudfront`: Boolean
-- `release_to_toolbox`: Boolean
+`promote-to-prod.yml` (autocomplete) promotes a release branch's gamma artifacts to prod
+(CloudFront + Toolbox). The legacy `release-kiro-cli-prod.yml` remains as the underlying
+production release path.
 
 ---
 
@@ -267,42 +228,37 @@ Simplified workflow for production releases.
 
 ### kiro-cli Workflows
 
-#### 1.0 Build Kiro CLI Chat (build-kiro-cli.yml)
+#### 1.0 Build and Trigger Release (build-and-release.yml) - "Release SOP: 2.0"
+
+The current orchestrator (replaced `build-kiro-cli.yml`).
 
 **Triggers:**
-- `schedule`: Daily at 6:21 UTC
-- `push`: To prod, main, feature/*
-- `workflow_dispatch`: Manual with inputs
-
-**Inputs:**
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `version_increment` | choice | none | patch/minor/major/none |
-| `release_quality` | choice | insider | stable/nightly/insider |
-| `trigger_autocomplete_build` | boolean | true | Trigger autocomplete after success |
+- `schedule`: `30 6 * * *` and `30 18 * * *` (nightly, twice daily)
+- `workflow_dispatch`: Manual with `increment` (rc/stable/nightly/feature) and `dry_run`
 
 **Jobs Flow:**
 ```
-check_nightly_skip → determine_branch → generate_timestamp → ValidateReleaseTrigger
-                                                                      │
-                                                                      ▼
-                                                            UpdateVersionNumber
-                                                                      │
-                                              ┌───────────────────────┴───────────────────────┐
-                                              ▼                                               ▼
-                                    TriggerDarwinBuild                              TriggerLinuxBuild
-                                              │                                               │
-                                              └───────────────────────┬───────────────────────┘
-                                                                      ▼
-                                                          TriggerAutocompleteBuild
-                                                                      │
-                                                                      ▼
-                                                              BuildSummary
+tag → prepare → generate_embeddings
+                      │
+        ┌─────────────┼──────────────┬───────────────┐
+        ▼             ▼              ▼               ▼
+  build_darwin   build_linux   build_windows   build_windows_retry
+        │             │              │               │
+        └─────────────┴──────┬───────┴───────────────┘
+                             ▼
+              smoke_tests (non-blocking) + dispatch_autocomplete
+                             │
+                             ▼
+                          summary
 ```
+
+`tag` self-skips a scheduled run if `main` has not advanced since the last nightly tag.
+`dispatch_autocomplete` runs in the `gamma` environment and uses `AUTOCOMPLETE_TRIGGER_TOKEN`
+to dispatch `release-non-prod.yml` in the autocomplete repo.
 
 #### 1.1 Build Linux (build-linux.yml)
 
-**Called by:** build-kiro-cli.yml
+**Called by:** build-and-release.yml
 
 **Build Matrix:**
 | Target | Runner | Notes |
@@ -314,7 +270,7 @@ check_nightly_skip → determine_branch → generate_timestamp → ValidateRelea
 
 #### 1.2 Build Darwin (build-darwin.yml)
 
-**Called by:** build-kiro-cli.yml
+**Called by:** build-and-release.yml
 
 **Output:** Universal binary (x86_64 + aarch64)
 
@@ -323,7 +279,7 @@ check_nightly_skip → determine_branch → generate_timestamp → ValidateRelea
 #### 1.0 Build Kiro CLI (build-kiro-cli.yml)
 
 **Triggers:**
-- `workflow_call`: From release-nightly.yml
+- `workflow_call`: From release-non-prod.yml
 - `workflow_dispatch`: Manual
 - `push`: To prod, main, feature/*
 
@@ -345,14 +301,19 @@ check_nightly_skip → determine_branch → generate_timestamp → ValidateRelea
 | `build_manifest` | JSON manifest with traceability info |
 | `build_timestamp` | Build timestamp |
 
-#### 2.2 Release Kiro CLI Nightly (release-nightly.yml)
+#### 2.2 Release Kiro CLI Non-Prod (release-non-prod.yml)
 
-**Triggered by:** kiro-cli's TriggerAutocompleteBuild job
+Renamed from `release-nightly.yml`; handles nightly, beta, and feature releases.
+
+**Triggered by:** chat repo's `dispatch_autocomplete` job (in `build-and-release.yml`)
 
 **Flow:**
 ```
-build (build-kiro-cli.yml) → release_toolbox → notify_slack → summary
+build (build-kiro-cli.yml) → release_toolbox → GitHub release → notify_slack → summary
 ```
+
+`notify_slack` uses `CHAT_TRIGGER_TOKEN` to trigger `nightly-release-notification.yml`
+back in the chat repo.
 
 #### 2.3 Release to CloudFront (release-cloudfront.yml)
 
@@ -402,7 +363,7 @@ Invokes Lambda to publish artifacts to internal toolbox.
 
 | Secret | Purpose | Used By |
 |--------|---------|---------|
-| `CHAT_TRIGGER_TOKEN` | **PAT to trigger chat repo notifications** | release-nightly.yml |
+| `CHAT_TRIGGER_TOKEN` | **PAT to trigger chat repo notifications** | release-non-prod.yml |
 
 #### Gamma Environment Secrets
 
@@ -440,19 +401,18 @@ Same structure as gamma-release, pointing to production AWS resources.
 
 **Token:** `AUTOCOMPLETE_TRIGGER_TOKEN` (in kiro-cli gamma environment)
 
-**Location:** `kiro-cli/.github/workflows/build-kiro-cli.yml` (TriggerAutocompleteBuild job)
+**Location:** `kiro-cli/.github/workflows/build-and-release.yml` (dispatch_autocomplete job)
 
 **Triggers:**
-- `release-nightly.yml` (for nightly builds)
-- `build-kiro-cli.yml` (for other builds)
+- `release-non-prod.yml` (nightly / beta / feature builds)
 
 **Payload:**
 ```javascript
 {
-  release_quality: 'nightly',
+  release_quality: 'nightly',   // nightly | beta (from stable) | <feature-slug>
   chat_binary_commit: '<commit_sha>',
-  chat_version: '1.24.2-nightly.4',
-  chat_build_timestamp: '202601300633',
+  chat_version: '2.6.2-nightly.1',
+  chat_build_timestamp: '202606120633',
   trigger_source: 'chat-build'
 }
 ```
@@ -465,7 +425,7 @@ Same structure as gamma-release, pointing to production AWS resources.
 
 **Token:** `CHAT_TRIGGER_TOKEN` (in kiro-cli-autocomplete repository)
 
-**Location:** `kiro-cli-autocomplete/.github/workflows/release-nightly.yml` (notify_slack job)
+**Location:** `kiro-cli-autocomplete/.github/workflows/release-non-prod.yml` (notify_slack job)
 
 **Triggers:**
 - `nightly-release-notification.yml`
@@ -502,8 +462,8 @@ Same structure as gamma-release, pointing to production AWS resources.
 |----------|-------|
 | **Stored In** | `kiro-team/kiro-cli` |
 | **Secret Level** | Environment: `gamma` (NOT repo-level) |
-| **Used By** | `build-kiro-cli.yml` → TriggerAutocompleteBuild job |
-| **Purpose** | Triggers `release-nightly.yml` or `build-kiro-cli.yml` in autocomplete repo |
+| **Used By** | `build-and-release.yml` → dispatch_autocomplete job |
+| **Purpose** | Triggers `release-non-prod.yml` in autocomplete repo |
 | **Target Repo** | `kiro-team/kiro-cli-autocomplete` |
 | **UI Location** | https://github.com/kiro-team/kiro-cli/settings/environments/gamma |
 
@@ -513,7 +473,7 @@ Same structure as gamma-release, pointing to production AWS resources.
 |----------|-------|
 | **Stored In** | `kiro-team/kiro-cli-autocomplete` |
 | **Secret Level** | Repository (not environment) |
-| **Used By** | `release-nightly.yml` → notify_slack job |
+| **Used By** | `release-non-prod.yml` → notify_slack job |
 | **Purpose** | Triggers `nightly-release-notification.yml` for Slack notification |
 | **Target Repo** | `kiro-team/kiro-cli` |
 | **UI Location** | https://github.com/kiro-team/kiro-cli-autocomplete/settings/secrets/actions |
@@ -577,17 +537,18 @@ Or via UI:
 
 ```bash
 # Trigger a nightly build to test both tokens
-gh workflow run build-kiro-cli.yml \
+gh workflow run build-and-release.yml \
   --repo kiro-team/kiro-cli \
-  --ref nightly \
-  -f release_quality=nightly
+  --ref main \
+  -f increment=nightly
 
 # Watch the run
-gh run list --repo kiro-team/kiro-cli --workflow=build-kiro-cli.yml --limit 1
+gh run list --repo kiro-team/kiro-cli \
+  --workflow="Release SOP: 2.0 Build and Trigger Release" --limit 1
 ```
 
 Check that:
-1. `TriggerAutocompleteBuild` job succeeds (tests `AUTOCOMPLETE_TRIGGER_TOKEN`)
+1. `dispatch_autocomplete` job succeeds (tests `AUTOCOMPLETE_TRIGGER_TOKEN`)
 2. `notify_slack` job in autocomplete succeeds (tests `CHAT_TRIGGER_TOKEN`)
 
 ### Common Token Issues
@@ -640,63 +601,74 @@ If expired, regenerate following steps above.
 
 ### Trigger Nightly Build (Full Pipeline)
 
-Triggers chat build → autocomplete build → toolbox release → Slack notification:
+Computes a `-nightly.N` tag, builds chat for all platforms, then dispatches the
+autocomplete release → toolbox → Slack notification:
 
 ```bash
-gh workflow run build-kiro-cli.yml \
-  --repo kiro-team/kiro-cli \
-  --ref nightly \
-  -f release_quality=nightly \
-  -f trigger_autocomplete_build=true
-```
-
-### Trigger Insider Build (Chat Only)
-
-Builds chat binary without triggering autocomplete:
-
-```bash
-gh workflow run build-kiro-cli.yml \
+gh workflow run build-and-release.yml \
   --repo kiro-team/kiro-cli \
   --ref main \
-  -f release_quality=insider \
-  -f trigger_autocomplete_build=false
+  -f increment=nightly
 ```
 
-### Trigger Autocomplete Build Directly
+### Build an RC / Stable Release
 
-Skip chat build, use existing chat binary from S3:
+Run on the release branch created by `cut-release.yml`:
 
 ```bash
-gh workflow run release-nightly.yml \
+gh workflow run build-and-release.yml \
+  --repo kiro-team/kiro-cli \
+  --ref release/2.7.0 \
+  -f increment=rc        # or: stable
+```
+
+### Dry Run (compute version, do not build)
+
+```bash
+gh workflow run build-and-release.yml \
+  --repo kiro-team/kiro-cli \
+  --ref main \
+  -f increment=nightly \
+  -f dry_run=true
+```
+
+### Trigger Autocomplete Release Directly
+
+Skip the chat build, use an existing chat binary from S3:
+
+```bash
+gh workflow run release-non-prod.yml \
   --repo kiro-team/kiro-cli-autocomplete \
-  --ref nightly \
+  --ref main \
   -f release_quality=nightly \
   -f chat_binary_commit=latest \
   -f trigger_source=manual
 ```
 
-### Trigger Autocomplete Build with Specific Chat Version
+With a specific chat version:
 
 ```bash
-gh workflow run release-nightly.yml \
+gh workflow run release-non-prod.yml \
   --repo kiro-team/kiro-cli-autocomplete \
-  --ref nightly \
+  --ref main \
   -f release_quality=nightly \
   -f chat_binary_commit=<commit_sha> \
-  -f chat_version=1.24.2-nightly.5 \
+  -f chat_version=2.6.2-nightly.5 \
   -f trigger_source=manual
 ```
 
 ### Check Run Status
 
 ```bash
-# Get latest run link
-gh run list --repo kiro-team/kiro-cli --workflow=build-kiro-cli.yml --limit 1
+# Get latest orchestrator run
+gh run list --repo kiro-team/kiro-cli \
+  --workflow="Release SOP: 2.0 Build and Trigger Release" --limit 1
 
-# Watch run progress
+# Anything actively running
+gh run list --repo kiro-team/kiro-cli --status=in_progress --limit 10
+
+# Watch / view a run
 gh run watch --repo kiro-team/kiro-cli <run_id>
-
-# View run details
 gh run view --repo kiro-team/kiro-cli <run_id>
 ```
 
@@ -759,10 +731,10 @@ Dependabot is configured in `.github/dependabot.yml` for:
 **Debug:**
 ```bash
 # Check recent chat builds
-gh run list --repo kiro-team/kiro-cli --workflow=build-kiro-cli.yml --limit 5
+gh run list --repo kiro-team/kiro-cli --workflow="Release SOP: 2.0 Build and Trigger Release" --limit 5
 
 # Check if autocomplete was triggered
-gh run list --repo kiro-team/kiro-cli-autocomplete --workflow=release-nightly.yml --limit 5
+gh run list --repo kiro-team/kiro-cli-autocomplete --workflow=release-non-prod.yml --limit 5
 
 # Check the TriggerAutocompleteBuild job specifically
 gh run view <run_id> --repo kiro-team/kiro-cli --log-failed
@@ -807,13 +779,13 @@ gh secret set AUTOCOMPLETE_TRIGGER_TOKEN --repo kiro-team/kiro-cli --env gamma
 **Check:**
 ```bash
 # View scheduled runs
-gh run list --repo kiro-team/kiro-cli --workflow=build-kiro-cli.yml --event=schedule --limit 5
+gh run list --repo kiro-team/kiro-cli --workflow="Release SOP: 2.0 Build and Trigger Release" --event=schedule --limit 5
 
-# Check if it was skipped (last commit was nightly bump)
+# Check if it was skipped (main did not advance since last nightly tag)
 gh run view <run_id> --repo kiro-team/kiro-cli
 ```
 
-The nightly skips if the last commit was a previous nightly version bump (prevents infinite loops).
+The nightly self-skips (in the `tag` job) if `main` has not advanced since the last nightly tag.
 
 #### 5. Wrong Token Being Used
 
@@ -859,7 +831,7 @@ gh run view <run_id> --repo kiro-team/kiro-cli
 gh run view <run_id> --repo kiro-team/kiro-cli --log-failed
 
 # Manually trigger nightly
-gh workflow run build-kiro-cli.yml --repo kiro-team/kiro-cli --ref nightly -f release_quality=nightly
+gh workflow run build-and-release.yml --repo kiro-team/kiro-cli --ref main -f increment=nightly
 
 # List secrets
 gh secret list --repo kiro-team/kiro-cli --env gamma
@@ -900,4 +872,4 @@ If a secret exists at multiple levels, the environment-level secret takes preced
 
 ---
 
-*Last updated: 2026-03-09*
+*Last updated: 2026-06-12*

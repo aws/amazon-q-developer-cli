@@ -135,6 +135,9 @@ pub mod env_var {
         /// OpenTelemetry export interval override for local development
         KIRO_TELEMETRY_EXPORT_INTERVAL_MS = "KIRO_TELEMETRY_EXPORT_INTERVAL_MS",
 
+        /// OpenTelemetry logs export switch for KUTS metrics-only testing
+        KIRO_TELEMETRY_OTLP_LOGS_ENABLED = "KIRO_TELEMETRY_OTLP_LOGS_ENABLED",
+
         /// Chat shell for Unix systems
         KIRO_CHAT_SHELL = "KIRO_CHAT_SHELL",
 

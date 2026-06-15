@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp", "crates/kiro-bot-eval", "crates/kiro-github-mcp", "crates/kiro-mcp", "crates/kiro-bot-metrics", "crates/kiro-telemetry", "crates/kiro-telemetry-collector", "crates/kiro-telemetry-host", "crates/kiro-telemetry-schema", "crates/voice"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp", "crates/kiro-bot-eval", "crates/kiro-github-mcp", "crates/kiro-mcp", "crates/kiro-bot-metrics", "crates/kiro-telemetry", "crates/kiro-telemetry-collector", "crates/kiro-telemetry-host", "crates/kiro-telemetry-legacy", "crates/kiro-telemetry-schema", "crates/voice"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]
@@ -23,6 +23,7 @@ amzn-toolkit-telemetry-client = { path = "crates/amzn-toolkit-telemetry-client" 
 chat-cli-ui = { path = "crates/chat-cli-ui" }
 kiro-telemetry = { path = "crates/kiro-telemetry" }
 kiro-telemetry-host = { path = "crates/kiro-telemetry-host" }
+kiro-telemetry-legacy = { path = "crates/kiro-telemetry-legacy" }
 anstream = "0.6.13"
 anyhow = "1.0"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
@@ -119,6 +120,7 @@ objc2 = "0.5.2"
 objc2-app-kit = { version = "0.2.2", features = ["NSWorkspace"] }
 objc2-foundation = { version = "0.2.2", features = ["NSString", "NSURL"] }
 opentelemetry = "~0.32.0"
+opentelemetry-http = "~0.32.0"
 opentelemetry-otlp = { version = "~0.32.0", features = ["http-proto", "reqwest-blocking-client", "metrics", "logs"] }
 opentelemetry-proto = "~0.32.0"
 opentelemetry_sdk = { version = "~0.32.1", features = ["metrics", "logs", "rt-tokio"] }

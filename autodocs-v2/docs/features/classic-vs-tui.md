@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-06
-  commit: 33b3c338
+  validated: 2026-06-13
+  commit: ed1d467b6
   status: validated
   testable_headless: false
   category: feature
@@ -71,6 +71,8 @@ When you paste text longer than 10 lines, the TUI collapses it into a compact ch
 ### Approval Snackbar
 
 Tool permission prompts appear as a snackbar above your input. y/n/t with granular trust options and drill-in feedback mode.
+
+**Drill-in feedback**: When you reject a tool call, type a message explaining why. Your feedback is passed to the agent so it can adjust its approach, and displayed below the rejected tool in your conversation history.
 
 ## What Changed
 

@@ -2171,6 +2171,7 @@ dependencies = [
  "insta",
  "jsonschema 0.30.0",
  "kiro-telemetry",
+ "kiro-telemetry-legacy",
  "libc",
  "mimalloc",
  "mockito",
@@ -2241,6 +2242,7 @@ dependencies = [
  "voice",
  "walkdir",
  "webpki-roots",
+ "which 8.0.2",
  "whoami",
  "windows 0.61.3",
  "windows-sys 0.59.0",
@@ -2318,6 +2320,7 @@ dependencies = [
  "jsonschema 0.30.0",
  "kiro-telemetry",
  "kiro-telemetry-host",
+ "kiro-telemetry-legacy",
  "libc",
  "mimalloc",
  "mock-mcp-server",
@@ -2332,8 +2335,6 @@ dependencies = [
  "paste",
  "percent-encoding",
  "predicates",
- "prettyplease",
- "quote",
  "r2d2",
  "r2d2_sqlite",
  "rand 0.9.4",
@@ -2367,7 +2368,6 @@ dependencies = [
  "strip-ansi-escapes",
  "strsim",
  "strum 0.27.2",
- "syn 2.0.117",
  "syntect",
  "sysinfo",
  "tempfile",
@@ -5481,15 +5481,19 @@ dependencies = [
 name = "kiro-telemetry"
 version = "0.0.0-dev"
 dependencies = [
+ "async-trait",
+ "futures",
  "indexmap 2.14.0",
  "kiro-telemetry-schema",
  "libc",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
  "regex",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "tempfile",
@@ -5510,6 +5514,23 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.27.2",
+ "typeshare",
+]
+
+[[package]]
+name = "kiro-telemetry-legacy"
+version = "0.0.0-dev"
+dependencies = [
+ "amzn-toolkit-telemetry-client",
+ "convert_case 0.11.0",
+ "kiro-telemetry",
+ "kiro-telemetry-host",
+ "kiro-telemetry-schema",
+ "prettyplease",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.117",
 ]
 
 [[package]]

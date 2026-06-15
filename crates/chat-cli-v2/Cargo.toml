@@ -146,6 +146,7 @@ winnow.workspace = true
 zip.workspace = true
 kiro-telemetry.workspace = true
 kiro-telemetry-host.workspace = true
+kiro-telemetry-legacy.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
@@ -180,11 +181,4 @@ serial_test = "3.2"
 tracing-test.workspace = true
 
 [build-dependencies]
-convert_case.workspace = true
-prettyplease.workspace = true
-quote.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
-syn.workspace = true
-schemars.workspace = true

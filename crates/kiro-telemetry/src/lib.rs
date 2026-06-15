@@ -36,14 +36,6 @@ pub use kiro_telemetry_schema::{
     LegacyEventType,
     MetricKind,
 };
-pub use legacy::{
-    LegacyOtelTarget,
-    emits_legacy_tool_call_total,
-    emits_legacy_user_turn_counter,
-    legacy_log_record,
-    legacy_metric_record,
-    legacy_otel_target,
-};
 pub use metric::{
     ConsentCheckKind,
     ConsentIntegrityResult,

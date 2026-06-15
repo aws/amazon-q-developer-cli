@@ -1,3 +1,6 @@
+//! KUTS accepts metrics/traces, not logs. Logs are disabled by default; set
+//! `KIRO_TELEMETRY_OTLP_LOGS_ENABLED=1` only for collectors that expose `/v1/logs`.
+
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
@@ -32,16 +35,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     config_pairs.extend(env::vars());
     let config = TelemetryConfig::from_pairs(config_pairs);
     let providers = init_otel(&config);
+    let include_logs = config.otlp_logs_enabled();
 
     if providers.pipeline_kind() != OtelPipelineKind::OtlpHttp {
         return Err("OTLP exporter did not initialize; check KIRO_TELEMETRY_OTLP_ENDPOINT".into());
     }
 
-    let client = TelemetryClient::new(config)
-        .with_sink(Arc::new(OtelMetricsSink::new(
-            providers.meter_provider().meter("kiro-telemetry-local-smoke"),
-        )))
-        .with_sink(Arc::new(OtelLogsSink::from_providers(&providers)));
+    let mut client = TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(
+        providers.meter_provider().meter("kiro-telemetry-local-smoke"),
+    )));
+    if include_logs {
+        client = client.with_sink(Arc::new(OtelLogsSink::from_providers(&providers)));
+    }
 
     client.emit(metric::cli_session_started(
         metric::OsType::from_name(env::consts::OS),
@@ -76,15 +81,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         client.emit(record)?;
     }
 
-    client.emit_log(log::conversation_completed(
-        "local-smoke-session",
-        "local-smoke-conversation",
-        log::CompletionReason::Stop,
-    ))?;
+    if include_logs {
+        client.emit_log(log::conversation_completed(
+            "local-smoke-session",
+            "local-smoke-conversation",
+            log::CompletionReason::Stop,
+        ))?;
+    }
 
     providers.force_flush()?;
     providers.shutdown()?;
 
-    println!("sent kiro-telemetry smoke metrics and logs to {endpoint}");
+    let payload_kind = if include_logs { "metrics and logs" } else { "metrics" };
+    println!("sent kiro-telemetry smoke {payload_kind} to {endpoint}");
     Ok(())
 }

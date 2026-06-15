@@ -23,6 +23,7 @@ pub enum Feature {
     Tui,
     Voice,
     Lite,
+    Kas,
     #[cfg(test)]
     Test,
     #[cfg(test)]
@@ -81,7 +82,7 @@ pub struct FeatureRollout {
 /// in the experiment at all (`variation()` returns `None`).
 ///
 /// Initialized once at startup via `Rollout::init()`, then accessed
-/// anywhere via `Rollout::variation()` or `Rollout::is_enabled()`.
+/// anywhere via `rollout().variation()` or `rollout().is_enabled()`.
 #[derive(Debug, Clone)]
 pub struct Rollout {
     features: HashMap<String, FeatureRollout>,
@@ -90,7 +91,7 @@ pub struct Rollout {
     is_nightly: bool,
     /// True when the running binary is installed from the toolbox `insider`
     /// channel. Used as an additional, treat-as-TREATMENT signal for
-    /// `Feature::Lite` only — see `variation_impl`. Detected from the install
+    /// `Feature::Lite` only — see `variation`. Detected from the install
     /// path because the insider release flow ships binaries with
     /// `CARGO_PKG_VERSION = 0.0.0-dev`, so the standard nightly version-string
     /// detection cannot see them.
@@ -171,19 +172,12 @@ impl Rollout {
         });
     }
 
-    /// Returns the variation for the current user in the given experiment.
+    /// Returns the variation for this rollout state in the given experiment.
     ///
-    /// - `Some(TREATMENT)` — user is in the experiment and gets the new behavior
-    /// - `Some(CONTROL)` — user is in the experiment but gets the default behavior (for
-    ///   measurement)
-    /// - `None` — user is not in the experiment (wrong segment, wrong channel, no client_id, or
-    ///   feature not configured)
-    pub fn variation(feature: Feature) -> Option<&'static str> {
-        INSTANCE.get()?.variation_impl(feature)
-    }
-
-    /// Instance method: testable without OnceLock.
-    fn variation_impl(&self, feature: Feature) -> Option<&'static str> {
+    /// - `Some(TREATMENT)` — gets the new behavior
+    /// - `Some(CONTROL)` — in the experiment but gets the default behavior
+    /// - `None` — not in the experiment (wrong segment/channel, no client_id, or feature absent)
+    pub fn variation(&self, feature: Feature) -> Option<&'static str> {
         // Lite-only escape hatch: anyone running from the toolbox `insider`
         // channel gets `Feature::Lite` regardless of segment / channel /
         // treatment_percent. The insider channel is itself a curated install
@@ -210,9 +204,9 @@ impl Rollout {
         }
     }
 
-    /// Convenience: returns true if the user gets TREATMENT for this feature.
-    pub fn is_enabled(feature: Feature) -> bool {
-        Self::variation(feature) == Some(TREATMENT)
+    /// Returns true if this rollout state gets TREATMENT for the feature.
+    pub fn is_enabled(&self, feature: Feature) -> bool {
+        self.variation(feature) == Some(TREATMENT)
     }
 
     /// Test helper: force the global rollout to allow gated features
@@ -242,6 +236,43 @@ impl Rollout {
             is_insider_toolbox: true,
         });
     }
+
+    /// A rollout with no features enabled. Used as the fallback before [`init`]
+    /// runs (see [`rollout`]).
+    fn disabled() -> Self {
+        Rollout {
+            features: HashMap::new(),
+            client_id: None,
+            is_internal: false,
+            is_nightly: false,
+            is_insider_toolbox: false,
+        }
+    }
+
+    /// Construct a rollout with explicit segment/channel state, reading the real
+    /// embedded feature config. Lets callers exercise gating deterministically
+    /// without touching the process-global instance.
+    #[cfg(test)]
+    pub fn new_for_test(is_internal: bool, is_nightly: bool) -> Self {
+        Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap_or_default(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal,
+            is_nightly,
+            is_insider_toolbox: false,
+        }
+    }
+}
+
+/// Returns the process-global rollout instance set by [`Rollout::init`].
+///
+/// `init` is always called in [crate::os::Os::new], avoids reinstantiating
+/// another [crate::os::Os::new].
+pub fn rollout() -> &'static Rollout {
+    static FALLBACK: OnceLock<Rollout> = OnceLock::new();
+    INSTANCE
+        .get()
+        .unwrap_or_else(|| FALLBACK.get_or_init(Rollout::disabled))
 }
 
 #[cfg(test)]
@@ -272,10 +303,10 @@ mod tests {
         };
 
         // test has segment=all, treatment_percent=100 → TREATMENT
-        assert_eq!(rollout.variation_impl(Feature::Test), Some(TREATMENT));
+        assert_eq!(rollout.variation(Feature::Test), Some(TREATMENT));
 
         // test_internal_only has segment=internal → None for external user
-        assert_eq!(rollout.variation_impl(Feature::TestInternalOnly), None);
+        assert_eq!(rollout.variation(Feature::TestInternalOnly), None);
     }
 
     #[test]
@@ -288,8 +319,8 @@ mod tests {
             is_insider_toolbox: false,
         };
 
-        assert_eq!(rollout.variation_impl(Feature::Test), Some(TREATMENT));
-        assert_eq!(rollout.variation_impl(Feature::TestInternalOnly), Some(TREATMENT));
+        assert_eq!(rollout.variation(Feature::Test), Some(TREATMENT));
+        assert_eq!(rollout.variation(Feature::TestInternalOnly), Some(TREATMENT));
     }
 
     #[test]
@@ -302,7 +333,7 @@ mod tests {
             is_nightly: true,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout.variation_impl(Feature::TestNightlyOnly), Some(TREATMENT));
+        assert_eq!(rollout.variation(Feature::TestNightlyOnly), Some(TREATMENT));
 
         // Stable build, internal user → does NOT see nightly-only feature
         let rollout_stable = Rollout {
@@ -312,7 +343,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout_stable.variation_impl(Feature::TestNightlyOnly), None);
+        assert_eq!(rollout_stable.variation(Feature::TestNightlyOnly), None);
     }
 
     #[test]
@@ -325,7 +356,7 @@ mod tests {
             is_nightly: true,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout.variation_impl(Feature::Voice), Some(TREATMENT));
+        assert_eq!(rollout.variation(Feature::Voice), Some(TREATMENT));
 
         // Stable + internal → voice NOT enabled
         let rollout_stable = Rollout {
@@ -335,7 +366,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout_stable.variation_impl(Feature::Voice), None);
+        assert_eq!(rollout_stable.variation(Feature::Voice), None);
 
         // Nightly + external → voice NOT enabled (segment=internal)
         let rollout_external = Rollout {
@@ -345,12 +376,12 @@ mod tests {
             is_nightly: true,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout_external.variation_impl(Feature::Voice), None);
+        assert_eq!(rollout_external.variation(Feature::Voice), None);
     }
 
     // NOTE: the config-driven `test_lite_requires_internal_and_nightly` test
     // lives with the flag-flip PR that adds the `lite` key to rollout.json.
-    // Until then there is no `lite` config entry, so `variation_impl` only
+    // Until then there is no `lite` config entry, so `variation` only
     // resolves `Feature::Lite` via the insider-toolbox escape hatch (covered
     // by `insider_toolbox_enables_lite_*` above).
 
@@ -406,7 +437,7 @@ mod tests {
         assert!(!path_is_insider_toolbox(&parent));
     }
 
-    // ── variation_impl: Feature::Lite via the insider toolbox branch ──────
+    // ── variation: Feature::Lite via the insider toolbox branch ──────
 
     #[test]
     fn insider_toolbox_enables_lite_for_external_stable_user() {
@@ -419,7 +450,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: true,
         };
-        assert_eq!(r.variation_impl(Feature::Lite), Some(TREATMENT));
+        assert_eq!(r.variation(Feature::Lite), Some(TREATMENT));
     }
 
     #[test]
@@ -433,7 +464,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: true,
         };
-        assert_eq!(r.variation_impl(Feature::Voice), None);
-        assert_eq!(r.variation_impl(Feature::Tui), None);
+        assert_eq!(r.variation(Feature::Voice), None);
+        assert_eq!(r.variation(Feature::Tui), None);
     }
 }

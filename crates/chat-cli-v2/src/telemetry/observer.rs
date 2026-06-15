@@ -41,6 +41,7 @@ use agent::tools::{
     ToolKind,
 };
 use kiro_telemetry::metric;
+use kiro_telemetry_legacy::estimated_cost_usd;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -52,7 +53,6 @@ use super::core::{
     EventType,
     MessageMetaTag,
     RecordUserTurnCompletionArgs,
-    estimated_cost_usd,
 };
 use crate::agent::ipc_server::TelemetryEventStore;
 use crate::agent::rts::RtsState;
@@ -987,10 +987,10 @@ mod tests {
         StreamEvent,
     };
     use agent::types::AgentId;
+    use kiro_telemetry_legacy::event_to_otel_metric_records;
     use uuid::Uuid;
 
     use super::*;
-    use crate::telemetry::core::EventLegacyExt;
 
     fn test_loop_id() -> agent::agent_loop::AgentLoopId {
         agent::agent_loop::AgentLoopId::new(AgentId::default())
@@ -1808,7 +1808,7 @@ mod tests {
             other => panic!("expected ToolUseSuggested, got {other:?}"),
         }
 
-        let records = event.otel_metric_records();
+        let records = event_to_otel_metric_records(&event);
         let tool_call = records
             .iter()
             .find(|record| record.name == "tool_call_total")
@@ -1853,7 +1853,7 @@ mod tests {
             other => panic!("expected ToolUseSuggested, got {other:?}"),
         }
 
-        let records = event.otel_metric_records();
+        let records = event_to_otel_metric_records(&event);
         let invocations = records
             .iter()
             .find(|record| record.name == "kiro_cli_tool_invocations")

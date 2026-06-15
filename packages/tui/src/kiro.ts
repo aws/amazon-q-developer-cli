@@ -837,6 +837,11 @@ export class Kiro {
     await this.sessionClient.setMode(modeId);
   }
 
+  async resetMcpServer(serverName: string, startOAuth: boolean): Promise<void> {
+    if (!this.sessionClient?.resetMcpServer) return;
+    await this.sessionClient.resetMcpServer(serverName, startOAuth);
+  }
+
   async getCommandOptions(
     commandName: string,
     partial: string = ''

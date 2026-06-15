@@ -1,6 +1,5 @@
 pub mod cognito;
 pub mod core;
-pub mod definitions;
 pub mod endpoint;
 pub mod observer;
 
@@ -51,6 +50,13 @@ pub use kiro_telemetry_host::{
     InstallMethod,
     get_install_method,
 };
+#[cfg(test)]
+use kiro_telemetry_legacy::event_to_otel_metric_record;
+use kiro_telemetry_legacy::{
+    event_to_metric_datum,
+    event_to_otel_log_record,
+    event_to_otel_metric_records,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
@@ -87,7 +93,6 @@ use crate::os::{
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EmptyResponseRetryOutcome,
-    EventLegacyExt,
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
@@ -95,6 +100,7 @@ pub use crate::telemetry::core::{
 use crate::util::consts::env_var::{
     KIRO_TELEMETRY_OTEL,
     KIRO_TELEMETRY_OTLP_ENDPOINT,
+    KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
 };
 use crate::util::env_var::get_cli_client_application;
 use crate::util::paths::GlobalPaths;
@@ -898,16 +904,19 @@ impl TelemetryClient {
         } else {
             None
         };
-        let otel_config = otel_telemetry_config(env, telemetry_enabled);
+        let client_id = client_id(env, database, telemetry_enabled)?;
+        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id);
         let otel_providers = init_otel(&otel_config);
-        let otel_telemetry_client = Arc::new(
-            OtelTelemetryClient::new(otel_config)
-                .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())))
-                .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers))),
-        );
+        let mut otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
+            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
+        if otel_config.otlp_logs_enabled() {
+            otel_telemetry_client =
+                otel_telemetry_client.with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers)));
+        }
+        let otel_telemetry_client = Arc::new(otel_telemetry_client);
 
         let client = Self {
-            client_id: client_id(env, database, telemetry_enabled)?,
+            client_id,
             telemetry_enabled,
             otel_providers,
             otel_telemetry_client,
@@ -988,7 +997,7 @@ impl TelemetryClient {
             return;
         }
 
-        let records = event.otel_metric_records();
+        let records = event_to_otel_metric_records(event);
         if records.is_empty() {
             if let Some(legacy_event_type) = event.ty.legacy_event_type() {
                 trace!(
@@ -1013,7 +1022,7 @@ impl TelemetryClient {
             return;
         }
 
-        let Some(record) = event.otel_log_record() else {
+        let Some(record) = event_to_otel_log_record(event) else {
             return;
         };
 
@@ -1163,7 +1172,7 @@ impl TelemetryClient {
         };
         let client_id = self.client_id;
         self.emit_redaction_metric_records(&event);
-        let Some(metric_datum) = event.into_metric_datum() else {
+        let Some(metric_datum) = event_to_metric_datum(event) else {
             trace!("not sending toolkit metric - metric datum does not exist");
             return;
         };
@@ -1232,7 +1241,7 @@ impl TelemetryClient {
 /// Default OTLP collector endpoint when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
 const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
 
-fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryConfig {
+fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: Uuid) -> OtelTelemetryConfig {
     let otel_mode = env
         .get(KIRO_TELEMETRY_OTEL)
         .map_or(OtelMode::Off, |value| OtelMode::parse(&value));
@@ -1245,7 +1254,13 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool) -> OtelTelemetryCon
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
         .unwrap_or_else(|| std::env::temp_dir().join("kiro-cli"));
 
+    let otlp_logs_enabled = env
+        .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
+        .is_ok_and(|value| value.trim() != "0");
+
     OtelTelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir)
+        .with_otlp_logs_enabled(otlp_logs_enabled)
+        .with_machine_id(client_id.hyphenated().to_string())
 }
 
 pub use kiro_telemetry_host::ReasonCode;
@@ -1302,15 +1317,29 @@ mod test {
                 KIRO_TELEMETRY_OTLP_ENDPOINT,
                 "https://prod.us-east-1.telemetry-v2.kiro.dev",
             ),
+            (KIRO_TELEMETRY_OTLP_LOGS_ENABLED, "0"),
         ]);
-        let config = otel_telemetry_config(&env, true);
+        let client_id = uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
+        let config = otel_telemetry_config(&env, true, client_id);
 
         assert_eq!(config.otel_mode, OtelMode::DualWrite);
         assert!(config.exports_enabled());
+        assert!(!config.otlp_logs_enabled());
+        assert_eq!(config.machine_id, client_id.hyphenated().to_string());
+        assert_eq!(config.deployment_environment, "prod");
         assert_eq!(
             config.otlp_endpoint.as_deref(),
             Some("https://prod.us-east-1.telemetry-v2.kiro.dev")
         );
+    }
+
+    #[test]
+    fn otel_config_defaults_kuts_logs_off() {
+        let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "2")]);
+        let config = otel_telemetry_config(&env, true, uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"));
+
+        assert!(config.exports_enabled());
+        assert!(!config.otlp_logs_enabled());
     }
 
     #[test]
@@ -1364,12 +1393,10 @@ mod test {
             providers,
             client: otel_telemetry_client,
             sink,
-        } = in_memory_telemetry(OtelTelemetryConfig::new(
-            true,
-            OtelMode::DualWrite,
-            None,
-            tempdir.path().to_path_buf(),
-        ));
+        } = in_memory_telemetry(
+            OtelTelemetryConfig::new(true, OtelMode::DualWrite, None, tempdir.path().to_path_buf())
+                .with_otlp_logs_enabled(true),
+        );
         let client = TelemetryClient {
             client_id: Uuid::nil(),
             telemetry_enabled: true,
@@ -1588,7 +1615,7 @@ mod test {
             event.client_application.as_deref(),
             Some(metric::ClientApplication::ChatCliV2.as_str())
         );
-        let record = event.otel_metric_record().expect("daily heartbeat metric");
+        let record = event_to_otel_metric_record(&event).expect("daily heartbeat metric");
         expect_metric(
             std::slice::from_ref(&record),
             metric::daily_heartbeat_record(metric::DailyHeartbeat::from_names(
@@ -1717,7 +1744,7 @@ mod test {
             platform: "darwin".to_string(),
         });
 
-        let datum = event.into_metric_datum();
+        let datum = event_to_metric_datum(event);
         assert!(datum.is_some());
 
         let datum = datum.unwrap();
@@ -1777,7 +1804,7 @@ mod test {
             platform: "linux".to_string(),
         });
 
-        let datum = event.into_metric_datum();
+        let datum = event_to_metric_datum(event);
         assert!(datum.is_some());
 
         let datum = datum.unwrap();
