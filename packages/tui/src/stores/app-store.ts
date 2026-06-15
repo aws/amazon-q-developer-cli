@@ -2740,6 +2740,34 @@ export const createAppStore = (props: AppStoreProps) => {
       const dispose = () => {
         if (disposed) return;
         disposed = true;
+        // Finalize an in-flight reasoning block. When a turn is abandoned
+        // (cancel/error) while the model is still reasoning — before any
+        // answer text or tool call ended the thinking phase — `thinkingMs`
+        // was never stamped. Stamp it now so <ThinkingDisplay> closes the
+        // block ("Thought for Ns") instead of rendering a permanently-live
+        // "Thinking..." header in scrollback.
+        if (thinkingStart !== null && thinkingMs === null) {
+          thinkingMs = Date.now() - thinkingStart;
+          const finalizedThinkingMs = thinkingMs;
+          set((state) => {
+            const idx = state.messages.findLastIndex(
+              (msg) => msg.role === MessageRole.Model
+            );
+            if (idx === -1) return {};
+            const msg = state.messages[idx];
+            if (
+              msg &&
+              msg.role === MessageRole.Model &&
+              msg.thinking &&
+              msg.thinkingMs == null
+            ) {
+              const messages = [...state.messages];
+              messages[idx] = { ...msg, thinkingMs: finalizedThinkingMs };
+              return { messages };
+            }
+            return {};
+          });
+        }
         if (pendingContentFlush) {
           clearTimeout(pendingContentFlush);
           pendingContentFlush = null;

@@ -318,6 +318,58 @@ describe('Stream event handler — SessionError', () => {
   });
 });
 
+describe('Stream event handler — cancel mid-reasoning', () => {
+  it('finalizes thinkingMs on dispose when cancelled while still thinking', async () => {
+    // Reasoning streamed, but no answer text or tool call has ended the
+    // thinking phase yet — so thinkingMs is never computed on the message.
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.Thought,
+      id: 't-1',
+      content: { type: ContentType.Text, text: 'Reasoning about the task.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const beforeCancel = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model && m.thinking);
+    expect(beforeCancel).toBeDefined();
+    expect((beforeCancel as any).thinking).toBe('Reasoning about the task.');
+    expect((beforeCancel as any).thinkingMs).toBeUndefined();
+
+    // Cancel/error path: sendMessage disposes the handler on AbortError.
+    handler.dispose();
+
+    const afterCancel = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model && m.thinking);
+    expect(afterCancel).toBeDefined();
+    expect(typeof (afterCancel as any).thinkingMs).toBe('number');
+    expect((afterCancel as any).thinkingMs).toBeGreaterThan(0);
+  });
+
+  it('does not stamp thinkingMs when there was no in-flight reasoning', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.Content,
+      id: 'c-1',
+      content: { type: ContentType.Text, text: 'Plain answer, no thinking.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    handler.dispose();
+
+    const modelMsg = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model);
+    expect(modelMsg).toBeDefined();
+    expect((modelMsg as any).thinking).toBeUndefined();
+    expect((modelMsg as any).thinkingMs).toBeUndefined();
+  });
+});
+
 describe('Stream event handler — McpServerInitFailure', () => {
   it('adds to initErrors and shows alert', () => {
     const store = makeStore();
