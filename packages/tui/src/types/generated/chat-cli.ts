@@ -100,6 +100,10 @@ export interface UiModeDefaultChangedNotification {
  * Which input source resolved the UI mode at session start. The wire format is the
  * camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
  * persisted setting > built-in default).
+ * 
+ * Defined here (rather than in `chat-cli-v2`'s `agent::acp::schema`) so the portable
+ * [`Event`] types can refer to it directly; `agent::acp::schema` re-exports it to keep
+ * the V2 API surface unchanged.
  */
 export enum UiModeSource {
 	/** Resolved from the `KIRO_UI_MODE` env var. */

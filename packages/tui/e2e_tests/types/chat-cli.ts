@@ -65,6 +65,79 @@ export interface SessionDataView {
 	message_count?: number;
 }
 
+/**
+ * Telemetry payload sent when the user toggles the UI mode mid-session via `/lite` or
+ * `/tui`. Caller is responsible for skipping no-op changes (`from == to`).
+ */
+export interface UiModeChangedNotification {
+	/** Mode before the toggle (`"lite"` or `"tui"`). */
+	from: string;
+	/** Mode after the toggle (`"lite"` or `"tui"`). */
+	to: string;
+	/**
+	 * How the toggle was initiated. Today only `slashCommand`; the field is reserved
+	 * so a future keybinding entry point doesn't need a wire-format change.
+	 */
+	source: ModeChangeSource;
+	/** ACP session id, used as `amazonqConversationId` on the metric. */
+	sessionId?: string;
+}
+
+/**
+ * Telemetry payload sent when `/settings default-ui` writes a new value to the
+ * persisted `chat.ui.mode` setting. Caller is responsible for skipping no-ops.
+ */
+export interface UiModeDefaultChangedNotification {
+	/** Prior persisted default (`"lite"`, `"tui"`, or `"unset"`). */
+	from: string;
+	/** New persisted default (`"lite"` or `"tui"`). */
+	to: string;
+	/** ACP session id, used as `amazonqConversationId` on the metric. */
+	sessionId?: string;
+}
+
+/**
+ * Which input source resolved the UI mode at session start. The wire format is the
+ * camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
+ * persisted setting > built-in default).
+ * 
+ * Defined here (rather than in `chat-cli-v2`'s `agent::acp::schema`) so the portable
+ * [`Event`] types can refer to it directly; `agent::acp::schema` re-exports it to keep
+ * the V2 API surface unchanged.
+ */
+export enum UiModeSource {
+	/** Resolved from the `KIRO_UI_MODE` env var. */
+	EnvVar = "envVar",
+	/** Resolved from the persisted `chat.ui.mode` setting. */
+	Setting = "setting",
+	/** No env / setting — fell through to the built-in default. */
+	Default = "default",
+}
+
+/**
+ * Telemetry payload sent from the TUI exactly once per session, immediately after the
+ * UI mode is resolved. Carries both the mode the session actually started in and the
+ * persisted default, so dashboards can answer "is lite the user's default" independent
+ * of which source won at startup.
+ */
+export interface UiModeSessionStartNotification {
+	/** The UI mode the session actually started in (`"lite"` or `"tui"`). */
+	uiMode: string;
+	/** Which input source resolved the mode. */
+	uiModeSource: UiModeSource;
+	/**
+	 * The persisted default — `"lite"`, `"tui"`, or `"unset"` if no value is stored.
+	 * Distinct from `ui_mode` so a dashboard can count "users whose default is lite"
+	 * without having to ignore env-var-driven sessions.
+	 */
+	uiModeDefault: string;
+	/**
+	 * ACP session id, used as `amazonqConversationId` on the metric. Optional —
+	 * startup-time emission may run before a session id is available.
+	 */
+	sessionId?: string;
+}
+
 export type ChatResponseStream = 
 	| { kind: "AssistantResponseEvent", data: {
 	content: string;
