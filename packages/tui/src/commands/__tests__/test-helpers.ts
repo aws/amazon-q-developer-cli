@@ -32,6 +32,8 @@ export interface CreateMockCtxOptions {
   settingsReturnOnEscape?: boolean;
   /** Current-agent snapshot used by some effects. Default: null */
   currentAgent?: CommandContext['currentAgent'];
+  /** Cached session tool listing snapshot. Default: [] */
+  toolsList?: CommandContext['toolsList'];
 }
 
 /**
@@ -82,6 +84,7 @@ export function createMockCommandContext(
     setShowRewindExplorer: spy('setShowRewindExplorer') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,
+    toolsList: opts.toolsList ?? [],
     setShowGoalPanel: spy('setShowGoalPanel') as any,
     setGoalStatus: spy('setGoalStatus') as any,
     setShowStatsPanel: spy('setShowStatsPanel') as any,

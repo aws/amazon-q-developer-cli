@@ -54,7 +54,9 @@ import type {
   HookInfo,
   McpServerInfo,
   ContextBreakdownData,
+  ToolInfo,
 } from './stores/app-store';
+import { parseToolsDidChange } from './utils/kas-tools';
 import type {
   KasContextShowResponse,
   KasContextMutationResponse,
@@ -2262,6 +2264,10 @@ export class KasAcpClient extends BaseAcpClient {
   private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
   private hooksNotificationDisposable: { dispose: () => void } | null = null;
+  /** Cached session tool listing, updated via _kiro/tools/didChange. */
+  private cachedTools: ToolInfo[] = [];
+  /** Disposable for the tools notification subscription. */
+  private toolsNotificationDisposable: { dispose: () => void } | null = null;
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
@@ -2516,6 +2522,26 @@ export class KasAcpClient extends BaseAcpClient {
       }
     );
 
+    // Subscribe to session tool-listing changes. KAS pushes the full current
+    // tag set (builtin category tags + per-tool MCP tags) on session
+    // new/load and whenever the resolved tool set changes (MCP connect/reset,
+    // powers activation, /agent swaps). We cache it and broadcast a
+    // ToolsUpdate event so the /tools panel reflects the latest set.
+    this.toolsNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/tools/didChange',
+      (params: Record<string, unknown>) => {
+        const sessionId = params.sessionId as string | undefined;
+        if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+          return;
+        }
+        this.cachedTools = parseToolsDidChange(params);
+        this.broadcastStreamEvent({
+          type: AgentEventType.ToolsUpdate,
+          tools: this.cachedTools,
+        });
+      }
+    );
+
     // Register ext notification handlers
     this.kiroClient.onExtNotification('_kiro/mcp/status', (params) => {
       this.handleMcpStatusNotification(params);
@@ -2588,6 +2614,8 @@ export class KasAcpClient extends BaseAcpClient {
   override close(): void {
     this.hooksNotificationDisposable?.dispose();
     this.hooksNotificationDisposable = null;
+    this.toolsNotificationDisposable?.dispose();
+    this.toolsNotificationDisposable = null;
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
     super.close();

@@ -101,11 +101,19 @@ export interface McpServerInfo {
   enabled?: boolean;
 }
 
+export type ToolStatus = 'allowed' | 'requires-approval' | 'denied';
+
 export interface ToolInfo {
   name: string;
   source: string;
   description: string;
-  status: 'allowed' | 'requires-approval' | 'denied';
+  /**
+   * Permission status. Present for the Rust (V2) engine, which exposes
+   * per-tool trust. Absent for KAS, whose `_kiro/tools/didChange` listing is a
+   * tag-based capability view with no per-tool status — the panel hides the
+   * Status column when every row omits it.
+   */
+  status?: ToolStatus;
 }
 
 export interface RequestStat {
@@ -745,6 +753,8 @@ interface BaseAppActions {
     registryServers?: McpServerInfo[]
   ) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Update the cached session tool listing without toggling the panel. */
+  setToolsList: (tools: ToolInfo[]) => void;
   setShowGoalPanel: (show: boolean) => void;
   setShowStatsPanel: (
     show: boolean,
@@ -1351,6 +1361,7 @@ function buildCommandContext(
     setShowRewindExplorer: state.setShowRewindExplorer,
     setShowMcpPanel: state.setShowMcpPanel,
     setShowToolsPanel: state.setShowToolsPanel,
+    toolsList: state.toolsList,
     setShowGoalPanel: state.setShowGoalPanel,
     setGoalStatus: state.setGoalStatus,
     setShowStatsPanel: state.setShowStatsPanel,
@@ -2692,6 +2703,13 @@ export const createAppStore = (props: AppStoreProps) => {
             // Update cached hooks list. If the panel is open, it will
             // re-render with the new data automatically.
             set({ hooksList: event.hooks });
+            break;
+          case AgentEventType.ToolsUpdate:
+            // Cache the latest session tool listing (pushed by KAS via
+            // _kiro/tools/didChange). If the /tools panel is open it
+            // re-renders automatically; otherwise the handler reads this
+            // cache when opening the panel.
+            set({ toolsList: event.tools });
             break;
         }
       };
@@ -4062,8 +4080,20 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    setShowToolsPanel: (show, tools = []) => {
-      set({ showToolsPanel: show, toolsList: tools });
+    setShowToolsPanel: (show, tools) => {
+      // Only replace the cached list when tools are explicitly provided.
+      // Closing the panel (no `tools` arg) must NOT wipe `toolsList`: under
+      // KAS the cache is the source of truth between `_kiro/tools/didChange`
+      // pushes, and KAS won't re-push an unchanged set (diff-before-emit), so
+      // clearing here would leave `/tools` empty until the set next changes.
+      set(
+        tools !== undefined
+          ? { showToolsPanel: show, toolsList: tools }
+          : { showToolsPanel: show }
+      );
+    },
+    setToolsList: (tools) => {
+      set({ toolsList: tools });
     },
     setShowGoalPanel: (show) => {
       set({ showGoalPanel: show });

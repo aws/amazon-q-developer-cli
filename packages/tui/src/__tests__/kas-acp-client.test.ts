@@ -5055,3 +5055,71 @@ describe('MCP OAuth flow', () => {
     });
   });
 });
+
+describe('KasAcpClient — _kiro/tools/didChange', () => {
+  it('subscribes on initialize and broadcasts ToolsUpdate with parsed tools', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    const handler = (client as any).kiroClient._extNotifHandlers[
+      '_kiro/tools/didChange'
+    ];
+    expect(typeof handler).toBe('function');
+
+    handler({
+      sessionId: client.sessionId,
+      tags: [
+        { source: 'builtin', tag: 'read', description: 'read tools' },
+        { source: 'mcp', tag: '@git/status', description: 'git status' },
+      ],
+    });
+
+    const toolsEvent = events.find(
+      (e) => e.type === AgentEventType.ToolsUpdate
+    );
+    expect(toolsEvent).toBeDefined();
+    expect(toolsEvent.tools).toEqual([
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: '@git/status', source: 'mcp', description: 'git status' },
+    ]);
+    // No per-tool status from KAS.
+    expect(toolsEvent.tools.every((t: any) => t.status === undefined)).toBe(
+      true
+    );
+  });
+
+  it('ignores notifications for a different session', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    const handler = (client as any).kiroClient._extNotifHandlers[
+      '_kiro/tools/didChange'
+    ];
+    handler({
+      sessionId: 'some-other-session',
+      tags: [{ source: 'builtin', tag: 'read', description: 'read tools' }],
+    });
+
+    expect(
+      events.find((e) => e.type === AgentEventType.ToolsUpdate)
+    ).toBeUndefined();
+  });
+
+  it('disposes the tools subscription on close', async () => {
+    mockExtNotificationDispose.mockClear();
+    const client = new KasAcpClient();
+    await client.initialize();
+    client.close();
+    // Hooks + tools + other ext subscriptions all dispose; at least the
+    // tools one must have fired.
+    expect(mockExtNotificationDispose).toHaveBeenCalled();
+  });
+});

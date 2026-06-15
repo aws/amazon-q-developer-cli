@@ -24,6 +24,7 @@ export enum KasCommandName {
   Code = '/code',
   Hooks = '/hooks',
   Mcp = '/mcp',
+  Tools = '/tools',
   Plan = '/plan',
   Feedback = '/feedback',
   Rewind = '/rewind',
@@ -173,6 +174,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Mcp,
     description: 'Show MCP server status',
+    meta: { inputType: 'panel' },
+  },
+  {
+    name: KasCommandName.Tools,
+    description: 'List available tools',
     meta: { inputType: 'panel' },
   },
   {

@@ -767,3 +767,36 @@ describe('isSubagentTool flag survives ToolCall create → ToolCall update → T
     expect((afterFinished as any).isFinished).toBe(true);
   });
 });
+
+describe('setShowToolsPanel — cache preservation', () => {
+  it('preserves toolsList when closing the panel (no tools arg)', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const tools = [
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: 'write', source: 'builtin', description: 'write tools' },
+    ];
+    // Notification populates the cache.
+    store.getState().setToolsList(tools);
+    // Open with the cached snapshot, then close (no tools arg).
+    store.getState().setShowToolsPanel(true, tools);
+    store.getState().setShowToolsPanel(false);
+    // Cache must survive close so a later open (without a new push) still shows it.
+    expect(store.getState().showToolsPanel).toBe(false);
+    expect(store.getState().toolsList).toEqual(tools);
+  });
+
+  it('replaces toolsList when tools are explicitly provided', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    store
+      .getState()
+      .setToolsList([{ name: 'read', source: 'builtin', description: 'r' }]);
+    store
+      .getState()
+      .setShowToolsPanel(true, [
+        { name: 'shell', source: 'builtin', description: 's' },
+      ]);
+    expect(store.getState().toolsList).toEqual([
+      { name: 'shell', source: 'builtin', description: 's' },
+    ]);
+  });
+});

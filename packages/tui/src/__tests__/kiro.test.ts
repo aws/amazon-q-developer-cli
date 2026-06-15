@@ -551,6 +551,24 @@ describe('Kiro — handler registration and forwarding', () => {
     ]);
   });
 
+  it('onToolsUpdate receives tools update events from the global handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onToolsUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    const tools = [
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: '@git/status', source: 'mcp', description: 'git status' },
+    ];
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ToolsUpdate,
+        tools,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith(tools);
+  });
+
   it('onCompactionStatus receives compaction events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});

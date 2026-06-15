@@ -186,6 +186,11 @@ const wireUpHandlers = () => {
     appStore.getState().setKasCommands(commands);
   });
 
+  kiro.onToolsUpdate((tools) => {
+    logger.debug('[tui] tools update received:', tools.length, 'tools');
+    appStore.getState().setToolsList(tools);
+  });
+
   // Wire up prompts handler before initialize
   kiro.onPromptsUpdate((prompts) => {
     logger.debug('[tui] prompts update received:', prompts.length, 'prompts');
