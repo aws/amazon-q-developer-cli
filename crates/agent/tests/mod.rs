@@ -1616,8 +1616,7 @@ async fn test_parse_error_preserved_when_sibling_denied() {
         "follow-up should include an error tool_result for the denied tooluse_write"
     );
     assert!(
-        follow_up
-            .has_tool_result(|tr| tr.tool_use_id == "tooluse_bad" && matches!(tr.status, ToolResultStatus::Error)),
+        follow_up.has_tool_result(|tr| tr.tool_use_id == "tooluse_bad" && matches!(tr.status, ToolResultStatus::Error)),
         "follow-up should include the parse-error tool_result for tooluse_bad — \
          dropping it is the bug this test guards against"
     );
