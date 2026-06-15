@@ -1,6 +1,5 @@
 pub mod cognito;
 pub mod core;
-pub mod definitions;
 pub mod endpoint;
 pub mod observer;
 
@@ -51,6 +50,13 @@ pub use kiro_telemetry_host::{
     InstallMethod,
     get_install_method,
 };
+#[cfg(test)]
+use kiro_telemetry_legacy::event_to_otel_metric_record;
+use kiro_telemetry_legacy::{
+    event_to_metric_datum,
+    event_to_otel_log_record,
+    event_to_otel_metric_records,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
@@ -87,7 +93,6 @@ use crate::os::{
 use crate::telemetry::core::Event;
 pub use crate::telemetry::core::{
     EmptyResponseRetryOutcome,
-    EventLegacyExt,
     EventType,
     QProfileSwitchIntent,
     TelemetryResult,
@@ -946,7 +951,7 @@ impl TelemetryClient {
             return;
         }
 
-        let records = event.otel_metric_records();
+        let records = event_to_otel_metric_records(event);
         if records.is_empty() {
             if let Some(legacy_event_type) = event.ty.legacy_event_type() {
                 trace!(
@@ -971,7 +976,7 @@ impl TelemetryClient {
             return;
         }
 
-        let Some(record) = event.otel_log_record() else {
+        let Some(record) = event_to_otel_log_record(event) else {
             return;
         };
 
@@ -1121,7 +1126,7 @@ impl TelemetryClient {
         };
         let client_id = self.client_id;
         self.emit_redaction_metric_records(&event);
-        let Some(metric_datum) = event.into_metric_datum() else {
+        let Some(metric_datum) = event_to_metric_datum(event) else {
             trace!("not sending toolkit metric - metric datum does not exist");
             return;
         };
@@ -1564,7 +1569,7 @@ mod test {
             event.client_application.as_deref(),
             Some(metric::ClientApplication::ChatCliV2.as_str())
         );
-        let record = event.otel_metric_record().expect("daily heartbeat metric");
+        let record = event_to_otel_metric_record(&event).expect("daily heartbeat metric");
         expect_metric(
             std::slice::from_ref(&record),
             metric::daily_heartbeat_record(metric::DailyHeartbeat::from_names(
@@ -1693,7 +1698,7 @@ mod test {
             platform: "darwin".to_string(),
         });
 
-        let datum = event.into_metric_datum();
+        let datum = event_to_metric_datum(event);
         assert!(datum.is_some());
 
         let datum = datum.unwrap();
@@ -1753,7 +1758,7 @@ mod test {
             platform: "linux".to_string(),
         });
 
-        let datum = event.into_metric_datum();
+        let datum = event_to_metric_datum(event);
         assert!(datum.is_some());
 
         let datum = datum.unwrap();

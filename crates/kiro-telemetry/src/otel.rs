@@ -96,15 +96,26 @@ impl Default for KutsRetryPolicy {
 
 impl KutsHttpClient {
     fn new() -> Self {
-        Self {
-            inner: reqwest::blocking::Client::builder()
+        // `reqwest::blocking::Client::builder().build()` synchronously waits on
+        // its own internal tokio runtime, so dropping it inside an outer tokio
+        // runtime panics ("Cannot drop a runtime in a context where blocking is
+        // not allowed"). Build it on a fresh thread that has no runtime in its
+        // thread-local storage.
+        let inner = std::thread::spawn(|| {
+            reqwest::blocking::Client::builder()
                 .http1_only()
                 .timeout(Duration::from_secs(30))
                 .build()
                 .unwrap_or_else(|err| {
                     warn!(%err, "failed to build OTLP HTTP client; using reqwest defaults");
                     reqwest::blocking::Client::new()
-                }),
+                })
+        })
+        .join()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+        Self {
+            inner,
             retry_policy: KutsRetryPolicy::default(),
         }
     }

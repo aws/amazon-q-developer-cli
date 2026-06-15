@@ -1,0 +1,28 @@
+[package]
+name = "kiro-telemetry-legacy"
+version = "0.0.0-dev"
+edition = "2024"
+publish = false
+description = "Legacy CloudWatch/Toolkit telemetry translation for kiro-cli (V2 only)"
+
+[lints]
+workspace = true
+
+[dependencies]
+amzn-toolkit-telemetry-client = { workspace = true }
+kiro-telemetry = { workspace = true }
+kiro-telemetry-host = { workspace = true }
+kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
+serde = { workspace = true }
+
+[build-dependencies]
+convert_case = { workspace = true }
+prettyplease = { workspace = true }
+quote = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+syn = { workspace = true }
+
+[dev-dependencies]
+kiro-telemetry = { workspace = true, features = ["test-support"] }
+serde_json = { workspace = true }

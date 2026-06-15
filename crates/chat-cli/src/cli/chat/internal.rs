@@ -822,7 +822,7 @@ impl EmitTelemetryArgs {
 
 #[cfg(test)]
 mod tests {
-    use chat_cli_v2::telemetry::EventLegacyExt;
+    use kiro_telemetry_legacy::event_to_otel_metric_record;
     use serde_json::json;
 
     use super::*;
@@ -1102,7 +1102,7 @@ mod tests {
         assert_eq!(payload.mode.as_deref(), Some("kiro_planner"));
 
         let event = chat_cli_v2::agent::acp::acp_agent::kas_chat_session_started_event(payload);
-        let record = event.otel_metric_record().expect("chat session start metric");
+        let record = event_to_otel_metric_record(&event).expect("chat session start metric");
         assert_eq!(record.name, "chat_session_started_total");
         assert_eq!(
             kiro_telemetry::testing::metric_attr(&record, "client_application"),

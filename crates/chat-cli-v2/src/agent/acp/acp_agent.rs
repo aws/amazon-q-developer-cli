@@ -71,6 +71,7 @@ use agent::{
     AgentHandle,
 };
 use code_agent_sdk::CodeIntelligence;
+use kiro_telemetry_legacy::estimated_cost_usd;
 use sacp::schema::{
     AGENT_METHOD_NAMES,
     AgentCapabilities,
@@ -179,7 +180,6 @@ use crate::os::Os;
 use crate::telemetry::core::{
     Event,
     RecordUserTurnCompletionArgs,
-    estimated_cost_usd,
 };
 use crate::telemetry::observer::{
     AcpClientInfo,
@@ -4971,6 +4971,11 @@ mod kas_turn_completion_telemetry_tests {
         log as telemetry_log,
         metric,
     };
+    use kiro_telemetry_legacy::{
+        event_to_otel_log_record,
+        event_to_otel_metric_record,
+        event_to_otel_metric_records,
+    };
 
     use super::kas_turn_completion_events;
     use crate::agent::acp::schema::{
@@ -4983,10 +4988,7 @@ mod kas_turn_completion_telemetry_tests {
         TurnCompletionStatus,
         TurnCompletionTelemetryPayload,
     };
-    use crate::telemetry::core::{
-        Event,
-        EventLegacyExt,
-    };
+    use crate::telemetry::core::Event;
     use crate::telemetry::{
         EventType,
         TelemetryResult,
@@ -5043,13 +5045,13 @@ mod kas_turn_completion_telemetry_tests {
             assert_kas_attribution(event);
         }
 
-        let session_start = session.otel_metric_record().expect("chat session start metric");
+        let session_start = event_to_otel_metric_record(&session).expect("chat session start metric");
         expect_metric(
             std::slice::from_ref(&session_start),
             metric::chat_session_started(metric::Mode::Plan, metric::ClientApplication::ChatCliV3),
         );
 
-        let process_records = process.otel_metric_records();
+        let process_records = event_to_otel_metric_records(&process);
         expect_metric(
             &process_records,
             metric::process_memory_rss(
@@ -5122,7 +5124,7 @@ mod kas_turn_completion_telemetry_tests {
         );
         assert!(events.iter().all(|event| event.app_type.as_deref() == Some("KAS")));
 
-        let metering = events[0].otel_log_record().expect("metering log");
+        let metering = event_to_otel_log_record(&events[0]).expect("metering log");
         expect_log(
             std::slice::from_ref(&metering),
             telemetry_log::metering_event_record(telemetry_log::MeteringEventLog::from_names(
@@ -5135,7 +5137,7 @@ mod kas_turn_completion_telemetry_tests {
             )),
         );
 
-        let context_usage = events[1].otel_metric_record().expect("context usage metric");
+        let context_usage = event_to_otel_metric_record(&events[1]).expect("context usage metric");
         expect_metric(
             std::slice::from_ref(&context_usage),
             metric::context_usage_percentage(
@@ -5169,14 +5171,14 @@ mod kas_turn_completion_telemetry_tests {
             },
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }
-        let turn_log = events[2].otel_log_record().expect("turn completion log");
+        let turn_log = event_to_otel_log_record(&events[2]).expect("turn completion log");
         assert_eq!(log_attr(&turn_log, "total_tokens"), Some("17"));
         assert_eq!(log_attr(&turn_log, "uncached_input_tokens"), Some("10"));
         assert_eq!(log_attr(&turn_log, "output_tokens"), Some("5"));
         assert_eq!(log_attr(&turn_log, "cache_read_input_tokens"), Some("2"));
         assert_eq!(log_attr(&turn_log, "cache_write_input_tokens"), Some("3"));
         assert_eq!(log_attr(&turn_log, "estimated_cost_usd"), Some("0.000107850"));
-        let turn_records = events[2].otel_metric_records();
+        let turn_records = event_to_otel_metric_records(&events[2]);
         let invocation = metric::InvocationContext::new(
             metric::ModelClass::AnthropicSonnet,
             metric::ClientApplication::ChatCliV3,
@@ -5222,7 +5224,7 @@ mod kas_turn_completion_telemetry_tests {
             ),
         );
 
-        let invocation = events[3].otel_metric_record().expect("model invocation metric");
+        let invocation = event_to_otel_metric_record(&events[3]).expect("model invocation metric");
         expect_metric(
             std::slice::from_ref(&invocation),
             metric::model_invocation(metric::ModelClass::AnthropicSonnet),
@@ -5310,7 +5312,7 @@ mod kas_turn_completion_telemetry_tests {
                 .all(|event| event.client_application.as_deref() == Some("chat_cli_v3"))
         );
 
-        let builtin_records = events[0].otel_metric_records();
+        let builtin_records = event_to_otel_metric_records(&events[0]);
         expect_metric(
             &builtin_records,
             metric::tool_call_total(metric::ToolOrigin::Builtin, Some("fs_read"), metric::Outcome::Success),
@@ -5319,20 +5321,20 @@ mod kas_turn_completion_telemetry_tests {
             &builtin_records,
             metric::tool_invocations(metric::ToolOrigin::Builtin, metric::Outcome::Success),
         );
-        let builtin_log = events[0].otel_log_record().expect("builtin tool log");
+        let builtin_log = event_to_otel_log_record(&events[0]).expect("builtin tool log");
         assert_eq!(log_attr(&builtin_log, "tool_name"), Some("fs_read"));
         assert_eq!(log_attr(&builtin_log, "model_class"), Some("anthropic_sonnet"));
 
-        let mcp_records = events[1].otel_metric_records();
+        let mcp_records = event_to_otel_metric_records(&events[1]);
         expect_metric(
             &mcp_records,
             metric::tool_call_total(metric::ToolOrigin::Mcp, None, metric::Outcome::Success),
         );
-        let mcp_log = events[1].otel_log_record().expect("mcp tool log");
+        let mcp_log = event_to_otel_log_record(&events[1]).expect("mcp tool log");
         assert_eq!(log_attr(&mcp_log, "tool_name"), Some("echo"));
         assert_eq!(log_attr(&mcp_log, "mcp_server_name"), Some("local"));
 
-        let custom_log = events[2].otel_log_record().expect("custom tool log");
+        let custom_log = event_to_otel_log_record(&events[2]).expect("custom tool log");
         assert_eq!(log_attr(&custom_log, "tool_name"), Some("custom_tool"));
         assert_eq!(log_attr(&custom_log, "mcp_server_name"), None);
     }
@@ -5364,7 +5366,7 @@ mod kas_turn_completion_telemetry_tests {
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }
 
-        let records = events[0].otel_metric_records();
+        let records = event_to_otel_metric_records(&events[0]);
         expect_metric(
             &records,
             metric::tokens_consumed(

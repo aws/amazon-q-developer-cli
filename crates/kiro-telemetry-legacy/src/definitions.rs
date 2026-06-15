@@ -12,12 +12,13 @@ include!(concat!(env!("OUT_DIR"), "/mod.rs"));
 mod tests {
     use std::time::SystemTime;
 
-    use super::*;
-    use crate::telemetry::core::{
+    use kiro_telemetry_host::{
         ChatConversationType,
         MessageMetaTag,
     };
-    use crate::telemetry::definitions::metrics::CodewhispererterminalAddChatMessage;
+
+    use super::*;
+    use crate::definitions::metrics::CodewhispererterminalAddChatMessage;
 
     #[test]
     fn test_serde() {
@@ -31,7 +32,7 @@ mod tests {
             sso_region: Some("us-east-1".to_owned().into()),
             codewhispererterminal_in_cloudshell: None,
             codewhispererterminal_utterance_id: Some("message_id".to_owned().into()),
-            result: crate::telemetry::definitions::types::Result::new("Succeeded".to_string()),
+            result: crate::definitions::types::Result::new("Succeeded".to_string()),
             reason: None,
             reason_desc: None,
             status_code: None,
