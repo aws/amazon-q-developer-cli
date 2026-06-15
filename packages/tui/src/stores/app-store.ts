@@ -1643,13 +1643,17 @@ export const createAppStore = (props: AppStoreProps) => {
     _shellEscapeWriter: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
-    // Dual-mode interrupt behavior
-    activeInterruptMode: parseInterruptMode(
-      readStringSetting(
-        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-        DEFAULT_INTERRUPT_MODE
-      )
-    ),
+    // Dual-mode interrupt behavior. KAS ("v3") has no backend steering yet,
+    // so it is pinned to QUEUE; v2 honors the persisted setting.
+    activeInterruptMode:
+      agentEngine === 'kas'
+        ? InterruptMode.QUEUE
+        : parseInterruptMode(
+            readStringSetting(
+              Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+              DEFAULT_INTERRUPT_MODE
+            )
+          ),
     queuedMessages: [],
     editingQueueIndex: null,
 
@@ -3564,7 +3568,13 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     clearSteerMessage: () => {
-      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
+      const {
+        kiro,
+        sessionId,
+        pendingSteerContent,
+        isInitialized,
+        agentEngine,
+      } = get();
       if (pendingSteerContent == null) return;
 
       // Optimistically clear locally. The backend `SteeringCleared`
@@ -3578,7 +3588,8 @@ export const createAppStore = (props: AppStoreProps) => {
       // (see index.tsx init path). A session-live queue still needs the
       // explicit `_session/steer/clear` round-trip to keep the backend in
       // sync.
-      const hasBackendQueue = isInitialized && sessionId != null;
+      const hasBackendQueue =
+        isInitialized && sessionId != null && agentEngine !== 'kas';
       if (hasBackendQueue) {
         kiro.clearSteering(sessionId).catch((err) => {
           logger.error('clearSteerMessage failed', err);
@@ -4514,6 +4525,14 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Dual-mode interrupt behavior toggle
     toggleInterruptMode: () => {
+      if (get().agentEngine === 'kas') {
+        get().showTransientAlert({
+          message: 'Steering is currently unsupported for v3',
+          status: 'info',
+          autoHideMs: 3000,
+        });
+        return;
+      }
       const switchingToQueue =
         get().activeInterruptMode === InterruptMode.STEER;
       const newMode = switchingToQueue
@@ -4530,6 +4549,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setActiveInterruptMode: (mode: InterruptMode) => {
+      if (get().agentEngine === 'kas') return;
       set({ activeInterruptMode: mode });
     },
 
