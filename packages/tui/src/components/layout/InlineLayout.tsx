@@ -81,6 +81,7 @@ import {
 } from '../../utils/keybindings.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { InterruptMode } from '../../constants/interrupt-mode.js';
+import type { AgentEngine } from '../../agent-engine.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
@@ -99,6 +100,7 @@ function getPlaceholder(opts: {
   isInitialized: boolean;
   pendingSteerContent: string | null;
   activeInterruptMode: InterruptMode;
+  agentEngine: AgentEngine;
   queuedMessages: string[];
   toggleHintLabel: string;
   agentName: string | undefined;
@@ -131,6 +133,10 @@ function getPlaceholder(opts: {
     return `Goal Active: ${desc} · Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} · ${cancel} to pause`;
   }
   if (opts.pendingApproval || opts.isProcessing) {
+    // KAS ("v3") has no mid-turn steering, so omit the steer toggle hint.
+    if (opts.agentEngine === 'kas') {
+      return 'Kiro is working · Type to queue';
+    }
     if (opts.activeInterruptMode === InterruptMode.STEER) {
       return `Kiro is working · Type to steer · ${opts.toggleHintLabel} to queue`;
     }
@@ -315,6 +321,7 @@ export const InlineLayout: React.FC = () => {
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
@@ -1078,6 +1085,7 @@ export const InlineLayout: React.FC = () => {
               isInitialized,
               pendingSteerContent,
               activeInterruptMode,
+              agentEngine,
               queuedMessages,
               toggleHintLabel,
               agentName: currentAgent?.name,
