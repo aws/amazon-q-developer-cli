@@ -706,6 +706,7 @@ pub async fn build_v1_host_config(
         ),
         legacy_sink: None,
         otel_translator: None,
+        metadata_enricher: None,
         client_application: get_cli_client_application().map(|s| metric::ClientApplication::from_name(Some(&s))),
         host_role: kiro_telemetry_host::HostRole::UserCli,
         govcloud_partition: region.and_then(govcloud_partition),

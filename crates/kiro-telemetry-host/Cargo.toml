@@ -9,6 +9,7 @@ description = "Shared host for kiro-cli telemetry: TelemetryThread, Event types,
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
 eyre.workspace = true
 futures.workspace = true
 kiro-telemetry.workspace = true

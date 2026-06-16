@@ -22,13 +22,21 @@ use tokio::time::error::Elapsed;
 use tracing::trace;
 
 use crate::config::{
+    EventEnricher,
     HostConfig,
     OtelEventTranslator,
 };
 use crate::event::{
+    AgentConfigInitArgs,
+    ChatAddedMessageParams,
+    EmptyResponseRetryOutcome,
     Event,
     EventType,
+    RecordUserTurnCompletionArgs,
+    TangentModeSessionArgs,
+    TelemetryResult,
 };
+use crate::tool_event::ToolUseEventBuilder;
 
 /// Errors produced by [`TelemetryThread`] operations.
 #[derive(thiserror::Error, Debug)]
@@ -436,6 +444,252 @@ impl TelemetryThread {
             source,
             session_id,
         }))?)
+    }
+
+    // ----------------------------------------------------------------------
+    // Metadata-aware send helpers.
+    //
+    // Each helper builds the corresponding [`Event`], runs the optional
+    // [`EventEnricher`] closure on it (which V2 implements as a closure
+    // capturing `Arc<Database>`), and forwards it via [`Self::send_event`].
+    // V3 / kiro-bot / tests pass `None` and skip enrichment.
+    // ----------------------------------------------------------------------
+
+    pub async fn send_cli_subcommand_executed(
+        &self,
+        enricher: Option<&EventEnricher>,
+        subcommand_name: String,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::CliSubcommandExecuted {
+            subcommand: subcommand_name,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_chat_slash_command_executed(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        command: String,
+        subcommand: Option<String>,
+        result: TelemetryResult,
+        reason: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::ChatSlashCommandExecuted {
+            conversation_id,
+            command,
+            subcommand,
+            result,
+            reason,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_agent_contribution_metric(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::AgentContribution {
+            conversation_id,
+            utterance_id,
+            tool_use_id,
+            tool_name,
+            lines_by_agent,
+            lines_by_user,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_chat_added_message(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        result: TelemetryResult,
+        data: ChatAddedMessageParams,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::ChatAddedMessage {
+            conversation_id,
+            result,
+            data,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_record_user_turn_completion(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: RecordUserTurnCompletionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id,
+            result,
+            args,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_metering_event(
+        &self,
+        enricher: Option<&EventEnricher>,
+        request_id: Option<String>,
+        model: Option<String>,
+        usage: f64,
+        unit: String,
+        unit_plural: String,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::MeteringEvent {
+            request_id,
+            model,
+            usage,
+            unit,
+            unit_plural,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_empty_response_retry(
+        &self,
+        enricher: Option<&EventEnricher>,
+        model: Option<String>,
+        outcome: EmptyResponseRetryOutcome,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::EmptyResponseRetry { model, outcome });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_tangent_mode_session(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::TangentModeSession {
+            conversation_id,
+            result,
+            args,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_tool_use_suggested(
+        &self,
+        enricher: Option<&EventEnricher>,
+        event: ToolUseEventBuilder,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::ToolUseSuggested {
+            conversation_id: event.conversation_id,
+            utterance_id: event.utterance_id,
+            user_input_id: event.user_input_id,
+            tool_use_id: event.tool_use_id,
+            tool_name: event.tool_name,
+            mcp_server_name: event.mcp_server_name,
+            is_accepted: event.is_accepted,
+            is_trusted: event.is_trusted,
+            is_success: event.is_success,
+            reason_desc: event.reason_desc,
+            is_valid: event.is_valid,
+            is_custom_tool: event.is_custom_tool,
+            input_token_size: event.input_token_size,
+            output_token_size: event.output_token_size,
+            custom_tool_call_latency: event.custom_tool_call_latency,
+            model: event.model,
+            execution_duration: event.execution_duration,
+            turn_duration: event.turn_duration,
+            aws_service_name: event.aws_service_name,
+            aws_operation_name: event.aws_operation_name,
+        });
+        enrich(enricher, &mut telemetry_event).await;
+        self.send_event(telemetry_event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_mcp_server_init(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        server_name: String,
+        init_failure_reason: Option<String>,
+        number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::McpServerInit {
+            conversation_id,
+            server_name,
+            init_failure_reason,
+            number_of_tools,
+            all_tool_names,
+            loaded_tool_names,
+            all_tools_count,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    pub async fn send_agent_config_init(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        args: AgentConfigInitArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::AgentConfigInit { conversation_id, args });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_response_error(
+        &self,
+        enricher: Option<&EventEnricher>,
+        conversation_id: String,
+        context_file_length: Option<usize>,
+        result: TelemetryResult,
+        reason: Option<String>,
+        reason_desc: Option<String>,
+        status_code: Option<u16>,
+        request_id: Option<String>,
+        message_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let mut event = Event::new(EventType::MessageResponseError {
+            result,
+            reason,
+            reason_desc,
+            status_code,
+            conversation_id,
+            context_file_length,
+            request_id,
+            message_id,
+            model: None,
+        });
+        enrich(enricher, &mut event).await;
+        self.send_event(event)
+    }
+}
+
+/// Run the optional [`EventEnricher`] closure on an event, if provided.
+async fn enrich(enricher: Option<&EventEnricher>, event: &mut Event) {
+    if let Some(enricher) = enricher {
+        enricher(event).await;
     }
 }
 

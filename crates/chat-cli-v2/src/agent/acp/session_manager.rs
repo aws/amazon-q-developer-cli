@@ -447,7 +447,7 @@ pub struct SessionManager {
     /// Specific tools to trust for new sessions (from --trust-tools CLI flag)
     trust_tools: Option<Vec<String>>,
     /// ACP client identity from InitializeRequest, propagated to all sessions
-    acp_client_info: Option<crate::telemetry::observer::AcpClientInfo>,
+    acp_client_info: Option<crate::telemetry::AcpClientInfo>,
     /// Telemetry event store for recording events in test scenarios.
     /// Shared with the IPC server so tests can drain and assert on events. `None` in production.
     telemetry_event_store: Option<TelemetryEventStore>,
@@ -1076,7 +1076,7 @@ impl SessionManager {
                 version,
                 resp_sender,
             } => {
-                self.acp_client_info = Some(crate::telemetry::observer::AcpClientInfo::new(name, version));
+                self.acp_client_info = Some(crate::telemetry::AcpClientInfo::new(name, version));
                 _ = resp_sender.send(Ok(()));
             },
             SessionManagerRequestData::ListSessions { cwd, resp_sender } => {

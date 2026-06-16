@@ -50,8 +50,16 @@ pub trait OtelEventTranslator: Send + Sync + std::fmt::Debug {
     fn log_record(&self, event: &Event) -> Option<TelemetryLogRecord>;
 }
 
+/// Async closure that enriches an outbound [`Event`] with caller-supplied
+/// session/auth metadata (start URL, SSO region, client application, ...).
+///
+/// V2 builds one of these capturing `Arc<Database>`; V3 / kiro-bot / tests
+/// pass `None`. The HRTB lifetime lets the closure body hold `&mut Event`
+/// across `.await` without forcing the caller to clone the event.
+pub type EventEnricher = Arc<dyn for<'a> Fn(&'a mut Event) -> BoxFuture<'a, ()> + Send + Sync>;
+
 /// Pre-resolved configuration handed to `TelemetryThread::new`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HostConfig {
     /// Resolved at startup: env > database > new uuid.
     pub client_id: Uuid,
@@ -63,6 +71,8 @@ pub struct HostConfig {
     pub legacy_sink: Option<Arc<dyn LegacySink>>,
     /// Optional OTel translator. `Some(_)` enables OTel emission; `None` skips it.
     pub otel_translator: Option<Arc<dyn OtelEventTranslator>>,
+    /// Optional per-event metadata enrichment closure. `None` skips enrichment.
+    pub metadata_enricher: Option<EventEnricher>,
     /// Forwarded into per-event enrichment by the caller-side observer (PR E).
     pub client_application: Option<ClientApplication>,
     /// Reserved for PR L; defaults to `UserCli`.
@@ -74,6 +84,26 @@ pub struct HostConfig {
     pub consent_settings_path: Option<PathBuf>,
 }
 
+impl std::fmt::Debug for HostConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostConfig")
+            .field("client_id", &self.client_id)
+            .field("telemetry_enabled", &self.telemetry_enabled)
+            .field("otel_config", &self.otel_config)
+            .field("legacy_sink", &self.legacy_sink)
+            .field("otel_translator", &self.otel_translator)
+            .field(
+                "metadata_enricher",
+                &self.metadata_enricher.as_ref().map(|_| "<closure>"),
+            )
+            .field("client_application", &self.client_application)
+            .field("host_role", &self.host_role)
+            .field("govcloud_partition", &self.govcloud_partition)
+            .field("consent_settings_path", &self.consent_settings_path)
+            .finish()
+    }
+}
+
 impl Default for HostConfig {
     fn default() -> Self {
         Self {
@@ -82,6 +112,7 @@ impl Default for HostConfig {
             otel_config: TelemetryConfig::new(false, kiro_telemetry::OtelMode::Off, None, std::env::temp_dir()),
             legacy_sink: None,
             otel_translator: None,
+            metadata_enricher: None,
             client_application: None,
             host_role: HostRole::UserCli,
             govcloud_partition: None,

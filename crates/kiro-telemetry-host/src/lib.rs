@@ -10,8 +10,10 @@ pub mod event;
 pub mod install_method;
 pub mod reason;
 pub mod thread;
+pub mod tool_event;
 
 pub use config::{
+    EventEnricher,
     HostConfig,
     HostRole,
     LegacySink,
@@ -46,3 +48,4 @@ pub use thread::{
     TelemetrySender,
     TelemetryThread,
 };
+pub use tool_event::ToolUseEventBuilder;

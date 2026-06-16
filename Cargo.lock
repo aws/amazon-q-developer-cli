@@ -2322,6 +2322,7 @@ dependencies = [
  "kiro-telemetry",
  "kiro-telemetry-host",
  "kiro-telemetry-legacy",
+ "kiro-telemetry-observer",
  "libc",
  "mimalloc",
  "mock-mcp-server",
@@ -5510,6 +5511,7 @@ version = "0.0.0-dev"
 name = "kiro-telemetry-host"
 version = "0.0.0-dev"
 dependencies = [
+ "async-trait",
  "eyre",
  "futures",
  "kiro-telemetry",
@@ -5537,6 +5539,24 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "kiro-telemetry-observer"
+version = "0.0.0-dev"
+dependencies = [
+ "agent",
+ "async-trait",
+ "chrono",
+ "futures",
+ "kiro-telemetry",
+ "kiro-telemetry-host",
+ "kiro-telemetry-legacy",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

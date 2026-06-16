@@ -181,14 +181,12 @@ use crate::telemetry::core::{
     Event,
     RecordUserTurnCompletionArgs,
 };
-use crate::telemetry::observer::{
+use crate::telemetry::{
     AcpClientInfo,
+    EventType,
     TelemetryContext,
     TelemetryObserver,
     TelemetryObserverHandle,
-};
-use crate::telemetry::{
-    EventType,
     TelemetryResult,
 };
 use crate::util::consts::env_var::KIRO_TEST_MODE;
@@ -1747,16 +1745,24 @@ impl AcpSession {
         let agent = agent.spawn();
 
         // Create telemetry observer actor
+        let rts_state_for_model = Arc::clone(&rts_state);
         let telemetry_context = TelemetryContext::new(
-            Arc::clone(&rts_state),
+            Arc::new(move || rts_state_for_model.model_id()),
             builder.acp_client_info.clone(),
             builder.is_subagent,
         );
+        let metadata_enricher = Some(crate::telemetry::build_metadata_enricher(Arc::new(os.database.clone())));
+        let event_store: Option<Arc<dyn kiro_telemetry_observer::EventStore>> = builder
+            .telemetry_event_store
+            .clone()
+            .map(|store| Arc::new(store) as Arc<dyn kiro_telemetry_observer::EventStore>);
+        let reason_extractor = Some(crate::telemetry::build_reason_extractor());
         let telemetry_observer = TelemetryObserver::spawn(
             telemetry_context,
             os.telemetry.clone(),
-            os.database.clone(),
-            builder.telemetry_event_store,
+            metadata_enricher,
+            event_store,
+            reason_extractor,
         );
 
         Ok(Self {

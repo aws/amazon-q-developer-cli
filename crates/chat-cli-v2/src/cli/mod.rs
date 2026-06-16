@@ -1,4 +1,3 @@
-use crate::telemetry::TelemetryThreadV2Ext;
 use crate::theme::StyledText;
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
@@ -211,13 +210,12 @@ impl RootSubcommand {
 
         // Daily heartbeat check
         if os.database.record_heartbeat_if_needed() {
-            os.telemetry.send_daily_heartbeat().ok();
+            crate::telemetry::cli_helpers::record_daily_heartbeat(os).ok();
         }
 
         // Send executed telemetry.
         if self.valid_for_telemetry() {
-            os.telemetry
-                .send_cli_subcommand_executed(&os.database, &self)
+            crate::telemetry::cli_helpers::record_cli_subcommand(os, self.telemetry_name())
                 .await
                 .ok();
         }
@@ -288,21 +286,15 @@ impl RootSubcommand {
                     ),
                 };
                 let input_method = if ptt { "PTT" } else { "SlashCommand" };
-                os.telemetry
-                    .send_voice_input(
-                        None,
-                        telem_result,
-                        reason,
-                        reason_desc,
-                        backend,
-                        input_method.to_string(),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .ok();
+                crate::telemetry::cli_helpers::record_voice_input(
+                    os,
+                    telem_result,
+                    reason,
+                    reason_desc,
+                    backend,
+                    input_method,
+                )
+                .ok();
                 result
             },
             #[cfg(feature = "voice")]
