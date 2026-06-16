@@ -275,7 +275,7 @@ async fn launch_acp_interactive(
     match agent_engine {
         AgentEngine::Kas => {
             if !crate::util::platform::can_run_kas() {
-                bail!("The Kiro agent engine (KAS) is not supported on this system.");
+                bail!("V3 is currently not supported on this system.");
             }
 
             // Resolve user identity for KAS telemetry (not needed for Rust engine)

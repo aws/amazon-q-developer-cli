@@ -334,13 +334,13 @@ pub struct ChatArgs {
     /// Use the legacy harness
     #[arg(long, visible_alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
-    /// Agent engine to use: "v1", "v2" (default), or "kas"
+    /// Agent engine to use: "v1", "v2" (default), or "v3"
     #[arg(long, value_name = "ENGINE")]
     pub agent_engine: Option<AgentEngine>,
-    /// Use the KAS agent engine (shorthand for --agent-engine=kas)
+    /// Launch the next generation Kiro agent
     #[arg(long, conflicts_with_all = ["legacy_ui", "agent_engine"])]
     pub v3: bool,
-    /// Mode to use with KAS agent: "vibe" (default) or "spec"
+    /// Mode to use with the V3 agent: "default" or "spec"
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
     /// Internal subcommands (`_ export-session`, `_ import-session`)
@@ -364,7 +364,7 @@ impl ChatArgs {
         } else if let Some(engine) = self.agent_engine {
             engine
         } else if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine) {
-            if val.eq_ignore_ascii_case("kas") {
+            if val.eq_ignore_ascii_case("v3") || val.eq_ignore_ascii_case("kas") {
                 AgentEngine::Kas
             } else if val.eq_ignore_ascii_case("v1") {
                 AgentEngine::V1
@@ -380,8 +380,9 @@ impl ChatArgs {
         // Validate: --legacy-ui conflicts with non-V1 engines
         if self.legacy_ui && engine != AgentEngine::V1 {
             bail!(
-                "Conflicting options: --legacy-ui cannot be used with --agent-engine={engine}. \
-                 Use --agent-engine=v1 or remove --legacy-ui."
+                "Conflicting options: --legacy-ui cannot be used with --agent-engine={}. \
+                 Use --agent-engine=v1 or remove --legacy-ui.",
+                engine.user_label()
             );
         }
 

@@ -146,11 +146,11 @@ pub enum RootSubcommand {
         /// Trust only this set of tools
         #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
         trust_tools: Option<Vec<String>>,
-        /// Agent engine to use: "v1", "v2" (default), or "kas"
+        /// Agent engine to use: "v1", "v2" (default), or "v3"
         #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::V2)]
         agent_engine: chat::AgentEngine,
     },
-    /// Start a persistent KAS agent server over WebSocket
+    /// Start a persistent V3 agent server over WebSocket
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8082")]
@@ -704,7 +704,7 @@ fn read_kas_version(server_js: &Path) -> String {
 /// MUST implement the same callback themselves.
 pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio::process::Child> {
     if !crate::util::platform::can_run_kas() {
-        bail!("The Kiro agent engine (KAS) is not supported on this system.");
+        bail!("V3 is currently not supported on this system.");
     }
 
     let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
@@ -915,7 +915,7 @@ pub struct Cli {
     /// Launch chat in legacy UI mode
     #[arg(long, visible_alias = "classic")]
     legacy_ui: bool,
-    /// Launch chat with the KAS agent engine (shorthand for --agent-engine=kas)
+    /// Launch the next generation Kiro agent
     #[arg(long, conflicts_with = "legacy_ui")]
     v3: bool,
     /// Resume the most recent conversation from this directory
