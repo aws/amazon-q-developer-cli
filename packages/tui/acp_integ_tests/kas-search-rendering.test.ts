@@ -15,6 +15,7 @@ import type {
   PromptResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'search-session-1';
 
@@ -28,10 +29,7 @@ function setupHandshake(tc: AcpTestCase): void {
   }));
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: SESSION_ID,
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
   tc.mock.on('session/set_config_option', () => ({}));
 }

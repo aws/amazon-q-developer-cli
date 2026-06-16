@@ -15,6 +15,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 const DOWN_ARROW = '\x1b[B';
 
@@ -32,10 +33,7 @@ function setupHandshake(
 
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId,
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
 
   tc.mock.on('session/set_config_option', () => ({}));

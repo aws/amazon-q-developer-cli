@@ -16,7 +16,10 @@ use crate::database::{
     AuthProfile,
     Database,
 };
-use crate::telemetry::TelemetryThread;
+use crate::telemetry::{
+    TelemetryThread,
+    build_v2_host_config,
+};
 use crate::util::log_on_err::LogOnErr;
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
@@ -68,7 +71,10 @@ impl Os {
             .await
             .log_on_err("Os::new: BuilderIdToken::load failed")?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region)
+        let host_config = build_v2_host_config(&env, &fs, &mut database, region)
+            .await
+            .log_on_err("Os::new: build_v2_host_config failed")?;
+        let telemetry = TelemetryThread::new(host_config)
             .await
             .log_on_err("Os::new: TelemetryThread::new failed")?;
 
@@ -102,10 +108,8 @@ impl Os {
         let region = profile.arn.split(':').nth(3);
 
         // reconstruct telemetry thread and clients
-        let old_telemetry = std::mem::replace(
-            &mut self.telemetry,
-            TelemetryThread::new(&self.env, &self.fs, &mut self.database, region).await?,
-        );
+        let host_config = build_v2_host_config(&self.env, &self.fs, &mut self.database, region).await?;
+        let old_telemetry = std::mem::replace(&mut self.telemetry, TelemetryThread::new(host_config).await?);
 
         old_telemetry.finish().await?;
         Ok(())

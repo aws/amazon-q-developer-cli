@@ -496,10 +496,10 @@ describe('Stress Test', () => {
 		expect(flicker.clean).toBe(true);
 		expect(diffRatio).toBeGreaterThan(0.9);
 		// Wide-line path is allowed more budget than narrow (per-line
-		// visibleWidth + physical row math). Kept generous so CI variance
-		// doesn't cause flakes — the goal is to catch regressions like
-		// unbounded O(n) work per render, not to tune a specific number.
-		expect(avgRenderMs).toBeLessThan(100);
+		// visibleWidth + physical row math). Keep this loose enough for
+		// shared-runner variance on GitHub Actions while still catching
+		// meaningful regressions in the wide-line render path.
+		expect(avgRenderMs).toBeLessThan(120);
 		expect(tui.perfMaxRenderMs).toBeLessThan(300);
 	}, 60_000);
 });

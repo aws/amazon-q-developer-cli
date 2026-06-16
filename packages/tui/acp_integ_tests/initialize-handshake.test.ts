@@ -27,6 +27,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 describe('ACP initialize handshake', () => {
   let tc: AcpTestCase | null = null;
@@ -56,10 +57,7 @@ describe('ACP initialize handshake', () => {
 
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     }));
 
     // `session/set_config_option` fires for autopilot inside try/catch in

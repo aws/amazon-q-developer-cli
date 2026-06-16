@@ -7,7 +7,11 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type { ToolInfo, InitError } from '../../stores/app-store.js';
+import type {
+  ToolInfo,
+  ToolStatus,
+  InitError,
+} from '../../stores/app-store.js';
 import { visibleWidth, truncateToWidth } from '../../utils/text-width.js';
 import { webToolsGovernanceMessage } from './toolsPanelMessages.js';
 
@@ -44,7 +48,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   const warning = getColor('warning');
   const error = getColor('error');
 
-  const statusLabels: Record<ToolInfo['status'], string> = useMemo(
+  const statusLabels: Record<ToolStatus, string> = useMemo(
     () => ({
       allowed: `${!allowIcons ? '' : glyphs.dotFilled} allowed`,
       'requires-approval': `${!allowIcons ? '' : glyphs.dotLoading} approval required`,
@@ -52,6 +56,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     }),
     [glyphs, allowIcons]
   );
+
+  // KAS exposes tags with no per-tool status; hide the Status column entirely
+  // when no row carries a status (the Rust engine always sets one).
+  const showStatus = tools.some((t) => t.status !== undefined);
 
   const maxVisible = Math.max(termHeight - 9, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -92,10 +100,10 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     0
   );
   const sourceCol = Math.max(maxSourceLen, 10) + GAP;
-  const statusCol = 20 + GAP;
+  const statusCol = showStatus ? 20 + GAP : 0;
   const descCol = Math.max(termWidth - nameCol - sourceCol - statusCol - 2, 10);
 
-  const statusColor = (status: ToolInfo['status']) => {
+  const statusColor = (status: ToolStatus) => {
     switch (status) {
       case 'allowed':
         return success;
@@ -106,29 +114,36 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     }
   };
   const sourceColor = (source: string) =>
-    source === 'built-in' ? brand : info;
+    source === 'built-in' || source === 'builtin' ? brand : info;
 
   const columns = [
     { label: 'Name', width: nameCol },
     { label: 'Source', width: sourceCol },
-    { label: 'Status', width: statusCol },
+    ...(showStatus ? [{ label: 'Status', width: statusCol }] : []),
     { label: 'Description' },
   ];
 
   const rows: Row[] = useMemo(
     () =>
       visible.map((tool) => {
-        const st = tool.status ?? 'requires-approval';
-        return [
+        const cells: Row = [
           { text: tool.name, color: primary },
           { text: tool.source, color: sourceColor(tool.source) },
-          { text: statusLabels[st], color: statusColor(st) },
-          { text: shortDescription(tool.description, descCol), color: dim },
         ];
+        if (showStatus) {
+          const st = tool.status ?? 'requires-approval';
+          cells.push({ text: statusLabels[st], color: statusColor(st) });
+        }
+        cells.push({
+          text: shortDescription(tool.description, descCol),
+          color: dim,
+        });
+        return cells;
       }),
     [
       visible,
       descCol,
+      showStatus,
       primary,
       dim,
       brand,
@@ -150,9 +165,14 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
     ? `${!allowIcons ? '' : `${glyphs.warning} `}${governanceMessage}`
     : undefined;
 
+  // The Rust engine lists individual tools (with status); KAS lists tags
+  // (no status). Reflect that in the title noun.
+  const noun = showStatus ? 'tool' : 'tag';
+  const title = `/tools · ${tools.length} ${noun}${tools.length === 1 ? '' : 's'}`;
+
   return (
     <Panel
-      title={`/tools · ${tools.length} tool${tools.length === 1 ? '' : 's'}`}
+      title={title}
       onClose={onClose}
       searchable={true}
       onSearchChange={handleSearchChange}

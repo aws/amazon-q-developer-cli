@@ -17,6 +17,10 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../src/constants/agents';
 
 interface SetConfigOptionParams {
   sessionId: string;
@@ -51,9 +55,9 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-1',
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
-          { id: 'vibe', name: 'Default' },
+          { id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
           { id: 'kiro_planner', name: 'Planner' },
         ],
       },
@@ -92,8 +96,10 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-2',
       modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
+        currentModeId: KAS_DEFAULT_AGENT_ID,
+        availableModes: [
+          { id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
+        ],
       },
     }));
 

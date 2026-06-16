@@ -111,6 +111,12 @@ export interface CommandContext {
   ) => void;
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /**
+   * Read-only snapshot of the cached session tool listing at the moment the
+   * context was built. Populated by KAS via `_kiro/tools/didChange`; used by
+   * the KAS `/tools` handler to open the panel without clearing the cache.
+   */
+  toolsList: readonly ToolInfo[];
   /** Show/hide goal panel */
   setShowGoalPanel: (show: boolean) => void;
   setGoalStatus: (

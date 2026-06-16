@@ -147,6 +147,7 @@ zip.workspace = true
 kiro-telemetry.workspace = true
 kiro-telemetry-host.workspace = true
 kiro-telemetry-legacy.workspace = true
+kiro-telemetry-observer.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

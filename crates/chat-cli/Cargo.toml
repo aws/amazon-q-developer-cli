@@ -17,8 +17,8 @@ workspace = true
 
 [features]
 default = ["voice", "legacy_codewhisperer_sink", "legacy_toolkit_sink"]
-legacy_codewhisperer_sink = []
-legacy_toolkit_sink = []
+legacy_codewhisperer_sink = ["chat_cli_v2/legacy_codewhisperer_sink"]
+legacy_toolkit_sink = ["chat_cli_v2/legacy_toolkit_sink"]
 voice = ["dep:voice", "chat_cli_v2/voice"]
 wayland = ["arboard/wayland-data-control"]
 
@@ -140,6 +140,7 @@ zip.workspace = true
 rmcp.workspace = true
 chat-cli-ui.workspace = true
 kiro-telemetry.workspace = true
+kiro-telemetry-host.workspace = true
 kiro-telemetry-legacy.workspace = true
 voice = { workspace = true, optional = true }
 serde_yaml.workspace = true

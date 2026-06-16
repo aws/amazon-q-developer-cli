@@ -334,13 +334,13 @@ pub struct ChatArgs {
     /// Use the legacy harness
     #[arg(long, visible_alias = "classic", conflicts_with = "tui")]
     pub legacy_ui: bool,
-    /// Agent engine to use: "v1", "v2" (default), or "kas"
+    /// Agent engine to use: "v1", "v2" (default), or "v3"
     #[arg(long, value_name = "ENGINE")]
     pub agent_engine: Option<AgentEngine>,
-    /// Use the KAS agent engine (shorthand for --agent-engine=kas)
+    /// Launch the next generation Kiro agent
     #[arg(long, conflicts_with_all = ["legacy_ui", "agent_engine"])]
     pub v3: bool,
-    /// Mode to use with KAS agent: "vibe" (default) or "spec"
+    /// Mode to use with the V3 agent: "default" or "spec"
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
     /// Internal subcommands (`_ export-session`, `_ import-session`)
@@ -358,13 +358,13 @@ impl ChatArgs {
     ///
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
-    pub fn resolve_agent_engine(&self, os: &Os, rollout: &crate::rollout::Rollout) -> Result<AgentEngine> {
+    pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
         let engine = if self.v3 {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
             engine
         } else if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine) {
-            if val.eq_ignore_ascii_case("kas") {
+            if val.eq_ignore_ascii_case("v3") || val.eq_ignore_ascii_case("kas") {
                 AgentEngine::Kas
             } else if val.eq_ignore_ascii_case("v1") {
                 AgentEngine::V1
@@ -380,8 +380,9 @@ impl ChatArgs {
         // Validate: --legacy-ui conflicts with non-V1 engines
         if self.legacy_ui && engine != AgentEngine::V1 {
             bail!(
-                "Conflicting options: --legacy-ui cannot be used with --agent-engine={engine}. \
-                 Use --agent-engine=v1 or remove --legacy-ui."
+                "Conflicting options: --legacy-ui cannot be used with --agent-engine={}. \
+                 Use --agent-engine=v1 or remove --legacy-ui.",
+                engine.user_label()
             );
         }
 
@@ -393,9 +394,6 @@ impl ChatArgs {
             );
         }
 
-        // Gate KAS (the `--v3` engine) behind the `kas` rollout feature.
-        validate_engine_availability(engine, rollout.is_enabled(crate::rollout::Feature::Kas))?;
-
         Ok(engine)
     }
 
@@ -404,7 +402,12 @@ impl ChatArgs {
     /// When `--agent-engine` is not explicitly set, the default is determined by:
     /// - Non-interactive: V1
     /// - Interactive: check `--tui`/`--legacy-ui` flags, `KIRO_CHAT_UI` env var, `chat.ui` setting,
-    ///   then default to V2.
+    ///   then default to the new-TUI engine.
+    ///
+    /// The new-TUI engine is KAS (V3) when the `kas` rollout feature is active
+    /// for this user, otherwise V2. Explicit engine selection (`--v3`,
+    /// `--agent-engine`, `chat.agentEngine`) is resolved earlier and is
+    /// unaffected.
     fn default_engine(&self, os: &Os) -> AgentEngine {
         if self.no_interactive {
             return AgentEngine::V1;
@@ -415,8 +418,10 @@ impl ChatArgs {
             return AgentEngine::V1;
         }
 
+        let tui_engine = default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas));
+
         if self.tui {
-            return AgentEngine::V2;
+            return tui_engine;
         }
         if self.legacy_ui {
             return AgentEngine::V1;
@@ -424,7 +429,7 @@ impl ChatArgs {
 
         if let Ok(val) = std::env::var(crate::util::consts::env_var::KIRO_CHAT_UI) {
             if val.eq_ignore_ascii_case("tui") {
-                return AgentEngine::V2;
+                return tui_engine;
             } else {
                 return AgentEngine::V1;
             }
@@ -432,13 +437,13 @@ impl ChatArgs {
 
         if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
             if val.eq_ignore_ascii_case("tui") {
-                return AgentEngine::V2;
+                return tui_engine;
             } else {
                 return AgentEngine::V1;
             }
         }
 
-        AgentEngine::V2
+        tui_engine
     }
 
     /// Resolve the non-interactive input from `--input` or stdin.
@@ -677,6 +682,29 @@ impl ChatArgs {
 
             agents
         };
+
+        // Ensure mandatory MCP server tools are always visible and allowed
+        let mandatory_mcp_names: Vec<String> = std::env::var("ASBX_KIRO_MANDATORY_MCPS")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|n| n.trim().to_string())
+                    .filter(|n| !n.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !mandatory_mcp_names.is_empty()
+            && let Some(agent) = agents.get_active_mut()
+        {
+            for name in &mandatory_mcp_names {
+                let tool_pattern = format!("@{}/*", name);
+                if !agent.tools.contains(&tool_pattern) {
+                    agent.tools.push(tool_pattern.clone());
+                }
+                agent.allowed_tools.insert(tool_pattern);
+            }
+        }
 
         // Fetch registry data for ToolManager if in registry mode
         let registry_data = if mcp_enabled && mcp_registry_url.is_some() {
@@ -2406,6 +2434,14 @@ impl ChatSession {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
         if self.interactive {
+            // Display terminal banner if set (e.g., by sandbox launcher).
+            // This is unconditional — not gated by ChatGreetingEnabled.
+            if let Ok(banner) = std::env::var("ASBX_KIRO_TERMINAL_BANNER")
+                && !banner.is_empty()
+            {
+                execute!(self.stderr, style::Print(&banner), style::Print("\n"))?;
+            }
+
             if os
                 .database
                 .settings
@@ -5837,16 +5873,12 @@ async fn save_agent_config(
     Ok(())
 }
 
-/// Returns an error if the resolved engine is not available to this user.
-///
-/// KAS (the `--v3` engine) is gated behind the `kas` rollout feature. When the
-/// feature is not enabled for the current user, requesting it via any path
-/// (`--v3`, `--agent-engine=kas`, or the `chat.agentEngine` setting) is rejected.
-fn validate_engine_availability(engine: AgentEngine, kas_enabled: bool) -> Result<()> {
-    if engine == AgentEngine::Kas && !kas_enabled {
-        bail!("V3 is currently not supported for your system");
-    }
-    Ok(())
+/// Resolve the default "new-TUI" engine. When the `kas` rollout feature is
+/// active for this user the new-TUI default is KAS (V3); otherwise V2.
+/// Explicit engine selection (`--v3`, `--agent-engine`, `chat.agentEngine`) is
+/// resolved earlier in [`ChatArgs::resolve_agent_engine`] and is unaffected.
+fn default_tui_engine(kas_default: bool) -> AgentEngine {
+    if kas_default { AgentEngine::Kas } else { AgentEngine::V2 }
 }
 
 #[cfg(test)]
@@ -5857,23 +5889,13 @@ mod tests {
     use crate::cli::agent::Agent;
 
     #[test]
-    fn test_kas_blocked_when_not_enabled() {
-        let err = validate_engine_availability(AgentEngine::Kas, false).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("V3 is currently not supported for your system")
-        );
+    fn default_tui_engine_is_kas_when_rollout_active() {
+        assert_eq!(default_tui_engine(true), AgentEngine::Kas);
     }
 
     #[test]
-    fn test_kas_allowed_when_enabled() {
-        assert!(validate_engine_availability(AgentEngine::Kas, true).is_ok());
-    }
-
-    #[test]
-    fn test_non_kas_engines_always_available() {
-        assert!(validate_engine_availability(AgentEngine::V2, false).is_ok());
-        assert!(validate_engine_availability(AgentEngine::V1, false).is_ok());
+    fn default_tui_engine_is_v2_when_rollout_inactive() {
+        assert_eq!(default_tui_engine(false), AgentEngine::V2);
     }
 
     async fn get_test_agents(os: &Os) -> Agents {

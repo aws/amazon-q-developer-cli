@@ -189,6 +189,13 @@ pub mod env_var {
         /// child spawn and by shell-outs that need to invoke chat_cli.
         KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
 
+        /// Comma-separated MCP server names (matching entries in mcp.json) that must
+        /// always be loaded and their tools always available, regardless of agent profile.
+        ASBX_KIRO_MANDATORY_MCPS = "ASBX_KIRO_MANDATORY_MCPS",
+
+        /// Text displayed to the user at session start (display-only, never reaches model).
+        ASBX_KIRO_TERMINAL_BANNER = "ASBX_KIRO_TERMINAL_BANNER",
+
         /// The session ID of the current Kiro chat session.
         ///
         /// Set on the process environment at session creation so that all child

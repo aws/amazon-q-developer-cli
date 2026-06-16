@@ -185,6 +185,10 @@ pub struct AgentSettings {
     /// When true, MCP tools are hidden until activated via search_tools.
     #[serde(default)]
     pub tool_search_enabled: bool,
+    /// MCP server names that must always have their tools immediately available
+    /// (bypass tool_search deferral). Set via ASBX_KIRO_MANDATORY_MCPS env var.
+    #[serde(default)]
+    pub mandatory_mcp_names: Vec<String>,
     /// Only activate tool search when MCP tool specs exceed this percentage of context window.
     #[typeshare(skip)]
     #[serde(default = "default_tool_search_min_pct")]
@@ -220,6 +224,7 @@ impl Default for AgentSettings {
             web_tools_enabled: true,
             mcp_enabled: true,
             tool_search_enabled: false,
+            mandatory_mcp_names: Vec::new(),
             tool_search_min_pct: default_tool_search_min_pct(),
             tool_search_min_tokens: default_tool_search_min_tokens(),
         }

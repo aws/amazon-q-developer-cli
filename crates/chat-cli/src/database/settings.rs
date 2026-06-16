@@ -183,7 +183,7 @@ pub enum Setting {
         props(scope = "global_only")
     )]
     ChatKeybindingsQuit,
-    #[strum(message = "Default agent engine: 'rust' or 'kas' (string)")]
+    #[strum(message = "Default agent engine: 'v1', 'v2' (default), or 'v3' (string)")]
     ChatAgentEngine,
     #[strum(
         message = "Enable animated spinners and progress indicators (boolean)",

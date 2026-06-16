@@ -11,6 +11,7 @@
 import type { CommandContext } from './types.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
+import { KAS_DEFAULT_AGENT_NAME } from '../constants/agents.js';
 import {
   enrichTurnsWithPreview,
   type TurnMessage,
@@ -418,7 +419,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.kiro.setMode(previousAgent.name).catch(() => {
           if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
           ctx.showAlert(
-            `Failed to restore agent "${previousAgent.name}", reverted to default`,
+            `Failed to restore agent "${previousAgent.name}", reverted to ${KAS_DEFAULT_AGENT_NAME}`,
             'error',
             5000
           );
