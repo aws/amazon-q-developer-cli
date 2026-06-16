@@ -24,6 +24,7 @@ import {
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { createAppStore } from '../app-store';
 import { Kiro } from '../../kiro';
 
@@ -271,7 +272,7 @@ describe('Survey flow integration', () => {
     expect(store.getState().currentAgent?.name).toBe('kiro_planner');
 
     // Switch to execution agent (simulates handoff)
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
 
     // queueMicrotask defers the trigger
     await new Promise((r) => setTimeout(r, 10));
@@ -284,7 +285,7 @@ describe('Survey flow integration', () => {
 
   it('plan survey does NOT trigger when switching TO kiro_planner', async () => {
     const store = makeStore();
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
 
     // Switch to planner — should NOT trigger
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
@@ -304,7 +305,7 @@ describe('Survey flow integration', () => {
     expect(store.getState().surveyPrompt).not.toBeNull();
 
     // Now switch away from planner — should NOT overwrite
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
 
     // Still showing the session feedback prompt, not the plan one
@@ -334,7 +335,7 @@ describe('Survey flow integration', () => {
     const store = makeStore();
     // Trigger and open plan survey
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
     store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
 
@@ -404,7 +405,7 @@ describe('Survey flow integration', () => {
     const store = makeStore();
     // Trigger and open plan survey, then submit
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
     store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
     store.getState().submitSurvey({ plan_quality: 'Very well' });
@@ -462,7 +463,7 @@ describe('Survey flow integration', () => {
     const store = makeStore();
     // Show plan-quality prompt via planner handoff
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
     expect(store.getState().surveyPrompt?.survey.id).toBe('plan-quality');
 
@@ -487,7 +488,7 @@ describe('Survey flow integration', () => {
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
 
     // Step 2: Planner hands off to executor → plan survey triggers
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
 
     // Verify plan survey is showing
@@ -534,7 +535,7 @@ describe('Survey flow integration', () => {
 
     // Planner handoff → plan survey shown
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
     expect(store.getState().planSurveyShownThisSession).toBe(true);
 
@@ -567,7 +568,7 @@ describe('Survey flow integration', () => {
 
     // Plan trigger conditions: planner handoff to non-planner agent.
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
 
     // Plan survey IS shown despite session having just been submitted.
@@ -579,7 +580,7 @@ describe('Survey flow integration', () => {
 
     // Trigger and submit plan survey.
     store.getState().setCurrentAgent({ name: 'kiro_planner' });
-    store.getState().setCurrentAgent({ name: 'kiro_default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
     await new Promise((r) => setTimeout(r, 10));
     expect(store.getState().surveyPrompt?.survey.id).toBe('plan-quality');
     store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
@@ -608,7 +609,7 @@ describe('Survey flow integration', () => {
       // Session 1: trigger and submit plan.
       const store1 = makeStore();
       store1.getState().setCurrentAgent({ name: 'kiro_planner' });
-      store1.getState().setCurrentAgent({ name: 'kiro_default' });
+      store1.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
       await new Promise((r) => setTimeout(r, 10));
       expect(store1.getState().surveyPrompt?.survey.id).toBe('plan-quality');
       store1.getState().openSurveyPanel(store1.getState().surveyPrompt!.survey);
@@ -622,7 +623,7 @@ describe('Survey flow integration', () => {
 
       // Try to trigger plan via planner handoff — blocked by 90d cooldown.
       store2.getState().setCurrentAgent({ name: 'kiro_planner' });
-      store2.getState().setCurrentAgent({ name: 'kiro_default' });
+      store2.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
       await new Promise((r) => setTimeout(r, 10));
       expect(store2.getState().planSurveyShownThisSession).toBe(false);
       expect(store2.getState().surveyPrompt).toBeNull();

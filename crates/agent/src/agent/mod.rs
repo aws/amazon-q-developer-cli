@@ -3096,6 +3096,7 @@ impl Agent {
             tool_search_active,
             tool_names.into_iter().collect(),
             &self.tool_search_activated,
+            &self.settings.mandatory_mcp_names,
         );
         let sanitized_specs = sanitize_tool_specs(
             tool_names.into_iter().collect(),

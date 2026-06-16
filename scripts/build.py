@@ -350,7 +350,19 @@ def build_chat_bin(
     # minimal containers and headless environments.
     voice_unsupported = any(t.startswith(("x86_64-unknown-linux", "aarch64-unknown-linux")) for t in targets)
     if voice_unsupported:
-        args = [cargo_cmd_name(), "build", "--locked", "--package", package, "--no-default-features"]
+        # --no-default-features drops voice (and the other default features), so the
+        # legacy CodeWhisperer/Kibana and Toolkit telemetry sinks must be re-enabled
+        # explicitly to keep telemetry flowing on these targets.
+        args = [
+            cargo_cmd_name(),
+            "build",
+            "--locked",
+            "--package",
+            package,
+            "--no-default-features",
+            "--features",
+            "legacy_codewhisperer_sink,legacy_toolkit_sink",
+        ]
     else:
         args = [cargo_cmd_name(), "build", "--locked", "--package", package]
 

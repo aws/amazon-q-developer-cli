@@ -11,6 +11,10 @@ import {
 } from 'bun:test';
 import { EventEmitter } from 'events';
 import { AgentEventType, ContentType } from '../types/agent-events';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../constants/agents';
 
 // --- Mock child_process ---
 function createMockStream() {
@@ -241,6 +245,22 @@ afterAll(() => {
 // @ts-expect-error — bun-specific query-string import
 const { KasAcpClient, resolveFeedbackUrl, browserOpenCommand } =
   await import('../acp-client?kas-test');
+
+function defaultMode(overrides: Record<string, unknown> = {}) {
+  return {
+    id: KAS_DEFAULT_AGENT_ID,
+    name: KAS_DEFAULT_AGENT_NAME,
+    ...overrides,
+  };
+}
+
+function defaultModeOption(overrides: Record<string, unknown> = {}) {
+  return {
+    value: KAS_DEFAULT_AGENT_ID,
+    name: KAS_DEFAULT_AGENT_NAME,
+    ...overrides,
+  };
+}
 
 function freshMocks() {
   mockSpawn.mockClear();
@@ -481,7 +501,7 @@ describe('KasAcpClient', () => {
 
   it('newSession() prefers initialAgent over KIRO_MODE env var', async () => {
     const prev = process.env.KIRO_MODE;
-    process.env.KIRO_MODE = 'vibe';
+    process.env.KIRO_MODE = KAS_DEFAULT_AGENT_ID;
     try {
       const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
       await client.newSession();
@@ -537,6 +557,22 @@ describe('KasAcpClient', () => {
     await client.loadSession('second-session');
     expect(mockSessionUpdateDispose).toHaveBeenCalledTimes(1);
     expect(mockPermissionRequestDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('loadSession() returns the normalized agent id for wire vibe (not the raw wire id)', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'kas-loaded',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [{ id: 'vibe', name: 'Vibe' }],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    const result = await client.loadSession('existing-session');
+
+    expect(result.currentAgent?.name).toBe('default');
   });
 
   it('prompt() throws when no session is active', async () => {
@@ -745,11 +781,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -780,21 +816,25 @@ describe('KasAcpClient', () => {
       agents: Array<{ name: string; description: string }>;
       current: string;
     };
-    expect(data.current).toBe('kiro_default');
+    expect(data.current).toBe(KAS_DEFAULT_AGENT_ID);
     expect(data.agents.map((a) => a.name)).toEqual([
-      'kiro_default',
+      KAS_DEFAULT_AGENT_ID,
       'research',
     ]);
   });
 
-  it('captureModes translates wire vibe → kiro_default and rewrites the display name to "Kiro"', async () => {
+  it('captureModes keeps the advertised Default display name', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
-          { id: 'vibe', name: 'Vibe', description: 'General coding' },
+          {
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
+            description: 'General coding',
+          },
           { id: 'spec', name: 'Spec', description: 'Spec mode' },
         ],
       },
@@ -803,15 +843,15 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     await client.newSession();
     const state = (client as any).modesState;
-    expect(state.currentModeId).toBe('kiro_default');
+    expect(state.currentModeId).toBe(KAS_DEFAULT_AGENT_ID);
     expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
-      'kiro_default',
+      KAS_DEFAULT_AGENT_ID,
       'spec',
     ]);
     const def = state.availableModes.find(
-      (m: { id: string }) => m.id === 'kiro_default'
+      (m: { id: string }) => m.id === KAS_DEFAULT_AGENT_ID
     );
-    expect(def.name).toBe('Kiro');
+    expect(def.name).toBe(KAS_DEFAULT_AGENT_NAME);
     // Spec is unaffected — its display name passes through.
     const spec = state.availableModes.find(
       (m: { id: string }) => m.id === 'spec'
@@ -819,14 +859,100 @@ describe('KasAcpClient', () => {
     expect(spec.name).toBe('Spec');
   });
 
-  it('agent swap of kiro_default sends "vibe" on the wire (toKasModeId)', async () => {
+  it('captureModes allows only the built-in agents (default/plan/spec) and keeps user agents', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: KAS_DEFAULT_AGENT_ID,
+        availableModes: [
+          {
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
+            description: 'General coding',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'plan',
+            name: 'Plan',
+            description: 'Interactive planner',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'spec',
+            name: 'Spec',
+            description: 'Spec mode',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'bug-fix',
+            name: 'Bug Fix',
+            description: 'Bug fixing workflow',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'autonomous',
+            name: 'Autonomous',
+            description: 'Self-directed execution',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'quick-spec',
+            name: 'Quick Spec',
+            description: 'Fast spec-generation workflow',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            id: 'my-agent',
+            name: 'My Agent',
+            description: 'Custom workspace agent',
+            _meta: { kiro: { source: 'workspace' } },
+          },
+        ],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.newSession();
+    const state = (client as any).modesState;
+    // Only the three allowlisted built-ins survive (default, plan →
+    // kiro_planner, spec), plus the user/workspace agent. Any other bundled
+    // mode (bug-fix, autonomous, quick-spec) is hidden.
+    expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
+      KAS_DEFAULT_AGENT_ID,
+      'kiro_planner',
+      'spec',
+      'my-agent',
+    ]);
+  });
+
+  it('agent swap of default sends the KAS wire id "vibe"', async () => {
+    // KAS still expects `vibe` on the wire for the default mode; the TUI-side
+    // canonical id is `default` but `toKasModeId` translates on the way out.
+    // Remove this translation (and update this test) once KAS accepts `default`.
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'kas-session-1',
+      models: null,
+      modes: {
+        currentModeId: KAS_DEFAULT_AGENT_ID,
+        availableModes: [
+          {
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
+            description: 'General coding',
+          },
+          { id: 'spec', name: 'Spec', description: 'Spec mode' },
+        ],
+      },
+    } as any);
+
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
     mockKiroSetSessionConfigOption.mockClear();
     await client.executeCommand({
       command: 'agent',
-      args: { agentName: 'kiro_default' },
+      args: { agentName: KAS_DEFAULT_AGENT_ID },
     } as any);
     const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
       ([req]: any[]) => req?.configId === 'mode'
@@ -1114,11 +1240,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1156,8 +1282,8 @@ describe('KasAcpClient', () => {
     );
     expect(result.options).toEqual([
       {
-        value: 'kiro_default',
-        label: 'Kiro',
+        value: KAS_DEFAULT_AGENT_ID,
+        label: KAS_DEFAULT_AGENT_NAME,
         description: '[active] General coding assistance',
         group: 'Bundled',
       },
@@ -1194,11 +1320,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1217,7 +1343,7 @@ describe('KasAcpClient', () => {
 
     const result = await client.getCommandOptions('/agent', '');
     const values = result.options.map((o: any) => o.value);
-    expect(values).toEqual(['kiro_default']);
+    expect(values).toEqual([KAS_DEFAULT_AGENT_ID]);
     expect(values).not.toContain('semantic_reviewer');
   });
 
@@ -1226,11 +1352,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1249,7 +1375,7 @@ describe('KasAcpClient', () => {
 
     const result = await client.getCommandOptions('/agent', '');
     const values = result.options.map((o: any) => o.value);
-    expect(values).toEqual(['kiro_default']);
+    expect(values).toEqual([KAS_DEFAULT_AGENT_ID]);
     expect(values).not.toContain('autonomous');
   });
 
@@ -1258,11 +1384,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1298,11 +1424,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: 'General coding assistance',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1331,11 +1457,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1373,11 +1499,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1412,7 +1538,7 @@ describe('KasAcpClient', () => {
       .find((e: any) => e.type === AgentEventType.AgentSwitched);
     expect(switched).toBeDefined();
     expect(switched.agentName).toBe('spec');
-    expect(switched.previousAgentName).toBe('kiro_default');
+    expect(switched.previousAgentName).toBe(KAS_DEFAULT_AGENT_ID);
     expect(switched.welcomeMessage).toBe('Spec mode: ready to plan');
   });
 
@@ -1421,11 +1547,11 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             description: '',
             _meta: { kiro: { source: 'bundled' } },
           },
@@ -1443,7 +1569,7 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       update: {
         sessionUpdate: 'current_mode_update',
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
       },
     });
 
@@ -1860,6 +1986,50 @@ describe('KasAcpClient', () => {
     });
 
     expect(events.find((e) => e.type === 'model_update')).toBeUndefined();
+  });
+
+  it('available_commands_update hides built-in steering commands (quick-spec, architecture-selection, bug-fix) but keeps user steering', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'quick-spec',
+            description: 'Spec-generation workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'architecture-selection',
+            description: 'Architecture selection workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'bug-fix',
+            description: 'Bug fixing workflow',
+            _meta: { kiro: { type: 'steering', scope: 'global' } },
+          },
+          {
+            name: 'my-steering',
+            description: 'A user steering doc',
+            _meta: { kiro: { type: 'steering', scope: 'workspace' } },
+          },
+        ],
+      },
+    });
+
+    const steeringEvent = events.find(
+      (e) => e.type === AgentEventType.SteeringUpdate
+    );
+    expect(steeringEvent).toBeDefined();
+    const names = steeringEvent.steering.map((s: { name: string }) => s.name);
+    expect(names).toEqual(['my-steering']);
   });
 
   // ── /effort command ──
@@ -2639,7 +2809,7 @@ describe('KasAcpClient', () => {
         availableCommands: [
           { name: 'help', description: 'Show help', _meta: {} },
           {
-            name: 'vibe',
+            name: KAS_DEFAULT_AGENT_ID,
             description: 'General coding',
             _meta: { kiro: { type: 'agent' } },
           },
@@ -2710,9 +2880,13 @@ describe('KasAcpClient', () => {
       sessionId: 'kas-session-1',
       models: null,
       modes: {
-        currentModeId: 'vibe',
+        currentModeId: KAS_DEFAULT_AGENT_ID,
         availableModes: [
-          { id: 'vibe', name: 'Vibe', description: 'General coding' },
+          {
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
+            description: 'General coding',
+          },
           { id: 'research', name: 'Research', description: 'Deep research' },
         ],
       },
@@ -2731,7 +2905,11 @@ describe('KasAcpClient', () => {
         sessionUpdate: 'available_commands_update',
         availableCommands: [
           { name: 'help', description: 'Show help', _meta: {} },
-          { name: 'vibe', description: 'General coding', _meta: {} },
+          {
+            name: KAS_DEFAULT_AGENT_ID,
+            description: 'General coding',
+            _meta: {},
+          },
           { name: 'research', description: 'Deep research', _meta: {} },
         ],
       },
@@ -3086,8 +3264,10 @@ describe('KasAcpClient', () => {
           id: 'mode',
           name: 'Mode',
           category: 'mode',
-          currentValue: 'vibe',
-          options: [{ value: 'vibe', name: 'Default' }],
+          currentValue: 'default',
+          options: [
+            { value: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
+          ],
         },
       ],
     } as any);
@@ -3190,8 +3370,10 @@ describe('KasAcpClient', () => {
             id: 'mode',
             name: 'Mode',
             category: 'mode',
-            currentValue: 'vibe',
-            options: [{ value: 'vibe', name: 'Default' }],
+            currentValue: 'default',
+            options: [
+              { value: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
+            ],
           },
         ],
       },
@@ -3381,7 +3563,7 @@ describe('KasAcpClient — getCommandOptions', () => {
               id: 'coder',
               name: 'Coder',
               description: 'Write code',
-              _meta: { kiro: { source: 'bundled' } },
+              _meta: { kiro: { source: 'workspace' } },
             },
             { id: 'planner', name: 'Planner', description: 'Plan', _meta: {} },
           ],
@@ -3890,9 +4072,11 @@ describe('MCP OAuth flow', () => {
       kc._extNotifHandlers['_kiro/customAgent/not_found']({
         sessionId: 'test',
         requestedAgent: 'missing-agent',
-        fallbackAgent: 'vibe',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       });
-      expect((client as any).modesState.currentModeId).toBe('kiro_default');
+      expect((client as any).modesState.currentModeId).toBe(
+        KAS_DEFAULT_AGENT_ID
+      );
     });
   });
 
@@ -4942,5 +5126,73 @@ describe('MCP OAuth flow', () => {
       expect(finishedEvent).toBeDefined();
       expect(finishedEvent.result.status).toBe('error');
     });
+  });
+});
+
+describe('KasAcpClient — _kiro/tools/didChange', () => {
+  it('subscribes on initialize and broadcasts ToolsUpdate with parsed tools', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    const handler = (client as any).kiroClient._extNotifHandlers[
+      '_kiro/tools/didChange'
+    ];
+    expect(typeof handler).toBe('function');
+
+    handler({
+      sessionId: client.sessionId,
+      tags: [
+        { source: 'builtin', tag: 'read', description: 'read tools' },
+        { source: 'mcp', tag: '@git/status', description: 'git status' },
+      ],
+    });
+
+    const toolsEvent = events.find(
+      (e) => e.type === AgentEventType.ToolsUpdate
+    );
+    expect(toolsEvent).toBeDefined();
+    expect(toolsEvent.tools).toEqual([
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: '@git/status', source: 'mcp', description: 'git status' },
+    ]);
+    // No per-tool status from KAS.
+    expect(toolsEvent.tools.every((t: any) => t.status === undefined)).toBe(
+      true
+    );
+  });
+
+  it('ignores notifications for a different session', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    const handler = (client as any).kiroClient._extNotifHandlers[
+      '_kiro/tools/didChange'
+    ];
+    handler({
+      sessionId: 'some-other-session',
+      tags: [{ source: 'builtin', tag: 'read', description: 'read tools' }],
+    });
+
+    expect(
+      events.find((e) => e.type === AgentEventType.ToolsUpdate)
+    ).toBeUndefined();
+  });
+
+  it('disposes the tools subscription on close', async () => {
+    mockExtNotificationDispose.mockClear();
+    const client = new KasAcpClient();
+    await client.initialize();
+    client.close();
+    // Hooks + tools + other ext subscriptions all dispose; at least the
+    // tools one must have fired.
+    expect(mockExtNotificationDispose).toHaveBeenCalled();
   });
 });

@@ -107,6 +107,32 @@ describe('settings subcommands registry', () => {
     });
   });
 
+  describe('KAS gating', () => {
+    it('omits interrupt behaviour from the terminal submenu on KAS', () => {
+      const { handleCtx, ctx, capturedOptions } = makeHandleCtx();
+      ctx.agentEngine = 'kas';
+      findSettingsSubcommand('terminal')!.handle(handleCtx);
+      const values = capturedOptions().map((o) => o.value);
+      expect(values).toContain('terminal:newlines');
+      expect(values).not.toContain('terminal:interrupt');
+    });
+
+    it('still lists interrupt behaviour on v2', () => {
+      const { handleCtx, capturedOptions } = makeHandleCtx();
+      findSettingsSubcommand('terminal')!.handle(handleCtx);
+      const values = capturedOptions().map((o) => o.value);
+      expect(values).toContain('terminal:interrupt');
+    });
+
+    it('guards the direct terminal:interrupt entry on KAS', () => {
+      const { handleCtx, ctx } = makeHandleCtx();
+      ctx.agentEngine = 'kas';
+      findSettingsSubcommand('terminal:interrupt')!.handle(handleCtx);
+      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
+      expect(ctx._spies.showAlert!).toHaveBeenCalled();
+    });
+  });
+
   describe('persistence', () => {
     it('selecting steer persists chat.defaultInterruptBehavior=steer', () => {
       const { handleCtx } = makeHandleCtx();

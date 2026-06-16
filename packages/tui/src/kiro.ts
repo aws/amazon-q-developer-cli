@@ -18,7 +18,7 @@ import type {
   ChatSlashCommandTelemetryPayload,
 } from './types/session-client';
 import type { ModeChangedNotification } from './types/generated/chat-cli';
-import type { ContextBreakdownData } from './stores/app-store';
+import type { ContextBreakdownData, ToolInfo } from './stores/app-store';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -51,6 +51,7 @@ export class Kiro {
     }>
   ) => void;
   private kasCommandsHandler?: (commands: KasCommand[]) => void;
+  private toolsHandler?: (tools: ToolInfo[]) => void;
   private promptsHandler?: (prompts: PromptEntry[]) => void;
   private skillsHandler?: (skills: SkillEntry[]) => void;
   private steeringHandler?: (steering: SteeringEntry[]) => void;
@@ -108,6 +109,10 @@ export class Kiro {
 
   onKasCommandsDiscovered(handler: (commands: KasCommand[]) => void): void {
     this.kasCommandsHandler = handler;
+  }
+
+  onToolsUpdate(handler: (tools: ToolInfo[]) => void): void {
+    this.toolsHandler = handler;
   }
 
   onPromptsUpdate(handler: (prompts: PromptEntry[]) => void): void {
@@ -417,6 +422,9 @@ export class Kiro {
           this.kasCommandsHandler
         ) {
           this.kasCommandsHandler(event.commands);
+        }
+        if (event.type === AgentEventType.ToolsUpdate && this.toolsHandler) {
+          this.toolsHandler(event.tools);
         }
         if (
           event.type === AgentEventType.PromptsUpdate &&

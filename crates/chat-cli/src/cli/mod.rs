@@ -146,11 +146,11 @@ pub enum RootSubcommand {
         /// Trust only this set of tools
         #[arg(long, value_delimiter = ',', value_name = "TOOL_NAMES")]
         trust_tools: Option<Vec<String>>,
-        /// Agent engine to use: "v1", "v2" (default), or "kas"
+        /// Agent engine to use: "v1", "v2" (default), or "v3"
         #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::V2)]
         agent_engine: chat::AgentEngine,
     },
-    /// Start a persistent KAS agent server over WebSocket
+    /// Start a persistent V3 agent server over WebSocket
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8082")]
@@ -343,7 +343,7 @@ impl RootSubcommand {
 
                     let tui_available =
                         crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                    let engine = args.resolve_agent_engine(os, crate::rollout::rollout())?;
+                    let engine = args.resolve_agent_engine(os)?;
                     match engine {
                         chat::AgentEngine::V1 => args.execute(os).await,
                         chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
@@ -513,7 +513,7 @@ impl RootSubcommand {
 
                 let tui_available =
                     crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                let engine = args.resolve_agent_engine(os, crate::rollout::rollout())?;
+                let engine = args.resolve_agent_engine(os)?;
                 let is_tui_supported = crate::util::system_info::is_tui_supported();
                 tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
                 match engine {
@@ -704,7 +704,7 @@ fn read_kas_version(server_js: &Path) -> String {
 /// MUST implement the same callback themselves.
 pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio::process::Child> {
     if !crate::util::platform::can_run_kas() {
-        bail!("The Kiro agent engine (KAS) is not supported on this system.");
+        bail!("V3 is currently not supported on this system.");
     }
 
     let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
@@ -915,7 +915,7 @@ pub struct Cli {
     /// Launch chat in legacy UI mode
     #[arg(long, visible_alias = "classic")]
     legacy_ui: bool,
-    /// Launch chat with the KAS agent engine (shorthand for --agent-engine=kas)
+    /// Launch the next generation Kiro agent
     #[arg(long, conflicts_with = "legacy_ui")]
     v3: bool,
     /// Resume the most recent conversation from this directory
@@ -1569,32 +1569,9 @@ mod test {
 
     mod resolve_agent_engine {
         use super::*;
-        use crate::rollout::Rollout;
 
         async fn make_os() -> crate::os::Os {
             crate::os::Os::new().await.unwrap()
-        }
-
-        /// Helper to make an internal user [Rollout].
-        fn internal_rollout() -> Rollout {
-            Rollout::new_for_test(true, true)
-        }
-
-        #[tokio::test]
-        async fn v3_blocked_when_rollout_disabled() {
-            // External user: the `kas` feature is internal-only, so resolving to
-            // KAS via --v3 is rejected with a hard error.
-            let os = make_os().await;
-            let rollout = Rollout::new_for_test(false, true);
-            let args = ChatArgs {
-                v3: true,
-                ..Default::default()
-            };
-            let err = args.resolve_agent_engine(&os, &rollout).unwrap_err();
-            assert!(
-                err.to_string()
-                    .contains("V3 is currently not supported for your system")
-            );
         }
 
         #[tokio::test]
@@ -1602,10 +1579,7 @@ mod test {
             // In test environments stdin is piped, so default is V1
             let os = make_os().await;
             let args = ChatArgs::default();
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V1
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
         }
 
         #[tokio::test]
@@ -1615,10 +1589,7 @@ mod test {
                 no_interactive: true,
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V1
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
         }
 
         #[tokio::test]
@@ -1628,10 +1599,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::Kas),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::Kas
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
         }
 
         #[tokio::test]
@@ -1641,10 +1609,7 @@ mod test {
                 v3: true,
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::Kas
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
         }
 
         #[tokio::test]
@@ -1656,10 +1621,7 @@ mod test {
                 input: Some("hello".to_string()),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::Kas
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
         }
 
@@ -1671,10 +1633,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::V2),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V2
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
         }
 
         #[tokio::test]
@@ -1684,10 +1643,7 @@ mod test {
                 legacy_ui: true,
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V1
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
         }
 
         #[tokio::test]
@@ -1698,10 +1654,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::V2),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V2
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
         }
 
         #[tokio::test]
@@ -1712,7 +1665,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::Kas),
                 ..Default::default()
             };
-            assert!(args.resolve_agent_engine(&os, &internal_rollout()).is_err());
+            assert!(args.resolve_agent_engine(&os).is_err());
         }
 
         #[tokio::test]
@@ -1723,7 +1676,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::V2),
                 ..Default::default()
             };
-            assert!(args.resolve_agent_engine(&os, &internal_rollout()).is_err());
+            assert!(args.resolve_agent_engine(&os).is_err());
         }
 
         #[tokio::test]
@@ -1734,7 +1687,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::V1),
                 ..Default::default()
             };
-            assert!(args.resolve_agent_engine(&os, &internal_rollout()).is_err());
+            assert!(args.resolve_agent_engine(&os).is_err());
         }
 
         #[tokio::test]
@@ -1745,10 +1698,7 @@ mod test {
                 agent_engine: Some(chat::AgentEngine::V1),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V1
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
         }
 
         #[tokio::test]
@@ -1759,10 +1709,7 @@ mod test {
                 input: Some("hello".to_string()),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V1
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
         }
 
@@ -1775,10 +1722,7 @@ mod test {
                 input: Some("test prompt".to_string()),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::Kas
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "test prompt");
         }
 
@@ -1803,10 +1747,7 @@ mod test {
                 input: Some("query".to_string()),
                 ..Default::default()
             };
-            assert_eq!(
-                args.resolve_agent_engine(&os, &internal_rollout()).unwrap(),
-                chat::AgentEngine::V2
-            );
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "query");
         }
     }

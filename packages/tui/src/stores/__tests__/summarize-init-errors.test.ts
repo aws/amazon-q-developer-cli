@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { summarizeInitErrors, type InitError } from '../app-store.js';
 
 describe('summarizeInitErrors', () => {
@@ -20,11 +21,11 @@ describe('summarizeInitErrors', () => {
       {
         type: 'agent_not_found',
         requestedAgent: 'foo',
-        fallbackAgent: 'kiro_default',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       },
     ];
     expect(summarizeInitErrors(errors)).toBe(
-      'agent "foo" not found, using "kiro_default"'
+      `agent "foo" not found, using "${KAS_DEFAULT_AGENT_ID}"`
     );
   });
 
@@ -97,12 +98,12 @@ describe('summarizeInitErrors', () => {
       {
         type: 'agent_not_found',
         requestedAgent: 'foo',
-        fallbackAgent: 'kiro_default',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       },
       { type: 'mcp_failure', serverName: 'srv', error: 'err' },
     ];
     expect(summarizeInitErrors(errors)).toBe(
-      'agent "foo" not found, using "kiro_default"; 1 MCP failure — see /mcp'
+      `agent "foo" not found, using "${KAS_DEFAULT_AGENT_ID}"; 1 MCP failure — see /mcp`
     );
   });
 
@@ -122,13 +123,13 @@ describe('summarizeInitErrors', () => {
       {
         type: 'agent_not_found',
         requestedAgent: 'missing',
-        fallbackAgent: 'kiro_default',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       },
       { type: 'agent_config_error', path: '/broken.json', error: 'e' },
       { type: 'mcp_failure', serverName: 'srv', error: 'e' },
     ];
     expect(summarizeInitErrors(errors)).toBe(
-      'agent "missing" not found, using "kiro_default"; invalid agent config: broken.json; 1 MCP failure — see /mcp'
+      `agent "missing" not found, using "${KAS_DEFAULT_AGENT_ID}"; invalid agent config: broken.json; 1 MCP failure — see /mcp`
     );
   });
 

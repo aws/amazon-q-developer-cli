@@ -103,11 +103,19 @@ export interface McpServerInfo {
   enabled?: boolean;
 }
 
+export type ToolStatus = 'allowed' | 'requires-approval' | 'denied';
+
 export interface ToolInfo {
   name: string;
   source: string;
   description: string;
-  status: 'allowed' | 'requires-approval' | 'denied';
+  /**
+   * Permission status. Present for the Rust (V2) engine, which exposes
+   * per-tool trust. Absent for KAS, whose `_kiro/tools/didChange` listing is a
+   * tag-based capability view with no per-tool status — the panel hides the
+   * Status column when every row omits it.
+   */
+  status?: ToolStatus;
 }
 
 export interface RequestStat {
@@ -837,6 +845,8 @@ interface BaseAppActions {
     registryServers?: McpServerInfo[]
   ) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
+  /** Update the cached session tool listing without toggling the panel. */
+  setToolsList: (tools: ToolInfo[]) => void;
   setShowGoalPanel: (show: boolean) => void;
   setShowStatsPanel: (
     show: boolean,
@@ -1757,6 +1767,7 @@ function buildCommandContext(
     setShowRewindExplorer: state.setShowRewindExplorer,
     setShowMcpPanel: state.setShowMcpPanel,
     setShowToolsPanel: state.setShowToolsPanel,
+    toolsList: state.toolsList,
     setShowGoalPanel: state.setShowGoalPanel,
     setGoalStatus: state.setGoalStatus,
     setShowStatsPanel: state.setShowStatsPanel,
@@ -2138,13 +2149,17 @@ export const createAppStore = (props: AppStoreProps) => {
     _activeStreamHandler: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
-    // Dual-mode interrupt behavior
-    activeInterruptMode: parseInterruptMode(
-      readStringSetting(
-        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-        DEFAULT_INTERRUPT_MODE
-      )
-    ),
+    // Dual-mode interrupt behavior. KAS ("v3") has no backend steering yet,
+    // so it is pinned to QUEUE; v2 honors the persisted setting.
+    activeInterruptMode:
+      agentEngine === 'kas'
+        ? InterruptMode.QUEUE
+        : parseInterruptMode(
+            readStringSetting(
+              Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+              DEFAULT_INTERRUPT_MODE
+            )
+          ),
 
     // Task management
     tasks: [],
@@ -3445,6 +3460,13 @@ export const createAppStore = (props: AppStoreProps) => {
             // re-render with the new data automatically.
             set({ hooksList: event.hooks });
             break;
+          case AgentEventType.ToolsUpdate:
+            // Cache the latest session tool listing (pushed by KAS via
+            // _kiro/tools/didChange). If the /tools panel is open it
+            // re-renders automatically; otherwise the handler reads this
+            // cache when opening the panel.
+            set({ toolsList: event.tools });
+            break;
         }
       };
 
@@ -3498,6 +3520,34 @@ export const createAppStore = (props: AppStoreProps) => {
       const dispose = () => {
         if (disposed) return;
         disposed = true;
+        // Finalize an in-flight reasoning block. When a turn is abandoned
+        // (cancel/error) while the model is still reasoning — before any
+        // answer text or tool call ended the thinking phase — `thinkingMs`
+        // was never stamped. Stamp it now so <ThinkingDisplay> closes the
+        // block ("Thought for Ns") instead of rendering a permanently-live
+        // "Thinking..." header in scrollback.
+        if (thinkingStart !== null && thinkingMs === null) {
+          thinkingMs = Date.now() - thinkingStart;
+          const finalizedThinkingMs = thinkingMs;
+          set((state) => {
+            const idx = state.messages.findLastIndex(
+              (msg) => msg.role === MessageRole.Model
+            );
+            if (idx === -1) return {};
+            const msg = state.messages[idx];
+            if (
+              msg &&
+              msg.role === MessageRole.Model &&
+              msg.thinking &&
+              msg.thinkingMs == null
+            ) {
+              const messages = [...state.messages];
+              messages[idx] = { ...msg, thinkingMs: finalizedThinkingMs };
+              return { messages };
+            }
+            return {};
+          });
+        }
         if (pendingContentFlush) {
           clearTimeout(pendingContentFlush);
           pendingContentFlush = null;
@@ -4586,7 +4636,13 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     clearSteerMessage: () => {
-      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
+      const {
+        kiro,
+        sessionId,
+        pendingSteerContent,
+        isInitialized,
+        agentEngine,
+      } = get();
       if (pendingSteerContent == null) return;
 
       // Optimistically clear locally. The backend `SteeringCleared`
@@ -4600,7 +4656,8 @@ export const createAppStore = (props: AppStoreProps) => {
       // (see index.tsx init path). A session-live queue still needs the
       // explicit `_session/steer/clear` round-trip to keep the backend in
       // sync.
-      const hasBackendQueue = isInitialized && sessionId != null;
+      const hasBackendQueue =
+        isInitialized && sessionId != null && agentEngine !== 'kas';
       if (hasBackendQueue) {
         kiro.clearSteering(sessionId).catch((err) => {
           logger.error('clearSteerMessage failed', err);
@@ -5201,8 +5258,20 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    setShowToolsPanel: (show, tools = []) => {
-      set({ showToolsPanel: show, toolsList: tools });
+    setShowToolsPanel: (show, tools) => {
+      // Only replace the cached list when tools are explicitly provided.
+      // Closing the panel (no `tools` arg) must NOT wipe `toolsList`: under
+      // KAS the cache is the source of truth between `_kiro/tools/didChange`
+      // pushes, and KAS won't re-push an unchanged set (diff-before-emit), so
+      // clearing here would leave `/tools` empty until the set next changes.
+      set(
+        tools !== undefined
+          ? { showToolsPanel: show, toolsList: tools }
+          : { showToolsPanel: show }
+      );
+    },
+    setToolsList: (tools) => {
+      set({ toolsList: tools });
     },
     setShowGoalPanel: (show) => {
       set({ showGoalPanel: show });
@@ -5612,6 +5681,14 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Dual-mode interrupt behavior toggle
     toggleInterruptMode: () => {
+      if (get().agentEngine === 'kas') {
+        get().showTransientAlert({
+          message: 'Steering is currently unsupported for v3',
+          status: 'info',
+          autoHideMs: 3000,
+        });
+        return;
+      }
       const switchingToQueue =
         get().activeInterruptMode === InterruptMode.STEER;
       const newMode = switchingToQueue
@@ -5628,6 +5705,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setActiveInterruptMode: (mode: InterruptMode) => {
+      if (get().agentEngine === 'kas') return;
       set({ activeInterruptMode: mode });
     },
 

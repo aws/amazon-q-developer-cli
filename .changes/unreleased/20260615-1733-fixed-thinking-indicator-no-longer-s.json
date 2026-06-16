@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "\"Thinking...\" indicator no longer stays stuck permanently after cancelling mid-reasoning with Ctrl+C"
+}

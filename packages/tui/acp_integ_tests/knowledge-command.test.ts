@@ -10,6 +10,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 describe('/knowledge command', () => {
   let tc: AcpTestCase | null = null;
@@ -54,10 +55,7 @@ describe('/knowledge command', () => {
 
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     }));
 
     tc.mock.on('session/set_config_option', () => ({}));

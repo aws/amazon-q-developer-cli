@@ -276,11 +276,13 @@ pub fn should_activate_tool_search(
 
 /// Filter tool names based on tool_search_enabled flag and activated tools set.
 /// When disabled, returns all tools unchanged (backward compat).
-/// When enabled, keeps all builtins and agents, but filters MCP tools to only activated ones.
+/// When enabled, keeps all builtins and agents, but filters MCP tools to only activated ones
+/// or those belonging to mandatory servers.
 pub fn filter_tool_names(
     tool_search_enabled: bool,
     all_tool_names: Vec<CanonicalToolName>,
     activated_tools: &HashSet<CanonicalToolName>,
+    mandatory_server_names: &[String],
 ) -> Vec<CanonicalToolName> {
     if !tool_search_enabled {
         return all_tool_names;
@@ -290,7 +292,9 @@ pub fn filter_tool_names(
         .filter(|name| match name {
             CanonicalToolName::BuiltIn(_) => true,
             CanonicalToolName::Agent { .. } => true,
-            CanonicalToolName::Mcp { .. } => activated_tools.contains(name),
+            CanonicalToolName::Mcp { server_name, .. } => {
+                mandatory_server_names.contains(server_name) || activated_tools.contains(name)
+            },
         })
         .collect()
 }
@@ -412,7 +416,7 @@ mod tests {
             CanonicalToolName::from_mcp_parts("server".into(), "mcp_tool".into()),
         ];
         let activated = HashSet::new();
-        let result = filter_tool_names(false, all.clone(), &activated);
+        let result = filter_tool_names(false, all.clone(), &activated, &[]);
         assert_eq!(result.len(), 2);
     }
 
@@ -425,7 +429,7 @@ mod tests {
             CanonicalToolName::from_mcp_parts("server".into(), "mcp_tool".into()),
         ];
         let activated = HashSet::new();
-        let result = filter_tool_names(true, all, &activated);
+        let result = filter_tool_names(true, all, &activated, &[]);
         assert_eq!(result.len(), 2);
         assert!(result.iter().any(|n| n.tool_name() == "read"));
         assert!(result.iter().any(|n| n.tool_name() == "tool_search"));
@@ -441,7 +445,7 @@ mod tests {
         ];
         let mut activated = HashSet::new();
         activated.insert(CanonicalToolName::from_mcp_parts("server".into(), "active_tool".into()));
-        let result = filter_tool_names(true, all, &activated);
+        let result = filter_tool_names(true, all, &activated, &[]);
         assert_eq!(result.len(), 2);
         assert!(result.iter().any(|n| n.tool_name() == "active_tool"));
         assert!(!result.iter().any(|n| n.tool_name() == "inactive_tool"));
@@ -516,6 +520,26 @@ mod tests {
         // pct threshold set but no context window — pct check skipped, tokens not set
         let s = make_settings(true, Some(5.0), None);
         assert!(!should_activate_tool_search(&s, 60_000, None));
+    }
+
+    #[test]
+    fn filter_tool_names_mandatory_server_bypasses_deferral() {
+        use crate::agent::tools::BuiltInToolName;
+        let all = vec![
+            CanonicalToolName::BuiltIn(BuiltInToolName::FsRead),
+            CanonicalToolName::from_mcp_parts("mandatory_srv".into(), "must_have".into()),
+            CanonicalToolName::from_mcp_parts("optional_srv".into(), "deferred_tool".into()),
+        ];
+        let activated = HashSet::new(); // nothing activated via tool_search
+        let mandatory = vec!["mandatory_srv".to_string()];
+        let result = filter_tool_names(true, all, &activated, &mandatory);
+        // Built-in always passes, mandatory server tool passes, optional server deferred
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&CanonicalToolName::BuiltIn(BuiltInToolName::FsRead)));
+        assert!(result.contains(&CanonicalToolName::from_mcp_parts(
+            "mandatory_srv".into(),
+            "must_have".into()
+        )));
     }
 
     #[test]

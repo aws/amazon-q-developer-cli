@@ -222,11 +222,19 @@ impl Clone for TelemetryThread {
 }
 
 impl TelemetryThread {
+    /// Construct a V1 `TelemetryThread`.
+    ///
+    /// V1 keeps its own private internal pipeline (it has a distinct
+    /// `core::Event` shape from the host crate); PR I rewires V1 to consume
+    /// `HostConfig.legacy_sink`. For PR D the `_host_config` parameter is
+    /// metadata-only — V1 still derives govcloud partition and constructs its
+    /// local `TelemetryClient` from `(env, fs, database, region)`.
     pub async fn new(
         env: &Env,
         fs: &Fs,
         database: &mut Database,
         region: Option<&str>,
+        _host_config: kiro_telemetry_host::HostConfig,
     ) -> Result<Self, TelemetryError> {
         // govcloud does not have the infrastructure to support toolkit telemetry
         let govcloud_partition = region.and_then(govcloud_partition);
@@ -661,6 +669,49 @@ impl TelemetryThread {
 
         Ok(self.tx.send(telemetry_event)?)
     }
+}
+
+/// Build a host-level [`kiro_telemetry_host::HostConfig`] for V1.
+///
+/// In PR D this is metadata-only (V1's local `TelemetryClient` still owns the
+/// real send paths); PR I rewires V1 to actually consume the host
+/// `legacy_sink`.
+pub async fn build_v1_host_config(
+    env: &Env,
+    database: &mut Database,
+    region: Option<&str>,
+) -> Result<kiro_telemetry_host::HostConfig, TelemetryError> {
+    let telemetry_enabled = !cfg!(test)
+        && !crate::util::env_var::is_telemetry_disabled()
+        && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
+
+    let client_id = if telemetry_enabled {
+        match crate::util::env_var::get_telemetry_client_id(env) {
+            Ok(id) => Uuid::from_str(&id)
+                .unwrap_or_else(|_| database.get_client_id().ok().flatten().unwrap_or_else(Uuid::new_v4)),
+            Err(_) => database.get_client_id().ok().flatten().unwrap_or_else(Uuid::new_v4),
+        }
+    } else {
+        uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    };
+
+    Ok(kiro_telemetry_host::HostConfig {
+        client_id,
+        telemetry_enabled,
+        otel_config: kiro_telemetry::TelemetryConfig::new(
+            telemetry_enabled,
+            kiro_telemetry::OtelMode::Off,
+            None,
+            std::env::temp_dir().join("kiro-cli"),
+        ),
+        legacy_sink: None,
+        otel_translator: None,
+        metadata_enricher: None,
+        client_application: get_cli_client_application().map(|s| metric::ClientApplication::from_name(Some(&s))),
+        host_role: kiro_telemetry_host::HostRole::UserCli,
+        govcloud_partition: region.and_then(govcloud_partition),
+        consent_settings_path: None,
+    })
 }
 
 async fn set_event_metadata(database: &Database, event: &mut Event) {
@@ -1361,14 +1412,11 @@ mod test {
     #[tokio::test]
     async fn cloned_telemetry_thread_can_finish_before_original() {
         let mut database = Database::new_default().await.unwrap();
-        let thread = TelemetryThread::new(
-            &Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "0")]),
-            &Fs::new(),
-            &mut database,
-            None,
-        )
-        .await
-        .unwrap();
+        let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "0")]);
+        let host_config = build_v1_host_config(&env, &mut database, None).await.unwrap();
+        let thread = TelemetryThread::new(&env, &Fs::new(), &mut database, None, host_config)
+            .await
+            .unwrap();
         let clone = thread.clone();
 
         clone.finish().await.unwrap();
@@ -1393,7 +1441,9 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_send() {
         let mut database = Database::new_default().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database, None)
+        let env = Env::new();
+        let host_config = build_v1_host_config(&env, &mut database, None).await.unwrap();
+        let thread = TelemetryThread::new(&env, &Fs::new(), &mut database, None, host_config)
             .await
             .unwrap();
         thread.send_user_logged_in().ok();
@@ -1411,7 +1461,9 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_all_telemetry() {
         let mut database = Database::new_default().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database, None)
+        let env = Env::new();
+        let host_config = build_v1_host_config(&env, &mut database, None).await.unwrap();
+        let thread = TelemetryThread::new(&env, &Fs::new(), &mut database, None, host_config)
             .await
             .unwrap();
 

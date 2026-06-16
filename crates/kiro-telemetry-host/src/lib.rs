@@ -1,15 +1,26 @@
 //! kiro-telemetry-host: shared host for kiro-cli telemetry.
 //!
 //! This crate owns the cross-harness telemetry pieces (Event types,
-//! HostConfig, and eventually `TelemetryThread`) so they can be reused
-//! from V2, V3, kiro-bot, and other harnesses. Translation of [`Event`]
-//! into legacy CloudWatch/Toolkit datums or OTel records lives in the
-//! consumer crates.
+//! HostConfig, and `TelemetryThread`) so they can be reused from V2, V3,
+//! kiro-bot, and other harnesses. Translation of [`Event`] into legacy
+//! CloudWatch/Toolkit datums or OTel records lives in the consumer crates.
 
+pub mod config;
 pub mod event;
 pub mod install_method;
 pub mod reason;
+pub mod thread;
+pub mod tool_event;
 
+pub use config::{
+    EventEnricher,
+    HostConfig,
+    HostRole,
+    LegacySink,
+    OtelEventTranslator,
+    US_GOV_PARTITION,
+    govcloud_partition,
+};
 pub use event::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
@@ -33,3 +44,9 @@ pub use reason::{
     ReasonCode,
     get_error_reason,
 };
+pub use thread::{
+    TelemetryError,
+    TelemetrySender,
+    TelemetryThread,
+};
+pub use tool_event::ToolUseEventBuilder;

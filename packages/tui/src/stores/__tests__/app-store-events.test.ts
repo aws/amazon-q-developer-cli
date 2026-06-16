@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { AgentEventType, ContentType } from '../../types/agent-events';
 
 mock.module('../../kiro', () => ({
@@ -438,6 +439,58 @@ describe('Stream event handler — SessionError', () => {
   });
 });
 
+describe('Stream event handler — cancel mid-reasoning', () => {
+  it('finalizes thinkingMs on dispose when cancelled while still thinking', async () => {
+    // Reasoning streamed, but no answer text or tool call has ended the
+    // thinking phase yet — so thinkingMs is never computed on the message.
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.Thought,
+      id: 't-1',
+      content: { type: ContentType.Text, text: 'Reasoning about the task.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const beforeCancel = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model && m.thinking);
+    expect(beforeCancel).toBeDefined();
+    expect((beforeCancel as any).thinking).toBe('Reasoning about the task.');
+    expect((beforeCancel as any).thinkingMs).toBeUndefined();
+
+    // Cancel/error path: sendMessage disposes the handler on AbortError.
+    handler.dispose();
+
+    const afterCancel = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model && m.thinking);
+    expect(afterCancel).toBeDefined();
+    expect(typeof (afterCancel as any).thinkingMs).toBe('number');
+    expect((afterCancel as any).thinkingMs).toBeGreaterThan(0);
+  });
+
+  it('does not stamp thinkingMs when there was no in-flight reasoning', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.Content,
+      id: 'c-1',
+      content: { type: ContentType.Text, text: 'Plain answer, no thinking.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    handler.dispose();
+
+    const modelMsg = store
+      .getState()
+      .messages.find((m: any) => m.role === MessageRole.Model);
+    expect(modelMsg).toBeDefined();
+    expect((modelMsg as any).thinking).toBeUndefined();
+    expect((modelMsg as any).thinkingMs).toBeUndefined();
+  });
+});
+
 describe('Stream event handler — McpServerInitFailure', () => {
   it('adds to initErrors and shows alert', () => {
     const store = makeStore();
@@ -587,7 +640,7 @@ describe('Stream event handler — AgentNotFound', () => {
     handler({
       type: AgentEventType.AgentNotFound,
       requestedAgent: 'missing-agent',
-      fallbackAgent: 'default',
+      fallbackAgent: KAS_DEFAULT_AGENT_ID,
     });
     expect(store.getState().initErrors).toHaveLength(1);
     expect(store.getState().initErrors[0].type).toBe('agent_not_found');
@@ -1594,5 +1647,36 @@ describe('Stream event handler — thinkingMs', () => {
     expect(model).toBeDefined();
     expect(typeof (model as any).thinkingMs).toBe('number');
     expect((model as any).thinkingMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('Stream event handler — ToolsUpdate', () => {
+  it('populates toolsList from the event', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const tools = [
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: '@git/status', source: 'mcp', description: 'git status' },
+    ];
+    handler({ type: AgentEventType.ToolsUpdate, tools });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.getState().toolsList).toEqual(tools);
+  });
+
+  it('replaces the previous toolsList wholesale (no merge)', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolsUpdate,
+      tools: [{ name: 'read', source: 'builtin', description: 'a' }],
+    });
+    handler({
+      type: AgentEventType.ToolsUpdate,
+      tools: [{ name: 'write', source: 'builtin', description: 'b' }],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.getState().toolsList).toEqual([
+      { name: 'write', source: 'builtin', description: 'b' },
+    ]);
   });
 });

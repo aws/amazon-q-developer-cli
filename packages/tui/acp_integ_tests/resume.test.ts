@@ -41,6 +41,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 interface ScriptedBinary {
   binPath: string;
@@ -138,10 +139,7 @@ function setupHandshake(
     tracker.newCalls += 1;
     return {
       sessionId: newSessionId,
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     };
   });
   tc.mock.on<LoadSessionRequest, LoadSessionResponse>(
@@ -149,10 +147,7 @@ function setupHandshake(
     (params) => {
       tracker.loadCalls.push(params);
       return {
-        modes: {
-          currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Default' }],
-        },
+        modes: defaultKasModes(),
       };
     }
   );

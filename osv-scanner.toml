@@ -1,3 +1,2 @@
-[[IgnoredVulns]]
-id = "GHSA-5xrq-8626-4rwp"
-reason = "Vitest is a dev-only test runner dependency that is not bundled into the CLI runtime; upgrading to Vitest 4 requires a separate coverage-threshold migration."
+# Intentionally empty: keep the scanner config file present so the workflow's
+# --config flag remains valid, without carrying stale ignore entries.

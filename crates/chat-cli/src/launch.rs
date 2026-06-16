@@ -255,6 +255,18 @@ async fn launch_acp_interactive(
     }
     std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
     cmd.env("KIRO_FEED_FILE", &feed_path);
+
+    // Signal Amazon-internal authentication to the TUI so KAS-mode /feedback
+    // routes to Taskei instead of GitHub. Sourced from the auth token (same
+    // source as `whoami`), set on the child only — no global env mutation.
+    let is_amzn = matches!(
+        crate::auth::builder_id::BuilderIdToken::load(&os.database, None).await,
+        Ok(Some(token)) if token.is_amzn_user()
+    );
+    if is_amzn {
+        cmd.env("KIRO_INTERNAL", "1");
+    }
+
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }
@@ -283,7 +295,7 @@ async fn launch_acp_interactive(
     match agent_engine {
         AgentEngine::Kas => {
             if !crate::util::platform::can_run_kas() {
-                bail!("The Kiro agent engine (KAS) is not supported on this system.");
+                bail!("V3 is currently not supported on this system.");
             }
 
             // Resolve user identity for KAS telemetry (not needed for Rust engine)

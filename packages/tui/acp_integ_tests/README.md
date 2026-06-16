@@ -67,7 +67,7 @@ describe('my feature', () => {
     }));
     tc.mock.on('session/new', () => ({
       sessionId: 'test-1',
-      modes: { currentModeId: 'vibe', availableModes: [{ id: 'vibe' }] },
+      modes: defaultKasModes(),
     }));
 
     await tc.launch();

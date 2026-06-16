@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
+import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
 import { createAppStore } from '../stores/app-store';
@@ -551,6 +552,24 @@ describe('Kiro — handler registration and forwarding', () => {
     ]);
   });
 
+  it('onToolsUpdate receives tools update events from the global handler', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onToolsUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    const tools = [
+      { name: 'read', source: 'builtin', description: 'read tools' },
+      { name: '@git/status', source: 'mcp', description: 'git status' },
+    ];
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ToolsUpdate,
+        tools,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith(tools);
+  });
+
   it('onCompactionStatus receives compaction events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});
@@ -617,7 +636,7 @@ describe('Kiro — handler registration and forwarding', () => {
       mockOnUpdateHandler({
         type: AgentEventType.AgentNotFound,
         requestedAgent: 'missing',
-        fallbackAgent: 'default',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       } as AgentStreamEvent);
     }
     expect(handler).toHaveBeenCalled();

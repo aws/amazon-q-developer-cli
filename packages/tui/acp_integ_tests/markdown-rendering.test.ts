@@ -14,6 +14,7 @@ import type {
   PromptResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'markdown-rendering-session';
 
@@ -34,10 +35,7 @@ beforeAll(async () => {
   }));
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: SESSION_ID,
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
   tc.mock.on('session/set_config_option', () => ({}));
 

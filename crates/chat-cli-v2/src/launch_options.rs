@@ -11,6 +11,11 @@ pub enum AgentEngine {
     #[value(alias = "rust")]
     V2,
     V1,
+    // The next-generation agent engine. Surfaced to users as "v3"; "kas" is
+    // accepted as a backwards-compatible alias and remains the wire/storage
+    // identifier (see `Display`). Keep the value description out of `--help`
+    // by using a plain comment rather than a doc comment.
+    #[value(name = "v3", alias = "kas")]
     Kas,
 }
 
@@ -24,17 +29,33 @@ impl Display for AgentEngine {
     }
 }
 
+impl AgentEngine {
+    /// User-facing label for the engine. Mirrors the clap value names, so the
+    /// next-generation engine is presented as "v3" rather than its internal
+    /// "kas" identifier.
+    pub fn user_label(&self) -> &'static str {
+        match self {
+            Self::V1 => "v1",
+            Self::V2 => "v2",
+            Self::Kas => "v3",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum AgentMode {
+    // "vibe" is accepted as a backwards-compatible alias for the canonical
+    // "default" mode id (the wire identifier sent to the V3 agent).
     #[default]
-    Vibe,
+    #[value(alias = "vibe")]
+    Default,
     Spec,
 }
 
 impl Display for AgentMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Vibe => write!(f, "vibe"),
+            Self::Default => write!(f, "default"),
             Self::Spec => write!(f, "spec"),
         }
     }
@@ -57,7 +78,7 @@ pub enum Interactivity {
 pub struct LaunchOptions {
     /// Which agent engine to use: native Rust ACP or the KAS TypeScript agent.
     pub agent_engine: AgentEngine,
-    /// Optional initial mode for agents that support it (e.g. KAS vibe/spec).
+    /// Optional initial mode for agents that support it (e.g. KAS default/spec).
     pub mode: Option<AgentMode>,
     /// Whether to drive an interactive TUI or a non-interactive one-shot turn.
     pub interactivity: Interactivity,

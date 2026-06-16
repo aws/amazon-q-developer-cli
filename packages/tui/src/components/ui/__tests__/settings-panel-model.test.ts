@@ -227,4 +227,21 @@ describe('settings-panel-model', () => {
       expect(screenDescription({ type: 'history' })).toBeTruthy();
     });
   });
+
+  describe('KAS gating', () => {
+    it('omits the interrupt row from the terminal screen on KAS', () => {
+      const ids = buildRows({ type: 'terminal' }, defaultSnapshot, 'kas').map(
+        (r) => r.id
+      );
+      expect(ids).toContain('newlines');
+      expect(ids).not.toContain('interrupt');
+    });
+
+    it('keeps the interrupt row on v2', () => {
+      const ids = buildRows({ type: 'terminal' }, defaultSnapshot, 'v2').map(
+        (r) => r.id
+      );
+      expect(ids).toContain('interrupt');
+    });
+  });
 });

@@ -60,7 +60,9 @@ import type {
   HookInfo,
   McpServerInfo,
   ContextBreakdownData,
+  ToolInfo,
 } from './stores/app-store';
+import { parseToolsDidChange } from './utils/kas-tools';
 import type {
   KasContextShowResponse,
   KasContextMutationResponse,
@@ -69,6 +71,7 @@ import type {
 import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
+import { KAS_DEFAULT_AGENT_ID } from './constants/agents';
 import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
@@ -148,6 +151,16 @@ function extractKiroMetaFromEvent(
   return 'meta' in event && event.meta ? event.meta.kiro : undefined;
 }
 
+/**
+ * KAS policy capability identifiers, emitted on
+ * `_meta.kiro.consent.capability`. Source of truth: KAS
+ * `packages/kiro-agent/src/policy/capabilities.ts` (`BUILTIN`).
+ */
+const KAS_CAPABILITIES = {
+  /** Sub-agent spawn (e.g. `invoke_sub_agent`) — parent-session decision. */
+  SUBAGENT: 'subagent',
+} as const;
+
 const EXT_METHODS = {
   COMMANDS_AVAILABLE: 'kiro.dev/commands/available',
   COMMANDS_EXECUTE: 'kiro.dev/commands/execute',
@@ -195,77 +208,66 @@ type CachedModesState = {
 };
 
 /**
- * Agents (KAS modes) that should never surface in the `/agent` menu or any
- * agent listing, keyed by their KAS mode id.
+ * The only KAS *bundled* agents that may surface in the `/agent` menu or any
+ * derived agent listing, keyed by their `fromKasModeId`-normalized id.
  *
- * Each entry MUST carry a comment explaining why it is being removed so that
- * future maintainers know whether the exclusion is still warranted.
+ * This is an allowlist rather than a denylist: KAS ships a growing set of
+ * bundled modes (e.g. semantic_reviewer, autonomous, quick-spec, bug-fix),
+ * most of which are internal or non-conversational and should not be
+ * user-selectable. Allowlisting means any current or future bundled mode that
+ * isn't one of these three is hidden by default, so a newly added bundled
+ * mode can't leak into the picker.
  *
- * Note: ids are compared after `fromKasModeId` normalization, i.e. the same
- * form stored in `modesState.availableModes`. Denial is scoped to
- * bundled agents (see `isAgentDenied`) so a user/workspace config that
- * deliberately defines an agent under one of these ids is preserved.
+ * Entries (normalized ids):
+ *   - `KAS_DEFAULT_AGENT_ID`: the general coding agent, displayed with the
+ *     server-advertised `KAS_DEFAULT_AGENT_NAME`.
+ *   - `kiro_planner`: the interactive read-only planner (wire id `plan`).
+ *   - `spec`: the spec-driven workflow agent (wire id `spec`).
+ *
+ * Ids are compared after `fromKasModeId` normalization, i.e. the same form
+ * stored in `modesState.availableModes`. The allowlist is scoped to *bundled*
+ * agents only (see `isAgentHidden`); user/workspace-defined agents are always
+ * shown so a config the user opted into is never silently dropped.
  */
-const AGENT_DENYLIST: Record<string, string> = {
-  // The semantic reviewer is an internal review-only subagent invoked
-  // programmatically (e.g. by the autonomous planner's review loop). It is
-  // not a general-purpose conversational agent, so exposing it in the
-  // user-facing `/agent` picker is confusing and lets users switch into a
-  // mode that isn't meant to drive an interactive session. KAS advertises it
-  // under the wire mode id `semantic_reviewer`.
-  semantic_reviewer:
-    'Internal review-only subagent; not a user-selectable conversational agent.',
-
-  // The autonomous agent is a bundled KAS mode that drives long-running,
-  // self-directed execution rather than an interactive conversational
-  // session. Surfacing it in the user-facing `/agent` picker lets users
-  // switch into a mode that isn't meant for normal chat, so we hide it.
-  // KAS advertises it under the wire mode id `autonomous` (passed through
-  // unchanged by `fromKasModeId`).
-  autonomous:
-    'Bundled self-directed execution mode; not a user-selectable conversational agent.',
-};
+const BUILTIN_AGENT_ALLOWLIST = new Set<string>([
+  KAS_DEFAULT_AGENT_ID,
+  'kiro_planner',
+  'spec',
+]);
 
 /**
- * Builtin KAS modes hidden from the TUI agent picker and all derived
- * listings. Unlike AGENT_DENYLIST (which only targets *bundled* agents and
- * preserves user/workspace overrides), these are reserved builtin mode ids a
- * user cannot redefine, so they are filtered unconditionally.
- *
- * `quick-spec`: the heavyweight spec-generation workflow (formerly
- * `quick-plan`). The TUI surfaces interactive planning via the `plan` mode
- * (reached through /plan and Shift+Tab); quick-spec is not offered as a
- * directly selectable agent.
+ * Steering commands hidden from the TUI slash-command menu. KAS ships
+ * built-in steering documents that register inline slash commands to trigger
+ * bundled workflows (e.g. `/quick-spec`, `/architecture-selection`,
+ * `/bug-fix`). Product does not surface these bundled workflows in the TUI
+ * (their picker modes are hidden too — see BUILTIN_AGENT_ALLOWLIST), so the
+ * inline commands are dropped from autocomplete as well. User/workspace
+ * steering documents are unaffected.
  */
-const HIDDEN_BUILTIN_MODES = new Set<string>(['quick-spec']);
-
-/**
- * Steering commands hidden from the TUI slash-command menu. KAS ships a
- * builtin `quick-spec` steering document that registers `/quick-spec` to
- * trigger the spec-generation workflow inline. Product does not want
- * quick-spec exposed in the TUI (the picker mode is hidden too), so the
- * inline command is dropped from autocomplete as well.
- */
-const HIDDEN_STEERING_COMMANDS = new Set<string>(['quick-spec']);
+const HIDDEN_STEERING_COMMANDS = new Set<string>([
+  'quick-spec',
+  'architecture-selection',
+  'bug-fix',
+]);
 
 /**
  * Whether the given mode should be hidden from agent listings.
  *
- * The denylist targets KAS's *bundled* agents only. A user- or
- * workspace-defined agent that happens to share a denylisted id (e.g. a
- * workspace `semantic_reviewer` that overrides the bundled one) is
- * intentionally left visible — the user opted into defining it, so we must
- * not silently drop it. Modes with no source metadata are treated as
- * non-bundled and therefore never denied.
+ * The allowlist targets KAS's *bundled* agents only. A user- or
+ * workspace-defined agent is always shown — the user opted into defining it,
+ * so we must not silently drop it, even if it shares an id with a bundled
+ * mode. Modes with no source metadata are treated as non-bundled and are
+ * therefore always shown too. A bundled mode is hidden unless its normalized
+ * id is on `BUILTIN_AGENT_ALLOWLIST`.
  */
-function isAgentDenied(mode: {
+function isAgentHidden(mode: {
   id: string;
   _meta?: Record<string, unknown> | null;
 }): boolean {
-  if (!Object.prototype.hasOwnProperty.call(AGENT_DENYLIST, mode.id)) {
+  if (getModeSource(mode._meta) !== 'bundled') {
     return false;
   }
-  return getModeSource(mode._meta) === 'bundled';
+  return !BUILTIN_AGENT_ALLOWLIST.has(mode.id);
 }
 
 function extractCurrentAgent(
@@ -2215,14 +2217,15 @@ function toKasModeId(tuiModeId: string): string {
   // The TUI surfaces the planner under the internal name `kiro_planner`; the
   // agent's read-only planner builtin mode is wire id `plan`.
   if (tuiModeId === 'kiro_planner') return 'plan';
-  if (tuiModeId === 'kiro_default') return 'vibe';
+  // KAS still emits/accepts `vibe` as the wire id for the default mode.
+  if (tuiModeId === 'default') return 'vibe';
   return tuiModeId;
 }
 
 /** Map KAS wire mode names back to TUI-facing names. */
 function fromKasModeId(kasModeId: string): string {
   if (kasModeId === 'plan') return 'kiro_planner';
-  if (kasModeId === 'vibe') return 'kiro_default';
+  if (kasModeId === 'vibe') return 'default';
   return kasModeId;
 }
 
@@ -2262,7 +2265,7 @@ export class KasAcpClient extends BaseAcpClient {
    * With `options.initialAgent`: apply the given agent name as the KAS
    * `mode` config option on the first `newSession`.  Takes precedence
    * over the legacy `KIRO_MODE` env var (which is the propagation
-   * channel for the KAS-only `--mode=vibe|spec` Rust flag).
+   * channel for the KAS-only Rust mode flag).
    *
    * `agentProcess` is intentionally not a public option - mock callers
    * never need to inject a different one, and accepting it without a
@@ -2392,15 +2395,15 @@ export class KasAcpClient extends BaseAcpClient {
           return {
             ...m,
             id,
-            name: id === 'kiro_default' ? 'Kiro' : m.name,
+            name: m.name,
           };
         })
-        // Drop denylisted bundled agents (e.g. the bundled semantic
-        // reviewer) so they never appear in the /agent menu or any derived
-        // listing. User/workspace-defined agents are preserved — see
-        // AGENT_DENYLIST and isAgentDenied for the rationale.
-        // Also drop reserved builtin modes hidden from the TUI (quick-spec).
-        .filter((m) => !isAgentDenied(m) && !HIDDEN_BUILTIN_MODES.has(m.id)),
+        // Hide bundled agents that aren't on the built-in allowlist (e.g.
+        // semantic_reviewer, autonomous, quick-spec, bug-fix) so they never
+        // appear in the /agent menu or any derived listing. User/workspace
+        // agents are always preserved — see BUILTIN_AGENT_ALLOWLIST and
+        // isAgentHidden for the rationale.
+        .filter((m) => !isAgentHidden(m)),
       currentModeId: modes.currentModeId
         ? fromKasModeId(modes.currentModeId)
         : modes.currentModeId,
@@ -2439,6 +2442,10 @@ export class KasAcpClient extends BaseAcpClient {
   private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
   private hooksNotificationDisposable: { dispose: () => void } | null = null;
+  /** Cached session tool listing, updated via _kiro/tools/didChange. */
+  private cachedTools: ToolInfo[] = [];
+  /** Disposable for the tools notification subscription. */
+  private toolsNotificationDisposable: { dispose: () => void } | null = null;
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
@@ -2586,8 +2593,8 @@ export class KasAcpClient extends BaseAcpClient {
    *  so we cross-reference the modes cache by name to catch it. (Untyped
    *  custom-agent subagents can't be caught here — they're not modes — so
    *  the upstream type-based filter is the source of truth for those.)
-   *  The cache holds TUI-translated ids (e.g. `kiro_default`), but KAS
-   *  emits commands using the wire ids (e.g. `vibe`), so the filter set
+   *  The cache holds TUI-translated ids (e.g. `kiro_planner`), but KAS
+   *  emits commands using canonical ids (e.g. `plan`), so the filter set
    *  has to include both. */
   protected override convertAcpUpdateToEvent(
     update: AcpSessionUpdate,
@@ -2655,10 +2662,15 @@ export class KasAcpClient extends BaseAcpClient {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
     const subtaskId = this.toolCallToSubtask.get(toolCallId);
+    // Sub-agent spawn approvals are parent-session decisions — surface them
+    // in main view (V1 `use_subagent` UX), not the crew prompt.
+    const isSubagentSpawn =
+      (request as any)?._meta?.kiro?.consent?.capability ===
+      KAS_CAPABILITIES.SUBAGENT;
     const enriched = {
       ...request,
       toolCall: request.toolCall || { toolCallId },
-      ...(subtaskId && { sessionId: subtaskId }),
+      ...(subtaskId && !isSubagentSpawn && { sessionId: subtaskId }),
     };
     return this.handlePermissionRequest(enriched);
   }
@@ -2700,6 +2712,26 @@ export class KasAcpClient extends BaseAcpClient {
         this.broadcastStreamEvent({
           type: AgentEventType.HooksUpdate,
           hooks: this.cachedHooks,
+        });
+      }
+    );
+
+    // Subscribe to session tool-listing changes. KAS pushes the full current
+    // tag set (builtin category tags + per-tool MCP tags) on session
+    // new/load and whenever the resolved tool set changes (MCP connect/reset,
+    // powers activation, /agent swaps). We cache it and broadcast a
+    // ToolsUpdate event so the /tools panel reflects the latest set.
+    this.toolsNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/tools/didChange',
+      (params: Record<string, unknown>) => {
+        const sessionId = params.sessionId as string | undefined;
+        if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+          return;
+        }
+        this.cachedTools = parseToolsDidChange(params);
+        this.broadcastStreamEvent({
+          type: AgentEventType.ToolsUpdate,
+          tools: this.cachedTools,
         });
       }
     );
@@ -2776,6 +2808,8 @@ export class KasAcpClient extends BaseAcpClient {
   override close(): void {
     this.hooksNotificationDisposable?.dispose();
     this.hooksNotificationDisposable = null;
+    this.toolsNotificationDisposable?.dispose();
+    this.toolsNotificationDisposable = null;
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
     super.close();
@@ -2810,7 +2844,7 @@ export class KasAcpClient extends BaseAcpClient {
     // Initial agent (KAS "mode") resolution.  CLI `--agent` flag takes
     // precedence over the legacy `KIRO_MODE` env var so explicit user
     // input always wins; the env var remains a propagation channel for
-    // the KAS-only `--mode=vibe|spec` Rust flag.
+    // the KAS-only Rust mode flag.
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     if (initialMode) {
       try {
@@ -2919,10 +2953,7 @@ export class KasAcpClient extends BaseAcpClient {
     return {
       sessionId,
       currentModel: configModel ?? legacyModel,
-      // TODO: Remove cast once @kiro/client adds `modes` to LoadSessionResponse
-      currentAgent: extractCurrentAgent(
-        (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
-      ),
+      currentAgent: extractCurrentAgent(this.modesState),
     };
   }
 
