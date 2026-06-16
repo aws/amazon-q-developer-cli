@@ -17,8 +17,8 @@ workspace = true
 
 [features]
 default = ["voice", "legacy_codewhisperer_sink", "legacy_toolkit_sink"]
-legacy_codewhisperer_sink = []
-legacy_toolkit_sink = []
+legacy_codewhisperer_sink = ["chat_cli_v2/legacy_codewhisperer_sink"]
+legacy_toolkit_sink = ["chat_cli_v2/legacy_toolkit_sink"]
 voice = ["dep:voice", "chat_cli_v2/voice"]
 wayland = ["arboard/wayland-data-control"]
 
