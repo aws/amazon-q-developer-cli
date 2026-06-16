@@ -5506,6 +5506,22 @@ dependencies = [
 [[package]]
 name = "kiro-telemetry-collector"
 version = "0.0.0-dev"
+dependencies = [
+ "dirs 5.0.1",
+ "fs4",
+ "hex",
+ "libc",
+ "nix 0.31.3",
+ "reqwest 0.13.3",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "kiro-telemetry-host"

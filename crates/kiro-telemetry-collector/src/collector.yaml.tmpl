@@ -1,0 +1,84 @@
+# kiro-telemetry-collector configuration template.
+# Rendered by kiro_telemetry_collector::config::render().
+# Substitutions: {{UPSTREAM_ENDPOINT}}, {{QUEUE_DIR}}, {{CRASHES_DIR}}.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:14318
+  filelog:
+    include:
+      - {{CRASHES_DIR}}/*.json
+    start_at: beginning
+    operators:
+      - type: json_parser
+        parse_from: body
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 128
+    spike_limit_mib: 32
+
+  # Cardinality control: keep only schema-allowlisted attribute keys on metric
+  # data points. The allowlist below is the F-impl MVP set; the schema-YAML-
+  # driven version (driven by kiro-telemetry-schema) is a follow-up.
+  transform/cardinality:
+    metric_statements:
+      - context: datapoint
+        statements:
+          - keep_keys(attributes, ["host_role", "command", "exit_status", "error_code", "model", "host_os", "kiro_version", "telemetry_schema_version"])
+
+  # Drop datapoints whose error_code attribute looks high-cardinality
+  # (anything that doesn't match the snake_case identifier pattern).
+  filter/known_high_cardinality:
+    error_mode: ignore
+    metrics:
+      datapoint:
+        - 'attributes["error_code"] != nil and not IsMatch(attributes["error_code"], "^[a-z_]+$")'
+
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  otlphttp/upstream:
+    endpoint: {{UPSTREAM_ENDPOINT}}
+    tls:
+      insecure: false
+    sending_queue:
+      enabled: true
+      storage: file_storage/kiro
+      num_consumers: 10
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+extensions:
+  file_storage/kiro:
+    directory: {{QUEUE_DIR}}
+    timeout: 1s
+  health_check:
+    endpoint: 127.0.0.1:13133
+    path: /health
+
+service:
+  extensions: [file_storage/kiro, health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/cardinality, filter/known_high_cardinality, batch]
+      exporters: [otlphttp/upstream]
+    logs:
+      receivers: [otlp, filelog]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/upstream]
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: none
