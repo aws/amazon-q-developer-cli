@@ -1,3 +1,4 @@
+use crate::telemetry::TelemetryThreadV2Ext;
 use crate::theme::StyledText;
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;

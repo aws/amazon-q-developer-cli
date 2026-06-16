@@ -10,7 +10,16 @@ workspace = true
 
 [dependencies]
 eyre.workspace = true
+futures.workspace = true
 kiro-telemetry.workspace = true
 serde.workspace = true
 strum.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tracing.workspace = true
 typeshare.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

@@ -140,6 +140,7 @@ zip.workspace = true
 rmcp.workspace = true
 chat-cli-ui.workspace = true
 kiro-telemetry.workspace = true
+kiro-telemetry-host.workspace = true
 kiro-telemetry-legacy.workspace = true
 voice = { workspace = true, optional = true }
 serde_yaml.workspace = true
