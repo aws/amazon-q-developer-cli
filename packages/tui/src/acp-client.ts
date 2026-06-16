@@ -145,6 +145,16 @@ function extractKiroMetaFromEvent(
   return 'meta' in event && event.meta ? event.meta.kiro : undefined;
 }
 
+/**
+ * KAS policy capability identifiers, emitted on
+ * `_meta.kiro.consent.capability`. Source of truth: KAS
+ * `packages/kiro-agent/src/policy/capabilities.ts` (`BUILTIN`).
+ */
+const KAS_CAPABILITIES = {
+  /** Sub-agent spawn (e.g. `invoke_sub_agent`) — parent-session decision. */
+  SUBAGENT: 'subagent',
+} as const;
+
 const EXT_METHODS = {
   COMMANDS_AVAILABLE: 'kiro.dev/commands/available',
   COMMANDS_EXECUTE: 'kiro.dev/commands/execute',
@@ -2473,10 +2483,15 @@ export class KasAcpClient extends BaseAcpClient {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
     const subtaskId = this.toolCallToSubtask.get(toolCallId);
+    // Sub-agent spawn approvals are parent-session decisions — surface them
+    // in main view (V1 `use_subagent` UX), not the crew prompt.
+    const isSubagentSpawn =
+      (request as any)?._meta?.kiro?.consent?.capability ===
+      KAS_CAPABILITIES.SUBAGENT;
     const enriched = {
       ...request,
       toolCall: request.toolCall || { toolCallId },
-      ...(subtaskId && { sessionId: subtaskId }),
+      ...(subtaskId && !isSubagentSpawn && { sessionId: subtaskId }),
     };
     return this.handlePermissionRequest(enriched);
   }
