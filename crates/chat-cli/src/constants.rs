@@ -15,6 +15,7 @@ pub const PRODUCT_NAME: &str = "Kiro";
 pub const CLI_NAME: &str = "kiro-cli";
 
 /// Homebrew cask name for install detection
+#[allow(dead_code)]
 pub const BREW_CASK_NAME: &str = "kiro-cli";
 
 /// Client name for authentication purposes

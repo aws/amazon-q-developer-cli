@@ -2171,6 +2171,7 @@ dependencies = [
  "insta",
  "jsonschema 0.30.0",
  "kiro-telemetry",
+ "kiro-telemetry-host",
  "kiro-telemetry-legacy",
  "libc",
  "mimalloc",
@@ -2321,6 +2322,7 @@ dependencies = [
  "kiro-telemetry",
  "kiro-telemetry-host",
  "kiro-telemetry-legacy",
+ "kiro-telemetry-observer",
  "libc",
  "mimalloc",
  "mock-mcp-server",
@@ -5504,17 +5506,40 @@ dependencies = [
 [[package]]
 name = "kiro-telemetry-collector"
 version = "0.0.0-dev"
+dependencies = [
+ "dirs 5.0.1",
+ "fs4",
+ "hex",
+ "libc",
+ "nix 0.31.3",
+ "reqwest 0.13.3",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "kiro-telemetry-host"
 version = "0.0.0-dev"
 dependencies = [
+ "async-trait",
  "eyre",
+ "futures",
  "kiro-telemetry",
  "serde",
  "serde_json",
  "strum 0.27.2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
  "typeshare",
+ "uuid",
 ]
 
 [[package]]
@@ -5531,6 +5556,24 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "kiro-telemetry-observer"
+version = "0.0.0-dev"
+dependencies = [
+ "agent",
+ "async-trait",
+ "chrono",
+ "futures",
+ "kiro-telemetry",
+ "kiro-telemetry-host",
+ "kiro-telemetry-legacy",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore, MessageRole } from './app-store';
+import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { Kiro } from '../kiro';
 import { AgentEventType } from '../types/agent-events';
 
@@ -36,9 +37,11 @@ describe('Agent welcome message', () => {
   it('setCurrentAgent without welcomeMessage adds no message', () => {
     const store = createAppStore({ kiro: new Kiro() });
 
-    store.getState().setCurrentAgent({ name: 'default' });
+    store.getState().setCurrentAgent({ name: KAS_DEFAULT_AGENT_ID });
 
-    expect(store.getState().currentAgent).toEqual({ name: 'default' });
+    expect(store.getState().currentAgent).toEqual({
+      name: KAS_DEFAULT_AGENT_ID,
+    });
     expect(store.getState().messages).toHaveLength(0);
   });
 
@@ -66,10 +69,12 @@ describe('Agent welcome message', () => {
 
     handler({
       type: AgentEventType.AgentSwitched,
-      agentName: 'default',
+      agentName: KAS_DEFAULT_AGENT_ID,
     });
 
-    expect(store.getState().currentAgent).toEqual({ name: 'default' });
+    expect(store.getState().currentAgent).toEqual({
+      name: KAS_DEFAULT_AGENT_ID,
+    });
     expect(store.getState().messages).toHaveLength(0);
   });
 

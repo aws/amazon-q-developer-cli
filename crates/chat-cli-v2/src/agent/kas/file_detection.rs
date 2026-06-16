@@ -167,7 +167,7 @@ mod tests {
             "schemaVersion": "1.0.0",
             "id": "sess_abc",
             "title": "t",
-            "agentMode": "vibe",
+            "agentMode": "default",
             "workspacePaths": ["/tmp"],
             "createdAt": "2024-01-01T00:00:00Z",
             "lastModifiedAt": "2024-01-01T00:00:00Z",

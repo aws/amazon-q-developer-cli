@@ -15,6 +15,7 @@ import type {
   PromptResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'markdown-spacing-session';
 
@@ -35,10 +36,7 @@ beforeAll(async () => {
   }));
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: SESSION_ID,
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
   tc.mock.on('session/set_config_option', () => ({}));
 
@@ -324,8 +322,15 @@ describe('Markdown Spacing', () => {
     const subBlanks = blankLinesBetween(snapshot, 'sub-item A', 'sub-item B');
     console.log('sub-item blanks:', subBlanks);
     expect(subBlanks).toBe(0);
-    // De-indent from sub-item to top-level should have 1 blank line
-    const deindentBlanks = blankLinesBetween(snapshot, 'sub-item B', '2.');
+    // De-indent from sub-item to top-level should have 1 blank line.
+    // Match the actual list item text rather than the bare `2.` prefix,
+    // which is too ambiguous in a shared terminal buffer and can pick up
+    // unrelated later content on CI.
+    const deindentBlanks = blankLinesBetween(
+      snapshot,
+      'sub-item B',
+      'Second section'
+    );
     console.log('de-indent blanks:', deindentBlanks);
     expect(deindentBlanks).toBe(1);
   });

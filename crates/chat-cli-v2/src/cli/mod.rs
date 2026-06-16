@@ -210,13 +210,12 @@ impl RootSubcommand {
 
         // Daily heartbeat check
         if os.database.record_heartbeat_if_needed() {
-            os.telemetry.send_daily_heartbeat().ok();
+            crate::telemetry::cli_helpers::record_daily_heartbeat(os).ok();
         }
 
         // Send executed telemetry.
         if self.valid_for_telemetry() {
-            os.telemetry
-                .send_cli_subcommand_executed(&os.database, &self)
+            crate::telemetry::cli_helpers::record_cli_subcommand(os, self.telemetry_name())
                 .await
                 .ok();
         }
@@ -287,21 +286,15 @@ impl RootSubcommand {
                     ),
                 };
                 let input_method = if ptt { "PTT" } else { "SlashCommand" };
-                os.telemetry
-                    .send_voice_input(
-                        None,
-                        telem_result,
-                        reason,
-                        reason_desc,
-                        backend,
-                        input_method.to_string(),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .ok();
+                crate::telemetry::cli_helpers::record_voice_input(
+                    os,
+                    telem_result,
+                    reason,
+                    reason_desc,
+                    backend,
+                    input_method,
+                )
+                .ok();
                 result
             },
             #[cfg(feature = "voice")]
@@ -436,11 +429,6 @@ impl Cli {
             // instead of receiving the entire changelog (~100KB) as an env var.
             let feed_path = crate::util::paths::feed_json_path()?;
             std::fs::write(&feed_path, include_str!("feed.json"))?;
-            // Expose internal-user status to the TUI via env var (derived from SSO start URL).
-            if is_internal_user(&os.database) {
-                // SAFETY: single-threaded at this point — TUI subprocess hasn't spawned yet.
-                unsafe { std::env::set_var("KIRO_INTERNAL", "1") };
-            }
             crate::launch_options::launch_tui(&asset_paths).await
         } else {
             subcommand.execute(&mut os).await
@@ -528,15 +516,6 @@ impl Cli {
 
         Ok(ExitCode::SUCCESS)
     }
-}
-
-/// Returns `true` if the user authenticated via the Amazon-internal SSO start URL.
-fn is_internal_user(database: &crate::database::Database) -> bool {
-    database
-        .get_start_url()
-        .ok()
-        .flatten()
-        .is_some_and(|url| url == crate::auth::AMZN_START_URL)
 }
 
 #[cfg(test)]
@@ -882,25 +861,5 @@ mod test {
                 wrap: Some(Auto),
             })
         );
-    }
-
-    #[tokio::test]
-    async fn test_is_internal_user_with_amzn_start_url() {
-        let mut db = crate::database::Database::new().await.unwrap();
-        db.set_start_url("https://amzn.awsapps.com/start".to_string()).unwrap();
-        assert!(super::is_internal_user(&db));
-    }
-
-    #[tokio::test]
-    async fn test_is_internal_user_with_external_start_url() {
-        let mut db = crate::database::Database::new().await.unwrap();
-        db.set_start_url("https://view.awsapps.com/start".to_string()).unwrap();
-        assert!(!super::is_internal_user(&db));
-    }
-
-    #[tokio::test]
-    async fn test_is_internal_user_with_no_start_url() {
-        let db = crate::database::Database::new().await.unwrap();
-        assert!(!super::is_internal_user(&db));
     }
 }

@@ -776,7 +776,7 @@ mod tests {
             "id": 5,
             "schemaVersion": "1.0.0",
             "title": "t",
-            "agentMode": "vibe",
+            "agentMode": "default",
             "workspacePaths": ["/x"],
             "createdAt": "2025-01-01T00:00:00Z",
             "lastModifiedAt": "2025-01-01T00:00:00Z",

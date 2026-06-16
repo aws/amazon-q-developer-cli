@@ -43,6 +43,7 @@ export enum AgentEventType {
   SteeringConsumed = 'steering_consumed',
   SteeringCleared = 'steering_cleared',
   HooksUpdate = 'hooks_update',
+  ToolsUpdate = 'tools_update',
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
 }
@@ -492,6 +493,22 @@ export interface HooksUpdateEvent {
   }>;
 }
 
+/**
+ * Emitted when KAS pushes `_kiro/tools/didChange`. Carries the full current
+ * tool listing for the session (tag-based for KAS — no per-tool status).
+ * Shape matches `ToolInfo` structurally; inlined to avoid a circular import
+ * with the app store (mirrors `HooksUpdateEvent`).
+ */
+export interface ToolsUpdateEvent {
+  type: AgentEventType.ToolsUpdate;
+  tools: Array<{
+    name: string;
+    source: string;
+    description: string;
+    status?: 'allowed' | 'requires-approval' | 'denied';
+  }>;
+}
+
 export interface GoalStatusEvent {
   type: AgentEventType.GoalStatus;
   state: string;
@@ -659,4 +676,5 @@ export type AgentStreamEvent =
   | EffortUpdateEvent
   | ModelUpdateEvent
   | HooksUpdateEvent
+  | ToolsUpdateEvent
   | GoalStatusEvent;

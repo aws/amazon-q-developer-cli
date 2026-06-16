@@ -1,6 +1,10 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { runEffect } from '../effects.js';
 import type { SlashCommand } from '../../stores/app-store.js';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../../constants/agents.js';
 import { createMockCommandContext } from './test-helpers.js';
 
 const clearCmd: SlashCommand = {
@@ -24,7 +28,7 @@ describe('/clear effect — clearMessages', () => {
       data: {
         sessionId: 'new-session-123',
         currentModel: { id: 'auto', name: 'Auto' },
-        currentAgent: { name: 'kiro_default' },
+        currentAgent: { name: KAS_DEFAULT_AGENT_ID },
       },
     };
 
@@ -50,14 +54,14 @@ describe('/clear effect — clearMessages', () => {
       message: '',
       data: {
         sessionId: 'new-session-456',
-        currentAgent: { name: 'kiro_default', welcomeMessage: 'Hello' },
+        currentAgent: { name: KAS_DEFAULT_AGENT_ID, welcomeMessage: 'Hello' },
       },
     };
 
     runEffect(clearCmd, result, ctx, '');
 
     expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
-      name: 'kiro_default',
+      name: KAS_DEFAULT_AGENT_ID,
       welcomeMessage: 'Hello',
     });
   });
@@ -74,7 +78,10 @@ describe('/clear effect — clearMessages', () => {
       message: '',
       data: {
         sessionId: 'new-session-789',
-        currentAgent: { name: 'kiro_default', welcomeMessage: 'Welcome' },
+        currentAgent: {
+          name: KAS_DEFAULT_AGENT_ID,
+          welcomeMessage: 'Welcome',
+        },
       },
     };
 
@@ -85,11 +92,11 @@ describe('/clear effect — clearMessages', () => {
 
     // Should have fallen back to backend agent and shown alert
     expect(ctx._spies.setCurrentAgent!).toHaveBeenNthCalledWith(2, {
-      name: 'kiro_default',
+      name: KAS_DEFAULT_AGENT_ID,
       welcomeMessage: 'Welcome',
     });
     expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
-      'Failed to restore agent "kiro-dev-v2", reverted to default',
+      `Failed to restore agent "kiro-dev-v2", reverted to ${KAS_DEFAULT_AGENT_NAME}`,
       'error',
       5000
     );

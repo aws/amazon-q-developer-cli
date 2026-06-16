@@ -25,6 +25,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 interface SetConfigOptionParams {
   sessionId: string;
@@ -89,10 +90,7 @@ describe('/effort command (KAS)', () => {
     registerInitialize(tc);
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      modes: defaultKasModes(),
       configOptions: baselineConfigOptions('high'),
     }));
     // autopilot set during newSession; canned empty response.
@@ -121,10 +119,7 @@ describe('/effort command (KAS)', () => {
     registerInitialize(tc);
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      modes: defaultKasModes(),
       configOptions: baselineConfigOptions('high'),
     }));
     tc.mock.on('session/set_config_option', () => ({}));
@@ -169,10 +164,7 @@ describe('/effort command (KAS)', () => {
     registerInitialize(tc);
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      modes: defaultKasModes(),
       configOptions: baselineConfigOptions('high'),
     }));
     // Echo the requested level back for effortLevel writes; empty for autopilot.
@@ -225,10 +217,7 @@ describe('/effort command (KAS)', () => {
     registerInitialize(tc);
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      modes: defaultKasModes(),
       configOptions: baselineConfigOptions('high'),
     }));
     tc.mock.on('session/set_config_option', () => ({}));
@@ -285,10 +274,7 @@ describe('/effort command (KAS)', () => {
     // session/new returns only a model option — no effortLevel entry.
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      modes: defaultKasModes(),
       configOptions: [
         {
           type: 'select' as const,

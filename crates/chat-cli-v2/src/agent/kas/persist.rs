@@ -197,7 +197,7 @@ mod tests {
             schema_version: CURRENT_SCHEMA_VERSION.to_string(),
             id: id.to_string(),
             title: "test".to_string(),
-            agent_mode: "vibe".to_string(),
+            agent_mode: "default".to_string(),
             workspace_paths: vec!["/tmp/ws".to_string()],
             created_at: "2024-01-01T00:00:00Z".to_string(),
             last_modified_at: "2024-01-01T00:00:00Z".to_string(),

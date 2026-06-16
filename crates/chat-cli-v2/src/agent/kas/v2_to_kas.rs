@@ -129,17 +129,17 @@ fn build_metadata(opts: &ConvertArgs) -> SessionMetadata {
 
 /// Map a V2 agent name (from `session_state.agent_name()`) to a KAS
 /// `agent_mode` string. V2's two builtins (`kiro_default`,
-/// `kiro_planner`) translate to KAS's closest builtin modes (`vibe`,
+/// `kiro_planner`) translate to KAS's closest builtin modes (`default`,
 /// `quick-plan`). Custom V2 agent names pass through verbatim - KAS's
 /// `AgentModeSchema` accepts any string and treats unknown values as
 /// custom agent profile ids on its side. Missing or unrecognized
 /// state falls back to KAS's default mode.
 fn map_agent_mode_from_agent_name(v2_agent_name: Option<&str>) -> String {
     match v2_agent_name {
-        Some("kiro_default") => "vibe".to_string(),
+        Some("kiro_default") => "default".to_string(),
         Some("kiro_planner") => "quick-plan".to_string(),
         Some(custom) => custom.to_string(),
-        None => "vibe".to_string(),
+        None => "default".to_string(),
     }
 }
 
@@ -800,14 +800,14 @@ mod tests {
     #[test]
     fn metadata_uses_kas_default_agent_mode() {
         let out = convert(vec![prompt("u1", "hi")]);
-        assert_eq!(out.metadata.agent_mode, "vibe");
+        assert_eq!(out.metadata.agent_mode, "default");
     }
 
-    /// V2 `kiro_default` maps to KAS `vibe`.
+    /// V2 `kiro_default` maps to KAS `default`.
     #[test]
-    fn agent_mode_maps_kiro_default_to_vibe() {
+    fn agent_mode_maps_kiro_default_to_default() {
         let out = convert_with_agent("kiro_default");
-        assert_eq!(out.metadata.agent_mode, "vibe");
+        assert_eq!(out.metadata.agent_mode, "default");
     }
 
     /// V2 `kiro_planner` maps to KAS `quick-plan` - KAS's only

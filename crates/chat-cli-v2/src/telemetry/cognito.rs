@@ -21,7 +21,7 @@ use crate::database::{
     CredentialsJson,
     Database,
 };
-use crate::telemetry::TelemetryStage;
+use crate::telemetry::legacy_sink::TelemetryStage;
 
 fn create_cognito_client(telemetry_stage: &TelemetryStage) -> aws_sdk_cognitoidentity::Client {
     let conf = aws_sdk_cognitoidentity::Config::builder()

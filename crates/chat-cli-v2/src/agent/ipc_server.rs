@@ -48,6 +48,14 @@ impl TelemetryEventStore {
     }
 }
 
+impl kiro_telemetry_observer::EventStore for TelemetryEventStore {
+    fn push(&self, event: Event) -> futures::future::BoxFuture<'_, ()> {
+        Box::pin(async move {
+            TelemetryEventStore::push(self, event).await;
+        })
+    }
+}
+
 /// Test command from external test process
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]

@@ -55,7 +55,7 @@ pub(super) fn default_metadata(id: &str) -> Value {
         "id": id,
         "schemaVersion": "1.0.0",
         "title": "Original Title",
-        "agentMode": "vibe",
+        "agentMode": "default",
         "workspacePaths": ["/old/path"],
         "createdAt": "2024-12-31T00:00:00.000Z",
         "lastModifiedAt": "2025-01-01T00:00:00.000Z",

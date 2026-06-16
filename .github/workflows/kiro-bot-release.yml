@@ -119,6 +119,7 @@ jobs:
         run: |
           cargo zigbuild --release --target ${{ env.TARGET }} \
             --no-default-features \
+            --features chat_cli/legacy_codewhisperer_sink,chat_cli/legacy_toolkit_sink \
             -p kiro-bot \
             -p chat_cli \
             -p kiro-knowledge-mcp \

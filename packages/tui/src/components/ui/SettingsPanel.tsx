@@ -67,6 +67,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const setLoadingMessage = useAppStore((state) => state.setLoadingMessage);
   const showAlert = useAppStore((state) => state.showTransientAlert);
   const kiro = useAppStore((state) => state.kiro);
+  const agentEngine = useAppStore((state) => state.agentEngine);
 
   const [screen, setScreen] = useState<Screen>({ type: 'top' });
   const screenKey = screen.type;
@@ -191,14 +192,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   // itself is pure and takes the resolved snapshot.
   const rows: ExplorerRow[] = useMemo(
     () =>
-      buildRows(screen, {
-        historyMode: readStringSetting(Settings.CHAT_HISTORY_MODE, 'session'),
-        interruptMode: readStringSetting(
-          Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-          DEFAULT_INTERRUPT_MODE
-        ),
-      }),
-    [screen]
+      buildRows(
+        screen,
+        {
+          historyMode: readStringSetting(Settings.CHAT_HISTORY_MODE, 'session'),
+          interruptMode: readStringSetting(
+            Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+            DEFAULT_INTERRUPT_MODE
+          ),
+        },
+        agentEngine
+      ),
+    [screen, agentEngine]
   );
 
   // ─── Selection ──────────────────────────────────────────────────

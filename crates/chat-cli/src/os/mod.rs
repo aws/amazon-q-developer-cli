@@ -18,7 +18,10 @@ use crate::database::{
     Database,
 };
 use crate::rollout::Rollout;
-use crate::telemetry::TelemetryThread;
+use crate::telemetry::{
+    TelemetryThread,
+    build_v1_host_config,
+};
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
 const UNIX_USER_HOME: &str = "/home/testuser";
@@ -68,7 +71,10 @@ impl Os {
             .await
             .log_on_err("Os::new: BuilderIdToken::load failed")?;
         let region = token.as_ref().and_then(|t| t.region.as_deref());
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region)
+        let host_config = build_v1_host_config(&env, &mut database, region)
+            .await
+            .log_on_err("Os::new: build_v1_host_config failed")?;
+        let telemetry = TelemetryThread::new(&env, &fs, &mut database, region, host_config)
             .await
             .log_on_err("Os::new: TelemetryThread::new failed")?;
         Rollout::init(
@@ -105,9 +111,10 @@ impl Os {
         let region = profile.arn.split(':').nth(3);
 
         // reconstruct telemetry thread and clients
+        let host_config = build_v1_host_config(&self.env, &mut self.database, region).await?;
         let old_telemetry = std::mem::replace(
             &mut self.telemetry,
-            TelemetryThread::new(&self.env, &self.fs, &mut self.database, region).await?,
+            TelemetryThread::new(&self.env, &self.fs, &mut self.database, region, host_config).await?,
         );
 
         old_telemetry.finish().await?;

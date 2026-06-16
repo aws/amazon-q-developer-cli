@@ -181,14 +181,12 @@ use crate::telemetry::core::{
     Event,
     RecordUserTurnCompletionArgs,
 };
-use crate::telemetry::observer::{
+use crate::telemetry::{
     AcpClientInfo,
+    EventType,
     TelemetryContext,
     TelemetryObserver,
     TelemetryObserverHandle,
-};
-use crate::telemetry::{
-    EventType,
     TelemetryResult,
 };
 use crate::util::consts::env_var::KIRO_TEST_MODE;
@@ -742,6 +740,8 @@ pub struct AcpSessionBuilder<'a> {
     /// Whether MCP is enabled by governance (Kiro console MCP toggle).
     /// Fail-closed default — callers MUST set this from resolved governance.
     mcp_enabled: bool,
+    /// MCP server names that bypass tool_search deferral (from ASBX_KIRO_MANDATORY_MCPS).
+    mandatory_mcp_names: Vec<String>,
     /// Optional MCP registry forwarded to [`agent::Agent::new`]. The agent
     /// applies the registry to its config before launching MCP servers and
     /// re-applies on swap / refresh.
@@ -781,6 +781,7 @@ impl<'a> Default for AcpSessionBuilder<'a> {
             // Fail-closed: governance must be explicitly enabled by caller.
             web_tools_enabled: false,
             mcp_enabled: false,
+            mandatory_mcp_names: Vec::new(),
             mcp_registry: None,
         }
     }
@@ -899,6 +900,11 @@ impl<'a> AcpSessionBuilder<'a> {
 
     pub fn mcp_enabled(mut self, enabled: bool) -> Self {
         self.mcp_enabled = enabled;
+        self
+    }
+
+    pub fn mandatory_mcp_names(mut self, names: Vec<String>) -> Self {
+        self.mandatory_mcp_names = names;
         self
     }
 
@@ -1640,6 +1646,7 @@ impl AcpSession {
             s.settings.trust_all_tools = builder.trust_all_tools;
             s.settings.web_tools_enabled = builder.web_tools_enabled;
             s.settings.mcp_enabled = builder.mcp_enabled;
+            s.settings.mandatory_mcp_names = builder.mandatory_mcp_names;
             if let Some(tools) = builder.trust_tools {
                 for tool in &tools {
                     if !tool.starts_with('@') && tool.parse::<agent::tools::BuiltInToolName>().is_err() {
@@ -1738,16 +1745,24 @@ impl AcpSession {
         let agent = agent.spawn();
 
         // Create telemetry observer actor
+        let rts_state_for_model = Arc::clone(&rts_state);
         let telemetry_context = TelemetryContext::new(
-            Arc::clone(&rts_state),
+            Arc::new(move || rts_state_for_model.model_id()),
             builder.acp_client_info.clone(),
             builder.is_subagent,
         );
+        let metadata_enricher = Some(crate::telemetry::build_metadata_enricher(Arc::new(os.database.clone())));
+        let event_store: Option<Arc<dyn kiro_telemetry_observer::EventStore>> = builder
+            .telemetry_event_store
+            .clone()
+            .map(|store| Arc::new(store) as Arc<dyn kiro_telemetry_observer::EventStore>);
+        let reason_extractor = Some(crate::telemetry::build_reason_extractor());
         let telemetry_observer = TelemetryObserver::spawn(
             telemetry_context,
             os.telemetry.clone(),
-            os.database.clone(),
-            builder.telemetry_event_store,
+            metadata_enricher,
+            event_store,
+            reason_extractor,
         );
 
         Ok(Self {
