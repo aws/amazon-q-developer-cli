@@ -182,6 +182,40 @@ impl BuiltInToolTrait for AgentCrew {
     }
 }
 
+/// Substitute the `{task}` placeholder in each stage's `prompt_template` with
+/// the overall task value, in-place on the JSON model input. The tool schema
+/// (TOOL_SCHEMA above) tells the model to write `{task}` literally and let the
+/// runtime substitute — backend execution does this for the spawned subagent
+/// in `spawn_ready_stages` (line 327, 335). The TUI separately renders the
+/// raw model input from `tool_use_block.input`, which would otherwise display
+/// `{task}` literally to the user. Substituting on the display copy keeps the
+/// rendered prompt identical to what the spawned subagent actually receives.
+///
+/// Caller responsibility: only invoke for `Tool::AgentCrew(_)` tool calls.
+/// Silently no-ops on malformed input (missing `task`, non-array `stages`,
+/// non-string `prompt_template`) — display path must never panic.
+pub fn substitute_task_placeholder(input: &mut serde_json::Value) {
+    let Some(obj) = input.as_object_mut() else { return };
+    let Some(task) = obj.get("task").and_then(|v| v.as_str()).map(str::to_string) else {
+        return;
+    };
+    let Some(stages) = obj.get_mut("stages").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    for stage in stages {
+        let Some(stage_obj) = stage.as_object_mut() else {
+            continue;
+        };
+        let Some(template) = stage_obj.get("prompt_template").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if template.contains("{task}") {
+            let substituted = template.replace("{task}", &task);
+            stage_obj.insert("prompt_template".to_string(), serde_json::Value::String(substituted));
+        }
+    }
+}
+
 /// Spec for a pending stage passed to the session manager for DAG execution.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -330,6 +364,18 @@ impl AgentCrew {
             })
             .collect();
 
+        // Fire all spawn requests up front, then await every response. The
+        // session manager actor still processes spawn messages one-at-a-time,
+        // but batching the SENDS here removes the per-stage agent_crew↔actor
+        // round-trip serialization. Without this batching, each iteration
+        // pays a full IPC round trip (event_tx → handler → SessionManager →
+        // resp_sender) before the next stage even reaches the actor's queue,
+        // which staggers the resulting SUBAGENT_LIST_UPDATE notifications
+        // across hundreds of milliseconds and makes subagents appear in the
+        // TUI footer one-at-a-time. Batching collapses those round trips so
+        // the notifications fire in rapid succession (within a single render
+        // frame) and the user sees all stages appear together.
+        let mut response_rxs = Vec::new();
         let mut spawned = Vec::new();
         for stage in stages.iter().filter(|s| s.depends_on.is_empty()) {
             let stage_task = stage.prompt_template.replace("{task}", task);
@@ -348,11 +394,15 @@ impl AgentCrew {
             event_tx
                 .send(AgentEvent::SessionToolRequest(request))
                 .map_err(|e| ToolExecutionError::Custom(format!("Failed to spawn stage {}: {e}", stage.name)))?;
-            // Await to ensure the session is registered before WaitForGroup.
-            // Without this, WaitForGroup can race ahead and see an empty group
-            // (`.all()` on empty iterator = true), firing immediately.
-            let _ = response_rx.await;
+            response_rxs.push(response_rx);
             spawned.push(stage.name.clone());
+        }
+        // Await every spawn to ensure all sessions are registered before
+        // WaitForGroup runs. Without this, WaitForGroup can race ahead and
+        // see an empty group (`.all()` on empty iterator = true), firing
+        // immediately.
+        for rx in response_rxs {
+            let _ = rx.await;
         }
 
         Ok((spawned, pending_specs))

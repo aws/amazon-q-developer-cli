@@ -684,6 +684,48 @@ impl TelemetryThread {
         enrich(enricher, &mut event).await;
         self.send_event(event)
     }
+
+    pub fn send_ui_mode_session_start(
+        &self,
+        ui_mode: String,
+        ui_mode_source: crate::event::UiModeSource,
+        ui_mode_default: String,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeSessionStart {
+            ui_mode,
+            ui_mode_source,
+            ui_mode_default,
+            session_id,
+        });
+        self.send_event(event)
+    }
+
+    pub fn send_ui_mode_changed(
+        &self,
+        from: String,
+        to: String,
+        source: crate::event::ModeChangeSource,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeChanged {
+            from,
+            to,
+            source,
+            session_id,
+        });
+        self.send_event(event)
+    }
+
+    pub fn send_ui_mode_default_changed(
+        &self,
+        from: String,
+        to: String,
+        session_id: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        let event = Event::new(EventType::UiModeDefaultChanged { from, to, session_id });
+        self.send_event(event)
+    }
 }
 
 /// Run the optional [`EventEnricher`] closure on an event, if provided.

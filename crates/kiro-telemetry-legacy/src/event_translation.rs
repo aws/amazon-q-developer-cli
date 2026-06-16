@@ -40,6 +40,9 @@ use crate::definitions::metrics::{
     CodewhispererterminalRecordUserTurnCompletion,
     CodewhispererterminalRefreshCredentials,
     CodewhispererterminalToolUseSuggested,
+    CodewhispererterminalUiModeChanged,
+    CodewhispererterminalUiModeDefaultChanged,
+    CodewhispererterminalUiModeSessionStart,
     CodewhispererterminalUserLoggedIn,
     KirocliGoalCompleted,
     KirocliSubagentInvocation,
@@ -707,6 +710,51 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
                 codewhispererterminal_mode_from_agent: Some(from_mode.into()),
                 codewhispererterminal_mode_to_agent: Some(to_mode.into()),
                 codewhispererterminal_mode_change_source: Some(source.to_string().into()),
+                amazonq_conversation_id: session_id.map(Into::into),
+            }
+            .into_metric_datum(),
+        ),
+        EventType::UiModeSessionStart {
+            ui_mode,
+            ui_mode_source,
+            ui_mode_default,
+            session_id,
+        } => Some(
+            CodewhispererterminalUiModeSessionStart {
+                create_time: event.created_time,
+                value: None,
+                credential_start_url: event.credential_start_url.map(Into::into),
+                codewhispererterminal_ui_mode: Some(ui_mode.into()),
+                codewhispererterminal_ui_mode_source: Some(ui_mode_source.to_string().into()),
+                codewhispererterminal_ui_mode_default: Some(ui_mode_default.into()),
+                amazonq_conversation_id: session_id.map(Into::into),
+            }
+            .into_metric_datum(),
+        ),
+        EventType::UiModeChanged {
+            from,
+            to,
+            source,
+            session_id,
+        } => Some(
+            CodewhispererterminalUiModeChanged {
+                create_time: event.created_time,
+                value: None,
+                credential_start_url: event.credential_start_url.map(Into::into),
+                codewhispererterminal_ui_mode_from: Some(from.into()),
+                codewhispererterminal_ui_mode_to: Some(to.into()),
+                codewhispererterminal_ui_mode_change_source: Some(source.to_string().into()),
+                amazonq_conversation_id: session_id.map(Into::into),
+            }
+            .into_metric_datum(),
+        ),
+        EventType::UiModeDefaultChanged { from, to, session_id } => Some(
+            CodewhispererterminalUiModeDefaultChanged {
+                create_time: event.created_time,
+                value: None,
+                credential_start_url: event.credential_start_url.map(Into::into),
+                codewhispererterminal_ui_mode_default_from: Some(from.into()),
+                codewhispererterminal_ui_mode_default_to: Some(to.into()),
                 amazonq_conversation_id: session_id.map(Into::into),
             }
             .into_metric_datum(),

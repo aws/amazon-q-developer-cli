@@ -125,6 +125,26 @@ pub enum ModeChangeSource {
     SlashCommand,
 }
 
+/// Which input source resolved the UI mode at session start. The wire format is the
+/// camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
+/// persisted setting > built-in default).
+///
+/// Defined here (rather than in `chat-cli-v2`'s `agent::acp::schema`) so the portable
+/// [`Event`] types can refer to it directly; `agent::acp::schema` re-exports it to keep
+/// the V2 API surface unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumString, Display)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+#[typeshare]
+pub enum UiModeSource {
+    /// Resolved from the `KIRO_UI_MODE` env var.
+    EnvVar,
+    /// Resolved from the persisted `chat.ui.mode` setting.
+    Setting,
+    /// No env / setting — fell through to the built-in default.
+    Default,
+}
+
 /// Optional fields to add for a chatAddedMessage telemetry event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ChatAddedMessageParams {
@@ -402,6 +422,30 @@ pub enum EventType {
         source: ModeChangeSource,
         session_id: Option<String>,
     },
+    /// Emitted exactly once per session, immediately after the TUI resolves the UI mode.
+    /// `ui_mode_default` is the persisted default (or `"unset"`) regardless of which
+    /// source actually won — separating the steady-state count from the per-launch outcome.
+    UiModeSessionStart {
+        ui_mode: String,
+        ui_mode_source: UiModeSource,
+        ui_mode_default: String,
+        session_id: Option<String>,
+    },
+    /// Emitted when the user toggles between `lite` and `tui` mid-session via `/lite` or
+    /// `/tui`. Caller is responsible for skipping no-op changes (`from == to`).
+    UiModeChanged {
+        from: String,
+        to: String,
+        source: ModeChangeSource,
+        session_id: Option<String>,
+    },
+    /// Emitted when `/settings default-ui` writes a new value to the persisted
+    /// `chat.ui.mode` setting. Caller is responsible for skipping no-ops.
+    UiModeDefaultChanged {
+        from: String,
+        to: String,
+        session_id: Option<String>,
+    },
     GoalCompleted {
         conversation_id: Option<String>,
         terminal_state: String,
@@ -514,6 +558,9 @@ impl EventType {
             Self::VoiceInput { .. } => Some(LegacyEventType::VoiceInput),
             Self::ProcessHealthMetric { .. } => Some(LegacyEventType::ProcessHealthMetric),
             Self::ModeChanged { .. } => Some(LegacyEventType::ModeChanged),
+            Self::UiModeSessionStart { .. } => None,
+            Self::UiModeChanged { .. } => None,
+            Self::UiModeDefaultChanged { .. } => None,
             Self::GoalCompleted { .. } => Some(LegacyEventType::GoalCompleted),
             Self::MeteringEvent { .. } => None,
             Self::ContextUsagePercentage { .. } => None,
@@ -580,4 +627,34 @@ fn redaction_records_for_fields(
         );
     }
     records
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trips a camelCase wire-format enum through both serde JSON and
+    /// strum's FromStr/Display, so a `rename_all`/variant drift fails the test.
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str::<$ty>(&quoted).unwrap());
+            assert_eq!($variant, $text.parse::<$ty>().unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
+
+    #[test]
+    fn test_ui_mode_source_ser_deser() {
+        test_ser_deser!(UiModeSource, UiModeSource::EnvVar, "envVar");
+        test_ser_deser!(UiModeSource, UiModeSource::Setting, "setting");
+        test_ser_deser!(UiModeSource, UiModeSource::Default, "default");
+    }
+
+    #[test]
+    fn test_mode_change_source_ser_deser() {
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
+    }
 }

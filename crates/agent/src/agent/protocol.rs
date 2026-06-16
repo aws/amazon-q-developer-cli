@@ -616,7 +616,10 @@ pub enum InternalEvent {
     /// The exact request sent to the backend
     RequestSent(SendRequestArgs),
     /// The agent has changed state.
-    StateChange { from: ExecutionState, to: ExecutionState },
+    StateChange {
+        from: Box<ExecutionState>,
+        to: Box<ExecutionState>,
+    },
     /// A tool use was requested by the model, and the permission was evaluated
     ToolPermissionEvalResult {
         tool_use_id: String,

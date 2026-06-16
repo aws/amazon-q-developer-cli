@@ -1677,6 +1677,23 @@ impl SessionManager {
                             if !cancelled {
                                 let msg = format!("[{} failed: {}]", session_name_clone, e);
                                 session_tx.deliver_subagent_result(&parent_sid, &msg).await;
+                            } else {
+                                // Stamp a placeholder result so the parent's
+                                // agent_crew/subagent output shows "[Cancelled
+                                // by user]" for this stage instead of an
+                                // ambiguous "No result". The orch session
+                                // table is read by collect_group_results to
+                                // build the final agent_crew output; stages
+                                // with `result: None` flow through as "No
+                                // result" via the JSON formatting in
+                                // session_tool_handler.rs, which historically
+                                // looked indistinguishable from a silent
+                                // backend failure and tempted the parent
+                                // model to re-dispatch the work the user
+                                // just killed.
+                                session_tx
+                                    .store_session_result(&new_sid, "[Cancelled by user]".to_string(), false)
+                                    .await;
                             }
                             if persistent {
                                 session_tx.update_session_status(&new_sid, SessionStatus::Idle).await;

@@ -30,7 +30,15 @@ function runTests() {
   const hasPathArg = extraArgs.some(a => !a.startsWith("-") && (a.includes("/") || a.endsWith(".ts")));
 
   console.log("Running E2E tests...");
-  const testArgs = hasPathArg ? ["test", ...extraArgs] : ["test", "./e2e_tests/", ...extraArgs];
+  // --max-concurrency=1 forces serial execution: these tests allocate PTYs,
+  // and parallel PTY allocation deadlocks on the pinned Bun version. Setting
+  // it here (CLI flag) rather than bunfig.toml because Bun ignores
+  // parallel/maxConcurrency as [test] config keys — they're CLI-only, so the
+  // config form silently ran the suite at full fan-out and could OOM dev
+  // machines. (See commit 13644ce4b.)
+  const testArgs = hasPathArg
+    ? ["test", "--max-concurrency=1", ...extraArgs]
+    : ["test", "--max-concurrency=1", "./e2e_tests/", ...extraArgs];
   const test = spawn("bun", testArgs, { cwd: TUI_ROOT, stdio: "inherit" });
   test.on("exit", (code) => process.exit(code ?? 0));
 }

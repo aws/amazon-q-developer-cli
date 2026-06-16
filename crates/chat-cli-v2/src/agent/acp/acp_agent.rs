@@ -3461,24 +3461,39 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
             Some(SessionUpdate::ToolCall(acp_tool_call))
         },
         UpdateEvent::ToolCallFinished { tool_call, result } => {
-            let (status, raw_output) = match result {
-                ToolCallResult::Success(output) => (ToolCallStatus::Completed, serde_json::to_value(output).ok()),
-                ToolCallResult::Error(_) => (ToolCallStatus::Failed, None),
-                ToolCallResult::Cancelled => (ToolCallStatus::Failed, None),
+            // ACP only models Completed/Failed for terminal tool calls. To
+            // distinguish user-cancellation from a real failure we tunnel a
+            // canonical reason string in the failure content; acp-client.ts
+            // matches this prefix and translates it back to a `cancelled`
+            // status so the chat log renders "✗ Cancelled" instead of the
+            // generic FAILED chip. Mirrors the existing denied-by-user
+            // detection (see acp-client.ts ~L893 and app-store.ts ~L2657).
+            let (status, raw_output, content) = match result {
+                ToolCallResult::Success(output) => (ToolCallStatus::Completed, serde_json::to_value(output).ok(), None),
+                ToolCallResult::Error(_) => (ToolCallStatus::Failed, None, None),
+                ToolCallResult::Cancelled => {
+                    let cancel_text: ToolCallContent =
+                        ContentBlock::Text(TextContent::new("Tool use was cancelled by the user".to_string())).into();
+                    (ToolCallStatus::Failed, None, Some(vec![cancel_text]))
+                },
             };
 
             let locations = get_tool_locations(&tool_call.tool);
             let title = get_tool_title(&tool_call.tool);
 
+            let mut fields = ToolCallUpdateFields::new()
+                .status(Some(status))
+                .title(Some(title))
+                .kind(Some(get_tool_kind(&tool_call.tool_use_block.name)))
+                .raw_input(Some(tool_call.tool_use_block.input.clone()))
+                .raw_output(raw_output)
+                .locations(locations);
+            if let Some(c) = content {
+                fields = fields.content(Some(c));
+            }
             Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                 ToolCallId::new(tool_call.id),
-                ToolCallUpdateFields::new()
-                    .status(Some(status))
-                    .title(Some(title))
-                    .kind(Some(get_tool_kind(&tool_call.tool_use_block.name)))
-                    .raw_input(Some(tool_call.tool_use_block.input.clone()))
-                    .raw_output(raw_output)
-                    .locations(locations),
+                fields,
             )))
         },
         UpdateEvent::ToolCallFailed {
@@ -4224,6 +4239,76 @@ pub async fn execute(
                 async move |notif: super::schema::ModeChangedNotification, _cx: ConnectionTo<sacp::Client>| {
                     if let Some(ref telemetry) = telemetry_thread {
                         emit_kas_mode_changed_telemetry(telemetry, notif);
+                    }
+                    Ok(())
+                }
+            },
+            sacp::on_receive_notification!(),
+        )
+        // Telemetry notification: UI mode resolved at session start.
+        .on_receive_notification(
+            {
+                let telemetry_thread = Some(os.telemetry.clone());
+                async move |notif: super::schema::UiModeSessionStartNotification, _cx: ConnectionTo<sacp::Client>| {
+                    debug!(
+                        ui_mode = %notif.ui_mode,
+                        ui_mode_source = %notif.ui_mode_source,
+                        ui_mode_default = %notif.ui_mode_default,
+                        "uiModeSessionStart telemetry received from TUI"
+                    );
+                    if let Some(ref telemetry) = telemetry_thread {
+                        let _ = telemetry.send_ui_mode_session_start(
+                            notif.ui_mode,
+                            notif.ui_mode_source,
+                            notif.ui_mode_default,
+                            notif.session_id,
+                        );
+                    }
+                    Ok(())
+                }
+            },
+            sacp::on_receive_notification!(),
+        )
+        // Telemetry notification: UI mode toggled mid-session.
+        .on_receive_notification(
+            {
+                let telemetry_thread = Some(os.telemetry.clone());
+                async move |notif: super::schema::UiModeChangedNotification, _cx: ConnectionTo<sacp::Client>| {
+                    debug!(
+                        from = %notif.from,
+                        to = %notif.to,
+                        source = %notif.source,
+                        "uiModeChanged telemetry received from TUI"
+                    );
+                    if let Some(ref telemetry) = telemetry_thread {
+                        let _ = telemetry.send_ui_mode_changed(
+                            notif.from,
+                            notif.to,
+                            notif.source,
+                            notif.session_id,
+                        );
+                    }
+                    Ok(())
+                }
+            },
+            sacp::on_receive_notification!(),
+        )
+        // Telemetry notification: persisted default UI mode changed.
+        .on_receive_notification(
+            {
+                let telemetry_thread = Some(os.telemetry.clone());
+                async move |notif: super::schema::UiModeDefaultChangedNotification, _cx: ConnectionTo<sacp::Client>| {
+                    debug!(
+                        from = %notif.from,
+                        to = %notif.to,
+                        "uiModeDefaultChanged telemetry received from TUI"
+                    );
+                    if let Some(ref telemetry) = telemetry_thread {
+                        let _ = telemetry.send_ui_mode_default_changed(
+                            notif.from,
+                            notif.to,
+                            notif.session_id,
+                        );
                     }
                     Ok(())
                 }

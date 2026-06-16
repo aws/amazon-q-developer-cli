@@ -440,7 +440,11 @@ impl TryFrom<&str> for Setting {
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
-            "chat.uiMode" => Ok(Self::UiMode),
+            // Frontend persists this key in `cli.json` using the dotted
+            // `chat.ui.mode` form and mirrors it to the backend. The
+            // canonical key is camelCase `chat.uiMode`; accept the dotted
+            // form as an alias so the mirror write doesn't fail.
+            "chat.uiMode" | "chat.ui.mode" => Ok(Self::UiMode),
             "chat.diffTool" => Ok(Self::ChatDiffTool),
             "chat.ui" => Ok(Self::ChatUi),
             "cleanup.periodDays" => Ok(Self::CleanupPeriodDays),
@@ -936,5 +940,14 @@ mod test {
             .global
             .insert("api.timeout".to_string(), Value::Number(30.into()));
         assert_eq!(settings.get_int_or(Setting::ApiTimeout, 60), 30);
+    }
+
+    #[test]
+    fn test_ui_mode_accepts_dotted_alias() {
+        // Frontend writes `chat.ui.mode`; canonical form is `chat.uiMode`.
+        let canonical = Setting::try_from("chat.uiMode").unwrap();
+        let aliased = Setting::try_from("chat.ui.mode").unwrap();
+        assert!(matches!(canonical, Setting::UiMode));
+        assert!(matches!(aliased, Setting::UiMode));
     }
 }

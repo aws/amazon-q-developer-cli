@@ -1,5 +1,9 @@
 #![cfg(not(test))]
 #![allow(dead_code)]
+// The ACP agent's `execute()` async state machine is large enough that its
+// layout computation exceeds rustc's default query depth (128). Raise the
+// limit so the future's type can be laid out.
+#![recursion_limit = "256"]
 //! This lib.rs is only here for testing purposes.
 //! `test_mcp_server/test_server.rs` is declared as a separate binary and would need a way to
 //! reference types defined inside of this crate, hence the export.

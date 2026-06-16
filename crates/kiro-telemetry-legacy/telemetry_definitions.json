@@ -537,6 +537,46 @@
       "name": "codewhispererterminal_modeChangeSource",
       "type": "string",
       "description": "How the mode change was initiated. Known values today: 'shiftTab', 'slashCommand'. New entry points are added by extending the ModeChangeSource enum on the producer side."
+    },
+    {
+      "name": "codewhispererterminal_uiMode",
+      "type": "string",
+      "description": "TUI mode the session actually started in or transitioned to. Known values: 'lite', 'tui'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeSource",
+      "type": "string",
+      "description": "Which input source resolved the UI mode at session start. Known values: 'envVar', 'setting', 'default'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeDefault",
+      "type": "string",
+      "description": "Persisted default for the chat.ui.mode setting at session start. Known values: 'lite', 'tui', 'unset'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeFrom",
+      "type": "string",
+      "description": "TUI mode before a mid-session toggle. Known values: 'lite', 'tui'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeTo",
+      "type": "string",
+      "description": "TUI mode after a mid-session toggle. Known values: 'lite', 'tui'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeChangeSource",
+      "type": "string",
+      "description": "How a UI-mode toggle was initiated. Known values today: 'slashCommand'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeDefaultFrom",
+      "type": "string",
+      "description": "Prior persisted default for chat.ui.mode. Known values: 'lite', 'tui', 'unset'."
+    },
+    {
+      "name": "codewhispererterminal_uiModeDefaultTo",
+      "type": "string",
+      "description": "New persisted default for chat.ui.mode. Known values: 'lite', 'tui'."
     }
   ],
   "metrics": [
@@ -889,6 +929,41 @@
         { "type": "codewhispererterminal_modeFromAgent" },
         { "type": "codewhispererterminal_modeToAgent" },
         { "type": "codewhispererterminal_modeChangeSource" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_uiModeSessionStart",
+      "description": "Emitted exactly once per session, immediately after the TUI resolves its UI mode (lite vs tui). Carries both the actual resolved mode and the persisted default so dashboards can answer 'how many users are using lite' and 'how many users have lite as their default' independently.",
+      "passive": true,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "codewhispererterminal_uiMode" },
+        { "type": "codewhispererterminal_uiModeSource" },
+        { "type": "codewhispererterminal_uiModeDefault" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_uiModeChanged",
+      "description": "Emitted when the user toggles between lite and tui mid-session via /lite or /tui. Skipped when from == to. Counted per session, the histogram across sessions answers 'how often do users switch UI modes within a session'.",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "codewhispererterminal_uiModeFrom" },
+        { "type": "codewhispererterminal_uiModeTo" },
+        { "type": "codewhispererterminal_uiModeChangeSource" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_uiModeDefaultChanged",
+      "description": "Emitted when /settings default-ui writes a new value to the persisted chat.ui.mode setting. Skipped on no-op writes. Companion to uiModeSessionStart.uiModeDefault: the snapshot answers steady state, this one answers opt-in/opt-out flow.",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl", "required": false },
+        { "type": "amazonqConversationId", "required": false },
+        { "type": "codewhispererterminal_uiModeDefaultFrom" },
+        { "type": "codewhispererterminal_uiModeDefaultTo" }
       ]
     },
     {

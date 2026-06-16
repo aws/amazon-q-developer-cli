@@ -142,6 +142,15 @@ pub(crate) async fn handle_internal_prompt(
                     }
                 },
                 AgentEvent::Stop(AgentStopReason::Cancelled) => {
+                    // If the subagent's summary tool already ran and emitted
+                    // SubagentSummary before cancellation landed (model produced
+                    // summary, execute() broadcast it, then the user pressed Esc
+                    // / a sibling kill cascaded a parent cancel), honor that
+                    // result instead of dropping it. If no summary was emitted,
+                    // the cancelled subagent simply has no result to report.
+                    if let Some(s) = summary {
+                        return Ok(s);
+                    }
                     return Err(InternalPromptError::Cancelled);
                 },
                 AgentEvent::Stop(AgentStopReason::Error(e)) => {
@@ -153,6 +162,9 @@ pub(crate) async fn handle_internal_prompt(
                 tracing::warn!(%skipped, "Subagent broadcast receiver lagged; skipped events");
             },
             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                if let Some(s) = summary {
+                    return Ok(s);
+                }
                 return Err(InternalPromptError::Cancelled);
             },
         }

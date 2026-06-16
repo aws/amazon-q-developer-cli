@@ -1,0 +1,24 @@
+// Response 1: Assistant emits 3 tool uses in parallel — 2 valid fs_read calls
+// against an existing file plus a 3rd fs_read against a nonexistent directory.
+// Validation in parse_tools fires for the 3rd one (Directory not found),
+// while the first two parse successfully.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Reading the files."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_ok_1","name":"read"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"a.txt\"}]}"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_ok_2","name":"read"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"b.txt\"}]}"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_bad","name":"read"}},"contentBlockIndex":2}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Directory\", \"path\": \"definitely-does-not-exist-xyzzy\"}]}"}},"contentBlockIndex":2}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":2}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"partial-parse-batch","statusCode":null}}}}
+
+// Response 2: end turn after the model receives the merged tool_results
+// (two successes + one parse error for the nonexistent path).
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Read both files; the directory check failed."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:20.610411Z","requestEndTime":"2025-10-29T17:26:23.069210Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":5},"usage":null,"service":{"requestId":"partial-parse-batch-end","statusCode":null}}}}

@@ -87,10 +87,15 @@ function startTUI() {
 
   console.log("Starting TUI...");
 
-  // Forward any extra CLI args (e.g. --agent <name>) to the TUI process.
+  // Start bun and forward any extra CLI args (e.g. --agent <name>) to the TUI.
   // Use absolute path to entry file so the caller's cwd is preserved.
+  //
+  // Deliberately NOT using --watch: a watch restart kills only the TUI process
+  // and reparents chat_cli's child tree (aim mcp, otelcol-contrib) to PID 1,
+  // leaking ~30MB per orphan and leaving zombie chat_cli processes. Restart the
+  // dev server manually instead. (See commit 414f62298.)
   const entryFile = resolve(import.meta.dir, "../src/index.tsx");
-  const bunProcess = spawn(PINNED_BUN, ["--watch", entryFile, ...tuiArgs], {
+  const bunProcess = spawn(PINNED_BUN, [entryFile, ...tuiArgs], {
     stdio: "inherit",
     env: {
       ...process.env,

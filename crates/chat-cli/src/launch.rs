@@ -200,6 +200,26 @@ async fn launch_acp_interactive(
     cmd.arg(&asset_paths.tui_js_path)
         .args(&args[1..])
         .env("JSC_numberOfGCMarkers", "1")
+        // Surface the real CLI version to the TUI. The embedded TUI bundle's
+        // package.json is pinned to "0.0.0-dev" in-repo and isn't bumped by
+        // the tag-based release flow, so the TUI reads this env (carrying
+        // CARGO_PKG_VERSION, set from KIRO_VERSION at build time) to show the
+        // correct version in its footer.
+        .env("KIRO_VERSION", env!("CARGO_PKG_VERSION"))
+        // Lite-mode gate. The TUI's resolveUiMode() / `/lite` honor lite mode
+        // only when this is "1". Set it server-authoritatively from the
+        // Feature::Lite rollout decision (internal+nightly via rollout.json,
+        // or the toolbox insider channel via install-path detection) and
+        // write "0" otherwise — overwriting any inherited value so a user
+        // can't force lite on by exporting the var in their shell.
+        .env(
+            "KIRO_LITE_ROLLOUT_ENABLED",
+            if crate::rollout::rollout().is_enabled(crate::rollout::Feature::Lite) {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .kill_on_drop(true);
 
     // Used by the TUI voice helper (packages/tui/src/commands/voice-helper.ts) to
