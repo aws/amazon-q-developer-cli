@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Default agent displays as \"Default\" instead of \"Kiro\" in the agent chip"
+}

@@ -94,12 +94,12 @@ describe('/rewind command (session/fork)', () => {
     expect(params._meta?.kiro?.createdReason).toBe('rewind');
   });
 
-  it('renders the agent chip as "Kiro" after rewind loads a session with wire id vibe', async () => {
+  it('renders the agent chip as "Default" after rewind loads a session with wire id vibe', async () => {
     /**
      * GIVEN  a forked session whose session/load returns the wire mode `vibe`
      * WHEN   /rewind loads that session
-     * THEN   the current agent is the normalized `kiro_default`, so the chip
-     *        renders "Kiro" and never leaks the raw wire id `vibe`
+     * THEN   the current agent is the normalized `default`, so the chip
+     *        renders "Default" and never leaks the raw wire id `vibe`
      */
     tc = new AcpTestCase({ testName: 'rewind-agent-chip' });
     setupHandshake(tc);
@@ -146,13 +146,13 @@ describe('/rewind command (session/fork)', () => {
     await tc.pressEnter();
 
     const store = await tc.waitForStore(
-      (s) => s.currentAgent?.name === 'kiro_default',
+      (s) => s.currentAgent?.name === 'default',
       5000
     );
-    expect(store.currentAgent?.name).toBe('kiro_default');
+    expect(store.currentAgent?.name).toBe('default');
 
     const snapshot = await tc.terminalSnapshot();
-    expect(snapshot.contains('Kiro')).toBe(true);
+    expect(snapshot.contains('Default')).toBe(true);
     expect(snapshot.matches(/\bvibe\b/i)).toBe(false);
   });
 });

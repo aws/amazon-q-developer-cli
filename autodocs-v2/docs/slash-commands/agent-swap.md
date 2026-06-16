@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-09
-  commit: 96dc37b3f
+  validated: 2026-06-16
+  commit: 619568c59
   status: validated
   testable_headless: false
   category: slash_command
@@ -85,10 +85,10 @@ Opens agent for editing.
 ```
 → rust-expert - Rust development with cargo and clippy
   python-dev - Python development assistant
-  Kiro - Default agent
+  Default - Default agent
 ```
 
-Current agent marked with `→`. Shows display name and description. Built-in agents use canonical display names (e.g., "Kiro" for the default agent, "Plan" for the planner).
+Current agent marked with `→`. Shows display name and description. Built-in agents use canonical display names (e.g., "Default" for the default agent, "Plan" for the planner).
 
 ### Example 2: Direct Switch
 
@@ -100,6 +100,8 @@ Current agent marked with `→`. Shows display name and description. Built-in ag
 ```
 Agent changed to python-dev
 ```
+
+A transient toast ("Switched to python-dev") also appears briefly to confirm the switch. This toast appears on both `/agent` commands and keyboard-shortcut cycling (e.g., Shift+Tab).
 
 ### Example 3: Switch to Agent Named After Subcommand
 

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Shift+Tab agent cycling now shows a transient toast confirming the switch"
+}

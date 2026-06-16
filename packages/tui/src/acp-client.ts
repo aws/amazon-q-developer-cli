@@ -2056,12 +2056,15 @@ function toKasModeId(tuiModeId: string): string {
   // The TUI surfaces the planner under the internal name `kiro_planner`; the
   // agent's read-only planner builtin mode is wire id `plan`.
   if (tuiModeId === 'kiro_planner') return 'plan';
+  // KAS still emits/accepts `vibe` as the wire id for the default mode.
+  if (tuiModeId === 'default') return 'vibe';
   return tuiModeId;
 }
 
 /** Map KAS wire mode names back to TUI-facing names. */
 function fromKasModeId(kasModeId: string): string {
   if (kasModeId === 'plan') return 'kiro_planner';
+  if (kasModeId === 'vibe') return 'default';
   return kasModeId;
 }
 

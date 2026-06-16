@@ -221,8 +221,12 @@ export const InlineLayout: React.FC = () => {
     initErrors,
     pendingOAuthServers,
   } = useNotificationState();
-  const { dismissTransientAlert, setAgentError, setLoadingMessage } =
-    useNotificationActions();
+  const {
+    dismissTransientAlert,
+    setAgentError,
+    setLoadingMessage,
+    showTransientAlert,
+  } = useNotificationActions();
   const {
     isProcessing,
     isCompacting,
@@ -448,6 +452,18 @@ export const InlineLayout: React.FC = () => {
           }
         };
 
+        // Replace any in-flight toast (e.g. stale "Switched to spec" from a
+        // prior /agent command) with a fresh one for this swap so rapid
+        // Shift+Tab presses don't keep showing the previous target's label.
+        // Uses the raw id (not the display name) to match the /agent toast.
+        const announceSwitch = (name: string) => {
+          showTransientAlert({
+            message: `Switched to ${name}`,
+            status: 'success',
+            autoHideMs: 2000,
+          });
+        };
+
         if (currentName === 'kiro_planner') {
           const target = previousAgentName;
           if (!target) return;
@@ -459,7 +475,10 @@ export const InlineLayout: React.FC = () => {
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
                 emitModeChange(currentName, name);
-                if (name) setCurrentAgent({ name });
+                if (name) {
+                  setCurrentAgent({ name });
+                  announceSwitch(name);
+                }
               }
             })
             .catch(() => setLoadingMessage(null));
@@ -476,7 +495,10 @@ export const InlineLayout: React.FC = () => {
               if (result?.success) {
                 const name = (result.data as any)?.agent?.name;
                 emitModeChange(currentName, name);
-                if (name) setCurrentAgent({ name });
+                if (name) {
+                  setCurrentAgent({ name });
+                  announceSwitch(name);
+                }
               }
             })
             .catch(() => setLoadingMessage(null));

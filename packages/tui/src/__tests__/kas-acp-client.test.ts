@@ -572,7 +572,7 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     const result = await client.loadSession('existing-session');
 
-    expect(result.currentAgent?.name).toBe('kiro_default');
+    expect(result.currentAgent?.name).toBe('default');
   });
 
   it('prompt() throws when no session is active', async () => {
@@ -926,7 +926,10 @@ describe('KasAcpClient', () => {
     ]);
   });
 
-  it('agent swap of default sends the canonical "default" mode id', async () => {
+  it('agent swap of default sends the KAS wire id "vibe"', async () => {
+    // KAS still expects `vibe` on the wire for the default mode; the TUI-side
+    // canonical id is `default` but `toKasModeId` translates on the way out.
+    // Remove this translation (and update this test) once KAS accepts `default`.
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
       models: null,
@@ -955,7 +958,7 @@ describe('KasAcpClient', () => {
       ([req]: any[]) => req?.configId === 'mode'
     );
     expect(modeCalls.length).toBe(1);
-    expect(modeCalls[0][0].value).toBe(KAS_DEFAULT_AGENT_ID);
+    expect(modeCalls[0][0].value).toBe('vibe');
   });
 
   it('executeCommand("clear") creates a new session via session/new primitive', async () => {
