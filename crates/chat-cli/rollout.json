@@ -5,9 +5,9 @@
     "segment": "internal"
   },
   "kas": {
-    "description": "KAS agent engine (--v3) - internal only initially",
-    "treatment_percent": 100,
-    "segment": "internal"
+    "description": "Default the new-TUI engine to KAS (V3) instead of V2 when no engine is explicitly selected; ramp via treatment_percent",
+    "treatment_percent": 0,
+    "segment": "all"
   },
   "voice": {
     "description": "Voice input mode - internal nightly only initially",

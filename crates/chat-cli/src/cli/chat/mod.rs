@@ -358,7 +358,7 @@ impl ChatArgs {
     ///
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
-    pub fn resolve_agent_engine(&self, os: &Os, rollout: &crate::rollout::Rollout) -> Result<AgentEngine> {
+    pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
         let engine = if self.v3 {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
@@ -394,9 +394,6 @@ impl ChatArgs {
             );
         }
 
-        // Gate KAS (the `--v3` engine) behind the `kas` rollout feature.
-        validate_engine_availability(engine, rollout.is_enabled(crate::rollout::Feature::Kas))?;
-
         Ok(engine)
     }
 
@@ -405,7 +402,12 @@ impl ChatArgs {
     /// When `--agent-engine` is not explicitly set, the default is determined by:
     /// - Non-interactive: V1
     /// - Interactive: check `--tui`/`--legacy-ui` flags, `KIRO_CHAT_UI` env var, `chat.ui` setting,
-    ///   then default to V2.
+    ///   then default to the new-TUI engine.
+    ///
+    /// The new-TUI engine is KAS (V3) when the `kas` rollout feature is active
+    /// for this user, otherwise V2. Explicit engine selection (`--v3`,
+    /// `--agent-engine`, `chat.agentEngine`) is resolved earlier and is
+    /// unaffected.
     fn default_engine(&self, os: &Os) -> AgentEngine {
         if self.no_interactive {
             return AgentEngine::V1;
@@ -416,8 +418,10 @@ impl ChatArgs {
             return AgentEngine::V1;
         }
 
+        let tui_engine = default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas));
+
         if self.tui {
-            return AgentEngine::V2;
+            return tui_engine;
         }
         if self.legacy_ui {
             return AgentEngine::V1;
@@ -425,7 +429,7 @@ impl ChatArgs {
 
         if let Ok(val) = std::env::var(crate::util::consts::env_var::KIRO_CHAT_UI) {
             if val.eq_ignore_ascii_case("tui") {
-                return AgentEngine::V2;
+                return tui_engine;
             } else {
                 return AgentEngine::V1;
             }
@@ -433,13 +437,13 @@ impl ChatArgs {
 
         if let Some(val) = os.database.settings.get_string(Setting::ChatUi) {
             if val.eq_ignore_ascii_case("tui") {
-                return AgentEngine::V2;
+                return tui_engine;
             } else {
                 return AgentEngine::V1;
             }
         }
 
-        AgentEngine::V2
+        tui_engine
     }
 
     /// Resolve the non-interactive input from `--input` or stdin.
@@ -5869,16 +5873,12 @@ async fn save_agent_config(
     Ok(())
 }
 
-/// Returns an error if the resolved engine is not available to this user.
-///
-/// KAS (the `--v3` engine) is gated behind the `kas` rollout feature. When the
-/// feature is not enabled for the current user, requesting it via any path
-/// (`--v3`, `--agent-engine=kas`, or the `chat.agentEngine` setting) is rejected.
-fn validate_engine_availability(engine: AgentEngine, kas_enabled: bool) -> Result<()> {
-    if engine == AgentEngine::Kas && !kas_enabled {
-        bail!("V3 is currently not supported for your system");
-    }
-    Ok(())
+/// Resolve the default "new-TUI" engine. When the `kas` rollout feature is
+/// active for this user the new-TUI default is KAS (V3); otherwise V2.
+/// Explicit engine selection (`--v3`, `--agent-engine`, `chat.agentEngine`) is
+/// resolved earlier in [`ChatArgs::resolve_agent_engine`] and is unaffected.
+fn default_tui_engine(kas_default: bool) -> AgentEngine {
+    if kas_default { AgentEngine::Kas } else { AgentEngine::V2 }
 }
 
 #[cfg(test)]
@@ -5889,23 +5889,13 @@ mod tests {
     use crate::cli::agent::Agent;
 
     #[test]
-    fn test_kas_blocked_when_not_enabled() {
-        let err = validate_engine_availability(AgentEngine::Kas, false).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("V3 is currently not supported for your system")
-        );
+    fn default_tui_engine_is_kas_when_rollout_active() {
+        assert_eq!(default_tui_engine(true), AgentEngine::Kas);
     }
 
     #[test]
-    fn test_kas_allowed_when_enabled() {
-        assert!(validate_engine_availability(AgentEngine::Kas, true).is_ok());
-    }
-
-    #[test]
-    fn test_non_kas_engines_always_available() {
-        assert!(validate_engine_availability(AgentEngine::V2, false).is_ok());
-        assert!(validate_engine_availability(AgentEngine::V1, false).is_ok());
+    fn default_tui_engine_is_v2_when_rollout_inactive() {
+        assert_eq!(default_tui_engine(false), AgentEngine::V2);
     }
 
     async fn get_test_agents(os: &Os) -> Agents {
