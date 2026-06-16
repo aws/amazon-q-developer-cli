@@ -170,7 +170,29 @@ async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, PathBu
         .await
         .with_context(|| format!("failed to canonicalize KAS server path: {}", server_path.display()))?;
 
+    // On Windows, canonicalize() returns extended-length paths prefixed with
+    // `\\?\` (e.g. `\\?\C:\Users\...`). Node.js does not handle this prefix
+    // correctly for ESM module resolution, causing the KAS sidecar to crash
+    // on startup. Strip the prefix to get a normal absolute path.
+    let node_extract_path = strip_extended_length_prefix(node_extract_path);
+    let server_path = strip_extended_length_prefix(server_path);
+
     Ok(Some((node_extract_path, server_path)))
+}
+
+/// Strip the `\\?\` extended-length path prefix that Windows `canonicalize()` produces.
+/// Node.js ESM loader does not handle this prefix correctly, causing module resolution
+/// failures when the KAS server path includes it.
+fn strip_extended_length_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    let _ = &path; // suppress unused warning on non-Windows
+    path
 }
 
 /// Ensures that KAS assets (node runtime, KAS acp-server.js bundle) are extracted to the file
