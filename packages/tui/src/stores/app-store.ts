@@ -2160,8 +2160,6 @@ export const createAppStore = (props: AppStoreProps) => {
               DEFAULT_INTERRUPT_MODE
             )
           ),
-    queuedMessages: [],
-    editingQueueIndex: null,
 
     // Task management
     tasks: [],
