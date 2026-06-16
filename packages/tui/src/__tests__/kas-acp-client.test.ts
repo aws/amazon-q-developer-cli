@@ -559,6 +559,22 @@ describe('KasAcpClient', () => {
     expect(mockPermissionRequestDispose).toHaveBeenCalledTimes(1);
   });
 
+  it('loadSession() returns the normalized agent id for wire vibe (not the raw wire id)', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'kas-loaded',
+      models: null,
+      modes: {
+        currentModeId: 'vibe',
+        availableModes: [{ id: 'vibe', name: 'Vibe' }],
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    const result = await client.loadSession('existing-session');
+
+    expect(result.currentAgent?.name).toBe('kiro_default');
+  });
+
   it('prompt() throws when no session is active', async () => {
     const client = new KasAcpClient();
     expect(

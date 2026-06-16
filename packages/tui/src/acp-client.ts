@@ -2774,10 +2774,7 @@ export class KasAcpClient extends BaseAcpClient {
     return {
       sessionId,
       currentModel: configModel ?? legacyModel,
-      // TODO: Remove cast once @kiro/client adds `modes` to LoadSessionResponse
-      currentAgent: extractCurrentAgent(
-        (r as { modes?: Parameters<typeof extractCurrentAgent>[0] }).modes
-      ),
+      currentAgent: extractCurrentAgent(this.modesState),
     };
   }
 
