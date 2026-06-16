@@ -28,6 +28,7 @@ import { runEffect } from '../effects.js';
 import { MessageRole } from '../../stores/app-store.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
+import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { ModeChangeSource } from '../../types/generated/chat-cli.js';
 
 const copyCmd: SlashCommand = {
@@ -368,7 +369,7 @@ describe('runEffect routing', () => {
       data: {
         sessionId: 'new-session-id',
         currentModel: { id: 'm1', name: 'Test Model' },
-        currentAgent: { name: 'default' },
+        currentAgent: { name: KAS_DEFAULT_AGENT_ID },
       },
     };
 
@@ -383,7 +384,7 @@ describe('runEffect routing', () => {
       name: 'Test Model',
     });
     expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
-      name: 'default',
+      name: KAS_DEFAULT_AGENT_ID,
     });
     // Legacy Rust-mode behavior (keep-last-turn) must NOT fire
     expect(ctx._spies.clearMessages!).not.toHaveBeenCalled();
@@ -609,7 +610,7 @@ describe('/agent effect', () => {
       source: 'backend',
     };
     const ctx = createMockCommandContext({
-      currentAgent: { name: 'kiro_default' },
+      currentAgent: { name: KAS_DEFAULT_AGENT_ID },
     });
     const agent = { name: 'kiro_planner' };
     const result = { success: true, message: '', data: { agent } };
@@ -618,7 +619,7 @@ describe('/agent effect', () => {
 
     expect(ctx.kiro.sendModeChanged).toHaveBeenCalledTimes(1);
     expect(ctx.kiro.sendModeChanged).toHaveBeenCalledWith({
-      fromMode: 'kiro_default',
+      fromMode: KAS_DEFAULT_AGENT_ID,
       toMode: 'kiro_planner',
       source: ModeChangeSource.SlashCommand,
       sessionId: undefined,
@@ -632,9 +633,9 @@ describe('/agent effect', () => {
       source: 'backend',
     };
     const ctx = createMockCommandContext({
-      currentAgent: { name: 'kiro_default' },
+      currentAgent: { name: KAS_DEFAULT_AGENT_ID },
     });
-    const agent = { name: 'kiro_default' };
+    const agent = { name: KAS_DEFAULT_AGENT_ID };
     const result = { success: true, message: '', data: { agent } };
 
     runEffect(cmd, result, ctx, '');
@@ -1050,7 +1051,7 @@ describe('clearMessages effect', () => {
       data: {
         sessionId: 'new-sess-1',
         currentModel: { id: 'claude', name: 'Claude' },
-        currentAgent: { name: 'default' },
+        currentAgent: { name: KAS_DEFAULT_AGENT_ID },
       },
     };
     runEffect(clearCmd, result, ctx, '');
@@ -1062,7 +1063,7 @@ describe('clearMessages effect', () => {
       name: 'Claude',
     });
     expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({
-      name: 'default',
+      name: KAS_DEFAULT_AGENT_ID,
     });
   });
 

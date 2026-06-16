@@ -8,6 +8,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { KAS_DEFAULT_AGENT_ID } from '../src/constants/agents';
 
 describe('Initialization failure notifications', () => {
   let testCase: E2ETestCase | null = null;
@@ -127,7 +128,9 @@ describe('Initialization failure notifications', () => {
     expect(err).toBeTruthy();
     if (err?.type === 'agent_not_found') {
       expect(err.requestedAgent).toBe('nonexistent-agent-xyz');
-      expect(err.fallbackAgent).toBe('kiro_default');
+      expect(err.fallbackAgent).toBe(
+        store.agentEngine === 'kas' ? KAS_DEFAULT_AGENT_ID : 'kiro_default'
+      );
     }
 
     expect(store.transientAlert).toBeTruthy();

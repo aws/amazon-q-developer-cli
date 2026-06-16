@@ -27,14 +27,15 @@ impl Display for AgentEngine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum AgentMode {
     #[default]
-    Vibe,
+    #[value(alias = "vibe")]
+    Default,
     Spec,
 }
 
 impl Display for AgentMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Vibe => write!(f, "vibe"),
+            Self::Default => write!(f, "default"),
             Self::Spec => write!(f, "spec"),
         }
     }
@@ -57,7 +58,7 @@ pub enum Interactivity {
 pub struct LaunchOptions {
     /// Which agent engine to use: native Rust ACP or the KAS TypeScript agent.
     pub agent_engine: AgentEngine,
-    /// Optional initial mode for agents that support it (e.g. KAS vibe/spec).
+    /// Optional initial mode for agents that support it (e.g. KAS default/spec).
     pub mode: Option<AgentMode>,
     /// Whether to drive an interactive TUI or a non-interactive one-shot turn.
     pub interactivity: Interactivity,

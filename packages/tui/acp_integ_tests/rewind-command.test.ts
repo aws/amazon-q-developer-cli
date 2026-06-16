@@ -11,6 +11,7 @@ import type {
   PromptResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
@@ -22,10 +23,7 @@ function setupHandshake(tc: AcpTestCase): void {
   }));
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: 'rewind-session-1',
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
   tc.mock.on('session/set_config_option', () => ({}));
 }
@@ -50,10 +48,7 @@ describe('/rewind command (session/fork)', () => {
     tc.mock.on('session/fork', () => ({ sessionId: 'forked-session-1' }));
     tc.mock.on('session/load', () => ({
       sessionId: 'forked-session-1',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     }));
 
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {

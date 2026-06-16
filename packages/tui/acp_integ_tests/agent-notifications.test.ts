@@ -17,6 +17,10 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../src/constants/agents';
 
 function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
@@ -30,9 +34,9 @@ function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: 'notif-session-1',
     modes: {
-      currentModeId: 'vibe',
+      currentModeId: KAS_DEFAULT_AGENT_ID,
       availableModes: [
-        { id: 'vibe', name: 'Default' },
+        { id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
         { id: 'spec', name: 'Spec' },
       ],
     },
@@ -51,7 +55,7 @@ describe('KAS agent notifications', () => {
 
   it('_kiro/customAgent/not_found updates initErrors AND currentAgent to fallback', async () => {
     /**
-     * GIVEN  TUI connected with mode 'vibe'
+     * GIVEN  TUI connected with the KAS default mode
      * WHEN   server pushes _kiro/customAgent/not_found with fallbackAgent
      * THEN   store.initErrors contains the not_found entry
      *        store.currentAgent updates to the fallback agent
@@ -61,7 +65,7 @@ describe('KAS agent notifications', () => {
      * currentAgent reflects the fallback immediately.
      */
     tc = new AcpTestCase({ testName: 'agent-not-found' });
-    // Use a custom initial mode so fallback to 'vibe' triggers a real switch
+    // Use a custom initial mode so fallback to the KAS default mode triggers a real switch
     tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
       protocolVersion: 1,
       agentCapabilities: {
@@ -74,7 +78,7 @@ describe('KAS agent notifications', () => {
       modes: {
         currentModeId: 'my-custom-agent',
         availableModes: [
-          { id: 'vibe', name: 'Default' },
+          { id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
           { id: 'my-custom-agent', name: 'Custom' },
         ],
       },
@@ -87,8 +91,8 @@ describe('KAS agent notifications', () => {
 
     tc.mock.notify('_kiro/customAgent/not_found', {
       requestedAgent: 'nonexistent-agent',
-      fallbackAgent: 'vibe',
-      message: 'Agent not found, falling back to default',
+      fallbackAgent: KAS_DEFAULT_AGENT_ID,
+      message: `Agent not found, falling back to ${KAS_DEFAULT_AGENT_ID}`,
     });
     await tc.sleepMs(300);
 
@@ -100,10 +104,9 @@ describe('KAS agent notifications', () => {
     );
     expect(notFoundErr).toBeDefined();
     expect(notFoundErr!.requestedAgent).toBe('nonexistent-agent');
-    expect(notFoundErr!.fallbackAgent).toBe('vibe');
+    expect(notFoundErr!.fallbackAgent).toBe(KAS_DEFAULT_AGENT_ID);
     // currentAgent should now reflect the fallback (BUG-3 fix)
-    // Note: fromKasModeId maps 'vibe' → 'kiro_default' for display
-    expect(store.currentAgent?.name).toBe('kiro_default');
+    expect(store.currentAgent?.name).toBe(KAS_DEFAULT_AGENT_ID);
   });
 
   it('_kiro/customAgent/config_error is suppressed (no-op)', async () => {
@@ -254,7 +257,7 @@ describe('KAS agent notifications', () => {
 
   it('current_mode_update via session/update changes store mode', async () => {
     /**
-     * GIVEN  TUI connected with mode 'vibe'
+     * GIVEN  TUI connected with the KAS default mode
      * WHEN   server pushes current_mode_update with 'spec'
      * THEN   store.currentAgent reflects the new mode
      */

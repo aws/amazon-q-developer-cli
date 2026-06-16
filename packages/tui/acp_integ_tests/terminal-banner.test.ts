@@ -9,6 +9,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 describe('ASBX_KIRO_TERMINAL_BANNER', () => {
   let tc: AcpTestCase | null = null;
@@ -39,10 +40,7 @@ describe('ASBX_KIRO_TERMINAL_BANNER', () => {
 
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-banner',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     }));
 
     tc.mock.on('session/set_config_option', () => ({}));
@@ -71,10 +69,7 @@ describe('ASBX_KIRO_TERMINAL_BANNER', () => {
 
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: 'test-session-no-banner',
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
-      },
+      modes: defaultKasModes(),
     }));
 
     tc.mock.on('session/set_config_option', () => ({}));

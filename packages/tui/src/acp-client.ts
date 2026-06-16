@@ -65,6 +65,7 @@ import type {
 import packageJson from '../package.json';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
+import { KAS_DEFAULT_AGENT_ID } from './constants/agents';
 import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
@@ -202,7 +203,8 @@ type CachedModesState = {
  * mode can't leak into the picker.
  *
  * Entries (normalized ids):
- *   - `kiro_default`: the general coding agent (wire id `vibe`, shown as "Kiro").
+ *   - `KAS_DEFAULT_AGENT_ID`: the general coding agent, displayed with the
+ *     server-advertised `KAS_DEFAULT_AGENT_NAME`.
  *   - `kiro_planner`: the interactive read-only planner (wire id `plan`).
  *   - `spec`: the spec-driven workflow agent (wire id `spec`).
  *
@@ -212,7 +214,7 @@ type CachedModesState = {
  * shown so a config the user opted into is never silently dropped.
  */
 const BUILTIN_AGENT_ALLOWLIST = new Set<string>([
-  'kiro_default',
+  KAS_DEFAULT_AGENT_ID,
   'kiro_planner',
   'spec',
 ]);
@@ -2044,14 +2046,12 @@ function toKasModeId(tuiModeId: string): string {
   // The TUI surfaces the planner under the internal name `kiro_planner`; the
   // agent's read-only planner builtin mode is wire id `plan`.
   if (tuiModeId === 'kiro_planner') return 'plan';
-  if (tuiModeId === 'kiro_default') return 'vibe';
   return tuiModeId;
 }
 
 /** Map KAS wire mode names back to TUI-facing names. */
 function fromKasModeId(kasModeId: string): string {
   if (kasModeId === 'plan') return 'kiro_planner';
-  if (kasModeId === 'vibe') return 'kiro_default';
   return kasModeId;
 }
 
@@ -2091,7 +2091,7 @@ export class KasAcpClient extends BaseAcpClient {
    * With `options.initialAgent`: apply the given agent name as the KAS
    * `mode` config option on the first `newSession`.  Takes precedence
    * over the legacy `KIRO_MODE` env var (which is the propagation
-   * channel for the KAS-only `--mode=vibe|spec` Rust flag).
+   * channel for the KAS-only Rust mode flag).
    *
    * `agentProcess` is intentionally not a public option - mock callers
    * never need to inject a different one, and accepting it without a
@@ -2217,7 +2217,7 @@ export class KasAcpClient extends BaseAcpClient {
           return {
             ...m,
             id,
-            name: id === 'kiro_default' ? 'Kiro' : m.name,
+            name: m.name,
           };
         })
         // Hide bundled agents that aren't on the built-in allowlist (e.g.
@@ -2405,8 +2405,8 @@ export class KasAcpClient extends BaseAcpClient {
    *  so we cross-reference the modes cache by name to catch it. (Untyped
    *  custom-agent subagents can't be caught here — they're not modes — so
    *  the upstream type-based filter is the source of truth for those.)
-   *  The cache holds TUI-translated ids (e.g. `kiro_default`), but KAS
-   *  emits commands using the wire ids (e.g. `vibe`), so the filter set
+   *  The cache holds TUI-translated ids (e.g. `kiro_planner`), but KAS
+   *  emits commands using canonical ids (e.g. `plan`), so the filter set
    *  has to include both. */
   protected override convertAcpUpdateToEvent(
     update: AcpSessionUpdate
@@ -2650,7 +2650,7 @@ export class KasAcpClient extends BaseAcpClient {
     // Initial agent (KAS "mode") resolution.  CLI `--agent` flag takes
     // precedence over the legacy `KIRO_MODE` env var so explicit user
     // input always wins; the env var remains a propagation channel for
-    // the KAS-only `--mode=vibe|spec` Rust flag.
+    // the KAS-only Rust mode flag.
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     if (initialMode) {
       try {

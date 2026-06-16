@@ -16,6 +16,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 function setupHandshake(
   tc: AcpTestCase,
@@ -31,10 +32,7 @@ function setupHandshake(
 
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId,
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
   }));
 
   tc.mock.on('session/set_config_option', () => ({}));
@@ -442,10 +440,7 @@ describe('/chat command', () => {
       // history renders before the "Loaded session from ..." system message.
       await new Promise((r) => setTimeout(r, 100));
       return {
-        modes: {
-          currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Default' }],
-        },
+        modes: defaultKasModes(),
       };
     });
 
@@ -562,10 +557,7 @@ describe('/chat command', () => {
       // Drain notifications before unblocking the load response.
       await new Promise((r) => setTimeout(r, 100));
       return {
-        modes: {
-          currentModeId: 'vibe',
-          availableModes: [{ id: 'vibe', name: 'Default' }],
-        },
+        modes: defaultKasModes(),
       };
     });
 

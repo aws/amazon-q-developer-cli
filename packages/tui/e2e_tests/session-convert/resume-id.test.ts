@@ -47,6 +47,7 @@ import type { LoadSessionRequest } from '@agentclientprotocol/sdk';
 import { computeWorkspaceHash, SessionPersistence } from '@kiro/agent';
 
 import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import { KAS_DEFAULT_AGENT_ID } from '../../src/constants/agents';
 import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
 import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
 import { assertConvertedSession } from './assertions';
@@ -178,7 +179,7 @@ describe('--resume-id', () => {
       );
       expect(metadata.id).toBe(targetSessionId);
       expect(metadata.schemaVersion).toBe('1.0.0');
-      expect(metadata.agentMode).toBe('vibe');
+      expect(metadata.agentMode).toBe(KAS_DEFAULT_AGENT_ID);
       expect(metadata.workspacePaths).toEqual([kiroHome]);
       // KAS stamps `1` on save; converter output matches.
       expect(metadata.dataModelVersion).toBe(1);

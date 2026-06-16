@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
+import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
 import { createAppStore } from '../stores/app-store';
@@ -635,7 +636,7 @@ describe('Kiro — handler registration and forwarding', () => {
       mockOnUpdateHandler({
         type: AgentEventType.AgentNotFound,
         requestedAgent: 'missing',
-        fallbackAgent: 'default',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
       } as AgentStreamEvent);
     }
     expect(handler).toHaveBeenCalled();

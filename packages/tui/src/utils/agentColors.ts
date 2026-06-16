@@ -1,9 +1,13 @@
 import { getTerminalChalkColor } from './colorUtils.js';
-
-export const DEFAULT_AGENT_NAME = 'kiro_default';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../constants/agents.js';
 
 /** Agent names that represent the default/built-in agent. */
-const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set(['kiro_default']);
+const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set([
+  KAS_DEFAULT_AGENT_ID,
+]);
 
 /** Whether the given agent name is the default built-in agent. */
 export function isDefaultAgent(name: string): boolean {
@@ -18,7 +22,7 @@ export function isDefaultAgent(name: string): boolean {
  * pass through verbatim.
  */
 const BUILTIN_DISPLAY_NAMES: Record<string, string> = {
-  kiro_default: 'Kiro',
+  [KAS_DEFAULT_AGENT_ID]: KAS_DEFAULT_AGENT_NAME,
   kiro_planner: 'Plan',
   plan: 'Plan',
   spec: 'Spec',

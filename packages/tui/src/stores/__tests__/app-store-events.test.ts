@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { AgentEventType, ContentType } from '../../types/agent-events';
 
 mock.module('../../kiro', () => ({
@@ -519,7 +520,7 @@ describe('Stream event handler — AgentNotFound', () => {
     handler({
       type: AgentEventType.AgentNotFound,
       requestedAgent: 'missing-agent',
-      fallbackAgent: 'default',
+      fallbackAgent: KAS_DEFAULT_AGENT_ID,
     });
     expect(store.getState().initErrors).toHaveLength(1);
     expect(store.getState().initErrors[0].type).toBe('agent_not_found');

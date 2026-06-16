@@ -14,6 +14,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { defaultKasModes } from './shared/default-agent';
 
 interface SetConfigOptionParams {
   sessionId: string;
@@ -49,10 +50,7 @@ function setupHandshake(tc: AcpTestCase, setModelCurrentValue: string): void {
   // session/new reports the user's real model list with `auto` selected.
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: 'default-model-session',
-    modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
-    },
+    modes: defaultKasModes(),
     configOptions: [modelConfigOption('auto')],
   }));
 

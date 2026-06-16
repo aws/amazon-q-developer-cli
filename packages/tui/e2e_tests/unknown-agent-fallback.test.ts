@@ -1,9 +1,11 @@
 /**
- * E2E test: launching with an unknown --agent falls back to kiro_default.
+ * E2E test: launching with an unknown --agent falls back to the active
+ * engine's default agent.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { KAS_DEFAULT_AGENT_ID } from '../src/constants/agents';
 
 describe('unknown agent fallback', () => {
   let testCase: E2ETestCase | null = null;
@@ -15,7 +17,7 @@ describe('unknown agent fallback', () => {
     }
   });
 
-  it('falls back to kiro_default when --agent specifies a nonexistent agent', async () => {
+  it('falls back to the active engine default when --agent specifies a nonexistent agent', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('unknown-agent-fallback')
       .withCliArgs('--agent', 'nonexistent-agent')
@@ -25,7 +27,9 @@ describe('unknown agent fallback', () => {
     await testCase.waitForSlashCommands();
 
     const store = await testCase.getStore();
-    expect(store.currentAgent?.name).toBe('kiro_default');
+    expect(store.currentAgent?.name).toBe(
+      store.agentEngine === 'kas' ? KAS_DEFAULT_AGENT_ID : 'kiro_default'
+    );
 
     await testCase.pressCtrlCTwice();
     const exitCode = await testCase.expectExit();

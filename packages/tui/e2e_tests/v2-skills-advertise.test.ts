@@ -3,7 +3,7 @@
  * `/` slash-command autocomplete.
  *
  * Setup: cwd is set to the sandbox dir so V2 picks the BuiltIn
- * `kiro_default` agent (no workspace agent overrides), whose resource
+ * `default` agent (no workspace agent overrides), whose resource
  * list includes `skill://.kiro/skills/*\/SKILL.md`. The skill file
  * is written via `prelaunchFiles` BEFORE spawn so V2's one-shot
  * `advertise_commands_and_prompts` finds it during session init.

@@ -1,7 +1,7 @@
 /**
  * Regression test: chained switch_to_execution in KAS plan mode.
  *
- * Bug: when the planner emits `current_mode_update` → vibe exec2 inside a
+ * Bug: when the planner emits `current_mode_update` → default execution inside a
  * single session/prompt response, exec2 text renders but tool-use cards
  * do NOT appear in store.messages.
  *
@@ -19,6 +19,11 @@ import type {
   PromptResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import {
+  DEFAULT_KAS_MODE,
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from './shared/default-agent';
 
 const SESSION_ID = 'switch-exec-session-1';
 
@@ -35,7 +40,7 @@ describe('switch_to_execution chained render', () => {
      * GIVEN  KAS mode starts as 'plan'
      * WHEN   session/prompt response contains:
      *          1. planner agent_message_chunk
-     *          2. current_mode_update → 'vibe'
+     *          2. current_mode_update → KAS default execution mode
      *          3. exec2 agent_message_chunk
      *          4. exec2 tool_call (fs_write, kind:'edit', _meta.kiro.toolOrigin:'agent')
      *          5. tool_call_update completed
@@ -56,10 +61,7 @@ describe('switch_to_execution chained render', () => {
       sessionId: SESSION_ID,
       modes: {
         currentModeId: 'plan',
-        availableModes: [
-          { id: 'plan', name: 'Plan' },
-          { id: 'vibe', name: 'Default' },
-        ],
+        availableModes: [{ id: 'plan', name: 'Plan' }, { ...DEFAULT_KAS_MODE }],
       },
     }));
 
@@ -78,12 +80,12 @@ describe('switch_to_execution chained render', () => {
       });
       await delay(100);
 
-      // 2. Mode switch: planner → vibe (exec2)
+      // 2. Mode switch: planner → KAS default execution mode
       tc!.mock.notify('session/update', {
         sessionId: SESSION_ID,
         update: {
           sessionUpdate: 'current_mode_update',
-          currentModeId: 'vibe',
+          currentModeId: KAS_DEFAULT_AGENT_ID,
         },
       });
       await delay(100);
@@ -191,7 +193,7 @@ describe('switch_to_execution chained render', () => {
 
   it('[A] tool_use card renders with current_mode_update + welcomeMessage', async () => {
     /**
-     * Variant A: mode switch WITH welcomeMessage on the vibe mode.
+     * Variant A: mode switch WITH welcomeMessage on the KAS default mode.
      * The AgentSwitched event carries welcomeMessage → setCurrentAgent inserts
      * a standalone Model message mid-turn → ConversationView turn-split →
      * executor ToolCalls become orphaned turns not rendered.
@@ -210,7 +212,7 @@ describe('switch_to_execution chained render', () => {
       },
     }));
 
-    // Variant A: vibe mode has _meta.welcomeMessage so AgentSwitched carries it
+    // Variant A: the KAS default mode has _meta.welcomeMessage so AgentSwitched carries it
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: SESSION_ID_A,
       modes: {
@@ -218,8 +220,8 @@ describe('switch_to_execution chained render', () => {
         availableModes: [
           { id: 'plan', name: 'Plan' },
           {
-            id: 'vibe',
-            name: 'Default',
+            id: KAS_DEFAULT_AGENT_ID,
+            name: KAS_DEFAULT_AGENT_NAME,
             _meta: { welcomeMessage: 'Starting execution.' },
           },
         ],
@@ -241,12 +243,12 @@ describe('switch_to_execution chained render', () => {
       });
       await delay(100);
 
-      // 2. Mode switch: planner → vibe WITH welcomeMessage
+      // 2. Mode switch: planner → KAS default mode WITH welcomeMessage
       tc!.mock.notify('session/update', {
         sessionId: SESSION_ID_A,
         update: {
           sessionUpdate: 'current_mode_update',
-          currentModeId: 'vibe',
+          currentModeId: KAS_DEFAULT_AGENT_ID,
         },
       });
       await delay(100);
@@ -376,10 +378,7 @@ describe('switch_to_execution chained render', () => {
       sessionId: SESSION_ID_AB,
       modes: {
         currentModeId: 'plan',
-        availableModes: [
-          { id: 'plan', name: 'Plan' },
-          { id: 'vibe', name: 'Default' },
-        ],
+        availableModes: [{ id: 'plan', name: 'Plan' }, { ...DEFAULT_KAS_MODE }],
       },
     }));
 

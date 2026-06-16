@@ -14,6 +14,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
+import { DEFAULT_KAS_MODE, KAS_DEFAULT_AGENT_ID } from './shared/default-agent';
 
 interface SetConfigOptionParams {
   sessionId: string;
@@ -33,11 +34,8 @@ function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
     sessionId: 'model-session-1',
     modes: {
-      currentModeId: 'vibe',
-      availableModes: [
-        { id: 'vibe', name: 'Default' },
-        { id: 'spec', name: 'Spec' },
-      ],
+      currentModeId: KAS_DEFAULT_AGENT_ID,
+      availableModes: [{ ...DEFAULT_KAS_MODE }, { id: 'spec', name: 'Spec' }],
     },
     configOptions: [
       {
@@ -211,7 +209,7 @@ describe('model switch, agent swap, and cancel', () => {
 
   it('/agent swap sends set_config_option(mode) and server confirms via current_mode_update', async () => {
     /**
-     * GIVEN  TUI on 'vibe' mode with 'spec' available
+     * GIVEN  TUI on the KAS default mode with 'spec' available
      * WHEN   user types /agent swap spec (simulated via slash command dispatch)
      * THEN   set_config_option with configId:'mode' is sent
      *        server responds with current_mode_update → store.currentAgent updates

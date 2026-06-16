@@ -22,6 +22,10 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import type { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../../src/constants/agents';
 
 export interface SetupAcpHandshakeOptions {
   /**
@@ -49,15 +53,17 @@ export function setupAcpHandshake(
     tc.mock.on<NewSessionRequest, NewSessionResponse>('session/new', () => ({
       sessionId: bootSessionId,
       modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Default' }],
+        currentModeId: KAS_DEFAULT_AGENT_ID,
+        availableModes: [
+          { id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
+        ],
       },
     }));
   }
   tc.mock.on<LoadSessionRequest, LoadSessionResponse>('session/load', () => ({
     modes: {
-      currentModeId: 'vibe',
-      availableModes: [{ id: 'vibe', name: 'Default' }],
+      currentModeId: KAS_DEFAULT_AGENT_ID,
+      availableModes: [{ id: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME }],
     },
   }));
   tc.mock.on('session/set_config_option', () => ({}));

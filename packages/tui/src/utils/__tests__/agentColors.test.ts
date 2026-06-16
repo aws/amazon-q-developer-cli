@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'bun:test';
 import {
-  DEFAULT_AGENT_NAME,
-  getAgentColor,
-  getAgentDisplayName,
-} from '../agentColors';
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../../constants/agents';
+import { getAgentColor, getAgentDisplayName } from '../agentColors';
 
 describe('agentColors', () => {
   const mockGetColor = (path: string) => {
@@ -13,15 +13,9 @@ describe('agentColors', () => {
     return colors[path] ?? colors.brand;
   };
 
-  describe('DEFAULT_AGENT_NAME', () => {
-    it('equals kiro_default', () => {
-      expect(DEFAULT_AGENT_NAME).toBe('kiro_default');
-    });
-  });
-
   describe('getAgentColor', () => {
-    it('returns brand color for DEFAULT_AGENT_NAME', () => {
-      const result = getAgentColor(DEFAULT_AGENT_NAME, mockGetColor);
+    it('returns brand color for the KAS default agent id', () => {
+      const result = getAgentColor(KAS_DEFAULT_AGENT_ID, mockGetColor);
       expect(result.hex).toBe('#8700FF');
       expect(result('test')).toBe('brand:test');
     });
@@ -64,10 +58,14 @@ describe('agentColors', () => {
   });
 
   describe('getAgentDisplayName', () => {
-    it('returns "Kiro" for the default built-in', () => {
-      expect(getAgentDisplayName('kiro_default')).toBe('Kiro');
+    it('returns "Default" for the default built-in', () => {
+      expect(getAgentDisplayName(KAS_DEFAULT_AGENT_ID)).toBe(
+        KAS_DEFAULT_AGENT_NAME
+      );
       // Built-in lookup wins even when KAS supplies a different fallback.
-      expect(getAgentDisplayName('kiro_default', 'Vibe')).toBe('Kiro');
+      expect(getAgentDisplayName(KAS_DEFAULT_AGENT_ID, 'Vibe')).toBe(
+        KAS_DEFAULT_AGENT_NAME
+      );
     });
 
     it('returns "Plan" for kiro_planner and the legacy "plan" id', () => {
