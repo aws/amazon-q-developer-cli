@@ -312,7 +312,6 @@ export const InlineLayout: React.FC = () => {
   const activeCommand = useAppStore((state) => state.activeCommand);
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
-  const agentEngine = useAppStore((state) => state.agentEngine);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
