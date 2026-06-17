@@ -19,16 +19,22 @@ export interface McpOAuthActionDeps {
   ) => void;
 }
 
+/** Shown when the OAuth URL is (or will be) on the clipboard. */
+const URL_COPIED_MESSAGE = 'OAuth URL copied to clipboard';
+
 /**
- * Trigger MCP OAuth for a pending server. Behaviour differs by agent engine:
+ * Trigger MCP OAuth for a pending server. Behaviour differs by agent engine,
+ * but the user-facing outcome is the same: the OAuth URL ends up on the
+ * clipboard for the user to open in a browser.
  *
  * - **KAS mode**: the initial connection used a placeholder redirect URI, so
- *   the cached URL is stale. Reset the server with `startOAuth=true` to spin up
- *   a real local redirect server and open the browser.
+ *   the cached URL is stale. Reset the server with `startOAuth=true`; KAS then
+ *   regenerates a valid URL and hands it back via `_kiro/openExternalUrl`,
+ *   which the CLI copies to the clipboard (see `capabilities/copy-url-to-clipboard.ts`).
  * - **V2 (Rust agent) mode**: the agent already started a local redirect server
  *   on a real port and is blocked awaiting the callback, so the URL is valid
  *   as-is. The Rust agent does not implement `_kiro/mcp/resetServer`, so copy
- *   the URL for the user to open in a browser and complete authorization.
+ *   the URL here directly.
  */
 export function startMcpOAuth(deps: McpOAuthActionDeps): void {
   const {
@@ -43,7 +49,7 @@ export function startMcpOAuth(deps: McpOAuthActionDeps): void {
   if (!serverName) return;
 
   if (agentEngine === 'kas') {
-    showAlert(`Authenticating MCP server "${serverName}"...`, 'info', 3000);
+    showAlert(URL_COPIED_MESSAGE, 'info', 3000);
     resetMcpServer(serverName, true).catch(() => {
       showAlert(`Failed to start OAuth for "${serverName}"`, 'error', 5000);
     });
@@ -51,7 +57,7 @@ export function startMcpOAuth(deps: McpOAuthActionDeps): void {
   }
 
   if (url && copyToClipboard(url)) {
-    showAlert('OAuth URL copied to clipboard', 'info', 3000);
+    showAlert(URL_COPIED_MESSAGE, 'info', 3000);
   } else {
     showAlert(
       'Failed to copy OAuth URL — no clipboard tool found',

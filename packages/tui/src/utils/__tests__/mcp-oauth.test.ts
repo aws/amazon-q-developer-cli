@@ -81,7 +81,7 @@ describe('startMcpOAuth', () => {
     expect(resetMcpServer).toHaveBeenCalledWith('oauth-srv', true);
     expect(copyToClipboard).not.toHaveBeenCalled();
     expect(showAlert).toHaveBeenCalledWith(
-      'Authenticating MCP server "oauth-srv"...',
+      'OAuth URL copied to clipboard',
       'info',
       3000
     );

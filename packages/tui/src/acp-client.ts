@@ -20,7 +20,7 @@ import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
-import { createOpenExternalUrlCapability } from './capabilities/open-external-url';
+import { createCopyUrlToClipboardCapability } from './capabilities/copy-url-to-clipboard';
 import { createSecretStorageCapabilities } from './capabilities/secret-storage';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type {
@@ -2206,7 +2206,7 @@ export class KasAcpClient extends BaseAcpClient {
       clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
       capabilities: [
         createGetAccessTokenCapability(),
-        createOpenExternalUrlCapability(),
+        createCopyUrlToClipboardCapability(),
         ...createSecretStorageCapabilities(),
       ],
       clientMeta: {

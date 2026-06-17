@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "MCP OAuth panel now shows confirmation when URL is copied to clipboard"
+}

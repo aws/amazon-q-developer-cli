@@ -82,6 +82,8 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { InterruptMode } from '../../constants/interrupt-mode.js';
 import type { AgentEngine } from '../../agent-engine.js';
+import { startMcpOAuth } from '../../utils/mcp-oauth.js';
+import { copyToSystemClipboard } from '../../commands/effects.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
@@ -313,6 +315,7 @@ export const InlineLayout: React.FC = () => {
   const promptHint = useAppStore((state) => state.promptHint);
   const agentEngine = useAppStore((state) => state.agentEngine);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
@@ -1224,18 +1227,21 @@ export const InlineLayout: React.FC = () => {
                 pendingOAuthUrls={pendingOAuthServers}
                 mode={mcpMode}
                 onClose={handleCloseMcpPanel}
-                onAuthenticate={
-                  // KAS mode resets the server to start OAuth with a fresh
-                  // redirect server. In V2 (Rust agent) mode, leave this
-                  // undefined so McpPanel falls back to copying the (already
-                  // valid) URL to the clipboard — the Rust agent does not
-                  // implement `_kiro/mcp/resetServer`.
-                  agentEngine === 'kas'
-                    ? (serverName) => {
-                        kiro.resetMcpServer(serverName, true).catch(() => {});
-                      }
-                    : undefined
-                }
+                onAuthenticate={(serverName) => {
+                  // Mirror the Ctrl+Y path so the panel shows the same
+                  // notification: KAS resets the server to (re)start OAuth;
+                  // V2 copies the (already valid) URL to the clipboard.
+                  startMcpOAuth({
+                    agentEngine,
+                    serverName,
+                    url: pendingOAuthServers.get(serverName) ?? null,
+                    resetMcpServer: (name, startOAuth) =>
+                      kiro.resetMcpServer(name, startOAuth),
+                    copyToClipboard: copyToSystemClipboard,
+                    showAlert: (message, status, autoHideMs) =>
+                      showTransientAlert({ message, status, autoHideMs }),
+                  });
+                }}
                 onAction={async (serverNames: string[]) => {
                   const action = mcpMode === 'add' ? 'add' : 'remove';
                   await kiro.executeCommand({
