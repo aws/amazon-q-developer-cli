@@ -1744,6 +1744,7 @@ abstract class BaseAcpClient implements SessionClient {
     const notifSessionId = (params as any).sessionId as string | undefined;
     const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
     const event = this.convertAcpUpdateToEvent(update);
+
     if (!event) return;
 
     if (isSubagentEvent) {
@@ -1752,7 +1753,9 @@ abstract class BaseAcpClient implements SessionClient {
         event.type === AgentEventType.ToolCall ||
         event.type === AgentEventType.ToolCallUpdate ||
         event.type === AgentEventType.ToolCallFinished;
-      if (isToolEvent) this.broadcastStreamEvent(event);
+      if (isToolEvent) {
+        this.broadcastStreamEvent(event);
+      }
     } else {
       this.broadcastStreamEvent(event);
     }
@@ -2068,6 +2071,21 @@ function fromKasModeId(kasModeId: string): string {
   return kasModeId;
 }
 
+/**
+ * Subagent event types that should ALSO render inline in the main transcript
+ * when the subtask is *standalone* (no crew panel registered). These are the
+ * tool cards a user expects to see from a hidden/spec subagent. Content/Thought
+ * are forwarded too — harmless, since KAS suppresses subagent say/reasoning for
+ * hidden agents so they rarely arrive. Pure lifecycle/noise events are excluded.
+ */
+const STANDALONE_MAIN_FORWARD_TYPES: ReadonlySet<AgentEventType> = new Set([
+  AgentEventType.ToolCall,
+  AgentEventType.ToolCallUpdate,
+  AgentEventType.ToolCallFinished,
+  AgentEventType.Content,
+  AgentEventType.Thought,
+]);
+
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
@@ -2204,6 +2222,12 @@ export class KasAcpClient extends BaseAcpClient {
   // Pipeline support: maps toolCallId → agentSubtaskId for permission routing
   private toolCallToSubtask: Map<string, string> = new Map();
 
+  // Subtasks that correspond to a VISIBLE pipeline stage (a crew panel was
+  // registered via handlePipelineStateUpdate → broadcastSubagentList). Only
+  // these route tool approvals to the crew monitor; hidden/one-off spec
+  // subagents have no panel, so their approvals must surface in the main view.
+  private pipelineStageSubtasks: Set<string> = new Set();
+
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
   /** Cache of session modes received on session/new and session/load.  This
@@ -2284,6 +2308,12 @@ export class KasAcpClient extends BaseAcpClient {
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
+    // Drop subtask correlation state from the previous session so a stale
+    // subtaskId can't misroute a new session's tool approval to a crew panel
+    // that no longer exists. loadSession replays history AFTER this runs, so
+    // any still-active stages get re-registered before their events arrive.
+    this.pipelineStageSubtasks.clear();
+    this.toolCallToSubtask.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -2369,10 +2399,11 @@ export class KasAcpClient extends BaseAcpClient {
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
         const event = this.convertAcpUpdateToEvent(update);
+        const meta = event ? extractKiroMetaFromEvent(event) : undefined;
+
         if (!event) return;
 
         // Intercept pipeline metadata → emit subagent list update
-        const meta = extractKiroMetaFromEvent(event);
         if (meta?.pipeline) {
           this.handlePipelineStateUpdate(meta.pipeline);
         }
@@ -2380,16 +2411,37 @@ export class KasAcpClient extends BaseAcpClient {
         // Intercept per-stage events → route to multi-session handlers
         if (meta?.agentSubtaskId) {
           const subtaskId = meta.agentSubtaskId;
+          // A subtask is a VISIBLE crew stage only when a pipeline state update
+          // registered it (see handlePipelineStateUpdate). Crew stages render
+          // exclusively in the crew panel via multi-session. Standalone/hidden
+          // spec subagents never register a stage, so they have no panel — their
+          // tool cards would render NOWHERE if dropped. Forward those to the main
+          // stream so they appear as normal inline tool cards.
+          const isVisibleCrewStage = this.pipelineStageSubtasks.has(subtaskId);
           if (event.type === AgentEventType.ToolCall) {
             event.sessionId = subtaskId;
             this.toolCallToSubtask.set(event.id, subtaskId);
           }
           this.broadcastMultiSession(subtaskId, event);
-          // Any event tagged with agentSubtaskId belongs to a sub-agent
-          // (per-stage content, tool calls, or the invoke_sub_agent
-          // wrapper). It must not also reach the main conversation,
-          // otherwise sub-agent narration leaks into the main view as
-          // duplicates of what shows in SUBAGENT OUTPUT.
+          // Crew stages: panel-only (the SUBAGENT OUTPUT panel renders them, so
+          // they must NOT also leak into the main conversation as duplicates).
+          // Standalone subtasks: also surface in main. The main copy strips
+          // `sessionId` (set above for ToolCall, for crew correlation) so it
+          // renders as a normal inline tool card rather than a tagged subagent
+          // tool. Multi-session already received the tagged copy by reference.
+          if (
+            !isVisibleCrewStage &&
+            STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
+          ) {
+            // Strip the crew-correlation sessionId (set above for ToolCall) so
+            // the main copy renders as a normal inline card. Only the ToolCall
+            // variant carries sessionId; other forwarded types are sent as-is.
+            const mainEvent =
+              event.type === AgentEventType.ToolCall
+                ? { ...event, sessionId: undefined }
+                : event;
+            this.broadcastStreamEvent(mainEvent);
+          }
           return;
         }
 
@@ -2467,6 +2519,12 @@ export class KasAcpClient extends BaseAcpClient {
         dependsOn: s.dependsOn,
       }));
 
+    // Record every stage's subtask as a visible crew stage so its tool
+    // approvals can route to the crew monitor (see handleKasPermissionRequest).
+    for (const s of pipeline.stages) {
+      if (s.agentSubtaskId) this.pipelineStageSubtasks.add(s.agentSubtaskId);
+    }
+
     const pendingStages = pipeline.stages
       .filter((s) => s.status === 'pending')
       .map((s) => ({
@@ -2491,10 +2549,23 @@ export class KasAcpClient extends BaseAcpClient {
     const isSubagentSpawn =
       (request as any)?._meta?.kiro?.consent?.capability ===
       KAS_CAPABILITIES.SUBAGENT;
+    // Only route a child tool approval to the crew monitor when its subtask is
+    // a VISIBLE pipeline stage (a crew panel was registered). Hidden/one-off
+    // spec subagents never register a stage, so attaching their subtaskId as
+    // `sessionId` would route the prompt to a crew panel that doesn't exist —
+    // it would never render, resolve() would never fire, and KAS would deadlock
+    // ("turn may be stuck", isProcessing=true forever). Surfacing in the main
+    // view keeps the prompt resolvable. Ordering caveat: if the pipeline state
+    // update arrives AFTER this request, the approval routes to main rather
+    // than crew — acceptable, since main is always resolvable and never hangs.
+    const isVisibleCrewStage =
+      !!subtaskId && this.pipelineStageSubtasks.has(subtaskId);
     const enriched = {
       ...request,
       toolCall: request.toolCall || { toolCallId },
-      ...(subtaskId && !isSubagentSpawn && { sessionId: subtaskId }),
+      ...(subtaskId &&
+        !isSubagentSpawn &&
+        isVisibleCrewStage && { sessionId: subtaskId }),
     };
     return this.handlePermissionRequest(enriched);
   }
@@ -2644,6 +2715,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.toolsNotificationDisposable = null;
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
+    // Mirror wireSessionListeners: drop subtask correlation state on teardown.
+    this.pipelineStageSubtasks.clear();
+    this.toolCallToSubtask.clear();
     super.close();
   }
 

@@ -4682,18 +4682,53 @@ describe('MCP OAuth flow', () => {
       expect((event as any).sessionId).toBe('sub-1');
     });
 
-    it('agentSubtaskId events do NOT broadcast to main stream', async () => {
+    it('crew-stage agentSubtaskId events do NOT broadcast to main stream', async () => {
       // Regression: per-stage events were leaking into the main conversation
       // alongside the SUBAGENT OUTPUT panel, causing duplicate text and tool
-      // events. Anything tagged with `_meta.kiro.agentSubtaskId` must reach
-      // multi-session handlers only.
+      // events. For a VISIBLE crew stage (registered via a pipeline state
+      // update), anything tagged with `_meta.kiro.agentSubtaskId` must reach
+      // multi-session handlers ONLY. (Behavior update: the discriminator is now
+      // pipelineStageSubtasks — a stage must be registered first, else the
+      // subtask is treated as standalone and DOES surface in main. See the
+      // 'standalone subagent tool cards surface in main' suite.)
       const client = new KasAcpClient();
       const mainHandler = mock((_event: any) => {});
       const multiHandler = mock((_sessionId: string, _event: any) => {});
       client.onUpdate(mainHandler);
       client.onMultiSessionUpdate(multiHandler);
       await client.newSession();
+
+      // Register 'sub-1' as a VISIBLE crew stage so a panel exists for it.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
       mainHandler.mockClear();
+      multiHandler.mockClear();
 
       // Per-stage tool call
       await capturedSessionUpdateHandler({
@@ -4763,10 +4798,226 @@ describe('MCP OAuth flow', () => {
     });
   });
 
+  // ── Standalone (hidden) subagent tool cards surface inline in main ──
+
+  describe('standalone subagent tool cards surface in main', () => {
+    it('standalone subtask tool_call/update (no crew panel) forwards to main AND multi-session', async () => {
+      // Ground truth: a hidden/standalone spec subagent emits tool calls tagged
+      // with agentSubtaskId but never registers a pipeline stage, so there is no
+      // crew panel. Pre-fix these were dropped from main (rendered nowhere).
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // tool_call tagged with a subtask NEVER registered as a pipeline stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-x',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/spec/requirements.md' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-x' } },
+        },
+      });
+
+      // tool_call_update for the same standalone subtask.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'write-x',
+          status: 'in_progress',
+          content: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-x' } },
+        },
+      });
+
+      const mainToolEvents = mainHandler.mock.calls
+        .map((c) => c[0] as any)
+        .filter(
+          (e) =>
+            e.type === AgentEventType.ToolCall ||
+            e.type === AgentEventType.ToolCallUpdate
+        );
+      // Both reach the MAIN stream so the standalone subagent's tool cards
+      // render inline (pre-fix this was 0).
+      expect(mainToolEvents.length).toBe(2);
+      // And both still reach multi-session (harmless — no panel renders them).
+      expect(multiHandler).toHaveBeenCalledTimes(2);
+    });
+
+    it('standalone subtask full lifecycle (call + update + finished) all forward to main', async () => {
+      // NIT coverage: ToolCallFinished is in STANDALONE_MAIN_FORWARD_TYPES, so a
+      // hidden subagent's tool card must COMPLETE inline in main, not just start.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      const tagged = { kiro: { agentSubtaskId: 'sub-life' } };
+      // tool_call (→ ToolCall)
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'life-1',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/spec/x.md' },
+          content: [],
+          locations: [],
+          _meta: tagged,
+        },
+      });
+      // tool_call_update in_progress (→ ToolCallUpdate)
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'life-1',
+          status: 'in_progress',
+          content: [],
+          _meta: tagged,
+        },
+      });
+      // tool_call_update completed (→ ToolCallFinished)
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'life-1',
+          status: 'completed',
+          content: [],
+          _meta: tagged,
+        },
+      });
+
+      const mainTypes = mainHandler.mock.calls.map((c) => (c[0] as any).type);
+      expect(mainTypes).toContain(AgentEventType.ToolCall);
+      expect(mainTypes).toContain(AgentEventType.ToolCallUpdate);
+      expect(mainTypes).toContain(AgentEventType.ToolCallFinished);
+    });
+
+    it('main-forwarded ToolCall has sessionId stripped; multi-session copy retains it', async () => {
+      const client = new KasAcpClient();
+      let mainToolCall: any = null;
+      let multiToolCall: { sid: string; e: any } | null = null;
+      client.onUpdate((e: any) => {
+        if (e.type === AgentEventType.ToolCall) mainToolCall = e;
+      });
+      client.onMultiSessionUpdate((sid: string, e: any) => {
+        if (e.type === AgentEventType.ToolCall) multiToolCall = { sid, e };
+      });
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-x',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/spec/design.md' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-x' } },
+        },
+      });
+
+      expect(mainToolCall).not.toBeNull();
+      // Main copy renders as a NORMAL inline tool card (no subagent session tag).
+      expect(mainToolCall.sessionId).toBeUndefined();
+      // Multi-session copy keeps the subtask id for crew correlation.
+      expect(multiToolCall).not.toBeNull();
+      expect(multiToolCall!.sid).toBe('sub-x');
+      expect(multiToolCall!.e.sessionId).toBe('sub-x');
+    });
+
+    it('crew-stage subtask tool_call (registered pipeline) stays panel-only, not main', async () => {
+      // Regression: when a pipeline state update HAS registered the subtask as a
+      // visible crew stage, its per-stage tool calls render in the crew panel
+      // only and must NOT leak into the main conversation.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      // Register 'sub-1' as a VISIBLE crew stage FIRST (a panel exists for it).
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // Per-stage tool_call for the registered stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-001',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Task 5: Permission request stage correlation ──
 
   describe('permission request stage correlation', () => {
-    it('permission request resolves sessionId from toolCallToSubtask map', async () => {
+    // Behavior fix (was: 'permission request resolves sessionId from
+    // toolCallToSubtask map'). This previously asserted sessionId='sub-1'
+    // even though NO pipeline state update ever registered 'sub-1' as a
+    // visible crew stage. That encoded the deadlock bug: routing a hidden
+    // subagent's tool approval to a crew panel that doesn't exist drops the
+    // prompt (never renders, resolve() never fires) and KAS hangs. The
+    // corrected expectation is sessionId=undefined so the prompt surfaces in
+    // the main view, which is always resolvable. Crew routing for *real*
+    // pipeline stages is covered by the positive test below.
+    it('hidden subagent tool approval (no registered stage) surfaces in main view', async () => {
       const client = new KasAcpClient();
       let approvalInfo: any = null;
       const mainHandler = mock((event: any) => {
@@ -4807,10 +5058,225 @@ describe('MCP OAuth flow', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(approvalInfo).not.toBeNull();
-      expect(approvalInfo.sessionId).toBe('sub-1');
+      // No pipeline stage registered for 'sub-1' → main view (undefined), not crew.
+      expect(approvalInfo.sessionId).toBeUndefined();
       expect(approvalInfo.toolCall.toolCallId).toBe('write-001');
 
       // Resolve the approval to avoid hanging promise
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+
+    // Repro of the recorded deadlock: a hidden/one-off spec subagent issues
+    // fs_write (consent.capability='fs_write', NOT 'subagent'). Its toolCallId
+    // is in toolCallToSubtask but no crew panel was ever registered. Must
+    // route to main (sessionId undefined). Pre-fix this returned 'sub-1'.
+    it('hidden spec subagent fs_write approval routes to main, not crew', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Child subagent tool_call tags the call with its subtask id, but the
+      // subtask is hidden — no pipeline state update registers a crew stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'spec-write-001',
+          title: 'Write File',
+          kind: 'edit',
+          rawInput: { path: '/spec' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'spec-sub' } },
+        },
+      });
+
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'spec-write-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: { kiro: { consent: { capability: 'fs_write' } } },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+      expect(approvalInfo.toolCall.toolCallId).toBe('spec-write-001');
+
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+
+    // Positive/regression: a REAL visible pipeline stage. Pipeline state
+    // update registers 'sub-1' as a crew stage FIRST, then the tool approval
+    // arrives → routes to crew (sessionId='sub-1').
+    it('visible pipeline stage tool approval routes to crew (sessionId set)', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Register 'sub-1' as a visible crew stage via a pipeline state update.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-task',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // Child tool_call inside that stage populates toolCallToSubtask.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-stage-001',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'write-stage-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBe('sub-1');
+      expect(approvalInfo.toolCall.toolCallId).toBe('write-stage-001');
+
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+
+    // Regression for #3109: the invoke_sub_agent WRAPPER spawn approval
+    // (consent.capability='subagent') is a parent-session decision and must
+    // surface in main view regardless of subtask correlation. Unchanged by fix.
+    it('invoke_sub_agent wrapper spawn approval surfaces in main view', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Register 'sub-9' as a VISIBLE crew stage FIRST. This makes the test
+      // discriminating: without it, isVisibleCrewStage is false and the
+      // sessionId would be undefined regardless of the spawn guard, so the
+      // assertion couldn't detect a regression in the `!isSubagentSpawn` term.
+      // With the stage registered, isVisibleCrewStage=true and `!isSubagentSpawn`
+      // becomes the SOLE gate keeping this spawn approval in the main view.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op-9',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'spec' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-spawn',
+                stages: [
+                  {
+                    name: 'spec-writer',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-9',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      // A subtask-tagged tool_call populates the map for this toolCallId...
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'spawn-001',
+          title: 'invoke_sub_agent',
+          kind: 'other',
+          rawInput: { task: 'spec' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-9' } },
+        },
+      });
+
+      // ...but the spawn consent capability forces main view.
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'spawn-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: { kiro: { consent: { capability: 'subagent' } } },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+
       approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
       await permissionPromise;
     });
@@ -4854,6 +5320,198 @@ describe('MCP OAuth flow', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    });
+
+    // Session switch clears stale subtask correlation. A stage subtask that
+    // routed to crew in one session must NOT keep routing to crew after a new
+    // session starts (its crew panel is gone). wireSessionListeners clears the
+    // collections; a second newSession() re-invokes it here.
+    it('session switch clears stage subtasks so a prior crew subtask routes to main', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Register 'sub-1' as a visible crew stage, then confirm its tool approval
+      // routes to crew (sessionId='sub-1').
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-switch',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-stage-001',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+      const firstPromise = capturedPermissionHandler({
+        toolCallId: 'write-stage-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(approvalInfo.sessionId).toBe('sub-1');
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await firstPromise;
+
+      // Session switch: a second newSession() re-invokes wireSessionListeners,
+      // which clears pipelineStageSubtasks + toolCallToSubtask.
+      approvalInfo = null;
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // The SAME subtask + toolCallId now has no registered stage → standalone,
+      // so its approval surfaces in main (sessionId undefined). Pre-clear this
+      // would still resolve to 'sub-1', so the assertion is discriminating.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-stage-001',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+      const secondPromise = capturedPermissionHandler({
+        toolCallId: 'write-stage-001',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await secondPromise;
+    });
+
+    // Ordering edge (documented race): a permission request for a tagged but
+    // UNREGISTERED subtask routes to main at request time. A pipeline state
+    // update that arrives AFTER must NOT retroactively re-route the already
+    // decided approval to crew — routing is fixed when the request is handled.
+    it('routing is decided at request time, not retroactively by a late pipeline update', async () => {
+      const client = new KasAcpClient();
+      let approvalInfo: any = null;
+      const mainHandler = mock((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+        }
+      });
+      client.onUpdate(mainHandler);
+      await client.newSession();
+      mainHandler.mockClear();
+
+      // Tagged tool_call for a subtask with NO registered stage yet.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-late',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-late' } },
+        },
+      });
+
+      // Permission request fires BEFORE the pipeline registration → main.
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'write-late',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {},
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(approvalInfo).not.toBeNull();
+      expect(approvalInfo.sessionId).toBeUndefined();
+
+      // NOW a late pipeline state update registers 'sub-late' as a crew stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op-late',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-late',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-late',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      await new Promise((r) => setTimeout(r, 20));
+
+      // The already-decided approval is unchanged (still main, sessionId
+      // undefined) — the late registration does not rewrite the emitted event.
       expect(approvalInfo.sessionId).toBeUndefined();
 
       approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
