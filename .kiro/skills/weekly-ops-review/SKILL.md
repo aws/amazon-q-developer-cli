@@ -6,14 +6,18 @@ description: Generate the weekly "[Kiro-CLI] Weekly Ops Review" oncall report fo
 # Kiro CLI Weekly Ops Review — Report Generation SOP
 
 Generate the **`[Kiro-CLI] Weekly Ops Review`** report for the `Amazon Q for CLI`
-resolver group and write it to **`.ops/weekly-reviews/`** in the repository.
+resolver group, write it to **`.ops/weekly-reviews/`**, and open a review PR so the team
+can comment on it during the ops meeting.
 
 - Output: `.ops/weekly-reviews/YYYY-MM-DD.md` (where `YYYY-MM-DD` is the `end_date`)
 - Template: `.ops/weekly-reviews/TEMPLATE.md` (the canonical 10-section layout to fill in)
 - Example: `.ops/weekly-reviews/2026-06-15.md`
+- Review branch: `ops/weekly-review-YYYY-MM-DD` → PR titled `[Kiro-CLI] Weekly Ops Review - MM/DD/YYYY`
 
 The report has **10 sections** (Step 7). Ticket data is pulled directly from the
-ticketing system. The final report is written as a new Markdown file in the repo.
+ticketing system. By default the report is committed to a dedicated branch and a PR is
+opened (Step 9); reviewers leave comments during the meeting, and
+`@apply-ops-review-comments` (Step 11) folds them back in. Merge the PR when finalized.
 
 ## Team Constants
 
@@ -45,8 +49,10 @@ ticketing system. The final report is written as a new Markdown file in the repo
   Resolved from the schedule if omitted.
 - **previous_report_url** (optional): last week's report path — overrides the auto-lookup of
   the prior report for the Section 1 starting-queue figure and open action items.
+- **no_pr** (optional, default `false`): write the report to `.ops/weekly-reviews/` on the
+  current branch and STOP — do not create a branch or open a PR.
 - **dry_run** (optional, default `false`): print the Markdown to stdout and skip writing the
-  file to `.ops/weekly-reviews/`.
+  file, creating a branch, or opening a PR.
 
 ## Context discipline
 
@@ -325,11 +331,12 @@ grep -q "^# \[Kiro-CLI\] Weekly Ops Review - " "$REPORT" || echo "MISSING TITLE"
 Fix anything reported. Confirm Section 2 `Total` == Section 1 Resolved, and Section 6 row
 count == `metrics.pages` (or note the discrepancy).
 
-## Step 9 — Write report to repository
+## Step 9 — Write the report and open a review PR
 
-If `dry_run` is `true`: print `/tmp/kcli_oncall_report.md` contents to stdout and STOP.
+If `dry_run` is `true`: print `/tmp/kcli_oncall_report.md` to stdout and STOP — do not write
+a file, create a branch, or open a PR.
 
-Otherwise, copy the report into the repository:
+Otherwise, write the report into the repo:
 
 ```bash
 mkdir -p .ops/weekly-reviews
@@ -337,20 +344,84 @@ cp /tmp/kcli_oncall_report.md .ops/weekly-reviews/{end_date}.md
 ```
 
 Where `{end_date}` is the `YYYY-MM-DD` end date (e.g. `.ops/weekly-reviews/2026-06-15.md`).
-Confirm the file was written successfully.
+
+**If `no_pr` is `true`:** STOP here — the file is written on the current branch and the
+oncall can commit it however they like.
+
+**Otherwise (default): open a review PR** so the team can comment during the ops meeting.
+First confirm the working tree has no unrelated staged changes, then:
+
+```bash
+branch="ops/weekly-review-{end_date}"
+git checkout -b "$branch"
+git add .ops/weekly-reviews/{end_date}.md
+git commit -m "ops: weekly ops review {end_date}"
+git push -u origin "$branch"
+gh pr create \
+  --title "[Kiro-CLI] Weekly Ops Review - {MM/DD/YYYY}" \
+  --label no-changelog \
+  --body "Auto-generated weekly ops review for the {start_date} → {end_date} oncall week.
+
+Review during the ops meeting by leaving PR comments — Sections 3 (Pain Level), 5 (Action
+Items), 8 (Security Risks) and 10 (Dashboard Review) are filled live this way. Run
+\`@apply-ops-review-comments {pr_number}\` to fold comments back in, then merge when finalized."
+```
+
+Capture the PR URL from `gh pr create`. Only commit the single report file
+(`.ops/weekly-reviews/{end_date}.md`) — never stage unrelated changes. If the branch
+already exists (a regenerate of the same week), `git checkout "$branch"`, overwrite the
+file, and amend/append a commit instead of creating a duplicate branch.
 
 ## Step 10 — Report completion
 
-Print a short summary (do NOT paste the full report): file path (e.g.
-`.ops/weekly-reviews/2026-06-15.md`), or "dry run — not written" on dry_run; oncall week +
-current oncall; Pages, Queue `x→y`, Incoming, Resolved, LSE count; counts of pages logged /
-open Sev2s / tickets cut to other teams; any approximate (`~`) figures or warnings; and a
-reminder that Sections 3, 5, 8, 10 are reviewed live during the meeting.
+Print a short summary (do NOT paste the full report): the PR URL (or local file path on
+`no_pr`, or "dry run — not written" on `dry_run`); oncall week + current oncall; Pages,
+Queue `x→y`, Incoming, Resolved, LSE count; counts of pages logged / open Sev2s / tickets
+cut to other teams; any approximate (`~`) figures or warnings; and a reminder that
+Sections 3, 5, 8, 10 are filled during the meeting via PR comments
+(`@apply-ops-review-comments`).
+
+## Step 11 — Apply review comments (separate run)
+
+This step runs **on its own** (via `@apply-ops-review-comments`), after the ops meeting,
+once reviewers have left comments on the PR from Step 9. It is NOT part of report
+generation.
+
+1. Resolve the PR: use the PR number/URL if given, else find the open PR whose head branch
+   matches `ops/weekly-review-*` (`gh pr list --head ops/weekly-review-{end_date}` or
+   `gh pr list --search "Weekly Ops Review"`).
+2. Read **all** unresolved comments:
+   - Conversation/issue comments: `gh pr view {pr} --json comments,reviews,title,headRefName`
+   - Inline review comments (with file + line anchors):
+     `gh api repos/{owner}/{repo}/pulls/{pr}/comments`
+   Skip comments already marked resolved/outdated and your own prior fixup acknowledgements.
+3. For each actionable comment, interpret it as an edit to
+   `.ops/weekly-reviews/{end_date}.md` and apply it:
+   - Inline comments map to the file/line they anchor to (often Sections 3/5/8/10 or a
+     correction in a table row).
+   - General comments name the section or change ("pain level is 4", "add action item X",
+     "drop ticket Vxxx from section 9"). If a comment is ambiguous, leave the text as-is and
+     note it in the completion summary rather than guessing.
+4. Check out the PR branch, apply the edits, and push a fixup:
+   ```bash
+   gh pr checkout {pr}
+   # edit .ops/weekly-reviews/{end_date}.md
+   git add .ops/weekly-reviews/{end_date}.md
+   git commit -m "ops: apply review comments for {end_date}"
+   git push
+   ```
+5. Optionally reply on the PR (`gh pr comment {pr}`) summarizing what was applied and
+   listing any comments that need human clarification. Do NOT resolve reviewers' comment
+   threads yourself; let them confirm. Do NOT merge the PR — the team merges when finalized.
 
 ## Prohibited
 
-- Do NOT write the file when `dry_run` is true.
-- Do NOT overwrite a previous week's report without explicit user confirmation.
+- Do NOT write a file, create a branch, or open a PR when `dry_run` is true.
+- Do NOT commit or stage anything other than `.ops/weekly-reviews/{end_date}.md` — never
+  bundle unrelated working-tree changes into the report commit.
+- Do NOT merge the review PR — the team merges it when the report is finalized.
+- Do NOT resolve reviewers' comment threads on their behalf when applying comments.
+- Do NOT push to `main`/`master`; the report always lives on its `ops/weekly-review-*` branch.
 - Do NOT leave auto-populated fields blank; do NOT assume ticket details without fetching.
 - Do NOT group unrelated tickets or use a representative ticket for a group — list every ID.
 - Do NOT hold raw ticket responses in context; do NOT skip any Sev2 ID; do NOT produce a
@@ -361,7 +432,7 @@ reminder that Sections 3, 5, 8, 10 are reviewed live during the meeting.
 ```
 generate the oncall report
 ```
-(no dates → defaults to the most recently completed oncall week, writes to `.ops/weekly-reviews/`)
+(no dates → most recently completed oncall week; writes `.ops/weekly-reviews/` and opens a review PR)
 ```
 generate the Kiro CLI weekly ops review for 2026-06-08 to 2026-06-15
 ```
@@ -369,8 +440,16 @@ generate the Kiro CLI weekly ops review for 2026-06-08 to 2026-06-15
 write the weekly oncall report for 2026-06-08 to 2026-06-15, oncall_alias girpooja
 ```
 ```
+generate the oncall report, no pr
+```
+(write the file on the current branch without opening a PR)
+```
 dry-run the weekly ops review for 2026-06-08 to 2026-06-15
 ```
+```
+apply the ops review comments on PR 3145
+```
+(fold reviewer PR comments back into the report and push a fixup — see Step 11)
 
 ## Tips
 
@@ -379,3 +458,6 @@ dry-run the weekly ops review for 2026-06-08 to 2026-06-15
   adjust for DST.
 - Provide `previous_report_url` for an accurate starting-queue figure when the previous
   week's report hasn't been generated yet.
+- The review PR is the meeting surface: drop comments during the ops review, run
+  `@apply-ops-review-comments` to fold them in, then merge when finalized. Use `no_pr` to
+  skip the PR and just drop the file on the current branch.

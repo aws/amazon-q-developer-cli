@@ -74,14 +74,23 @@ report. The skill:
 - Writes it to `.ops/weekly-reviews/YYYY-MM-DD.md` (using the oncall week end date as the
   filename), and reads that same directory to find the prior week's report for the
   starting-queue figure.
-- Supports `dry_run` to preview the Markdown without writing the file.
+- By default commits the report to a dedicated `ops/weekly-review-YYYY-MM-DD` branch and
+  opens a review PR. The team comments on the PR during the ops meeting; the standing
+  live-review sections (3 Pain Level, 5 Action Items, 8 Security Risks, 10 Dashboard
+  Review) are filled this way. Merge the PR when finalized.
+- Supports `no_pr` to write the file on the current branch without opening a PR, and
+  `dry_run` to preview the Markdown without writing anything.
+
+After the meeting, **`@apply-ops-review-comments`** folds reviewer PR comments back into
+the report and pushes a fixup (Step 11 of the skill). When applying comments: apply only
+what's asked, flag anything ambiguous instead of guessing, never resolve reviewers'
+threads, and never merge the PR yourself.
 
 **You do not need any arguments.** If the user gives no dates, the skill defaults to the
 most recently completed oncall week (Mon 9 AM PST → Mon 9 AM PST) and prints the resolved
-week for confirmation. The oncall is resolved automatically. Never overwrite a prior week's
-report without confirmation — each week is a new file. When a ticket's root
-cause/description is blank, investigate the ticket's correspondence before ever writing
-"Unknown".
+week for confirmation. The oncall is resolved automatically. Only ever commit the single
+report file — never bundle unrelated changes. When a ticket's root cause/description is
+blank, investigate the ticket's correspondence before ever writing "Unknown".
 
 ## GitHub Investigations
 
