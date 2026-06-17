@@ -1184,7 +1184,7 @@ abstract class BaseAcpClient implements SessionClient {
     this.broadcastInbox(params);
   }
 
-  private handleAgentSwitched(params: Record<string, unknown>) {
+  protected handleAgentSwitched(params: Record<string, unknown>) {
     const p = params as {
       agentName: string;
       previousAgentName?: string;
@@ -2569,7 +2569,15 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient.onExtNotification(
       '_kiro/customAgent/not_found',
       (params) => {
-        this.handleAgentNotFound(params);
+        // Normalize the fallback id (e.g. KAS `vibe` -> `default`) before it
+        // reaches the shared handler, so the "using <agent>" message shows the
+        // canonical id. `requestedAgent` stays raw — it echoes back the user's
+        // literal chat.defaultAgent value.
+        const rawFallback = params.fallbackAgent as string | undefined;
+        this.handleAgentNotFound({
+          ...params,
+          ...(rawFallback ? { fallbackAgent: fromKasModeId(rawFallback) } : {}),
+        });
         // KAS doesn't send current_mode_update after fallback, so update the cached mode here
         const fallback = params.fallbackAgent as string | undefined;
         if (fallback) {
@@ -3660,6 +3668,24 @@ export class KasAcpClient extends BaseAcpClient {
     this.currentEffortLevel = effortOpt.currentValue;
   }
 
+  /**
+   * Normalize backend-initiated agent switches (e.g. a spec-workflow handoff)
+   * so the chip / welcome banner never surface a raw KAS wire id like `vibe`.
+   * The base implementation is identity (V2 ids need no translation).
+   */
+  protected override handleAgentSwitched(
+    params: Record<string, unknown>
+  ): void {
+    const p = params as { agentName?: string; previousAgentName?: string };
+    super.handleAgentSwitched({
+      ...params,
+      ...(p.agentName ? { agentName: fromKasModeId(p.agentName) } : {}),
+      ...(p.previousAgentName
+        ? { previousAgentName: fromKasModeId(p.previousAgentName) }
+        : {}),
+    });
+  }
+
   /** Update cached currentModeId from a setSessionConfigOption response.
    *  Falls back to `requestedMode` if the response doesn't contain mode info. */
   private refreshModeFromConfigOptions(
@@ -3667,7 +3693,10 @@ export class KasAcpClient extends BaseAcpClient {
     requestedMode: string
   ): void {
     if (!Array.isArray(configOptions)) {
-      this.modesState = { ...this.modesState, currentModeId: requestedMode };
+      this.modesState = {
+        ...this.modesState,
+        currentModeId: fromKasModeId(requestedMode),
+      };
       return;
     }
     const modeOpt = (configOptions as Array<Record<string, unknown>>).find(

@@ -4078,6 +4078,54 @@ describe('MCP OAuth flow', () => {
         KAS_DEFAULT_AGENT_ID
       );
     });
+
+    it('agent not_found event normalizes the wire fallback id (vibe -> default) but keeps requestedAgent raw', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/customAgent/not_found']({
+        sessionId: 'test',
+        requestedAgent: 'amzn-builder',
+        fallbackAgent: 'vibe',
+      });
+      const notFound = events.find((e) => e.type === 'agent_not_found');
+      expect(notFound).toBeDefined();
+      // The fallback shown in the "using <agent>" message is the canonical id.
+      expect(notFound.fallbackAgent).toBe('default');
+      // The requested id echoes back the user's literal chat.defaultAgent value.
+      expect(notFound.requestedAgent).toBe('amzn-builder');
+      // The cached mode is normalized too.
+      expect((client as any).modesState.currentModeId).toBe('default');
+    });
+
+    it('backend-initiated agent switch normalizes the wire id (vibe -> default)', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      (client as any).handleAgentSwitched({
+        agentName: 'vibe',
+        previousAgentName: 'plan',
+      });
+      const switched = events.find((e) => e.type === 'agent_switched');
+      expect(switched).toBeDefined();
+      expect(switched.agentName).toBe('default');
+      expect(switched.previousAgentName).toBe('kiro_planner');
+    });
+
+    it('refreshModeFromConfigOptions normalizes the requestedMode on the no-config-info fallback path', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      // No array of config options -> falls back to the requested mode, which
+      // must still be normalized from the wire id.
+      (client as any).refreshModeFromConfigOptions(undefined, 'vibe');
+      expect((client as any).modesState.currentModeId).toBe('default');
+    });
   });
 
   describe('McpServerInitialized transition logic', () => {
