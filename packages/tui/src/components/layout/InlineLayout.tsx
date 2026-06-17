@@ -326,6 +326,7 @@ export const InlineLayout: React.FC = () => {
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);

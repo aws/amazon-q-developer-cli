@@ -14,14 +14,23 @@
  * 6. clearSteerMessage on KAS never calls the backend clearSteering.
  */
 
-import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  beforeEach,
+  afterAll,
+  spyOn,
+} from 'bun:test';
+import * as cliSettings from '../../utils/cli-settings';
 
-mock.module('../../utils/cli-settings', () => ({
-  readStringSetting: (key: string, def: string) =>
-    key === 'chat.defaultInterruptBehavior' ? 'steer' : def,
-  readBoolSetting: (_key: string, def: boolean) => def,
-}));
-
+// cli-settings is stubbed via spyOn (not mock.module) on purpose: bun's
+// mock.restore() does NOT undo mock.module(), so a module-level
+// mock.module('../../utils/cli-settings', …) leaks into later test files —
+// notably cli-settings.test.ts, whose readBoolSetting assertions then read
+// the stub and fail. spyOn is restored by mock.restore(), keeping the stub
+// scoped to this file.
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),
@@ -34,6 +43,16 @@ mock.module('../../kiro', () => ({
 
 import { createAppStore } from '../app-store';
 import { Kiro } from '../../kiro';
+
+beforeEach(() => {
+  spyOn(cliSettings, 'readStringSetting').mockImplementation(
+    (key: string, def: string) =>
+      key === 'chat.defaultInterruptBehavior' ? 'steer' : def
+  );
+  spyOn(cliSettings, 'readBoolSetting').mockImplementation(
+    (_key: string, def?: boolean) => def ?? false
+  );
+});
 
 afterAll(() => {
   mock.restore();
