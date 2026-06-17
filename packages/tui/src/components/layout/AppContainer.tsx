@@ -14,6 +14,7 @@ import {
   CLEAR_SCREEN,
 } from '../../utils/terminal-sequences';
 import { copyToSystemClipboard } from '../../commands/effects.js';
+import { startMcpOAuth } from '../../utils/mcp-oauth.js';
 import { saveTrustGateAccepted } from '../../utils/trust-gate-state.js';
 import { keyToRawBytes } from '../../hooks/useKeypress.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
@@ -79,6 +80,7 @@ export const AppContainer: React.FC = () => {
     (state) => state.dismissTransientAlert
   );
   const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
@@ -163,22 +165,19 @@ export const AppContainer: React.FC = () => {
       acceptSurveyPrompt: () => {
         if (surveyPrompt) openSurveyPanel(surveyPrompt.survey);
       },
-      copyOAuthUrl: (_url) => {
+      copyOAuthUrl: (url) => {
         const serverName = firstOAuthEntry?.[0];
-        if (serverName) {
-          showTransientAlert({
-            message: `Authenticating MCP server "${serverName}"...`,
-            status: 'info',
-            autoHideMs: 3000,
-          });
-          kiro.resetMcpServer(serverName, true).catch(() => {
-            showTransientAlert({
-              message: `Failed to start OAuth for "${serverName}"`,
-              status: 'error',
-              autoHideMs: 5000,
-            });
-          });
-        }
+        if (!serverName) return;
+        startMcpOAuth({
+          agentEngine,
+          serverName,
+          url,
+          resetMcpServer: (name, startOAuth) =>
+            kiro.resetMcpServer(name, startOAuth),
+          copyToClipboard: copyToSystemClipboard,
+          showAlert: (message, status, autoHideMs) =>
+            showTransientAlert({ message, status, autoHideMs }),
+        });
       },
       suspendProcess,
       shellEscapeWrite: shellEscapeWriter ?? null,

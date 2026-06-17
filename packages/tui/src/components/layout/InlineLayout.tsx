@@ -312,6 +312,7 @@ export const InlineLayout: React.FC = () => {
   const activeCommand = useAppStore((state) => state.activeCommand);
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
@@ -1223,9 +1224,18 @@ export const InlineLayout: React.FC = () => {
                 pendingOAuthUrls={pendingOAuthServers}
                 mode={mcpMode}
                 onClose={handleCloseMcpPanel}
-                onAuthenticate={(serverName) => {
-                  kiro.resetMcpServer(serverName, true).catch(() => {});
-                }}
+                onAuthenticate={
+                  // KAS mode resets the server to start OAuth with a fresh
+                  // redirect server. In V2 (Rust agent) mode, leave this
+                  // undefined so McpPanel falls back to copying the (already
+                  // valid) URL to the clipboard — the Rust agent does not
+                  // implement `_kiro/mcp/resetServer`.
+                  agentEngine === 'kas'
+                    ? (serverName) => {
+                        kiro.resetMcpServer(serverName, true).catch(() => {});
+                      }
+                    : undefined
+                }
                 onAction={async (serverNames: string[]) => {
                   const action = mcpMode === 'add' ? 'add' : 'remove';
                   await kiro.executeCommand({
