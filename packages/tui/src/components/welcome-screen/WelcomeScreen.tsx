@@ -53,7 +53,7 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
                 'Migration tooling to bring your V2 configurations to V3 is coming soon.'
               )}
             </Text>
-            <Text>{brand('https://kiro.dev/changelog/cli')}</Text>
+            <Text>{brand('https://kiro.dev/docs/cli/v3/')}</Text>
             <Text>{primary(' ')}</Text>
             <Text>
               {primary('Share feedback anytime with ')}
