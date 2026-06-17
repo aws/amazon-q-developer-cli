@@ -5,8 +5,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-// Skipped: the /compact slash command is temporarily not exposed in KAS mode.
-describe.skip('/compact and summary', () => {
+describe('/compact and summary', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {

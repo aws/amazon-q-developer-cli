@@ -312,8 +312,8 @@ export const InlineLayout: React.FC = () => {
     goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
-  const promptHint = useAppStore((state) => state.promptHint);
   const agentEngine = useAppStore((state) => state.agentEngine);
+  const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const agentEngine = useAppStore((state) => state.agentEngine);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -329,7 +329,6 @@ export const InlineLayout: React.FC = () => {
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
-  const agentEngine = useAppStore((s) => s.agentEngine);
   const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);

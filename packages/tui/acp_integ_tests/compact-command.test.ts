@@ -39,8 +39,7 @@ describe('/compact command + summarization lifecycle', () => {
     tc = null;
   });
 
-  // Skipped: the /compact slash command is temporarily not exposed in KAS mode.
-  it.skip('sends _kiro/session/compact with sessionId on /compact', async () => {
+  it('sends _kiro/session/compact with sessionId on /compact', async () => {
     /**
      * GIVEN  session active
      * WHEN   user types /compact
