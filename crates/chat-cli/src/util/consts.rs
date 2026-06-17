@@ -190,6 +190,14 @@ pub mod env_var {
         ///     session listing, etc. - see `packages/tui/src/utils/chat-cli-bin.ts`)
         KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
 
+        /// Overrides the version reported by the TUI bundle. Set by the
+        /// kiro-cli launcher when spawning the TUI so the JS side
+        /// (`getCliVersion()` in `packages/tui/src/utils/version.ts`) reports
+        /// the binary's real compile-time version instead of the bundled
+        /// `0.0.0-dev` placeholder / `99.99.99-dev` dev fallback. Users can
+        /// also set it directly to test version-gated features.
+        KIRO_VERSION_OVERRIDE = "KIRO_VERSION_OVERRIDE",
+
         /// Path to the KAS ACP server JS entrypoint (`acp-server.js`).
         /// Set in two scenarios:
         ///   * The launcher always sets this on the TUI child to forward

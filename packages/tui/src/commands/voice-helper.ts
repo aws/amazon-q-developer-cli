@@ -24,11 +24,11 @@ import { logger } from '../utils/logger.js';
  * Throws a descriptive error if the binary cannot be found.
  */
 function getBinaryPath(): string {
-  const path = process.env.KIRO_CLI_PATH ?? 'kiro-cli';
+  const path = process.env.KIRO_CHAT_CLI_BIN ?? 'kiro-cli';
   // Validate absolute/relative paths exist on disk
   if (path.includes('/') && !existsSync(path)) {
     throw new Error(
-      `Voice binary not found at "${path}". Check KIRO_CLI_PATH or reinstall kiro-cli.`
+      `Voice binary not found at "${path}". Check KIRO_CHAT_CLI_BIN or reinstall kiro-cli.`
     );
   }
   return path;
@@ -259,7 +259,7 @@ export function startPTTRecording(
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       rejectText!(
         new Error(
-          `Voice binary "${binary}" not found. Check KIRO_CLI_PATH or reinstall kiro-cli.`
+          `Voice binary "${binary}" not found. Check KIRO_CHAT_CLI_BIN or reinstall kiro-cli.`
         )
       );
       return;

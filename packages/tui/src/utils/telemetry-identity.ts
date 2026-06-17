@@ -6,7 +6,7 @@
  */
 
 import { machineIdSync } from 'node-machine-id';
-import packageJson from '../../package.json';
+import { getCliVersion } from './version';
 
 function getMachineId(): string {
   try {
@@ -32,8 +32,8 @@ export function getTelemetryIdentity(): TelemetryIdentity {
   return {
     machineId,
     userId: process.env['KIRO_USER_ID'] || '',
-    version: packageJson.version,
-    kiroClientVersion: packageJson.version,
+    version: getCliVersion(),
+    kiroClientVersion: getCliVersion(),
   };
 }
 

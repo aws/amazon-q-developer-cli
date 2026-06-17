@@ -62,7 +62,7 @@ import type {
   KasContextMutationResponse,
 } from './types/session-client';
 
-import packageJson from '../package.json';
+import { getCliVersion } from './utils/version';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
 import { KAS_DEFAULT_AGENT_ID } from './constants/agents';
@@ -70,8 +70,6 @@ import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
 import { emitKasTelemetry } from './utils/kas-telemetry-cli';
-
-const TUI_VERSION: string = packageJson.version;
 
 function getKasVersion(kasServerPath: string): string {
   try {
@@ -1766,13 +1764,25 @@ abstract class BaseAcpClient implements SessionClient {
 
 export class RustAcpClient extends BaseAcpClient implements acp.Client {
   private connection: acp.ClientSideConnection;
+  /**
+   * Version reported in the ACP `clientInfo` handshake. Injectable so tests
+   * can assert the forwarded version without re-importing the module to bust
+   * a cached module-level constant. Defaults to the launcher-forwarded CLI
+   * version (`getCliVersion()`), so production behavior is unchanged.
+   */
+  private readonly version: string;
 
-  constructor(agentPath: string, extraAcpArgs: string[] = []) {
+  constructor(
+    agentPath: string,
+    extraAcpArgs: string[] = [],
+    version: string = getCliVersion()
+  ) {
     const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
     });
     super(toAgentProcess(proc));
+    this.version = version;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     this.connection = new acp.ClientSideConnection(() => this, finalStream);
@@ -1787,7 +1797,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
-      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-tui', version: this.version },
     });
     logger.debug(
       '[acp-client] ACP handshake done, protocolVersion:',
@@ -2109,6 +2119,14 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialModel?: string;
 
   /**
+   * Version reported in the KAS `clientInfo` handshake and the
+   * `KIRO_CUSTOM_USER_AGENT` passed to the KAS subprocess. Injectable for
+   * tests; defaults to the launcher-forwarded CLI version (`getCliVersion()`)
+   * so production behavior is unchanged.
+   */
+  private readonly version: string;
+
+  /**
    * Construct a KAS ACP client.
    *
    * Default (no options): spawn the KAS subprocess and wire its stdio as
@@ -2132,15 +2150,17 @@ export class KasAcpClient extends BaseAcpClient {
     stream?: Stream;
     initialAgent?: string;
     initialModel?: string;
+    version?: string;
   }) {
     if (options?.stream) {
       super(createNullAgentProcess());
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
+      this.version = options.version ?? getCliVersion();
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
-        clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+        clientInfo: { name: 'kiro-cli', version: this.version },
         capabilities: [createGetAccessTokenCapability()],
       });
       return;
@@ -2173,6 +2193,11 @@ export class KasAcpClient extends BaseAcpClient {
     const nodeBin = process.env.KIRO_KAS_NODE_PATH || 'node';
     logger.info(`[acp-client] Spawning KAS agent: ${nodeBin} ${kasServerPath}`);
 
+    // Resolved before `super()` because the user-agent below is baked into
+    // the subprocess env at spawn time, which precedes the `super()` call
+    // that unblocks `this` access. Stored on the instance afterwards.
+    const version = options?.version ?? getCliVersion();
+
     const proc = spawn(
       nodeBin,
       [
@@ -2191,19 +2216,20 @@ export class KasAcpClient extends BaseAcpClient {
           ...process.env,
           NODE_CHANNEL_FD: undefined,
           NODE_CHANNEL_SERIALIZATION_MODE: undefined,
-          KIRO_CUSTOM_USER_AGENT: `KiroCLI/${TUI_VERSION} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${TUI_VERSION} app/AmazonQ-For-CLI`,
+          KIRO_CUSTOM_USER_AGENT: `KiroCLI/${version} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${version} app/AmazonQ-For-CLI`,
         },
       }
     );
     super(toAgentProcess(proc));
     this.initialAgent = options?.initialAgent;
     this.initialModel = options?.initialModel;
+    this.version = version;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
     this.kiroClient = new KiroClient({
       stream: finalStream,
-      clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-cli', version: this.version },
       capabilities: [
         createGetAccessTokenCapability(),
         createCopyUrlToClipboardCapability(),
