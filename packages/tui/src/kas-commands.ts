@@ -144,10 +144,6 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: { inputType: 'panel' },
   },
   {
-    name: KasCommandName.Compact,
-    description: 'Compact conversation history to reduce context usage',
-  },
-  {
     name: KasCommandName.Context,
     description: 'Show or manage context files',
     meta: {
