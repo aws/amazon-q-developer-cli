@@ -71,18 +71,17 @@ report. The skill:
 
 - Builds the 10-section `[Kiro-CLI] Weekly Ops Review` report for the `Amazon Q for CLI`
   resolver group directly from ticket/oncall data.
-- Publishes it as a NEW Quip document (via `@builder-mcp/QuipEditor`, omitting
-  `documentId`) in the reports folder `nfVzO8ENPg5z`
-  (https://quip-amazon.com/nfVzO8ENPg5z/series), and reads that same folder to find the
-  prior week's report for the starting-queue figure.
-- Supports `dry_run` to write the Markdown to `/tmp/kcli_oncall_report.md` without
-  publishing.
+- Writes it to `.ops/weekly-reviews/YYYY-MM-DD.md` (using the oncall week end date as the
+  filename), and reads that same directory to find the prior week's report for the
+  starting-queue figure.
+- Supports `dry_run` to preview the Markdown without writing the file.
 
 **You do not need any arguments.** If the user gives no dates, the skill defaults to the
 most recently completed oncall week (Mon 9 AM PST → Mon 9 AM PST) and prints the resolved
-week for confirmation. The oncall is resolved automatically. Never edit the template or a
-prior week's report — each week is a new doc. When a ticket's root cause/description is
-blank, investigate the ticket's correspondence before ever writing "Unknown".
+week for confirmation. The oncall is resolved automatically. Never overwrite a prior week's
+report without confirmation — each week is a new file. When a ticket's root
+cause/description is blank, investigate the ticket's correspondence before ever writing
+"Unknown".
 
 ## GitHub Investigations
 

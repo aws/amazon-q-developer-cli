@@ -1,20 +1,19 @@
 ---
 name: weekly-ops-review
-description: Generate the weekly "[Kiro-CLI] Weekly Ops Review" oncall report for the Amazon Q for CLI resolver group and publish it to Quip. Use when asked to create/write the weekly oncall report, ops review, or ops meeting doc. Triggers on "weekly ops review", "oncall report", "ops review doc", "weekly report".
+description: Generate the weekly "[Kiro-CLI] Weekly Ops Review" oncall report for the Amazon Q for CLI resolver group and write it to .ops/weekly-reviews/ in the repo. Use when asked to create/write the weekly oncall report, ops review, or ops meeting doc. Triggers on "weekly ops review", "oncall report", "ops review doc", "weekly report".
 ---
 
 # Kiro CLI Weekly Ops Review — Report Generation SOP
 
 Generate the **`[Kiro-CLI] Weekly Ops Review`** report for the `Amazon Q for CLI`
-resolver group and publish it as a **new Quip document** in the series folder.
+resolver group and write it to **`.ops/weekly-reviews/`** in the repository.
 
-- Template: https://quip-amazon.com/UbzgAYbxXOIb (`[Kiro-CLI] Weekly Ops Review - <Insert Date>`)
-- Example: https://quip-amazon.com/HDlCAYvDpXjc (`Kiro-CLI-Weekly-Ops-Review-06152026`)
-- **Series folder (REQUIRED destination):** https://quip-amazon.com/nfVzO8ENPg5z/series (folder ID `nfVzO8ENPg5z`)
+- Output: `.ops/weekly-reviews/YYYY-MM-DD.md` (where `YYYY-MM-DD` is the `end_date`)
+- Template: `.ops/weekly-reviews/TEMPLATE.md` (the canonical 10-section layout to fill in)
+- Example: `.ops/weekly-reviews/2026-06-15.md`
 
 The report has **10 sections** (Step 7). Ticket data is pulled directly from the
-ticketing system. The final report is created as a brand-new Quip doc each week via
-`@builder-mcp/QuipEditor` and filed in the series folder.
+ticketing system. The final report is written as a new Markdown file in the repo.
 
 ## Team Constants
 
@@ -26,10 +25,9 @@ ticketing system. The final report is created as a brand-new Quip doc each week 
 - **DeeOps dashboard:** `https://deeops.aka.amazon.com/ops_readiness/sto_health/`
 - **Previous Week's Action Items (Section 5):** `https://tiny.amazon.com/1auvbeoty/taskamazdevroom7c22task`
 - **Dashboard Review notes (Section 10):** `https://quip-amazon.com/umwaAzDXcFo1`
-- **Reports folder (store AND look up here):** `https://quip-amazon.com/nfVzO8ENPg5z/series`
-  (folder ID `nfVzO8ENPg5z`). Every weekly report is BOTH published here and read from here
-  to find the prior week's report (for the Section 1 starting queue). This single folder is
-  the source of truth — do not use any other location.
+- **Reports directory:** `.ops/weekly-reviews/` in the repository root. Every weekly report
+  is written here and read from here to find the prior week's report (for the Section 1
+  starting queue). This directory is the source of truth.
 
 ## Parameters
 
@@ -45,12 +43,10 @@ ticketing system. The final report is created as a brand-new Quip doc each week 
   back to the user before proceeding so they can correct it if they meant a different week.
 - **oncall_alias** (optional): primary oncall for the week (Section 8 security links).
   Resolved from the schedule if omitted.
-- **previous_report_url** (optional): last week's Quip URL — overrides the auto-lookup of
+- **previous_report_url** (optional): last week's report path — overrides the auto-lookup of
   the prior report for the Section 1 starting-queue figure and open action items.
-- **quip_folder_id** (optional): defaults to `nfVzO8ENPg5z` (the reports folder). Override
-  only for testing.
-- **dry_run** (optional, default `false`): write Markdown to `/tmp/kcli_oncall_report.md`
-  and skip Quip creation.
+- **dry_run** (optional, default `false`): print the Markdown to stdout and skip writing the
+  file to `.ops/weekly-reviews/`.
 
 ## Context discipline
 
@@ -155,15 +151,11 @@ Run with `@builder-mcp/TicketingReadActions action=search-tickets` (read `totalC
    `resolved = distinct count`. This list also feeds the Section 2 root-cause table.
 
 **Starting queue `x` — auto-find the previous report:**
-1. Read the reports folder `https://quip-amazon.com/nfVzO8ENPg5z/series` with
-   `@builder-mcp/ReadInternalWebsites` and find the document titled
-   `[Kiro-CLI] Weekly Ops Review - {prev_MM/DD/YYYY}`, where `{prev}` = `start_date` (the
-   prior week's end date = this week's start).
-2. Read that document and take its Section 1 **ending** queue (the `y` in `x → y`) — that is
-   this week's `x`. (Verified: the 06/08 report ended at `177 → 191`, and the 06/15 report
-   started at `191`.)
-3. If `previous_report_url` was passed, use it directly instead of searching.
-4. Only if no previous report can be found, estimate `x = y − incoming_raw + resolved` and
+1. Look for `.ops/weekly-reviews/{start_date}.md` (the prior week's end date = this week's
+   start date). Read that file and take its Section 1 **ending** queue (the `y` in `x → y`)
+   — that is this week's `x`.
+2. If `previous_report_url` was passed, read it directly instead of searching.
+3. Only if no previous report can be found, estimate `x = y − incoming_raw + resolved` and
    prefix it with `~`.
 
 **Pages — real page events (NOT distinct tickets):**
@@ -301,83 +293,17 @@ the above genuinely yield nothing. Never default to "Unknown" just because the s
 
 ## Step 7 — Assemble the Markdown report
 
-Write `/tmp/kcli_oncall_report.md` with exactly these 10 sections. Use Markdown tables
-(header + `|---|` row, no blank lines inside tables). Bullet lists use `*` with a blank
-line between a label and its first item (QuipEditor markdown rules). Ticket links MUST use
-the human-readable **display ID** (`display_id` — `V…`/`P…`/`D…`), never the internal
-UUID: `[<display_id>](https://t.corp.amazon.com/<display_id>)` (e.g.
-`[V2239674541](https://t.corp.amazon.com/V2239674541)`). Throughout this template,
-`{id}` means the display ID. Never leave auto-populated fields blank — use real data,
-`None`, or `Unknown`.
+Start from the canonical template at **`.ops/weekly-reviews/TEMPLATE.md`** — read it,
+fill in every `{placeholder}`, and write the result to `/tmp/kcli_oncall_report.md`. The
+template defines exactly these 10 sections; do not add, remove, or reorder them.
 
-````
-# [Kiro-CLI] Weekly Ops Review - {MM/DD/YYYY}
-
-**On Call:** {current_alias} | **Next:** {next_alias} | **Previous:** {previous_alias}
-
-## 1. Summary
-* Pages: {pages}
-* [Ticket Queue](https://t.corp.amazon.com/issues/?q=extensions.tt.status%3A%28Assigned%20OR%20Researching%20OR%20%22Work%20In%20Progress%22%20OR%20Pending%29%20AND%20extensions.tt.assignedGroup%3A%22Amazon%20Q%20for%20CLI%22): {queue_start} → {queue_end}
-* Incoming Tickets: {incoming}
-* Resolved Tickets: {resolved}
-* Large Scale Significant Events: {lse_count}
-
-DeeOps dashboard https://deeops.aka.amazon.com/ops_readiness/sto_health/
-
-## 2. Graphs
-### Ticket Resolved Count By Root Cause (Previous week)
-
-| Root Cause | Count | Topic | Tickets |
-|---|---|---|---|
-| {root_cause} | {n} | {topic} | {ticket links} |
-| Total | {resolved} |  |  |
-
-## 3. Operational Pain Level
-
-_Pick one (1–10) during the ops review._
-
-{suggested 1–10 with a one-line justification, clearly marked as a suggestion}
-
-## 4. Large Scale Significant Events
-* {LSE bullet}
-
-## 5. Previous Week's Action Items
-
-During the meeting, go over open action items here https://tiny.amazon.com/1auvbeoty/taskamazdevroom7c22task
-
-{optional carried-forward items from previous_report_url}
-
-## 6. Page Log
-
-| # | Ticket | Announcement / Synopsis |
-|---|---|---|
-| 1 | [{id}]({page_or_ticket_url}) | {synopsis} |
-
-## 7. Open Sev2s
-
-| # | Ticket | Description | ETA To Resolve |
-|---|---|---|---|
-| 1 | [{id}](https://t.corp.amazon.com/{id}) | {description} | {eta or TBD} |
-
-## 8. Security Risks
-
-_To be reviewed during the meeting._
-
-* Acknowledge High/Critical risks https://policyengine.amazon.com/dashboard/{oncall_alias}
-* OS Patching https://mirador.security.aws.dev/#/insights/patching?viewingAs={oncall_alias}
-* AppSec findings https://mirador.security.aws.dev/#/findings?viewingAs={oncall_alias}
-* SAS risks https://sas.corp.amazon.com/summary/all/{oncall_alias}
-
-## 9. Tickets Cut to Other Teams
-
-| # | Team - Ticket | Description |
-|---|---|---|
-| 1 | {team} - [{id}](https://t.corp.amazon.com/{id}) | {description} |
-
-## 10. Dashboard Review
-
-Add dashboard spikes related findings here [[Kiro-CLI] Weekly Dashboard Investigation Notes](https://quip-amazon.com/umwaAzDXcFo1)
-````
+Formatting rules: use Markdown tables (header + `|---|` row, no blank lines inside tables).
+Bullet lists use `*` with a blank line between a label and its first item. Ticket links
+MUST use the human-readable **display ID** (`display_id` — `V…`/`P…`/`D…`), never the
+internal UUID: `[<display_id>](https://t.corp.amazon.com/<display_id>)` (e.g.
+`[V2239674541](https://t.corp.amazon.com/V2239674541)`). Throughout the template, `{id}`
+means the display ID. Never leave auto-populated fields blank — use real data, `None`, or
+`Unknown`.
 
 Sections 3, 5, 8, 10 keep their standing placeholders/links (filled live during the
 meeting). Grouped tickets must list ALL their IDs.
@@ -399,39 +325,32 @@ grep -q "^# \[Kiro-CLI\] Weekly Ops Review - " "$REPORT" || echo "MISSING TITLE"
 Fix anything reported. Confirm Section 2 `Total` == Section 1 Resolved, and Section 6 row
 count == `metrics.pages` (or note the discrepancy).
 
-## Step 9 — Publish to Quip
+## Step 9 — Write report to repository
 
-If `dry_run` is `true`: print `/tmp/kcli_oncall_report.md` + a short summary and STOP.
+If `dry_run` is `true`: print `/tmp/kcli_oncall_report.md` contents to stdout and STOP.
 
-Otherwise create a NEW Quip doc with `@builder-mcp/QuipEditor` — **omit `documentId`** to
-create:
+Otherwise, copy the report into the repository:
 
-```json
-{
-  "title": "[Kiro-CLI] Weekly Ops Review - 06/15/2026",
-  "contentFilePath": "/tmp/kcli_oncall_report.md",
-  "format": "markdown",
-  "memberIds": "nfVzO8ENPg5z"
-}
+```bash
+mkdir -p .ops/weekly-reviews
+cp /tmp/kcli_oncall_report.md .ops/weekly-reviews/{end_date}.md
 ```
 
-`memberIds` defaults to `nfVzO8ENPg5z` (the series folder) so the doc is filed in the
-series. Capture the returned URL and confirm it landed in the series folder. If creation
-fails (auth), run `mwinit`, keep the Markdown file, and retry.
+Where `{end_date}` is the `YYYY-MM-DD` end date (e.g. `.ops/weekly-reviews/2026-06-15.md`).
+Confirm the file was written successfully.
 
 ## Step 10 — Report completion
 
-Print a short summary (do NOT paste the full report): new Quip URL (or local path on
-dry_run/failure); oncall week + current oncall; Pages, Queue `x→y`, Incoming, Resolved,
-LSE count; counts of pages logged / open Sev2s / tickets cut to other teams; any
-approximate (`~`) figures or warnings; and a reminder that Sections 3, 5, 8, 10 are
-reviewed live during the meeting.
+Print a short summary (do NOT paste the full report): file path (e.g.
+`.ops/weekly-reviews/2026-06-15.md`), or "dry run — not written" on dry_run; oncall week +
+current oncall; Pages, Queue `x→y`, Incoming, Resolved, LSE count; counts of pages logged /
+open Sev2s / tickets cut to other teams; any approximate (`~`) figures or warnings; and a
+reminder that Sections 3, 5, 8, 10 are reviewed live during the meeting.
 
 ## Prohibited
 
-- Do NOT publish when `dry_run` is true.
-- Do NOT pass `documentId` to QuipEditor for the weekly report — each week is a NEW doc.
-- Do NOT edit the template (`UbzgAYbxXOIb`) or any prior week's report.
+- Do NOT write the file when `dry_run` is true.
+- Do NOT overwrite a previous week's report without explicit user confirmation.
 - Do NOT leave auto-populated fields blank; do NOT assume ticket details without fetching.
 - Do NOT group unrelated tickets or use a representative ticket for a group — list every ID.
 - Do NOT hold raw ticket responses in context; do NOT skip any Sev2 ID; do NOT produce a
@@ -442,13 +361,12 @@ reviewed live during the meeting.
 ```
 generate the oncall report
 ```
-(no dates → defaults to the most recently completed oncall week, publishes to the reports folder)
+(no dates → defaults to the most recently completed oncall week, writes to `.ops/weekly-reviews/`)
 ```
 generate the Kiro CLI weekly ops review for 2026-06-08 to 2026-06-15
 ```
 ```
-write the weekly oncall report for 2026-06-08 to 2026-06-15, oncall_alias girpooja,
-previous_report_url https://quip-amazon.com/HDlCAYvDpXjc
+write the weekly oncall report for 2026-06-08 to 2026-06-15, oncall_alias girpooja
 ```
 ```
 dry-run the weekly ops review for 2026-06-08 to 2026-06-15
@@ -459,5 +377,5 @@ dry-run the weekly ops review for 2026-06-08 to 2026-06-15
 - You only need `start_date` and `end_date`; everything else defaults sensibly.
 - Oncall week is 9 AM PST → 9 AM PST; convert to UTC by adding 8h (`17:00:00Z`); do NOT
   adjust for DST.
-- Provide `previous_report_url` for an accurate starting-queue figure.
-- Quip auth is automatic via Midway+SAML in builder-mcp — run `mwinit` on auth errors.
+- Provide `previous_report_url` for an accurate starting-queue figure when the previous
+  week's report hasn't been generated yet.
