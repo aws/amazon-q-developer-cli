@@ -47,8 +47,12 @@ use opentelemetry_sdk::logs::{
     SdkLoggerProvider,
 };
 use opentelemetry_sdk::metrics::{
+    Aggregation,
+    Instrument,
+    InstrumentKind,
     PeriodicReader,
     SdkMeterProvider,
+    Stream,
     Temporality,
 };
 use tracing::warn;
@@ -70,6 +74,83 @@ const KUTS_MAX_REQUEST_BODY_BYTES: usize = 1_048_576;
 const KUTS_MAX_EXPORT_RETRIES: usize = 3;
 const KUTS_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
 const KUTS_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// Explicit histogram bucket boundaries for latencies recorded in **seconds**.
+///
+/// The OTel Rust SDK's default explicit-bucket boundaries are tuned for
+/// milliseconds (`…, 1000, 2500, 5000, 7500, 10000`). Applying them to a
+/// second-scale latency squashes every realistic value into the first bucket,
+/// so these instruments get a dedicated second-scale ladder instead.
+const SECONDS_LATENCY_BOUNDARIES: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0];
+
+/// Explicit boundaries for unit-interval ratios (`0.0..=1.0`), e.g. cache-hit
+/// ratio and CPU utilisation. Default ms buckets run to 10000, so a ratio of
+/// `0.4` lands in the same bucket as everything `>= 0.0`.
+const RATIO_BOUNDARIES: &[f64] = &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+
+/// Explicit boundaries for a memory growth rate in **bytes per second**.
+/// Covers 1 KiB/s up to 100 MiB/s, where the action of interest (a leak) lives.
+const MEMORY_GROWTH_RATE_BOUNDARIES: &[f64] = &[
+    0.0,
+    1_024.0,         // 1 KiB/s
+    10_240.0,        // 10 KiB/s
+    102_400.0,       // 100 KiB/s
+    1_048_576.0,     // 1 MiB/s
+    10_485_760.0,    // 10 MiB/s
+    104_857_600.0,   // 100 MiB/s
+    1_073_741_824.0, // 1 GiB/s
+];
+
+/// Explicit boundaries for telemetry export batch sizes (a small integer count
+/// of records per batch), not a millisecond latency.
+const BATCH_SIZE_BOUNDARIES: &[f64] = &[1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1_000.0];
+
+/// Maps a histogram instrument name to its explicit bucket boundaries.
+///
+/// Returns `None` for histograms whose values are genuinely milliseconds-scale
+/// (e.g. `*_duration_ms`); those keep the SDK's default ms buckets, which are
+/// already correct for them.
+fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
+    match name {
+        // Latencies recorded in seconds.
+        "chat_cli.bedrock.stream.ttft"
+        | "chat_cli.bedrock.stream.inter_token_latency"
+        | "chat_cli.bedrock.stream.duration"
+        | "chat_cli.bedrock.request.duration"
+        | "kiro_cli_user_turn_duration_seconds"
+        | "telemetry.exporter.send.duration"
+        | "chat_cli.startup.duration"
+        | "chat_cli.agent.loop.iteration_duration" => Some(SECONDS_LATENCY_BOUNDARIES),
+        // Unit-interval ratios (0..=1).
+        "kiro_cli_cache_hit_ratio" | "chat_cli.process.cpu.utilization" => Some(RATIO_BOUNDARIES),
+        // Memory growth rate, bytes/second.
+        "chat_cli.process.memory.growth_rate" => Some(MEMORY_GROWTH_RATE_BOUNDARIES),
+        // Export batch sizes (record counts).
+        "telemetry.batch.size" => Some(BATCH_SIZE_BOUNDARIES),
+        _ => None,
+    }
+}
+
+/// A [`View`](opentelemetry_sdk::metrics::View) that installs explicit
+/// histogram bucket boundaries for the non-millisecond instruments listed in
+/// [`histogram_boundaries`]. Registering this on the `SdkMeterProvider` is the
+/// OTel-idiomatic way to override default aggregation per instrument name,
+/// keeping the generic name-keyed instrument cache in [`OtelMetricsSink`]
+/// boundary-agnostic.
+fn histogram_bucket_view(instrument: &Instrument) -> Option<Stream> {
+    if instrument.kind() != InstrumentKind::Histogram {
+        return None;
+    }
+
+    let boundaries = histogram_boundaries(instrument.name())?;
+    Stream::builder()
+        .with_aggregation(Aggregation::ExplicitBucketHistogram {
+            boundaries: boundaries.to_vec(),
+            record_min_max: true,
+        })
+        .build()
+        .ok()
+}
 
 #[derive(Clone, Debug)]
 struct KutsHttpClient {
@@ -272,7 +353,7 @@ pub fn init_otel(config: &TelemetryConfig) -> OtelProviders {
 }
 
 pub fn init_noop_otel(_config: &TelemetryConfig) -> OtelProviders {
-    let meter_provider = SdkMeterProvider::builder().build();
+    let meter_provider = SdkMeterProvider::builder().with_view(histogram_bucket_view).build();
     let logger_provider = SdkLoggerProvider::builder().build();
     global::set_meter_provider(meter_provider.clone());
     OtelProviders {
@@ -303,6 +384,7 @@ fn build_otlp_http_providers(
     let meter_provider = SdkMeterProvider::builder()
         .with_reader(reader)
         .with_resource(resource.clone())
+        .with_view(histogram_bucket_view)
         .build();
     let mut logger_provider_builder = SdkLoggerProvider::builder().with_resource(resource);
     if config.otlp_logs_enabled() {
@@ -559,6 +641,57 @@ mod tests {
             .with_otlp_logs_enabled(otlp_logs_enabled)
             .with_machine_id(TEST_MACHINE_ID)
             .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT)
+    }
+
+    #[test]
+    fn histogram_boundaries_target_non_millisecond_instruments() {
+        // Second-scale latencies must not inherit the SDK's ms-scale defaults.
+        assert_eq!(
+            histogram_boundaries("chat_cli.bedrock.stream.ttft"),
+            Some(SECONDS_LATENCY_BOUNDARIES)
+        );
+        assert_eq!(
+            histogram_boundaries("kiro_cli_user_turn_duration_seconds"),
+            Some(SECONDS_LATENCY_BOUNDARIES)
+        );
+        // Unit-interval ratios.
+        assert_eq!(histogram_boundaries("kiro_cli_cache_hit_ratio"), Some(RATIO_BOUNDARIES));
+        assert_eq!(
+            histogram_boundaries("chat_cli.process.cpu.utilization"),
+            Some(RATIO_BOUNDARIES)
+        );
+        // Bytes/second growth rate and record-count batch sizes.
+        assert_eq!(
+            histogram_boundaries("chat_cli.process.memory.growth_rate"),
+            Some(MEMORY_GROWTH_RATE_BOUNDARIES)
+        );
+        assert_eq!(
+            histogram_boundaries("telemetry.batch.size"),
+            Some(BATCH_SIZE_BOUNDARIES)
+        );
+
+        // Genuine millisecond latencies keep the SDK default buckets (no override).
+        assert_eq!(histogram_boundaries("kiro_cli_tool_execution_duration_ms"), None);
+        assert_eq!(histogram_boundaries("kiro_cli_time_to_first_chunk_ms"), None);
+        // Context usage is now a gauge, so it must not match a histogram view.
+        assert_eq!(histogram_boundaries("kiro_cli_context_usage_percentage"), None);
+
+        // All configured boundary sets must build into a valid ExplicitBucketHistogram
+        // Stream (sorted, finite, non-duplicate) — i.e. the View will actually apply.
+        for boundaries in [
+            SECONDS_LATENCY_BOUNDARIES,
+            RATIO_BOUNDARIES,
+            MEMORY_GROWTH_RATE_BOUNDARIES,
+            BATCH_SIZE_BOUNDARIES,
+        ] {
+            Stream::builder()
+                .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                    boundaries: boundaries.to_vec(),
+                    record_min_max: true,
+                })
+                .build()
+                .expect("configured histogram boundaries must be valid");
+        }
     }
 
     #[test]

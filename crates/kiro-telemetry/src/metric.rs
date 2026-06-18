@@ -3425,7 +3425,12 @@ pub fn context_usage_percentage(
     client_application: ClientApplication,
     is_subagent: bool,
 ) -> MetricRecord {
-    histogram("kiro_cli_context_usage_percentage", percentage)
+    // Context usage is a point-in-time "how full is the context window right now"
+    // reading (0-100), not a distribution worth quantiling. A gauge renders the
+    // 0-100 range directly and avoids the bucket-boundary problem entirely (the
+    // OTel SDK's default histogram buckets are tuned for ms-scale latencies and
+    // would otherwise stretch the axis to 10000).
+    gauge("kiro_cli_context_usage_percentage", percentage)
         .attribute("model_class", model_class.as_str())
         .attribute("client_application", client_application.as_str())
         .attribute("is_subagent", is_subagent.to_string())
@@ -4856,14 +4861,17 @@ mod tests {
     }
 
     #[test]
-    fn context_usage_record_buckets_and_filters_values() {
+    fn context_usage_record_is_gauge_and_filters_values() {
         let input = ContextUsageMetric::from_names(42.5, Some("claude-4-sonnet"), Some("kas"), true);
         let record = context_usage_percentage_record(input).expect("valid context usage");
 
+        // Context usage is a point-in-time 0-100 reading, so it is emitted as a
+        // gauge (renders the 0-100 range directly) rather than a histogram with
+        // ms-scale default buckets.
         assert_metric_shape(
             record,
             "kiro_cli_context_usage_percentage",
-            MetricValue::Histogram(42.5),
+            MetricValue::Gauge(42.5),
             &[
                 ("model_class", "anthropic_sonnet"),
                 ("client_application", "chat_cli_v3"),
