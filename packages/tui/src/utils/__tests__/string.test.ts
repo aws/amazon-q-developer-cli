@@ -229,6 +229,13 @@ describe('stripNonPrintable', () => {
     expect(stripNonPrintable('a\x80b')).toBe('ab');
     expect(stripNonPrintable('a\x9Fb')).toBe('ab');
   });
+
+  it('preserves ZWJ and ZWNJ so emoji clusters survive', () => {
+    // Family emoji is built from three faces joined by U+200D.
+    const family = '\u{1F468}‍\u{1F469}‍\u{1F467}';
+    expect(stripNonPrintable(`${family} hello`)).toBe(`${family} hello`);
+    expect(stripNonPrintable('a‌b')).toBe('a‌b'); // ZWNJ
+  });
 });
 
 describe('normalizeLineEndings (CRLF/CR conversion)', () => {
