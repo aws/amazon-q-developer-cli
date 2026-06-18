@@ -779,6 +779,58 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
+    // /spec analyze_requirements [name] — switch to spec mode and ask the
+    // agent to analyze the requirements document. The agent invokes the
+    // analyze_requirements tool which streams clarifying questions via
+    // permission requests and updates the requirements with answers.
+    if (/^analyze_requirements(\s|$)/.test(trimmed)) {
+      const name = trimmed.slice(21).trim();
+      const features = listSpecFeatures(workspaceRoot).filter((f) =>
+        f.specDocumentPaths.some((p) => p.endsWith('requirements.md'))
+      );
+      if (features.length === 0) {
+        ctx.showAlert(
+          'No specs with requirements.md found. Use "/spec new <name>" to create one.',
+          'warning',
+          6000
+        );
+        return true;
+      }
+      // Exact match — execute immediately
+      const exactMatch = name ? features.find((f) => f.featureName === name) : undefined;
+      if (exactMatch) {
+        try {
+          await ctx.kiro.setMode('spec');
+        } catch (err) {
+          ctx.showAlert(
+            extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+            'error',
+            5000
+          );
+          return true;
+        }
+        ctx.setCurrentAgent({ name: 'spec' });
+        const reqPath = exactMatch.specDocumentPaths.find((p) => p.endsWith('requirements.md'))!;
+        await ctx.sendMessage(
+          `Analyze the requirements in ${reqPath} for ambiguities, inconsistencies, and missing acceptance criteria. Use the analyze_requirements tool.`
+        );
+        return true;
+      }
+      // No name or no exact match — show searchable picker
+      ctx.setActiveCommand({
+        command: {
+          ...cmd,
+          meta: { ...cmd.meta, inputType: 'selection' as const },
+        },
+        options: features.map((f) => ({
+          value: `analyze_requirements ${f.featureName}`,
+          label: f.featureName,
+          description: describeSpecDocuments(f),
+        })),
+      });
+      return true;
+    }
+
     // /spec view <name> [requirements|design|tasks] — explicit alias for
     // the default action below. Kept so existing muscle memory and the
     // tab-completion flow that surfaces `view` as a subcommand still work.
@@ -1262,6 +1314,7 @@ async function runSpecFeature(
     );
   }
 }
+
 
 /**
  * Switch to spec mode and ask the agent to continue work on a feature.
