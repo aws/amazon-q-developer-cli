@@ -2944,22 +2944,22 @@ impl AcpSession {
                     });
                 }
             },
-            AgentEvent::SteeringQueued { message } => {
+            AgentEvent::SteeringQueued { message_id, content } => {
                 let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
                     session_id: self.session_id.clone(),
-                    update: ExtSessionUpdate::SteeringQueued { message },
+                    update: ExtSessionUpdate::AgentExecutionUserMessageQueued { message_id, content },
                 });
             },
-            AgentEvent::SteeringConsumed { content } => {
+            AgentEvent::SteeringConsumed { message_id, content } => {
                 let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
                     session_id: self.session_id.clone(),
-                    update: ExtSessionUpdate::SteeringConsumed { content },
+                    update: ExtSessionUpdate::AgentExecutionSteeringInjected { message_id, content },
                 });
             },
-            AgentEvent::SteeringCleared => {
+            AgentEvent::SteeringCleared { message_ids } => {
                 let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
                     session_id: self.session_id.clone(),
-                    update: ExtSessionUpdate::SteeringCleared,
+                    update: ExtSessionUpdate::AgentExecutionUserMessageCleared { message_ids },
                 });
             },
             AgentEvent::GoalAction(action) => {

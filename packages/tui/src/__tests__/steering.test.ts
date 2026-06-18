@@ -134,6 +134,43 @@ describe('TUI Steering Integration', () => {
       );
     });
 
+    it('flags the injected bubble as steered so it groups into its turn', () => {
+      // The `steered` flag marks a bubble as mid-turn injected. The
+      // ConversationView turn grouper (groupMessagesIntoTurns) uses it to fold
+      // the bubble into the originating prompt's turn instead of opening a new
+      // (response-less) turn — which is what previously rendered as a bogus
+      // "Cancelled". The flag must be set on every consumed steer.
+      const mockKiro = {
+        sendMessage: mock(() => Promise.resolve()),
+        streamMessage: mock(() => Promise.resolve()),
+        cancel: mock(() => Promise.resolve()),
+        close: mock(() => {}),
+        onCommandsUpdate: mock(() => () => {}),
+        onModelUpdate: mock(() => () => {}),
+        onAgentUpdate: mock(() => () => {}),
+        onPromptsUpdate: mock(() => () => {}),
+        executeCommand: mock(() =>
+          Promise.resolve({ success: true, message: '' })
+        ),
+        getCommandOptions: mock(() => Promise.resolve({ options: [] })),
+        settings: {},
+      };
+
+      const store = createAppStore({ kiro: mockKiro as any });
+      const handler = store.getState().createStreamEventHandler();
+
+      handler({
+        type: AgentEventType.SteeringConsumed,
+        content: 'count the lines instead',
+      });
+
+      const userMessages = store
+        .getState()
+        .messages.filter((m: { role: string }) => m.role === MessageRole.User);
+      expect(userMessages.length).toBe(1);
+      expect((userMessages[0] as { steered?: boolean }).steered).toBe(true);
+    });
+
     it('renders user bubble with correct content from consumed event', () => {
       const mockKiro = {
         sendMessage: mock(() => Promise.resolve()),

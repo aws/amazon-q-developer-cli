@@ -396,6 +396,16 @@ export type MessageType =
       agentName?: string;
       contextPercent?: number;
       kasMessageId?: string;
+      /**
+       * True when this user bubble was injected mid-turn via steering
+       * (consumed from the steer queue) rather than sent as a standalone
+       * prompt. Multiple steers are concatenated into a single agent
+       * continuation, so an injected bubble legitimately has no AI response
+       * of its own — the shared response attaches to the final bubble in the
+       * group. Renderers use this to avoid mislabeling such turns as
+       * "Cancelled".
+       */
+      steered?: boolean;
     }
   | {
       id: string;
@@ -2149,17 +2159,13 @@ export const createAppStore = (props: AppStoreProps) => {
     _activeStreamHandler: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
-    // Dual-mode interrupt behavior. KAS ("v3") has no backend steering yet,
-    // so it is pinned to QUEUE; v2 honors the persisted setting.
-    activeInterruptMode:
-      agentEngine === 'kas'
-        ? InterruptMode.QUEUE
-        : parseInterruptMode(
-            readStringSetting(
-              Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-              DEFAULT_INTERRUPT_MODE
-            )
-          ),
+    // Dual-mode interrupt behavior
+    activeInterruptMode: parseInterruptMode(
+      readStringSetting(
+        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+        DEFAULT_INTERRUPT_MODE
+      )
+    ),
 
     // Task management
     tasks: [],
@@ -3445,6 +3451,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   role: MessageRole.User,
                   content: event.content,
                   agentName: state.currentAgent?.name,
+                  steered: true,
                 },
               ],
             }));
@@ -4636,13 +4643,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     clearSteerMessage: () => {
-      const {
-        kiro,
-        sessionId,
-        pendingSteerContent,
-        isInitialized,
-        agentEngine,
-      } = get();
+      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
       if (pendingSteerContent == null) return;
 
       // Optimistically clear locally. The backend `SteeringCleared`
@@ -4656,8 +4657,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // (see index.tsx init path). A session-live queue still needs the
       // explicit `_session/steer/clear` round-trip to keep the backend in
       // sync.
-      const hasBackendQueue =
-        isInitialized && sessionId != null && agentEngine !== 'kas';
+      const hasBackendQueue = isInitialized && sessionId != null;
       if (hasBackendQueue) {
         kiro.clearSteering(sessionId).catch((err) => {
           logger.error('clearSteerMessage failed', err);
@@ -5681,14 +5681,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Dual-mode interrupt behavior toggle
     toggleInterruptMode: () => {
-      if (get().agentEngine === 'kas') {
-        get().showTransientAlert({
-          message: 'Steering is currently unsupported for v3',
-          status: 'info',
-          autoHideMs: 3000,
-        });
-        return;
-      }
       const switchingToQueue =
         get().activeInterruptMode === InterruptMode.STEER;
       const newMode = switchingToQueue
@@ -5705,7 +5697,6 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setActiveInterruptMode: (mode: InterruptMode) => {
-      if (get().agentEngine === 'kas') return;
       set({ activeInterruptMode: mode });
     },
 

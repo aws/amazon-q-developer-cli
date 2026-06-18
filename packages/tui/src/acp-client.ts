@@ -331,6 +331,13 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   metrics?: unknown;
   elapsedTime?: unknown;
   status?: unknown;
+  // Mid-turn steering queue lifecycle (KAS): `steering_queued` and
+  // `steering_injected` carry the raw user text in `content`, which the TUI
+  // surfaces. The accompanying id fields (`messageId` on queued/injected,
+  // `messageIds` on cleared) are part of the KAS contract but unused here, so
+  // they are intentionally not modeled. See @kiro/acp-type-covenant
+  // KiroSessionInfoUpdate for the full shape.
+  content?: string;
 };
 
 type KasTurnCompletionTelemetryPayload = {
@@ -1305,28 +1312,27 @@ abstract class BaseAcpClient implements SessionClient {
       return;
     }
 
-    // Steering events — both engines emit the same payload shape, but KAS
-    // uses `AgentExecutionXxx` discriminators where Rust uses `steering_xxx`.
-    // Normalize both to the same TUI event. Schema references:
-    //   Rust:  crates/chat-cli-v2/src/agent/acp/extensions.rs::ExtSessionUpdate
-    //   KAS:   packages/@kiro/agent/src/acp/session-updates.ts
+    // Steering events (Rust engine only). The Rust engine emits the
+    // `AgentExecution*` PascalCase discriminators on the
+    // `_kiro.dev/session/update` ext channel, with `{ messageId, content }` on
+    // queued/injected and `{ messageIds }` on cleared. Schema reference:
+    //   Rust: crates/chat-cli-v2/src/agent/acp/extensions.rs::ExtSessionUpdate
+    //
+    // The KAS engine no longer uses this channel: it now emits the same
+    // steering lifecycle as `session_info_update` kinds
+    // (`steering_queued` / `steering_injected` / `steering_cleared`) handled in
+    // `convertAcpUpdateToEvent`. Both paths map onto the same internal events.
     // Keep in sync with the kas-acp-client test fixture
     // (packages/tui/src/__tests__/kas-acp-client.test.ts).
-    if (
-      sessionUpdate === 'steering_queued' ||
-      sessionUpdate === 'AgentExecutionUserMessageQueued'
-    ) {
+    if (sessionUpdate === 'AgentExecutionUserMessageQueued') {
       this.broadcastStreamEvent({
         type: AgentEventType.SteeringQueued,
-        message: (update as { message?: string }).message ?? '',
+        message: (update as { content?: string }).content ?? '',
       });
       return;
     }
 
-    if (
-      sessionUpdate === 'steering_consumed' ||
-      sessionUpdate === 'AgentExecutionSteeringInjected'
-    ) {
+    if (sessionUpdate === 'AgentExecutionSteeringInjected') {
       this.broadcastStreamEvent({
         type: AgentEventType.SteeringConsumed,
         content: (update as { content?: string }).content ?? '',
@@ -1334,10 +1340,7 @@ abstract class BaseAcpClient implements SessionClient {
       return;
     }
 
-    if (
-      sessionUpdate === 'steering_cleared' ||
-      sessionUpdate === 'AgentExecutionUserMessageCleared'
-    ) {
+    if (sessionUpdate === 'AgentExecutionUserMessageCleared') {
       this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
       return;
     }
@@ -1763,6 +1766,32 @@ abstract class BaseAcpClient implements SessionClient {
             kasMessageId: (meta as any).userMessageId,
           });
         }
+        // Mid-turn steering queue lifecycle (KAS engine). KAS rides the
+        // standard `session_info_update` channel via the typed
+        // `KiroSessionInfoUpdate` union (snake_case `kind`), unlike the Rust
+        // engine which uses PascalCase discriminators on the
+        // `_kiro.dev/session/update` ext channel (see `handleExtSessionUpdate`).
+        // These map onto the same internal steering events. They are
+        // side-effect broadcasts (like `context_usage`), so broadcast and
+        // return null rather than returning the event.
+        if (meta?.kind === 'steering_queued') {
+          this.broadcastStreamEvent({
+            type: AgentEventType.SteeringQueued,
+            message: meta.content ?? '',
+          });
+          return null;
+        }
+        if (meta?.kind === 'steering_injected') {
+          this.broadcastStreamEvent({
+            type: AgentEventType.SteeringConsumed,
+            content: meta.content ?? '',
+          });
+          return null;
+        }
+        if (meta?.kind === 'steering_cleared') {
+          this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
+          return null;
+        }
         logger.debug(
           'KAS session update (not yet mapped):',
           update.sessionUpdate
@@ -1784,10 +1813,12 @@ abstract class BaseAcpClient implements SessionClient {
       }
 
       default:
-        // Steering events arrive through the `_kiro.dev/session/update`
-        // extension channel (see `handleExtSessionUpdate`), not here. If
-        // we reach this default branch we've received something neither
-        // ACP nor KAS has taught us to render yet — log and drop.
+        // Steering events arrive either as `session_info_update` kinds
+        // (KAS engine — handled in the `session_info_update` case above) or as
+        // `AgentExecution*` discriminators on the `_kiro.dev/session/update`
+        // ext channel (Rust engine — see `handleExtSessionUpdate`). If we reach
+        // this default branch we've received something neither ACP nor KAS has
+        // taught us to render yet — log and drop.
         logger.debug(
           'Unhandled session update type:',
           (update as any).sessionUpdate
@@ -2648,15 +2679,6 @@ export class KasAcpClient extends BaseAcpClient {
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
         return this.handleKasPermissionRequest(request);
       }),
-      // Mid-turn steering events arrive as `_kiro/steering/session_update` ext
-      // notifications rather than standard `session/update` because the ACP
-      // SDK validates `session/update` params against a fixed schema that
-      // rejects vendor-specific discriminators. Delegate to the same
-      // handler used by the Rust engine.
-      this.kiroClient.onExtNotification(
-        '_kiro/steering/session_update',
-        (params) => this.handleExtSessionUpdate(params)
-      ),
     ];
   }
 

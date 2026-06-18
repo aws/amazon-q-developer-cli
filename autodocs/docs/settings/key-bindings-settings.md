@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-08
-  commit: 18f860655
+  validated: 2026-06-15
+  commit: d6d422fde
   status: validated
   testable_headless: true
   category: settings-group

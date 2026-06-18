@@ -3218,6 +3218,115 @@ describe('KasAcpClient', () => {
     });
   });
 
+  // ── Mid-turn steering: KAS session_info_update kinds → internal events ──
+  //
+  // KAS emits the steering queue lifecycle on the standard session_info_update
+  // channel with snake_case `_meta.kiro.kind`. The Rust engine still uses the
+  // PascalCase `_kiro.dev/session/update` ext channel (see regression test
+  // below). Both map onto the same internal steering events.
+
+  it('session_info_update kind=steering_queued broadcasts SteeringQueued with content as message', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_queued',
+            messageId: 'steer-abc',
+            content: 'please focus on tests',
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringQueued);
+    expect(event).toBeDefined();
+    expect(event.message).toBe('please focus on tests');
+  });
+
+  it('session_info_update kind=steering_injected broadcasts SteeringConsumed with content', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_injected',
+            messageId: 'steer-abc',
+            content: 'the raw user message',
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringConsumed);
+    expect(event).toBeDefined();
+    expect(event.content).toBe('the raw user message');
+  });
+
+  it('session_info_update kind=steering_cleared broadcasts SteeringCleared', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_cleared',
+            messageIds: ['steer-abc', 'steer-def'],
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringCleared);
+    expect(event).toBeDefined();
+  });
+
+  it('Rust engine PascalCase _kiro.dev/session/update steering still maps to internal events', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    // The Rust engine continues to emit the PascalCase discriminators through
+    // handleExtSessionUpdate; this path must keep working unchanged.
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'AgentExecutionUserMessageQueued',
+        content: 'rust queued steer',
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringQueued);
+    expect(event).toBeDefined();
+    expect(event.message).toBe('rust queued steer');
+  });
+
   // ── effortLevel config option → EffortUpdate ──
 
   it('newSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {

@@ -272,17 +272,29 @@ pub enum ExtSessionUpdate {
     },
     /// A steering message was queued for mid-turn injection.
     ///
-    /// `message` is the **full current queue snapshot** (multiple steers are
+    /// `content` is the **full current queue snapshot** (multiple steers are
     /// concatenated on the backend with `"\n\n"`). Each emission carries the
     /// entire queue, so clients should overwrite their local copy rather than
-    /// append.
-    #[serde(rename_all = "camelCase")]
-    SteeringQueued { message: String },
-    /// The queued steering message was consumed and injected into the conversation.
-    #[serde(rename_all = "camelCase")]
-    SteeringConsumed { content: String },
-    /// The queued steering message was cleared without being consumed
-    /// (cancel, or explicit TUI-initiated clear). Clients should clear any
-    /// local queue display on receipt.
-    SteeringCleared,
+    /// append. `message_id` is the stable id of the steer just queued.
+    ///
+    /// Wire shape matches the KAS `AgentExecutionUserMessageQueued`
+    /// notification (`@kiro/acp-type-covenant` steering/session-update).
+    #[serde(rename = "AgentExecutionUserMessageQueued", rename_all = "camelCase")]
+    AgentExecutionUserMessageQueued { message_id: String, content: String },
+    /// A queued steering message was consumed and injected into the
+    /// conversation. Emitted once per steer, carrying that steer's stable
+    /// `message_id` and raw `content`.
+    ///
+    /// Wire shape matches the KAS `AgentExecutionSteeringInjected` notification.
+    #[serde(rename = "AgentExecutionSteeringInjected", rename_all = "camelCase")]
+    AgentExecutionSteeringInjected { message_id: String, content: String },
+    /// The queued steering messages were cleared without being consumed
+    /// (cancel, or explicit TUI-initiated clear). `message_ids` lists every
+    /// steer dropped from the queue so clients can reconcile out-of-order
+    /// delivery. Clients should clear any local queue display on receipt.
+    ///
+    /// Wire shape matches the KAS `AgentExecutionUserMessageCleared`
+    /// notification.
+    #[serde(rename = "AgentExecutionUserMessageCleared", rename_all = "camelCase")]
+    AgentExecutionUserMessageCleared { message_ids: Vec<String> },
 }

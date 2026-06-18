@@ -58,6 +58,7 @@ chat.log
 .kiro/projects/
 .kiro/settings/
 .kiro/knowledge/
+.kiro/specs/
 .kiro/skills/*
 !.kiro/skills/knight-rider/
 !.kiro/skills/acp-session-storage/

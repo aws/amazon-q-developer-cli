@@ -206,6 +206,10 @@ pub enum Setting {
     ChatShowThinking,
     #[strum(message = "Show dynamic title in terminal tab (boolean, default: false)")]
     ChatTerminalTitle,
+    #[strum(message = "Default follow-up delivery mode for new chat sessions: 'steer' or 'queue' (string)")]
+    ChatDefaultInterruptBehavior,
+    #[strum(message = "Key binding to toggle follow-up delivery mode (string, default: ctrl+s)")]
+    ChatKeybindingsToggleInterruptBehavior,
     #[cfg(feature = "voice")]
     #[strum(message = "Voice input language (string)")]
     VoiceLanguage,
@@ -365,6 +369,8 @@ impl AsRef<str> for Setting {
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
             Self::ChatTerminalTitle => "chat.terminalTitle",
+            Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
+            Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
             #[cfg(feature = "voice")]
             Self::VoiceLanguage => "voice.language",
             #[cfg(feature = "voice")]
@@ -411,6 +417,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
             "chat.enableSubagent" => Ok(Self::EnabledSubagent),
+            "chat.delegateModeKey" => Ok(Self::DelegateModeKey),
 
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "introspect.progressiveMode" => Ok(Self::IntrospectProgressiveMode),
@@ -439,6 +446,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "chat.enableDelegate" => Ok(Self::EnabledDelegate),
             "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
             // Frontend persists this key in `cli.json` using the dotted
             // `chat.ui.mode` form and mirrors it to the backend. The
@@ -468,6 +476,8 @@ impl TryFrom<&str> for Setting {
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
             "chat.terminalTitle" => Ok(Self::ChatTerminalTitle),
+            "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
+            "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
             #[cfg(feature = "voice")]
             "voice.language" => Ok(Self::VoiceLanguage),
             #[cfg(feature = "voice")]
@@ -737,6 +747,8 @@ impl Settings {
 
 #[cfg(test)]
 mod test {
+    use strum::IntoEnumIterator;
+
     use super::*;
 
     #[test]
@@ -745,6 +757,42 @@ mod test {
         assert!(!Setting::ApiCodeWhispererService.is_workspace_overridable());
         assert!(Setting::ChatDefaultModel.is_workspace_overridable());
         assert!(Setting::EnabledTangentMode.is_workspace_overridable());
+    }
+
+    #[test]
+    fn test_interrupt_behavior_setting_keys() {
+        // The TUI dual-mode feature reads these keys; the CLI `settings set`
+        // path must accept them, so they have to roundtrip through AsRef and
+        // TryFrom. Regression guard for the keys being absent from the enum.
+        let default_key = Setting::ChatDefaultInterruptBehavior.as_ref();
+        assert_eq!(default_key, "chat.defaultInterruptBehavior");
+        assert!(matches!(
+            Setting::try_from(default_key).unwrap(),
+            Setting::ChatDefaultInterruptBehavior
+        ));
+
+        let toggle_key = Setting::ChatKeybindingsToggleInterruptBehavior.as_ref();
+        assert_eq!(toggle_key, "chat.keybindings.toggleInterruptBehavior");
+        assert!(matches!(
+            Setting::try_from(toggle_key).unwrap(),
+            Setting::ChatKeybindingsToggleInterruptBehavior
+        ));
+    }
+
+    #[test]
+    fn test_all_settings_roundtrip() {
+        // Every Setting variant must parse back from its string key. Catches
+        // missing or mismatched entries between AsRef and TryFrom.
+        for setting in Setting::iter() {
+            let key = setting.as_ref();
+            let parsed =
+                Setting::try_from(key).unwrap_or_else(|_| panic!("setting key `{key}` is not parseable via TryFrom"));
+            assert_eq!(
+                parsed.as_ref(),
+                key,
+                "setting key `{key}` did not roundtrip through TryFrom",
+            );
+        }
     }
 
     #[test]

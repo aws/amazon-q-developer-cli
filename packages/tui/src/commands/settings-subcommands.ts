@@ -118,24 +118,6 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     description: 'Newlines, interrupt behaviour',
     handle: ({ ctx, settingsCommand }) => {
       ctx.setSettingsReturnOnEscape(true);
-      // KAS ("v3") has no mid-turn steering, so hide the interrupt-behaviour
-      // option. Revert once KAS supports steering.
-      const options = [
-        {
-          value: 'terminal:newlines',
-          label: 'newlines',
-          description: 'Shift+Enter / Option+Enter for newlines',
-        },
-        ...(ctx.agentEngine === 'kas'
-          ? []
-          : [
-              {
-                value: 'terminal:interrupt',
-                label: 'interrupt behaviour',
-                description: 'What happens when you type while Kiro is working',
-              },
-            ]),
-      ];
       ctx.setActiveCommand({
         command: {
           ...settingsCommand,
@@ -145,7 +127,18 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
             searchable: false,
           },
         },
-        options,
+        options: [
+          {
+            value: 'terminal:newlines',
+            label: 'newlines',
+            description: 'Shift+Enter / Option+Enter for newlines',
+          },
+          {
+            value: 'terminal:interrupt',
+            label: 'interrupt behaviour',
+            description: 'What happens when you type while Kiro is working',
+          },
+        ],
       });
     },
   },
@@ -178,14 +171,6 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     label: 'interrupt behaviour',
     description: 'What happens when you type while Kiro is working',
     handle: ({ ctx, settingsCommand }) => {
-      if (ctx.agentEngine === 'kas') {
-        ctx.showAlert(
-          'Steering is currently unsupported for v3',
-          'warning',
-          3000
-        );
-        return;
-      }
       const current = readStringSetting(
         Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
         DEFAULT_INTERRUPT_MODE

@@ -689,10 +689,29 @@ pub struct Agent {
     /// Whether tool search is effectively active (computed from settings + thresholds)
     tool_search_active: bool,
 
-    /// Queued user message for mid-turn steering.
+    /// Queued steering messages for mid-turn injection.
     /// Consumed at the next tool boundary (send_tool_results) or end-of-turn.
-    /// Multiple messages are concatenated with "\n\n".
-    queued_user_message: Option<String>,
+    /// Each steer carries a stable `steer-<uuid>` id so queued/consumed/cleared
+    /// notifications can be correlated by id (matching the KAS contract). When
+    /// drained, the steers' text is concatenated with "\n\n" into a single LLM
+    /// continuation request, while one consume notification is emitted per steer.
+    queued_steers: Vec<QueuedSteer>,
+}
+
+/// A single queued steering message awaiting injection.
+#[derive(Debug, Clone)]
+struct QueuedSteer {
+    /// Stable `steer-<uuid>` id, surfaced on the queued/consumed/cleared
+    /// notifications so clients can track each steer by id.
+    id: String,
+    /// The raw, user-typed steering text (trimmed).
+    text: String,
+}
+
+/// Join queued steers' text into the full queue snapshot (the value carried by
+/// the queued notification and injected into the LLM as a single block).
+fn steer_snapshot(steers: &[QueuedSteer]) -> String {
+    steers.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("\n\n")
 }
 
 impl Agent {
@@ -785,7 +804,7 @@ impl Agent {
             tool_search_config: ToolLoadConfig::from_env(),
             tool_search_activated: HashSet::new(),
             tool_search_active: false,
-            queued_user_message: None,
+            queued_steers: Vec::new(),
         })
     }
 
@@ -1500,29 +1519,34 @@ impl Agent {
                 if trimmed.is_empty() {
                     return Err(AgentError::Custom("empty steering message".into()));
                 }
-                // Append onto the existing queue, or initialize it.
-                // Successive steers concatenate with "\n\n" and drain
+                // Append onto the existing queue. Successive steers drain
                 // together at the next tool boundary or end of turn.
+                //
+                // Each steer gets a stable `steer-<uuid>` id so the queued,
+                // consumed, and cleared notifications can be correlated by id
+                // (matching the KAS contract).
                 //
                 // No size cap is applied — the human typing rate is the
                 // natural bound. If a runaway front-end becomes a problem
                 // in practice, a cap can be added here.
-                let snapshot = if let Some(existing) = &mut self.queued_user_message {
-                    existing.push_str("\n\n");
-                    existing.push_str(trimmed);
-                    existing.clone()
-                } else {
-                    let s = trimmed.to_string();
-                    self.queued_user_message = Some(s.clone());
-                    s
-                };
-                self.agent_event_buf
-                    .push(AgentEvent::SteeringQueued { message: snapshot });
+                let id = format!("steer-{}", Uuid::new_v4().as_simple());
+                self.queued_steers.push(QueuedSteer {
+                    id: id.clone(),
+                    text: trimmed.to_string(),
+                });
+                // The queued notification carries the full queue snapshot so
+                // consumers overwrite their local copy rather than append.
+                let snapshot = steer_snapshot(&self.queued_steers);
+                self.agent_event_buf.push(AgentEvent::SteeringQueued {
+                    message_id: id,
+                    content: snapshot,
+                });
                 Ok(AgentResponse::Success)
             },
             AgentRequest::ClearSteering => {
-                if self.queued_user_message.take().is_some() {
-                    self.agent_event_buf.push(AgentEvent::SteeringCleared);
+                if !self.queued_steers.is_empty() {
+                    let message_ids = self.queued_steers.drain(..).map(|s| s.id).collect();
+                    self.agent_event_buf.push(AgentEvent::SteeringCleared { message_ids });
                 }
                 Ok(AgentResponse::Success)
             },
@@ -1711,8 +1735,9 @@ impl Agent {
         // and replays it as a fresh prompt after cancel resolves ("cancel =
         // redirect" UX). The backend clear ensures a subsequent turn doesn't
         // accidentally inherit stale steering content.
-        if let Some(_cleared) = self.queued_user_message.take() {
-            self.agent_event_buf.push(AgentEvent::SteeringCleared);
+        if !self.queued_steers.is_empty() {
+            let message_ids = self.queued_steers.drain(..).map(|s| s.id).collect();
+            self.agent_event_buf.push(AgentEvent::SteeringCleared { message_ids });
         }
 
         Ok(AgentResponse::Success)
@@ -3544,16 +3569,25 @@ impl Agent {
     /// really ending, so its metering rolls up into the extended turn's
     /// final `EndTurn` instead.
     async fn drain_steering_or_end_turn(&mut self, md: UserTurnMetadata) -> Result<(), AgentError> {
-        if let Some(steering) = self.queued_user_message.take() {
-            self.agent_event_buf.push(AgentEvent::SteeringConsumed {
-                content: steering.clone(),
-            });
+        if !self.queued_steers.is_empty() {
+            let steers = std::mem::take(&mut self.queued_steers);
+            // Emit one consume notification per steer (carrying its id + raw
+            // text) so clients can reconcile each queued steer by id, matching
+            // the KAS contract. The drained text is still concatenated into a
+            // single LLM continuation request below.
+            let snapshot = steer_snapshot(&steers);
+            for steer in steers {
+                self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                    message_id: steer.id,
+                    content: steer.text,
+                });
+            }
             // Extend the existing agent loop (still alive in UserTurnEnded
             // state) with the drained content. This mirrors the stop-hook
             // block path above: reuse the loop rather than spawning a new
             // one, so the drained content is "continuation of the same
             // user turn" semantically.
-            let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(steering)], None);
+            let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(snapshot)], None);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -3621,11 +3655,20 @@ impl Agent {
             }
         }
 
-        // Drain queued steering message and append as user content
-        if let Some(steering) = self.queued_user_message.take() {
-            content.push(ContentBlock::Text(format_steering_message(&steering)));
-            self.agent_event_buf
-                .push(AgentEvent::SteeringConsumed { content: steering });
+        // Drain queued steering messages and append as user content.
+        // The combined snapshot becomes a single LLM content block, while one
+        // consume notification is emitted per steer (id + raw text) to match
+        // the KAS contract's per-message identity tracking.
+        if !self.queued_steers.is_empty() {
+            let steers = std::mem::take(&mut self.queued_steers);
+            let snapshot = steer_snapshot(&steers);
+            content.push(ContentBlock::Text(format_steering_message(&snapshot)));
+            for steer in steers {
+                self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                    message_id: steer.id,
+                    content: steer.text,
+                });
+            }
         }
 
         let pending = PendingUserMessage::new_tool_results(content.clone(), results);

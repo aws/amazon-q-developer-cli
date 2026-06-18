@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [steering, redirect, interrupt, queue, mid-turn, guidance, follow-up, queuing, steer mode, queue mode]
   related: [session-management, tangent-mode, key-bindings-settings]
-  validated: 2026-06-08
-  commit: 18f860655
+  validated: 2026-06-15
+  commit: d6d422fde
   status: validated
   testable_headless: false
 ---
@@ -164,19 +164,6 @@ Redirecting to: Actually, let's do integration tests
 [New turn starts with integration test focus]
 ```
 
-### Example 5: Toggle Mode Mid-Session
-
-```
-[Steering mode - message pending]
-
-Ctrl+S
-
-Switched to Queue mode
-
-[Pending steer message now in local queue]
-[Can add more items or edit queue]
-```
-
 ## Configuration
 
 ### Default Follow-Up Mode
@@ -239,7 +226,6 @@ Keyboard shortcuts in expanded tray:
 - **Queuing mode**: Messages sent sequentially, not batched
 - **No cross-mode editing**: In steering mode, you can only clear the pending message
 - **Timing dependent**: If the agent finishes before your message is queued, it becomes a normal prompt
-- **Mode transfer**: When toggling modes, concatenated steer messages split back into separate queue items
 
 ## Technical Details
 
