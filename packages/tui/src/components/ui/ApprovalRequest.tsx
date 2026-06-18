@@ -161,10 +161,13 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     } else if (key.leftArrow) {
       if (mode === 'drill-in') {
         setApprovalMode('dropdown');
-      } else if (page === 'trust' || page === 'kas-scope') {
+      } else if (
+        mode === 'dropdown' &&
+        (page === 'trust' || page === 'kas-scope')
+      ) {
         setPage('default');
         setFocusedIndex(0);
-      } else {
+      } else if (mode === 'dropdown') {
         cancelApproval();
       }
     } else if (input === 's' && page === 'kas-scope') {

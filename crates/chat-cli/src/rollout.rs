@@ -147,6 +147,16 @@ fn detect_insider_toolbox() -> bool {
         .is_some_and(path_is_insider_toolbox)
 }
 
+/// True when `start_url` is the internal Amazon IdC start URL.
+fn is_amzn_start_url(start_url: Option<&str>) -> bool {
+    start_url.map(str::trim) == Some(AMZN_START_URL)
+}
+
+/// Resolve the start URL used for rollout segment detection.
+pub fn resolve_segment_start_url(token_start_url: Option<String>, db_start_url: Option<String>) -> Option<String> {
+    token_start_url.or(db_start_url)
+}
+
 impl Rollout {
     /// Initialize the global rollout instance. Call once at startup after resolving client_id.
     pub fn init(client_id: Option<Uuid>, start_url: Option<String>) {
@@ -160,7 +170,7 @@ impl Rollout {
         }
 
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
-        let is_internal = start_url.as_deref().map(str::trim) == Some(AMZN_START_URL);
+        let is_internal = is_amzn_start_url(start_url.as_deref());
         let is_nightly = env!("CARGO_PKG_VERSION").contains("-nightly");
         let is_insider_toolbox = detect_insider_toolbox();
         let _ = INSTANCE.set(Rollout {
@@ -278,6 +288,47 @@ pub fn rollout() -> &'static Rollout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resolve_segment_start_url_prefers_token() {
+        // Token's start URL wins even when the state-table value differs or is stale.
+        assert_eq!(
+            resolve_segment_start_url(
+                Some(AMZN_START_URL.to_string()),
+                Some("https://other.awsapps.com/start".into())
+            ),
+            Some(AMZN_START_URL.to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_segment_start_url_falls_back_to_db() {
+        assert_eq!(
+            resolve_segment_start_url(None, Some(AMZN_START_URL.to_string())),
+            Some(AMZN_START_URL.to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_segment_start_url_none_when_both_absent() {
+        assert_eq!(resolve_segment_start_url(None, None), None);
+    }
+
+    #[test]
+    fn test_device_code_login_is_internal_from_token_only() {
+        // Device-code login populates the token's start URL but not the
+        // `auth.idc.start-url` state value. Internal detection must still hold.
+        let start_url = resolve_segment_start_url(Some(AMZN_START_URL.to_string()), None);
+        assert!(is_amzn_start_url(start_url.as_deref()));
+    }
+
+    #[test]
+    fn test_is_amzn_start_url() {
+        assert!(is_amzn_start_url(Some(AMZN_START_URL)));
+        assert!(is_amzn_start_url(Some(&format!("  {AMZN_START_URL}  "))));
+        assert!(!is_amzn_start_url(Some("https://view.awsapps.com/start")));
+        assert!(!is_amzn_start_url(None));
+    }
 
     #[test]
     fn test_embedded_config_parses() {

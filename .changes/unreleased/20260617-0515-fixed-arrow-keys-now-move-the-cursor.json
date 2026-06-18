@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Arrow keys now move the cursor while editing a tool approval instead of cancelling edit mode"
+}

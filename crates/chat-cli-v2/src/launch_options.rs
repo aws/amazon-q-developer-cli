@@ -146,11 +146,18 @@ pub async fn launch_tui(asset_paths: &TuiAssetPaths) -> Result<ExitCode> {
         .env(crate::util::consts::env_var::KIRO_CHAT_CLI_BIN, &current_exe)
         // Surface the real CLI version to the TUI. The embedded TUI bundle's
         // package.json is pinned to "0.0.0-dev" in-repo and isn't bumped by
-        // the tag-based release flow, so the TUI reads this env (which carries
-        // CARGO_PKG_VERSION, set from KIRO_VERSION at build time) to show the
-        // correct version in its footer. Falls back to the bundle version when
-        // unset (pure-source/dev runs).
+        // the tag-based release flow, so the TUI relies on these envs (which
+        // carry CARGO_PKG_VERSION, set from KIRO_VERSION at build time) to show
+        // the correct version. `getCliVersion()` reads KIRO_VERSION_OVERRIDE;
+        // honor a user/parent-provided value, otherwise fall back to this
+        // crate's compile-time version. KIRO_VERSION is kept for parity with
+        // the chat_cli launcher.
         .env("KIRO_VERSION", env!("CARGO_PKG_VERSION"))
+        .env(
+            crate::util::consts::env_var::KIRO_VERSION_OVERRIDE,
+            std::env::var_os(crate::util::consts::env_var::KIRO_VERSION_OVERRIDE)
+                .unwrap_or_else(|| std::ffi::OsString::from(env!("CARGO_PKG_VERSION"))),
+        )
         // Limit JSC garbage collector to 1 marker thread. By default JSC
         // uses up to min(4, core_count) marker threads on Apple Silicon
         // (see overrideDefaults() and computeNumberOfGCMarkers in Options.cpp).

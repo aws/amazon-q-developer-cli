@@ -94,6 +94,30 @@ describe('Stream event handler — ToolCall', () => {
     ).toBe(true);
   });
 
+  it('renders a tool card for a standalone-subagent ToolCall forwarded to main', async () => {
+    // A hidden/standalone subagent's tool call is forwarded to the main stream
+    // by KasAcpClient with sessionId stripped to undefined. Verify the main
+    // store/render path actually appends a tool card for it — proving the
+    // surfaced event becomes a real inline card, not merely a routed event.
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'standalone-tc',
+      name: 'fs_write',
+      kind: 'edit',
+      sessionId: undefined,
+      args: { path: '/spec/requirements.md', content: 'hi' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const msgs = store.getState().messages;
+    expect(
+      msgs.some(
+        (m: any) => m.id === 'standalone-tc' && m.role === MessageRole.ToolUse
+      )
+    ).toBe(true);
+  });
+
   it('updates existing tool call with new content', async () => {
     const store = makeStore();
     const handler = store.getState().createStreamEventHandler();

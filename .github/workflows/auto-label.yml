@@ -16,6 +16,7 @@ permissions:
 jobs:
   label:
     name: Classify and label PR
+    if: github.event.pull_request.head.repo.fork != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

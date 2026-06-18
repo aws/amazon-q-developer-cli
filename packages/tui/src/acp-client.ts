@@ -21,7 +21,7 @@ import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
-import { createOpenExternalUrlCapability } from './capabilities/open-external-url';
+import { createCopyUrlToClipboardCapability } from './capabilities/copy-url-to-clipboard';
 import { createSecretStorageCapabilities } from './capabilities/secret-storage';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type {
@@ -68,7 +68,7 @@ import type {
   KasContextMutationResponse,
 } from './types/session-client';
 
-import packageJson from '../package.json';
+import { getCliVersion } from './utils/version';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
 import { KAS_DEFAULT_AGENT_ID } from './constants/agents';
@@ -76,8 +76,6 @@ import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
 import { emitKasTelemetry } from './utils/kas-telemetry-cli';
-
-const TUI_VERSION: string = packageJson.version;
 
 function getKasVersion(kasServerPath: string): string {
   try {
@@ -1247,7 +1245,7 @@ abstract class BaseAcpClient implements SessionClient {
     this.broadcastInbox(params);
   }
 
-  private handleAgentSwitched(params: Record<string, unknown>) {
+  protected handleAgentSwitched(params: Record<string, unknown>) {
     const p = params as {
       agentName: string;
       previousAgentName?: string;
@@ -1893,8 +1891,19 @@ abstract class BaseAcpClient implements SessionClient {
 
 export class RustAcpClient extends BaseAcpClient implements acp.Client {
   private connection: acp.ClientSideConnection;
+  /**
+   * Version reported in the ACP `clientInfo` handshake. Injectable so tests
+   * can assert the forwarded version without re-importing the module to bust
+   * a cached module-level constant. Defaults to the launcher-forwarded CLI
+   * version (`getCliVersion()`), so production behavior is unchanged.
+   */
+  private readonly version: string;
 
-  constructor(agentPath: string, extraAcpArgs: string[] = []) {
+  constructor(
+    agentPath: string,
+    extraAcpArgs: string[] = [],
+    version: string = getCliVersion()
+  ) {
     const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
@@ -1904,6 +1913,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       detached: true,
     });
     super(toAgentProcess(proc));
+    this.version = version;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     this.connection = new acp.ClientSideConnection(() => this, finalStream);
@@ -1918,7 +1928,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
-      clientInfo: { name: 'kiro-tui', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-tui', version: this.version },
     });
     logger.debug(
       '[acp-client] ACP handshake done, protocolVersion:',
@@ -2229,6 +2239,21 @@ function fromKasModeId(kasModeId: string): string {
   return kasModeId;
 }
 
+/**
+ * Subagent event types that should ALSO render inline in the main transcript
+ * when the subtask is *standalone* (no crew panel registered). These are the
+ * tool cards a user expects to see from a hidden/spec subagent. Content/Thought
+ * are forwarded too — harmless, since KAS suppresses subagent say/reasoning for
+ * hidden agents so they rarely arrive. Pure lifecycle/noise events are excluded.
+ */
+const STANDALONE_MAIN_FORWARD_TYPES: ReadonlySet<AgentEventType> = new Set([
+  AgentEventType.ToolCall,
+  AgentEventType.ToolCallUpdate,
+  AgentEventType.ToolCallFinished,
+  AgentEventType.Content,
+  AgentEventType.Thought,
+]);
+
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
@@ -2250,6 +2275,14 @@ export class KasAcpClient extends BaseAcpClient {
    * passed on the CLI (so an explicit flag always takes precedence).
    */
   private readonly initialModel?: string;
+
+  /**
+   * Version reported in the KAS `clientInfo` handshake and the
+   * `KIRO_CUSTOM_USER_AGENT` passed to the KAS subprocess. Injectable for
+   * tests; defaults to the launcher-forwarded CLI version (`getCliVersion()`)
+   * so production behavior is unchanged.
+   */
+  private readonly version: string;
 
   /**
    * Construct a KAS ACP client.
@@ -2275,15 +2308,17 @@ export class KasAcpClient extends BaseAcpClient {
     stream?: Stream;
     initialAgent?: string;
     initialModel?: string;
+    version?: string;
   }) {
     if (options?.stream) {
       super(createNullAgentProcess());
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
+      this.version = options.version ?? getCliVersion();
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
-        clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+        clientInfo: { name: 'kiro-cli', version: this.version },
         capabilities: [createGetAccessTokenCapability()],
       });
       return;
@@ -2316,6 +2351,11 @@ export class KasAcpClient extends BaseAcpClient {
     const nodeBin = process.env.KIRO_KAS_NODE_PATH || 'node';
     logger.info(`[acp-client] Spawning KAS agent: ${nodeBin} ${kasServerPath}`);
 
+    // Resolved before `super()` because the user-agent below is baked into
+    // the subprocess env at spawn time, which precedes the `super()` call
+    // that unblocks `this` access. Stored on the instance afterwards.
+    const version = options?.version ?? getCliVersion();
+
     const proc = spawn(
       nodeBin,
       [
@@ -2334,7 +2374,7 @@ export class KasAcpClient extends BaseAcpClient {
           ...process.env,
           NODE_CHANNEL_FD: undefined,
           NODE_CHANNEL_SERIALIZATION_MODE: undefined,
-          KIRO_CUSTOM_USER_AGENT: `KiroCLI/${TUI_VERSION} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${TUI_VERSION} app/AmazonQ-For-CLI`,
+          KIRO_CUSTOM_USER_AGENT: `KiroCLI/${version} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${version} app/AmazonQ-For-CLI`,
         },
         // See RustAcpClient — detached so close() can kill -pgid and reap
         // MCP children together with KAS instead of leaking them as
@@ -2345,15 +2385,16 @@ export class KasAcpClient extends BaseAcpClient {
     super(toAgentProcess(proc));
     this.initialAgent = options?.initialAgent;
     this.initialModel = options?.initialModel;
+    this.version = version;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
     this.kiroClient = new KiroClient({
       stream: finalStream,
-      clientInfo: { name: 'kiro-cli', version: TUI_VERSION },
+      clientInfo: { name: 'kiro-cli', version: this.version },
       capabilities: [
         createGetAccessTokenCapability(),
-        createOpenExternalUrlCapability(),
+        createCopyUrlToClipboardCapability(),
         ...createSecretStorageCapabilities(),
       ],
       clientMeta: {
@@ -2368,6 +2409,12 @@ export class KasAcpClient extends BaseAcpClient {
 
   // Pipeline support: maps toolCallId → agentSubtaskId for permission routing
   private toolCallToSubtask: Map<string, string> = new Map();
+
+  // Subtasks that correspond to a VISIBLE pipeline stage (a crew panel was
+  // registered via handlePipelineStateUpdate → broadcastSubagentList). Only
+  // these route tool approvals to the crew monitor; hidden/one-off spec
+  // subagents have no panel, so their approvals must surface in the main view.
+  private pipelineStageSubtasks: Set<string> = new Set();
 
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
@@ -2449,6 +2496,12 @@ export class KasAcpClient extends BaseAcpClient {
 
   private wireSessionListeners(sessionId: string): void {
     this.sessionDisposables.forEach((d) => d.dispose());
+    // Drop subtask correlation state from the previous session so a stale
+    // subtaskId can't misroute a new session's tool approval to a crew panel
+    // that no longer exists. loadSession replays history AFTER this runs, so
+    // any still-active stages get re-registered before their events arrive.
+    this.pipelineStageSubtasks.clear();
+    this.toolCallToSubtask.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -2544,10 +2597,11 @@ export class KasAcpClient extends BaseAcpClient {
         // for signature consistency and to correctly stamp if a genuine
         // subagent-session listener is ever wired.
         const event = this.convertAcpUpdateToEvent(update, sessionId);
+        const meta = event ? extractKiroMetaFromEvent(event) : undefined;
+
         if (!event) return;
 
         // Intercept pipeline metadata → emit subagent list update
-        const meta = extractKiroMetaFromEvent(event);
         if (meta?.pipeline) {
           this.handlePipelineStateUpdate(meta.pipeline);
         }
@@ -2555,16 +2609,37 @@ export class KasAcpClient extends BaseAcpClient {
         // Intercept per-stage events → route to multi-session handlers
         if (meta?.agentSubtaskId) {
           const subtaskId = meta.agentSubtaskId;
+          // A subtask is a VISIBLE crew stage only when a pipeline state update
+          // registered it (see handlePipelineStateUpdate). Crew stages render
+          // exclusively in the crew panel via multi-session. Standalone/hidden
+          // spec subagents never register a stage, so they have no panel — their
+          // tool cards would render NOWHERE if dropped. Forward those to the main
+          // stream so they appear as normal inline tool cards.
+          const isVisibleCrewStage = this.pipelineStageSubtasks.has(subtaskId);
           if (event.type === AgentEventType.ToolCall) {
             event.sessionId = subtaskId;
             this.toolCallToSubtask.set(event.id, subtaskId);
           }
           this.broadcastMultiSession(subtaskId, event);
-          // Any event tagged with agentSubtaskId belongs to a sub-agent
-          // (per-stage content, tool calls, or the invoke_sub_agent
-          // wrapper). It must not also reach the main conversation,
-          // otherwise sub-agent narration leaks into the main view as
-          // duplicates of what shows in SUBAGENT OUTPUT.
+          // Crew stages: panel-only (the SUBAGENT OUTPUT panel renders them, so
+          // they must NOT also leak into the main conversation as duplicates).
+          // Standalone subtasks: also surface in main. The main copy strips
+          // `sessionId` (set above for ToolCall, for crew correlation) so it
+          // renders as a normal inline tool card rather than a tagged subagent
+          // tool. Multi-session already received the tagged copy by reference.
+          if (
+            !isVisibleCrewStage &&
+            STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
+          ) {
+            // Strip the crew-correlation sessionId (set above for ToolCall) so
+            // the main copy renders as a normal inline card. Only the ToolCall
+            // variant carries sessionId; other forwarded types are sent as-is.
+            const mainEvent =
+              event.type === AgentEventType.ToolCall
+                ? { ...event, sessionId: undefined }
+                : event;
+            this.broadcastStreamEvent(mainEvent);
+          }
           return;
         }
 
@@ -2643,6 +2718,12 @@ export class KasAcpClient extends BaseAcpClient {
         dependsOn: s.dependsOn,
       }));
 
+    // Record every stage's subtask as a visible crew stage so its tool
+    // approvals can route to the crew monitor (see handleKasPermissionRequest).
+    for (const s of pipeline.stages) {
+      if (s.agentSubtaskId) this.pipelineStageSubtasks.add(s.agentSubtaskId);
+    }
+
     const pendingStages = pipeline.stages
       .filter((s) => s.status === 'pending')
       .map((s) => ({
@@ -2667,10 +2748,23 @@ export class KasAcpClient extends BaseAcpClient {
     const isSubagentSpawn =
       (request as any)?._meta?.kiro?.consent?.capability ===
       KAS_CAPABILITIES.SUBAGENT;
+    // Only route a child tool approval to the crew monitor when its subtask is
+    // a VISIBLE pipeline stage (a crew panel was registered). Hidden/one-off
+    // spec subagents never register a stage, so attaching their subtaskId as
+    // `sessionId` would route the prompt to a crew panel that doesn't exist —
+    // it would never render, resolve() would never fire, and KAS would deadlock
+    // ("turn may be stuck", isProcessing=true forever). Surfacing in the main
+    // view keeps the prompt resolvable. Ordering caveat: if the pipeline state
+    // update arrives AFTER this request, the approval routes to main rather
+    // than crew — acceptable, since main is always resolvable and never hangs.
+    const isVisibleCrewStage =
+      !!subtaskId && this.pipelineStageSubtasks.has(subtaskId);
     const enriched = {
       ...request,
       toolCall: request.toolCall || { toolCallId },
-      ...(subtaskId && !isSubagentSpawn && { sessionId: subtaskId }),
+      ...(subtaskId &&
+        !isSubagentSpawn &&
+        isVisibleCrewStage && { sessionId: subtaskId }),
     };
     return this.handlePermissionRequest(enriched);
   }
@@ -2745,7 +2839,15 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient.onExtNotification(
       '_kiro/customAgent/not_found',
       (params) => {
-        this.handleAgentNotFound(params);
+        // Normalize the fallback id (e.g. KAS `vibe` -> `default`) before it
+        // reaches the shared handler, so the "using <agent>" message shows the
+        // canonical id. `requestedAgent` stays raw — it echoes back the user's
+        // literal chat.defaultAgent value.
+        const rawFallback = params.fallbackAgent as string | undefined;
+        this.handleAgentNotFound({
+          ...params,
+          ...(rawFallback ? { fallbackAgent: fromKasModeId(rawFallback) } : {}),
+        });
         // KAS doesn't send current_mode_update after fallback, so update the cached mode here
         const fallback = params.fallbackAgent as string | undefined;
         if (fallback) {
@@ -2812,6 +2914,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.toolsNotificationDisposable = null;
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
+    // Mirror wireSessionListeners: drop subtask correlation state on teardown.
+    this.pipelineStageSubtasks.clear();
+    this.toolCallToSubtask.clear();
     super.close();
   }
 
@@ -3836,6 +3941,24 @@ export class KasAcpClient extends BaseAcpClient {
     this.currentEffortLevel = effortOpt.currentValue;
   }
 
+  /**
+   * Normalize backend-initiated agent switches (e.g. a spec-workflow handoff)
+   * so the chip / welcome banner never surface a raw KAS wire id like `vibe`.
+   * The base implementation is identity (V2 ids need no translation).
+   */
+  protected override handleAgentSwitched(
+    params: Record<string, unknown>
+  ): void {
+    const p = params as { agentName?: string; previousAgentName?: string };
+    super.handleAgentSwitched({
+      ...params,
+      ...(p.agentName ? { agentName: fromKasModeId(p.agentName) } : {}),
+      ...(p.previousAgentName
+        ? { previousAgentName: fromKasModeId(p.previousAgentName) }
+        : {}),
+    });
+  }
+
   /** Update cached currentModeId from a setSessionConfigOption response.
    *  Falls back to `requestedMode` if the response doesn't contain mode info. */
   private refreshModeFromConfigOptions(
@@ -3843,7 +3966,10 @@ export class KasAcpClient extends BaseAcpClient {
     requestedMode: string
   ): void {
     if (!Array.isArray(configOptions)) {
-      this.modesState = { ...this.modesState, currentModeId: requestedMode };
+      this.modesState = {
+        ...this.modesState,
+        currentModeId: fromKasModeId(requestedMode),
+      };
       return;
     }
     const modeOpt = (configOptions as Array<Record<string, unknown>>).find(

@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-12
-  commit: b7417f5c8
+  validated: 2026-06-17
+  commit: 97c6ac4c6
   status: validated
   testable_headless: false
   category: slash_command
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
-  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate]
+  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate, clipboard]
   related: [cmd-mcp, agent-config, mcp-registry]
 ---
 
@@ -17,7 +17,7 @@ See MCP server loaded and manage MCP servers.
 
 ## Overview
 
-The `/mcp` command displays status of MCP servers and provides subcommands to manage them. Shows server state, authentication requirements, and available tools. When a server requires OAuth, you can authenticate directly from the panel.
+The `/mcp` command displays status of MCP servers and provides subcommands to manage them. Shows server state, authentication requirements, and available tools. When a server requires OAuth, you can authenticate directly from the panel — the authorization URL is copied to your clipboard for you to open in a browser.
 
 ## Usage
 
@@ -58,7 +58,7 @@ Shows for each server:
 - Server name and command
 - Status (initialized, loading, needs auth)
 - Available tools
-- Authentication action (if OAuth required — press Enter to authenticate)
+- Authentication action (if OAuth required — press Enter to copy the OAuth URL to your clipboard)
 
 ## Related
 
@@ -122,7 +122,7 @@ Select MCP server to remove:
 
 **Symptom**: Server shows "loading" or "needs auth"  
 **Cause**: Server starting or requires OAuth  
-**Solution**: Wait for initialization or press Enter on the server in the `/mcp` panel to start authentication. Outside the panel, press Ctrl+y when the status bar shows an OAuth prompt. The browser will open automatically for you to complete the OAuth flow.
+**Solution**: Wait for initialization or press Enter on the server in the `/mcp` panel to start authentication. Outside the panel, press Ctrl+y when the status bar shows an OAuth prompt. The OAuth authorization URL will be copied to your clipboard — open it in a browser to complete the OAuth flow.
 
 ### Issue: No Servers Shown
 

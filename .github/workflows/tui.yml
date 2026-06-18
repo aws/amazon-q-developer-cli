@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tui-changed: ${{ steps.filter.outputs.tui }}
+      is-fork: ${{ steps.fork.outputs.is-fork }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -30,11 +31,14 @@ jobs:
               - 'packages/tui/**'
               - 'packages/twinki/**'
               - '.github/workflows/tui.yml'
+      - name: Detect fork PR
+        id: fork
+        run: echo "is-fork=${{ github.event.pull_request.head.repo.fork || false }}" >> "$GITHUB_OUTPUT"
 
   tui-typecheck:
     name: Typecheck
     needs: check-paths
-    if: needs.check-paths.outputs.tui-changed == 'true'
+    if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,7 +62,7 @@ jobs:
   tui-lint:
     name: Lint
     needs: check-paths
-    if: needs.check-paths.outputs.tui-changed == 'true'
+    if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -82,7 +86,7 @@ jobs:
   tui-test:
     name: Unit Tests
     needs: check-paths
-    if: needs.check-paths.outputs.tui-changed == 'true'
+    if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -132,7 +136,7 @@ jobs:
   tui-integ:
     name: Integration Tests (${{ matrix.os }})
     needs: check-paths
-    if: needs.check-paths.outputs.tui-changed == 'true'
+    if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -200,7 +204,7 @@ jobs:
   tui-e2e:
     name: E2E Tests (${{ matrix.os }})
     needs: check-paths
-    if: needs.check-paths.outputs.tui-changed == 'true'
+    if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
@@ -270,8 +274,9 @@ jobs:
           retention-days: 7
 
   # Gate jobs: always run so they can be set as required status checks.
-  # When TUI files aren't changed the upstream jobs are skipped, but these
-  # still report success — unblocking non-TUI PRs.
+  # When TUI files aren't changed OR the PR is from a fork, the upstream
+  # jobs are skipped, but these still report success — unblocking the PR.
+  # Fork TUI checks are handled by fork-ci.yml (safe-to-test label).
 
   tui-unit-tests-required:
     name: "TUI: Unit Tests (required)"
@@ -283,6 +288,10 @@ jobs:
         run: |
           if [[ "${{ needs.check-paths.outputs.tui-changed }}" != "true" ]]; then
             echo "TUI files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — TUI checks deferred to fork-ci.yml"
             exit 0
           fi
           if [[ "${{ needs.tui-test.result }}" != "success" ]]; then
@@ -302,6 +311,10 @@ jobs:
             echo "TUI files not changed — skipping"
             exit 0
           fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — TUI checks deferred to fork-ci.yml"
+            exit 0
+          fi
           if [[ "${{ needs.tui-integ.result }}" != "success" ]]; then
             echo "::error::TUI integration tests failed"
             exit 1
@@ -317,6 +330,10 @@ jobs:
         run: |
           if [[ "${{ needs.check-paths.outputs.tui-changed }}" != "true" ]]; then
             echo "TUI files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — TUI checks deferred to fork-ci.yml"
             exit 0
           fi
           if [[ "${{ needs.tui-e2e.result }}" != "success" ]]; then
@@ -336,6 +353,10 @@ jobs:
             echo "TUI files not changed — skipping"
             exit 0
           fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — TUI checks deferred to fork-ci.yml"
+            exit 0
+          fi
           if [[ "${{ needs.tui-typecheck.result }}" != "success" ]]; then
             echo "::error::TUI typecheck failed"
             exit 1
@@ -351,6 +372,10 @@ jobs:
         run: |
           if [[ "${{ needs.check-paths.outputs.tui-changed }}" != "true" ]]; then
             echo "TUI files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — TUI checks deferred to fork-ci.yml"
             exit 0
           fi
           if [[ "${{ needs.tui-lint.result }}" != "success" ]]; then

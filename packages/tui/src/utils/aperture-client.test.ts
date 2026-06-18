@@ -97,6 +97,26 @@ describe('aperture-client: submitForm happy path', () => {
     expect(result.ok).toBe(true);
     expect(result.data).toEqual({});
   });
+
+  test('survey User-Agent carries the real version via getCliVersion', async () => {
+    // Guards the documented bug: the survey User-Agent must report the
+    // launcher-forwarded version (KIRO_VERSION_OVERRIDE), not the bundle's
+    // baked-in 99.99.99-dev dev fallback.
+    const saved = process.env.KIRO_VERSION_OVERRIDE;
+    process.env.KIRO_VERSION_OVERRIDE = '2.4.0';
+    try {
+      const { calls } = mockFetch(() => new Response('{}', { status: 200 }));
+      await submitForm({}, { url: 'https://example.invalid/form' });
+      const headers = calls[0]?.[1]?.headers as
+        | Record<string, string>
+        | undefined;
+      expect(headers?.['User-Agent']).toBe('kiro-cli/2.4.0');
+      expect(headers?.['User-Agent']).not.toContain('99.99.99-dev');
+    } finally {
+      if (saved === undefined) delete process.env.KIRO_VERSION_OVERRIDE;
+      else process.env.KIRO_VERSION_OVERRIDE = saved;
+    }
+  });
 });
 
 describe('aperture-client: error handling', () => {
