@@ -149,6 +149,27 @@ jobs:
             --skip-lints --skip-tests --skip-autodocs-embeddings \
             --stage-name "${{ env.STAGE_NAME }}"
 
+      - name: Smoke-test KAS spawn (Windows)
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $binary = Get-ChildItem -Recurse -Filter "chat_cli.exe" -Path "target" | Select-Object -First 1
+          if (-not $binary) { throw "chat_cli.exe not found in target/" }
+          $env:KIRO_LOG_LEVEL = "debug"
+          $proc = Start-Process -FilePath $binary.FullName `
+            -ArgumentList "acp","--agent-engine=kas" `
+            -RedirectStandardError "kas-stderr.txt" `
+            -PassThru -NoNewWindow
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) {
+            Write-Host "KAS stderr:"
+            Get-Content kas-stderr.txt
+            throw "KAS process exited early with code $($proc.ExitCode)"
+          }
+          Write-Host "KAS process still running after 5s - spawn OK"
+          Stop-Process $proc -Force
+
       - name: Re-authenticate AWS credentials for signing
         uses: aws-actions/configure-aws-credentials@v4
         with:

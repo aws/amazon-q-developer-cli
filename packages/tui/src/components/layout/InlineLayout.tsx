@@ -82,6 +82,8 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { InterruptMode } from '../../constants/interrupt-mode.js';
 import type { AgentEngine } from '../../agent-engine.js';
+import { startMcpOAuth } from '../../utils/mcp-oauth.js';
+import { copyToSystemClipboard } from '../../commands/effects.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
@@ -310,6 +312,7 @@ export const InlineLayout: React.FC = () => {
     goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -325,7 +328,6 @@ export const InlineLayout: React.FC = () => {
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
-  const agentEngine = useAppStore((s) => s.agentEngine);
   const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
@@ -1224,7 +1226,19 @@ export const InlineLayout: React.FC = () => {
                 mode={mcpMode}
                 onClose={handleCloseMcpPanel}
                 onAuthenticate={(serverName) => {
-                  kiro.resetMcpServer(serverName, true).catch(() => {});
+                  // Mirror the Ctrl+Y path so the panel shows the same
+                  // notification: KAS resets the server to (re)start OAuth;
+                  // V2 copies the (already valid) URL to the clipboard.
+                  startMcpOAuth({
+                    agentEngine,
+                    serverName,
+                    url: pendingOAuthServers.get(serverName) ?? null,
+                    resetMcpServer: (name, startOAuth) =>
+                      kiro.resetMcpServer(name, startOAuth),
+                    copyToClipboard: copyToSystemClipboard,
+                    showAlert: (message, status, autoHideMs) =>
+                      showTransientAlert({ message, status, autoHideMs }),
+                  });
                 }}
                 onAction={async (serverNames: string[]) => {
                   const action = mcpMode === 'add' ? 'add' : 'remove';

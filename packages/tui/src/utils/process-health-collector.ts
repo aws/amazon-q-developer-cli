@@ -9,7 +9,7 @@
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
 import { cpus, totalmem } from 'os';
 import { inputMetrics } from './inputMetrics.js';
-import packageJson from '../../package.json';
+import { getCliVersion } from './version.js';
 
 const INTERVAL_MS = 60_000;
 
@@ -144,7 +144,7 @@ export function startProcessHealthCollector(
       totalMemoryMb,
       terminal,
       sessionId: getSessionId?.() ?? null,
-      version: packageJson.version,
+      version: getCliVersion(),
       platform: process.platform,
     });
   }, INTERVAL_MS);

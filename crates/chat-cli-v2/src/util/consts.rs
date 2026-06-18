@@ -189,6 +189,15 @@ pub mod env_var {
         /// child spawn and by shell-outs that need to invoke chat_cli.
         KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
 
+        /// Overrides the version reported by the TUI bundle. Set by the
+        /// kiro-cli launcher when spawning the TUI so the JS side
+        /// (`getCliVersion()` in `packages/tui/src/utils/version.ts`) reports
+        /// the binary's real compile-time version instead of the bundled
+        /// `0.0.0-dev` placeholder / `99.99.99-dev` dev fallback. A
+        /// user/parent-provided value is honored; otherwise the launcher
+        /// forwards the crate's compile-time version.
+        KIRO_VERSION_OVERRIDE = "KIRO_VERSION_OVERRIDE",
+
         /// Comma-separated MCP server names (matching entries in mcp.json) that must
         /// always be loaded and their tools always available, regardless of agent profile.
         ASBX_KIRO_MANDATORY_MCPS = "ASBX_KIRO_MANDATORY_MCPS",

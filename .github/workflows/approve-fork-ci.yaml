@@ -1,0 +1,81 @@
+name: Approve Pending CI Runs
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: write
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve pending workflow runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const headSha = pr.head.sha;
+            const prAuthor = pr.user.login;
+
+            core.info(`PR #${pr.number} by ${prAuthor} from ${pr.head.repo.full_name}`);
+            core.info(`Head SHA: ${headSha}`);
+
+            // Users with write access don't need approval — their CI runs start
+            // immediately. Skip the retry loop to avoid wasting ~40s.
+            try {
+              const { data: { permission } } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username: prAuthor,
+              });
+              core.info(`${prAuthor} has '${permission}' permission`);
+              if (permission === 'admin' || permission === 'write') {
+                core.info('User has write access — CI runs do not need approval');
+                return;
+              }
+            } catch (err) {
+              core.info(`Could not check permission for ${prAuthor}: ${err.message}. Proceeding to approve.`);
+            }
+
+            // Workflow runs may not exist yet when pull_request_target fires —
+            // retry with backoff until they appear or we give up.
+            const maxAttempts = 5;
+            const delayMs = 10_000;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const { data: { workflow_runs: runs } } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                head_sha: headSha,
+                status: 'action_required',
+              });
+
+              core.info(`Attempt ${attempt}/${maxAttempts}: found ${runs.length} action_required run(s)`);
+
+              if (runs.length > 0) {
+                for (const run of runs) {
+                  try {
+                    await github.rest.actions.approveWorkflowRun({
+                      owner,
+                      repo,
+                      run_id: run.id,
+                    });
+                    core.info(`Approved run ${run.id} (${run.name})`);
+                  } catch (err) {
+                    core.error(`Failed to approve run ${run.id} (${run.name}): ${err.message}`);
+                  }
+                }
+                return;
+              }
+
+              if (attempt < maxAttempts) {
+                core.info(`Waiting ${delayMs / 1000}s before next attempt...`);
+                await new Promise(r => setTimeout(r, delayMs));
+              }
+            }
+
+            core.warning('No workflow runs requiring approval found after all attempts');

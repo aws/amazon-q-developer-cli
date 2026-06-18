@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2026-06-15",
+      "version": "2.7.1",
+      "title": "Version 2.7.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Warning notification when web tools are disabled by your administrator in the Kiro console"
+        },
+        {
+          "type": "fixed",
+          "description": "Glob patterns in agent resource paths no longer fail to match on Windows mapped drives"
+        },
+        {
+          "type": "fixed",
+          "description": "Resumed conversations in `--classic` mode now restore the model used in the previous session instead of falling back to the default"
+        },
+        {
+          "type": "fixed",
+          "description": "Drill-in feedback on tool rejection now reaches the model in the same turn instead of being lost or requiring a separate prompt"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-06-11",
       "version": "2.7.0",
       "title": "Version 2.7.0",

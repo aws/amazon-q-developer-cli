@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Left arrow key now navigates back from drill-in mode in approval prompts"
+}
