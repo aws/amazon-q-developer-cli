@@ -2,6 +2,7 @@
  * Types for the slash command handler system.
  */
 
+import type { TerminalColor } from '../types/themeTypes.js';
 import type { StreamEventHandler } from '../stores/app-store.js';
 import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
@@ -55,12 +56,21 @@ export interface CommandContext {
     status: 'success' | 'warning' | 'error',
     autoHideMs?: number
   ) => void;
+  /**
+   * Announce a state change the user should see persistently.
+   * In lite mode this writes to the chat scrollback as a system message;
+   * in TUI mode it falls back to a transient alert (since classic has a
+   * NotificationBar but no equivalent always-visible scrollback target).
+   */
+  announceSystem: (message: string, success?: boolean) => void;
   /** Set loading message (shows shimmer) */
   setLoadingMessage: (message: string | null) => void;
   /** Set active command (for selection menus) */
   setActiveCommand: (cmd: ActiveCommand | null) => void;
   /** Update current model in store */
   setCurrentModel: (model: { id: string; name: string }) => void;
+  /** Read current model from store (used by /effort to detect model=auto). */
+  getCurrentModel?: () => { id: string; name: string } | null;
   /** Update current reasoning effort level in store (KAS /effort). */
   setCurrentEffort: (effort: string | null) => void;
   /** Update current agent in store */
@@ -132,6 +142,10 @@ export interface CommandContext {
   setShowThemePanel: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
+  /** Stash the parent route consumed by the /verbosity menu's ESC handler. */
+  setVerboseReturnOnEscape: (route: string | null) => void;
+  /** Stash the parent route consumed by the /theme menu's ESC handler. */
+  setThemeReturnOnEscape: (route: string | null) => void;
   /** Set the active interrupt mode (steer or queue) — takes effect immediately */
   setActiveInterruptMode: (mode: InterruptMode) => void;
   /**
@@ -170,16 +184,26 @@ export interface CommandContext {
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */
   resetMessages: () => void;
+  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
+  markMessagesFromHistory: (fromIndex: number) => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
+  /** Lite-only: signal LiteLayout to wipe scrollback + render cache.
+   *  Used on /chat <id> and /rewind to drop stale flushed rows so the
+   *  resumed history isn't stacked under the previous session. No-op in TUI. */
+  bumpLiteScrollbackClear: () => void;
   /** Send message to chat. If displayContent is provided, it's shown in UI instead of content. */
   sendMessage: (
     content: string,
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  /** Create a stream event handler for processing agent events into messages */
-  createStreamEventHandler: () => StreamEventHandler;
+  /** Create a stream event handler for processing agent events into messages.
+   *  Lite passes `{ fromHistory: true }` when replaying a resumed session so
+   *  the handler renders cheaply (see session-load / markMessagesFromHistory). */
+  createStreamEventHandler: (options?: {
+    fromHistory?: boolean;
+  }) => StreamEventHandler;
   /** Update the session ID in the store */
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */
@@ -218,4 +242,45 @@ export interface CommandContext {
   incrementVoiceHint: () => void;
   /** Set pending voice text for insertion into input */
   setPendingVoiceText: (text: string | null) => void;
+  /** Update user theme colors (prompt text+bg combo and/or response text and/or diff colors).
+   *  Pass null to clear an override, undefined to leave unchanged. */
+  setUserColors: (
+    prompt?: { text: any; bg: any } | null,
+    response?: any | null,
+    diff?: any | null
+  ) => void;
+  /** Switch the base theme at runtime. Pass null to reset to auto-detected. */
+  setBaseTheme: (theme: any) => void;
+  /** Set theme preview string (rendered below menu during /theme flow) */
+  setThemePreview: (preview: string | null) => void;
+  /** Get the base theme's diff colors (for preview fallback when user preset is 'default') */
+  getThemeDiffHex: () => {
+    added: {
+      background: TerminalColor;
+      bar: TerminalColor;
+      highlight: TerminalColor;
+    };
+    removed: {
+      background: TerminalColor;
+      bar: TerminalColor;
+      highlight: TerminalColor;
+    };
+  };
+  /** Get a preview string showing the auto-detected theme with no user overrides */
+  getAutoPreview: () => string;
+  /** Switch between TUI and lite mode */
+  setUiMode?: (mode: 'tui' | 'lite') => void;
+  /** Get current UI mode */
+  getUiMode?: () => 'tui' | 'lite';
+  /**
+   * Set the index into `messages` at which lite's <Static> begins emitting.
+   * Called by `switchToLite` (tui→lite) so prior messages already on the
+   * user's screen via the modern TUI aren't re-emitted as duplicates in
+   * lite style below them.
+   */
+  setLiteStaticSkipBefore?: (idx: number) => void;
+  /** Drain any messages the user typed while a load (or other gating state)
+   * was in flight. Effects that gate input on `loadingMessage` should call
+   * this once they've cleared it, so queued lines don't sit forever. */
+  processQueue: () => Promise<void>;
 }

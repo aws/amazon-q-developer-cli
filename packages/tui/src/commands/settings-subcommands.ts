@@ -12,7 +12,10 @@ import type { CommandContext } from './types.js';
 import type { AvailableCommand } from '../types/commands.js';
 import type { EffectHandler } from './effects.js';
 import { setupTerminal } from '../utils/terminal-setup.js';
-import { Settings } from '../constants/settings.js';
+import {
+  Settings,
+  DISPLAY_SETTINGS_DESCRIPTION,
+} from '../constants/settings.js';
 import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
@@ -32,6 +35,15 @@ export interface SettingsSubcommand {
   description: string;
   /** Dispatch logic for this subcommand */
   handle: (ctx: SettingsHandleContext) => void | Promise<void>;
+  /**
+   * Hide this entry from the /settings menu when the UI is not in lite
+   * mode. The entry stays in the registry — typing the full
+   * `/settings <value>` form still routes through `findSettingsSubcommand`
+   * — only the menu listing is affected. Used by lite-specific entries
+   * (e.g. verbosity) so the menu doesn't surface options that produce a
+   * lite-only error alert when selected from TUI mode.
+   */
+  liteOnly?: boolean;
 }
 
 /**
@@ -47,16 +59,48 @@ export interface SettingsHandleContext {
    * which makes misspellings a build/run error rather than a silent no-op.
    */
   resolveEffect: (name: string) => EffectHandler;
+  /**
+   * Trailing argument after the subcommand name, e.g. the `truncation` in
+   * `/settings verbosity truncation`. Empty string when the user typed only
+   * the subcommand. Handlers that own a nested menu (currently verbosity)
+   * forward this to their effect so a typed section name drills straight in;
+   * handlers that don't take a sub-arg ignore it.
+   */
+  arg?: string;
 }
 
 export const settingsSubcommands: readonly SettingsSubcommand[] = [
   {
     value: 'display',
     label: 'display',
-    description: 'Control animations, ASCII art, and icons',
+    description: DISPLAY_SETTINGS_DESCRIPTION,
     handle: ({ ctx }) => {
       ctx.setSettingsReturnOnEscape(true);
       ctx.setShowDisplaySettingsPanel(true);
+    },
+  },
+  {
+    value: 'verbosity',
+    label: 'verbosity',
+    description:
+      'Tool args, reasoning, output filters, density (lite mode only)',
+    liteOnly: true,
+    handle: ({ ctx, settingsCommand, resolveEffect, arg }) => {
+      ctx.setSettingsReturnOnEscape(true);
+
+      // Pass the /settings cmd as the dispatcher hint — the verbosityConfig
+      // handler resolves the canonical /verbosity SlashCommand from the
+      // registry internally, so the menu chip says /verbosity (matching
+      // direct entry) regardless of which value we hand it here. The shape
+      // we pass is only used as a fallback if /verbosity isn't registered
+      // (test-only). Mirrors the /settings theme delegation pattern below.
+      // A trailing section name (e.g. `/settings verbosity truncation`) is
+      // forwarded so the user drills straight into that sub-menu; empty args
+      // opens the smart entry menu — same as bare `/verbosity`. ESC inside a
+      // verbosity submenu is governed by `verboseReturnOnEscape`; once the
+      // user ESCs out of the top-level verbosity menu, the
+      // `settingsReturnOnEscape` flag set above re-opens /settings.
+      resolveEffect('verbosityConfig')(null, ctx, settingsCommand, arg ?? '');
     },
   },
   {

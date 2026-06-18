@@ -304,6 +304,74 @@ describe('AcpClient', () => {
     expect(event.result.status).toBe('success');
   });
 
+  it('Failed tool_call_update for a subagent stage stamps the synthesized ToolCall with the stage sessionId', async () => {
+    // Bug 3 (kill-race / rejected-before-exec leak): when a Failed
+    // tool_call_update carrying rawInput is the FIRST event the store sees for
+    // a toolCallId (no prior `tool_call` was sent — parse error /
+    // permission-denied / hook-rejected), the converter synthesizes a ToolCall
+    // and broadcasts it inline. For a subagent stage that synthesized event
+    // MUST carry the stage sessionId, or the store falls back to the main
+    // agent and lite leaks the stage tool into the main scrollback.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession(); // this.sessionId = 'test-session-123'
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    const notification: SessionNotification = {
+      sessionId: 'stage-session',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-x',
+        status: 'failed',
+        title: 'grep',
+        kind: 'search',
+        rawInput: { pattern: 'x' },
+      },
+    } as unknown as SessionNotification;
+    await client.sessionUpdate(notification);
+
+    // The FIRST broadcast is the synthesized ToolCall, stamped with the stage
+    // session so the store resolves the stage's agentName (not main).
+    const synth = handler.mock.calls[0]![0] as any;
+    expect(synth.type).toBe(AgentEventType.ToolCall);
+    expect(synth.id).toBe('tc-x');
+    expect(synth.sessionId).toBe('stage-session');
+    // A ToolCallFinished for the same id is also broadcast (it's matched by id
+    // in the store, so it doesn't need the stamp).
+    const finished = handler.mock.calls.find(
+      (c) => (c[0] as any).type === AgentEventType.ToolCallFinished
+    );
+    expect(finished).toBeDefined();
+    expect((finished![0] as any).id).toBe('tc-x');
+  });
+
+  it('Failed tool_call_update for the MAIN agent leaves the synthesized ToolCall unstamped (regression guard)', async () => {
+    // Genuine main-agent rejected-before-exec tools must still render in the
+    // main view: notifSessionId === this.sessionId → no stamp.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession(); // this.sessionId = 'test-session-123'
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    const notification: SessionNotification = {
+      sessionId: 'test-session-123',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-main',
+        status: 'failed',
+        title: 'grep',
+        kind: 'search',
+        rawInput: { pattern: 'x' },
+      },
+    } as unknown as SessionNotification;
+    await client.sessionUpdate(notification);
+
+    const synth = handler.mock.calls[0]![0] as any;
+    expect(synth.type).toBe(AgentEventType.ToolCall);
+    expect(synth.id).toBe('tc-main');
+    expect(synth.sessionId).toBeUndefined();
+  });
+
   it('sessionUpdate for unrecognized type does not broadcast any event', async () => {
     const client = new AcpClient('/path/to/agent', []);
     await client.newSession();

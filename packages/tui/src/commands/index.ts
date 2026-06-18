@@ -26,6 +26,22 @@ function findCommand<T extends AvailableCommand>(
 }
 
 /**
+ * Whether the input's first whitespace-separated token names a known slash
+ * command (exact match, no prefix). Used by lite mode to decide between
+ * "dispatch a command" and "send as a chat message" — the latter is the
+ * lite contract for typos like /foozle and pasted paths like /some/path.
+ */
+export function isKnownSlashCommandToken(
+  input: string,
+  commands: readonly AvailableCommand[]
+): boolean {
+  const { isCommand, name } = parseCommand(input);
+  if (!isCommand) return false;
+  const lower = name.toLowerCase();
+  return commands.some((c) => c.name.toLowerCase() === `/${lower}`);
+}
+
+/**
  * Execute a slash command.
  */
 export async function executeCommand(

@@ -214,6 +214,7 @@ export const useUIActions = () =>
       setShowSettingsPanel: state.setShowSettingsPanel,
       setTerminalTitleEnabled: state.setTerminalTitleEnabled,
       setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
+      setVerboseReturnOnEscape: state.setVerboseReturnOnEscape,
       reopenSettingsMenu: state.reopenSettingsMenu,
       setShowKnowledgePanel: state.setShowKnowledgePanel,
       setShowCodePanel: state.setShowCodePanel,

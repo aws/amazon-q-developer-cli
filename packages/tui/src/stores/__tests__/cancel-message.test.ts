@@ -89,6 +89,48 @@ describe('cancelMessage clears isProcessing (P409238957)', () => {
     expect(store.getState().cancelInProgress).toBeNull();
   });
 
+  it('disposes the active stream handler so partial content lands in scrollback', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    const dispose = mock();
+    const handler: any = mock();
+    handler.dispose = dispose;
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      _activeStreamHandler: handler,
+      streamingContent: 'partial response',
+      streamingMessageId: 'msg-1',
+    });
+
+    await store.getState().cancelMessage();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(store.getState()._activeStreamHandler).toBeNull();
+    expect(store.getState().streamingContent).toBe('');
+    expect(store.getState().streamingMessageId).toBeNull();
+    expect(store.getState().thinkingContent).toBe('');
+  });
+
+  it('returns the in-flight cancel promise when called re-entrantly', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    let resolveCancel!: () => void;
+    mockKiro.cancel = mock(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCancel = resolve;
+        })
+    );
+    store.setState({ isProcessing: true, isInitialized: true });
+
+    const first = store.getState().cancelMessage();
+    const second = store.getState().cancelMessage();
+
+    expect(mockKiro.cancel).toHaveBeenCalledTimes(1);
+    resolveCancel();
+    await Promise.all([first, second]);
+    expect(store.getState().isProcessing).toBe(false);
+  });
+
   it('flips unfinished Pending tools to Rejected with cancelled result', async () => {
     const store = createAppStore({ kiro: mockKiro });
     store.setState({
@@ -145,6 +187,89 @@ describe('cancelMessage clears isProcessing (P409238957)', () => {
       expect(msg!.status).toBe(ToolUseStatus.Approved);
       expect(msg!.result).toEqual({ status: 'cancelled' });
     }
+  });
+});
+
+describe('cancelMessage drain path (P438912313 issue 2)', () => {
+  // The cancel-path's queue drain used to be inlined in cancelMessage's
+  // finally block, duplicating logic from processQueue. Two protections
+  // got added to processQueue over time (snapshot/restore of
+  // commandInputValue around an interactive picker drain in da31eff2d,
+  // and the [queue] /command System row emission in 836490c26) but the
+  // inline copy in cancelMessage was missed both times. The fix
+  // replaced the inline drain with a single `await processQueue()` call
+  // so any future drain-protection lands in both paths automatically.
+  // These tests pin the union of guarantees the cancel-path drain must
+  // honor.
+  let mockKiro: any;
+
+  beforeEach(() => {
+    mockKiro = new Kiro();
+  });
+
+  function createStoreWithKnownSlashCommands() {
+    // The drain-path branches below only fire when isKnownSlashCommandToken
+    // returns true. Default `slashCommands` doesn't include /help, so register
+    // it here — same approach as message-queue.test.ts.
+    const store = createAppStore({ kiro: mockKiro });
+    const existing = store.getState().slashCommands;
+    store.setState({
+      slashCommands: [
+        ...existing,
+        { name: '/help', description: 'Show help', source: 'local' as const },
+      ],
+    });
+    return store;
+  }
+
+  it('preserves mid-typed commandInputValue across a slash-command drain triggered by cancel', async () => {
+    // Reproduction for the live bug: user queues `/model` mid-stream,
+    // keeps typing into the input row while the prior turn is still
+    // running, then hits Ctrl+C to abandon the turn. Pre-fix, the
+    // inline drain called handleUserInput directly, the dispatcher
+    // wiped commandInputValue, and the user's mid-typed text vanished
+    // with no recovery path.
+    const store = createStoreWithKnownSlashCommands();
+    store.setState({
+      isInitialized: true,
+      isProcessing: true,
+      queuedMessages: ['/help'],
+      commandInputValue: '/help notes I started typing while waiting',
+    });
+
+    await store.getState().cancelMessage();
+
+    expect(store.getState().commandInputValue).toBe(
+      '/help notes I started typing while waiting'
+    );
+  });
+
+  it('emits a [queue] System row when draining a slash command via cancel', async () => {
+    // Pair to the processQueue version of this test in
+    // message-queue.test.ts. The drain row is the user's only signal
+    // that a queued picker-opening command (`/model`, `/agent`,
+    // `/effort`, `/theme`) actually fired — the dispatcher's own
+    // announcement only lands when the user picks a value, and a
+    // dismissed picker leaves zero scrollback evidence otherwise.
+    // Pre-fix, this evidence row was dropped on the cancel path.
+    const store = createStoreWithKnownSlashCommands();
+    store.setState({
+      isInitialized: true,
+      isProcessing: true,
+      queuedMessages: ['/help'],
+    });
+    const messagesBefore = store.getState().messages.length;
+
+    await store.getState().cancelMessage();
+
+    const newMessages = store.getState().messages.slice(messagesBefore);
+    const drainRow = newMessages.find(
+      (m) =>
+        m.role === MessageRole.System &&
+        typeof m.content === 'string' &&
+        m.content.includes('[queue] /help')
+    );
+    expect(drainRow).toBeDefined();
   });
 });
 

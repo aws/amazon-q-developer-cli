@@ -134,6 +134,30 @@ export const SESSION_TOOL_NAMES: Set<string> = new Set([
   'Invoke Agent',
   'Subagent Response',
 ]);
+
+/**
+ * Tool names whose `tool_call` IS a subagent/pipeline PARENT — i.e. the row
+ * that lite collapses into the single canonical subagent block and that drives
+ * the active-subagent footer strip. Narrower than {@link SESSION_TOOL_NAMES}
+ * (excludes `session_management` and the `*_response` tools, which are not
+ * orchestration parents and must not collapse).
+ *
+ * `orchestrate_subagent` is the name the backend emits for a pipeline (agent_crew)
+ * parent when its update carries `_meta.kiro.pipeline` (see acp-client.ts
+ * `convertAcpUpdateToEvent`). Lite previously hard-coded `name === 'subagent'`
+ * in its recognition checks, so a renamed pipeline parent went unrecognized —
+ * breaking grouping/hiding and leaking per-stage rows into scrollback.
+ */
+export const PARENT_SUBAGENT_TOOL_NAMES: Set<string> = new Set([
+  'subagent',
+  'orchestrate_subagent',
+  'invoke_sub_agent',
+  'agent_crew',
+]);
+
+/** True when `name` is a subagent/pipeline parent tool. */
+export const isParentSubagentTool = (name?: string | null): boolean =>
+  !!name && PARENT_SUBAGENT_TOOL_NAMES.has(name);
 export const INTROSPECT_TOOL_NAMES: Set<string> = new Set([
   'introspect',
   'Introspect',
@@ -317,7 +341,7 @@ export interface ConsentContext {
 
 export interface ApprovalRequestInfo {
   sessionId?: string;
-  toolCall: { toolCallId: string; title?: string };
+  toolCall: { toolCallId: string; title?: string; rawInput?: unknown };
   /**
    * The tool being approved, from `_meta.kiro.toolId`. Present for real tool
    * approvals; absent for `user_input` questions, which reuse the permission
@@ -354,6 +378,8 @@ export interface AgentContentEvent {
   type: AgentEventType.Content;
   id: string;
   content: ContentChunk;
+  /** True when this content is thinking/reasoning, not the final response */
+  _thinking?: boolean;
   meta?: { kiro?: KiroMeta };
 }
 
@@ -408,6 +434,11 @@ export interface CommandsUpdateEvent {
     name: string;
     description: string;
     meta?: CommandMeta;
+  }>;
+  mcpServers?: Array<{
+    name: string;
+    status: string;
+    toolCount: number;
   }>;
 }
 

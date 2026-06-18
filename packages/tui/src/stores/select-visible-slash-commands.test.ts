@@ -201,7 +201,10 @@ describe('/tui filter — KAS vs V2', () => {
     const visible = selectVisibleSlashCommands(store.getState());
     const tui = visible.find((c) => c.name === '/tui');
     expect(tui).toBeDefined();
-    expect(tui!.description).toContain("What's new");
+    // Lite repurposes /tui as the mode-switch command (it switches the user
+    // out of lite into the full TUI), so its description differs from the
+    // legacy "What's new in the TUI experience" info-command wording.
+    expect(tui!.description).toContain('Switch to TUI mode');
   });
 
   it("when agentEngine is 'kas', /tui is not in the raw slashCommands slice", () => {

@@ -14,13 +14,47 @@ export const Settings = {
   CHAT_KEYBINDINGS_CANCEL_STREAM: 'chat.keybindings.cancelStream',
   CHAT_KEYBINDINGS_CLOSE_MENU: 'chat.keybindings.closeMenu',
   CHAT_KEYBINDINGS_QUIT: 'chat.keybindings.quit',
+  CHAT_UI_MODE: 'chat.ui.mode',
   CHAT_ASCII_MODE: 'chat.allowAsciiArt',
   CHAT_ANIMATIONS: 'chat.allowAnimations',
   CHAT_ICONS: 'chat.allowIcons',
   CHAT_SHOW_THINKING: 'chat.showThinking',
   CHAT_HISTORY_MODE: 'chat.historyMode',
+  // Verbosity-config mirror keys. The lite UI's /verbosity menu is the
+  // primary write surface for these; the modern TUI consumes them via
+  // getVerboseDisplay() so the same toggle takes effect in both modes.
+  // Lite's setVerboseConfig() writes both lite_verbose.json (legacy
+  // mirror) and cli.json (canonical), and getVerboseDisplay() resolves
+  // each field with cli.json > lite_verbose.json > DEFAULT_DISPLAY.
+  // See packages/tui/src/lite/verbose.ts for the field-by-field
+  // semantics.
+  CHAT_TOOLS_FILTERS: 'chat.tools.filters',
+  CHAT_TOOLS_SHOW_REASONING: 'chat.tools.showReasoning',
+  CHAT_TOOLS_ARGS_MODE: 'chat.tools.argsMode',
+  CHAT_TOOLS_SHOW_ELAPSED: 'chat.tools.showElapsed',
+  CHAT_TOOLS_ARGS_MAX_LINES: 'chat.tools.argsMaxLines',
+  CHAT_TOOLS_OUTPUT_MAX_LINES: 'chat.tools.outputMaxLines',
+  CHAT_TOOLS_ARGS_MAX_CHARS: 'chat.tools.argsMaxChars',
+  CHAT_TOOLS_OUTPUT_MAX_CHARS: 'chat.tools.outputMaxChars',
+  CHAT_TOOLS_SHOW_WRITE_DIFFS: 'chat.tools.showWriteDiffs',
+  CHAT_SHOW_TASKS: 'chat.showTasks',
+  CHAT_SUBAGENT_SHOW_PIPELINE: 'chat.subagent.showPipeline',
+  CHAT_SUBAGENT_SHOW_PROMPTS: 'chat.subagent.showPrompts',
+  CHAT_SUBAGENT_SHOW_ROLES: 'chat.subagent.showRoles',
+  CHAT_SUBAGENT_SHOW_DEPS: 'chat.subagent.showDeps',
+  CHAT_SUBAGENT_SHOW_RESPONSES: 'chat.subagent.showResponses',
   CHAT_TERMINAL_TITLE: 'chat.terminalTitle',
   CHAT_DEFAULT_INTERRUPT_BEHAVIOR: 'chat.defaultInterruptBehavior',
   CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
     'chat.keybindings.toggleInterruptBehavior',
 } as const;
+
+/**
+ * Description for the "Display" settings entry, shared by the typed
+ * `/settings display` subcommand router (settings-subcommands.ts) and the
+ * shared settings panel model (settings-panel-model.ts) so both advertise the
+ * same controls — including the "Default UI at startup" (chat.ui.mode) toggle,
+ * which lives in the Display sub-panel for both lite and TUI.
+ */
+export const DISPLAY_SETTINGS_DESCRIPTION =
+  'Default UI at startup, animations, ASCII art, icons, and thinking';

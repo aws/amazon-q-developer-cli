@@ -11,6 +11,7 @@ import type {
   SpecResolveSessionResponse,
 } from '@kiro/acp-type-covenant';
 import { logger } from './utils/logger';
+import { isUserCancelledReason } from './constants/tool-failure-reasons';
 import {
   getTelemetryIdentity,
   isTelemetryEnabled,
@@ -28,7 +29,12 @@ import type {
   SessionClient,
 } from './types/session-client';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
-import type { ModeChangedNotification } from './types/generated/chat-cli';
+import type {
+  ModeChangedNotification,
+  UiModeChangedNotification,
+  UiModeDefaultChangedNotification,
+  UiModeSessionStartNotification,
+} from './types/generated/chat-cli';
 import {
   AgentEventType,
   ContentType,
@@ -314,6 +320,11 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   contextUsage?: { usagePercentage?: number };
   usagePercentage?: number;
   breakdown?: unknown;
+  // Some agents emit the user-facing error for an in-flight tool call here
+  // rather than on the tool_call_update payload. Captured into
+  // pendingDisplayError so tool_call_update Failed can use it as a fallback
+  // when its own error fields are empty.
+  displayError?: { message?: string };
   promptTurnSummaries?: KasPromptTurnSummary[];
   tokenUsage?: unknown;
   usage?: unknown;
@@ -585,11 +596,29 @@ export interface AgentProcess {
 function toAgentProcess(proc: ChildProcess): AgentProcess {
   // stdin/stdout/stderr are set synchronously on spawn and never change,
   // so plain property reads are sufficient (no getter indirection).
+  //
+  // The agent is spawned with `detached: true` so it's the leader of its own
+  // process group. That lets us signal `-pgid` here to bring down the agent
+  // *and every grandchild it spawned* (MCP servers, subagents, etc.) in one
+  // shot — without the negative PID, agent crashes leak MCP children as
+  // ppid=1 orphans that accumulate across restarts.
   return {
     stdin: proc.stdin,
     stdout: proc.stdout,
     stderr: proc.stderr,
-    kill: (signal) => proc.kill(signal),
+    kill: (signal) => {
+      if (proc.pid && proc.pid > 0) {
+        try {
+          process.kill(-proc.pid, signal ?? 'SIGTERM');
+          return true;
+        } catch {
+          // Group may already be dead, or we lost the race with reap. Fall
+          // through to the per-process kill so we still tear down the leader
+          // if it's somehow still alive.
+        }
+      }
+      return proc.kill(signal);
+    },
     onExit(listener) {
       proc.once('exit', listener);
       return () => {
@@ -842,6 +871,9 @@ abstract class BaseAcpClient implements SessionClient {
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
+  /** Captured from session_info_update displayError — consumed as fallback by tool_call_update Failed */
+  private pendingDisplayError: string | null = null;
+  protected promptsCache: PromptEntry[] = [];
   protected cachedBreakdown: unknown = null;
 
   constructor(agentProcess: AgentProcess) {
@@ -928,6 +960,13 @@ abstract class BaseAcpClient implements SessionClient {
   abstract sendChatSlashCommandTelemetry(
     payload: ChatSlashCommandTelemetryPayload
   ): void;
+  abstract sendUiModeSessionStart(
+    payload: UiModeSessionStartNotification
+  ): void;
+  abstract sendUiModeChanged(payload: UiModeChangedNotification): void;
+  abstract sendUiModeDefaultChanged(
+    payload: UiModeDefaultChangedNotification
+  ): void;
 
   // ── Shared methods ──
 
@@ -960,9 +999,32 @@ abstract class BaseAcpClient implements SessionClient {
     return () => this.inboxHandlers.delete(handler);
   }
 
+  /**
+   * Tear down the agent process group. Idempotent — multiple shutdown paths
+   * (SIGINT, SIGTERM, beforeExit, uncaughtException) can all call this and
+   * we only signal once.
+   *
+   * SIGTERM gives the agent a brief window to flush its MCP children
+   * cleanly; if it's still alive 800ms later we follow up with SIGKILL so
+   * a wedged agent can't hold up shutdown indefinitely.
+   */
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.agentProcess.kill('SIGTERM');
+    // Best-effort SIGKILL escalation. Wrapped in setTimeout (not unrefed —
+    // we want it to fire before the loop drains). If the process is already
+    // gone the kill becomes a no-op via the catch in toAgentProcess.
+    setTimeout(() => {
+      try {
+        this.agentProcess.kill('SIGKILL');
+      } catch {
+        // already dead, fine
+      }
+    }, 800).unref();
   }
+
+  private closed = false;
 
   protected broadcastStreamEvent(event: AgentStreamEvent): void {
     this.updateHandlers.forEach((handler) => handler(event));
@@ -1053,6 +1115,7 @@ abstract class BaseAcpClient implements SessionClient {
         }
         return { name: cmd.name, description, meta: cmd.meta };
       }),
+      mcpServers: mcpServers.length > 0 ? mcpServers : undefined,
     });
     this.broadcastStreamEvent({ type: AgentEventType.PromptsUpdate, prompts });
     this.broadcastStreamEvent({ type: AgentEventType.SkillsUpdate, skills });
@@ -1302,7 +1365,8 @@ abstract class BaseAcpClient implements SessionClient {
   // ── Shared session update → event conversion ──
 
   protected convertAcpUpdateToEvent(
-    update: AcpSessionUpdate
+    update: AcpSessionUpdate,
+    notifSessionId?: string
   ): AgentStreamEvent | null {
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
@@ -1401,13 +1465,28 @@ abstract class BaseAcpClient implements SessionClient {
           // notification was sent. Synthesize one from rawInput so the TUI
           // can render the tool name and attempted arguments.
           if (update.rawInput !== undefined) {
-            this.broadcastStreamEvent({
+            const synthesized: AgentStreamEvent = {
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
               name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
-            });
+            };
+            // Stamp the originating subagent session so the store resolves the
+            // stage's agentName instead of falling back to the MAIN agent.
+            // When a Failed tool_call_update is the FIRST event the store sees
+            // for this toolCallId (parse error / permission-denied / hook-
+            // rejected — the only paths that carry rawInput here, since the
+            // backend never sent an initial `tool_call`), an unstamped synthesized
+            // event resolves to the main agent. lite's isInnerSubagentTool then
+            // can't hide it, leaking the rejected stage tool into the main
+            // scrollback / static flush. Mirrors handleSessionUpdate's guard at
+            // ~1722 so a genuine main-agent rejected-before-exec tool is
+            // unaffected (notifSessionId absent or === this.sessionId → no stamp).
+            if (notifSessionId && notifSessionId !== this.sessionId) {
+              synthesized.sessionId = notifSessionId;
+            }
+            this.broadcastStreamEvent(synthesized);
           }
           // Prefer a descriptive error from the content block; fall back to
           // rawOutput, then a generic message.
@@ -1427,6 +1506,32 @@ abstract class BaseAcpClient implements SessionClient {
           }
           if (!errorText && typeof update.rawOutput === 'string') {
             errorText = update.rawOutput;
+          }
+          // Some agents send the user-facing error in session_info_update's
+          // displayError meta rather than on the tool_call_update payload
+          // itself. Captured upstream into pendingDisplayError; consumed
+          // here as a final fallback so the failure surfaces with text
+          // instead of a bare `✗ failed` chip. Always cleared after read
+          // so a stale value can't bleed into the next tool failure.
+          if (!errorText && this.pendingDisplayError) {
+            errorText = this.pendingDisplayError;
+          }
+          this.pendingDisplayError = null;
+          // Recover user-cancellation from the canonical reason string the
+          // V2 Rust side tunnels through the failure content (acp_agent.rs
+          // ToolCallFinished arm for ToolCallResult::Cancelled). ACP's
+          // ToolCallStatus only has Completed/Failed, so without this
+          // detection a tool the user interrupted lands as a generic FAILED
+          // chip — including the parent agent_crew tool when the user hits
+          // Esc mid-pipeline. `isUserCancelledReason` localizes the V2 string
+          // coupling (no-op for KAS); mirrors `isUserDeniedReason` in the
+          // app-store.ts ToolCallFinished handler.
+          if (isUserCancelledReason(errorText)) {
+            return {
+              type: AgentEventType.ToolCallFinished,
+              id: update.toolCallId,
+              result: { status: 'cancelled' },
+            };
           }
           return {
             type: AgentEventType.ToolCallFinished,
@@ -1585,6 +1690,13 @@ abstract class BaseAcpClient implements SessionClient {
       // (`agent_thought_chunk` is handled above — see ThinkingDisplay pipeline.)
       case 'session_info_update': {
         const meta = extractKasSessionInfoMeta(update);
+        // Some agents emit the user-facing error for an in-flight tool call
+        // here rather than on the tool_call_update payload. Captured into
+        // pendingDisplayError so tool_call_update Failed can fall back to it
+        // when its own error fields are empty.
+        if (meta?.displayError?.message) {
+          this.pendingDisplayError = meta.displayError.message;
+        }
         if (meta?.kind === 'turn_completion') {
           const completion = normalizeKasTurnCompletion(meta);
           if (!completion) {
@@ -1698,6 +1810,7 @@ abstract class BaseAcpClient implements SessionClient {
           toolCall: {
             toolCallId: params.toolCall?.toolCallId || '',
             title: params.toolCall?.title ?? undefined,
+            rawInput: (params.toolCall as any)?.rawInput ?? undefined,
           },
           permissionOptions: (params.options || []).map((opt) => ({
             kind: opt.kind as ApprovalOptionId,
@@ -1741,8 +1854,7 @@ abstract class BaseAcpClient implements SessionClient {
     if (!update) return;
     const notifSessionId = (params as any).sessionId as string | undefined;
     const isSubagentEvent = notifSessionId && notifSessionId !== this.sessionId;
-    const event = this.convertAcpUpdateToEvent(update);
-
+    const event = this.convertAcpUpdateToEvent(update, notifSessionId);
     if (!event) return;
 
     if (isSubagentEvent) {
@@ -1752,6 +1864,21 @@ abstract class BaseAcpClient implements SessionClient {
         event.type === AgentEventType.ToolCallUpdate ||
         event.type === AgentEventType.ToolCallFinished;
       if (isToolEvent) {
+        // Stamp the originating session on the standard `tool_call` event so
+        // the main store's ToolCall handler resolves the stage's agentName
+        // instead of falling back to the main agent. `convertAcpUpdateToEvent`
+        // can't see the notification's sessionId, so the standard `tool_call`
+        // path (unlike `tool_call_chunk`) would otherwise broadcast it here
+        // with sessionId undefined — the store then stamps the stage tool
+        // incorrectly
+        // as a MAIN-agent tool, leaking it into the lite chat log / static
+        // flush (scrollback wedges) and dropping the parent subagent out of
+        // the live region's active-tool set (spinner stalls). ToolCallUpdate /
+        // ToolCallFinished are matched by id in the store, so they don't need
+        // it.
+        if (event.type === AgentEventType.ToolCall) {
+          event.sessionId = notifSessionId;
+        }
         this.broadcastStreamEvent(event);
       }
     } else {
@@ -1780,6 +1907,10 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
+      // Run in its own process group so close() can signal -pgid and take
+      // down any MCP servers / subprocesses the agent spawned. Without this
+      // a TUI crash or SIGTERM leaks the entire MCP tree as ppid=1 orphans.
+      detached: true,
     });
     super(toAgentProcess(proc));
     this.version = version;
@@ -1994,6 +2125,33 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
         ...payload,
         sessionId: this.sessionId,
       } as unknown as Record<string, unknown>)
+      .catch(() => {});
+  }
+
+  sendUiModeSessionStart(payload: UiModeSessionStartNotification): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/uiModeSessionStart'),
+        payload as unknown as Record<string, unknown>
+      )
+      .catch(() => {});
+  }
+
+  sendUiModeChanged(payload: UiModeChangedNotification): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/uiModeChanged'),
+        payload as unknown as Record<string, unknown>
+      )
+      .catch(() => {});
+  }
+
+  sendUiModeDefaultChanged(payload: UiModeDefaultChangedNotification): void {
+    this.connection
+      .extNotification(
+        this.ext('kiro.dev/telemetry/uiModeDefaultChanged'),
+        payload as unknown as Record<string, unknown>
+      )
       .catch(() => {});
   }
 
@@ -2218,6 +2376,10 @@ export class KasAcpClient extends BaseAcpClient {
           NODE_CHANNEL_SERIALIZATION_MODE: undefined,
           KIRO_CUSTOM_USER_AGENT: `KiroCLI/${version} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${version} app/AmazonQ-For-CLI`,
         },
+        // See RustAcpClient — detached so close() can kill -pgid and reap
+        // MCP children together with KAS instead of leaking them as
+        // orphans.
+        detached: true,
       }
     );
     super(toAgentProcess(proc));
@@ -2424,7 +2586,17 @@ export class KasAcpClient extends BaseAcpClient {
           }
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
-        const event = this.convertAcpUpdateToEvent(update);
+        // NOTE: `sessionId` here is the per-listener KAS session, which equals
+        // this.sessionId for the main agent — so the converter's stamp guard
+        // (notifSessionId !== this.sessionId) is a no-op on the KAS main path.
+        // KAS discriminates subagent stages via meta.agentSubtaskId, extracted
+        // from the RETURNED event below — NOT via a per-stage notification
+        // sessionId. So a Failed-tool synthesized broadcast for a denied KAS
+        // *stage* tool is not stamped by this thread-through; that is a separate,
+        // narrower defect tracked apart from the Rust-engine fix. Threaded here
+        // for signature consistency and to correctly stamp if a genuine
+        // subagent-session listener is ever wired.
+        const event = this.convertAcpUpdateToEvent(update, sessionId);
         const meta = event ? extractKiroMetaFromEvent(event) : undefined;
 
         if (!event) return;
@@ -2500,9 +2672,10 @@ export class KasAcpClient extends BaseAcpClient {
    *  emits commands using canonical ids (e.g. `plan`), so the filter set
    *  has to include both. */
   protected override convertAcpUpdateToEvent(
-    update: AcpSessionUpdate
+    update: AcpSessionUpdate,
+    notifSessionId?: string
   ): AgentStreamEvent | null {
-    const event = super.convertAcpUpdateToEvent(update);
+    const event = super.convertAcpUpdateToEvent(update, notifSessionId);
     if (
       event?.type === AgentEventType.CommandsUpdate &&
       this.modesState.availableModes.length > 0
@@ -4258,6 +4431,18 @@ export class KasAcpClient extends BaseAcpClient {
         }
       })
       .catch((err) => logger.debug('[kas] telemetry bridge failed:', err));
+  }
+
+  sendUiModeSessionStart(_payload: UiModeSessionStartNotification): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  }
+
+  sendUiModeChanged(_payload: UiModeChangedNotification): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  }
+
+  sendUiModeDefaultChanged(_payload: UiModeDefaultChangedNotification): void {
+    // TODO: implement KAS-side telemetry when KAS supports ext notifications
   }
 }
 
