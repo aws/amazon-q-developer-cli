@@ -77,6 +77,14 @@ import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
 import { emitKasTelemetry } from './utils/kas-telemetry-cli';
 
+// User-agent tokens attached to the KAS ACP clientInfo._meta. KAS appends these
+// to the user agent it sends to the backend. `app/AmazonQ-For-CLI` is required
+// for backend ALB routing + ClientMetadataUtil parsing; KAS derives the
+// KiroCLI/<version>, KAS/, os/, and md/appVersion- segments itself.
+const KAS_CLIENT_INFO_META = {
+  userAgentTags: ['app/AmazonQ-For-CLI'],
+} as const;
+
 function getKasVersion(kasServerPath: string): string {
   try {
     const { readFileSync } = require('node:fs');
@@ -2362,7 +2370,11 @@ export class KasAcpClient extends BaseAcpClient {
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
-        clientInfo: { name: 'kiro-cli', version: this.version },
+        clientInfo: {
+          name: 'kiro-cli',
+          version: this.version,
+          _meta: KAS_CLIENT_INFO_META,
+        },
         capabilities: [createGetAccessTokenCapability()],
       });
       return;
@@ -2435,7 +2447,11 @@ export class KasAcpClient extends BaseAcpClient {
     const kasSettings = buildKasSettings();
     this.kiroClient = new KiroClient({
       stream: finalStream,
-      clientInfo: { name: 'kiro-cli', version: this.version },
+      clientInfo: {
+        name: 'kiro-cli',
+        version: this.version,
+        _meta: KAS_CLIENT_INFO_META,
+      },
       capabilities: [
         createGetAccessTokenCapability(),
         createCopyUrlToClipboardCapability(),

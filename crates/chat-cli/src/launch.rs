@@ -111,6 +111,17 @@ fn client_application_for_agent_engine(agent_engine: AgentEngine) -> ClientAppli
     }
 }
 
+/// User-agent tokens the CLI attaches to its ACP `clientInfo._meta` so KAS can
+/// append them to the user agent it sends to the backend. `app/AmazonQ-For-CLI`
+/// is required for backend ALB routing and `ClientMetadataUtil` parsing; KAS
+/// derives the `KiroCLI/<version>`, `KAS/`, `os/`, and `md/appVersion-` segments
+/// itself, so only the non-derivable token is supplied here.
+fn client_info_user_agent_meta() -> agent_client_protocol::Meta {
+    let mut meta = agent_client_protocol::Meta::new();
+    meta.insert("userAgentTags".to_string(), serde_json::json!(["app/AmazonQ-For-CLI"]));
+    meta
+}
+
 fn agent_kind_for_agent_engine(agent_engine: AgentEngine) -> AgentKind {
     match agent_engine {
         AgentEngine::V1 => AgentKind::V1,
@@ -622,7 +633,11 @@ async fn launch_acp_non_interactive(
             conn.initialize(
                 acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
                     acp::Implementation::new("kiro-cli-non-interactive", env!("CARGO_PKG_VERSION"))
-                        .title(Some("Kiro CLI (non-interactive)".to_string())),
+                        .title(Some("Kiro CLI (non-interactive)".to_string()))
+                        // app/AmazonQ-For-CLI lets the backend identify CLI-via-KAS traffic
+                        // (ALB routing + ClientMetadataUtil). KAS reads _meta.userAgentTags
+                        // and appends these segments to the derived user agent.
+                        .meta(client_info_user_agent_meta()),
                 )),
             )
             .await
@@ -839,5 +854,16 @@ mod tests {
         let status = std::process::ExitStatus::from_raw(9);
 
         assert_eq!(exit_reason_for_status(Some(&status)), ExitReason::Crash);
+    }
+
+    #[test]
+    fn client_info_user_agent_meta_carries_cli_app_tag() {
+        let meta = client_info_user_agent_meta();
+        let tags = meta
+            .get("userAgentTags")
+            .and_then(|v| v.as_array())
+            .expect("userAgentTags should be a JSON array");
+        let tags: Vec<&str> = tags.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(tags, vec!["app/AmazonQ-For-CLI"]);
     }
 }
