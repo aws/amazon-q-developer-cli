@@ -710,7 +710,15 @@ impl ChatArgs {
         let registry_data = if mcp_enabled && mcp_registry_url.is_some() {
             if let Some(registry_url) = &mcp_registry_url {
                 let registry_client = crate::mcp_registry::McpRegistryClient::new();
-                match registry_client.fetch_registry(registry_url).await {
+                let fetch_result = match registry_client.fetch_registry(registry_url).await {
+                    Ok(registry) => Ok(registry),
+                    Err(first_err) => {
+                        tracing::warn!(%first_err, "Registry fetch failed, retrying in 1s");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        registry_client.fetch_registry(registry_url).await
+                    },
+                };
+                match fetch_result {
                     Ok(registry) => {
                         // Apply filtering to all agents before ToolManager creation
                         for agent in agents.agents.values_mut() {

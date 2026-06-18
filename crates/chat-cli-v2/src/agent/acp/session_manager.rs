@@ -279,9 +279,22 @@ impl SessionManagerBuilder {
                                     );
                                     Some(registry)
                                 },
-                                Err(e) => {
-                                    error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
-                                    Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
+                                Err(first_err) => {
+                                    tracing::warn!(%first_err, "Registry fetch failed, retrying in 1s");
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    match client.fetch_registry(&registry_url).await {
+                                        Ok(registry) => {
+                                            info!(
+                                                servers = registry.servers.len(),
+                                                "Fetched MCP registry from {} (retry)", registry_url
+                                            );
+                                            Some(registry)
+                                        },
+                                        Err(e) => {
+                                            error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
+                                            Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
+                                        },
+                                    }
                                 },
                             };
                             (true, registry_data, Some(registry_url), web_tools_enabled, false)

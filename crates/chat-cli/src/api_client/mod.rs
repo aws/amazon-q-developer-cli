@@ -575,12 +575,22 @@ impl ApiClient {
         // governance check to run on all endpoints (including alpha/gamma) so that
         // pre-prod environments exercise the same code path as prod, and so service-team
         // owners can validate the MCP governance toggle before promotion.
+        let governance_timeout = TimeoutConfig::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(15))
+            .operation_attempt_timeout(Duration::from_secs(15))
+            .operation_timeout(Duration::from_secs(30))
+            .build();
         let request = self
             .client
             .get_profile()
             .set_profile_arn(self.optional_profile_arn().await);
 
-        let response = request.send().await?;
+        let response = request
+            .customize()
+            .config_override(amzn_codewhisperer_client::config::Builder::new().timeout_config(governance_timeout))
+            .send()
+            .await?;
         let mcp_config = response
             .profile()
             .opt_in_features()
