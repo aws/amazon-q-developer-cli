@@ -2285,6 +2285,19 @@ const STANDALONE_MAIN_FORWARD_TYPES: ReadonlySet<AgentEventType> = new Set([
   AgentEventType.Thought,
 ]);
 
+/**
+ * Crew pipeline stage statuses that mean a stage has finished. Any status NOT
+ * in this set (pending/running/queued/…) means the pipeline is still active.
+ * KAS only ever sets completed/failed for stages today (see
+ * orchestrate-subagent.ts); `cancelled` is included defensively in case that
+ * changes.
+ */
+const TERMINAL_STAGE_STATUSES: ReadonlySet<string> = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private mcpServerCache: McpServerInfo[] = [];
@@ -2447,6 +2460,21 @@ export class KasAcpClient extends BaseAcpClient {
   // subagents have no panel, so their approvals must surface in the main view.
   private pipelineStageSubtasks: Set<string> = new Set();
 
+  // Crew pipeline groups (keyed by `pipeline.groupId`) that currently have at
+  // least one non-terminal stage. While ANY group is active, every
+  // agentSubtaskId-tagged event is kept out of the main stream — it belongs to
+  // the crew and renders in the SUBAGENT OUTPUT panel via multi-session.
+  //
+  // This is the fix for per-stage WRAPPER tool_calls ("Sub-agent: <role>"),
+  // which KAS tags with a DERIVED subtaskId (e.g.
+  // "invoke_subagent_tooluse_<parent>_stage_<name>") rather than the stage UUID
+  // registered in pipelineStageSubtasks. The wrapper therefore failed the
+  // pipelineStageSubtasks check and leaked into main as a duplicate. Gating on
+  // an active group instead of per-subtask registration closes that gap.
+  // pipelineStageSubtasks is retained as a trailing-event safety net for a
+  // stage event that arrives just after its group cleared.
+  private activeCrewGroups: Set<string> = new Set();
+
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
   /** Cache of session modes received on session/new and session/load.  This
@@ -2533,6 +2561,9 @@ export class KasAcpClient extends BaseAcpClient {
     // any still-active stages get re-registered before their events arrive.
     this.pipelineStageSubtasks.clear();
     this.toolCallToSubtask.clear();
+    // Drop crew-liveness state too, so a stale active group from the previous
+    // session can't keep suppressing the next session's standalone subagents.
+    this.activeCrewGroups.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -2635,31 +2666,49 @@ export class KasAcpClient extends BaseAcpClient {
         // Intercept pipeline metadata → emit subagent list update
         if (meta?.pipeline) {
           this.handlePipelineStateUpdate(meta.pipeline);
+          // Backstop clear: the orchestrate_subagent card carries pipeline meta
+          // on every emission, including its terminal one (KAS maps a terminal
+          // tool_call_update → ToolCallFinished, preserving _meta.kiro.pipeline).
+          // handlePipelineStateUpdate's all-terminal check releases the group on
+          // a clean finish, but a failed/cancelled pipeline STOPS mid-flight and
+          // leaves unexecuted stages 'pending', so the snapshot is never
+          // all-terminal. The orchestrate card finishing is the one signal that
+          // fires for every terminal path, so clear on it unconditionally.
+          if (event.type === AgentEventType.ToolCallFinished) {
+            this.activeCrewGroups.delete(meta.pipeline.groupId);
+          }
         }
 
         // Intercept per-stage events → route to multi-session handlers
         if (meta?.agentSubtaskId) {
           const subtaskId = meta.agentSubtaskId;
-          // A subtask is a VISIBLE crew stage only when a pipeline state update
-          // registered it (see handlePipelineStateUpdate). Crew stages render
-          // exclusively in the crew panel via multi-session. Standalone/hidden
-          // spec subagents never register a stage, so they have no panel — their
-          // tool cards would render NOWHERE if dropped. Forward those to the main
-          // stream so they appear as normal inline tool cards.
-          const isVisibleCrewStage = this.pipelineStageSubtasks.has(subtaskId);
+          // While a crew pipeline is active, ALL agentSubtaskId-tagged events are
+          // crew activity and render exclusively in the crew panel via
+          // multi-session — they must NOT also leak into the main conversation.
+          // The active-group gate (not per-subtask registration) is what catches
+          // per-stage WRAPPER tool_calls, which carry a DERIVED subtaskId that
+          // was never registered in pipelineStageSubtasks. pipelineStageSubtasks
+          // is kept as a trailing-event safety net for a stage event that lands
+          // just after its group cleared. When NO crew is active, the subtask is
+          // a standalone/hidden spec subagent with no panel — its tool cards
+          // would render NOWHERE if dropped, so we forward those to the main
+          // stream as normal inline tool cards.
+          const isCrewActivity =
+            this.activeCrewGroups.size > 0 ||
+            this.pipelineStageSubtasks.has(subtaskId);
           if (event.type === AgentEventType.ToolCall) {
             event.sessionId = subtaskId;
             this.toolCallToSubtask.set(event.id, subtaskId);
           }
           this.broadcastMultiSession(subtaskId, event);
-          // Crew stages: panel-only (the SUBAGENT OUTPUT panel renders them, so
-          // they must NOT also leak into the main conversation as duplicates).
+          // Crew activity: panel-only (the SUBAGENT OUTPUT panel renders it, so
+          // it must NOT also leak into the main conversation as a duplicate).
           // Standalone subtasks: also surface in main. The main copy strips
           // `sessionId` (set above for ToolCall, for crew correlation) so it
           // renders as a normal inline tool card rather than a tagged subagent
           // tool. Multi-session already received the tagged copy by reference.
           if (
-            !isVisibleCrewStage &&
+            !isCrewActivity &&
             STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
           ) {
             // Strip the crew-correlation sessionId (set above for ToolCall) so
@@ -2744,6 +2793,23 @@ export class KasAcpClient extends BaseAcpClient {
     // approvals can route to the crew monitor (see handleKasPermissionRequest).
     for (const s of pipeline.stages) {
       if (s.agentSubtaskId) this.pipelineStageSubtasks.add(s.agentSubtaskId);
+    }
+
+    // Track pipeline liveness by groupId. While any stage is non-terminal the
+    // crew is active → every agentSubtaskId event is suppressed from main (see
+    // the agentSubtaskId branch). Once every stage is terminal the crew is done
+    // → release the group so a later standalone subagent surfaces in main again.
+    // (Empty stages → no active stages → treated as not active, so the parent
+    // card still surfaces normally.) A failed/cancelled pipeline can leave
+    // unexecuted stages 'pending' here; the ToolCallFinished backstop in the
+    // session handler covers that case.
+    const anyNonTerminal = pipeline.stages.some(
+      (s) => !TERMINAL_STAGE_STATUSES.has(s.status)
+    );
+    if (anyNonTerminal) {
+      this.activeCrewGroups.add(pipeline.groupId);
+    } else {
+      this.activeCrewGroups.delete(pipeline.groupId);
     }
 
     const pendingStages = pipeline.stages
@@ -2939,6 +3005,7 @@ export class KasAcpClient extends BaseAcpClient {
     // Mirror wireSessionListeners: drop subtask correlation state on teardown.
     this.pipelineStageSubtasks.clear();
     this.toolCallToSubtask.clear();
+    this.activeCrewGroups.clear();
     super.close();
   }
 

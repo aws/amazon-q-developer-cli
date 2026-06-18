@@ -5114,6 +5114,276 @@ describe('MCP OAuth flow', () => {
     });
   });
 
+  // ── Crew per-stage WRAPPER card duplicate suppression (active-pipeline gate) ──
+
+  describe('crew wrapper cards do not duplicate into main (active-pipeline gate)', () => {
+    // Helper: deliver the crew pipeline state update that KAS emits FIRST on the
+    // orchestrate_subagent card. Registers stage UUIDs and marks the group
+    // active. Mirrors the live ACP recording (groupId + stage agentSubtaskIds
+    // are real UUIDs; the per-stage wrapper card is tagged separately below).
+    const sendPipelineRunning = async () =>
+      capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tooluse_PARENT',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'review' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'pending',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+    it('REPRO: per-stage wrapper tool_call (derived subtaskId, NOT a stage UUID) stays out of main', async () => {
+      // Ground truth from the ACP recording: while the crew pipeline is active,
+      // KAS emits a per-stage WRAPPER tool_call titled "Sub-agent: <role>" whose
+      // agentSubtaskId is a DERIVED id ("invoke_subagent_tooluse_<parent>_stage_
+      // <name>"), NOT the stage UUID registered via the pipeline meta. Pre-fix
+      // the pipelineStageSubtasks check missed it and it leaked into main as a
+      // duplicate (it also correctly renders in the SUBAGENT OUTPUT panel). With
+      // the active-pipeline gate it must reach multi-session ONLY.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      const wrapperSubtaskId =
+        'invoke_subagent_tooluse_PARENT_stage_architecture_review';
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: wrapperSubtaskId,
+          title: 'Sub-agent: general-task-execution',
+          kind: 'other',
+          rawInput: { name: 'general-task-execution', prompt: 'work' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: wrapperSubtaskId } },
+        },
+      });
+
+      // Panel-only: multi-session received it, main did NOT (no duplicate).
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(multiHandler.mock.calls[0]![0]).toBe(wrapperSubtaskId);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+
+    it('LIFECYCLE: after an all-terminal snapshot clears the group, a later standalone subagent surfaces in main again', async () => {
+      // Proves the suppression is not sticky: once every stage is terminal the
+      // group is released, so a subsequent standalone (no-pipeline) subagent's
+      // tool card forwards to main as before.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+
+      // Pipeline completes — every stage terminal → group released.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tooluse_PARENT',
+          status: 'completed',
+          rawOutput: 'Pipeline completed: 2 stages finished.',
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'completed',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // A brand-new standalone subagent (NO pipeline) emits a tool call.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-standalone',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-standalone' } },
+        },
+      });
+
+      // Forwarded to BOTH main (standalone surfacing) and multi-session.
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+      const mainEvent = mainHandler.mock.calls[0]![0] as any;
+      expect(mainEvent.type).toBe(AgentEventType.ToolCall);
+      // Main copy renders as a normal inline card (crew sessionId stripped).
+      expect(mainEvent.sessionId).toBeUndefined();
+    });
+
+    it('BACKSTOP: a failed pipeline that leaves a stage pending still clears the group on the orchestrate card finishing', async () => {
+      // KAS stops a pipeline on first stage failure, so the terminal snapshot
+      // can still carry an unexecuted 'pending' stage (never all-terminal). The
+      // all-terminal check alone would leave the group stuck active. The
+      // ToolCallFinished backstop on the orchestrate card releases it anyway.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+
+      // Pipeline fails at stage 1; stage 'synthesis' was never reached → pending.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tooluse_PARENT',
+          status: 'failed',
+          content: [
+            {
+              type: 'content',
+              content: { type: 'text', text: 'Stage failed' },
+            },
+          ],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'failed',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'pending',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // Group should be cleared despite the lingering 'pending' stage: a later
+      // standalone subagent surfaces in main.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-standalone',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-standalone' } },
+        },
+      });
+
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('CAVEAT: a standalone subagent running concurrently with an active crew is suppressed from main', async () => {
+      // Documented tradeoff: the active-pipeline gate keys on "any crew active",
+      // not on which group a subtask belongs to. So a hidden/standalone spec
+      // subagent that happens to run WHILE a crew pipeline is active is also
+      // kept out of main (it still renders via multi-session). This is rare and
+      // preferred over the duplicate-card regression. Pinned here so a future
+      // change to this behavior is a conscious decision, not an accident.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // Unrelated standalone subagent (its subtaskId is not a registered stage).
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-concurrent',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-unrelated' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Task 5: Permission request stage correlation ──
 
   describe('permission request stage correlation', () => {

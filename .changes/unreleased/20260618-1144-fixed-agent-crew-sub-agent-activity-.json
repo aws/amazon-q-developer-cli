@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Agent-crew sub-agent activity no longer appears duplicated in the main conversation"
+}
