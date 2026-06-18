@@ -2446,6 +2446,7 @@ export class KasAcpClient extends BaseAcpClient {
         ...(isTelemetryEnabled() && { telemetry: getTelemetryIdentity() }),
         knowledge: true,
         hooks: { enabled: true, v2: true },
+        requirementsAnalysis: true,
         ...(kasSettings && { settings: kasSettings }),
       },
     });
