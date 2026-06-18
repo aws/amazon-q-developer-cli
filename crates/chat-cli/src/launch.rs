@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -29,6 +33,7 @@ use crate::util::consts::env_var::{
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
     KIRO_KAS_SERVER_PATH,
+    KIRO_VERSION_OVERRIDE,
 };
 
 /// Launch the session according to the configured options.
@@ -177,6 +182,34 @@ fn resolve_force_color(
     }
 }
 
+/// Environment variables unconditionally forwarded to the TUI child process.
+/// Extracted into a pure helper so the forwarded set stays unit-testable.
+///
+/// `version` is the already-resolved value to forward as
+/// `KIRO_VERSION_OVERRIDE`. The caller is responsible for resolution
+/// (honor a user/parent-provided override, else the crate's compile-time
+/// version) so this helper stays free of process-env reads and is testable
+/// with explicit inputs.
+fn tui_child_env(current_exe: &Path, version: OsString) -> Vec<(&'static str, OsString)> {
+    vec![
+        // Path to chat_cli itself, so the TUI can invoke its headless
+        // `chat _ export-session` / `chat _ import-session` subcommands for
+        // /chat save and /chat load, so V2 spawns the ACP child from this
+        // binary, and so the TUI voice helper
+        // (packages/tui/src/commands/voice-helper.ts) spawns the `voice`
+        // subcommand of the same binary for microphone capture and Whisper
+        // transcription. Engine-agnostic: V2 and KAS both route their slash
+        // commands through the same Rust binary.
+        (KIRO_CHAT_CLI_BIN, current_exe.as_os_str().to_owned()),
+        // Forward the resolved version so the TUI bundle reports the real
+        // release version (consumed by `getCliVersion()` in
+        // `packages/tui/src/utils/version.ts`) instead of its baked-in
+        // `0.0.0-dev` placeholder / `99.99.99-dev` dev fallback. Keeps the
+        // survey User-Agent and KAS clientInfo aligned with the Rust user agent.
+        (KIRO_VERSION_OVERRIDE, version),
+    ]
+}
+
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
 async fn launch_acp_interactive(
     os: &Os,
@@ -222,10 +255,14 @@ async fn launch_acp_interactive(
         )
         .kill_on_drop(true);
 
-    // Used by the TUI voice helper (packages/tui/src/commands/voice-helper.ts) to
-    // spawn the `voice` subcommand of the same binary for microphone capture
-    // and Whisper transcription.
-    cmd.env("KIRO_CLI_PATH", &current_exe);
+    // Forward the unconditional env vars (binary paths, version) to the TUI.
+    // Honor a user/parent-provided KIRO_VERSION_OVERRIDE instead of clobbering
+    // it; fall back to the crate's compile-time version when unset.
+    let version_override =
+        std::env::var_os(KIRO_VERSION_OVERRIDE).unwrap_or_else(|| OsString::from(env!("CARGO_PKG_VERSION")));
+    for (key, value) in tui_child_env(&current_exe, version_override) {
+        cmd.env(key, value);
+    }
 
     // Propagate voice.serverUrl setting so the TUI uses a remote voice server
     // (cloud desktop scenario) instead of spawning the local voice binary.
@@ -237,13 +274,6 @@ async fn launch_acp_interactive(
     {
         cmd.env("KIRO_VOICE_SERVER_URL", &url);
     }
-
-    // Path to chat_cli itself, so the TUI can invoke its headless
-    // `chat _ export-session` / `chat _ import-session` subcommands
-    // for /chat save and /chat load, and so V2 spawns the ACP child
-    // from this binary. Engine-agnostic: V2 and KAS both route their
-    // slash commands through the same Rust binary.
-    cmd.env(KIRO_CHAT_CLI_BIN, &current_exe);
 
     // Write feed.json to data dir and pass the path to the TUI (avoids 100KB env var).
     // The parent directory is normally created by extract_tui_assets_if_needed when
@@ -670,6 +700,45 @@ async fn launch_acp_non_interactive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tui_child_env_forwards_real_version() {
+        // With no user/parent override, the call site resolves the version to
+        // the crate's compile-time version and passes it in; otherwise the TUI
+        // bundle would fall back to its baked-in `99.99.99-dev` placeholder
+        // (e.g. in the survey User-Agent). Pass the default explicitly rather
+        // than mutating process env to keep this test parallel-safe.
+        let exe = Path::new("/tmp/kiro-cli");
+        let env = tui_child_env(exe, OsString::from(env!("CARGO_PKG_VERSION")));
+        let version = env
+            .iter()
+            .find(|(k, _)| *k == "KIRO_VERSION_OVERRIDE")
+            .map(|(_, v)| v.clone());
+        assert_eq!(
+            version.as_deref(),
+            Some(OsString::from(env!("CARGO_PKG_VERSION")).as_os_str()),
+            "TUI child env must forward KIRO_VERSION_OVERRIDE set to the crate version"
+        );
+    }
+
+    #[test]
+    fn test_tui_child_env_forwards_explicit_override() {
+        // A user/parent-provided KIRO_VERSION_OVERRIDE must win: whatever the
+        // caller resolved is forwarded verbatim, not clobbered by the crate
+        // version. Passing the value as an explicit param keeps the test free
+        // of process-env mutation (parallel-test safe).
+        let exe = Path::new("/tmp/kiro-cli");
+        let env = tui_child_env(exe, OsString::from("7.7.7-test"));
+        let version = env
+            .iter()
+            .find(|(k, _)| *k == "KIRO_VERSION_OVERRIDE")
+            .map(|(_, v)| v.clone());
+        assert_eq!(
+            version.as_deref(),
+            Some(OsString::from("7.7.7-test").as_os_str()),
+            "TUI child env must forward the caller-resolved override value verbatim"
+        );
+    }
 
     #[test]
     fn test_resolve_force_color_no_color_set() {

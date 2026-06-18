@@ -158,16 +158,13 @@ async fn extract_kas_assets_if_needed(os: &Os) -> Result<Option<(PathBuf, PathBu
         .join("server")
         .join("acp-server.js");
 
-    // Canonicalize to ensure absolute paths.
-    let node_extract_path = os
-        .fs
-        .canonicalize(&node_extract_path)
-        .await
+    // Use dunce::canonicalize instead of std::fs::canonicalize because the latter
+    // returns \\?\ verbatim paths on Windows which break Node.js ESM module resolution,
+    // causing the KAS sidecar to crash on startup. On non-Windows platforms dunce is
+    // identical to std::fs::canonicalize.
+    let node_extract_path = dunce::canonicalize(&node_extract_path)
         .with_context(|| format!("failed to canonicalize node path: {}", node_extract_path.display()))?;
-    let server_path = os
-        .fs
-        .canonicalize(&server_path)
-        .await
+    let server_path = dunce::canonicalize(&server_path)
         .with_context(|| format!("failed to canonicalize KAS server path: {}", server_path.display()))?;
 
     Ok(Some((node_extract_path, server_path)))

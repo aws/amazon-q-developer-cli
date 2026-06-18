@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Resumed conversations in `--classic` mode now restore the model used in the previous session instead of falling back to the default"
+}

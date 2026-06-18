@@ -22,7 +22,7 @@ const DEV_FALLBACK_VERSION = '99.99.99-dev';
  * high dev version so outbound traffic always reports a usable value.
  */
 export function getCliVersion(): string {
-  const override = process.env.KIRO_VERSION_OVERRIDE;
+  const override = process.env.KIRO_VERSION_OVERRIDE?.trim();
   if (override) return override;
   if (packageJson.version === PLACEHOLDER_VERSION) return DEV_FALLBACK_VERSION;
   return packageJson.version;

@@ -1,6 +1,7 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { EventEmitter } from 'events';
 import { AgentEventType, ContentType } from '../types/agent-events';
+import { getCliVersion } from '../utils/version';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
 
 // --- Mock child_process ---
@@ -175,6 +176,28 @@ describe('AcpClient', () => {
     const params = mockInitialize.mock.calls[0]![0];
     expect(params.clientInfo.name).toBe('kiro-tui');
     expect(params.protocolVersion).toBeDefined();
+  });
+
+  it('initialize() reports the injected version in clientInfo', async () => {
+    // The launcher forwards the real release version via KIRO_VERSION_OVERRIDE;
+    // injecting it through the constructor lets us assert the handshake carries
+    // it without re-importing the module to bust a cached constant. The
+    // negative assertion guards the original fix: the `99.99.99-dev` dev
+    // fallback must never leak when a real version was forwarded.
+    const client = new AcpClient('/path/to/agent', [], '3.1.4-test');
+    await client.initialize();
+    const params = mockInitialize.mock.calls[0]![0];
+    expect(params.clientInfo.version).toBe('3.1.4-test');
+    expect(params.clientInfo.version).not.toBe('99.99.99-dev');
+  });
+
+  it('initialize() defaults clientInfo version to getCliVersion()', async () => {
+    // No-regression guard: with no injected version, production behavior is
+    // unchanged — clientInfo reports the launcher-forwarded CLI version.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.initialize();
+    const params = mockInitialize.mock.calls[0]![0];
+    expect(params.clientInfo.version).toBe(getCliVersion());
   });
 
   it('newSession() calls connection.newSession and returns sessionId', async () => {

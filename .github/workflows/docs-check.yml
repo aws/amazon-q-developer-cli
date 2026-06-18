@@ -15,6 +15,7 @@ jobs:
     if: |
       (github.event_name == 'pull_request' &&
        github.actor != 'github-actions[bot]' &&
+       github.event.pull_request.head.repo.fork != true &&
        !contains(github.event.pull_request.labels.*.name, 'no-changelog')) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&

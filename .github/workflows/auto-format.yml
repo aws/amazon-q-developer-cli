@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   auto-format:
-    # Skip bot pushes to avoid infinite loops
-    if: github.actor != 'github-actions[bot]'
+    # Skip bot pushes (infinite loops) and fork PRs (no PAT access)
+    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.fork != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

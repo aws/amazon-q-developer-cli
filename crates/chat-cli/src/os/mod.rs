@@ -79,7 +79,10 @@ impl Os {
             .log_on_err("Os::new: TelemetryThread::new failed")?;
         Rollout::init(
             database.get_client_id().ok().flatten(),
-            database.get_start_url().ok().flatten(),
+            crate::rollout::resolve_segment_start_url(
+                token.as_ref().and_then(|t| t.start_url.clone()),
+                database.get_start_url().ok().flatten(),
+            ),
         );
 
         Ok(Self {
