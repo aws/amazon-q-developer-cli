@@ -12,6 +12,42 @@
     },
     {
       "type": "release",
+      "date": "2026-06-17",
+      "version": "2.8.1",
+      "title": "Version 2.8.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "MCP OAuth in V2 mode now copies the authorization URL to the clipboard instead of failing silently"
+        },
+        {
+          "type": "fixed",
+          "description": "Subagent tool calls and approval prompts now appear in the main view during spec workflows"
+        },
+        {
+          "type": "changed",
+          "description": "MCP OAuth panel now shows confirmation when URL is copied to clipboard"
+        },
+        {
+          "type": "changed",
+          "description": "Welcome screen link updated to point to V3 documentation"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2026-06-16",
+      "version": "2.8.0",
+      "title": "Version 2.8.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "An early release of Kiro CLI V3 is now available. Try it out with: kiro-cli --v3. Learn more: https://kiro.dev/docs/cli/v3/"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-06-15",
       "version": "2.7.1",
       "title": "Version 2.7.1",
