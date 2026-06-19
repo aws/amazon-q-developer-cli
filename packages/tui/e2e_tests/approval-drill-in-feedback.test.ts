@@ -126,12 +126,19 @@ describe('Approval drill-in feedback', () => {
     // Press Enter to submit the feedback
     await testCase.pressEnter();
 
-    // The approval should be cleared (tool was rejected)
+    // The original tool should be rejected, and the model should retry in the
+    // same turn with a fresh approval request for the corrected write.
     const storeAfterSubmit = await testCase.waitForStoreCondition(
-      (s) => s.pendingApproval === null,
-      5000
+      (s) => {
+        return s.messages.some(
+          (m) =>
+            m.role === 'tool_use' &&
+            m.id === 'tool-write-feedback' &&
+            (m as any).status === 'rejected'
+        );
+      },
+      10000
     );
-    expect(storeAfterSubmit.pendingApproval).toBeNull();
 
     // The tool should be marked as rejected
     const rejectedTool = storeAfterSubmit.messages.find(

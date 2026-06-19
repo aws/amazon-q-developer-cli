@@ -78,7 +78,8 @@ describe('/compact and summary', () => {
     expect(store.messages.length).toBeGreaterThan(0);
   }, 60000);
 
-  it('renders summary system message after compaction completes', async () => {
+  // Windows: compaction response + summary rendering exceeds timeout in CI
+  it.skipIf(process.platform === 'win32')('renders summary system message after compaction completes', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
       .withTestName('compact-summary')

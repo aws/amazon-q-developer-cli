@@ -139,7 +139,7 @@ jobs:
     if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -171,7 +171,13 @@ jobs:
         # session listing, ensure-session, and `/chat` save/load. The
         # integ harness defaults `KIRO_CHAT_CLI_BIN` to `target/debug/chat_cli`,
         # so a built binary is a prerequisite (same as tui-e2e).
-        run: cargo build -p chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --no-default-features
+          else
+            cargo build -p chat_cli
+          fi
 
       - name: Read pinned Bun version
         id: bun-ver

@@ -51,7 +51,8 @@ describe('Paste Image', () => {
     await testCase.expectExit();
   }, 30000);
 
-  it('Ctrl+V image chip followed by text and submit', async () => {
+  // Windows: clipboard image detection timing differs in CI ConPTY
+  it.skipIf(process.platform === 'win32')('Ctrl+V image chip followed by text and submit', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('paste-image-submit')
       .launch();

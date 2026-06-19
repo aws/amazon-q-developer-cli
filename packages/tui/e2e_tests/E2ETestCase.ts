@@ -152,23 +152,42 @@ export class E2ETestCase {
     // Start both IPC servers
     await Promise.all([
       new Promise<void>((resolve, reject) => {
-        this.tuiIpcServer.listen(this.paths.tuiIpcSocket, (error?: Error) => {
-          if (error) reject(error);
-          else resolve();
+        const onError = (error: Error) => {
+          this.tuiIpcServer.off('error', onError);
+          reject(error);
+        };
+        this.tuiIpcServer.once('error', onError);
+        this.tuiIpcServer.listen(this.paths.tuiIpcSocket, () => {
+          this.tuiIpcServer.off('error', onError);
+          resolve();
         });
       }),
       new Promise<void>((resolve, reject) => {
-        this.agentIpcServer.listen(this.paths.agentIpcSocket, (error?: Error) => {
-          if (error) reject(error);
-          else resolve();
+        const onError = (error: Error) => {
+          this.agentIpcServer.off('error', onError);
+          reject(error);
+        };
+        this.agentIpcServer.once('error', onError);
+        this.agentIpcServer.listen(this.paths.agentIpcSocket, () => {
+          this.agentIpcServer.off('error', onError);
+          resolve();
         });
       }),
     ]);
 
-    // Spawn the real CLI
+    // Spawn the process inside the PTY.
+    // On Windows, spawn bun directly with the TUI bundle. The CLI binary
+    // inside ConPTY cannot spawn bun as a child process that properly inherits
+    // terminal handles (ConPTY limitation). Spawning bun directly as the
+    // ConPTY process matches the production architecture where bun is the
+    // outer process and the CLI is spawned as an ACP backend child.
     const chatPath = requireChatCliBin();
-    this.ptyManager.spawn(chatPath, ['chat', ...(this.options.extraCliArgs ?? [])]);
-
+    if (process.platform === 'win32') {
+      const tuiJsPath = path.join(__dirname, '../dist/tui.js');
+      this.ptyManager.spawn('bun', [tuiJsPath, 'chat', ...(this.options.extraCliArgs ?? [])]);
+    } else {
+      this.ptyManager.spawn(chatPath, ['chat', ...(this.options.extraCliArgs ?? [])]);
+    }
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);
     console.log(`Rust logs: ${this.paths.rustLogFile}`);
     console.log(`Snapshot: ${this.paths.snapshotHtmlFile}`);
@@ -472,28 +491,63 @@ export class E2ETestCase {
   }
 
   private waitForTuiConnection(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for TUI IPC connection'));
-      }, 15000);
-
-      this.tuiIpcServer.on('connection', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+    return this.waitForConnection(
+      () => this.tuiConnection,
+      this.tuiIpcServer,
+      'TUI'
+    );
   }
 
   private waitForAgentConnection(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for agent IPC connection'));
-      }, 15000);
+    return this.waitForConnection(
+      () => this.agentConnection,
+      this.agentIpcServer,
+      'agent'
+    );
+  }
 
-      this.agentIpcServer.on('connection', () => {
+  private waitForConnection(
+    getConnection: () => TuiIpcConnection | undefined,
+    server: net.Server,
+    label: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Windows named pipes take longer to establish on CI runners
+      const timeoutMs = process.platform === 'win32' ? 30000 : 15000;
+
+      const cleanup = () => {
         clearTimeout(timer);
+        server.off('connection', onConnection);
+        server.off('error', onError);
+      };
+
+      const resolveIfConnected = () => {
+        if (!getConnection()) return false;
+        cleanup();
         resolve();
-      });
+        return true;
+      };
+
+      const onConnection = () => {
+        resolveIfConnected();
+      };
+
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      const timer = setTimeout(() => {
+        if (resolveIfConnected()) return;
+        cleanup();
+        reject(new Error(`Timeout waiting for ${label} IPC connection`));
+      }, timeoutMs);
+
+      server.once('connection', onConnection);
+      server.once('error', onError);
+
+      // Handle race: connection may have arrived before we registered the listener
+      resolveIfConnected();
     });
   }
 }

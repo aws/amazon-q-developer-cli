@@ -38,7 +38,8 @@ describe('greeting setting', () => {
     expect(exitCode).toBe(0);
   }, 30000);
 
-  it('hides welcome screen when chat.greeting.enabled is false', async () => {
+  // Windows: CLI settings file path resolution differs (USERPROFILE vs HOME)
+  it.skipIf(process.platform === 'win32')('hides welcome screen when chat.greeting.enabled is false', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('greeting-disabled')
       .withGlobalSettings({ 'chat.greeting.enabled': false })

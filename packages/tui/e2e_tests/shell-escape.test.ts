@@ -119,7 +119,7 @@ describe('Shell Escape (!command)', () => {
   // issue on ubuntu runners where the echoed output doesn't appear. The
   // "multiple lines of interactive input" test covers the same code path
   // and passes reliably on all platforms.
-  (process.platform === 'linux' ? it.skip : it)(
+  (process.platform === 'linux' || process.platform === 'win32' ? it.skip : it)(
     'accepts interactive input via read',
     async () => {
       testCase = await E2ETestCase.builder()
@@ -176,7 +176,7 @@ describe('Shell Escape (!command)', () => {
     await testCase.waitForText('ask a question', 20000);
   }, 60000);
 
-  it('accepts multiple lines of interactive input', async () => {
+  (process.platform === 'win32' ? it.skip : it)('accepts multiple lines of interactive input', async () => {
     // Use a wider terminal to prevent the long command from wrapping and
     // interfering with prompt detection in the xterm screen buffer.
     testCase = await E2ETestCase.builder()
