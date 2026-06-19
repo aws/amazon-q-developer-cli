@@ -13,11 +13,12 @@ describe('kas-commands', () => {
       expect(specCmd!.description).toContain('spec');
       expect(specCmd!.meta).toEqual({
         local: true,
-        subcommands: ['new', 'run', 'view'],
+        subcommands: ['new', 'run', 'view', 'analyze_requirements'],
         subcommandHints: {
           new: '<feature-name>',
           run: '<feature-name>',
           view: '<feature-name> [requirements|design|tasks]',
+          analyze_requirements: '↵ to select a spec',
         },
       });
     });
