@@ -10,10 +10,9 @@
     "segment": "all"
   },
   "voice": {
-    "description": "Voice input mode - internal nightly only initially",
+    "description": "Voice input mode - all internal users",
     "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
+    "segment": "internal"
   },
   "test": {
     "description": "Test experiment for unit tests",
