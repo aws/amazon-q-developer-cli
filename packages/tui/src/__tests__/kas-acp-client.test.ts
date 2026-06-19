@@ -1705,7 +1705,12 @@ describe('KasAcpClient', () => {
    */
   function seedSessionWithModels(opts: {
     currentValue: string;
-    models: Array<{ value: string; name: string; description?: string }>;
+    models: Array<{
+      value: string;
+      name: string;
+      description?: string;
+      _meta?: { kiro?: { rateMultiplier?: number; rateUnit?: string } };
+    }>;
   }): void {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-models',
@@ -1750,16 +1755,59 @@ describe('KasAcpClient', () => {
 
     const result = await client.getCommandOptions('/model', '');
     expect(result.options.length).toBe(2);
+    // No `_meta.kiro` rate info on these models → the credits column shows the
+    // "----- credits" placeholder (mirrors v2's `to_command_option`).
     expect(result.options[0]).toEqual({
       value: 'claude-4',
       label: 'Claude 4',
       description: '[active] Best overall',
+      group: '----- credits',
     });
     expect(result.options[1]).toEqual({
       value: 'gpt-5',
       label: 'GPT-5',
       description: '',
+      group: '----- credits',
     });
+  });
+
+  it('getCommandOptions("/model") surfaces the credits column from _meta.kiro.rateMultiplier', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        {
+          value: 'claude-4',
+          name: 'Claude 4',
+          _meta: { kiro: { rateMultiplier: 0.25 } },
+        },
+        {
+          value: 'gpt-5',
+          name: 'GPT-5',
+          // Integer-ish rate locks toFixed(2) formatting → "1.00x credits".
+          _meta: { kiro: { rateMultiplier: 1 } },
+        },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options[0].group).toBe('0.25x credits');
+    expect(result.options[1].group).toBe('1.00x credits');
+    // The credits column renders whenever at least one option sets `group`.
+    expect(result.options.every((o: any) => !!o.group)).toBe(true);
+  });
+
+  it('getCommandOptions("/model") uses the "----- credits" placeholder when rate meta is absent', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [{ value: 'claude-4', name: 'Claude 4' }],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options[0].group).toBe('----- credits');
   });
 
   it('getCommandOptions("/model") returns empty when no models configured', async () => {

@@ -5,6 +5,7 @@ import type { Stream } from '@kiro/client';
 // TUI, KAS, and any other ACP client speak the same contract for the
 // `_kiro/spec/*` extension methods.
 import type {
+  KiroModelOptionMeta,
   SpecInvokeRequest,
   SpecInvokeResponse,
   SpecResolveSessionRequest,
@@ -699,11 +700,17 @@ function extractModel(
 //   { type: 'select', id: 'model', category: 'model',
 //     currentValue: <id>, options: [{value, name, description?}, ...] }
 //
-// The shape of a flat SessionConfigSelectOption — matches ACP SDK 0.19.2.
+// Locally-defined shape of a flat model select option. The ACP type
+// covenant does not export a select-option type at this version, so we
+// model only the fields the TUI consumes.
+// KAS additionally attaches per-model rate info under `_meta.kiro`
+// (rateMultiplier/rateUnit); we surface it as the credits column.
 interface ModelOption {
   value: string;
   name: string;
   description?: string;
+  rateMultiplier?: number;
+  rateUnit?: string;
 }
 
 /** Find the `category: 'model'` entry in a KAS configOptions array. */
@@ -727,12 +734,26 @@ function findModelConfigOption(
           typeof (o as any).name === 'string'
         );
       })
-      .map((o: any) => ({
-        value: o.value as string,
-        name: o.name as string,
-        description:
-          typeof o.description === 'string' ? o.description : undefined,
-      }));
+      .map((o: Record<string, unknown>) => {
+        // KAS attaches per-model rate info under `_meta.kiro` (mirrors the
+        // v2 Rust path). Read defensively — older servers omit `_meta`.
+        const kiro = (o._meta as { kiro?: KiroModelOptionMeta } | undefined)
+          ?.kiro;
+        return {
+          value: o.value as string,
+          name: o.name as string,
+          description:
+            typeof o.description === 'string' ? o.description : undefined,
+          rateMultiplier:
+            typeof kiro?.rateMultiplier === 'number'
+              ? kiro.rateMultiplier
+              : undefined,
+          // Captured for v2 parity; not yet rendered (credits column uses
+          // rateMultiplier only). Retained so future UI can surface the unit.
+          rateUnit:
+            typeof kiro?.rateUnit === 'string' ? kiro.rateUnit : undefined,
+        };
+      });
     return {
       currentValue:
         typeof opt.currentValue === 'string' ? opt.currentValue : undefined,
@@ -4343,6 +4364,14 @@ export class KasAcpClient extends BaseAcpClient {
           options: this.modelOptions.map((m) => {
             const isActive = m.value === this.currentModelId;
             const desc = m.description ?? '';
+            // Right-aligned credits column (mirrors v2's `to_command_option`):
+            // a rate multiplier renders as e.g. "0.25x credits"; absent rate
+            // data renders the "----- credits" placeholder so the column stays
+            // aligned. Menu shows the column when any option sets `group`.
+            const credits =
+              m.rateMultiplier !== undefined
+                ? `${m.rateMultiplier.toFixed(2)}x credits`
+                : '----- credits';
             return {
               value: m.value,
               label: m.name,
@@ -4351,6 +4380,7 @@ export class KasAcpClient extends BaseAcpClient {
                   ? `[active] ${desc}`
                   : '[active]'
                 : desc,
+              group: credits,
             };
           }),
         };
