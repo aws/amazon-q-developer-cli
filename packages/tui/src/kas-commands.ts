@@ -135,7 +135,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
         new: '<feature-name>',
         run: '<feature-name>',
         view: '<feature-name> [requirements|design|tasks]',
-        analyze_requirements: '<feature-name>',
+        analyze_requirements: '↵ to select a spec',
       },
     },
   },
