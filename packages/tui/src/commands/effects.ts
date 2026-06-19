@@ -797,7 +797,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
       // Exact match — execute immediately
-      const exactMatch = name ? features.find((f) => f.featureName === name) : undefined;
+      const exactMatch = name
+        ? features.find((f) => f.featureName === name)
+        : undefined;
       if (exactMatch) {
         try {
           await ctx.kiro.setMode('spec');
@@ -810,7 +812,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           return true;
         }
         ctx.setCurrentAgent({ name: 'spec' });
-        const reqPath = exactMatch.specDocumentPaths.find((p) => p.endsWith('requirements.md'))!;
+        const reqPath = exactMatch.specDocumentPaths.find((p) =>
+          p.endsWith('requirements.md')
+        )!;
         await ctx.sendMessage(
           `Analyze the requirements in ${reqPath} for ambiguities, inconsistencies, and missing acceptance criteria. Use the analyze_requirements tool.`
         );
@@ -1314,7 +1318,6 @@ async function runSpecFeature(
     );
   }
 }
-
 
 /**
  * Switch to spec mode and ask the agent to continue work on a feature.

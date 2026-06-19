@@ -1327,7 +1327,10 @@ describe('/spec analyze_requirements effect', () => {
     name: '/spec',
     description: 'Spec commands',
     source: 'local' as const,
-    meta: { local: true, subcommands: ['new', 'run', 'view', 'analyze_requirements'] },
+    meta: {
+      local: true,
+      subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+    },
   };
 
   let workspaceRoot: string;
@@ -1361,7 +1364,9 @@ describe('/spec analyze_requirements effect', () => {
   it('shows warning when no specs with requirements.md exist', () => {
     const ctx = createMockCommandContext({ slashCommands: [specCmd] });
     runEffect(specCmd, null, ctx, 'analyze_requirements');
-    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('No specs with requirements.md found');
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'No specs with requirements.md found'
+    );
     expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('warning');
   });
 
@@ -1386,7 +1391,9 @@ describe('/spec analyze_requirements effect', () => {
     makeSpec('no-reqs', ['design.md']);
     const ctx = createMockCommandContext({ slashCommands: [specCmd] });
     runEffect(specCmd, null, ctx, 'analyze_requirements no-reqs');
-    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('No specs with requirements.md found');
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'No specs with requirements.md found'
+    );
     expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('warning');
   });
 
@@ -1400,7 +1407,9 @@ describe('/spec analyze_requirements effect', () => {
     await runEffect(specCmd, null, ctx, 'analyze_requirements my-feature');
     expect(setModeMock).toHaveBeenCalledWith('spec');
     expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
-    const sendCall = (ctx._spies.sendMessage!.mock.calls as any)[0][0] as string;
+    const sendCall = (
+      ctx._spies.sendMessage!.mock.calls as any
+    )[0][0] as string;
     expect(sendCall).toContain('requirements.md');
     expect(sendCall).toContain('analyze_requirements');
   });
