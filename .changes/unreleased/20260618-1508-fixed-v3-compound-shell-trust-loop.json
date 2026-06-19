@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Compound shell commands (e.g. `git status && echo done`) in v3 no longer loop on the approval prompt; the trust exact-match and pattern options now target the gated sub-command"
+}

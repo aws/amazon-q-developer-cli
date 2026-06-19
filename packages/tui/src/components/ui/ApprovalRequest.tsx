@@ -15,6 +15,7 @@ import {
   type ConsentContext,
 } from '../../types/agent-events';
 import { MessageRole, useAppStore } from '../../stores/app-store.js';
+import { deriveShellTrustOptions } from '../../utils/shell-trust-options.js';
 
 interface ApprovalRequestProps {
   onDrillInSubmit: (value: string) => void;
@@ -96,17 +97,25 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     return msg && msg.role === MessageRole.ToolUse ? msg.name : undefined;
   })();
 
-  // Derive a "base command" pattern from the resource (e.g. "git commit -m x" → "git *")
-  // Only for shell-like capabilities where the resource is a command string
-  const isShellCapability = capability === 'shell' || capability === 'exec';
-  const baseCommand =
-    resource && isShellCapability && resource.includes(' ')
-      ? resource.split(/\s+/)[0] + ' *'
-      : undefined;
-  const resourceLabel = resource
-    ? resource.length > 50
-      ? `"${resource.slice(0, 47)}…"`
-      : `"${resource}"`
+  // Compound shell commands (e.g. "git status && echo done") are gated by the
+  // agent one sub-command at a time: the whole command arrives as `resource`,
+  // but the segment requiring consent right now is `triggeringResource`. Trust
+  // options must target THAT segment — otherwise neither the whole-command
+  // exact match nor the "git *" pattern can authorize a later segment like
+  // `echo done`, so the policy re-asks it forever. `gatedResource` falls back
+  // to `resource` for single / non-compound requests.
+  const { gatedResource, exactResource, patternResource } =
+    deriveShellTrustOptions({
+      capability,
+      resource,
+      triggeringResource: consentContext?.triggeringResource,
+    });
+  // The pattern (e.g. "echo *") offered for the gated sub-command.
+  const baseCommand = patternResource;
+  const resourceLabel = gatedResource
+    ? gatedResource.length > 50
+      ? `"${gatedResource.slice(0, 47)}…"`
+      : `"${gatedResource}"`
     : undefined;
 
   const [trustScope, setTrustScope] = useState<
@@ -127,7 +136,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
           },
         ]
       : []),
-    ...(baseCommand && baseCommand !== resource
+    ...(baseCommand && baseCommand !== gatedResource
       ? [
           {
             label: `Trust "${baseCommand}"`,
@@ -252,7 +261,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       if (resourceLabel && item.label === `Trust ${resourceLabel}`) {
         respondToApproval(TRUST_OPTION_ID, undefined, {
           kasScope: scopeValue,
-          kasResource: resource,
+          kasResource: exactResource,
         });
       } else if (baseCommand && item.label === `Trust "${baseCommand}"`) {
         respondToApproval(TRUST_OPTION_ID, undefined, {

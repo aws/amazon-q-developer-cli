@@ -6281,3 +6281,93 @@ describe('KasAcpClient — _kiro/tools/didChange', () => {
     expect(mockExtNotificationDispose).toHaveBeenCalled();
   });
 });
+
+// ── KAS shell consent: compound command at the ACP permission-request boundary ──
+//
+// The v3+KAS shell fix gates a compound command (`git status && echo "done"`)
+// per segment. KAS carries the decision on `_meta.kiro.consent`: `resource` is
+// the WHOLE command and `triggeringResource` is the GATED sub-command that
+// actually needs consent right now. This test pins the ACP **ingestion**
+// boundary — the seam where `handlePermissionRequest` lifts that consent off the
+// incoming `session/request_permission` into the `consentContext` the UI reads.
+//
+// SCOPE (be honest about what this exercises): ingestion only. A regression that
+// drops `triggeringResource` here would silently break the whole fix (the UI
+// would derive trust for the wrong segment). The OTHER half — deriving the gated
+// segment into the outgoing reply (`kasResource` → `_meta.kiro.consent.resource`,
+// in app-store `respondToApproval`) — is exercised end-to-end through the real
+// TUI + store in `acp_integ_tests/permission-consent.test.ts` ("compound shell:
+// exact-trust persists the GATED segment"). It is NOT reachable from this
+// harness, which never instantiates the store.
+describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', () => {
+  let origKasPath: string | undefined;
+
+  beforeEach(() => {
+    origKasPath = process.env.KIRO_KAS_SERVER_PATH;
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
+    freshMocks();
+  });
+
+  afterEach(() => {
+    if (origKasPath === undefined) delete process.env.KIRO_KAS_SERVER_PATH;
+    else process.env.KIRO_KAS_SERVER_PATH = origKasPath;
+  });
+
+  const COMPOUND = 'git status && echo "done"';
+  const GATED = 'echo "done"';
+
+  // Drive an incoming KAS permission request and return the captured
+  // ApprovalRequest value + the pending response promise.
+  async function driveCompoundPermission(client: any) {
+    let approvalInfo: any = null;
+    const handler = mock((event: any) => {
+      if (event.type === AgentEventType.ApprovalRequest) {
+        approvalInfo = event.value;
+      }
+    });
+    client.onUpdate(handler);
+    await client.newSession();
+    handler.mockClear();
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'shell-compound-001',
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+      ],
+      _meta: {
+        kiro: {
+          consent: {
+            capability: 'shell',
+            resource: COMPOUND,
+            triggeringResource: GATED,
+          },
+        },
+      },
+    });
+
+    // handlePermissionRequest resolves via broadcast; let the event settle.
+    await new Promise((r) => setTimeout(r, 50));
+    return { getApproval: () => approvalInfo, permissionPromise };
+  }
+
+  it('ingestion: incoming request_permission preserves BOTH resource (whole command) and triggeringResource (gated segment) into consentContext', async () => {
+    const client = new KasAcpClient();
+    const { getApproval, permissionPromise } =
+      await driveCompoundPermission(client);
+
+    const approval = getApproval();
+    expect(approval).not.toBeNull();
+    // The consent the UI reads must carry the full picture: the whole compound
+    // command for display, and the gated segment so trust applies to the right
+    // sub-command. Dropping `triggeringResource` here is the regression guarded.
+    expect(approval.consentContext).toBeDefined();
+    expect(approval.consentContext.capability).toBe('shell');
+    expect(approval.consentContext.resource).toBe(COMPOUND);
+    expect(approval.consentContext.triggeringResource).toBe(GATED);
+
+    // Resolve so the pending ACP promise never dangles.
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+  });
+});
