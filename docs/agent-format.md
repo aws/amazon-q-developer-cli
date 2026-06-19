@@ -219,26 +219,19 @@ Optionally, you can also prefix native tools with the namespace `@builtin`.
 ```json
 {
   "allowedTools": [
-    // Exact matches
     "fs_read",
     "knowledge",
     "@server/specific_tool",
-    
-    // Native tool wildcards
-    "fs_*",                    // All filesystem tools
-    "execute_*",               // All execute tools
-    "*_test",                  // Any tool ending in _test
-    @builtin,                // All native tools
-    
-    // MCP tool wildcards
-    "@server/api_*",           // All API tools from server
-    "@server/read_*",          // All read tools from server
-    "@git-server/get_*_info",  // Tools like get_user_info, get_repo_info
-    "@*/status",               // Status tool from any server
-    
-    // Server-level permissions
-    "@fetch",                  // All tools from fetch server
-    "@git-*"                   // All tools from any git-* server
+    "fs_*",
+    "execute_*",
+    "*_test",
+    "@builtin",
+    "@server/api_*",
+    "@server/read_*",
+    "@git-server/get_*_info",
+    "@*/status",
+    "@fetch",
+    "@git-*"
   ]
 }
 ```
