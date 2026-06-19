@@ -69,8 +69,18 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     await tc.launch();
     await tc.mock.awaitConnection();
 
-    // Allow the TUI to complete its initialize → session/new → set_config_option chain.
-    await new Promise((r) => setTimeout(r, 300));
+    // Poll until the set_config_option request arrives (Windows CI can be slow)
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const reqs = tc.mock.receivedRequests('session/set_config_option');
+      if (
+        reqs.some(
+          (r) => (r.params as SetConfigOptionParams).configId === 'mode'
+        )
+      )
+        break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
     const setConfigReqs = tc.mock.receivedRequests('session/set_config_option');
     const modeReqs = setConfigReqs.filter(
@@ -80,7 +90,7 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     const params = modeReqs[0]!.params as SetConfigOptionParams;
     expect(params.sessionId).toBe('test-session-1');
     expect(params.value).toBe('plan');
-  });
+  }, 15000);
 
   it('does not send mode config option when --agent is absent', async () => {
     tc = new AcpTestCase({ testName: 'acp-agent-flag-absent' });
@@ -108,12 +118,13 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
     await tc.launch();
     await tc.mock.awaitConnection();
 
-    await new Promise((r) => setTimeout(r, 300));
+    // Give TUI time to complete the init chain
+    await new Promise((r) => setTimeout(r, 1000));
 
     const setConfigReqs = tc.mock.receivedRequests('session/set_config_option');
     const modeReqs = setConfigReqs.filter(
       (r) => (r.params as SetConfigOptionParams).configId === 'mode'
     );
     expect(modeReqs).toHaveLength(0);
-  });
+  }, 15000);
 });
