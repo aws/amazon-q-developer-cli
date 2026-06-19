@@ -4219,7 +4219,13 @@ where
                         continue;
                     };
                     if entry.is_file() {
-                        let entry_path_str = entry.to_string_lossy().to_string();
+                        // Canonicalize before deduping so a glob hit collapses with an
+                        // explicitly-listed file (which is canonicalized in the `File` arm).
+                        // Without this, the same file loads twice whenever the literal glob
+                        // path differs from the canonical path (e.g. a symlinked cwd such as
+                        // macOS `/tmp` -> `/private/tmp`).
+                        let entry_path_str = canonicalize_path_sys(entry.to_string_lossy(), provider)
+                            .unwrap_or_else(|_| entry.to_string_lossy().to_string());
                         if !seen_files.insert(entry_path_str.clone()) {
                             continue;
                         }
@@ -4264,7 +4270,11 @@ where
                     };
                     if entry.is_file() {
                         let file_path_str = entry.to_string_lossy().to_string();
-                        if !seen_skills.insert(file_path_str.clone()) {
+                        // Canonicalize the dedup key so a glob hit collapses with an
+                        // explicitly-listed skill (canonicalized in the `Skill` arm).
+                        let dedup_key =
+                            canonicalize_path_sys(&file_path_str, provider).unwrap_or_else(|_| file_path_str.clone());
+                        if !seen_skills.insert(dedup_key) {
                             continue;
                         }
                         let Ok((content, _)) =
@@ -4693,6 +4703,40 @@ mod tests {
                 .iter()
                 .map(|r| (&r.config_value, &r.file_path))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// Regression for the 2.7 double-load bug: a file listed explicitly and the
+    /// same file matched by an injected absolute-path glob must not load twice.
+    /// `append_default_agent_resources` injects steering as a `file://<cwd>/.kiro/steering/**/*.md`
+    /// glob; a user agent that also lists a specific steering file would get it twice
+    /// because glob entries were deduped by their raw (non-canonical) path while
+    /// explicit entries are canonicalized. When the glob reaches the file through a
+    /// symlinked path component the two keys differ and dedup fails. Canonicalizing
+    /// glob entries before the dedup check fixes it.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_collect_resources_dedupes_glob_through_symlink() {
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/steering/a.md", "# Steering A"))
+            .await;
+
+        let real_steering = base.join(".kiro/steering");
+        let link_steering = base.join("linksteer");
+        std::os::unix::fs::symlink(&real_steering, &link_steering).unwrap();
+
+        // Explicit canonical file + a glob reaching the same file via the symlink.
+        let explicit = format!("file://{}", real_steering.join("a.md").display());
+        let glob = format!("file://{}/*.md", link_steering.display());
+
+        let (resources, _skills) = collect_resources([explicit, glob], &base).await;
+
+        assert_eq!(
+            resources.len(),
+            1,
+            "explicit file and glob-through-symlink should dedup to one Resource, got: {:?}",
+            resources.iter().map(|r| &r.file_path).collect::<Vec<_>>()
         );
     }
 
