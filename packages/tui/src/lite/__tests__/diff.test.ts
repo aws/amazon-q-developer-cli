@@ -1,8 +1,7 @@
 import './setup-chalk-level.js';
 
 import { describe, test, expect } from 'vitest';
-import { renderUnifiedDiff } from '../diff.js';
-import type { RenderTheme } from '../render.js';
+import { renderUnifiedDiff, type RenderTheme } from '../render.js';
 import { visibleWidth } from '../../utils/text-width.js';
 import stripAnsi from 'strip-ansi';
 
