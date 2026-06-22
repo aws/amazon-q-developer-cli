@@ -364,6 +364,7 @@ export const CommandMenu: React.FC = () => {
         prefix="@"
         onSelect={handleAtMenuSelect}
         onEscape={handleAtMenuEscape}
+        showFooterHints={true}
       />
     );
   }
@@ -380,6 +381,7 @@ export const CommandMenu: React.FC = () => {
           clearCommandInput();
           setPromptHint(null);
         }}
+        showFooterHints={true}
       />
     );
   }

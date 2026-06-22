@@ -304,6 +304,10 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   } else if (mode === 'dropdown') {
     footerLeft = (
       <Text>
+        {primary('↑↓')} {secondary('to navigate')}
+        {secondary(' · ')}
+        {primary('↵')} {secondary('to select')}
+        {secondary(' · ')}
         {primary('Tab')} {secondary('to edit')}
       </Text>
     );
