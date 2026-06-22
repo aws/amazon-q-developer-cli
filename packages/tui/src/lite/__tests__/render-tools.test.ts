@@ -16,23 +16,9 @@ import {
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
+import { setDisplay, restoreFullDefaults } from './verbose-config-helpers.js';
 
 useTempKiroHome();
-
-// Restore the all-flags-on display (unbounded output, 80-char arg cap) so a
-// suite that mutated the global verbose config doesn't leak into the next file.
-function restoreFullDefaults() {
-  setVerboseConfig({
-    filters: [],
-    display: {
-      ...DEFAULT_DISPLAY,
-      subagent: { ...DEFAULT_DISPLAY.subagent },
-      outputMaxLines: null,
-      argsMaxChars: 80,
-    },
-  });
-  resetVerboseCache();
-}
 
 describe('renderToolCall', () => {
   // STATUS-SLOT CONTRACT: the trailing status glyph reflects the truthful
@@ -973,17 +959,8 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     result: { status: 'success', output },
   });
 
-  // All cap tests share one fully-populated display baseline (every flag on,
-  // argsMaxChars=80, every other cap unbounded) and patch only the cap(s)
-  // under test, so each row reads as "this cap, this expectation".
-  const BASE_DISPLAY: VerboseDisplayConfig = {
-    ...DEFAULT_DISPLAY,
-    subagent: { ...DEFAULT_DISPLAY.subagent },
-    outputMaxLines: null,
-    argsMaxChars: 80,
-  };
-  const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
-    setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
+  // Cap tests patch only the cap(s) under test on top of the shared
+  // all-flags-on BASE_DISPLAY, so each row reads as "this cap, this expectation".
 
   test('outputMaxLines=10 truncates a 30-line output and emits a marker', () => {
     setDisplay({ outputMaxLines: 10 });
@@ -1568,15 +1545,6 @@ describe('display.toolArgsMode rendering', () => {
     isFinished: true,
     result: { status: 'success', output: 'on branch main' },
   });
-
-  const BASE_DISPLAY: VerboseDisplayConfig = {
-    ...DEFAULT_DISPLAY,
-    subagent: { ...DEFAULT_DISPLAY.subagent },
-    outputMaxLines: null,
-    argsMaxChars: 80,
-  };
-  const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
-    setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
 
   // Each row toggles the args presentation and asserts what the header shows.
   // 'inline' also flips reasoning off so the chip stands in for the args.
