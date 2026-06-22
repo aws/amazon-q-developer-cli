@@ -1,38 +1,22 @@
 /**
- * E2E test: Mode swap with pending (undismissed) approval.
+ * Mode swap with a pending (undismissed) approval. Bug-mine 2.1 (cursor
+ * realignment), 3.5 (approval at mode boundary). Discovered contracts:
  *
- * Validates bug-mine entries:
- *   2.1 — Mode-swap cursor realignment via useLayoutEffect
- *   3.5 — Approval interaction during mode boundary
+ * LITE -> TUI: the ApprovalPrompt replaces PromptInput and captures ALL
+ *   keystrokes (y/n/t/Esc/Ctrl+C hotkeys), so typing `/tui` is swallowed — the
+ *   `t` opens the trust submenu / auto-trusts. The swap command never reaches
+ *   the input; the user must dismiss the approval first.
  *
- * Discovered contracts:
- *
- *   LITE -> TUI (with active approval):
- *     The lite ApprovalPrompt replaces the PromptInput entirely while
- *     showApproval is true. The ApprovalPrompt captures ALL keystrokes
- *     via useKeypress, with y/n/t/Esc/Ctrl+C as active hotkeys. Attempting
- *     to type `/tui` causes the `t` character to open the trust scope
- *     submenu (if trust tiers are available for the tool) or auto-trust
- *     the tool (if no tiers). Either way, input is captured by the approval
- *     UI — the mode-swap command never reaches the input box. The user must
- *     first dismiss the approval (Esc to cancel the turn, or y/n to
- *     respond) before typing /tui.
- *
- *   TUI -> LITE (with active approval):
- *     The TUI renders an ApprovalRequest Panel with a Menu (dropdown mode).
- *     The PromptBar input is simultaneously visible. However, pressing
- *     Enter fires BOTH the Menu's onSelect (resolving approval with the
- *     highlighted option) AND the PromptBar's onSubmit. The net effect is:
- *     the approval gets auto-resolved by the Menu, and the PromptBar
- *     submits the typed text to handleUserInput. Since isProcessing is
- *     still true (tool is executing after approval), handleUserInput rejects
- *     the slash command. After the tool finishes and the turn completes,
- *     the user can then successfully issue /lite.
+ * TUI -> LITE: the approval Menu and PromptBar are both visible, and Enter
+ *   fires BOTH Menu.onSelect (auto-resolves approval) AND PromptBar.onSubmit.
+ *   isProcessing is still true while the tool runs, so the slash command is
+ *   rejected until the turn completes.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import { streamReply } from './lite/helpers/responses';
 
 describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -77,16 +61,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.pushSendMessageResponse(null);
 
     // Stream 2: Continuation after tool approval (assistant response)
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'File created successfully.' },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'File created successfully.');
 
     // Send a message to trigger the response stream
     await testCase.sendKeys('write a test file');
@@ -99,7 +74,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     // Confirm approval is pending
     const duringApproval = await testCase.waitForStoreCondition(
       (s) => s.pendingApproval != null,
-      5000,
+      5000
     );
     expect(duringApproval.pendingApproval).not.toBeNull();
     expect(duringApproval.isProcessing).toBe(true);
@@ -139,10 +114,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.sleepMs(200);
 
     // Wait for everything to settle (either cancelled or completed)
-    await testCase.waitForStoreCondition(
-      (s) => !s.isProcessing,
-      15000,
-    );
+    await testCase.waitForStoreCondition((s) => !s.isProcessing, 15000);
 
     const afterCancel = await testCase.getStore();
     expect(afterCancel.uiMode).toBe('lite');
@@ -155,10 +127,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'tui',
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'tui', 10000);
 
     const afterSwap = await testCase.getStore();
     expect(afterSwap.uiMode).toBe('tui');
@@ -198,16 +167,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.pushSendMessageResponse(null);
 
     // Stream 2: Continuation after tool approval (assistant response)
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'File written successfully.' },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'File written successfully.');
 
     // Send a message to trigger the response stream
     await testCase.sendKeys('write a test file');
@@ -220,7 +180,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     // Confirm approval is pending
     const duringApproval = await testCase.waitForStoreCondition(
       (s) => s.pendingApproval != null,
-      5000,
+      5000
     );
     expect(duringApproval.pendingApproval).not.toBeNull();
     expect(duringApproval.isProcessing).toBe(true);
@@ -247,10 +207,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.waitForSlashCommands();
     await typeSlashCommand(testCase, CMD_LITE);
 
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'lite',
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
 
     const afterSwap = await testCase.getStore();
     expect(afterSwap.uiMode).toBe('lite');
@@ -258,8 +215,8 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(afterSwap.isProcessing).toBe(false);
 
     // History preserved across the swap
-    const hasUserMsg = afterSwap.messages.some(
-      (m) => JSON.stringify(m).includes('write a test file')
+    const hasUserMsg = afterSwap.messages.some((m) =>
+      JSON.stringify(m).includes('write a test file')
     );
     expect(hasUserMsg).toBe(true);
   }, 60000);

@@ -1,22 +1,14 @@
 /**
- * E2E tests: queued follow-up messages survive a mode swap and drain
- * correctly in the new mode.
- *
- * In LITE mode, known slash commands typed while the agent is processing
- * get queued (not rejected). When the turn completes, processQueue drains
- * the items in FIFO order. If a queued item is a mode-swap command (e.g.
- * `/tui`), the mode changes mid-drain and subsequent queued messages fire
- * in the new mode.
- *
- * Test 1: lite → tui  (queue "/tui" + message while processing in lite,
- *                       verify message response appears in tui mode)
- * Test 2: tui → lite  (queue "/tui" + "/lite" + message while processing,
- *                       verify message response appears back in lite mode)
+ * Queued follow-up messages survive a mode swap and drain correctly in the new
+ * mode. In lite, known slash commands typed while processing are queued (not
+ * rejected); processQueue drains FIFO on turn completion, so a queued mode-swap
+ * command changes the mode mid-drain and later queued messages fire in the new mode.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import { streamReply } from './lite/helpers/responses';
 
 describe('queued message survives mode swap', () => {
   let testCase: E2ETestCase | null = null;
@@ -40,10 +32,7 @@ describe('queued message survives mode swap', () => {
     await testCase.getSessionId();
 
     // --- Turn 1: complete a full turn to warm the session ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Turn one done.' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'Turn one done.');
 
     await testCase.sendKeys('warm up');
     await testCase.sleepMs(100);
@@ -51,10 +40,8 @@ describe('queued message survives mode swap', () => {
     await testCase.waitForText('Turn one done', 15000);
     await testCase.waitForIdle(10000);
 
-    // --- Turn 2: start processing (no null = stream stays open) ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Still thinking.' } } },
-    ]);
+    // --- Turn 2: start processing (keepOpen = stream stays open, no null) ---
+    await streamReply(testCase, 'Still thinking.', { keepOpen: true });
 
     await testCase.sendKeys('turn two');
     await testCase.sleepMs(100);
@@ -87,7 +74,7 @@ describe('queued message survives mode swap', () => {
     // Wait for the follow-up to appear in the queue
     await testCase.waitForStoreCondition(
       (s) => s.queuedMessages.length >= 2,
-      5000,
+      5000
     );
 
     // Confirm both are queued in correct order
@@ -101,10 +88,7 @@ describe('queued message survives mode swap', () => {
     // Then: QUEUED_FOLLOWUP fires as sendMessage in TUI mode
     // Prepare the response for QUEUED_FOLLOWUP:
     await testCase.pushSendMessageResponse(null); // end turn 2
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'RESPONSE_IN_TUI_MODE' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null); // end queued message turn
+    await streamReply(testCase, 'RESPONSE_IN_TUI_MODE'); // end queued message turn
 
     // Wait for the queued message response to appear
     await testCase.waitForText('RESPONSE_IN_TUI_MODE', 20000);
@@ -117,8 +101,8 @@ describe('queued message survives mode swap', () => {
     expect(finalStore.isProcessing).toBe(false);
 
     // The queued message's response exists in messages
-    const hasResponse = finalStore.messages.some(
-      (m) => JSON.stringify(m).includes('RESPONSE_IN_TUI_MODE'),
+    const hasResponse = finalStore.messages.some((m) =>
+      JSON.stringify(m).includes('RESPONSE_IN_TUI_MODE')
     );
     expect(hasResponse).toBe(true);
   }, 60000);
@@ -137,10 +121,7 @@ describe('queued message survives mode swap', () => {
     await testCase.getSessionId();
 
     // --- Turn 1: warm up ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Warm up done.' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'Warm up done.');
 
     await testCase.sendKeys('warm up');
     await testCase.sleepMs(100);
@@ -148,10 +129,8 @@ describe('queued message survives mode swap', () => {
     await testCase.waitForText('Warm up done', 15000);
     await testCase.waitForIdle(10000);
 
-    // --- Turn 2: start processing (stream stays open) ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Processing.' } } },
-    ]);
+    // --- Turn 2: start processing (keepOpen = stream stays open) ---
+    await streamReply(testCase, 'Processing.', { keepOpen: true });
 
     await testCase.sendKeys('turn two');
     await testCase.sleepMs(100);
@@ -176,7 +155,7 @@ describe('queued message survives mode swap', () => {
     // Wait for /lite to appear in the queue
     await testCase.waitForStoreCondition(
       (s) => s.queuedMessages.length >= 2 && s.queuedMessages[1] === CMD_LITE,
-      5000,
+      5000
     );
     await testCase.sleepMs(300);
 
@@ -189,7 +168,7 @@ describe('queued message survives mode swap', () => {
     // Wait for the message to appear in the queue
     await testCase.waitForStoreCondition(
       (s) => s.queuedMessages.length >= 3,
-      5000,
+      5000
     );
 
     // Confirm all three are queued in order
@@ -202,10 +181,7 @@ describe('queued message survives mode swap', () => {
     // --- Complete turn 2 → processQueue drains ---
     // /tui fires (mode→tui), /lite fires (mode→lite), QUEUED_MSG_LITE fires
     await testCase.pushSendMessageResponse(null); // end turn 2
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'RESPONSE_BACK_IN_LITE' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null); // end queued message turn
+    await streamReply(testCase, 'RESPONSE_BACK_IN_LITE'); // end queued message turn
 
     // Wait for the queued message response
     await testCase.waitForText('RESPONSE_BACK_IN_LITE', 20000);
@@ -218,8 +194,8 @@ describe('queued message survives mode swap', () => {
     expect(finalStore.isProcessing).toBe(false);
 
     // Response exists in messages
-    const hasResponse = finalStore.messages.some(
-      (m) => JSON.stringify(m).includes('RESPONSE_BACK_IN_LITE'),
+    const hasResponse = finalStore.messages.some((m) =>
+      JSON.stringify(m).includes('RESPONSE_BACK_IN_LITE')
     );
     expect(hasResponse).toBe(true);
 

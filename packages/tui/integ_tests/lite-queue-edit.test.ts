@@ -1,47 +1,11 @@
 /**
- * Integ test: Queued message editing via ↑/↓ + Esc.
+ * Queued-message editing via ↑/↓ + Esc (lite). ↑ from an empty prompt walks
+ * back through queued messages (Claude Code parity) and shows the
+ * "▸ editing queued #<n>" header; re-submit writes back to the SAME slot via
+ * replaceQueuedMessage (FIFO preserved, no append); Esc abandons the edit and
+ * leaves the queue byte-for-byte intact.
  *
- * 1. WHAT user-observable behavior does this assert?
- *    Per PR #2643's "Footer chrome > Editing-queue header" surface area:
- *    in lite mode, ↑ from an empty prompt walks back through queued
- *    messages (Claude Code parity). When the user pulls a queued slot
- *    back into the input, the lite layout shows the cyan editing
- *    header "▸ editing queued #<n>" (LiteLayout.tsx:2075-2080).
- *    Resubmitting writes the edited text back into the same queue slot
- *    via replaceQueuedMessage, preserving FIFO order. Esc abandons the
- *    edit; the queue is left intact.
- *
- *    Three observable transitions tested:
- *      (a) Queue [A, B] + ↑ → editingQueueIndex=1, commandInputValue='B'
- *          and the editing header text is visible on screen.
- *      (b) Edit body to 'B-edited' + Enter → queuedMessages=[A, B-edited],
- *          editingQueueIndex=null, queue length unchanged.
- *      (c) Pull then Esc (without resubmitting) → queue intact, no edit
- *          applied, editingQueueIndex=null.
- *
- * 2. WHAT class of regression would this catch?
- *    Anyone refactoring navigateQueueUp / queueRestoreRef in
- *    src/components/chat/prompt-bar/PromptInput.tsx and breaking the
- *    "↑ pulls latest queued message" semantics would fail (a). Anyone
- *    wiring Enter through onSubmit instead of replaceQueuedMessage
- *    would either drop the edit or duplicate it (queue grows by one)
- *    and (b) catches both shapes. Anyone making Esc commit the edit
- *    instead of cancelling would fail (c) — the queue would mutate.
- *
- * 3. Could the test pass even if the feature is broken?
- *    No.
- *      (a) requires both editingQueueIndex AND commandInputValue AND
- *          the visible "editing queued" header to flip. Three signals
- *          tied together — implausibly false-positive.
- *      (b) compares the queue array byte-for-byte before/after edit.
- *          A bug that submits as a fresh message instead of replacing
- *          the slot leaves the queue with 3 entries, not 2. A bug that
- *          drops the edit leaves [A, B] unchanged.
- *      (c) compares the queue array before vs. after Esc — must be
- *          unchanged AND editingQueueIndex must be null.
- *
- * Anchor: PR #2643 ("Editing-queue header") + PromptInput.tsx ↑/↓
- *          queue-restore navigation.
+ * Anchor: PR #2643 ("Editing-queue header") + PromptInput.tsx ↑/↓ queue-restore.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';

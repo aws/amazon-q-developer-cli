@@ -3,11 +3,9 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 
 /**
- * Bug-mine 5.1-5.7: Cancel/interrupt invariants in lite mode.
- *
- * These tests validate that Ctrl+C and Esc behave correctly in various
- * contexts: mid-stream cancellation, idempotency guards, stream handler
- * disposal, panel/menu interactions, and queue drain after cancel.
+ * Bug-mine 5.1-5.7: cancel/interrupt invariants in lite mode. Non-obvious bits:
+ * cancel must be idempotent (guard against double-fire) and must dispose the
+ * stream handler so a late event can't re-open a cancelled turn.
  */
 describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   let testCase: TestCase | null = null;

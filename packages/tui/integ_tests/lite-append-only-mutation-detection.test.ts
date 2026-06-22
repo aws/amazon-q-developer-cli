@@ -3,20 +3,9 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 
 /**
- * Bug-mine 1.1, 1.3: Lite append-only contract — positive control tests.
- *
- * The append-only contract says: once an item is flushed to twinki's <Static>,
- * it NEVER re-renders. If something tries to mutate it, twinki silently drops
- * the row from scrollback.
- *
- * These tests form the first positive control layer — they prove the test
- * infrastructure can DETECT both:
- *   (a) content presence after it has been committed to <Static>
- *   (b) content absence after a clear operation (/chat new)
- *
- * This makes the rest of the append-only suite trustworthy: if our tests see
- * content persisting, it's because the contract is holding, not because the
- * test infrastructure can't detect changes.
+ * Bug-mine 1.1, 1.3: lite append-only contract. Once an item is flushed to
+ * twinki's <Static> it NEVER re-renders; a mutation attempt silently drops the
+ * row from scrollback.
  */
 describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
   let testCase: TestCase | null = null;
@@ -28,60 +17,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     }
   });
 
-  it('content committed to <Static> survives a new turn', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-append-only-survives-turn')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    // Inject content for turn 1
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-turn1',
-      content: { type: ContentType.Text, text: 'ORIGINAL_CONTENT_ABC123' },
-    });
-    await testCase.typeAndSubmit('t0');
-    await testCase.completeTurn();
-    await testCase.sleepMs(500);
-
-    // Verify content is visible after turn 1 completes
-    const snap1 = testCase.getSnapshot();
-    const originalLine = snap1.findIndex((l) =>
-      l.includes('ORIGINAL_CONTENT_ABC123')
-    );
-    expect(originalLine).not.toBe(-1);
-
-    // Start turn 2 — this forces turn 1's content into committed <Static>
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-turn2',
-      content: { type: ContentType.Text, text: 'SECOND_TURN_CONTENT_DEF456' },
-    });
-    await testCase.typeAndSubmit('t1');
-    await testCase.completeTurn();
-    await testCase.sleepMs(500);
-
-    // Verify BOTH markers are visible — the original survived the new turn
-    const snap2 = testCase.getSnapshot();
-    const originalLine2 = snap2.findIndex((l) =>
-      l.includes('ORIGINAL_CONTENT_ABC123')
-    );
-    const secondLine2 = snap2.findIndex((l) =>
-      l.includes('SECOND_TURN_CONTENT_DEF456')
-    );
-    expect(originalLine2).not.toBe(-1);
-    expect(secondLine2).not.toBe(-1);
-    // Original content still comes before second content (monotonic)
-    expect(originalLine2).toBeLessThan(secondLine2);
-
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
-
-  it('staticItems grow monotonically across three turns', async () => {
+  it('committed content survives later turns: markers grow monotonically, exactly once each', async () => {
     testCase = await TestCase.builder()
       .withTestName('lite-append-only-monotonic')
       .withLite()
@@ -99,6 +35,11 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.typeAndSubmit('turn1');
     await testCase.completeTurn();
     await testCase.sleepMs(400);
+
+    // Marker A must already be on screen before turn 2 commits it to <Static>.
+    expect(
+      testCase.getSnapshot().findIndex((l) => l.includes('MONOTONIC_A_MARKER'))
+    ).not.toBe(-1);
 
     // --- Turn 2: marker B ---
     await testCase.mockSessionUpdate({

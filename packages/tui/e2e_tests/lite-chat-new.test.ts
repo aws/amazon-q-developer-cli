@@ -1,27 +1,16 @@
 /**
- * E2E test: /chat new in lite mode -- session isolation and scrollback safety.
- *
- * Validates bug-mine entries:
- *   2.3 -- liteScrollbackClearToken resets all bookkeeping refs. Prior session
- *          rows don't bleed into the new session's rendered region.
- *   2.4 -- Clear-token reset runs in the render body, not useEffect. No
- *          duplicate copy of old session appears in scrollback.
- *   2.5 -- No CSI 3J terminal wipe on /chat new. Terminal scrollback ABOVE
- *          kiro is preserved (pre-kiro content remains accessible).
- *
- * Key terminal behavior:
- *   - /chat new does NOT emit CSI 3J (terminal scrollback wipe). Old content
- *     remains in the terminal buffer above the new session.
- *   - The invariant for 2.3 is: BELOW the new session's welcome banner,
- *     no old session markers appear. Old markers may still exist above the
- *     new banner in scrollback -- that's correct and expected (2.5).
- *   - The invariant for 2.4 is: old markers appear at most ONCE in the full
- *     terminal buffer -- they are NEVER duplicated by a stale re-render.
+ * /chat new in lite mode -- session isolation and scrollback safety. Bug-mine:
+ *   2.3 -- liteScrollbackClearToken resets bookkeeping; BELOW the new banner no
+ *          old session markers appear (old markers ABOVE the banner are expected).
+ *   2.4 -- clear-token reset runs in the render body, not useEffect; old markers
+ *          appear at most ONCE (never duplicated by a stale re-render).
+ *   2.5 -- /chat new emits NO CSI 3J wipe; terminal scrollback above kiro survives.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { CMD_CHAT_NEW, typeSlashCommand } from './lite/helpers/commands';
+import { streamReply } from './lite/helpers/responses';
 
 /**
  * Find the row index of the SECOND KIRO banner (the new session's banner).
@@ -61,10 +50,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SESSION1_TURN1_MARKER' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SESSION1_TURN1_MARKER');
 
     await testCase.sendKeys('turn one');
     await testCase.sleepMs(100);
@@ -72,10 +58,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForText('SESSION1_TURN1_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SESSION1_TURN2_MARKER' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SESSION1_TURN2_MARKER');
 
     await testCase.sendKeys('turn two');
     await testCase.sleepMs(100);
@@ -83,10 +66,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForText('SESSION1_TURN2_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SESSION1_TURN3_MARKER' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SESSION1_TURN3_MARKER');
 
     await testCase.sendKeys('turn three');
     await testCase.sleepMs(100);
@@ -107,8 +87,9 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     // Wait for session reset: messages cleared + token bumped
     await testCase.waitForStoreCondition(
-      (s) => s.messages.length === 0 && s.liteScrollbackClearToken > tokenBefore,
-      15000,
+      (s) =>
+        s.messages.length === 0 && s.liteScrollbackClearToken > tokenBefore,
+      15000
     );
     await testCase.sleepMs(1000); // Let the re-render settle
 
@@ -145,10 +126,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'DUPE_CHECK_ALPHA' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'DUPE_CHECK_ALPHA');
 
     await testCase.sendKeys('alpha msg');
     await testCase.sleepMs(100);
@@ -156,10 +134,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForText('DUPE_CHECK_ALPHA', 15000);
     await testCase.waitForIdle(10000);
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'DUPE_CHECK_BETA' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'DUPE_CHECK_BETA');
 
     await testCase.sendKeys('beta msg');
     await testCase.sleepMs(100);
@@ -169,8 +144,12 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     // Before /chat new each marker is on screen exactly once.
     const snapBefore = testCase.getSnapshot();
-    const countAlphaBefore = snapBefore.filter(l => l.includes('DUPE_CHECK_ALPHA')).length;
-    const countBetaBefore = snapBefore.filter(l => l.includes('DUPE_CHECK_BETA')).length;
+    const countAlphaBefore = snapBefore.filter((l) =>
+      l.includes('DUPE_CHECK_ALPHA')
+    ).length;
+    const countBetaBefore = snapBefore.filter((l) =>
+      l.includes('DUPE_CHECK_BETA')
+    ).length;
     expect(countAlphaBefore).toBe(1);
     expect(countBetaBefore).toBe(1);
 
@@ -180,7 +159,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await testCase.waitForStoreCondition(
       (s) => s.messages.length === 0 && s.liteScrollbackClearToken > tokenPre,
-      15000,
+      15000
     );
     await testCase.sleepMs(1000);
 
@@ -194,8 +173,12 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     // the new session's banner) because CSI 3J is deliberately not sent. The
     // key invariant is they are NEVER duplicated.
     const snapAfter = testCase.getSnapshot();
-    const countAlphaAfter = snapAfter.filter(l => l.includes('DUPE_CHECK_ALPHA')).length;
-    const countBetaAfter = snapAfter.filter(l => l.includes('DUPE_CHECK_BETA')).length;
+    const countAlphaAfter = snapAfter.filter((l) =>
+      l.includes('DUPE_CHECK_ALPHA')
+    ).length;
+    const countBetaAfter = snapAfter.filter((l) =>
+      l.includes('DUPE_CHECK_BETA')
+    ).length;
 
     expect(countAlphaAfter).toBeLessThanOrEqual(1);
     expect(countBetaAfter).toBeLessThanOrEqual(1);
@@ -219,10 +202,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SCROLLBACK_PRESERVE_CHECK' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SCROLLBACK_PRESERVE_CHECK');
 
     await testCase.sendKeys('preserve test');
     await testCase.sleepMs(100);
@@ -236,34 +216,23 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await testCase.waitForStoreCondition(
       (s) => s.messages.length === 0 && s.liteScrollbackClearToken > tokenPre,
-      15000,
+      15000
     );
     await testCase.sleepMs(1000);
 
-    // Bug 2.5: The comment in LiteLayout explicitly says:
-    //   "We deliberately do NOT write \x1b[3J / \x1b[2J"
-    //
-    // If CSI 3J were sent, the terminal buffer would be completely wiped and
-    // the first session's content would vanish. Without CSI 3J, old content
-    // from the first session is preserved in scrollback above the new banner.
-    //
-    // Verification: The first session's content (SCROLLBACK_PRESERVE_CHECK)
-    // must still be present in the terminal buffer. It won't be below the new
-    // banner, but it should still be somewhere in the visible buffer (since
-    // the terminal is tall enough to hold both sessions).
+    // Bug 2.5: LiteLayout deliberately does NOT emit CSI 3J/2J, so the first
+    // session's content survives in the buffer above the new banner (a CSI 3J
+    // would wipe it). The terminal is tall enough to hold both sessions.
     const snapAfter = testCase.getSnapshot();
     const fullText = snapAfter.join('\n');
 
     // Old session content is preserved in the buffer (not wiped by CSI 3J)
     expect(fullText).toContain('SCROLLBACK_PRESERVE_CHECK');
 
-    const hasPrompt = snapAfter.some(l => l.includes('>'));
+    const hasPrompt = snapAfter.some((l) => l.includes('>'));
     expect(hasPrompt).toBe(true);
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'AFTER_CHAT_NEW_WORKS' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'AFTER_CHAT_NEW_WORKS');
 
     await testCase.sendKeys('new session msg');
     await testCase.sleepMs(100);
