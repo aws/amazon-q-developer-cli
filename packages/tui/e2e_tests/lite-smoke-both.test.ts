@@ -36,8 +36,6 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     }
   });
 
-  // ─── 1. signal-exit ────────────────────────────────────────────────────────
-
   it.skipIf(process.platform === 'win32')(
     'signal-exit: SIGHUP exits cleanly in lite mode',
     async () => {
@@ -52,17 +50,14 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
       const launcherPid = testCase.getPid()!;
       expect(launcherPid).toBeGreaterThan(0);
 
-      // Send SIGHUP — process should exit cleanly (no hang, no crash)
       process.kill(launcherPid, 'SIGHUP');
 
+      // Any exit (0 or signal-based) is fine — the assertion is no hang.
       const exitCode = await testCase.expectExit();
-      // Any exit (0 or signal-based) is acceptable — the key assertion is no hang
       expect(exitCode).toBeDefined();
     },
     30000
   );
-
-  // ─── 2. cancel-state-recovery ──────────────────────────────────────────────
 
   it('cancel-state-recovery: Ctrl+C clears isProcessing in lite mode', async () => {
     testCase = await E2ETestCase.builder()
@@ -74,28 +69,24 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     await testCase.waitForText('>', 15000);
     await testCase.getSessionId();
 
-    // Stream a response that never closes — keeps the turn open for cancel.
+    // keepOpen so the turn stays open until we cancel it.
     await streamReply(testCase, 'Thinking...', { keepOpen: true });
 
-    // Send prompt
     await testCase.sendKeys('test prompt');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for processing to start
     await testCase.waitForStoreCondition((s) => s.isProcessing === true, 10000);
 
-    // Cancel with Ctrl+C
     await testCase.pressCtrlC();
 
-    // isProcessing must clear after cancel
     const afterCancel = await testCase.waitForStoreCondition(
       (s) => !s.isProcessing,
       5000
     );
     expect(afterCancel.isProcessing).toBe(false);
 
-    // Verify we can still send a second prompt (not stuck)
+    // A second prompt must still go through (turn not stuck).
     await streamReply(testCase, 'SECOND_OK');
 
     await testCase.sendKeys('second');
@@ -111,8 +102,6 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     );
   }, 60000);
 
-  // ─── 4. chat-command ───────────────────────────────────────────────────────
-
   it('chat-command: /chat new resets messages in lite mode', async () => {
     testCase = await E2ETestCase.builder()
       .withTestName('lite-smoke-chat-new')
@@ -125,7 +114,6 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
 
     const initialSessionId = await testCase.getSessionId();
 
-    // Complete a turn
     await streamReply(testCase, 'First reply.');
 
     await testCase.sendKeys('hi');
@@ -135,21 +123,18 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
 
     await typeSlashCommand(testCase, CMD_CHAT_NEW);
 
-    // Wait for session ID to change
     const afterNew = await testCase.waitForStoreCondition(
       (s) => s.sessionId !== initialSessionId && s.sessionId !== null,
       15000
     );
     expect(afterNew.sessionId).not.toBe(initialSessionId);
 
-    // Old messages should be gone
+    // Old messages must be purged by /chat new.
     const hasOldContent = afterNew.messages.some((m) =>
       m.content.includes('First reply.')
     );
     expect(hasOldContent).toBe(false);
   }, 60000);
-
-  // ─── 7. paste-preserves-indentation ────────────────────────────────────────
 
   it('paste: multi-line indented text lands correctly in lite mode', async () => {
     testCase = await E2ETestCase.builder()
@@ -161,25 +146,22 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     await testCase.waitForText('>', 15000);
     await testCase.getSessionId();
 
-    // Push response so message can be submitted
     await streamReply(testCase, 'Got paste.');
 
-    // Paste multi-line indented text via bracketed paste
     const pastedText = 'function foo() {\n  return 42;\n}';
     await testCase.sendKeys(`${PASTE_START}${pastedText}${PASTE_END}`);
     await testCase.sleepMs(300);
 
-    // Verify no escape sequence leak
+    // Bracketed-paste markers must not leak into the rendered input.
     const snapshot = testCase.getSnapshot().join('\n');
     expect(snapshot).not.toContain('[200~');
     expect(snapshot).not.toContain('[201~');
 
-    // The pasted content should be visible (either inline or as a chip)
+    // Pasted content is visible either inline or as a chip.
     const hasFunctionText =
       snapshot.includes('function foo()') || snapshot.includes('3 lines');
     expect(hasFunctionText).toBe(true);
 
-    // Submit and verify response
     await testCase.pressEnter();
     await testCase.waitForText('Got paste.', 10000);
 

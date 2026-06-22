@@ -1,40 +1,22 @@
 /**
- * E2E test: Real mid-stream mode swap.
+ * E2E test: real mid-stream mode swap [bug-mine 2.1, 2.2].
  *
- * Validates bug-mine entries:
- *   2.1 — Mode-swap cursor realignment via useLayoutEffect
- *   2.2 — useLayoutEffect (not useEffect) for cursor reset
+ * DIVERGENCE from bug-mine 2.2: bug 2.2 is a race where useEffect (async)
+ * misses the first batch of content after a mode swap; the fix is
+ * useLayoutEffect (synchronous). This test can only assert the observable
+ * outcome (content survival + correct rendering), not the hook timing — under
+ * the buggy useEffect the first lite batch after swap would be lost/duplicated.
  *
- * Test 1 (lite->tui): Typing /tui DURING active streaming queues the command.
- * When the stream completes, the queue drains and fires the mode swap. All
- * pre-swap and post-swap content must survive.
- *
- * Test 2 (tui->lite): TUI mode rejects slash commands during processing, so
- * the swap fires immediately after the stream completes. The test verifies
- * that the TUI-rendered content's static cursor state does not prevent the
- * lite renderer from picking up (bug-mine 2.1: cursor realignment). This is
- * the same scenario as 2.2 — messages accumulated during TUI streaming must
- * appear in lite mode without "missing first batch" artifacts.
- *
- * DIVERGENCE from bug-mine 2.2 description:
- *   Bug 2.2 describes a race where useEffect (async) would miss the first
- *   batch of content after a mode swap. The fix (useLayoutEffect) is
- *   synchronous. This test validates the observable outcome — content survival
- *   and correct rendering — but cannot directly assert the React lifecycle
- *   hook timing. If useEffect were incorrectly used, the first lite batch
- *   after swap would be lost or duplicated.
- *
- * NOTE on RTS lookahead:
- *   The RTS ResponseParser uses a 1-lookahead pattern: after consuming an
- *   AssistantResponseEvent, it peeks the NEXT event to check for
- *   CodeReferenceEvent. This means event N's content only becomes visible to
- *   the TUI after event N+1 arrives. Tests push N+1 events to ensure N are
- *   rendered before the swap.
+ * RTS lookahead: the RTS ResponseParser uses 1-lookahead — after consuming an
+ * AssistantResponseEvent it peeks the NEXT event for a CodeReferenceEvent, so
+ * event N only becomes visible after event N+1 arrives. Tests push N+1 events
+ * to ensure N is rendered before the swap.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import { assistantEvent } from './lite/helpers/responses';
 
 describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
   let testCase: E2ETestCase | null = null;
@@ -68,10 +50,10 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // and event 4 is consumed but held in the peek buffer, keeping the stream
     // open (isProcessing = true).
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: chunk1Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk2Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk3Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk4Content } } },
+      assistantEvent(chunk1Content),
+      assistantEvent(' ' + chunk2Content),
+      assistantEvent(' ' + chunk3Content),
+      assistantEvent(' ' + chunk4Content),
     ]);
 
     await testCase.sendKeys('start streaming');
@@ -97,16 +79,13 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // Push remaining events + null: unblocks the peek for event 4 and
     // completes the stream; the queue then drains, firing /tui.
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + postQueueContent } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + finalContent } } },
+      assistantEvent(' ' + postQueueContent),
+      assistantEvent(' ' + finalContent),
     ]);
     await testCase.pushSendMessageResponse(null);
 
     // Mode swaps once the queue drains after the stream ends.
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'tui',
-      15000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'tui', 15000);
     await testCase.waitForIdle(15000);
 
     // waitForIdle only checks isProcessing — it returns the moment the queue
@@ -159,12 +138,12 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // Push 6 events (first 5 render, 6th held in peek) + null to complete.
     // This simulates a multi-chunk streaming response that completes.
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: chunk1Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk2Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk3Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk4Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk5Content } } },
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + finalContent } } },
+      assistantEvent(chunk1Content),
+      assistantEvent(' ' + chunk2Content),
+      assistantEvent(' ' + chunk3Content),
+      assistantEvent(' ' + chunk4Content),
+      assistantEvent(' ' + chunk5Content),
+      assistantEvent(' ' + finalContent),
     ]);
     await testCase.pushSendMessageResponse(null);
 
@@ -182,10 +161,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // Swap to lite right after the stream completes. Bug 2.1/2.2: TUI's
     // static cursor has advanced; lite must realign.
     await typeSlashCommand(testCase, CMD_LITE);
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'lite',
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
     await testCase.sleepMs(500);
 
     // Bug 2.1: TUI-era messages must survive the swap into the store.
@@ -200,9 +176,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // Bug 2.2: a new lite message must render correctly (no missing first
     // batch due to stale cursor).
     const liteNewContent = 'LITE_NEW_AFTER_SWAP_MARKER';
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: liteNewContent } } },
-    ]);
+    await testCase.pushSendMessageResponse([assistantEvent(liteNewContent)]);
     await testCase.pushSendMessageResponse(null);
 
     await testCase.sendKeys('new lite msg');

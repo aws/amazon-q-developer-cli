@@ -30,15 +30,6 @@ interface SequenceStep {
   kind: 'step' | 'expect';
   ts: number;
   html: string;
-  store?: Pick<
-    AppState,
-    | 'isProcessing'
-    | 'queuedMessages'
-    | 'uiMode'
-    | 'pendingApproval'
-    | 'subagentPanelOpen'
-    | 'sessionId'
-  >;
   ok: boolean;
   error?: string;
 }
@@ -97,47 +88,22 @@ export class LiteSequence {
     error?: string
   ): void {
     let html = '';
-    let store: SequenceStep['store'];
     try {
       html = this.tc.getSnapshotHtml();
     } catch {
       // ignore snapshot errors during a torn-down test
     }
-    // Best-effort store sample; never block the timeline if IPC is gone.
-    void this.tc
-      .getStore()
-      .then((s) => {
-        store = {
-          isProcessing: s.isProcessing,
-          queuedMessages: s.queuedMessages,
-          uiMode: s.uiMode,
-          pendingApproval: s.pendingApproval,
-          subagentPanelOpen: s.subagentPanelOpen,
-          sessionId: s.sessionId,
-        };
-        const last = this.steps[this.steps.length - 1];
-        if (last && last.label === label) last.store = store;
-      })
-      .catch(() => {
-        /* ignore */
-      });
     this.steps.push({
       label,
       kind,
       ts: Date.now() - this.startedAt,
       html,
-      store,
       ok,
       error,
     });
   }
 
-  /**
-   * Write a per-step HTML timeline alongside the test's regular outputs.
-   * Call from a try/finally on failure so successful runs don't bloat
-   * test-outputs/. The output is one HTML file per step, plus an
-   * `index.html` that links them in order.
-   */
+  /** Write a per-step HTML timeline (one file per step + linking index.html) alongside the test's outputs; call on failure so passing runs don't bloat test-outputs/. */
   async dumpHtml(): Promise<string | null> {
     if (this.steps.length === 0) return null;
     const outDir = path.join(

@@ -90,7 +90,6 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     await testCase.waitForIdle(10000);
 
     const snap3 = testCase.getSnapshot();
-    console.log('Final snapshot:\n' + testCase.getSnapshotFormatted());
 
     const f3 = snap3.findIndex((l) => l.includes('FIRST_RESPONSE_MARKER_ABC'));
     const s3 = snap3.findIndex((l) => l.includes('SECOND_RESPONSE_MARKER_XYZ'));

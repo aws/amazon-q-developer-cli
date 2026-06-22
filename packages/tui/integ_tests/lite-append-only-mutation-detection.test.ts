@@ -24,7 +24,6 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
   it('committed content survives later turns: markers grow monotonically, exactly once each', async () => {
     testCase = await launchLiteInteg('lite-append-only-monotonic');
 
-    // --- Turn 1: marker A ---
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'content-a',
@@ -39,7 +38,6 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
       testCase.getSnapshot().findIndex((l) => l.includes('MONOTONIC_A_MARKER'))
     ).not.toBe(-1);
 
-    // --- Turn 2: marker B ---
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'content-b',
@@ -49,7 +47,6 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // --- Turn 3: marker C ---
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'content-c',
@@ -59,24 +56,19 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // Get final snapshot
     const snap = testCase.getSnapshot();
-
-    // Find line indices for each marker
     const idxA = snap.findIndex((l) => l.includes('MONOTONIC_A_MARKER'));
     const idxB = snap.findIndex((l) => l.includes('MONOTONIC_B_MARKER'));
     const idxC = snap.findIndex((l) => l.includes('MONOTONIC_C_MARKER'));
 
-    // All three markers must be present
     expect(idxA).not.toBe(-1);
     expect(idxB).not.toBe(-1);
     expect(idxC).not.toBe(-1);
 
-    // Monotonic ordering: A < B < C
+    // Append-only contract: markers stay in commit order, exactly once each.
     expect(idxA).toBeLessThan(idxB);
     expect(idxB).toBeLessThan(idxC);
 
-    // No duplicates of any marker
     const countA = snap.filter((l) => l.includes('MONOTONIC_A_MARKER')).length;
     const countB = snap.filter((l) => l.includes('MONOTONIC_B_MARKER')).length;
     const countC = snap.filter((l) => l.includes('MONOTONIC_C_MARKER')).length;
@@ -84,9 +76,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     expect(countB).toBe(1);
     expect(countC).toBe(1);
 
-    // Verify the store's messages array has content entries. Each turn
-    // produces at least a user + model message pair, though the mock may
-    // merge adjacent content events into fewer model messages.
+    // The mock may merge adjacent content events into fewer model messages.
     const store = await testCase.getStore();
     const contentMessages = store.messages.filter(
       (m) => m.role === 'model' && m.content
@@ -99,10 +89,8 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
   it('/chat new clears scrollback — positive control for detection (bug-mine 1.1)', async () => {
     testCase = await launchLiteInteg('lite-append-only-clear-positive-ctrl');
 
-    // Inject a CommandsUpdate event so the store knows about /chat.
-    // Without this, /chat new is treated as a regular chat message since
-    // the mock session doesn't send CommandsUpdate on boot like the real
-    // backend does.
+    // Mock session doesn't send CommandsUpdate on boot; without this /chat new
+    // is treated as a regular chat message rather than a command.
     await testCase.mockSessionUpdate({
       type: AgentEventType.CommandsUpdate,
       commands: [
@@ -110,7 +98,6 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
       ],
     });
 
-    // Inject content and complete a turn
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'content-preclear',
@@ -120,20 +107,16 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(500);
 
-    // Verify content is visible before the clear
     const snapBefore = testCase.getSnapshot();
     const beforeIdx = snapBefore.findIndex((l) =>
       l.includes('BEFORE_CLEAR_XYZ789')
     );
     expect(beforeIdx).not.toBe(-1);
 
-    // Verify the store has the content
     const storeBefore = await testCase.getStore();
     const tokenBefore = storeBefore.liteScrollbackClearToken;
 
-    // Send /chat new — this bumps liteScrollbackClearToken and resets messages.
-    // Type char-by-char (like the e2e chat-command test) and press Enter.
-    // The CommandMenu intercepts the Enter when it sees a matching command.
+    // Type char-by-char so CommandMenu intercepts Enter as the /chat command.
     for (const ch of '/chat new') {
       await testCase.sendKeys(ch);
       await testCase.sleepMs(30);
@@ -141,7 +124,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.sleepMs(200);
     await testCase.sendKeys('\r');
 
-    // Wait for the async newSession to resolve
+    // Wait for the async newSession to resolve.
     const deadline = Date.now() + 5000;
     let storeAfter = await testCase.getStore();
     while (
@@ -152,16 +135,11 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
       storeAfter = await testCase.getStore();
     }
 
-    // Verify the store was reset — this IS the positive control.
-    // The liteScrollbackClearToken bump proves the clear mechanism fired.
-    // The empty messages array proves state was wiped.
+    // Positive control: the clear-token bump + empty messages prove the clear
+    // mechanism fired and state was wiped (so this harness CAN detect removal).
     expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
     expect(storeAfter.messages.length).toBe(0);
 
-    // POSITIVE CONTROL: Inject new content after the clear and verify it
-    // renders in the terminal independently of old content. This proves
-    // our test infrastructure can detect that the application state was
-    // reset and new content is being rendered fresh.
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'content-postclear',
@@ -171,18 +149,13 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(500);
 
-    // Verify new content is visible
     const snapAfter = testCase.getSnapshot();
     const postClearIdx = snapAfter.findIndex((l) =>
       l.includes('AFTER_CLEAR_MARKER_QRS')
     );
     expect(postClearIdx).not.toBe(-1);
 
-    // Verify the store has ONLY the new content — old content is gone.
-    // This is the core positive control: we can detect that old content
-    // was removed from the application state, proving that if our other
-    // tests see content persisting, it's because the append-only contract
-    // holds, not because we can't detect removal.
+    // Only the new content survives — old content is gone from state.
     const storePostClear = await testCase.getStore();
     const modelMessages = storePostClear.messages.filter(
       (m) => m.role === 'model'

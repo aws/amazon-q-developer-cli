@@ -29,7 +29,6 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   });
 
   it('lite->tui: approval captures keystrokes, "t" enters trust submenu, mode swap blocked', async () => {
-    // Start in lite mode
     testCase = await E2ETestCase.builder()
       .withTestName('approval-pressure-lite-to-tui')
       .withTerminal({ width: 120, height: 40 })
@@ -39,7 +38,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.waitForText('>', 15000);
     await testCase.getSessionId();
 
-    // Stream 1: ToolUseEvent that requires approval
+    // Stream 1: a write ToolUseEvent that requires approval.
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -60,18 +59,15 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
 
-    // Stream 2: Continuation after tool approval (assistant response)
+    // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File created successfully.');
 
-    // Send a message to trigger the response stream
     await testCase.sendKeys('write a test file');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for the approval prompt to appear
     await testCase.waitForText('needs approval', 15000);
 
-    // Confirm approval is pending
     const duringApproval = await testCase.waitForStoreCondition(
       (s) => s.pendingApproval != null,
       5000
@@ -80,40 +76,30 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(duringApproval.isProcessing).toBe(true);
     expect(duringApproval.uiMode).toBe('lite');
 
-    // Type `/` — not a hotkey, dropped by ApprovalPrompt handler
+    // `/` is not a hotkey, so ApprovalPrompt drops it and stays active.
     await testCase.sendKeys('/');
     await testCase.sleepMs(100);
 
-    // Approval is still active after `/`
     const afterSlash = await testCase.getStore();
     expect(afterSlash.pendingApproval).not.toBeNull();
     expect(afterSlash.uiMode).toBe('lite');
 
-    // Type `t` — this IS a hotkey. In the default approval page, `t`
-    // enters the trust submenu (if trust tiers exist) or directly trusts
-    // the tool (if no tiers).
+    // `t` IS a hotkey: it enters the trust submenu (if tiers exist) or trusts
+    // directly. Either way the `/tui` swap never reaches input — proving the
+    // swap is blocked during an active approval (mode stays 'lite').
     await testCase.sendKeys('t');
     await testCase.sleepMs(300);
 
-    // Check if the approval entered trust submenu (tiers available) or
-    // resolved directly (no tiers). Either way, mode is still 'lite'.
     const afterT = await testCase.getStore();
     expect(afterT.uiMode).toBe('lite');
 
-    // Whether the approval resolved or entered submenu, the mode-swap
-    // command `/tui` was never processed — the `t` was captured by
-    // the approval UI, proving mode-swap is blocked during active approval.
-
-    // Cancel the entire turn with Esc to get to a clean state.
-    // If in trust submenu: Esc goes back to default page.
-    // If approval resolved: Esc cancels the current stream.
+    // Esc twice: back out of the trust submenu (if entered), then cancel the
+    // turn — reaching a clean idle state either way.
     await testCase.pressEscape();
     await testCase.sleepMs(200);
-    // If still in default approval page after first Esc, press again to cancel turn.
     await testCase.pressEscape();
     await testCase.sleepMs(200);
 
-    // Wait for everything to settle (either cancelled or completed)
     await testCase.waitForStoreCondition((s) => !s.isProcessing, 15000);
 
     const afterCancel = await testCase.getStore();
@@ -121,7 +107,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(afterCancel.pendingApproval).toBeNull();
     expect(afterCancel.isProcessing).toBe(false);
 
-    // Now verify a proper /tui swap works from a clean state
+    // A proper /tui swap works once idle.
     await testCase.waitForSlashCommands();
     await testCase.sendKeys(CMD_TUI);
     await testCase.sleepMs(100);
@@ -136,7 +122,6 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   }, 60000);
 
   it('tui->lite: Enter resolves approval via Menu then /lite works after idle', async () => {
-    // Start in TUI mode
     testCase = await E2ETestCase.builder()
       .withTestName('approval-pressure-tui-to-lite')
       .withTerminal({ width: 120, height: 40 })
@@ -145,7 +130,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.waitForText('ask a question', 15000);
     await testCase.getSessionId();
 
-    // Stream 1: ToolUseEvent that requires approval
+    // Stream 1: a write ToolUseEvent that requires approval.
     await testCase.pushSendMessageResponse([
       {
         kind: 'event',
@@ -166,18 +151,15 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
 
-    // Stream 2: Continuation after tool approval (assistant response)
+    // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File written successfully.');
 
-    // Send a message to trigger the response stream
     await testCase.sendKeys('write a test file');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for the approval prompt to appear
     await testCase.waitForText('requires approval', 15000);
 
-    // Confirm approval is pending
     const duringApproval = await testCase.waitForStoreCondition(
       (s) => s.pendingApproval != null,
       5000
@@ -186,24 +168,20 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(duringApproval.isProcessing).toBe(true);
     expect(duringApproval.uiMode).toBe('tui');
 
-    // In TUI mode, type /lite into the PromptBar (Menu only captures
-    // arrows/Enter/Esc, not printable chars). No trailing space: Enter must
-    // simultaneously fire Menu.onSelect (Allow Once) AND PromptBar.onSubmit
-    // (/lite). The approval resolves; handleUserInput('/lite') is rejected
-    // because isProcessing is still true.
+    // No trailing space: Enter fires BOTH Menu.onSelect (Allow Once) AND
+    // PromptBar.onSubmit (/lite). The approval resolves, but /lite is rejected
+    // because isProcessing is still true while the tool runs.
     await typeSlashCommand(testCase, CMD_LITE);
 
-    // Wait for the tool to complete and turn to finish
     await testCase.waitForIdle(15000);
 
-    // After idle, we should be in TUI mode still (/lite was rejected during
-    // processing because TUI mode can't queue slash commands)
+    // Still TUI: /lite was rejected mid-processing (TUI can't queue commands).
     const afterIdle = await testCase.getStore();
     expect(afterIdle.uiMode).toBe('tui');
     expect(afterIdle.pendingApproval).toBeNull();
     expect(afterIdle.isProcessing).toBe(false);
 
-    // Now that everything is idle, /lite should work
+    // /lite works once idle.
     await testCase.waitForSlashCommands();
     await typeSlashCommand(testCase, CMD_LITE);
 
@@ -214,7 +192,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(afterSwap.pendingApproval).toBeNull();
     expect(afterSwap.isProcessing).toBe(false);
 
-    // History preserved across the swap
+    // History preserved across the swap.
     const hasUserMsg = afterSwap.messages.some((m) =>
       JSON.stringify(m).includes('write a test file')
     );

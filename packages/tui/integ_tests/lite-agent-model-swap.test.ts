@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { AgentEventType, ApprovalOptionId } from '../src/types/agent-events';
+import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
 import {
   exitLiteInteg,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import {
+  injectApproval,
+  ALLOW_REJECT_OPTIONS,
+} from '../e2e_tests/lite/helpers/approvals';
 
 /**
  * Bug-mine 6.4: Subagent footer "needs approval" attribution at the integ
@@ -59,31 +63,14 @@ describe('lite agent/model swap [bug-mine 6.4]', () => {
       sessionId: SUBAGENT_SESSION,
     });
 
-    // Inject approval request for the subagent's tool.
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        sessionId: SUBAGENT_SESSION,
-        toolCall: {
-          toolCallId: SUBAGENT_TOOL_ID,
-          title: 'Execute shell command',
-          rawInput: {},
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: (() => {}) as any,
-      },
-    } as any);
+    // Approval request for the subagent's tool (ToolCall seeded above).
+    await injectApproval(testCase, {
+      toolCallId: SUBAGENT_TOOL_ID,
+      toolName: 'Shell',
+      sessionId: SUBAGENT_SESSION,
+      options: ALLOW_REJECT_OPTIONS,
+      withPrecedingToolCall: false,
+    });
 
     // Submit to trigger event drain.
     await testCase.typeAndSubmit('a1');

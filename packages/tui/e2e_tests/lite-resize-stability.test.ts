@@ -171,7 +171,6 @@ describe('lite resize stability [bug-mine 1.7]', () => {
     await sendTurn('narrow', 'POST_RESIZE_NARROW_ECHO');
 
     const snapFinal = testCase.getSnapshot();
-    console.log('Final snapshot:\n' + testCase.getSnapshotFormatted());
 
     // Final message rendered
     expect(snapFinal.some((l) => l.includes('POST_RESIZE_NARROW_ECHO'))).toBe(

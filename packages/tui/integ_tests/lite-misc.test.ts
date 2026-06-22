@@ -35,7 +35,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('live region leading separator matches static spacing [bug-mine 10.1]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-1-spacing');
 
-    // Inject a tool event (live rendering)
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'tool-spacing-001',
@@ -46,34 +45,29 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.typeAndSubmit('test spacing');
     await testCase.sleepMs(300);
 
-    // Capture live snapshot (tool still in progress)
+    // Live snapshot (tool still in progress) vs static (after flush).
     const liveSnapshot = testCase.getSnapshot();
     const liveReadLine = liveSnapshot.findIndex((line) =>
       line.includes('Read')
     );
 
-    // Complete the turn — flushes to static
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // Capture static snapshot
     const staticSnapshot = testCase.getSnapshot();
     const staticReadLine = staticSnapshot.findIndex((line) =>
       line.includes('Read')
     );
 
-    // Both should have the tool line present (no visual jump / disappear)
     expect(liveReadLine).not.toBe(-1);
     expect(staticReadLine).not.toBe(-1);
 
-    // Verify there is no unexpected blank-line gap above the tool line in
-    // static that wasn't there in live (spacing consistency)
+    // The blank-line gap above the tool line must be identical live vs static.
     const livePrefix =
       liveReadLine > 0 ? (liveSnapshot[liveReadLine - 1] ?? '') : '';
     const staticPrefix =
       staticReadLine > 0 ? (staticSnapshot[staticReadLine - 1] ?? '') : '';
 
-    // The line above should be semantically equivalent (both empty or both non-empty)
     const liveIsBlank = livePrefix.trim() === '';
     const staticIsBlank = staticPrefix.trim() === '';
     expect(staticIsBlank).toBe(liveIsBlank);
@@ -84,7 +78,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('finished tool has no duplicate bar in snapshot [bug-mine 10.2]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-2-no-dup');
 
-    // Inject tool then finish it immediately
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'tool-dup-001',
@@ -102,11 +95,10 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // Count how many times the tool label "Shell" appears in the snapshot
     const snapshot = testCase.getSnapshot();
     const shellLines = snapshot.filter((line) => line.includes('Shell'));
 
-    // Should appear exactly once — no duplicate from a cleanup race
+    // Exactly once — a cleanup race would emit a duplicate bar.
     expect(shellLines.length).toBe(1);
 
     await exitLiteInteg(testCase);
@@ -115,7 +107,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('tool line and output bar appear without extra gap [bug-mine 10.3]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-3-concat');
 
-    // Inject a tool with streaming output via ToolCallUpdate
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'tool-concat-001',
@@ -142,9 +133,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     const toolLine = snapshot.findIndex((line) => line.includes('Shell'));
     expect(toolLine).not.toBe(-1);
 
-    // Look for the output indicator or args within a window of 5 lines
-    // after the tool line — validates no excessive gap between tool name
-    // and its content
+    // Content must appear within 5 lines of the tool name (no excessive gap).
     const nearbyLines = snapshot.slice(toolLine, toolLine + 5).join('\n');
     const hasContentNearby =
       nearbyLines.includes('output') ||
@@ -158,7 +147,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('inner subagent tools carry agentName for batch isolation [bug-mine 10.4]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-4-subagent-isolation');
 
-    // Inject a parent tool (visible in main chat)
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'parent-tool-001',
@@ -166,7 +154,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       args: { task: 'run pipeline' },
     });
 
-    // Inject an inner subagent tool (with sessionId — should be isolated)
+    // Inner tool carries a sessionId so it should be isolated from the batch.
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'inner-tool-001',
@@ -184,30 +172,25 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.typeAndSubmit('t0');
     await testCase.sleepMs(300);
 
-    // Validate via store: the inner tool should have agentName set
-    // (different from mainAgent), which is what isInnerSubagentTool()
-    // uses to filter it from the batch computation and scrollback.
-    // In test mode, currentAgent is null so the visual filter doesn't
-    // apply, but the data contract (agentName field) is the invariant.
+    // The agentName field is the data contract isInnerSubagentTool() uses to
+    // filter inner tools from the batch/scrollback (currentAgent is null in
+    // test mode, so we assert the field rather than the visual filter).
     const store = await testCase.getStore();
     const innerTool = store.messages.find(
       (m) => m.role === 'tool_use' && m.id === 'inner-tool-001'
     );
     expect(innerTool).toBeDefined();
     expect(innerTool!.role).toBe(MessageRole.ToolUse);
-    // Narrow to tool_use to access agentName
     if (innerTool!.role === MessageRole.ToolUse) {
       expect(innerTool!.agentName).toBeDefined();
-      // The inner tool's agentName should differ from the parent's
       expect(innerTool!.agentName).not.toBe(store.currentAgent?.name ?? '');
     }
 
-    // The parent subagent tool should NOT have a foreign agentName
     const parentTool = store.messages.find(
       (m) => m.role === MessageRole.ToolUse && m.id === 'parent-tool-001'
     );
     expect(parentTool).toBeDefined();
-    // Parent tool either has no agentName or has the main agent's name
+    // Parent tool either has no agentName or has the main agent's name.
     if (parentTool!.role === MessageRole.ToolUse) {
       const parentIsMain =
         !parentTool!.agentName ||
@@ -223,8 +206,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('transient alert appears then auto-dismisses [bug-mine 10.5]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-5-transient-alert');
 
-    // To trigger a transient alert, we need the TUI to be processing.
-    // Inject a tool and start a turn but DON'T complete it:
+    // Start a turn but DON'T complete it — the alert only fires while busy.
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'busy-tool-001',
@@ -235,12 +217,10 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.typeAndSubmit('t0');
     await testCase.sleepMs(300);
 
-    // Verify processing state
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
-    // Submit a shell escape (!cmd) during processing — always triggers a
-    // warning alert regardless of command availability
+    // A shell escape (!cmd) during processing always triggers a warning alert.
     for (const ch of '!ls ') {
       await testCase.sendKeys(ch);
       await testCase.sleepMs(30);
@@ -249,15 +229,13 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.sendKeys('\r');
     await testCase.sleepMs(300);
 
-    // Check that transientAlert is set in the store
     store = await testCase.getStore();
     expect(store.transientAlert).not.toBeNull();
     expect(store.transientAlert!.message).toContain("can't be queued");
 
-    // Wait for auto-dismiss (autoHideMs is 4000ms)
+    // Auto-dismiss after autoHideMs (4000ms).
     await testCase.sleepMs(4500);
 
-    // Alert should have auto-dismissed
     store = await testCase.getStore();
     expect(store.transientAlert).toBeNull();
 
@@ -269,8 +247,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('/clear in lite writes CSI escape and wipes visible terminal [bug-mine 10.8]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-8-clear');
 
-    // Register /clear as a known command (mock mode doesn't auto-send
-    // CommandsUpdate from the backend)
+    // Mock mode doesn't auto-send CommandsUpdate, so register /clear manually.
     await testCase.mockSessionUpdate({
       type: AgentEventType.CommandsUpdate,
       commands: [
@@ -281,7 +258,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     });
     await testCase.sleepMs(200);
 
-    // Inject content that will appear in the terminal
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'msg-marker-001',
@@ -294,41 +270,35 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // Wait for the turn to fully settle (isProcessing must be false)
     await testCase.sleepMs(300);
     let store = await testCase.getStore();
-    // Retry if still processing (race between completeTurn IPC and render)
+    // Retry if still processing (race between completeTurn IPC and render).
     if (store.isProcessing) {
       await testCase.sleepMs(500);
       store = await testCase.getStore();
     }
     expect(store.isProcessing).toBe(false);
 
-    // Verify content was committed to the store
     const msgCountBefore = store.messages.length;
     expect(msgCountBefore).toBeGreaterThan(0);
 
-    // Verify the marker is visible before /clear
     let snapshot = testCase.getSnapshot();
     expect(snapshot.some((l) => l.includes('UNIQUE_MARKER_XYZZY_2024'))).toBe(
       true
     );
 
-    // Send /clear command
     await typeCommand(testCase, CMD_CLEAR);
     await testCase.sleepMs(600);
 
-    // The /clear effect writes CSI 2J+3J+H (screen wipe + scrollback wipe +
-    // cursor home). In the xterm PTY the marker text should no longer be
-    // visible on screen.
+    // /clear writes CSI 2J+3J+H (screen + scrollback wipe + cursor home), so
+    // the marker text must no longer be visible on screen.
     snapshot = testCase.getSnapshot();
     const markerGone = !snapshot.some((l) =>
       l.includes('UNIQUE_MARKER_XYZZY_2024')
     );
     expect(markerGone).toBe(true);
 
-    // The raw PTY output should contain the CSI escape sequence for screen
-    // wipe (ESC[2J = erase display, ESC[3J = erase scrollback, ESC[H = home)
+    // ESC[2J = erase display, ESC[3J = erase scrollback.
     const rawOutput = testCase.getOutput();
     const hasWipeSequence =
       rawOutput.includes('\x1b[2J') || rawOutput.includes('\x1b[3J');
@@ -340,7 +310,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   it('astral chars (emoji) kept intact across chunk boundaries [bug-mine 10.10]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-10-emoji');
 
-    // Inject content with emoji characters
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
       id: 'msg-emoji-001',
@@ -353,17 +322,13 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.completeTurn();
     await testCase.sleepMs(400);
 
-    // Verify the emoji characters render intact in the terminal
     const snapshot = testCase.getSnapshot();
     const partyLine = snapshot.find((line) => line.includes('Party time'));
     expect(partyLine).toBeDefined();
 
-    // Check that the emoji codepoints survived without lone surrogates
-    // or replacement characters (U+FFFD)
+    // No lone surrogates / replacement chars (U+FFFD) across chunk boundaries.
     expect(partyLine).not.toContain('�');
 
-    // The actual emoji glyphs should be present in the output
-    // (terminal renders them as wide chars, but the text content is intact)
     const fullOutput = snapshot.join('\n');
     expect(fullOutput).toContain('Great success!');
 
