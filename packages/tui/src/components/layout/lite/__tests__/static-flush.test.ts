@@ -41,55 +41,52 @@ function model(
 }
 
 describe('computeActiveToolBatchIds', () => {
-  test('empty when no trailing tool run', () => {
-    const ids = computeActiveToolBatchIds([user('u1'), model('m1')]);
-    expect(ids.size).toBe(0);
-  });
-
-  test('empty when trailing tool run is fully settled', () => {
-    const ids = computeActiveToolBatchIds([
-      user('u1'),
-      tool('a', true),
-      tool('b', true),
-    ]);
-    expect(ids.size).toBe(0);
-  });
-
-  test('captures the suffix from the first unfinished tool onward', () => {
-    // Prefix-flush semantics: tools finished BEFORE the first unfinished
-    // tool flush to static immediately. Only the suffix starting at the
-    // first unfinished tool stays in the live region (so creation order
-    // is preserved in scrollback when later parallel tools complete out
-    // of order).
-    const ids = computeActiveToolBatchIds([
-      user('u1'),
-      tool('a', true),
-      tool('b', false),
-      tool('c', true),
-    ]);
-    expect([...ids].sort()).toEqual(['b', 'c']);
-  });
-
-  test('all-finished trailing run is fully flushed (no batch)', () => {
-    // No unfinished tool → nothing held back from static.
-    const ids = computeActiveToolBatchIds([
-      user('u1'),
-      tool('a', true),
-      tool('b', true),
-      tool('c', true),
-    ]);
-    expect(ids.size).toBe(0);
-  });
-
-  test('does not include earlier settled batch separated by a model message', () => {
-    const ids = computeActiveToolBatchIds([
-      user('u1'),
-      tool('past', true),
-      model('m1'),
-      tool('current_a', false),
-      tool('current_b', true),
-    ]);
-    expect([...ids].sort()).toEqual(['current_a', 'current_b']);
+  // Prefix-flush semantics: tools finished BEFORE the first unfinished tool
+  // flush to static immediately; only the suffix starting at the first
+  // unfinished tool stays live (preserving creation order when later parallel
+  // tools settle out of order). A fully-settled trailing run holds back
+  // nothing, and a settled batch separated by a Model message is never folded
+  // into the current run.
+  const batchCases: Array<{
+    name: string;
+    msgs: MessageType[];
+    expectedIds: string[];
+  }> = [
+    {
+      name: 'empty when no trailing tool run',
+      msgs: [user('u1'), model('m1')],
+      expectedIds: [],
+    },
+    {
+      name: 'empty when trailing tool run is fully settled',
+      msgs: [user('u1'), tool('a', true), tool('b', true)],
+      expectedIds: [],
+    },
+    {
+      name: 'captures the suffix from the first unfinished tool onward',
+      msgs: [user('u1'), tool('a', true), tool('b', false), tool('c', true)],
+      expectedIds: ['b', 'c'],
+    },
+    {
+      name: 'all-finished trailing run is fully flushed (no batch)',
+      msgs: [user('u1'), tool('a', true), tool('b', true), tool('c', true)],
+      expectedIds: [],
+    },
+    {
+      name: 'does not include earlier settled batch separated by a model message',
+      msgs: [
+        user('u1'),
+        tool('past', true),
+        model('m1'),
+        tool('current_a', false),
+        tool('current_b', true),
+      ],
+      expectedIds: ['current_a', 'current_b'],
+    },
+  ];
+  test.each(batchCases)('$name', ({ msgs, expectedIds }) => {
+    const ids = computeActiveToolBatchIds(msgs);
+    expect([...ids].sort()).toEqual([...expectedIds].sort());
   });
 });
 

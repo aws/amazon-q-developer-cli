@@ -48,12 +48,26 @@ afterAll(() => {
 
 import { runEffect } from '../effects.js';
 import {
+  DEFAULT_DISPLAY,
   getVerboseConfig,
   resetVerboseCache,
   setVerboseConfig,
 } from '../../lite/verbose.js';
+import type { VerboseDisplayConfig } from '../../lite/verbose.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
+
+// Most display-config fixtures only vary one or two fields off the default
+// shape; this deep-merges overrides (subagent included) so call sites declare
+// just the field under test instead of repeating the full 16-key literal.
+type DisplayOverrides = Partial<Omit<VerboseDisplayConfig, 'subagent'>> & {
+  subagent?: Partial<VerboseDisplayConfig['subagent']>;
+};
+const display = (o: DisplayOverrides = {}): VerboseDisplayConfig => ({
+  ...DEFAULT_DISPLAY,
+  ...o,
+  subagent: { ...DEFAULT_DISPLAY.subagent, ...(o.subagent ?? {}) },
+});
 
 const verbosityCmd: SlashCommand = {
   name: '/verbosity',
@@ -135,10 +149,7 @@ describe('/verbosity top menu and status', () => {
     // partial display patch.
     setVerboseConfig({
       filters: [],
-      display: {
-        ...require('../../lite/verbose.js').DEFAULT_DISPLAY,
-        showElapsed: false,
-      },
+      display: display({ showElapsed: false }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, '');
@@ -473,24 +484,7 @@ describe('/verbosity display flag toggles (set:)', () => {
   beforeEach(() => {
     setVerboseConfig({
       filters: ['all'],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      display: display({ outputMaxLines: null, argsMaxChars: 80 }),
     });
     resetVerboseCache();
   });
@@ -522,7 +516,7 @@ describe('/verbosity display flag toggles (set:)', () => {
   it('reset puts display back to defaults and empties filters', () => {
     setVerboseConfig({
       filters: ['shell'],
-      display: {
+      display: display({
         showToolReasoning: false,
         toolArgsMode: 'off',
         showElapsed: false,
@@ -533,13 +527,9 @@ describe('/verbosity display flag toggles (set:)', () => {
           deps: false,
           responses: false,
         },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'reset');
@@ -562,24 +552,13 @@ describe('/verbosity preset confirmation gate (replaces standalone reset)', () =
     // legacy assertions about "config menu has no Reset row" relevant.
     setVerboseConfig({
       filters: [],
-      display: {
+      display: display({
         showToolReasoning: false,
         toolArgsMode: 'off',
         showElapsed: false,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
   });
 
@@ -623,7 +602,7 @@ describe('/verbosity preset confirmation gate (replaces standalone reset)', () =
   it('density:apply:default applies the default-preset reset and announces it', () => {
     setVerboseConfig({
       filters: ['shell'],
-      display: {
+      display: display({
         showToolReasoning: false,
         toolArgsMode: 'off',
         showElapsed: false,
@@ -634,13 +613,9 @@ describe('/verbosity preset confirmation gate (replaces standalone reset)', () =
           deps: false,
           responses: false,
         },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:apply:default');
@@ -751,24 +726,11 @@ describe('/verbosity drilldown menus', () => {
     // `if (sub.pipeline && ...)`. Reflect that in the menu so the user
     // can't toggle a row that wouldn't change the output.
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: false,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
+      display: display({
+        subagent: { pipeline: false },
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:subagent');
@@ -926,24 +888,7 @@ describe('/verbosity Truncation submenu', () => {
 
   it('Truncation row description summarizes both caps', () => {
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 20,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      display: display({ outputMaxLines: 20, argsMaxChars: 80 }),
     });
     const ctx = liteCtx();
     // Use the explicit `config` route — bare /verbosity may open density
@@ -960,24 +905,11 @@ describe('/verbosity Truncation submenu', () => {
 
   it('menu:truncation lists all four knobs with current values', () => {
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
+      display: display({
         argsMaxLines: 7,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:truncation');
@@ -1008,24 +940,11 @@ describe('/verbosity Truncation submenu', () => {
     // option list is a single placeholder, all keypresses are handled by
     // the editor component.
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
+      display: display({
         argsMaxLines: 10,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:truncation:argsLines:edit');
@@ -1056,24 +975,11 @@ describe('/verbosity Truncation submenu', () => {
 
   it('set:argsMaxChars:null clears the chip cap (unlimited inline args)', () => {
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
+      display: display({
         toolArgsMode: 'inline',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'set:argsMaxChars:null');
@@ -1082,24 +988,7 @@ describe('/verbosity Truncation submenu', () => {
 
   it('set:outputMaxLines:null clears the output cap (unlimited)', () => {
     setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 50,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      display: display({ outputMaxLines: 50, argsMaxChars: 80 }),
     });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'set:outputMaxLines:null');
@@ -1231,24 +1120,7 @@ describe('/verbosity top menu Subagent row summary', () => {
   it('summary lists steps with nested labels, summary, and full output when every knob is on', () => {
     setVerboseConfig({
       filters: ['all'],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      display: display({ outputMaxLines: null, argsMaxChars: 80 }),
     });
     const ctx = liteCtx();
     // `config` route — these tests probe the per-section row summaries in
@@ -1271,24 +1143,16 @@ describe('/verbosity top menu Subagent row summary', () => {
   it('summary collapses nested labels when only steps is on', () => {
     setVerboseConfig({
       filters: [],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
+      display: display({
         subagent: {
-          pipeline: true,
           prompts: false,
           roles: false,
           deps: false,
           responses: false,
         },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     // `config` route — these tests probe the per-section row summaries in
@@ -1307,10 +1171,7 @@ describe('/verbosity top menu Subagent row summary', () => {
   it('shows "(all hidden)" when no sections are on AND no full-output filter', () => {
     setVerboseConfig({
       filters: [],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
+      display: display({
         subagent: {
           pipeline: false,
           prompts: false,
@@ -1318,13 +1179,9 @@ describe('/verbosity top menu Subagent row summary', () => {
           deps: false,
           responses: false,
         },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 80,
-        outputMaxChars: null,
-      },
+      }),
     });
     const ctx = liteCtx();
     // `config` route — these tests probe the per-section row summaries in
@@ -1419,20 +1276,16 @@ describe('/verbosity case-insensitive command verbs', () => {
       { filters: ['all'] },
       (c: any) => expect(c.display!.toolArgsMode).toBe('inline'),
     ],
+    // `Status` folds to `status`: a read-only verb that must not mutate.
+    [
+      'Status',
+      { filters: ['shell'] },
+      (c: any) => expect(c.filters).toEqual(['shell']),
+    ],
   ] as const)('/verbosity %s folds the verb', (arg, initial, check) => {
     setVerboseConfig(initial as any);
     runEffect(verbosityCmd, null, liteCtx(), arg);
     check(getVerboseConfig());
-  });
-
-  it('/verbosity Status works the same as /verbosity status', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'Status');
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    expect(calls.length).toBeGreaterThan(0);
-    expect(getVerboseConfig().filters).toEqual(['shell']);
   });
 
   it('/verbosity ONLY shell preserves filter token case', () => {

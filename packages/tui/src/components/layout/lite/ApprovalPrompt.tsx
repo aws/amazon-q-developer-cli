@@ -62,21 +62,15 @@ export function ApprovalPrompt({
 }) {
   const glyphs = useGlyphs();
   const { allowIcons } = useAllowIcons();
-  // Build the per-render theme so the unified diff below picks up the
-  // active /settings theme (kiroDark ↔ kiroLight). LiteLayout already
-  // builds its own theme for the rendered chat-log scrollback; we
-  // construct a parallel one here rather than threading via prop because
-  // ApprovalPrompt is a self-contained inline surface and the modern
-  // hook+useMemo pattern matches LiteLiveRegion's wiring exactly. The
-  // theme is reused for any other lite/render exports that grow theme
-  // support (currently only renderUnifiedDiff consumes it from this
-  // component).
+  // Per-render theme so the unified diff below picks up the active /settings
+  // theme (kiroDark ↔ kiroLight). Built here rather than threaded via prop —
+  // ApprovalPrompt is a self-contained inline surface.
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
   const renderTheme = useMemo(
     () => buildRenderTheme(getColor, getUserPromptColor, getUserPromptBgHex),
     [getColor, getUserPromptColor, getUserPromptBgHex]
   );
-  // Get the raw tool name (not the title which may include args)
+  // Raw tool name (not the title, which may include args).
   const toolMsg = messages.find(
     (m) =>
       m.role === MessageRole.ToolUse && m.id === approval.toolCall.toolCallId
@@ -201,7 +195,6 @@ export function ApprovalPrompt({
     }
   });
 
-  // Show tool name as header, detail indented below
   const detailStr = detail
     ? Array.isArray(detail)
       ? detail[0]

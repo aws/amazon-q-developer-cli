@@ -260,16 +260,9 @@ export class TestCase {
   }
 
   /**
-   * Types text and then submits by pressing Enter. Includes a render-cycle
-   * delay between typing and submit so the TUI's input component has time
-   * to process the characters before the Enter key fires the submit handler.
-   *
-   * Without this delay, sending text+Enter as a single PTY write causes Ink
-   * to submit an empty input (the characters haven't been rendered into state
-   * by the time the Enter key handler reads them).
-   *
-   * @param text - The text to type before submitting
-   * @param settleMs - Delay between typing and Enter (default: 150ms)
+   * Type text, then Enter, with a render-cycle delay between. Without the
+   * delay, text+Enter in a single PTY write makes Ink submit an empty input
+   * (chars haven't rendered into state when the Enter handler reads them).
    */
   async typeAndSubmit(text: string, settleMs = 150): Promise<void> {
     await this.sendKeys(text);
@@ -293,16 +286,10 @@ export class TestCase {
   }
 
   /**
-   * Explicitly ends the mock turn by resolving the pending prompt() Promise.
-   * This causes streamMessage() to resolve, which commits buffered content
-   * to the store and sets isProcessing=false.
-   *
-   * Call this when your test needs:
-   * - Committed message content in the store (e.g., model.content assertions)
-   * - isProcessing to flip to false before the next interaction
-   *
-   * Tests that need isProcessing=true to persist (e.g., subagent panel tests)
-   * should NOT call this until they're done with mid-turn assertions.
+   * Ends the mock turn (resolves the pending prompt() Promise), so
+   * streamMessage() resolves, buffered content commits to the store, and
+   * isProcessing flips to false. Tests that need isProcessing to STAY true
+   * (e.g. subagent panel tests) must not call this until done mid-turn.
    */
   async completeTurn(): Promise<void> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
@@ -502,10 +489,9 @@ export class TestCase {
   }
 
   /**
-   * Returns cell attributes for every line containing `text` (top-to-bottom).
-   * Used by tests that compare older scrollback rows against newer live-region
-   * rows — e.g. /theme reflow assertions where the old row's color must stay
-   * frozen and the new row's color must update.
+   * Cell attributes for every line containing `text` (top-to-bottom). Used by
+   * tests comparing old scrollback rows against newer live rows — e.g. /theme
+   * reflow, where the old row's color must stay frozen and the new one update.
    */
   findAllTextCells(text: string): CellAttributes[][] {
     return this.ptyManager.findAllTextCells(text);
@@ -664,14 +650,10 @@ export class TestCaseBuilder {
   }
 
   /**
-   * Launches the TUI in lite mode by setting KIRO_UI_MODE=lite.
-   *
-   * Also sets KIRO_LITE_ROLLOUT_ENABLED=1 — without it, resolveUiMode()
-   * (index.tsx) silently falls back to 'tui' under the rollout gate
-   * added in commit e4077111c, so requesting lite via env alone has no
-   * effect in tests.
-   *
-   * @returns This builder for method chaining
+   * Launch the TUI in lite mode. Also sets KIRO_LITE_ROLLOUT_ENABLED=1 —
+   * without it resolveUiMode() (index.tsx) silently falls back to 'tui' under
+   * the rollout gate added in commit e4077111c, so KIRO_UI_MODE=lite alone has
+   * no effect in tests.
    */
   withLite(): TestCaseBuilder {
     return this.withEnv({

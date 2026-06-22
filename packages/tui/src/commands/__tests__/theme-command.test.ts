@@ -51,30 +51,23 @@ describe('/theme command', () => {
   });
 
   describe('bare /theme (no args)', () => {
-    it('shows top-level options: Default, bundled themes, and Custom', async () => {
+    it('shows top-level options: Auto + bundled themes (plain labels) + Custom', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, '', ctx);
 
       expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
       const options = call[0].options;
-      expect(options).toHaveLength(bundledThemes.length + 2); // Default + bundled + Custom
+      expect(options).toHaveLength(bundledThemes.length + 2); // Auto + bundled + Custom
       expect(options[0].value).toBe('bundled:default');
       expect(options[0].label).toBe('Auto');
-      expect(options[options.length - 1].value).toBe('custom');
-      expect(options[options.length - 1].label).toBe('Custom');
-    });
-
-    it('bundled theme options have plain labels', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, '', ctx);
-
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const options = call[0].options;
+      // Bundled rows in between carry plain id/label pairs.
       for (let i = 0; i < bundledThemes.length; i++) {
         expect(options[i + 1].value).toBe(`bundled:${bundledThemes[i]!.id}`);
         expect(options[i + 1].label).toBe(bundledThemes[i]!.label);
       }
+      expect(options[options.length - 1].value).toBe('custom');
+      expect(options[options.length - 1].label).toBe('Custom');
     });
   });
 

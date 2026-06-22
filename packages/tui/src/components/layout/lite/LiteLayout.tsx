@@ -139,8 +139,7 @@ export const LiteLayout: React.FC = () => {
   const dismissTransientAlert = useAppStore((s) => s.dismissTransientAlert);
   const loadingMessage = useAppStore((s) => s.loadingMessage);
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  // Accessibility wiring (1:1 with modern TUI): glyph/spinner Unicode↔ASCII,
-  // ASCII-art banner gate, animation-paused.
+  // Accessibility wiring — kept 1:1 with the modern TUI.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
@@ -628,7 +627,6 @@ export const LiteLayout: React.FC = () => {
       !messages.some((m) => !(m.role === MessageRole.Model && m.standalone)),
     [liteWelcomeEmitted, messages]
   );
-  // Agent/model names for display
   const agentName = currentAgent?.name || null;
   const modelName = currentModel?.name || currentModel?.id || null;
 

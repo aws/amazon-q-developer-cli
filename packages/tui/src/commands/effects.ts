@@ -1513,22 +1513,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   /**
-   * /verbosity: configure lite-mode rendering.
-   *
-   * The interactive menu is a sectioned drilldown:
-   *   top → density preset, sub-menus (Tool calls, Subagent,
-   *         Output bar), Reset
-   *   tool drilldown → Reasoning, Args mode, Elapsed
-   *   subagent drilldown → Pipeline, Prompts, Roles, Deps, Responses
-   *   output drilldown → per-category filter toggles
-   *
-   * Power-user CLI form (typed as args after the command) is preserved:
-   *   /verbosity on|off (aliases for filters: ['all'] / [])
-   *   /verbosity status / /verbosity all
-   *   /verbosity only|add|remove <list>
-   *   /verbosity density <minimal|lean|normal>
-   *
-   * Rejected outside lite mode — the renderer hooks only run in <LiteLayout>.
+   * /verbosity: configure lite-mode rendering. Interactive sectioned drilldown
+   * (top → density preset + per-section sub-menus) plus a preserved power-user
+   * CLI form: on|off, status, all, only|add|remove <list>, density <preset>,
+   * reset. Rejected outside lite mode — the renderer hooks only run in
+   * <LiteLayout>.
    */
   verbosityConfig: (_result, ctx, cmd, args) => {
     if (ctx.getUiMode?.() !== 'lite') {

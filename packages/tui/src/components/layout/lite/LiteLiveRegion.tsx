@@ -11,6 +11,7 @@ import {
   type MessageType,
 } from '../../../stores/app-store.js';
 import { usePendingSwap } from './usePendingSwap.js';
+import { computeActiveToolBatchIds } from './static-flush.js';
 import { getVerboseFilters, getVerboseDisplay } from '../../../lite/verbose.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
@@ -72,8 +73,8 @@ export const LiteLiveRegion: React.FC = () => {
   // bash (mwinit/sudo/brew-OTP) is the hung-looking bug this branch fixes.
   const isShellEscape = useAppStore((s) => s.isShellEscape);
   const pendingSwap = usePendingSwap();
-  // Accessibility wiring (1:1 with TUI): glyph/spinner Unicode↔ASCII,
-  // allowAsciiArt (pacman→quarterSpinner fallback), animation-paused.
+  // Accessibility wiring — kept 1:1 with the modern TUI. allowAsciiArt drives
+  // the pacman→quarterSpinner fallback below.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
@@ -225,50 +226,32 @@ export const LiteLiveRegion: React.FC = () => {
     glyphs,
   ]);
 
-  // Active tool batch — trailing run from the first still-unfinished tool.
-  // MUST mirror static-flush.ts/computeActiveToolBatchIds or a finished tool
-  // could appear in both static and the live region. Inner subagent tools are
-  // skipped (they render in the footer strip, not here).
+  // Active tool batch — the trailing in-flight run, shared with LiteLayout via
+  // computeActiveToolBatchIds so a finished tool can't appear in both static
+  // and the live region. Filter messages by the batch ids (preserving creation
+  // order), then project the fields downstream needs: id (lookup key), name
+  // (output filter), isFinished (gates the output bar), msg (canonical render).
   const activeTools = useMemo(() => {
     if (!isProcessing) return [];
-    const mainAgent = currentAgent?.name;
-    const isInner = (m: (typeof messages)[number]) =>
-      m.role === MessageRole.ToolUse &&
-      !!m.agentName &&
-      !!mainAgent &&
-      m.agentName !== mainAgent;
-    const isHidden = (m: (typeof messages)[number]) => isInner(m);
-    // Walk from the end: find the trailing run of tool messages, skipping
-    // inner subagent tool calls.
-    let runStart = messages.length;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      if (m.role !== MessageRole.ToolUse) break;
-      if (isHidden(m)) continue;
-      runStart = i;
-    }
-    // Find the first unfinished tool inside the run. Anything before it
-    // is in the done prefix and lives in static, not here.
-    let firstUnfinished = -1;
-    for (let i = runStart; i < messages.length; i++) {
-      const m = messages[i]!;
+    const batch = computeActiveToolBatchIds(messages, currentAgent?.name);
+    if (batch.size === 0) return [];
+    const out: Array<{
+      id: string;
+      name: string;
+      isFinished: boolean;
+      msg: MessageType;
+    }> = [];
+    for (const m of messages) {
       if (m.role !== MessageRole.ToolUse) continue;
-      if (isHidden(m)) continue;
-      if (!m.isFinished) {
-        firstUnfinished = i;
-        break;
-      }
+      if (!batch.has(m.id)) continue;
+      out.push({
+        id: m.id,
+        name: m.name,
+        isFinished: !!m.isFinished,
+        msg: m,
+      });
     }
-    if (firstUnfinished === -1) return [];
-    const run = messages.slice(firstUnfinished).filter((m) => !isHidden(m));
-    // Project the fields downstream needs: id (lookup key), name (output
-    // filter), isFinished (gates the output bar), msg (canonical row render).
-    return run.map((m) => ({
-      id: m.id,
-      name: (m as any).name as string,
-      isFinished: !!(m as any).isFinished,
-      msg: m,
-    }));
+    return out;
   }, [messages, isProcessing, currentAgent]);
 
   // Leading blank for the live region? Mirrors the static separator rule so
