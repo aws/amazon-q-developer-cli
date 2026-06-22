@@ -114,35 +114,6 @@ describe('renderToolCall', () => {
       [],
       [],
     ],
-    [
-      'shows MCP server source',
-      {
-        name: 'InternalSearch',
-        mcpServer: 'builder-mcp',
-        status: 'done' as const,
-      },
-      ['builder-mcp', 'InternalSearch'],
-      [],
-      [],
-    ],
-    [
-      'shows description when provided',
-      {
-        name: 'execute_bash',
-        description: 'Running tests',
-        status: 'running' as const,
-      },
-      ['Running tests'],
-      [],
-      [],
-    ],
-    [
-      'trivial tools are dimmed',
-      { name: 'fs_read', status: 'done' as const, isTrivial: true },
-      ['fs_read'],
-      [],
-      [],
-    ],
   ])('%s', (_name, input, contains, notContains, rawContains) => {
     const result = renderToolCall(input);
     const plain = stripAnsi(result);
@@ -151,72 +122,88 @@ describe('renderToolCall', () => {
     for (const r of rawContains) expect(result).toContain(r);
   });
 
-  // Inline-arg + reasoning layout. An inline arg chip pins reasoning to its own
-  // line(s) below (never beside the tool name); without an inline arg, reasoning
-  // keeps the legacy inline-on-first-line shape. Each row asserts the exact line
-  // count and per-line contains/absent.
-  it.each<{
-    name: string;
-    input: Parameters<typeof renderToolCall>[0];
-    lineCount: number;
-    lines: { idx: number; contains?: string[]; absent?: string[] }[];
-  }>([
-    {
-      name: 'inline arg chip renders next to tool name (no reasoning line)',
-      input: { name: 'shell', inlineArg: '[git status]', status: 'done' },
-      lineCount: 1,
-      lines: [{ idx: 0, contains: ['shell [git status]'] }],
-    },
-    {
-      name: 'inline arg + reasoning: args inline, reasoning on its own line below',
-      input: {
-        name: 'shell',
-        inlineArg: '[git status]',
-        description: 'Check the working tree state',
-        status: 'done',
-      },
-      lineCount: 2,
-      lines: [
-        {
-          idx: 0,
-          contains: ['shell [git status]'],
-          absent: ['Check the working tree state'],
-        },
-        { idx: 1, contains: ['Check the working tree state'] },
-      ],
-    },
-    {
-      name: 'reasoning without inline arg keeps legacy inline-on-first-line shape',
-      input: {
-        name: 'shell',
-        description: 'Check the working tree state',
-        status: 'done',
-      },
-      lineCount: 1,
-      lines: [{ idx: 0, contains: ['shell', 'Check the working tree state'] }],
-    },
-    {
-      name: 'multi-line reasoning + inline arg: every reasoning line indents below',
-      input: {
-        name: 'shell',
-        inlineArg: '[git status]',
-        description: 'First reason\nsecond reason',
-        status: 'done',
-      },
-      lineCount: 3,
-      lines: [
-        { idx: 0, contains: ['shell [git status]'], absent: ['First reason'] },
-        { idx: 1, contains: ['First reason'] },
-        { idx: 2, contains: ['second reason'] },
-      ],
-    },
-  ])('$name', ({ input, lineCount, lines }) => {
-    const plain = stripAnsi(renderToolCall(input)).split('\n');
-    expect(plain.length).toBe(lineCount);
-    for (const { idx, contains, absent } of lines) {
-      for (const c of contains ?? []) expect(plain[idx]).toContain(c);
-      for (const a of absent ?? []) expect(plain[idx]).not.toContain(a);
-    }
+  test('shows MCP server source', () => {
+    const result = renderToolCall({
+      name: 'InternalSearch',
+      mcpServer: 'builder-mcp',
+      status: 'done',
+    });
+    expect(result).toContain('builder-mcp');
+    expect(result).toContain('InternalSearch');
+  });
+
+  test('shows description when provided', () => {
+    const result = renderToolCall({
+      name: 'execute_bash',
+      description: 'Running tests',
+      status: 'running',
+    });
+    expect(result).toContain('Running tests');
+  });
+
+  test('trivial tools are dimmed', () => {
+    const result = renderToolCall({
+      name: 'fs_read',
+      status: 'done',
+      isTrivial: true,
+    });
+    expect(result).toContain('fs_read');
+  });
+
+  test('inline arg chip renders next to tool name', () => {
+    const result = renderToolCall({
+      name: 'shell',
+      inlineArg: '[git status]',
+      status: 'done',
+    });
+    // Strip ANSI to assert structural shape on a single line.
+    const plain = stripAnsi(result);
+    expect(plain).toContain('shell [git status]');
+    // No newline → reasoning isn't taking up a line below.
+    expect(plain.split('\n').length).toBe(1);
+  });
+
+  test('inline arg + reasoning: args inline, reasoning on its own line below', () => {
+    const result = renderToolCall({
+      name: 'shell',
+      inlineArg: '[git status]',
+      description: 'Check the working tree state',
+      status: 'done',
+    });
+    const lines = stripAnsi(result).split('\n');
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toContain('shell [git status]');
+    // Reasoning on its own indented line below — never inline next to the
+    // tool name when an inline arg is present.
+    expect(lines[0]).not.toContain('Check the working tree state');
+    expect(lines[1]).toContain('Check the working tree state');
+  });
+
+  test('reasoning without inline arg keeps legacy inline-on-first-line shape', () => {
+    const result = renderToolCall({
+      name: 'shell',
+      description: 'Check the working tree state',
+      status: 'done',
+    });
+    const lines = stripAnsi(result).split('\n');
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toContain('shell');
+    expect(lines[0]).toContain('Check the working tree state');
+  });
+
+  test('multi-line reasoning + inline arg: every reasoning line indents below', () => {
+    const result = renderToolCall({
+      name: 'shell',
+      inlineArg: '[git status]',
+      description: 'First reason\nsecond reason',
+      status: 'done',
+    });
+    const lines = stripAnsi(result).split('\n');
+    expect(lines.length).toBe(3);
+    expect(lines[0]).toContain('shell [git status]');
+    expect(lines[0]).not.toContain('First reason');
+    expect(lines[1]).toContain('First reason');
+    expect(lines[2]).toContain('second reason');
   });
 });
 
@@ -337,91 +324,32 @@ describe('formatToolArgLines wrap behavior', () => {
     expect(stripped.some((l) => l.includes('line6'))).toBe(false);
   });
 
-  // Per-value multi-line cap behavior. Build an N-line `command` value, render
-  // with formatToolArgLines('shell', content, 120, maxChars?, perValueLineCap?),
-  // then assert the delta marker ("+N more lines" — NOT the pre-fix total
-  // "(N lines)" form) and which source lines survive. perValueLineCap defaults
-  // to 5; null lifts it (P438130055 "unlimited" propagation).
-  const cmdLines = (n: number) =>
-    JSON.stringify({
-      command: Array.from({ length: n }, (_, i) => `line${i}`).join('\n'),
-    });
-  test.each<{
-    name: string;
-    content: string;
-    maxChars?: number | null;
-    perValueLineCap?: number | null;
-    matches?: RegExp[];
-    notMatches?: RegExp[];
-    contains?: string[];
-    absent?: string[];
-  }>([
-    {
-      // Delta = 50 - 5 visible = 45 hidden.
-      name: 'marker uses delta count (+N more lines), not total',
-      content: cmdLines(50),
-      maxChars: 120,
-      matches: [/\.\.\. \(\+45 more lines\)/],
-      notMatches: [/\(50 lines\)/],
-    },
-    {
-      name: 'marker omitted when value fits in 5 lines',
-      content: JSON.stringify({ command: ['a', 'b', 'c', 'd'].join('\n') }),
-      maxChars: 120,
-      notMatches: [/more lines/],
-      contains: ['a', 'd'],
-    },
-    {
-      name: 'renders all lines when perValueLineCap is null',
-      content: cmdLines(50),
-      maxChars: null,
-      perValueLineCap: null,
-      notMatches: [/more lines/],
-      contains: ['line0', 'line25', 'line49'],
-    },
-    {
-      // Default cap of 5 (callers like ApprovalPrompt that omit perValueLineCap).
-      name: 'defaults to a 5-line per-value cap (back-compat)',
-      content: cmdLines(10),
-      matches: [/\.\.\. \(\+5 more lines\)/],
-      contains: ['line0', 'line4'],
-      absent: ['line5'],
-    },
-    {
-      name: 'explicit perValueLineCap of 3 clips a 50-line value to 3 + marker',
-      content: cmdLines(50),
-      maxChars: null,
-      perValueLineCap: 3,
-      matches: [/\.\.\. \(\+47 more lines\)/],
-      contains: ['line0', 'line2'],
-      absent: ['line3'],
-    },
-  ])(
-    'multi-line $name',
-    ({
-      content,
-      maxChars,
-      perValueLineCap,
-      matches,
-      notMatches,
-      contains,
-      absent,
-    }) => {
-      const lines = formatToolArgLines(
-        'shell',
-        content,
-        120,
-        maxChars,
-        perValueLineCap
-      );
-      expect(lines).not.toBeNull();
-      const joined = (lines ?? []).map(stripAnsi).join('\n');
-      for (const re of matches ?? []) expect(joined).toMatch(re);
-      for (const re of notMatches ?? []) expect(joined).not.toMatch(re);
-      for (const c of contains ?? []) expect(joined).toContain(c);
-      for (const a of absent ?? []) expect(joined).not.toContain(a);
-    }
-  );
+  test('multi-line marker uses delta count (+N more lines), not total', () => {
+    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
+    const content = JSON.stringify({ command: fifty });
+    const lines = formatToolArgLines('shell', content, 120, 120);
+    expect(lines).not.toBeNull();
+    const joined = (lines ?? []).map(stripAnsi).join('\n');
+    // Delta = 50 - 5 visible = 45 hidden. Matches the output bar's
+    // "+N more lines above" idiom so the two sections read consistently.
+    expect(joined).toMatch(/\.\.\. \(\+45 more lines\)/);
+    // The pre-fix total-count form ("(50 lines)") MUST NOT appear — that
+    // was the marker that confused users into thinking 50 lines were
+    // hidden when only 45 actually were.
+    expect(joined).not.toMatch(/\(50 lines\)/);
+  });
+
+  test('multi-line marker omitted when value fits in 5 lines', () => {
+    const four = ['a', 'b', 'c', 'd'].join('\n');
+    const content = JSON.stringify({ command: four });
+    const lines = formatToolArgLines('shell', content, 120, 120);
+    expect(lines).not.toBeNull();
+    const joined = (lines ?? []).map(stripAnsi).join('\n');
+    expect(joined).not.toMatch(/more lines/);
+    // All 4 source lines visible.
+    expect(joined).toContain('a');
+    expect(joined).toContain('d');
+  });
 
   test('argsMaxChars clips EACH line of a multi-line value, not just the head', () => {
     // Per-line clip is what the knob's name says. Without this, only the
@@ -439,6 +367,56 @@ describe('formatToolArgLines wrap behavior', () => {
     // Continuation rows also clipped — same per-line cap applied.
     expect(stripped.some((l) => /^\s+bbbbbbb…/.test(l))).toBe(true);
     expect(stripped.some((l) => /^\s+ccccccc…/.test(l))).toBe(true);
+  });
+
+  // P438130055: the user-facing "unlimited" option for argsMaxLines saves
+  // `null`, but a hardcoded MULTI_LINE_VISIBLE = 5 inside formatArgLines
+  // still clipped each multi-line string value at 5 lines + a delta marker.
+  // The unlimited toggle now propagates through perValueLineCap so a 50-line
+  // shell heredoc renders all 50 lines with no marker.
+  test('multi-line value renders all lines when perValueLineCap is null', () => {
+    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
+    const content = JSON.stringify({ command: fifty });
+    const lines = formatToolArgLines('shell', content, 120, null, null);
+    expect(lines).not.toBeNull();
+    const joined = (lines ?? []).map(stripAnsi).join('\n');
+    expect(joined).not.toMatch(/more lines/);
+    // First, middle, and last source lines all visible.
+    expect(joined).toContain('line0');
+    expect(joined).toContain('line25');
+    expect(joined).toContain('line49');
+  });
+
+  test('formatToolArgLines defaults to a 5-line per-value cap (back-compat)', () => {
+    // Locks the default. Callers that don't pass perValueLineCap (e.g.
+    // ApprovalPrompt, formatJsonAsBarLines for output rendering) keep the
+    // historical 5-line clamp so the unlimited fix doesn't accidentally
+    // unleash unbounded multi-line rendering everywhere.
+    const ten = Array.from({ length: 10 }, (_, i) => `line${i}`).join('\n');
+    const content = JSON.stringify({ command: ten });
+    const lines = formatToolArgLines('shell', content, 120);
+    expect(lines).not.toBeNull();
+    const joined = (lines ?? []).map(stripAnsi).join('\n');
+    // 10 source lines - 5 visible = 5 hidden.
+    expect(joined).toMatch(/\.\.\. \(\+5 more lines\)/);
+    expect(joined).toContain('line0');
+    expect(joined).toContain('line4');
+    expect(joined).not.toContain('line5');
+  });
+
+  test('explicit perValueLineCap of 3 clips a 50-line value to 3 + marker', () => {
+    // Locks that the cap is an actual visible-line count. If a future
+    // refactor changes the param to "max hidden lines" or similar, this
+    // breaks loudly.
+    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
+    const content = JSON.stringify({ command: fifty });
+    const lines = formatToolArgLines('shell', content, 120, null, 3);
+    expect(lines).not.toBeNull();
+    const joined = (lines ?? []).map(stripAnsi).join('\n');
+    expect(joined).toContain('line0');
+    expect(joined).toContain('line2');
+    expect(joined).not.toContain('line3');
+    expect(joined).toMatch(/\.\.\. \(\+47 more lines\)/);
   });
 });
 
@@ -1603,58 +1581,57 @@ describe('display.toolArgsMode rendering', () => {
   const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
     setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
 
-  // Each row toggles a display knob (args presentation / elapsed / reasoning)
-  // and asserts what the header shows. 'inline' also flips reasoning off so the
-  // chip stands in for the args; showElapsed needs timing fields on the msg.
-  it.each<{
-    name: string;
-    overrides: Partial<VerboseDisplayConfig>;
-    msgExtra?: Record<string, unknown>;
-    contains: string[];
-    absent: string[];
-  }>([
-    {
-      name: 'block renders the full key:value tree (default)',
-      overrides: { toolArgsMode: 'block' },
-      contains: [
+  // Each row toggles the args presentation and asserts what the header shows.
+  // 'inline' also flips reasoning off so the chip stands in for the args.
+  test.each([
+    [
+      'block renders the full key:value tree (default)',
+      { toolArgsMode: 'block' as const },
+      [
         'shell',
         'check git state',
         'command: git status',
         'working_dir: /tmp/repo',
       ],
-      absent: [],
-    },
-    {
-      name: 'off hides args entirely; reasoning still shows',
-      overrides: { toolArgsMode: 'off' },
-      contains: ['shell', 'check git state'],
-      absent: ['command: git status', 'working_dir'],
-    },
-    {
-      name: 'inline + reasoning off shows tool [arg] chip',
-      overrides: { toolArgsMode: 'inline', showToolReasoning: false },
-      contains: ['shell', '[git status]'],
-      absent: ['check git state', 'working_dir: /tmp/repo'],
-    },
-    {
-      name: 'showElapsed false strips the duration tail',
-      overrides: { showElapsed: false },
-      msgExtra: { startTime: 0, finishTime: 1500 },
-      contains: ['shell'],
-      absent: ['1.5s', '1500ms'],
-    },
-    {
-      name: 'showToolReasoning false drops the purple "why" segment from the header',
-      overrides: { showToolReasoning: false },
-      contains: ['shell'],
-      absent: ['check git state'],
-    },
-  ])('$name', ({ overrides, msgExtra, contains, absent }) => {
+      [],
+    ],
+    [
+      'off hides args entirely; reasoning still shows',
+      { toolArgsMode: 'off' as const },
+      ['shell', 'check git state'],
+      ['command: git status', 'working_dir'],
+    ],
+    [
+      'inline + reasoning off shows tool [arg] chip',
+      { toolArgsMode: 'inline' as const, showToolReasoning: false },
+      ['shell', '[git status]'],
+      ['check git state', 'working_dir: /tmp/repo'],
+    ],
+  ])('toolArgsMode %s', (_name, overrides, contains, absent) => {
     setDisplay(overrides);
-    const msg = msgExtra ? { ...buildToolMsg(), ...msgExtra } : buildToolMsg();
-    const out = stripAnsi(renderMessageToText(msg, 'kiro_default'));
+    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
     for (const c of contains) expect(out).toContain(c);
     for (const a of absent) expect(out).not.toContain(a);
+  });
+
+  test('showElapsed false strips the duration tail', () => {
+    setDisplay({ showElapsed: false });
+    const msg = {
+      ...buildToolMsg(),
+      startTime: 0,
+      finishTime: 1500,
+    };
+    const out = stripAnsi(renderMessageToText(msg, 'kiro_default'));
+    expect(out).toContain('shell');
+    expect(out).not.toContain('1.5s');
+    expect(out).not.toContain('1500ms');
+  });
+
+  test('showToolReasoning false drops the purple "why" segment from the header', () => {
+    setDisplay({ showToolReasoning: false });
+    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
+    expect(out).toContain('shell');
+    expect(out).not.toContain('check git state');
   });
 });
 
