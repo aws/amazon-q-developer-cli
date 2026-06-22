@@ -200,54 +200,69 @@ describe('shouldShowToolOutput', () => {
     delete process.env.KIRO_LITE_VERBOSE;
   });
 
-  test('empty filters: no tool ever surfaces output', () => {
-    setVerboseConfig({ filters: [] });
-    expect(shouldShowToolOutput('execute_bash')).toBe(false);
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__recall')).toBe(false);
-    expect(shouldShowToolOutput('fs_read')).toBe(false);
-  });
-
-  test('"all" lets every tool through', () => {
-    setVerboseConfig({ filters: ['all'] });
-    expect(shouldShowToolOutput('execute_bash')).toBe(true);
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__recall')).toBe(true);
-    expect(shouldShowToolOutput('some_unknown_tool')).toBe(true);
-  });
-
-  test('exact tool name match', () => {
-    setVerboseConfig({
+  // Each row sets filters once, then asserts which tools surface output (true)
+  // vs stay hidden (false). Covers empty/all/exact-name/category/mixed gates.
+  test.each<{
+    name: string;
+    filters: string[];
+    wants: Record<string, boolean>;
+  }>([
+    {
+      name: 'empty filters: no tool ever surfaces output',
+      filters: [],
+      wants: {
+        execute_bash: false,
+        'mcp__nova-memory-mcp__recall': false,
+        fs_read: false,
+      },
+    },
+    {
+      name: '"all" lets every tool through',
+      filters: ['all'],
+      wants: {
+        execute_bash: true,
+        'mcp__nova-memory-mcp__recall': true,
+        some_unknown_tool: true,
+      },
+    },
+    {
+      name: 'exact tool name match (mcp category absent)',
       filters: ['mcp__nova-memory-mcp__recall'],
-    });
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__recall')).toBe(true);
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__remember')).toBe(false);
-    // mcp category alone wouldn't match either since filters doesn't include it
-    expect(shouldShowToolOutput('execute_bash')).toBe(false);
-  });
-
-  test('category match: shell allows execute_bash but not read', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    expect(shouldShowToolOutput('execute_bash')).toBe(true);
-    expect(shouldShowToolOutput('fs_read')).toBe(false);
-  });
-
-  test('mixed category + exact name: only shell + recall', () => {
-    setVerboseConfig({
+      wants: {
+        'mcp__nova-memory-mcp__recall': true,
+        'mcp__nova-memory-mcp__remember': false,
+        execute_bash: false,
+      },
+    },
+    {
+      name: 'category match: shell allows execute_bash but not read',
+      filters: ['shell'],
+      wants: { execute_bash: true, fs_read: false },
+    },
+    {
+      name: 'mixed category + exact name: only shell + recall',
       filters: ['shell', 'mcp__nova-memory-mcp__recall'],
-    });
-    expect(shouldShowToolOutput('execute_bash')).toBe(true);
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__recall')).toBe(true);
-    // Other MCP tools blocked despite recall being allowed.
-    expect(shouldShowToolOutput('mcp__builder-mcp__InternalSearch')).toBe(
-      false
-    );
-    expect(shouldShowToolOutput('fs_read')).toBe(false);
-  });
-
-  test('mcp category covers any mcp__-prefixed tool', () => {
-    setVerboseConfig({ filters: ['mcp'] });
-    expect(shouldShowToolOutput('mcp__nova-memory-mcp__recall')).toBe(true);
-    expect(shouldShowToolOutput('mcp__builder-mcp__InternalSearch')).toBe(true);
-    expect(shouldShowToolOutput('execute_bash')).toBe(false);
+      wants: {
+        execute_bash: true,
+        'mcp__nova-memory-mcp__recall': true,
+        'mcp__builder-mcp__InternalSearch': false,
+        fs_read: false,
+      },
+    },
+    {
+      name: 'mcp category covers any mcp__-prefixed tool',
+      filters: ['mcp'],
+      wants: {
+        'mcp__nova-memory-mcp__recall': true,
+        'mcp__builder-mcp__InternalSearch': true,
+        execute_bash: false,
+      },
+    },
+  ])('$name', ({ filters, wants }) => {
+    setVerboseConfig({ filters });
+    for (const [tool, want] of Object.entries(wants)) {
+      expect(shouldShowToolOutput(tool)).toBe(want);
+    }
   });
 });
 
@@ -268,87 +283,78 @@ describe('categorize', () => {
 });
 
 describe('validateTokens', () => {
-  test('accepts categories and tool-name shapes', () => {
-    const { accepted, rejected } = validateTokens([
-      'shell',
-      'mcp',
-      'all',
-      'mcp__nova-memory-mcp__recall',
-      'fs_write',
-    ]);
-    expect(accepted).toEqual([
-      'shell',
-      'mcp',
-      'all',
-      'mcp__nova-memory-mcp__recall',
-      'fs_write',
-    ]);
-    expect(rejected).toEqual([]);
-  });
-
-  test('rejects tokens with whitespace or shell metachars', () => {
-    const { accepted, rejected } = validateTokens([
-      'has space',
-      'pipe|bad',
-      'good',
-    ]);
-    expect(accepted).toEqual(['good']);
-    expect(rejected).toEqual(['has space', 'pipe|bad']);
-  });
-
-  test('drops empty tokens silently', () => {
-    const { accepted, rejected } = validateTokens(['', '   ', 'shell']);
-    expect(accepted).toEqual(['shell']);
-    expect(rejected).toEqual([]);
-  });
-
-  test('flags unknown non-mcp tokens via the `unknown` partition', () => {
-    const { accepted, rejected, unknown } = validateTokens([
-      'shell',
-      'foo',
-      'bar',
-    ]);
-    // All accepted (we don't reject typos — MCP tools load lazily) but
-    // foo/bar surface as unknown so the caller can soft-warn.
-    expect(accepted).toEqual(['shell', 'foo', 'bar']);
-    expect(rejected).toEqual([]);
-    expect(unknown).toEqual(['foo', 'bar']);
-  });
-
-  test('mcp__-prefixed tokens are not flagged unknown', () => {
-    const { accepted, unknown } = validateTokens([
-      'mcp__nova-memory-mcp__recall',
-      'mcp__some-server__tool',
-    ]);
-    expect(accepted).toEqual([
-      'mcp__nova-memory-mcp__recall',
-      'mcp__some-server__tool',
-    ]);
-    expect(unknown).toEqual([]);
-  });
-
-  test('known categories and `all` are not flagged unknown', () => {
-    const { accepted, unknown } = validateTokens([
-      'all',
-      'shell',
-      'mcp',
-      'read',
-      'subagent',
-    ]);
-    expect(accepted).toEqual(['all', 'shell', 'mcp', 'read', 'subagent']);
-    expect(unknown).toEqual([]);
-  });
-
-  test('legacy `write` token still accepted, but flagged as unknown', () => {
-    // `write` was a category token in earlier versions. After collapsing
-    // write visibility into outputMaxLines / outputMaxChars on the diff
-    // body, it's no longer a recognized category — but a saved config or
-    // hand-typed `/verbose only write` shouldn't error out. validateTokens
-    // accepts the token (so it survives a round-trip) and marks it unknown
-    // so the effect handler can surface a soft warning.
-    const { accepted, unknown } = validateTokens(['write']);
-    expect(accepted).toEqual(['write']);
-    expect(unknown).toEqual(['write']);
+  // We don't reject typos (MCP tools load lazily): unknown non-category,
+  // non-mcp__ tokens are accepted but partitioned into `unknown` so callers can
+  // soft-warn. Only whitespace/shell-metachar tokens are rejected; empty tokens
+  // drop silently. `write` is a legacy category → accepted + unknown so a saved
+  // config survives a round-trip without erroring.
+  test.each<{
+    name: string;
+    tokens: string[];
+    accepted: string[];
+    rejected?: string[];
+    unknown?: string[];
+  }>([
+    {
+      name: 'accepts categories and tool-name shapes',
+      tokens: [
+        'shell',
+        'mcp',
+        'all',
+        'mcp__nova-memory-mcp__recall',
+        'fs_write',
+      ],
+      accepted: [
+        'shell',
+        'mcp',
+        'all',
+        'mcp__nova-memory-mcp__recall',
+        'fs_write',
+      ],
+      rejected: [],
+    },
+    {
+      name: 'rejects tokens with whitespace or shell metachars',
+      tokens: ['has space', 'pipe|bad', 'good'],
+      accepted: ['good'],
+      rejected: ['has space', 'pipe|bad'],
+    },
+    {
+      name: 'drops empty tokens silently',
+      tokens: ['', '   ', 'shell'],
+      accepted: ['shell'],
+      rejected: [],
+    },
+    {
+      name: 'flags unknown non-mcp tokens via the `unknown` partition',
+      tokens: ['shell', 'foo', 'bar'],
+      accepted: ['shell', 'foo', 'bar'],
+      rejected: [],
+      unknown: ['foo', 'bar'],
+    },
+    {
+      name: 'mcp__-prefixed tokens are not flagged unknown',
+      tokens: ['mcp__nova-memory-mcp__recall', 'mcp__some-server__tool'],
+      accepted: ['mcp__nova-memory-mcp__recall', 'mcp__some-server__tool'],
+      unknown: [],
+    },
+    {
+      name: 'known categories and `all` are not flagged unknown',
+      tokens: ['all', 'shell', 'mcp', 'read', 'subagent'],
+      accepted: ['all', 'shell', 'mcp', 'read', 'subagent'],
+      unknown: [],
+    },
+    {
+      name: 'legacy `write` token accepted but flagged unknown',
+      tokens: ['write'],
+      accepted: ['write'],
+      unknown: ['write'],
+    },
+  ])('$name', ({ tokens, accepted, rejected, unknown }) => {
+    const result = validateTokens(tokens);
+    expect(result.accepted).toEqual(accepted);
+    if (rejected !== undefined) expect(result.rejected).toEqual(rejected);
+    if (unknown !== undefined) expect(result.unknown).toEqual(unknown);
   });
 });
 
@@ -649,80 +655,83 @@ describe('cli.json mirror — read path (getVerboseDisplay)', () => {
     });
   });
 
-  test('cli.json overrides lite_verbose.json on a per-field basis', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, showTasks: true },
-      })
-    );
-    writeCliJson({ [Settings.CHAT_SHOW_TASKS]: false });
-    expect(getVerboseDisplay().showTasks).toBe(false);
-  });
-
-  test('missing cli.json key falls back to lite_verbose.json value', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, showTasks: false },
-      })
-    );
-    writeCliJson({}); // explicitly empty, no chat.showTasks key
-    expect(getVerboseDisplay().showTasks).toBe(false);
-  });
-
-  test('missing cli.json key + missing lite_verbose key falls back to DEFAULT_DISPLAY', () => {
-    writeCliJson({});
-    expect(getVerboseDisplay().showTasks).toBe(DEFAULT_DISPLAY.showTasks);
-    expect(getVerboseDisplay().showThinkingContent).toBe(
-      DEFAULT_DISPLAY.showThinkingContent
-    );
-  });
-
-  test('malformed cli.json values are ignored (fall through to lite_verbose / DEFAULT)', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, showTasks: false },
-      })
-    );
-    writeCliJson({ [Settings.CHAT_SHOW_TASKS]: 'yeah' });
-    expect(getVerboseDisplay().showTasks).toBe(false);
-  });
-
-  test('cap fields: 0 / negative cli values fall through to fallback', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, outputMaxLines: 7 },
-      })
-    );
-    writeCliJson({ [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: 0 });
-    expect(getVerboseDisplay().outputMaxLines).toBe(7);
-    writeCliJson({ [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: -3 });
-    expect(getVerboseDisplay().outputMaxLines).toBe(7);
-  });
-
-  test('cap fields: explicit JSON null is preserved as unbounded', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, outputMaxLines: 7 },
-      })
-    );
-    writeCliJson({ [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: null });
-    expect(getVerboseDisplay().outputMaxLines).toBeNull();
-  });
-
-  test('toolArgsMode: invalid cli values fall through', () => {
-    setConfigFile(
-      JSON.stringify({
-        filters: [],
-        display: { ...DEFAULT_DISPLAY, toolArgsMode: 'block' },
-      })
-    );
-    writeCliJson({ [Settings.CHAT_TOOLS_ARGS_MODE]: 'banana' });
-    expect(getVerboseDisplay().toolArgsMode).toBe('block');
+  // Per-field precedence: a valid cli.json value wins; a missing/malformed/
+  // out-of-range one falls through to lite_verbose.json (then DEFAULT). Each
+  // row seeds lite_verbose with one display override, writes one cli.json key,
+  // and asserts the resolved field. (null cap is valid → preserved unbounded.)
+  test.each<{
+    name: string;
+    liteDisplay?: Partial<typeof DEFAULT_DISPLAY>;
+    cli: Record<string, unknown>;
+    field: keyof typeof DEFAULT_DISPLAY;
+    expected: (typeof DEFAULT_DISPLAY)[keyof typeof DEFAULT_DISPLAY];
+  }>([
+    {
+      name: 'valid cli.json value overrides lite_verbose per-field',
+      liteDisplay: { showTasks: true },
+      cli: { [Settings.CHAT_SHOW_TASKS]: false },
+      field: 'showTasks',
+      expected: false,
+    },
+    {
+      name: 'missing cli.json key falls back to lite_verbose value',
+      liteDisplay: { showTasks: false },
+      cli: {},
+      field: 'showTasks',
+      expected: false,
+    },
+    {
+      name: 'missing cli + missing lite key falls back to DEFAULT_DISPLAY',
+      cli: {},
+      field: 'showTasks',
+      expected: DEFAULT_DISPLAY.showTasks,
+    },
+    {
+      name: 'malformed cli.json boolean is ignored',
+      liteDisplay: { showTasks: false },
+      cli: { [Settings.CHAT_SHOW_TASKS]: 'yeah' },
+      field: 'showTasks',
+      expected: false,
+    },
+    {
+      name: 'cap fields: 0 cli value falls through to fallback',
+      liteDisplay: { outputMaxLines: 7 },
+      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: 0 },
+      field: 'outputMaxLines',
+      expected: 7,
+    },
+    {
+      name: 'cap fields: negative cli value falls through to fallback',
+      liteDisplay: { outputMaxLines: 7 },
+      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: -3 },
+      field: 'outputMaxLines',
+      expected: 7,
+    },
+    {
+      name: 'cap fields: explicit JSON null is preserved as unbounded',
+      liteDisplay: { outputMaxLines: 7 },
+      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: null },
+      field: 'outputMaxLines',
+      expected: null,
+    },
+    {
+      name: 'toolArgsMode: invalid cli value falls through',
+      liteDisplay: { toolArgsMode: 'block' },
+      cli: { [Settings.CHAT_TOOLS_ARGS_MODE]: 'banana' },
+      field: 'toolArgsMode',
+      expected: 'block',
+    },
+  ])('$name', ({ liteDisplay, cli, field, expected }) => {
+    if (liteDisplay) {
+      setConfigFile(
+        JSON.stringify({
+          filters: [],
+          display: { ...DEFAULT_DISPLAY, ...liteDisplay },
+        })
+      );
+    }
+    writeCliJson(cli);
+    expect(getVerboseDisplay()[field]).toBe(expected);
   });
 
   test('object identity is preserved when cli.json matches the cache', () => {
@@ -745,35 +754,44 @@ describe('getVerboseFilters — cli.json mirror', () => {
     resetVerboseCache();
   });
 
-  test('cli.json filters override lite_verbose.json filters', () => {
-    setConfigFile(JSON.stringify({ filters: ['shell'] }));
-    writeCliJson({ [Settings.CHAT_TOOLS_FILTERS]: ['mcp', 'web'] });
-    expect(getVerboseFilters()).toEqual(['mcp', 'web']);
-  });
-
-  test('missing cli.json filters falls back to lite_verbose.json', () => {
-    setConfigFile(JSON.stringify({ filters: ['shell'] }));
-    writeCliJson({});
-    expect(getVerboseFilters()).toEqual(['shell']);
-  });
-
-  test('non-array cli.json values fall through to lite_verbose.json', () => {
-    setConfigFile(JSON.stringify({ filters: ['shell'] }));
-    writeCliJson({ [Settings.CHAT_TOOLS_FILTERS]: 'shell' });
-    expect(getVerboseFilters()).toEqual(['shell']);
-  });
-
-  test('["all"] in cli.json collapses any mixed list', () => {
-    writeCliJson({
-      [Settings.CHAT_TOOLS_FILTERS]: ['all', 'shell', 'mcp'],
-    });
-    expect(getVerboseFilters()).toEqual(['all']);
-  });
-
-  test('non-string array entries are dropped', () => {
-    writeCliJson({
-      [Settings.CHAT_TOOLS_FILTERS]: ['shell', 42, null, '', 'mcp'],
-    });
-    expect(getVerboseFilters()).toEqual(['shell', 'mcp']);
+  test.each<{
+    name: string;
+    liteFilters?: string[];
+    cliValue?: unknown;
+    expected: string[];
+  }>([
+    {
+      name: 'cli.json filters override lite_verbose.json filters',
+      liteFilters: ['shell'],
+      cliValue: ['mcp', 'web'],
+      expected: ['mcp', 'web'],
+    },
+    {
+      name: 'missing cli.json filters falls back to lite_verbose.json',
+      liteFilters: ['shell'],
+      expected: ['shell'],
+    },
+    {
+      name: 'non-array cli.json value falls through to lite_verbose.json',
+      liteFilters: ['shell'],
+      cliValue: 'shell',
+      expected: ['shell'],
+    },
+    {
+      name: '["all"] in cli.json collapses any mixed list',
+      cliValue: ['all', 'shell', 'mcp'],
+      expected: ['all'],
+    },
+    {
+      name: 'non-string array entries are dropped',
+      cliValue: ['shell', 42, null, '', 'mcp'],
+      expected: ['shell', 'mcp'],
+    },
+  ])('$name', ({ liteFilters, cliValue, expected }) => {
+    if (liteFilters) setConfigFile(JSON.stringify({ filters: liteFilters }));
+    writeCliJson(
+      cliValue === undefined ? {} : { [Settings.CHAT_TOOLS_FILTERS]: cliValue }
+    );
+    expect(getVerboseFilters()).toEqual(expected);
   });
 });

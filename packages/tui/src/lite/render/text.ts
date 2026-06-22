@@ -109,14 +109,10 @@ export function wrapAnsiLine(
   const out: string[] = [];
   // eslint-disable-next-line no-control-regex
   const ansiRe = /\x1b\[[0-9;]*m/g;
-  // Scan once, building character cells with their visible width and the
-  // ANSI bytes attached to the previous boundary. lastSpace records the
-  // most recent inter-word break so we can soft-wrap on spaces.
-  // Iterate by code points so astral chars (emoji at U+1F000+) stay in a
-  // single cell — splitting their UTF-16 surrogate pair across rows
-  // produces lone surrogates that render as garbled replacement chars.
-  // ZWJ clusters (e.g. 👨‍👩‍👧‍👦) still split between codepoints; keeping
-  // a full grapheme cluster together would require Intl.Segmenter.
+  // Build character cells (visible width + ANSI bytes from the prior
+  // boundary), iterating by code point so an emoji's UTF-16 surrogate pair
+  // can't split across rows into garbled lone surrogates. (ZWJ clusters still
+  // split between codepoints; full grapheme clustering would need Intl.Segmenter.)
   type Cell = { ansi: string; ch: string; width: number };
   const cells: Cell[] = [];
   let pendingAnsi = '';
@@ -155,22 +151,11 @@ export function wrapAnsiLine(
       const breakAt = lastSpace > curStart ? lastSpace : k;
       flush(breakAt);
       curStart = breakAt;
-      // Skip leading whitespace on the next row, BUT preserve any ANSI
-      // escapes attached to the skipped cells. The cell at lastSpace
-      // commonly carries a closer for the styled span that ended right
-      // before it — `\x1b[22m` after `**bold**`, `\x1b[23m` after
-      // `*italic*`, `\x1b[24m\x1b[39m\x1b[2m` between a
-      // `chalk.underline.cyan` link label and its dim `(url)` trailer,
-      // `\x1b[39m` after a code span `\x1b[36m`, etc. Without preserving
-      // these on the surviving cell, the row finishes without closing
-      // the style and terminal state stays bold/italic/underline/color
-      // forever — bleeding into the rest of the message AND every
-      // subsequent message until something else resets terminal state.
-      // (Markdown links wrap-and-bleed almost 100% of the time because
-      // the closer-bearing space is the only natural break point in
-      // `[label](url)`.) Moving the closer to the next surviving cell is
-      // safe because ANSI escapes are zero-width and the skipped char
-      // (whitespace) doesn't render anyway at a row boundary.
+      // Skip leading whitespace on the next row, but carry forward any ANSI
+      // escapes attached to the skipped cells: the break cell often holds the
+      // closer for the span that just ended (e.g. `\x1b[22m` after bold). Drop
+      // it and the unclosed style bleeds into every following row/message.
+      // Safe to move because ANSI escapes are zero-width.
       let carriedAnsi = '';
       while (curStart < cells.length && cells[curStart]!.ch.trim() === '') {
         carriedAnsi += cells[curStart]!.ansi;
@@ -213,49 +198,20 @@ export function wrapAnsiLine(
   }
   if (curStart < cells.length) flush(cells.length);
   if (out.length === 0) out.push('');
-  // Trailing ANSI sequences live in `pendingAnsi` after the cell-build loop —
-  // they're escapes that came AFTER the last visible character (typically a
-  // color/style reset). The cell loop only attaches `pendingAnsi` to the
-  // NEXT cell's `ansi` field, so a trailing escape with no cell behind it
-  // gets silently dropped. That's how cli-highlight's `\x1b[39m` (foreground
-  // reset, emitted at the end of every highlighted token) was disappearing
-  // — the closing fence's `chalk.dim('```')` only resets `dim` (`\x1b[22m`),
-  // so the unclosed red bled into the prose below the block. Append the
-  // tail to the final row so the reset survives.
+  // Escapes after the last visible char (typically a trailing reset) sit in
+  // `pendingAnsi` with no following cell to attach to, so they'd be dropped —
+  // e.g. cli-highlight's closing `\x1b[39m`, without which color bleeds past
+  // the block. Append the tail to the final row so the reset survives.
   if (pendingAnsi) {
     out[out.length - 1] = (out[out.length - 1] ?? '') + pendingAnsi;
   }
-  // SGR carryover across wrap rows. wrapAnsiLine emits each cell's `ansi`
-  // bytes inline, so a styled span that opens at row 0's first cell and
-  // doesn't close until row N's last cell has the open sequence on row 0
-  // ONLY — every continuation row renders in default style. That's
-  // invisible when the terminal does the wrap (the same logical line
-  // preserves SGR state across visual rows), but with manual wrap each
-  // row is its own logical line, so the styling vanishes the moment a
-  // span crosses a wrap boundary.
-  //
-  // Walk the produced rows in order, tracking accumulated open SGR
-  // sequences. Any non-reset SGR seq appends to the active state; a full
-  // reset (`\x1b[0m`) clears it. At the start of each continuation row,
-  // prepend whatever's active so the row resumes the same style. The
-  // model is correct for highlighters/chalk that close with `\x1b[0m`
-  // (cli-highlight always does); for partial closers (`\x1b[22m`,
-  // `\x1b[39m`) the state may carry over a code that's already been
-  // partially closed — that's harmless because emitting a closed code
-  // again is a no-op for the terminal.
-  //
-  // Scan the ORIGINAL row content (captured before we prepend
-  // `activeSgr` to it) — NOT the post-prepend mutated string. Scanning
-  // the mutated string re-finds every escape we just prepended and
-  // appends it to `activeSgr` again on the same iteration, so each
-  // continuation row doubles `activeSgr`'s length. With short outputs
-  // (a few wrap rows) this is harmless; with long outputs that wrap to
-  // many rows — e.g. a tool stdout line clipped to MAX_INPUT_LINE_CHARS
-  // upstream then wrapping to 2500 rows of 80 cols — `activeSgr` blows
-  // up to gigabytes within ~30 rows and the renderer OOMs (RangeError:
-  // Out of memory). Capturing the original row first scales `activeSgr`
-  // with the count of distinct source-content SGR escapes, which is
-  // bounded by the actual styling in the input.
+  // SGR carryover across wrap rows: manual wrap makes each row its own logical
+  // line, so a span opening on row 0 but closing on row N would render rows
+  // 1..N in default style. Track open SGR state (full `\x1b[0m` clears it) and
+  // prepend it to each continuation row.
+  // INVARIANT: scan the ORIGINAL (pre-prepend) row, not the mutated one — else
+  // we re-count the escapes we just prepended and `activeSgr` doubles per row,
+  // OOMing on inputs that wrap to thousands of rows.
   if (out.length > 1) {
     let activeSgr = '';
     // eslint-disable-next-line no-control-regex
@@ -322,12 +278,8 @@ export function wrapPlainLine(
  * subsequent chunks fit in `restWidth`. Prefers breaking at whitespace; falls
  * back to hard-cut on long unbreakable runs (URLs, ids, file paths).
  *
- * Single forward pass: a sliding cursor accumulates per-char width and tracks
- * the most recent whitespace position in the current chunk. When the running
- * width exceeds the budget, we emit at last whitespace if one exists, else
- * hard-cut at the overflow character. The previous shape called
- * `visibleWidth(remaining)` on the full tail every iteration (O(n²); a 100K
- * unbreakable run froze the renderer for 30+ seconds).
+ * INVARIANT: single forward pass (O(n)). The earlier shape measured the full
+ * remaining tail each iteration (O(n²)) and froze on 100K unbreakable runs.
  */
 export function wrapAtWords(
   s: string,
@@ -336,11 +288,8 @@ export function wrapAtWords(
 ): string[] {
   if (!s) return [''];
   const out: string[] = [];
-  // chunkStart..i is the current chunk-in-progress. After every emit we
-  // advance chunkStart past the cut and skip leading whitespace, then continue
-  // walking from the new position. Worst-case re-walk per emit is bounded by
-  // the column budget, so total work stays O(n). Iterate by code points so
-  // astral chars (emoji) stay in a single cell on wrap boundaries.
+  // chunkStart..i is the chunk-in-progress; after each emit, advance past the
+  // cut and skip leading whitespace. Iterate by code point so emoji stay whole.
   let chunkStart = 0;
   let i = 0;
   let cumWidth = 0;
@@ -390,12 +339,9 @@ export function wrapAtWords(
 }
 
 /**
- * Cheap per-character zero-width check. `visibleWidth` already handles these
- * via the BMP combining-mark range, but routing single-char calls through
- * `visibleWidth` (which checks ASCII fast path, ANSI scan, then segments)
- * costs a Map lookup each time. Inline check shaves ~30% off the wrap pass on
- * pure-ASCII input. Covers the same ranges twinki's visibleWidth does for
- * BMP combining marks + ZW joiners, so wrap math agrees with measurement.
+ * Cheap per-character zero-width check (a fast path avoiding `visibleWidth`'s
+ * Map lookup). INVARIANT: must cover the same ranges `visibleWidth` treats as
+ * zero-width so wrap math agrees with measurement.
  */
 export function isZeroWidthChar(ch: string): boolean {
   if (ch.length === 0) return true;

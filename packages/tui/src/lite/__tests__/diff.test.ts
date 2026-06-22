@@ -13,28 +13,14 @@ const entryContaining = (out: string[], needle: string) => {
 };
 
 /**
- * The diff renderer manually wraps long source lines so wrapped continuation
- * rows align under the body of row 0 (a hanging indent that lines up with
- * the column where the body starts after the line-number gutter and `+`/`-`
- * marker).
- *
- * The earlier "emit as ONE logical line and let the terminal soft-wrap"
- * approach kept triple-click selection and URL copy-paste perfect, but
- * terminal soft-wrap has no concept of hanging indent — wrapped rows
- * fell back to col 0 and the diff read as visually disconnected from
- * its gutter. Manual wrap trades per-row triple-click selection for the
- * indented-and-tinted visual that matches what users expect from a code
- * diff. The bg tint + syntax highlighting still travel correctly across
- * wrap boundaries because we wrap the already-styled output via
- * `wrapAnsiLine`, which preserves zero-width SGR escapes across cell
- * boundaries.
+ * The diff renderer manually wraps long source lines (instead of letting the
+ * terminal soft-wrap) so continuation rows get a hanging indent aligned under
+ * row 0's body. bg tint + syntax highlight survive wrap boundaries because we
+ * wrap the already-styled output via wrapAnsiLine (preserves zero-width SGR).
  */
 describe('renderUnifiedDiff — wrapping', () => {
-  // Column geometry shared across tests. linePrefix = `'  ' + numStr (4) +
-  // ' '` = 7 cols, plus a 1-col gutter cell = 8 cols of head. The body
-  // (after gutter) gets a 2-col inset before content begins, so wrapped
-  // continuation rows must indent to col 10 to align under the start of
-  // row 0's source text.
+  // Column geometry: head = '  ' + numStr(4) + ' ' (7) + 1-col gutter = 8; body
+  // gets a 2-col inset, so continuation rows indent to col 10.
   const HEAD_WIDTH = 8;
   const BODY_START_COL = 10;
 
@@ -131,10 +117,9 @@ describe('renderUnifiedDiff — wrapping', () => {
   });
 
   test('syntax highlighting carries through wrap boundaries', () => {
-    // The wrapAnsiLine SGR-carryover pass must re-emit active open codes at
-    // each continuation row so a highlight span that opens on row 0 and runs
-    // past the wrap doesn't drop to default style mid-line. A long contiguous
-    // comment gets one cli-highlight SGR span, so the wrap lands mid-span.
+    // A highlight span opening on row 0 must re-emit on each continuation row.
+    // A long contiguous comment is one cli-highlight span, so the wrap lands
+    // mid-span — the strictest case.
     const longComment =
       '// This is an intentionally very long single-line comment that is designed to exceed the terminal width during testing of the diff renderer';
     const addedEntry = entryContaining(
@@ -143,12 +128,8 @@ describe('renderUnifiedDiff — wrapping', () => {
     );
     const visualRows = addedEntry.split('\n');
     expect(visualRows.length).toBeGreaterThan(1);
-    // Pull the comment-color SGR sequence out of row 0 (whichever
-    // sequence cli-highlight chose for `comment` tokens). The first
-    // non-bg SGR sequence emitted AFTER the bg-open on row 0 is the
-    // body's syntax-highlight color — that's what must propagate to
-    // every continuation row. (Earlier SGR seqs on row 0 belong to
-    // the line# / gutter chrome and are scoped to row 0 only.)
+    // The first non-bg SGR after the bg-open on row 0 is the body's highlight
+    // color (earlier seqs are line#/gutter chrome, scoped to row 0).
     // eslint-disable-next-line no-control-regex
     const sgrRe = /\x1b\[[0-9;]*m/g;
     const row0 = visualRows[0]!;
@@ -178,12 +159,9 @@ describe('renderUnifiedDiff — wrapping', () => {
 });
 
 /**
- * Theme support: write/edit diffs route bg + bar colors through the active
- * /settings theme; no theme falls back to the legacy hardcoded SGR constants.
- *
- * Tests use HAND-CRAFTED SGR strings (not `chalk.bgHex(...)`) so they're
- * deterministic regardless of the CI runtime's `chalk.level` — chalk would
- * otherwise downsample/strip truecolor and false-fail the `48;2;R;G;B` checks.
+ * Theme support: diffs route bg + bar colors through the active theme; no theme
+ * falls back to the legacy hardcoded SGR. Tests use HAND-CRAFTED SGR strings
+ * (not chalk.bgHex) so they're deterministic regardless of chalk.level.
  */
 function makeThemeWith(diffSlots: {
   diffAddedBg: (s: string) => string;

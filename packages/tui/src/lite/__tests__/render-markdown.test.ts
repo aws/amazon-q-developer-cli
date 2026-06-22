@@ -580,82 +580,64 @@ describe('markdown scoping', () => {
 });
 
 describe('renderShellOutputBlock', () => {
-  test('returns empty string for empty input so callers can pre-render', () => {
-    // The live region calls this every render whether or not the PTY has
-    // emitted bytes yet. Returning '' lets the JSX gate on truthiness
-    // without an extra "is content empty" check at every call site.
-    expect(renderShellOutputBlock('')).toBe('');
-    expect(renderShellOutputBlock('   ')).toBe('');
-    expect(renderShellOutputBlock('\n\n\n')).toBe('');
+  // Empty/blank input → '' so the live region can gate on truthiness; otherwise
+  // each source line gets the `! ` gutter, mid-output blanks are preserved
+  // (programs pad), trailing blanks trimmed (live buffers end with \n), and
+  // embedded PTY escapes pass through untouched.
+  test.each<{ name: string; input: string; expected: string[] }>([
+    { name: 'empty string → ""', input: '', expected: [''] },
+    { name: 'blank spaces → ""', input: '   ', expected: [''] },
+    { name: 'only newlines → ""', input: '\n\n\n', expected: [''] },
+    {
+      name: 'single line gets the gutter',
+      input: 'Enter PIN:',
+      expected: ['! Enter PIN:'],
+    },
+    {
+      name: 'gutter on every source line',
+      input: 'a\nb\nc',
+      expected: ['! a', '! b', '! c'],
+    },
+    {
+      name: 'preserves blank lines mid-output',
+      input: 'banner\n\nEnter PIN:',
+      expected: ['! banner', '! ', '! Enter PIN:'],
+    },
+    {
+      name: 'trims trailing blank lines',
+      input: 'done\n\n\n',
+      expected: ['! done'],
+    },
+  ])('$name', ({ input, expected }) => {
+    expect(stripAnsi(renderShellOutputBlock(input)).split('\n')).toEqual(
+      expected
+    );
   });
 
-  test('prefixes a single line with the brand-purple `! ` gutter', () => {
-    const out = renderShellOutputBlock('Enter PIN:');
-    // Strip ANSI for the structural check; the color is verified
-    // separately via a substring search in the next test.
-    expect(stripAnsi(out)).toBe('! Enter PIN:');
-  });
-
-  test('uses the brand color for the gutter so /theme swaps reflow it', () => {
-    // Lock the brand-color contract: the gutter has to come through the
-    // theme accessor (or the brand fallback when no theme is provided)
-    // so a /theme swap on a future render produces the correct color.
-    // We assert the actual hex is present in the rendered ANSI.
+  test('gutter uses the brand color so /theme swaps reflow it', () => {
     const out = renderShellOutputBlock('hello');
     const esc = String.fromCharCode(27);
     expect(out).toMatch(new RegExp(`${esc}\\[38;2;193;154;255m`)); // chalk.hex('#C19AFF')
   });
 
   test('respects an explicit theme.brand override', () => {
-    // Pass a custom brand that wraps text in a sentinel so we can prove
-    // the theme path is honored over the chalk.hex fallback.
     const themed = renderShellOutputBlock('hello', {
       brand: (s: string) => `<<${s}>>`,
     } as any);
     expect(themed).toContain('<<! >>hello');
   });
 
-  test('emits a gutter on every source line', () => {
-    const out = stripAnsi(renderShellOutputBlock('a\nb\nc'));
-    expect(out.split('\n')).toEqual(['! a', '! b', '! c']);
-  });
-
-  test('preserves blank lines mid-output (programs sometimes pad)', () => {
-    // mwinit prints a blank row between its banner and the PIN prompt;
-    // dropping it would fight the program's intended spacing.
-    const out = stripAnsi(renderShellOutputBlock('banner\n\nEnter PIN:'));
-    expect(out.split('\n')).toEqual(['! banner', '! ', '! Enter PIN:']);
-  });
-
-  test('trims trailing blank lines so the row sits flush', () => {
-    // A live-streaming buffer often ends with a trailing \n right after
-    // the last real chunk arrives — without trimming, the row would
-    // hold an empty `! ` gutter at the bottom that visually disconnects
-    // from the input prompt below. The leading content's blanks are
-    // preserved (see previous test).
-    const out = stripAnsi(renderShellOutputBlock('done\n\n\n'));
-    expect(out).toBe('! done');
-  });
-
   test('preserves embedded ANSI escapes from the PTY untouched', () => {
-    // mwinit prints colored "OK" lines, sudo highlights its prompt,
-    // many CLIs emit cursor-positioning escapes for in-line spinners.
-    // The gutter must not strip or rewrite any of them — the wrapper
+    // CLIs emit colored prompts and cursor-positioning escapes; the gutter
     // composes color + content with no normalization in between.
     const colored = '\x1b[32mOK\x1b[0m';
-    const out = renderShellOutputBlock(colored);
-    expect(out).toContain(colored);
+    expect(renderShellOutputBlock(colored)).toContain(colored);
   });
 });
 
-// Regression tests for P438908277: markdown inline colors (inline code,
-// links, link URL trailers) used to be hardcoded to chalk.cyan / chalk.dim
-// regardless of the active /theme. The renderer now reads them from the
-// supplied {@link RenderTheme}, sourced via `buildRenderTheme(getColor)`
-// from the same `getColor` accessor the modern TUI uses. The default
-// fallback (no theme passed) keeps the prior cyan/dim shape so unrelated
-// tests stay green; the cases below pass an explicit theme to verify the
-// full plumbing.
+// P438908277: inline colors (code, links, URL trailers) used to be hardcoded
+// cyan/dim regardless of /theme; they now read from RenderTheme via
+// buildRenderTheme(getColor). No-theme callers keep the prior cyan/dim shape.
 describe('theme-driven markdown colors', () => {
   // Recognizable RGB triplets for the three slots. Picked far apart from
   // each other and from cyan so we can assert "this slot's color appears
@@ -664,54 +646,100 @@ describe('theme-driven markdown colors', () => {
   const LINK_RGB = '\x1b[38;2;100;200;100m'; //   #64C864 — distinct green
   const SECONDARY_RGB = '\x1b[38;2;128;128;128m'; // #808080 — kiroDark secondary
 
-  /**
-   * Build a {@link RenderTheme} via the same accessor lite mode uses, so
-   * the test exercises the full `getColor → buildRenderTheme → renderer`
-   * path. The mock returns chalk truecolor wrappers for the three new
-   * slots (`highlight`, `link`, `secondary`); other slots fall through
-   * to the renderer's hardcoded fallbacks via the `safeChalk` probe.
-   */
+  // Exercise the full getColor → buildRenderTheme → renderer path. Unknown
+  // slots return null so the renderer falls back to its hardcoded default.
   function buildTestTheme(): RenderTheme {
     const mockGetColor = (path: string): any => {
       if (path === 'highlight') return chalk.hex('#0087FF');
       if (path === 'link') return chalk.hex('#64C864');
       if (path === 'secondary') return chalk.hex('#808080');
-      // Unknown slot — return something that fails the (probe('') is string)
-      // check so the renderer falls back to its hardcoded default.
       return null;
     };
     return buildRenderTheme(mockGetColor as any);
   }
 
-  test('inline code uses theme.inlineCode (highlight slot), not hardcoded cyan', () => {
-    const theme = buildTestTheme();
-    const out = renderAgentMessage(
-      'Run `npm install` to fetch deps',
-      'Kiro',
-      theme
-    );
-    expect(out).toContain(HIGHLIGHT_RGB);
-    expect(out).not.toContain('\x1b[36m'); // no plain cyan named-color
-    expect(stripAnsi(out)).toContain('npm install');
-    expect(stripAnsi(out)).not.toContain('`');
-  });
-
-  test('link label uses theme.link, URL trailer uses theme.secondary', () => {
-    const theme = buildTestTheme();
-    const out = renderAgentMessage(
-      'See [the docs](https://example.com/docs) for details',
-      'Kiro',
-      theme
-    );
-    // Underline is applied independently of the theme color so links stay
-    // visually distinct on themes whose link color matches prose.
-    expect(out).toContain('\x1b[4m'); // ANSI underline
-    expect(out).toContain(LINK_RGB);
-    expect(out).toContain(SECONDARY_RGB);
-    // The URL itself should sit inside the secondary-colored trailer.
-    expect(out).toContain('(https://example.com/docs)');
-    expect(stripAnsi(out)).toContain('the docs');
-  });
+  // Inline code (highlight slot) and links (link + secondary slots, plus an
+  // independent underline) must pick up the theme through every block→inline
+  // path: bare prose, list items, headers, and table cells. One table per slot
+  // family; `notContains` guards the legacy hardcoded cyan never reappears.
+  test.each<{
+    name: string;
+    input: string;
+    termCols?: number;
+    contains: string[];
+    notContains?: string[];
+    plainContains?: string[];
+    plainAbsent?: string[];
+  }>([
+    {
+      name: 'inline code in prose uses the highlight slot, not cyan',
+      input: 'Run `npm install` to fetch deps',
+      contains: [HIGHLIGHT_RGB],
+      notContains: ['\x1b[36m'],
+      plainContains: ['npm install'],
+      plainAbsent: ['`'],
+    },
+    {
+      name: 'inline code in a list item (block→inline path)',
+      input: '- the `frobnicate` helper',
+      contains: [HIGHLIGHT_RGB],
+      notContains: ['\x1b[36m'],
+      plainContains: ['- the frobnicate helper'],
+    },
+    {
+      name: 'inline code in a header (block→inline path)',
+      input: '# Configure `KIRO_HOME`',
+      contains: [HIGHLIGHT_RGB],
+      plainContains: ['Configure KIRO_HOME'],
+      plainAbsent: ['`'],
+    },
+    {
+      name: 'inline code in a table cell',
+      input: [
+        '| Setting | Default |',
+        '| --- | --- |',
+        '| `foo` | `bar` |',
+      ].join('\n'),
+      termCols: 80,
+      contains: [HIGHLIGHT_RGB],
+      notContains: ['\x1b[36m'],
+    },
+    {
+      name: 'link in prose: label uses link slot, trailer uses secondary',
+      input: 'See [the docs](https://example.com/docs) for details',
+      // Underline applied independently so links stay distinct on themes
+      // whose link color matches prose.
+      contains: [
+        '\x1b[4m',
+        LINK_RGB,
+        SECONDARY_RGB,
+        '(https://example.com/docs)',
+      ],
+      plainContains: ['the docs'],
+    },
+    {
+      name: 'link in a list item picks up the link + secondary slots',
+      input: '- see [click here](https://example.com)',
+      contains: ['\x1b[4m', LINK_RGB, SECONDARY_RGB],
+    },
+  ])(
+    '$name',
+    ({
+      input,
+      termCols,
+      contains,
+      notContains,
+      plainContains,
+      plainAbsent,
+    }) => {
+      const out = renderAgentMessage(input, 'Kiro', buildTestTheme(), termCols);
+      for (const s of contains) expect(out).toContain(s);
+      for (const s of notContains ?? []) expect(out).not.toContain(s);
+      const plain = stripAnsi(out);
+      for (const s of plainContains ?? []) expect(plain).toContain(s);
+      for (const s of plainAbsent ?? []) expect(plain).not.toContain(s);
+    }
+  );
 
   test('bare-URL link (visible label === URL) skips the secondary-colored trailer', () => {
     const theme = buildTestTheme();
@@ -728,55 +756,9 @@ describe('theme-driven markdown colors', () => {
     expect(urlMatches.length).toBe(1);
   });
 
-  test('inline code inside a list item picks up theme.inlineCode (block→inline path)', () => {
-    // List items are block-level segments; their body re-lexes through
-    // `renderInlineMarkdown` which threads the theme. This exercises the
-    // renderBlockSegment → renderListItem → renderInlineMarkdown path.
-    const theme = buildTestTheme();
-    const out = renderAgentMessage('- the `frobnicate` helper', 'Kiro', theme);
-    expect(out).toContain(HIGHLIGHT_RGB);
-    expect(out).not.toContain('\x1b[36m');
-    expect(stripAnsi(out)).toContain('- the frobnicate helper');
-  });
-
-  test('link inside a list item picks up theme.link', () => {
-    const theme = buildTestTheme();
-    const out = renderAgentMessage(
-      '- see [click here](https://example.com)',
-      'Kiro',
-      theme
-    );
-    expect(out).toContain('\x1b[4m');
-    expect(out).toContain(LINK_RGB);
-    expect(out).toContain(SECONDARY_RGB);
-  });
-
-  test('inline code inside a header retains theme.inlineCode (block→inline)', () => {
-    const theme = buildTestTheme();
-    const out = renderAgentMessage('# Configure `KIRO_HOME`', 'Kiro', theme);
-    expect(out).toContain(HIGHLIGHT_RGB);
-    expect(stripAnsi(out)).toContain('Configure KIRO_HOME');
-    expect(stripAnsi(out)).not.toContain('`');
-  });
-
-  test('inline code inside a table cell picks up theme.inlineCode', () => {
-    const theme = buildTestTheme();
-    const md = [
-      '| Setting | Default |',
-      '| --- | --- |',
-      '| `foo` | `bar` |',
-    ].join('\n');
-    const out = renderAgentMessage(md, 'Kiro', theme, 80);
-    expect(out).toContain(HIGHLIGHT_RGB);
-    expect(out).not.toContain('\x1b[36m');
-  });
-
   test('blockquote stays italic-only (no theme color applied to bar/body)', () => {
-    // Blockquotes already render as italic + dim `│ ` bar; they are NOT
-    // themed via the new slots. Lock that in so a future "extend theming"
-    // pass doesn't accidentally collapse blockquote and inline code into
-    // the same color again. The bar is dim chrome; the body is italic
-    // prose without an inline-code highlight.
+    // Blockquotes are italic + dim `│ ` bar, NOT themed — lock it so a future
+    // theming pass doesn't collapse blockquote and inline code into one color.
     const theme = buildTestTheme();
     const out = renderAgentMessage('> a thoughtful aside', 'Kiro', theme);
     expect(out).toContain('\x1b[3m'); // ANSI italic
@@ -786,10 +768,7 @@ describe('theme-driven markdown colors', () => {
   });
 
   test('default theme fallback keeps the legacy cyan/dim shape (no theme passed)', () => {
-    // Pure-context callers (tests, sub-renderers without ctx, callers
-    // that haven't been wired up yet) should still see the prior
-    // hardcoded cyan/dim for inline code and link trailers — that's
-    // what {@link DEFAULT_RENDER_THEME} guarantees.
+    // No-theme callers still get the prior hardcoded cyan/dim (DEFAULT_RENDER_THEME).
     const out = renderAgentMessage(
       'Run `npm install` to fetch [docs](https://example.com)',
       'Kiro'
@@ -800,9 +779,8 @@ describe('theme-driven markdown colors', () => {
   });
 
   test('buildRenderTheme falls back to chalk.cyan/chalk.dim when getColor throws or returns non-callable', () => {
-    // Locks the safety net: a misconfigured theme accessor (missing slot,
-    // throwing accessor) must not blow up the renderer. Each missing slot
-    // falls through to the prior hardcoded color.
+    // Safety net: a throwing/misconfigured accessor must not blow up the
+    // renderer — each missing slot falls through to the prior hardcoded color.
     const brokenTheme = buildRenderTheme((() => {
       throw new Error('theme not loaded');
     }) as any);

@@ -70,9 +70,10 @@ export function renderAgentMessage(
     getAgentTagColor && agentName
       ? getAgentTagColor(agentName)
       : (theme?.brand ?? brand);
-  // Theme fns are plain string→string and don't compose with chalk.x.bold,
-  // so bold the colored tag manually to keep both.
-  const tagBold = applyBold(tagColorFn(`${tag}:`));
+  // Theme fns are plain string→string and don't compose with chalk.x.bold, so
+  // bold the colored tag manually. chalk.bold uses \x1b[1m…\x1b[22m (not a full
+  // reset) so the foreground color survives.
+  const tagBold = chalk.bold(tagColorFn(`${tag}:`));
   const tagPrefix = `${tag}: `;
   // Reserve the role-tag width on the first line so wrapping accounts for it.
   const cols = termCols && termCols > 0 ? termCols : 0;
@@ -183,12 +184,6 @@ export function renderShellOutputBlock(
   return lines.map((line) => gutter + line).join('\n');
 }
 
-/** chalk.bold inserts \x1b[1m...\x1b[22m (not a full reset) so a pre-existing
- *  foreground color survives the wrap. */
-function applyBold(s: string): string {
-  return chalk.bold(s);
-}
-
 // ─── Markdown → ANSI Lines ───────────────────────────────────────────────────
 
 /**
@@ -286,11 +281,7 @@ function renderBlockSegment(
   // re-lexes them via renderInlineMarkdown (parseInlineMarkdown) to surface
   // **bold**/`code`/links. renderInlineSegment alone only honors flags
   // already on the segment and would emit the raw markers.
-  if (seg.header) {
-    const inline = renderInlineMarkdown(seg.text, theme);
-    return wrapStyled(chalk.bold(inline), width, width);
-  }
-  if (seg.boldHeading) {
+  if (seg.header || seg.boldHeading) {
     const inline = renderInlineMarkdown(seg.text, theme);
     return wrapStyled(chalk.bold(inline), width, width);
   }

@@ -421,30 +421,134 @@ describe('formatToolArgLines wrap behavior', () => {
 });
 
 describe('formatTaskToolBody', () => {
-  test('create command renders numbered task list under a description block', () => {
-    const content = JSON.stringify({
+  // Happy-path command cases share the shape: parse content, assert .command
+  // and contains/absent substrings on the stripped bodyLines. Structural cases
+  // (connector glyphs, details indent, wrap width) stay standalone below.
+  it.each<{
+    name: string;
+    content: unknown;
+    command?: string;
+    isNull?: boolean;
+    contains?: string[];
+    absent?: string[];
+    absentMatch?: RegExp[];
+  }>([
+    {
+      name: 'create renders a numbered task list with tree connectors',
+      content: {
+        command: 'create',
+        task_list_description: 'Add lite rendering for tasks',
+        tasks: [
+          { task_description: 'Investigate the schema' },
+          { task_description: 'Implement the renderer' },
+          { task_description: 'Add tests' },
+        ],
+      },
       command: 'create',
-      task_list_description: 'Add lite rendering for tasks',
-      tasks: [
-        { task_description: 'Investigate the schema' },
-        { task_description: 'Implement the renderer' },
-        { task_description: 'Add tests' },
+      // ├─ for non-last rows, └─ for the last.
+      contains: [
+        'description:',
+        'Add lite rendering for tasks',
+        '1. Investigate the schema',
+        '2. Implement the renderer',
+        '3. Add tests',
+        '├─',
+        '└─',
       ],
-    });
-    const result = formatTaskToolBody(content, 100);
+    },
+    {
+      name: 'add renders new_tasks with optional new_description',
+      content: {
+        command: 'add',
+        new_description: 'expanded scope',
+        new_tasks: [{ task_description: 'New thing' }],
+      },
+      command: 'add',
+      contains: ['description:', 'expanded scope', '1. New thing'],
+    },
+    {
+      name: 'complete renders ID chips, notes block, and modified files',
+      content: {
+        command: 'complete',
+        completed_task_ids: ['1', '2', '3'],
+        context_update:
+          'Found that the schema lives in the agent crate and is stable across versions.',
+        modified_files: [
+          'packages/tui/src/lite/render.ts',
+          'packages/tui/src/lite/__tests__/render.test.ts',
+        ],
+      },
+      command: 'complete',
+      contains: [
+        'completed:',
+        '#1',
+        '#2',
+        '#3',
+        'notes:',
+        'schema lives in the agent crate',
+        'files:',
+        '- packages/tui/src/lite/render.ts',
+      ],
+    },
+    {
+      // whitespace-only context_update treated as empty.
+      name: 'complete without notes or files renders only the ID chips',
+      content: {
+        command: 'complete',
+        completed_task_ids: ['7'],
+        context_update: '   ',
+      },
+      contains: ['completed:', '#7'],
+      absent: ['notes:', 'files:'],
+    },
+    {
+      name: 'remove shows IDs and optional new description',
+      content: {
+        command: 'remove',
+        remove_task_ids: ['2', '5'],
+        new_description: 'narrowed plan',
+      },
+      command: 'remove',
+      contains: ['removed:', '#2', '#5', 'description:', 'narrowed plan'],
+    },
+    {
+      // Defensive: malformed/partial args must not render a phantom numbered row.
+      name: 'skips tasks with empty or missing task_description',
+      content: {
+        command: 'create',
+        task_list_description: 'd',
+        tasks: [
+          { task_description: 'real one' },
+          { task_description: '' },
+          { task_description: '   ' },
+          {},
+        ],
+      },
+      contains: ['real one'],
+      absentMatch: [/\b2\./, /\b3\./, /\b4\./],
+    },
+  ])('$name', ({ content, command, contains, absent, absentMatch }) => {
+    const result = formatTaskToolBody(JSON.stringify(content), 120);
     expect(result).not.toBeNull();
-    expect(result!.command).toBe('create');
+    if (command) expect(result!.command).toBe(command);
     const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('description:');
-    expect(text).toContain('Add lite rendering for tasks');
-    expect(text).toContain('1. Investigate the schema');
-    expect(text).toContain('2. Implement the renderer');
-    expect(text).toContain('3. Add tests');
-    // Tree connectors: ├─ for non-last rows, └─ for the last.
-    expect(text).toContain('├─');
-    expect(text).toContain('└─');
-    // Single-task `create` would only use └─ — verify that with a separate
-    // call below; here we want both.
+    for (const s of contains ?? []) expect(text).toContain(s);
+    for (const s of absent ?? []) expect(text).not.toContain(s);
+    for (const re of absentMatch ?? []) expect(text).not.toMatch(re);
+  });
+
+  test('list command returns empty body — header line is enough', () => {
+    const result = formatTaskToolBody(JSON.stringify({ command: 'list' }), 80);
+    expect(result).not.toBeNull();
+    expect(result!.command).toBe('list');
+    expect(result!.bodyLines).toHaveLength(0);
+  });
+
+  test('returns null on invalid JSON, empty, or unknown command', () => {
+    expect(formatTaskToolBody('')).toBeNull();
+    expect(formatTaskToolBody('not-json')).toBeNull();
+    expect(formatTaskToolBody(JSON.stringify({}))).toBeNull();
+    expect(formatTaskToolBody(JSON.stringify({ command: 'bogus' }))).toBeNull();
   });
 
   test('create with a single task uses only the corner connector', () => {
@@ -511,116 +615,6 @@ describe('formatTaskToolBody', () => {
       expect(cont.startsWith('       ')).toBe(true);
     }
   });
-
-  test('add command renders new_tasks with optional new_description', () => {
-    const content = JSON.stringify({
-      command: 'add',
-      new_description: 'expanded scope',
-      new_tasks: [{ task_description: 'New thing' }],
-    });
-    const result = formatTaskToolBody(content, 100);
-    expect(result).not.toBeNull();
-    expect(result!.command).toBe('add');
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('description:');
-    expect(text).toContain('expanded scope');
-    expect(text).toContain('1. New thing');
-  });
-
-  test('complete command renders ID chips, notes block, and modified files', () => {
-    const content = JSON.stringify({
-      command: 'complete',
-      completed_task_ids: ['1', '2', '3'],
-      context_update:
-        'Found that the schema lives in the agent crate and is stable across versions.',
-      modified_files: [
-        'packages/tui/src/lite/render.ts',
-        'packages/tui/src/lite/__tests__/render.test.ts',
-      ],
-    });
-    const result = formatTaskToolBody(content, 120);
-    expect(result).not.toBeNull();
-    expect(result!.command).toBe('complete');
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('completed:');
-    expect(text).toContain('#1');
-    expect(text).toContain('#2');
-    expect(text).toContain('#3');
-    expect(text).toContain('notes:');
-    expect(text).toContain('schema lives in the agent crate');
-    expect(text).toContain('files:');
-    expect(text).toContain('- packages/tui/src/lite/render.ts');
-  });
-
-  test('complete without notes or files renders only the ID chips', () => {
-    const content = JSON.stringify({
-      command: 'complete',
-      completed_task_ids: ['7'],
-      context_update: '   ', // whitespace-only — should be treated as empty
-    });
-    const result = formatTaskToolBody(content, 80);
-    expect(result).not.toBeNull();
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('completed:');
-    expect(text).toContain('#7');
-    expect(text).not.toContain('notes:');
-    expect(text).not.toContain('files:');
-  });
-
-  test('remove command shows IDs and optional new description', () => {
-    const content = JSON.stringify({
-      command: 'remove',
-      remove_task_ids: ['2', '5'],
-      new_description: 'narrowed plan',
-    });
-    const result = formatTaskToolBody(content, 100);
-    expect(result).not.toBeNull();
-    expect(result!.command).toBe('remove');
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('removed:');
-    expect(text).toContain('#2');
-    expect(text).toContain('#5');
-    expect(text).toContain('description:');
-    expect(text).toContain('narrowed plan');
-  });
-
-  test('list command returns empty body — header line is enough', () => {
-    const result = formatTaskToolBody(JSON.stringify({ command: 'list' }), 80);
-    expect(result).not.toBeNull();
-    expect(result!.command).toBe('list');
-    expect(result!.bodyLines).toHaveLength(0);
-  });
-
-  test('returns null on invalid JSON, empty, or unknown command', () => {
-    expect(formatTaskToolBody('')).toBeNull();
-    expect(formatTaskToolBody('not-json')).toBeNull();
-    expect(formatTaskToolBody(JSON.stringify({}))).toBeNull();
-    expect(formatTaskToolBody(JSON.stringify({ command: 'bogus' }))).toBeNull();
-  });
-
-  test('skips tasks with empty or missing task_description', () => {
-    // Defensive: a malformed args payload (rare, but possible if the
-    // backend ever ships partial JSON during streaming) shouldn't render
-    // a phantom row with just a number and no text.
-    const content = JSON.stringify({
-      command: 'create',
-      task_list_description: 'd',
-      tasks: [
-        { task_description: 'real one' },
-        { task_description: '' },
-        { task_description: '   ' },
-        {} as { task_description?: string },
-      ],
-    });
-    const result = formatTaskToolBody(content, 80);
-    expect(result).not.toBeNull();
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('real one');
-    // Only one task rendered — no 2./3./4. rows.
-    expect(text).not.toMatch(/\b2\./);
-    expect(text).not.toMatch(/\b3\./);
-    expect(text).not.toMatch(/\b4\./);
-  });
 });
 
 // Verbose-mode rendering. Toggling state via setVerboseConfig touches the
@@ -647,159 +641,121 @@ describe('verbose tool output rendering', () => {
     ...overrides,
   });
 
-  test('verbose off: no output bar even with result present', () => {
-    setVerboseConfig({ filters: [] });
-    const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).not.toContain('hi from stdout');
-    // Sanity: tool name still renders.
-    expect(out).toContain('execute_bash');
-  });
-
-  test('verbose on + filter "all": output bar renders with full text', () => {
-    setVerboseConfig({ filters: ['all'] });
-    const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).toContain('hi from stdout');
-    expect(out).toContain('second line');
-    // Bar prefix glyph shows up on each output row.
-    expect(out).toContain('│');
-  });
-
-  test('verbose on but filter excludes this tool: no output bar', () => {
-    setVerboseConfig({ filters: ['mcp'] });
-    const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).not.toContain('hi from stdout');
-  });
-
-  test('filter "shell" lets bash through but not fs_read', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const bash = stripAnsi(
-      renderMessageToText(toolMsg({ name: 'execute_bash' }), 'kiro_default')
-    );
-    expect(bash).toContain('hi from stdout');
-
-    const read = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          id: 't-verbose-2',
-          name: 'fs_read',
-          content: JSON.stringify({
-            operations: [{ path: '/tmp/x' }],
-          }),
-          result: { status: 'success', output: 'file contents here' },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(read).not.toContain('file contents here');
-  });
-
-  test('filter targets a single MCP tool by exact name', () => {
-    setVerboseConfig({
+  // Each row sets a filter, renders one tool message (default = execute_bash
+  // with "hi from stdout"), then asserts what the output bar shows/hides. The
+  // env-var row exercises the saved-config-wins rule; the "output:" header
+  // shares the shouldShowToolOutput gate, so it appears iff the bar does.
+  it.each<{
+    name: string;
+    filters: string[];
+    msgOverride?: Record<string, unknown>;
+    env?: string;
+    contains?: string[];
+    absent?: string[];
+  }>([
+    {
+      name: 'verbose off: no output bar but tool name still renders',
+      filters: [],
+      contains: ['execute_bash'],
+      absent: ['hi from stdout', '│', 'output:'],
+    },
+    {
+      name: 'filter "all": full output + bar glyph + output: header',
+      filters: ['all'],
+      contains: ['hi from stdout', 'second line', '│', 'output:'],
+    },
+    {
+      name: 'filter excludes this tool: no bar and no output: header',
+      filters: ['mcp'],
+      absent: ['hi from stdout', '│', 'output:'],
+    },
+    {
+      name: 'filter "shell" lets bash through',
+      filters: ['shell'],
+      contains: ['hi from stdout'],
+    },
+    {
+      name: 'filter "shell" blocks fs_read',
+      filters: ['shell'],
+      msgOverride: {
+        id: 't-verbose-2',
+        name: 'fs_read',
+        content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
+        result: { status: 'success', output: 'file contents here' },
+      },
+      absent: ['file contents here'],
+    },
+    {
+      name: 'exact MCP filter lets the named tool through',
       filters: ['mcp__nova-memory-mcp__recall'],
-    });
-    const recall = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          id: 't-verbose-3',
-          name: 'mcp__nova-memory-mcp__recall',
-          content: JSON.stringify({ query: 'history' }),
-          result: { status: 'success', output: 'memory blob' },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(recall).toContain('memory blob');
-
-    const remember = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          id: 't-verbose-4',
-          name: 'mcp__nova-memory-mcp__remember',
-          content: JSON.stringify({ messages: [] }),
-          result: { status: 'success', output: 'persisted' },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(remember).not.toContain('persisted');
-  });
-
-  test('error result renders red bar regardless of result.output', () => {
-    setVerboseConfig({ filters: ['all'] });
+      msgOverride: {
+        id: 't-verbose-3',
+        name: 'mcp__nova-memory-mcp__recall',
+        content: JSON.stringify({ query: 'history' }),
+        result: { status: 'success', output: 'memory blob' },
+      },
+      contains: ['memory blob'],
+    },
+    {
+      name: 'exact MCP filter blocks a sibling MCP tool',
+      filters: ['mcp__nova-memory-mcp__recall'],
+      msgOverride: {
+        id: 't-verbose-4',
+        name: 'mcp__nova-memory-mcp__remember',
+        content: JSON.stringify({ messages: [] }),
+        result: { status: 'success', output: 'persisted' },
+      },
+      absent: ['persisted'],
+    },
+    {
+      name: 'error result renders the error text + output: header',
+      filters: ['all'],
+      msgOverride: {
+        id: 't-verbose-err',
+        result: { status: 'error', error: 'command failed: exit 1' },
+      },
+      contains: ['command failed', 'output:'],
+    },
+    {
+      // Env var is only a first-run hint; a persisted config wins, so
+      // KIRO_LITE_VERBOSE=1 must NOT force output back on over filters:[].
+      name: 'env KIRO_LITE_VERBOSE=1 is a no-op when a config is saved',
+      filters: [],
+      env: '1',
+      absent: ['hi from stdout'],
+    },
+    {
+      // Empty output early-returns before the header, so no orphan label.
+      name: 'empty output: no bar and no orphan output: header',
+      filters: ['all'],
+      msgOverride: {
+        id: 't-verbose-empty',
+        result: { status: 'success', output: '' },
+      },
+      absent: ['output:', '│'],
+    },
+  ])('$name', ({ filters, msgOverride, env, contains, absent }) => {
+    setVerboseConfig({ filters });
+    if (env !== undefined) {
+      process.env.KIRO_LITE_VERBOSE = env;
+      resetVerboseCache();
+    }
     const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          id: 't-verbose-5',
-          result: { status: 'error', error: 'permission denied' },
-        }),
-        'kiro_default'
-      )
+      renderMessageToText(toolMsg(msgOverride), 'kiro_default')
     );
-    expect(out).toContain('permission denied');
+    for (const s of contains ?? []) expect(out).toContain(s);
+    for (const s of absent ?? []) expect(out).not.toContain(s);
   });
 
-  test('env var KIRO_LITE_VERBOSE=1 is a no-op when a saved config exists', () => {
-    // Env var is now only a startup hint for first-time users — saved
-    // configs win. With filters:[] persisted, the env var must NOT force
-    // output back on.
-    setVerboseConfig({ filters: [] });
-    process.env.KIRO_LITE_VERBOSE = '1';
-    resetVerboseCache();
-    const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).not.toContain('hi from stdout');
-  });
-
-  // The dim "output:" header above the | bar disambiguates the output
-  // section from the args block above it. Without it, the args block's
-  // tail and the bar's first row read as one continuous chunk — especially
-  // when the args section ends with its own "(+N more lines)" marker, which
-  // visually rhymes with the bar's "+N more lines above" marker.
+  // The dim "output:" header lands ABOVE the bar so the args block's tail and
+  // the bar don't read as one chunk (both can end in a "+N more lines" marker).
   test('output: header renders above the | bar on success', () => {
     setVerboseConfig({ filters: ['all'] });
     const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).toContain('output:');
-    // Header lands ABOVE the first bar row, not below it.
     const headerIdx = out.indexOf('output:');
     const firstBarIdx = out.indexOf('│');
     expect(headerIdx).toBeGreaterThan(-1);
     expect(firstBarIdx).toBeGreaterThan(headerIdx);
-  });
-
-  test('output: header renders above red error bar on failure', () => {
-    // Errors take a separate code path inside renderVerboseOutput; the
-    // header should appear there too so the visual structure stays
-    // consistent regardless of result.status.
-    setVerboseConfig({ filters: ['all'] });
-    const errMsg = toolMsg({
-      id: 't-verbose-err',
-      result: { status: 'error', error: 'command failed: exit 1' },
-    });
-    const out = stripAnsi(renderMessageToText(errMsg, 'kiro_default'));
-    expect(out).toContain('output:');
-    expect(out).toContain('command failed');
-  });
-
-  test('output: header is suppressed when no output renders', () => {
-    // Empty/null output paths early-return before the header is emitted,
-    // so a tool that produces nothing must not leave an orphan label
-    // hanging below its tool line.
-    setVerboseConfig({ filters: ['all'] });
-    const emptyMsg = toolMsg({
-      id: 't-verbose-empty',
-      result: { status: 'success', output: '' },
-    });
-    const out = stripAnsi(renderMessageToText(emptyMsg, 'kiro_default'));
-    expect(out).not.toContain('output:');
-    expect(out).not.toContain('│');
-  });
-
-  test('output: header is suppressed when filter excludes the tool', () => {
-    // No bar means no header — the gate is the same predicate
-    // shouldShowToolOutput uses to decide whether the bar exists at all.
-    setVerboseConfig({ filters: ['mcp'] });
-    const out = stripAnsi(renderMessageToText(toolMsg(), 'kiro_default'));
-    expect(out).not.toContain('output:');
-    expect(out).not.toContain('│');
   });
 });
 
@@ -1058,36 +1014,34 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     expect(out20Idx).toBeGreaterThan(markerIdx);
   });
 
-  test('outputMaxLines=null renders all lines with no marker', () => {
-    setDisplay({ outputMaxLines: null });
-    const lines = Array.from({ length: 8 }, (_, i) => `out-${i}`).join('\n');
+  it.each<{ name: string; cap: number | null; count: number }>([
+    {
+      name: 'outputMaxLines=null renders all lines with no marker',
+      cap: null,
+      count: 8,
+    },
+    {
+      name: 'outputMaxLines does not fire when source fits the cap',
+      cap: 50,
+      count: 5,
+    },
+  ])('$name', ({ cap, count }) => {
+    setDisplay({ outputMaxLines: cap });
+    const lines = Array.from({ length: count }, (_, i) => `out-${i}`).join(
+      '\n'
+    );
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(lines), 'kiro_default')
     );
     expect(out).toContain('out-0');
-    expect(out).toContain('out-7');
-    expect(out).not.toMatch(/truncated/);
-  });
-
-  test('outputMaxLines does not fire when source line count fits the cap', () => {
-    setDisplay({ outputMaxLines: 50 });
-    const lines = Array.from({ length: 5 }, (_, i) => `out-${i}`).join('\n');
-    const out = stripAnsi(
-      renderMessageToText(buildToolMsg(lines), 'kiro_default')
-    );
-    expect(out).toContain('out-0');
-    expect(out).toContain('out-4');
+    expect(out).toContain(`out-${count - 1}`);
     expect(out).not.toMatch(/truncated/);
   });
 
   test('cap counts logical (source) lines — long lines no longer multiply against the cap', () => {
     setDisplay({ outputMaxLines: 3 });
-    // `formatBarBlock` hard-wraps long source lines so each visual row
-    // carries its own `│ ` prefix (visual alignment beats clipboard
-    // fidelity for tool output — readers see a consistent left margin
-    // even on overflow). After the wrap, each 200-char source line at
-    // termCols=40 produces several visual rows, so cap=3 fires hard:
-    // most of the input ends up above the tail window.
+    // Each 200-char source line wraps to several visual rows at termCols=40, so
+    // cap=3 fires hard: counting logical lines keeps the tail window meaningful.
     const sourceLines = [
       'a'.repeat(200),
       'b'.repeat(200),
@@ -1142,9 +1096,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('argsMaxChars=10 clips long string values inside block-mode args', () => {
-    // Block-mode now respects the per-value char cap. Without this the
-    // user can set chars-per-value to 1 and watch the args block render
-    // identically — confusing because the chip in inline mode honors it.
+    // Block-mode honors the per-value char cap (inline mode already did).
     setDisplay({ argsMaxChars: 10 });
     const content = JSON.stringify({
       command: 'this-is-a-pretty-long-shell-command --with --flags',
@@ -1152,6 +1104,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
       // Explicit purpose so the tool-name line shows reasoning rather than
       // falling back to args.command (which would then carry pre-clip text
       // for an unrelated reason).
+      // Explicit purpose so the tool-name line shows reasoning, not args.command.
       __tool_use_purpose: 'demo block-mode arg clipping',
     });
     const out = stripAnsi(
@@ -1170,69 +1123,54 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Both values clip at 10 chars (9 chars + ellipsis).
     expect(out).toMatch(/command:\s*this-is-a…/);
     expect(out).toMatch(/path:\s*a\/very\/lo…/);
-    // Pre-clip block-args text doesn't appear in the args block (the args
-    // section starts after `demo block-mode arg clipping`). We can't assert
-    // on the whole output because the reasoning line still mentions the
-    // tool — but each long value MUST be clipped under the args header.
+    // Assert under the args header only — the reasoning line still names the tool.
     const argsBlock = out.split('demo block-mode arg clipping')[1] ?? '';
     expect(argsBlock).not.toContain('pretty-long-shell-command');
     expect(argsBlock).not.toContain('deeply/nested/file.ts');
   });
 
-  test('argsMaxChars=null leaves long string values intact', () => {
-    setDisplay({ argsMaxChars: null });
-    const content = JSON.stringify({
-      command: 'echo hello-world-from-the-other-side',
-    });
+  it.each<{
+    name: string;
+    display: Partial<VerboseDisplayConfig>;
+    content: Record<string, unknown>;
+    contains: string[];
+  }>([
+    {
+      name: 'argsMaxChars=null leaves long string values intact',
+      display: { argsMaxChars: null },
+      content: { command: 'echo hello-world-from-the-other-side' },
+      contains: ['hello-world-from-the-other-side'],
+    },
+    {
+      name: 'argsMaxLines=null leaves the args block untouched',
+      display: { argsMaxLines: null },
+      content: { a: 'one', b: 'two', c: 'three' },
+      contains: ['a: one', 'b: two', 'c: three'],
+    },
+  ])('$name', ({ display, content, contains }) => {
+    setDisplay(display);
     const out = stripAnsi(
       renderMessageToText(
         {
-          id: 't-args-chars-2',
+          id: 't-args-nocap',
           role: 'tool_use',
           name: 'shell',
-          content,
+          content: JSON.stringify(content),
           isFinished: true,
           result: { status: 'success', output: 'ok' },
         },
         'kiro_default'
       )
     );
-    expect(out).toContain('hello-world-from-the-other-side');
-  });
-
-  test('argsMaxLines=null leaves the args block untouched', () => {
-    setDisplay({ argsMaxLines: null });
-    const content = JSON.stringify({ a: 'one', b: 'two', c: 'three' });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-args-cap-2',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('a: one');
-    expect(out).toContain('b: two');
-    expect(out).toContain('c: three');
+    for (const s of contains) expect(out).toContain(s);
     expect(out).not.toMatch(/truncated/);
   });
 
   test('argsMaxLines=null + multi-line value: NO per-value truncation marker', () => {
-    // P438130055: the user-facing "unlimited" toggle saves argsMaxLines=null
-    // but a hardcoded MULTI_LINE_VISIBLE = 5 inside formatArgLines still
-    // clipped each multi-line string at 5 lines + a "(+N more lines)"
-    // delta marker. That made "unlimited" a lie for any tool with a
-    // multi-line arg (shell heredocs, long scripts, multi-line patches).
-    //
-    // The fix propagates argsMaxLines=null through to perValueLineCap so
-    // the multi-line clamp is also lifted — no marker should appear.
-    // argsMaxChars=null too so the per-line char cap can't accidentally
-    // truncate a single line and look like the bug.
+    // P438130055: "unlimited" (argsMaxLines=null) must also lift the per-value
+    // 5-line clamp inside formatArgLines, else multi-line args (heredocs,
+    // scripts, patches) still got clipped. argsMaxChars=null too so the
+    // per-line char cap can't masquerade as the bug.
     setDisplay({ argsMaxLines: null, argsMaxChars: null });
     const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
     const content = JSON.stringify({ command: fifty });
@@ -1260,24 +1198,12 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('argsMaxLines=N + multi-line value: block-level marker reports ALL hidden source lines, not just dropped visual rows', () => {
-    // Follow-up to P438130055. The original fix kept a per-value 5-line
-    // cap when argsMaxLines was finite — fairness for multi-arg tools.
-    // Catch: with both caps active, the per-value cap emits its own
-    // "(+N more lines)" marker, and applyLineCap then chops that marker
-    // off as one dropped row — so the block-level marker says "+1 more
-    // lines" even though dozens of source lines are hidden underneath.
-    //
-    // Fix: drop the per-value cap from block mode entirely. The block-
-    // level applyLineCap is the single source of truth, and its marker
-    // counts visual rows that ARE source lines (since formatArgLines no
-    // longer collapses values internally). With argsMaxLines=5 and a
-    // 32-line value (cat <<EOF + 30 lines + EOF), the user sees
-    // command-head + 4 lines + "(truncated; +27 more lines)" — math
-    // checks out: 5 visible, 27 hidden, 32 total.
+    // Follow-up to P438130055: block mode must NOT keep a per-value cap when
+    // argsMaxLines is finite, else its inner "(+N more lines)" marker gets
+    // chopped by applyLineCap as one dropped row and the block marker reports
+    // "+1" while dozens hide. Block-level applyLineCap is the single source of
+    // truth. argsMaxLines=5 + 32-line value → 5 visible, 27 hidden, 32 total.
     setDisplay({ argsMaxLines: 5, argsMaxChars: null });
-    // 32-line value mirrors the user-reported case: cat <<EOF + 30
-    // numbered lines + EOF. The exact count matters because the
-    // assertion below pins the marker to "+27".
     const lines32 = [
       'cat <<EOF >> /tmp/test-banner.txt',
       ...Array.from({ length: 30 }, (_, i) => `line ${i + 1}`),
@@ -1297,14 +1223,10 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
         'kiro_default'
       )
     );
-    // Block-level marker reports 27 hidden — NOT the misleading "+1"
-    // that the pre-fix code emitted because the per-value marker got
-    // dropped silently into applyLineCap's "+1 row dropped" count.
+    // Block-level marker reports 27 hidden — not the pre-fix misleading "+1".
     expect(out).toMatch(/\.\.\. \(truncated; \+27 more lines\)/);
     expect(out).not.toMatch(/\(truncated; \+1 more lines\)/);
-    // The pre-fix per-value marker (with 27 hidden) would also have
-    // been emitted but then dropped — guard against it accidentally
-    // re-appearing in the visible portion.
+    // Guard the dropped per-value marker doesn't reappear in the visible portion.
     expect(out).not.toMatch(/\.\.\. \(\+\d+ more lines\)/);
     // First arg-block content rows still visible.
     expect(out).toContain('cat <<EOF');
@@ -1345,25 +1267,12 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('pathologically long single line is clipped before wrap (no OOM)', () => {
-    // Regression for the "RangeError: Out of memory" crash a user hit in the
-    // wild. The agent ran a `grep -E` shell command whose stdout contained
-    // a single match against a minified bundle / binary file — one logical
-    // line many MB long. The lite renderer's formatBarBlock walked every
-    // code point of that line through wrapAnsiLine, allocating a
-    // `{ansi, ch, width}` cell object per code point — tens of millions of
-    // objects, several GB of heap, OOM. The downstream applyTailLineCap
-    // (which would have discarded most rows) only runs AFTER formatBarBlock
-    // returns, so it can't help.
-    //
-    // formatBarBlock now clips each input line to MAX_INPUT_LINE_CHARS
-    // (200_000) chars, keeping the TAIL so it composes correctly with the
-    // tail-keep applyTailLineCap downstream. A 1MB single line should now
-    // render as a clip marker + the last 200K chars wrapped normally,
-    // without exhausting heap.
+    // Regression: a multi-MB single line (e.g. grep matching a minified bundle)
+    // made formatBarBlock allocate a cell object per code point → OOM, since
+    // applyTailLineCap only runs after it returns. Fix: clip each input line to
+    // MAX_INPUT_LINE_CHARS (200_000), keeping the TAIL so it composes with the
+    // downstream tail-keep cap.
     setDisplay({ outputMaxLines: null }); // unbounded: prove it doesn't OOM regardless
-    // 1MB single-line payload — same shape as `grep`-matching a minified
-    // bundle. Use a printable filler so the visible-width math doesn't add
-    // surprise factors on top of the OOM-prevention assertion.
     const huge = 'x'.repeat(1_000_000);
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(huge), 'kiro_default', {
@@ -1373,12 +1282,8 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Clip marker is emitted before the wrapped tail. 1_000_000 -
     // 200_000 = 800_000 chars hidden.
     expect(out).toMatch(/\.\.\. \(line clipped; \+800000 chars before\)/);
-    // The bar rows that survived are bounded — far below what the
-    // pre-fix path would have produced on this input. 200_000 chars
-    // wrapped at 80 cols yields ~2500 rows + 1 marker. Exercise the
-    // upper bound as a tripwire: if a future change blows past this,
-    // we want a loud test failure, not a silent regression toward
-    // O(input size) memory growth.
+    // Surviving bar rows are bounded (~2500 for 200K chars at 80 cols).
+    // Tripwire against silent regression toward O(input size) memory growth.
     const barLines = out.split('\n').filter((l) => l.includes('│'));
     expect(barLines.length).toBeLessThan(3000);
     // Tail is preserved — last char of the input is the last char of the
@@ -1388,13 +1293,9 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   }, 30_000);
 
   test('lines under MAX_INPUT_LINE_CHARS are not clipped', () => {
-    // Companion to the OOM regression: confirm the per-line cap is high
-    // enough that a "long but plausible" output (here 50K chars on a
-    // single line — well past any normal terminal width but realistic for
-    // a JSON blob, a stack trace, an interpreter error) renders without
-    // the clip marker. Without this, a future tightening of
-    // MAX_INPUT_LINE_CHARS could make legitimate output mysteriously
-    // grow a "(line clipped)" marker.
+    // Companion to the OOM test: a long-but-plausible 50K single line (JSON
+    // blob, stack trace) renders without a "(line clipped)" marker, so a
+    // future tightening of MAX_INPUT_LINE_CHARS can't clip legit output.
     setDisplay({ outputMaxLines: null });
     const long = 'y'.repeat(50_000);
     const out = stripAnsi(
@@ -1405,17 +1306,23 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     expect(out).not.toContain('(line clipped');
   });
 
-  // Write diffs deliberately OPT OUT of outputMaxLines: they materialize
-  // whole at finish time and the entire change is the payload the user is
-  // reviewing, so even with a cap set the diff body renders in full with no
-  // truncation marker (read tool bodies still honor the cap). See d26327c03.
-  // Complements the null-cap sibling below by proving the opt-out holds even
-  // when a cap IS configured.
-  test('outputMaxLines does not cap fs_write create diff (write diffs opt out)', () => {
-    setDisplay({ outputMaxLines: 5 });
-    // 30-line file create with outputMaxLines=5 set: the cap must NOT
-    // apply — all 30 added lines render and no truncation marker appears.
-    const longContent = Array.from({ length: 30 }, (_, i) => `line-${i}`).join(
+  // Write diffs OPT OUT of outputMaxLines: the whole change is the payload the
+  // user reviews, so the diff body renders in full whether a cap is set or null
+  // (read bodies still honor the cap). See d26327c03.
+  it.each<{ name: string; cap: number | null; count: number }>([
+    {
+      name: 'outputMaxLines=5 does not cap fs_write create diff',
+      cap: 5,
+      count: 30,
+    },
+    {
+      name: 'outputMaxLines=null leaves write diff uncapped',
+      cap: null,
+      count: 20,
+    },
+  ])('$name', ({ cap, count }) => {
+    setDisplay({ outputMaxLines: cap });
+    const content = Array.from({ length: count }, (_, i) => `line-${i}`).join(
       '\n'
     );
     const out = stripAnsi(
@@ -1427,58 +1334,27 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
           content: JSON.stringify({
             command: 'create',
             path: 'src/big.ts',
-            content: longContent,
+            content,
           }),
           isFinished: true,
           result: {
             status: 'success',
-            output: 'Successfully created src/big.ts (30 lines).',
+            output: `Successfully created src/big.ts (${count} lines).`,
           },
         } as any,
         'kiro_default'
       )
     );
     expect(out).toContain('fs_write');
-    // Every line survives — head and tail — because write diffs opt out.
+    // Every line survives — head and tail — and no truncation marker appears.
     expect(out).toMatch(/\+\s+line-0/);
-    expect(out).toMatch(/\+\s+line-29/);
-    // No truncation marker: the cap does not touch write diff bodies.
+    expect(out).toMatch(new RegExp(`\\+\\s+line-${count - 1}`));
     expect(out).not.toMatch(/\.\.\. \(truncated; \+\d+ more lines\)/);
   });
 
-  test('outputMaxLines null leaves write diff uncapped', () => {
-    setDisplay({ outputMaxLines: null });
-    const content = Array.from({ length: 20 }, (_, i) => `line-${i}`).join(
-      '\n'
-    );
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-write-uncapped',
-          role: 'tool_use',
-          name: 'fs_write',
-          content: JSON.stringify({
-            command: 'create',
-            path: 'src/full.ts',
-            content,
-          }),
-          isFinished: true,
-          result: { status: 'success' },
-        } as any,
-        'kiro_default'
-      )
-    );
-    // All 20 lines render; no truncation marker.
-    expect(out).toContain('line-0');
-    expect(out).toContain('line-19');
-    expect(out).not.toMatch(/\(truncated; \+/);
-  });
-
-  // The literal `Successfully created/replaced/inserted ...` string the
-  // agent returns for write tools duplicates what the diff already shows.
-  // Dropping it from scrollback was the second half of the merge ("write
-  // diff IS the write output"). Errors still surface — a separate test
-  // pins the failure path.
+  // The `Successfully created/replaced ...` line duplicates the diff, so it's
+  // dropped from scrollback ("write diff IS the write output"). Errors still
+  // surface (next test pins that).
   test('successful fs_write does not render the redundant success line', () => {
     setVerboseConfig({ filters: ['all'] }); // even with all filters on
     const out = stripAnsi(
@@ -1501,11 +1377,8 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
         'kiro_default'
       )
     );
-    // Diff body present.
+    // Diff body present; success chrome dropped even with filters:['all'].
     expect(out).toMatch(/\+\s+hello/);
-    // Success chrome line dropped — even with `filters: ['all']` it must
-    // not show up. Guards against a regression where the call site falls
-    // back to renderVerboseOutput unconditionally.
     expect(out).not.toContain('Successfully created');
   });
 
@@ -1553,165 +1426,132 @@ describe('pretty-printed tool output (json envelopes)', () => {
     result: { status: 'success', output },
   });
 
-  test('plain string output still renders as a flat bar block (text path unchanged)', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-text-1',
-          role: 'tool_use',
-          name: 'execute_bash',
-          content: JSON.stringify({ command: 'echo hi' }),
-          isFinished: true,
-          result: { status: 'success', output: 'line-a\nline-b' },
-        },
-        'kiro_default'
-      )
-    );
-    // No `key:` shape, just the literal lines under the bar.
-    expect(out).toContain('│ line-a');
-    expect(out).toContain('│ line-b');
-    expect(out).not.toMatch(/key:/);
-  });
+  // 10 top-level keys → 10 rows pre-cap; outputMaxLines=3 keeps a tail window.
+  const TEN_KEYS: Record<string, number> = {};
+  for (let i = 0; i < 10; i++) TEN_KEYS[`k${i}`] = i;
 
-  test('unknown json envelope renders as key:value tree under the bar', () => {
-    // No items / content / shell keys — falls through to the json path.
-    const out = stripAnsi(
-      renderMessageToText(
-        buildJsonOutputMsg({
-          status: 'ok',
-          count: 3,
-          query: 'find me a thing',
-        }),
-        'kiro_default'
-      )
-    );
-    // Each top-level key surfaces with bar prefix + `key: value`.
-    expect(out).toContain('│ status: ok');
-    expect(out).toContain('│ count: 3');
-    expect(out).toContain('│ query: find me a thing');
-    // The raw JSON brace form must NOT appear — that's the regression we
-    // were trying to kill.
-    expect(out).not.toContain('{"status":"ok"');
-  });
+  // Sage-green tint (#a3c0a3) = "successful result" signal. Both text-shape and
+  // JSON-shape success outputs must carry it (same truecolor SGR open code).
+  const GREEN_SGR = '\x1b[38;2;163;192;163m';
 
-  test('items[].Json envelope with unknown inner shape pretty-prints the inner object', () => {
-    // Real MCP shape: { items: [{ Json: { ...structured fields } }] }.
-    // None of the known string keys (text, content, stdout) are present, so
-    // the inner Json object should reach the pretty-printer.
-    const out = stripAnsi(
-      renderMessageToText(
-        buildJsonOutputMsg({
-          items: [{ Json: { matches: 5, latency_ms: 42 } }],
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('│ matches: 5');
-    expect(out).toContain('│ latency_ms: 42');
-  });
-
-  test('deeply nested json (>4 levels) does NOT collapse to safeJson', () => {
-    // The args path caps at maxDepth=4; the output path must not, since
-    // the user already controls footprint via outputMaxLines.
-    const out = stripAnsi(
-      renderMessageToText(
-        buildJsonOutputMsg({
-          a: { b: { c: { d: { e: { f: 'deep-value' } } } } },
-        }),
-        'kiro_default'
-      )
-    );
-    // The leaf value at depth 6 must be reachable as a `key: value` row,
-    // not buried in a `{...}` collapsed JSON dump.
-    expect(out).toContain('f: deep-value');
-    expect(out).not.toMatch(/\{"f":"deep-value"\}/);
-  });
-
-  test('outputMaxLines applies to the json tree the same way it does to text', () => {
-    setVerboseConfig({
-      display: {
-        ...DEFAULT_DISPLAY,
-        subagent: { ...DEFAULT_DISPLAY.subagent },
-        outputMaxLines: 3,
-        argsMaxChars: 80,
-      },
-    });
-    // 10 top-level keys → 10 rows pre-cap. Cap at 3 should drop 7.
-    const big: Record<string, number> = {};
-    for (let i = 0; i < 10; i++) big[`k${i}`] = i;
-    const out = stripAnsi(
-      renderMessageToText(buildJsonOutputMsg(big), 'kiro_default')
-    );
-    // Tail-window: the LAST 3 rows survive (k7/k8/k9), leading 7 hidden
-    // behind the marker above. Mirrors text-output behavior — both paths
-    // funnel through applyTailLineCap so the user sees consistent
-    // truncation across structured and unstructured tool output.
-    expect(out).toContain('k7: 7');
-    expect(out).toContain('k9: 9');
-    expect(out).not.toContain('k0: 0');
-    expect(out).not.toContain('k6: 6');
-    expect(out).toMatch(/\(truncated; \+7 more lines above\)/);
-  });
-
-  test('error path on a json envelope is unchanged (red bar of error text)', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-err-1',
-          role: 'tool_use',
-          name: 'mcp__some-server__lookup',
-          content: JSON.stringify({ query: 'q' }),
-          isFinished: true,
-          result: {
-            status: 'error',
-            error: 'something went wrong',
-            output: { items: [{ Json: { ignored: true } }] },
-          },
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('│ something went wrong');
-    // The structured output must NOT leak when we have an explicit error.
-    expect(out).not.toContain('ignored: true');
-  });
-
-  test('json-shape tool output bodies pick up the same green tint as text-shape outputs', () => {
-    // The sage-green tint (#a3c0a3) is the "successful result" outcome
-    // signal for tool-output bar blocks. Text-shape outputs (shell, grep,
-    // anything that returns a plain string) get it via formatBarBlock;
-    // JSON-shape envelopes (most MCP tools, knowledge searches, code-
-    // intel results) used to render plain — same successful result, two
-    // different visual treatments. This test pins that the JSON path now
-    // wraps body lines with the same body color so the tint is consistent
-    // across both branches.
-    //
-    // We assert the SGR open code (chalk truecolor `\x1b[38;2;...m`) for
-    // the body hex appears in the output. Stripping ANSI would erase the
-    // exact thing we're trying to verify, so we keep the raw output and
-    // pattern-match the SGR.
-    const greenSgr = '\x1b[38;2;163;192;163m';
-    const jsonOut = renderMessageToText(
-      buildJsonOutputMsg({ status: 'ok', count: 3 }),
-      'kiro_default'
-    );
-    expect(jsonOut).toContain(greenSgr);
-    // Sanity check: the same SGR is on the text-shape path so the test
-    // is comparing apples-to-apples — if shell output ever loses the
-    // tint, this assertion catches it before the json-shape one does.
-    const shellOut = renderMessageToText(
-      {
-        id: 't-text-tint',
-        role: 'tool_use',
+  it.each<{
+    name: string;
+    output?: unknown;
+    msgOverride?: Record<string, unknown>;
+    display?: Partial<VerboseDisplayConfig>;
+    contains?: string[];
+    absent?: string[];
+    matches?: RegExp[];
+    notMatches?: RegExp[];
+    rawContains?: string[]; // assert against un-stripped output (SGR checks)
+  }>([
+    {
+      // Plain string output stays a flat bar block (text path unchanged).
+      name: 'plain string output renders as a flat bar block, no key: shape',
+      msgOverride: {
+        id: 't-text-1',
         name: 'execute_bash',
         content: JSON.stringify({ command: 'echo hi' }),
-        isFinished: true,
+        result: { status: 'success', output: 'line-a\nline-b' },
+      },
+      contains: ['│ line-a', '│ line-b'],
+      notMatches: [/key:/],
+    },
+    {
+      // No items/content/shell keys → key:value tree, never a raw brace dump.
+      name: 'unknown json envelope renders as key:value tree under the bar',
+      output: { status: 'ok', count: 3, query: 'find me a thing' },
+      contains: ['│ status: ok', '│ count: 3', '│ query: find me a thing'],
+      absent: ['{"status":"ok"'],
+    },
+    {
+      // Real MCP shape { items: [{ Json: {...} }] } with no known string keys.
+      name: 'items[].Json envelope pretty-prints the inner object',
+      output: { items: [{ Json: { matches: 5, latency_ms: 42 } }] },
+      contains: ['│ matches: 5', '│ latency_ms: 42'],
+    },
+    {
+      // Args path caps at maxDepth=4; output path must not (user caps via lines).
+      name: 'deeply nested json (>4 levels) does NOT collapse to safeJson',
+      output: { a: { b: { c: { d: { e: { f: 'deep-value' } } } } } },
+      contains: ['f: deep-value'],
+      notMatches: [/\{"f":"deep-value"\}/],
+    },
+    {
+      // Tail-window cap mirrors text output (both funnel through applyTailLineCap).
+      name: 'outputMaxLines applies to the json tree like it does to text',
+      output: TEN_KEYS,
+      display: { outputMaxLines: 3, argsMaxChars: 80 },
+      contains: ['k7: 7', 'k9: 9'],
+      absent: ['k0: 0', 'k6: 6'],
+      matches: [/\(truncated; \+7 more lines above\)/],
+    },
+    {
+      // Explicit error: red error bar, structured output must not leak.
+      name: 'error path on a json envelope renders the error text only',
+      msgOverride: {
+        id: 't-err-1',
+        content: JSON.stringify({ query: 'q' }),
+        result: {
+          status: 'error',
+          error: 'something went wrong',
+          output: { items: [{ Json: { ignored: true } }] },
+        },
+      },
+      contains: ['│ something went wrong'],
+      absent: ['ignored: true'],
+    },
+    {
+      // JSON-shape success bodies pick up the same green tint as text-shape.
+      // Keep raw output — stripping ANSI would erase the SGR we assert.
+      name: 'json-shape output bodies carry the success green tint',
+      output: { status: 'ok', count: 3 },
+      rawContains: [GREEN_SGR],
+    },
+    {
+      // Apples-to-apples: the text-shape path carries the same tint.
+      name: 'text-shape output bodies carry the success green tint',
+      msgOverride: {
+        id: 't-text-tint',
+        name: 'execute_bash',
+        content: JSON.stringify({ command: 'echo hi' }),
         result: { status: 'success', output: 'hello' },
       },
-      'kiro_default'
-    );
-    expect(shellOut).toContain(greenSgr);
-  });
+      rawContains: [GREEN_SGR],
+    },
+  ])(
+    '$name',
+    ({
+      output,
+      msgOverride,
+      display,
+      contains,
+      absent,
+      matches,
+      notMatches,
+      rawContains,
+    }) => {
+      if (display) {
+        setVerboseConfig({
+          display: {
+            ...DEFAULT_DISPLAY,
+            subagent: { ...DEFAULT_DISPLAY.subagent },
+            ...display,
+          },
+        });
+      }
+      const msg = msgOverride
+        ? { ...buildJsonOutputMsg(undefined), ...msgOverride }
+        : buildJsonOutputMsg(output);
+      const raw = renderMessageToText(msg, 'kiro_default');
+      const out = stripAnsi(raw);
+      for (const s of contains ?? []) expect(out).toContain(s);
+      for (const s of absent ?? []) expect(out).not.toContain(s);
+      for (const re of matches ?? []) expect(out).toMatch(re);
+      for (const re of notMatches ?? []) expect(out).not.toMatch(re);
+      for (const s of rawContains ?? []) expect(raw).toContain(s);
+    }
+  );
 });
 
 describe('display.toolArgsMode rendering', () => {
