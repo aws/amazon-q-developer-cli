@@ -225,97 +225,105 @@ describe('renderSubagentFinalBlock', () => {
     expect(stripped).not.toContain('response summary:');
   });
 
-  test('renders responses section with ▸ chips for each summarized stage', () => {
-    const stageSummaries = [
-      {
-        stageName: 'a',
-        contextSummary: 'Colors: red, green, blue.',
-        taskResult: '',
-      },
-      { stageName: 'b', contextSummary: 'Icons: ✓, ✗, ●.', taskResult: '' },
-      {
-        stageName: 'combine',
-        contextSummary: 'Use red ✗ for errors.',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      heavyResult,
-      'done',
-      1000,
-      stageSummaries
+  // Responses section: contextSummary wins, taskResult is the fallback, and a
+  // long fallback caps at 30 lines + footnote. Each row supplies stageSummaries
+  // and the substrings that must / must not appear in the rendered block.
+  const LONG_BODY = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join(
+    '\n'
+  );
+  test.each<{
+    name: string;
+    stageSummaries: {
+      stageName: string;
+      contextSummary: string;
+      taskResult: string;
+    }[];
+    contains: string[];
+    absent?: string[];
+  }>([
+    {
+      name: 'renders ▸ chips for each summarized stage',
+      stageSummaries: [
+        {
+          stageName: 'a',
+          contextSummary: 'Colors: red, green, blue.',
+          taskResult: '',
+        },
+        { stageName: 'b', contextSummary: 'Icons: ✓, ✗, ●.', taskResult: '' },
+        {
+          stageName: 'combine',
+          contextSummary: 'Use red ✗ for errors.',
+          taskResult: '',
+        },
+      ],
+      contains: [
+        'response summary:',
+        '▸ a',
+        'Colors: red, green, blue.',
+        '▸ b',
+        'Icons: ✓, ✗, ●.',
+        '▸ combine',
+        'Use red ✗ for errors.',
+      ],
+      // No markdown header noise; parent-tool joiner output stays hidden.
+      absent: ['## a', '## combine', 'Final long body'],
+    },
+    {
+      name: 'falls back to taskResult when contextSummary is empty',
+      stageSummaries: [
+        {
+          stageName: 'a',
+          contextSummary: '',
+          taskResult: '42 typescript files.',
+        },
+        { stageName: 'b', contextSummary: '   ', taskResult: 'main' },
+        {
+          stageName: 'combine',
+          contextSummary: 'Already digested.',
+          taskResult: 'long body ignored',
+        },
+      ],
+      // Empty contextSummary → taskResult renders; non-empty wins over taskResult.
+      contains: [
+        'response summary:',
+        '▸ a',
+        '42 typescript files.',
+        '▸ b',
+        'main',
+        '▸ combine',
+        'Already digested.',
+      ],
+      absent: ['long body ignored'],
+    },
+    {
+      name: 'caps taskResult fallback at 30 lines with overflow footnote',
+      stageSummaries: [
+        { stageName: 'a', contextSummary: '', taskResult: LONG_BODY },
+      ],
+      contains: ['▸ a', 'line 1', 'line 30', '(+20 more lines)'],
+      absent: ['line 31', 'line 50'],
+    },
+    {
+      name: 'omits responses section entirely when every stage is empty',
+      stageSummaries: [
+        { stageName: 'a', contextSummary: '', taskResult: '' },
+        { stageName: 'b', contextSummary: '', taskResult: '' },
+      ],
+      contains: [],
+      absent: ['response summary:', '┌─ error:'],
+    },
+  ])('$name', ({ stageSummaries, contains, absent }) => {
+    const stripped = stripAnsi(
+      renderSubagentFinalBlock(
+        baseContent,
+        heavyResult,
+        'done',
+        1000,
+        stageSummaries
+      )
     );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('response summary:');
-    expect(stripped).toContain('▸ a');
-    expect(stripped).toContain('Colors: red, green, blue.');
-    expect(stripped).toContain('▸ b');
-    expect(stripped).toContain('Icons: ✓, ✗, ●.');
-    expect(stripped).toContain('▸ combine');
-    expect(stripped).toContain('Use red ✗ for errors.');
-    // No markdown header noise.
-    expect(stripped).not.toContain('## a');
-    expect(stripped).not.toContain('## combine');
-    // Parent-tool joiner output stays hidden.
-    expect(stripped).not.toContain('Final long body');
-  });
-
-  test('falls back to taskResult when contextSummary is empty', () => {
-    const stageSummaries = [
-      {
-        stageName: 'a',
-        contextSummary: '',
-        taskResult: '42 typescript files.',
-      },
-      { stageName: 'b', contextSummary: '   ', taskResult: 'main' },
-      {
-        stageName: 'combine',
-        contextSummary: 'Already digested.',
-        taskResult: 'long body ignored',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      heavyResult,
-      'done',
-      1000,
-      stageSummaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('response summary:');
-    // Empty contextSummary → taskResult body renders under the chip.
-    expect(stripped).toContain('▸ a');
-    expect(stripped).toContain('42 typescript files.');
-    expect(stripped).toContain('▸ b');
-    expect(stripped).toContain('main');
-    // Non-empty contextSummary takes priority — taskResult is ignored.
-    expect(stripped).toContain('▸ combine');
-    expect(stripped).toContain('Already digested.');
-    expect(stripped).not.toContain('long body ignored');
-  });
-
-  test('caps taskResult fallback at 30 lines with overflow footnote', () => {
-    const longBody = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join(
-      '\n'
-    );
-    const stageSummaries = [
-      { stageName: 'a', contextSummary: '', taskResult: longBody },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      heavyResult,
-      'done',
-      1000,
-      stageSummaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('▸ a');
-    expect(stripped).toContain('line 1');
-    expect(stripped).toContain('line 30');
-    expect(stripped).not.toContain('line 31');
-    expect(stripped).not.toContain('line 50');
-    expect(stripped).toContain('(+20 more lines)');
+    for (const c of contains) expect(stripped).toContain(c);
+    for (const a of absent ?? []) expect(stripped).not.toContain(a);
   });
 
   test('skips stages with neither contextSummary nor taskResult', () => {
@@ -346,23 +354,6 @@ describe('renderSubagentFinalBlock', () => {
     expect(insideResponses).not.toContain('▸ b');
   });
 
-  test('omits responses section entirely when every stage is empty', () => {
-    const stageSummaries = [
-      { stageName: 'a', contextSummary: '', taskResult: '' },
-      { stageName: 'b', contextSummary: '', taskResult: '' },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      heavyResult,
-      'done',
-      1000,
-      stageSummaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).not.toContain('response summary:');
-    expect(stripped).not.toContain('┌─ error:');
-  });
-
   test('renders error state with FAILED tail and red-coloured body, even with stageSummaries', () => {
     const content = JSON.stringify({ task: 't', stages: [] });
     const result = {
@@ -390,56 +381,57 @@ describe('renderSubagentFinalBlock', () => {
     expect(stripped).not.toContain('should not render on error');
   });
 
-  test('running state shows ... and no result/summary block', () => {
-    // Empty stages so no pipeline tree branches confuse the assertion.
-    const content = JSON.stringify({ task: 't', stages: [] });
-    const block = renderSubagentFinalBlock(content, undefined, 'running');
-    const stripped = stripAnsi(block);
-    expect(stripped).toMatch(/subagent\s+\.\.\./);
-    expect(stripped).not.toContain('┌─');
-  });
-
-  test('running with runningSpinner: header tail substitutes the spinner glyph', () => {
-    // Locks the bug fix: subagent was the only non-trivial tool that didn't
-    // pick up motion in the live region while running. Now the live region
-    // threads its spinner glyph through and the header tail uses it instead
-    // of the static dim ellipsis.
-    const content = JSON.stringify({ task: 't', stages: [] });
-    const block = renderSubagentFinalBlock(
-      content,
-      undefined,
-      'running',
-      undefined,
-      undefined,
-      { runningSpinner: '⠋' }
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('subagent');
-    expect(stripped).toContain('⠋');
-    // Spinner replaces ' ...', not concatenates.
-    expect(stripped).not.toMatch(/subagent\s+\.\.\./);
-  });
-
-  test('awaitingApproval overrides spinner with yellow `...`', () => {
-    // Same precedence rule as renderToolCall — even when the live region
-    // threads its spinner, an awaiting-approval flag wins. Yellow links
-    // the body to the approval prompt's [t] hotkey color.
-    const content = JSON.stringify({ task: 't', stages: [] });
-    const block = renderSubagentFinalBlock(
-      content,
-      undefined,
-      'running',
-      undefined,
-      undefined,
-      { runningSpinner: '⠋', awaitingApproval: true }
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('subagent');
-    expect(stripped).toContain('...');
-    expect(stripped).not.toContain('⠋');
-    // Yellow SGR code — chalk.yellow emits `\x1b[33m`.
-    expect(block).toContain('\x1b[33m');
-  });
+  // Running-state header tail (empty stages so no tree branches confuse the
+  // assertion). Precedence mirrors renderToolCall: a threaded runningSpinner
+  // replaces ' ...', but an awaitingApproval flag wins with a yellow ' ...'
+  // (`\x1b[33m`, the approval prompt's [t] hotkey color).
+  test.each<{
+    name: string;
+    info?: { runningSpinner?: string; awaitingApproval?: boolean };
+    containsMatch?: RegExp;
+    contains?: string[];
+    absent?: string[];
+    absentMatch?: RegExp;
+    rawContains?: string[];
+  }>([
+    {
+      name: 'running state shows ... and no result/summary block',
+      containsMatch: /subagent\s+\.\.\./,
+      absent: ['┌─'],
+    },
+    {
+      name: 'runningSpinner substitutes the spinner glyph (replaces ..., not concat)',
+      info: { runningSpinner: '⠋' },
+      contains: ['subagent', '⠋'],
+      absentMatch: /subagent\s+\.\.\./,
+    },
+    {
+      name: 'awaitingApproval overrides spinner with yellow ...',
+      info: { runningSpinner: '⠋', awaitingApproval: true },
+      contains: ['subagent', '...'],
+      absent: ['⠋'],
+      rawContains: ['\x1b[33m'],
+    },
+  ])(
+    '$name',
+    ({ info, containsMatch, contains, absent, absentMatch, rawContains }) => {
+      const content = JSON.stringify({ task: 't', stages: [] });
+      const block = renderSubagentFinalBlock(
+        content,
+        undefined,
+        'running',
+        undefined,
+        undefined,
+        info
+      );
+      const stripped = stripAnsi(block);
+      if (containsMatch) expect(stripped).toMatch(containsMatch);
+      for (const c of contains ?? []) expect(stripped).toContain(c);
+      for (const a of absent ?? []) expect(stripped).not.toContain(a);
+      if (absentMatch) expect(stripped).not.toMatch(absentMatch);
+      for (const r of rawContains ?? []) expect(block).toContain(r);
+    }
+  );
 });
 
 describe('display.subagent section toggles', () => {
