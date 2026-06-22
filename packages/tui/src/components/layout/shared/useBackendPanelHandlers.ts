@@ -73,123 +73,55 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
   const { kiro } = useKiroClient();
   const settingsReturnOnEscape = useAppStore((s) => s.settingsReturnOnEscape);
 
-  const handleCloseContextBreakdown = useCallback(() => {
-    setShowContextBreakdown(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowContextBreakdown, setActiveCommand, clearCommandInput]);
+  // Every close handler flips its show flag off, drops the activeCommand
+  // wrapper, and clears any half-typed slash. `returnToSettings` additionally
+  // honors settingsReturnOnEscape so a panel opened from /settings bounces back
+  // there. makeClose is called unconditionally and in fixed order each render
+  // (it wraps useCallback), so React hook ordering holds.
+  const makeClose = (
+    setShow: (open: boolean) => void,
+    opts?: { returnToSettings?: boolean }
+  ) =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useCallback(() => {
+      setShow(false);
+      setActiveCommand(null);
+      clearCommandInput();
+      if (opts?.returnToSettings && settingsReturnOnEscape) {
+        setSettingsReturnOnEscape(false);
+        reopenSettingsMenu();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+      setShow,
+      setActiveCommand,
+      clearCommandInput,
+      settingsReturnOnEscape,
+      setSettingsReturnOnEscape,
+      reopenSettingsMenu,
+    ]);
 
-  const handleCloseHelpPanel = useCallback(() => {
-    setShowHelpPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseUsagePanel = useCallback(() => {
-    setShowUsagePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowUsagePanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseMcpPanel = useCallback(() => {
-    setShowMcpPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowMcpPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseToolsPanel = useCallback(() => {
-    setShowToolsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseStatsPanel = useCallback(() => {
-    setShowStatsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowStatsPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseHooksPanel = useCallback(() => {
-    setShowHooksPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowHooksPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseKnowledgePanel = useCallback(() => {
-    setShowKnowledgePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowKnowledgePanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseCodePanel = useCallback(() => {
-    setShowCodePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowCodePanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseChangelogPanel = useCallback(() => {
-    setShowChangelogPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowChangelogPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseRewindExplorer = useCallback(() => {
-    setShowRewindExplorer(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowRewindExplorer, setActiveCommand, clearCommandInput]);
-
-  const handleCloseKeybindingsPanel = useCallback(() => {
-    setShowKeybindingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
-    setShowKeybindingsPanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
-
-  const handleCloseDisplaySettingsPanel = useCallback(() => {
-    setShowDisplaySettingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
+  const handleCloseContextBreakdown = makeClose(setShowContextBreakdown);
+  const handleCloseHelpPanel = makeClose(setShowHelpPanel);
+  const handleCloseUsagePanel = makeClose(setShowUsagePanel);
+  const handleCloseMcpPanel = makeClose(setShowMcpPanel);
+  const handleCloseToolsPanel = makeClose(setShowToolsPanel);
+  const handleCloseStatsPanel = makeClose(setShowStatsPanel);
+  const handleCloseHooksPanel = makeClose(setShowHooksPanel);
+  const handleCloseKnowledgePanel = makeClose(setShowKnowledgePanel);
+  const handleCloseCodePanel = makeClose(setShowCodePanel);
+  const handleCloseChangelogPanel = makeClose(setShowChangelogPanel);
+  const handleCloseRewindExplorer = makeClose(setShowRewindExplorer);
+  const handleCloseKeybindingsPanel = makeClose(setShowKeybindingsPanel, {
+    returnToSettings: true,
+  });
+  const handleCloseDisplaySettingsPanel = makeClose(
     setShowDisplaySettingsPanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
-
-  const handleCloseThemePanel = useCallback(() => {
-    setShowThemePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    // Return to /settings menu if this panel was opened from there.
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
-    setShowThemePanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
+    { returnToSettings: true }
+  );
+  const handleCloseThemePanel = makeClose(setShowThemePanel, {
+    returnToSettings: true,
+  });
 
   const handleCloseSettingsPanel = useCallback(() => {
     // Top-level /settings close. Always clears the back-flag so the next

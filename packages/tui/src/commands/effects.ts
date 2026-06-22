@@ -1597,22 +1597,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return null;
     };
 
-    // Short-form summary used in menu rows (no truncation — the row width
-    // handles overflow). `none` for empty, `all` for the full-list shortcut,
-    // otherwise comma-joined.
+    // Short-form summary for menu rows: `none` / `all` / comma-joined.
     const fmtFilters = (f: string[]) => {
       if (f.length === 0) return 'none';
       if (f.length === 1 && f[0] === 'all') return 'all';
       return f.join(', ');
     };
-    // Long-form for system announcements: collapses with a count when the
-    // joined form would wrap, since the lite renderer's word-break splits on
-    // character count rather than commas. Threshold derives from the terminal
-    // width (with a 120-column fallback) minus a generous prefix budget.
+    // Long-form for system announcements: collapses with a `+N more` count when
+    // the joined form would wrap (lite's word-break splits on char count, not
+    // commas). Budget derives from terminal width (120-col fallback).
     const fmtFiltersForAnnounce = (f: string[]) => {
-      if (f.length === 0) return 'none';
-      if (f.length === 1 && f[0] === 'all') return 'all';
       const joined = f.join(', ');
+      if (f.length <= 1) return fmtFilters(f);
       const cols = process.stdout.columns ?? 120;
       const budget = Math.max(40, cols - 30);
       if (joined.length <= budget) return joined;
@@ -1817,25 +1813,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       full: '1:1 of what the parent agent sees · all filters on · no truncation',
     };
 
-    /**
-     * Density menu — the primary entry point when a preset is active.
-     *
-     * Lists all four presets plus a `Custom` row that opens the config menu.
-     * The `← back` row is also Custom-equivalent so users have an obvious
-     * way to drill into the per-knob menu without learning the explicit
-     * `Custom` label.
-     *
-     * Highlighting a preset row should draft-preview it inline — wired in
-     * CommandMenu via the highlight handler, not here. Selecting a preset
-     * routes to the `density:confirm:<preset>` confirmation submenu rather
-     * than committing immediately, mirroring the old reset-confirm gate.
-     */
+    // Density menu — entry point when a preset is active. Lists all four
+    // presets plus a Custom row (→ config menu). Selecting a preset routes to
+    // the `menu:density:confirm:<preset>` gate rather than committing.
     const openDensityMenu = (initialIndex = 0) => {
-      // ESC from the density menu fully exits — there's no parent above it
-      // when it's the entry point. (Reached via the Custom flow → config
-      // menu → density submenu, ESC behavior is governed by setReturn
-      // earlier.) Default-clear so accidental cursor states from prior
-      // submenus don't persist.
+      // ESC fully exits — no parent above the entry point.
       setReturn(null);
       const active = detectActivePreset();
       const options: Array<{
@@ -1843,19 +1825,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         label: string;
         description: string;
       }> = DENSITY_PRESETS.map((p) => ({
-        // `menu:`-prefixed because this is internal menu navigation (opens
-        // the per-preset confirmation submenu), not a CLI form. The route
-        // handler at the bottom of this effect only matches the menu form;
-        // dropping the prefix here used to silently fall through to the
-        // "Unknown subcommand" error for every preset.
+        // `menu:`-prefixed internal navigation: without the prefix the route
+        // handler falls through to "Unknown subcommand" for every preset.
         value: `menu:density:confirm:${p}`,
         label: p,
         description:
           active === p ? `[active] · ${PRESET_DESC[p]}` : PRESET_DESC[p],
       }));
-      // Custom — explicit row so users know how to tweak individual knobs
-      // without thinking "what menu am I missing". Routes to the config
-      // menu (the prior top-menu drilldown).
       options.push({
         value: 'menu:config',
         label: 'custom',
@@ -1867,16 +1843,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openMenuWith(options, initialIndex, 'density');
     };
 
-    /**
-     * Confirmation gate for picking a density preset. Mirrors the old
-     * reset-to-defaults confirm flow — Cancel comes first so the default
-     * cursor lands on a safe row, Yes commits the preset (display + filters)
-     * and re-opens the density menu.
-     *
-     * `which` carries the preset the user picked so the confirmation can
-     * name it specifically and the route stays self-describing for ESC
-     * navigation.
-     */
+    // Confirmation gate for a density preset. Cancel comes first so the default
+    // cursor lands on a safe row; Yes commits (display + filters) and re-opens
+    // the density menu. `which` names the picked preset in the confirmation.
     const openPresetConfirmMenu = (which: DensityPreset) => {
       setReturn('menu:density');
       openMenuWith(
@@ -1953,20 +1922,17 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         description: onOff(sub[key]),
         group: 'Subagent display',
       });
-      // Gating rule: prompts and roles only emit anything when the master
-      // step list is on (the renderer wraps both in `if (sub.pipeline && ...)`),
-      // so showing them while pipeline is off would be a dead toggle. When
-      // off, drop the dependent rows so the menu reflects what each row
-      // can actually accomplish.
+      // prompts/roles only emit when the master step list is on (renderer wraps
+      // both in `if (sub.pipeline && ...)`), so drop the dependent rows when
+      // pipeline is off — they'd be dead toggles.
       const stepRows = sub.pipeline
         ? [
             row('prompts', 'Show step instructions'),
             row('roles', 'Show step role labels'),
           ]
         : [];
-      // Subagent's full taskResult body is gated by the `subagent` filter
-      // (mirrors what `output` does for tool output bars). Surface it here
-      // too so users don't have to know the filter→subagent connection.
+      // Full taskResult body is gated by the `subagent` filter (mirrors what
+      // `output` does for tool output bars); surface it here too.
       const filterSet = new Set(cur.filters);
       const fullOutputOn =
         cur.filters.includes('all') || filterSet.has('subagent');
@@ -1988,15 +1954,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    // Truncation submenu exposes four independent caps — line and char limits
-    // for both args and output — so users can pick the unit that maps best
-    // to what they care about. Each row routes to the numeric editor
-    // (rendered by CommandMenu when previewKey ends with `:edit`).
-    //
-    // Per-line vs per-char: line caps are visual-row counts (`argsMaxLines`,
-    // `outputMaxLines`); char caps cut individual values at N characters
-    // (`argsMaxChars`, `outputMaxChars`). The chip in inline mode and any
-    // long string value inside block-mode use the char cap.
+    // Truncation submenu: four independent caps (line + char limits for args
+    // and output). Line caps are visual-row counts; char caps cut individual
+    // values at N chars. Each row routes to the numeric editor (CommandMenu
+    // renders it when previewKey ends with `:edit`).
     const TRUNC_HEADINGS: Record<TruncationField, string> = {
       argsLines: 'Tool args · lines',
       argsChars: 'Tool args · chars per value',
@@ -2054,11 +2015,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    // Open the numeric editor for one of the four caps. The "menu" itself is
-    // a no-op option list — CommandMenu renders the VerbosityTruncationEditor
-    // component when previewKey ends with `:edit`. The single menu row is a
-    // dummy placeholder so navigation still works (Enter/Escape behave the
-    // same as any other menu).
+    // Open the numeric editor for one of the four caps. The single menu row is
+    // a dummy placeholder — CommandMenu renders VerbosityTruncationEditor when
+    // previewKey ends with `:edit` and the editor handles all keypresses.
     const openTruncationEditor = (which: TruncationField) => {
       // Esc from the editor returns to the Truncation submenu, NOT the top.
       setReturn('menu:truncation');
@@ -2067,9 +2026,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const heading = TRUNC_HEADINGS[which];
       const unit: 'lines' | 'chars' =
         which === 'argsChars' || which === 'outputChars' ? 'chars' : 'lines';
-      // Single placeholder option — the editor handles all keypresses, the
-      // menu's own option list is never used. We still emit one row so the
-      // menu component doesn't render an empty selection.
       openMenuWith(
         [
           {

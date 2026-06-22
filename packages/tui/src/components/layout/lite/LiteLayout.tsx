@@ -106,8 +106,7 @@ export const LiteLayout: React.FC = () => {
   // (keystroke→PTY forwarding lives in AppContainer's always-armed handler).
   const isShellEscape = useAppStore((s) => s.isShellEscape);
   // Render-skip bookmark (full contract in app-store): tui→lite swap sets it
-  // to messages.length so TUI scrollback isn't re-rendered in lite; resume
-  // sets it to max(0, len - LITE_HISTORY_RENDER_CAP). 0 on cold boot.
+  // to messages.length so TUI scrollback isn't re-rendered in lite.
   const liteStaticSkipBefore = useAppStore((s) => s.liteStaticSkipBefore);
   const isInitialized = useAppStore((s) => s.isInitialized);
   const agentError = useAppStore((s) => s.agentError);
@@ -120,7 +119,6 @@ export const LiteLayout: React.FC = () => {
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
-  // Tasks tray (Ctrl+X) — same store data the TUI's <ActivityTray /> consumes.
   const tasks = useAppStore((s) => s.tasks);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
@@ -142,8 +140,7 @@ export const LiteLayout: React.FC = () => {
   const loadingMessage = useAppStore((s) => s.loadingMessage);
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
   // Accessibility wiring (1:1 with modern TUI): glyph/spinner Unicode↔ASCII,
-  // ASCII-art banner gate, and animation-paused (skips the boot-frame interval
-  // so motion-sensitive setups don't see the spinner cycle).
+  // ASCII-art banner gate, animation-paused.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
@@ -177,7 +174,7 @@ export const LiteLayout: React.FC = () => {
   const currentEffort = useAppStore((s) => s.currentEffort);
   // Goal-loop state (set by `/goal`). Lite surfaces it three ways: a
   // status-line segment, a one-time scrollback confirmation, and a transient
-  // alert on bare `/goal` (which has no lite panel).
+  // alert on bare `/goal` (no lite panel).
   const goalStatus = useAppStore((s) => s.goalStatus);
   const setShowGoalPanel = useAppStore((s) => s.setShowGoalPanel);
   const showTransientAlert = useAppStore((s) => s.showTransientAlert);
@@ -680,32 +677,28 @@ export const LiteLayout: React.FC = () => {
     getUserPromptBgHex,
   ]);
 
-  // Persistent <Static> items array, built incrementally — each render only
-  // APPENDS, never mutates prior entries. Twinki's <Static> is a monotonic
-  // by-index cursor that silently drops re-emissions for already-printed
-  // indices, so the prefix is load-bearing forever. (A fresh array per chunk
-  // was both wasteful and a Zustand-equality footgun.)
+  // Append-only <Static> invariant: Twinki's <Static> is a monotonic by-index
+  // cursor that silently drops re-emissions for already-printed indices, so
+  // staticItemsRef only ever grows (until liteScrollbackClearToken resets it).
+  // The delta walk clamps late eligibility shrinkage and dedups via
+  // pushedStaticIdsRef for rows that flip eligible after a later row flushed.
   const staticItemsRef = useRef<Array<{ id: string; text: string }>>([]);
   // High-water mark into `eligible`: count already appended. Resets on clear.
   const lastFlushedEligibleCountRef = useRef(0);
-  // Session ids the user explicitly killed via Ctrl+X. Tracked locally because
-  // the backend fires session_terminated for normal completion too, so a status
-  // check alone would paint naturally-completed stages as red `✗ killed`.
+  // Session ids the user explicitly killed via Ctrl+X — the backend fires
+  // session_terminated for normal completion too, so a status check alone
+  // would paint naturally-completed stages as red `✗ killed`.
   const userKilledSessionsRef = useRef<Set<string>>(new Set());
-  // Ids already pushed to staticItemsRef. Belt-and-suspenders dedup: the
-  // index-based delta walk assumes the eligible PREFIX is stable, but a Model
-  // row can flip ineligible→eligible AFTER a later System/User row was flushed
-  // (the shell-escape cancel race), re-pointing the walk at an already-pushed
-  // row. Without this skip that row duplicates forever (static is append-only).
+  // Ids already pushed: a Model row can flip eligible AFTER a later row was
+  // flushed (shell-escape cancel race), re-pointing the delta walk at an
+  // already-pushed row that would otherwise duplicate forever.
   const pushedStaticIdsRef = useRef<Set<string>>(new Set());
-  // Turn-summary trailers already committed — never re-emit (preserves the
-  // monotonic cursor across mode swaps + slash-command boundaries).
+  // Turn-summary trailers already committed — never re-emit.
   const committedTurnSummariesRef = useRef<Set<string>>(new Set());
-  // User id opening the in-flight (or last) turn; the prior turn's trailer is
-  // emitted at this boundary.
+  // User id opening the in-flight (or last) turn; its trailer flushes here.
   const openTurnUserIdRef = useRef<string | null>(null);
-  // Last appended eligible msg — so the next delta can compute the leading
-  // blank against it without re-walking the full eligible list.
+  // Last appended eligible msg — the next delta computes its leading blank
+  // against this without re-walking the full eligible list.
   const lastAppendedEligibleMsgRef = useRef<MessageType | null>(null);
 
   // Session boundary (/chat new|<id>|load, /clear, /rewind, lite↔tui swap).
@@ -800,36 +793,28 @@ export const LiteLayout: React.FC = () => {
     return false;
   }, [messages]);
 
-  // Static items: welcome + finalized messages, append-only. Each item's text
-  // is baked once at flush time; prior items are never touched, so <Static>'s
-  // by-index cursor stays valid. Delta-append (not rebuild-per-render):
-  // staticItemsRef is a persistent array, mutated in place, only appending rows
-  // that joined `eligible` since the last walk.
+  // Static items: welcome + finalized messages, delta-appended (not rebuilt)
+  // into the persistent staticItemsRef. Each item's text is baked once at flush
+  // time.
   //
-  // Resize caveat: this bakes `process.stdout.columns` into each row's text. If
-  // the terminal resizes after a row lands, its text is stale — but the
-  // monotonic cursor ignores re-emissions anyway. DO NOT add a resize redraw:
-  // it would be silently dropped, or scramble history if Static ever honored
-  // in-place edits. Terminal soft-wrap absorbs width changes for live writes.
+  // Resize caveat: this bakes `process.stdout.columns` into each row's text, so
+  // a later resize leaves it stale — but the monotonic cursor ignores
+  // re-emissions anyway. DO NOT add a resize redraw: it would be silently
+  // dropped or scramble history. Terminal soft-wrap absorbs width changes.
   const staticItems = useMemo(() => {
     const items = staticItemsRef.current;
 
-    // Welcome banner placement is hybrid: (1) the live-region <Text> below
-    // (while showWelcomeBanner) handles the fresh-session resize case (a
-    // static-only banner vanishes on resize since doResize drops
-    // accumulatedStaticOutput); (2) the index-0 static push below (gated on
-    // items.length === 0) persists it as a session delimiter once chat lands.
-    // Both, because static-only regressed resize UX (b72df6cd8) and live-only
-    // regressed scrollback persistence. Mutually exclusive with the
-    // swap-with-content push above via the items.length === 0 gate.
+    // Welcome banner placement is hybrid: a live-region <Text> for the fresh
+    // session (a static-only banner vanishes on resize) + an index-0 static
+    // push once chat lands (so it persists as a session delimiter). Both,
+    // because static-only regressed resize UX (b72df6cd8) and live-only
+    // regressed scrollback persistence.
 
-    // Slice the tui→lite bookmark out before selecting eligible rows; slice
-    // preserves the tail for the "skip last streaming Model" rule.
-    // activeToolBatchIds is computed from FULL messages so the trailing batch
-    // is right even across the bookmark. Welcome-screen suppression: while
-    // showWelcomeBanner, drop standalone-greeting rows (rendered alongside the
-    // live banner so the banner sits above them); they fall back into eligible
-    // and commit to <Static> once the welcome screen ends.
+    // Slice the tui→lite bookmark out before selecting eligible rows (slice
+    // preserves the tail for the "skip last streaming Model" rule).
+    // Welcome-screen suppression: drop standalone-greeting rows (rendered
+    // alongside the live banner) while showWelcomeBanner; they fall back into
+    // eligible once the welcome screen ends.
     const sliced =
       liteStaticSkipBefore > 0 && liteStaticSkipBefore <= messages.length
         ? messages.slice(liteStaticSkipBefore)
@@ -1104,12 +1089,11 @@ export const LiteLayout: React.FC = () => {
     const byStage = new Map<string, SubagentRow>();
     const order: string[] = [];
 
-    // Seed rows from sessions FIRST: the ACP session exists at spawn, but a
-    // stage only emits ToolUse after its first tool call, so without this seed
-    // a thinking/streaming stage wouldn't appear until its summary fires.
-    // Include terminated stages too — sessions.values() is spawn order, so
-    // seeding them here lets the message walk update in place rather than
-    // reshuffling the row to the tail mid-run when the stage finishes.
+    // Seed rows from sessions FIRST (in spawn order): the ACP session exists at
+    // spawn, but a stage only emits ToolUse after its first tool call, so
+    // without this seed a thinking/streaming stage wouldn't appear until its
+    // summary fires. Seeding terminated stages too lets the message walk update
+    // in place instead of reshuffling the row to the tail when a stage finishes.
     for (const session of sessions.values()) {
       const stageName = session.name;
       if (!stageName || stageName === agentName) continue;
@@ -1117,10 +1101,8 @@ export const LiteLayout: React.FC = () => {
       order.push(stageName);
       byStage.set(stageName, {
         name: stageName,
-        // `killed` phase reflects explicit user kills ONLY: the backend drops a
-        // session on normal completion too (index.tsx → status 'terminated'),
-        // so a status check would paint completed stages as red `✗ killed`.
-        // Only the Ctrl+X handler adds to userKilledSessionsRef.
+        // `killed` reflects explicit user kills ONLY (userKilledSessionsRef) —
+        // the backend terminates sessions on normal completion too.
         phase: userKilledSessionsRef.current.has(session.id)
           ? 'killed'
           : 'running',
@@ -1516,8 +1498,7 @@ export const LiteLayout: React.FC = () => {
   return (
     <Box flexDirection="column">
       {/* Scrollback: finalized messages, append-only. wrap="overflow" writes
-          each item.text as-is and lets the terminal soft-wrap — pairs with
-          lite/render.ts's policy of \n only at structural breaks so copy-paste
+          item.text as-is and lets the terminal soft-wrap, so copy-paste
           preserves logical lines (wideLines enabled at index.tsx). */}
       <Static items={staticItems}>
         {(item) => (
@@ -1527,12 +1508,10 @@ export const LiteLayout: React.FC = () => {
         )}
       </Static>
 
-      {/* Welcome banner — live-region row while the welcome screen is active.
-          Lives outside <Static> so a resize (which clears
-          accumulatedStaticOutput) reflows it instead of an empty viewport. The
-          staticItemsRef.current.length === 0 gate keeps it mutually exclusive
-          with the swap-with-content static push above, so the user never sees
-          two KIRO arts at once. */}
+      {/* Welcome banner — live-region row while the welcome screen is active,
+          outside <Static> so a resize reflows it instead of an empty viewport.
+          The length === 0 gate keeps it mutually exclusive with the
+          swap-with-content static push above (no double KIRO art). */}
       {showWelcomeBanner && staticItemsRef.current.length === 0 && (
         <Text wrap="overflow">{welcomeBannerText}</Text>
       )}
@@ -1544,7 +1523,6 @@ export const LiteLayout: React.FC = () => {
         <Text wrap="overflow">{welcomeGreetingText}</Text>
       )}
 
-      {/* Live region: streaming + tools */}
       {agentError && <Text>{chalk.red(`error: ${agentError}`)}</Text>}
       <LiteLiveRegion />
 
@@ -1560,9 +1538,8 @@ export const LiteLayout: React.FC = () => {
 
       {/* Queued messages — preview rows only (full text lives in the store,
           restored verbatim on pull-back). previewLine cap + wrap="truncate-end"
-          bound each row's cost by width, not length — rendering full text here
-          hung the UI on multi-KB paste. Hidden during shell escape (queue is
-          for the agent, not bash). */}
+          bound each row's cost by width — rendering full text here hung the UI
+          on multi-KB paste. Hidden during shell escape. */}
       {queuedMessages.length > 0 && !isShellEscape && (
         <Box flexDirection="column">
           {queuedMessages.map((msg, i) => {
@@ -1700,12 +1677,11 @@ export const LiteLayout: React.FC = () => {
             </Text>
           )}
           {/* Input row — glyph + box pick up the user's prompt preset colors so
-              /theme re-skins the lite input. width="100%" on the row +
-              flexShrink={1} on the inner box are load-bearing for multi-line
-              wrap: without an explicit row width, Yoga sizes the row to the `> `
-              glyph and the Text has nothing to wrap against (PromptBar uses the
-              same pattern). Hidden while the /verbosity menu is active (its
-              breadcrumb header takes the input's place). */}
+              /theme re-skins the lite input. width="100%" + inner flexShrink={1}
+              are load-bearing for multi-line wrap: without an explicit row
+              width Yoga sizes the row to the `> ` glyph and Text has nothing to
+              wrap against. Hidden while /verbosity is active (breadcrumb header
+              takes the input's place). */}
           {!verbosityMenuActive && (
             <Box flexDirection="row" width="100%" backgroundColor={promptBgHex}>
               <Text>
@@ -1754,7 +1730,6 @@ export const LiteLayout: React.FC = () => {
           // floor-detection math stays consistent.
           return (
             <Box flexDirection="column">
-              {/* Top breathing room. */}
               <Text> </Text>
               {visible.map((sub, i) => {
                 if (openIdx === i && focused && focusedSessionId) {

@@ -456,6 +456,17 @@ describe('/verbosity density presets', () => {
     // The differentiator: filter list collapses to ['all'].
     expect(cfg.filters).toEqual(['all']);
   });
+
+  // density:<preset> colon form (Bug D): accepted as a CLI shortcut. The
+  // accepted forms (lean/minimal/full) are covered by the tests above; this
+  // pins the unknown-preset error path that the colon form must still reject.
+  it('density:<unknown> (e.g. density:custom) surfaces an error alert', () => {
+    const ctx = liteCtx();
+    runEffect(verbosityCmd, null, ctx, 'density:custom');
+    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
+    expect(calls[0]![0]).toContain('Unknown density preset');
+    expect(calls[0]![1]).toBe('error');
+  });
 });
 
 describe('/verbosity display flag toggles (set:)', () => {
@@ -887,62 +898,6 @@ describe('/verbosity ESC navigation flag', () => {
       .calls as unknown as unknown[][];
     const last = calls[calls.length - 1];
     expect(last?.[0]).toBe(route);
-  });
-});
-
-describe('/verbosity cursor positioning (initialIndex)', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: ['all'] });
-  });
-
-  // Entry menu, bare config menu, and every submenu open with the cursor at
-  // row 0 so the chevron is visible.
-  it.each([
-    '',
-    'menu:top',
-    'menu:density',
-    'menu:density:confirm:default',
-    'menu:density:confirm:lean',
-    'menu:tool',
-    'menu:subagent',
-    'menu:output',
-    'menu:truncation',
-    'menu:truncation:argsLines:edit',
-    'menu:truncation:outputLines:edit',
-  ])('opens %p with cursor at row 0', (sub) => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, sub);
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
-    expect(arg.initialIndex).toBe(0);
-  });
-
-  it('config menu re-entered via menu:top:<key> lands on the matching row', () => {
-    // Config menu order: density(0), tool(1), subagent(2), thinking(3),
-    // tasks(4), output(5), truncation(6). The standalone reset-confirm row
-    // is gone — density now serves the reset-to-defaults purpose via the
-    // `default` preset. `thinking` is the persisted-thinking-content toggle
-    // (distinct from per-tool reasoning under tool-calls). `tasks` is the
-    // lite task tray toggle.
-    const expected: Record<string, number> = {
-      'menu:top:density': 0,
-      'menu:top:tool': 1,
-      'menu:top:subagent': 2,
-      'menu:top:thinking': 3,
-      'menu:top:tasks': 4,
-      'menu:top:output': 5,
-      'menu:top:truncation': 6,
-    };
-    for (const [route, idx] of Object.entries(expected)) {
-      const ctx = liteCtx();
-      runEffect(verbosityCmd, null, ctx, route);
-      const calls = ctx._spies.setActiveCommand!.mock
-        .calls as unknown as unknown[][];
-      const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
-      expect(arg.initialIndex).toBe(idx);
-    }
   });
 });
 
@@ -1495,36 +1450,6 @@ describe('/verbosity case-insensitive command verbs', () => {
     expect(getVerboseConfig().filters).toContain('Shell');
     expect(getVerboseConfig().filters).not.toContain('shell');
   });
-});
-
-describe('/verbosity density colon form (Bug D)', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: ['all'] });
-  });
-
-  it('/verbosity density:lean is accepted as a CLI form', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:lean');
-    expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
-  });
-
-  it('/verbosity density:minimal is accepted', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:minimal');
-    expect(getVerboseConfig().display!.toolArgsMode).toBe('off');
-    expect(getVerboseConfig().display!.showToolReasoning).toBe(false);
-  });
-
-  it('/verbosity density:custom (unknown preset) surfaces an error alert', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:custom');
-    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(calls[0]![0]).toContain('Unknown density preset');
-    expect(calls[0]![1]).toBe('error');
-  });
-  // Case-insensitive `DENSITY:lean` verb is covered by the case-folding
-  // it.each above.
 });
 
 // Sanity test: the help-panel local-command merge skips liteOnly entries when

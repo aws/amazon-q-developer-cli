@@ -174,8 +174,7 @@ export const LiteLiveRegion: React.FC = () => {
 
   const liveContent = isProcessing ? streamingContent : '';
 
-  // Memoize the rendered thinking block so 150ms spinner ticks don't re-wrap
-  // the accumulated reasoning text (content is monotonic-append per round).
+  // Memoized so 150ms spinner ticks don't re-wrap the accumulated reasoning.
   const termCols = process.stdout.columns ?? 80;
   const thinkingBlockMemo = useMemo(() => {
     if (!thinkingContent) return '';
@@ -201,13 +200,10 @@ export const LiteLiveRegion: React.FC = () => {
     return renderShellOutputBlock(row.content, renderTheme, termCols);
   }, [isShellEscape, messages, renderTheme, termCols]);
 
-  // Memoize the streaming markdown render so spinner ticks / unrelated
-  // re-renders don't re-parse + re-wrap the accumulated `liveContent` (full
-  // re-parse per chunk is correct since the buffer is monotonic-append).
-  // Routed through the same renderAgentMessage that finalized rows use, so the
-  // live→static flush is a no-op visual transition (no plain→styled flicker).
-  // Marked treats unclosed inline emphasis as literal text, so a half-arrived
-  // `**bold` doesn't bleed (verified by probe).
+  // Memoized streaming markdown render, through the same renderAgentMessage
+  // that finalized rows use so the live→static flush is a no-op visual
+  // transition. Marked treats unclosed inline emphasis as literal text, so a
+  // half-arrived `**bold` doesn't bleed (verified by probe).
   const streamingBlockMemo = useMemo(() => {
     if (!liveContent) return '';
     return renderAgentMessage(
@@ -307,11 +303,9 @@ export const LiteLiveRegion: React.FC = () => {
     return needsLeadingBlankByRole(prev.role, nextRole);
   }, [messages, isProcessing, activeTools, liveContent]);
 
-  // Per-tool live output bars: pull accumulated lines from `liveOutputs` and
-  // tail-window them through the shared bar formatter so the preview matches
-  // the eventual static rendering. Hoisted above the early returns (hooks must
-  // run unconditionally); cost is zero when not processing since activeTools
-  // is []. Recomputed only on real deps so 150ms ticks reuse the prior map.
+  // Per-tool live output bars: tail-window accumulated `liveOutputs` lines
+  // through the shared bar formatter so the preview matches the eventual static
+  // rendering. Hoisted above the early returns (hooks run unconditionally).
   const display = getVerboseDisplay();
   // getVerboseFilters() (not getVerboseConfig().filters) so the cli.json
   // CHAT_TOOLS_FILTERS override reaches the live gate. Key the memo on the
@@ -350,11 +344,9 @@ export const LiteLiveRegion: React.FC = () => {
   ]);
 
   // Canonical render of each in-flight tool's chat-log row (same formatter as
-  // the settled row) so a running shell/fs_write/fs_read shows its full args /
-  // diff / body immediately, not just `<tool> ⠋`. Rendered with
-  // runningSpinner: SPINNER_PLACEHOLDER so the heavy work only reruns on real
-  // dep shifts; per tick we just replaceAll the placeholder. Theme tracked in
-  // deps so /theme swaps reflow the preview.
+  // the settled row) so a running shell/fs_write/fs_read shows its full body
+  // immediately. runningSpinner: SPINNER_PLACEHOLDER so the heavy work only
+  // reruns on real dep shifts; per tick we just replaceAll the placeholder.
   const renderedToolBodies = useMemo(() => {
     const out = new Map<string, string>();
     // Per-stage color resolver (same as LiteLayout's static ctx) — without it

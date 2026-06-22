@@ -79,49 +79,56 @@ describe('/theme command', () => {
   });
 
   describe('bundled themes (Dark/Light)', () => {
-    it('applies dark bundled theme and persists both prompt and response', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'bundled:dark', ctx);
+    // Applying a bundled theme sets prompt + response colors, switches the base
+    // theme to its surface truecolor, alerts success, and persists every preset
+    // slot (prompt/response/diff/baseTheme). Parameterized over the two bundled
+    // themes — same flow, different fixed color/pref values.
+    it.each([
+      {
+        id: 'dark',
+        surface: '#262626',
+        labelMatch: 'Dark',
+        prefs: {
+          responsePreset: 'light',
+          diffPreset: 'dark',
+          baseTheme: 'dark',
+        },
+      },
+      {
+        id: 'light',
+        surface: '#EEEEEE',
+        labelMatch: 'Light',
+        prefs: {
+          promptPreset: 'paper',
+          responsePreset: 'dark',
+          diffPreset: 'light',
+          baseTheme: 'light',
+        },
+      },
+    ])(
+      'applies bundled $id theme: sets colors, base theme, and persists presets',
+      async ({ id, surface, labelMatch, prefs: expectedPrefs }) => {
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, `bundled:${id}`, ctx);
 
-      expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      // Should set both prompt and response
-      expect(colorCall[0]).toBeDefined(); // prompt { text, bg }
-      expect(colorCall[1]).toBeDefined(); // response color
+        // Sets both prompt { text, bg } and response color.
+        expect(ctx._spies.setUserColors!).toHaveBeenCalled();
+        const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
+        expect(colorCall[0]).toBeDefined();
+        expect(colorCall[1]).toBeDefined();
 
-      // Should switch base theme to kiroDark
-      expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
-      const baseThemeCall = ctx._spies.setBaseTheme!.mock.calls[0]!;
-      expect(baseThemeCall[0]).toBeDefined();
-      expect(baseThemeCall[0].colors.surface.truecolor).toBe('#262626');
+        // Switches the base theme to the matching surface.
+        expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
+        const baseThemeCall = ctx._spies.setBaseTheme!.mock.calls[0]!;
+        expect(baseThemeCall[0]).toBeDefined();
+        expect(baseThemeCall[0].colors.surface.truecolor).toBe(surface);
 
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Dark');
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
+        expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(labelMatch);
+        expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
-      const prefs = loadUserThemePrefs();
-      expect(prefs.responsePreset).toBe('light');
-      expect(prefs.baseTheme).toBe('dark');
-    });
-
-    it('applies light bundled theme', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'bundled:light', ctx);
-
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeDefined();
-      expect(colorCall[1]).toBeDefined();
-
-      // Should switch base theme to kiroLight
-      expect(ctx._spies.setBaseTheme!).toHaveBeenCalled();
-      const baseThemeCall = ctx._spies.setBaseTheme!.mock.calls[0]!;
-      expect(baseThemeCall[0]).toBeDefined();
-      expect(baseThemeCall[0].colors.surface.truecolor).toBe('#EEEEEE');
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBe('paper');
-      expect(prefs.responsePreset).toBe('dark');
-      expect(prefs.baseTheme).toBe('light');
-    });
+        expect(loadUserThemePrefs()).toMatchObject(expectedPrefs);
+      }
+    );
 
     it('shows error for unknown bundled theme', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
@@ -248,79 +255,76 @@ describe('/theme command', () => {
       expect(prefs.promptPreset).toBeUndefined();
     });
 
-    it('shows error for unknown prompt preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt:nonexistent', ctx);
+    // Applying a response preset writes only the response color slot (arg index
+    // 1; prompt/diff untouched), alerts the label, and persists responsePreset.
+    it.each([
+      { id: 'light', truecolor: '#FFFFFF', labelMatch: 'Light' },
+      { id: 'dark', truecolor: '#626262', labelMatch: undefined },
+    ])(
+      'applies response:$id preset, sets only the response color, and persists',
+      async ({ id, truecolor, labelMatch }) => {
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, `response:${id}`, ctx);
 
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
-    });
+        expect(ctx._spies.setUserColors!).toHaveBeenCalled();
+        const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
+        expect(colorCall[0]).toBeUndefined(); // prompt unchanged
+        expect(colorCall[1]).toBeDefined();
+        expect(colorCall[1].truecolor).toBe(truecolor);
+        if (labelMatch) {
+          expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(
+            labelMatch
+          );
+        }
+        expect(loadUserThemePrefs().responsePreset).toBe(id);
+      }
+    );
 
-    it('applies light response preset and persists', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'response:light', ctx);
+    // Unknown preset id surfaces an error alert for every category.
+    it.each(['prompt', 'response', 'diff'])(
+      'shows error for unknown %s preset',
+      async (category) => {
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, `${category}:nonexistent`, ctx);
 
-      expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeUndefined();
-      expect(colorCall[1]).toBeDefined();
-      expect(colorCall[1].truecolor).toBe('#FFFFFF');
-
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Light');
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.responsePreset).toBe('light');
-    });
-
-    it('applies dark preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'response:dark', ctx);
-
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[1].truecolor).toBe('#626262');
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.responsePreset).toBe('dark');
-    });
-
-    it('shows error for unknown response preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'response:nonexistent', ctx);
-
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
-    });
+        expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
+      }
+    );
   });
 
   describe('independent persistence', () => {
-    it('changing prompt does not affect response', async () => {
-      saveUserThemePrefs({ responsePreset: 'dark' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt:ocean', ctx);
+    // Applying one category preset persists it WITHOUT clobbering the others'
+    // pre-saved prefs. `seed` is the unrelated pref(s) that must survive.
+    it.each([
+      {
+        route: 'prompt:ocean',
+        seed: { responsePreset: 'dark' },
+        expected: { promptPreset: 'ocean', responsePreset: 'dark' },
+      },
+      {
+        route: 'response:light',
+        seed: { promptPreset: 'forest' },
+        expected: { promptPreset: 'forest', responsePreset: 'light' },
+      },
+      {
+        route: 'diff:colorblind-dark',
+        seed: { promptPreset: 'ocean', responsePreset: 'dark' },
+        expected: {
+          promptPreset: 'ocean',
+          responsePreset: 'dark',
+          diffPreset: 'colorblind-dark',
+        },
+      },
+    ])(
+      '$route persists without affecting other categories',
+      async ({ route, seed, expected }) => {
+        saveUserThemePrefs(seed);
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, route, ctx);
 
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBe('ocean');
-      expect(prefs.responsePreset).toBe('dark');
-    });
-
-    it('changing response does not affect prompt', async () => {
-      saveUserThemePrefs({ promptPreset: 'forest' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'response:light', ctx);
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBe('forest');
-      expect(prefs.responsePreset).toBe('light');
-    });
-
-    it('changing diff does not affect prompt or response', async () => {
-      saveUserThemePrefs({ promptPreset: 'ocean', responsePreset: 'dark' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff:colorblind-dark', ctx);
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBe('ocean');
-      expect(prefs.responsePreset).toBe('dark');
-      expect(prefs.diffPreset).toBe('colorblind-dark');
-    });
+        expect(loadUserThemePrefs()).toMatchObject(expected);
+      }
+    );
   });
 
   describe('diff presets', () => {
@@ -367,30 +371,12 @@ describe('/theme command', () => {
       expect(prefs.diffPreset).toBeUndefined();
     });
 
-    it('shows error for unknown diff preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff:nonexistent', ctx);
+    // Unknown diff preset error is covered by the parameterized unknown-preset
+    // it.each in the "applying presets" describe above.
 
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
-    });
-
-    it('bundled dark theme persists diff preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'bundled:dark', ctx);
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.diffPreset).toBe('dark');
-      expect(prefs.baseTheme).toBe('dark');
-    });
-
-    it('bundled light theme persists diff preset', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'bundled:light', ctx);
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.diffPreset).toBe('light');
-      expect(prefs.baseTheme).toBe('light');
-    });
+    // Bundled-theme diff/baseTheme persistence is covered by the parameterized
+    // "applies bundled $id theme" test above (it asserts diffPreset + baseTheme
+    // in expectedPrefs).
 
     it('shows [active] on current diff preset', async () => {
       saveUserThemePrefs({ diffPreset: 'colorblind-dark' });
