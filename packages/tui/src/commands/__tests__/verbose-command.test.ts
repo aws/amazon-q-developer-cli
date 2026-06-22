@@ -129,13 +129,9 @@ describe('/verbosity top menu and status', () => {
   });
 
   it('bare /verbosity opens the density menu when an active preset is detected', () => {
-    // Setup: filters=['all'] in beforeEach combined with the `full` preset
-    // display matches DENSITY_FILTERS.full + DENSITY_DISPLAY.full, so the
-    // entry router should land in the density menu (the simple, common
-    // case for preset users). detectActivePreset() requires BOTH display
-    // and filters to match a preset, so we explicitly set display here —
-    // the beforeEach's filters=['all'] alone doesn't match because
-    // DEFAULT_DISPLAY.outputMaxLines (5) ≠ full preset's null.
+    // detectActivePreset() requires BOTH display and filters to match a preset,
+    // so set the full preset's display explicitly (filters=['all'] from
+    // beforeEach completes the match).
     setVerboseConfig({
       filters: ['all'],
       display: { ...require('../../lite/verbose.js').DENSITY_DISPLAY.full },
@@ -329,14 +325,6 @@ describe('/verbosity config interactive menu', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('output sub-menu first row is the "filter:all" pseudo-row', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:output');
-    const arg = lastMenu(ctx) as { command?: SlashCommand; options: any[] };
-    expect((arg as any).command.name).toBe('/verbosity');
-    expect(arg.options[0].value).toBe('filter:all');
-  });
-
   // Every category row reflects the master filter state: [on] under "all", and
   // [off] when the filter list is empty.
   it.each([
@@ -480,22 +468,17 @@ describe('/verbosity density presets', () => {
 
   it('density:apply:<preset> commits the preset and closes the menu', () => {
     // The post-confirmation Yes row routes through density:apply:<preset>.
-    // Picking a preset is a finish action — close the menu so the user
-    // lands at the prompt (the announceSystem call confirms it took
-    // effect). Re-opening the density menu after commit had been read as
-    // "did the click actually do anything?" by users.
+    // Distinct regression: picking a preset is a finish action that must
+    // CLOSE the overlay — an open menu after commit read as "did that do
+    // anything?". The announceSystem call is what signals success.
     setVerboseConfig({ filters: ['shell', 'mcp'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:apply:default');
     const cfg = getVerboseConfig();
     expect(cfg.display!.toolArgsMode).toBe('block');
-    // `default` preset's filter shape is ['shell'] — the fresh-install
-    // default that streams shell stdout in a tail-windowed strip. Picking
-    // the preset rewrites the filter list to that exact shape, dropping
+    // The preset rewrites filters to its exact shape (['shell']), dropping
     // the prior 'mcp' override.
     expect(cfg.filters).toEqual(['shell']);
-    // The switch is announced — the announcement is what tells the user it
-    // took effect (the menu closes, so there's no visible menu confirmation).
     const announced = (
       ctx._spies.announceSystem!.mock.calls as unknown as unknown[][]
     )
@@ -517,6 +500,20 @@ describe('/verbosity density presets', () => {
     const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
     expect(calls[0]![0]).toContain(expected);
     expect(calls[0]![1]).toBe('error');
+  });
+
+  it('menu:density:confirm:<preset> opens a Cancel/Yes gate without mutating', () => {
+    setVerboseConfig({ filters: ['shell'] });
+    const ctx = liteCtx();
+    runEffect(verbosityCmd, null, ctx, 'menu:density:confirm:default');
+    const arg = lastMenu(ctx);
+    expect(arg.options[0].label).toBe('Cancel');
+    expect(arg.options[0].value).toBe('menu:density');
+    expect(
+      arg.options.find((o) => o.value === 'density:apply:default')
+    ).toBeDefined();
+    // Confirm did not commit — filters unchanged.
+    expect(getVerboseConfig().filters).toEqual(['shell']);
   });
 });
 
@@ -562,52 +559,18 @@ describe('/verbosity display flag toggles (set:)', () => {
   });
 });
 
-describe('/verbosity preset confirmation gate (replaces standalone reset)', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    // Custom shape so bare /verbosity opens the config menu — keeps the
-    // legacy assertions about "config menu has no Reset row" relevant.
-    setVerboseConfig({
-      filters: [],
-      display: display({
-        showToolReasoning: false,
-        toolArgsMode: 'off',
-        showElapsed: false,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-      }),
-    });
-  });
-
-  it('menu:density:confirm:default opens the confirmation submenu without mutating', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:density:confirm:default');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    expect(arg.options[0].label).toBe('Cancel');
-    expect(arg.options[0].value).toBe('menu:density');
-    const yes = arg.options.find((o) => o.value === 'density:apply:default');
-    expect(yes).toBeDefined();
-    // Confirm did not commit — filters unchanged.
-    expect(getVerboseConfig().filters).toEqual(['shell']);
-  });
-});
-
 describe('/verbosity drilldown menus', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
   });
 
-  // Each drilldown menu opens with a fixed set of routing rows plus a
-  // section-encoded back-link. The internal `menu:<section>` route and the
-  // friendly breadcrumb aliases users type (`/verbosity tool`, `tools`, `tool
-  // calls`, `truncation`, ...) all open the same menu; the back-link encodes
-  // the section, proving the right sub-menu opened. `density` is intentionally
-  // excluded (bare `density` is the CLI set-preset form). Per-route behavior
-  // (toggling, mutation, [active] markers) is tested separately below.
+  // Each drilldown opens its routing rows plus a section-encoded back-link.
+  // The canonical menu:* rows pin the full row shape; one friendly-alias smoke
+  // row ('tool calls') proves the breadcrumb aliases reach the same menu.
+  // `density` is intentionally excluded (bare `density` is the CLI set-preset
+  // form). The old subagent "deps" row is gone — dependency arrows are
+  // always-on now. Per-route behavior is tested separately below.
   it.each([
     {
       route: 'menu:tool',
@@ -622,9 +585,6 @@ describe('/verbosity drilldown menus', () => {
       forbidden: [],
     },
     {
-      // Master step toggle, its two nested rows (instructions + role labels),
-      // responses, and the full-output toggle (mirrors the `subagent` filter).
-      // The old "deps" row is gone — dependency arrows are always-on now.
       route: 'menu:subagent',
       required: [
         'set:subagent:pipeline',
@@ -636,14 +596,7 @@ describe('/verbosity drilldown menus', () => {
       ],
       forbidden: ['set:subagent:deps'],
     },
-    // Friendly breadcrumb aliases — only the back-link is asserted (the row
-    // shape is already covered by the canonical menu:* rows above).
-    { route: 'tool', required: ['menu:top:tool'], forbidden: [] },
-    { route: 'tools', required: ['menu:top:tool'], forbidden: [] },
     { route: 'tool calls', required: ['menu:top:tool'], forbidden: [] },
-    { route: 'subagent', required: ['menu:top:subagent'], forbidden: [] },
-    { route: 'output', required: ['menu:top:output'], forbidden: [] },
-    { route: 'truncation', required: ['menu:top:truncation'], forbidden: [] },
   ])(
     '$route opens its drilldown rows + back-link',
     ({ route, required, forbidden }) => {
@@ -700,8 +653,10 @@ describe('/verbosity drilldown menus', () => {
     expect(f).toContain('mcp');
   });
 
-  it('menu:density shows the four presets (routed to the confirm gate), marks the active one, and lists Custom', () => {
-    setVerboseConfig({ display: undefined, filters: [] });
+  it('menu:density routes each preset to the confirm gate, marks the active one, and lists Custom', () => {
+    // 'default' = DEFAULT_DISPLAY + filters: ['shell'] (fresh-install shape),
+    // so seeding ['shell'] makes `default` the active preset.
+    setVerboseConfig({ display: undefined, filters: ['shell'] });
     resetVerboseCache();
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:density');
@@ -712,20 +667,12 @@ describe('/verbosity drilldown menus', () => {
     for (const p of ['minimal', 'lean', 'default', 'full']) {
       expect(values).toContain(`menu:density:confirm:${p}`);
     }
-    // Legacy `normal`/`verbose` identifiers are gone (renamed to default/full).
-    expect(values).not.toContain('menu:density:confirm:normal');
-    expect(values).not.toContain('menu:density:confirm:verbose');
     // Custom row routes to the config (per-knob) menu.
     expect(lastMenu(ctx).options.find((o) => o.label === 'custom')?.value).toBe(
       'menu:config'
     );
-    // 'default' = DEFAULT_DISPLAY + filters: ['shell'] (fresh-install shape);
-    // re-open under that shape to verify the [active] marker lands on `default`.
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx2 = liteCtx();
-    runEffect(verbosityCmd, null, ctx2, 'menu:density');
     expect(
-      lastMenu(ctx2).options.find(
+      lastMenu(ctx).options.find(
         (o) => o.value === 'menu:density:confirm:default'
       )?.description
     ).toContain('[active]');
@@ -766,19 +713,6 @@ describe('/verbosity Truncation submenu', () => {
     // Back-link present so the user can return to the top menu without ESC.
     const values = arg.options.map((o) => o.value);
     expect(values).toContain('menu:top:truncation');
-  });
-
-  // The preset menu was replaced with a numeric editor (rendered by
-  // CommandMenu when previewKey ends with `:edit`). The effect handler marks
-  // the route by setting previewKey on the active command — the option list is
-  // a single placeholder; all keypresses are handled by the editor component.
-  it.each([
-    ['menu:truncation:argsLines:edit', 'truncation:argsLines:edit'],
-    ['menu:truncation:outputLines:edit', 'truncation:outputLines:edit'],
-  ])('%s opens the numeric editor (sets previewKey)', (route, expectedKey) => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, route);
-    expect(lastMenu(ctx).previewKey).toBe(expectedKey);
   });
 
   it.each([

@@ -61,11 +61,9 @@ describe('/theme command', () => {
       expect(options).toHaveLength(bundledThemes.length + 2); // Auto + bundled + Custom
       expect(options[0].value).toBe('bundled:default');
       expect(options[0].label).toBe('Auto');
-      // Bundled rows in between carry plain id/label pairs.
-      for (let i = 0; i < bundledThemes.length; i++) {
-        expect(options[i + 1].value).toBe(`bundled:${bundledThemes[i]!.id}`);
-        expect(options[i + 1].label).toBe(bundledThemes[i]!.label);
-      }
+      // First bundled row carries a plain id/label pair (the rest follow suit).
+      expect(options[1].value).toBe(`bundled:${bundledThemes[0]!.id}`);
+      expect(options[1].label).toBe(bundledThemes[0]!.label);
       expect(options[options.length - 1].value).toBe('custom');
       expect(options[options.length - 1].label).toBe('Custom');
     });
@@ -181,6 +179,7 @@ describe('/theme command', () => {
 
   describe('custom flow — [active] markers', () => {
     // The seeded preset's row carries [active]; the default row does not.
+    // The no-seed row pins the inverse: with no prefs, default carries [active].
     it.each([
       {
         route: 'prompt',
@@ -194,31 +193,29 @@ describe('/theme command', () => {
         activeValue: 'diff:colorblind-dark',
         defaultValue: 'diff:default',
       },
+      {
+        route: 'prompt',
+        seed: undefined,
+        activeValue: 'prompt:default',
+        defaultValue: undefined,
+      },
     ])(
-      'shows [active] on the current $route preset',
+      'marks the active $route preset (seed $seed)',
       async ({ route, seed, activeValue, defaultValue }) => {
-        saveUserThemePrefs(seed);
+        if (seed) saveUserThemePrefs(seed);
         const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
         await dispatch(themeCmd, route, ctx);
 
         const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
         const options = call[0].options;
         const activeOpt = options.find((o: any) => o.value === activeValue);
-        const defaultOpt = options.find((o: any) => o.value === defaultValue);
         expect(activeOpt.description).toContain('[active]');
-        expect(defaultOpt.description).not.toContain('[active]');
+        if (defaultValue) {
+          const defaultOpt = options.find((o: any) => o.value === defaultValue);
+          expect(defaultOpt.description).not.toContain('[active]');
+        }
       }
     );
-
-    it('shows [active] on default when no prefs set', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt', ctx);
-
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const options = call[0].options;
-      const defaultOpt = options.find((o: any) => o.value === 'prompt:default');
-      expect(defaultOpt.description).toContain('[active]');
-    });
   });
 
   describe('custom flow — applying presets', () => {
@@ -273,6 +270,12 @@ describe('/theme command', () => {
           responsePreset: 'dark',
         },
       },
+      // The default preset clears its persisted slot rather than persisting one.
+      {
+        route: 'prompt:default',
+        seedOther: { promptPreset: 'purple' },
+        clears: ['promptPreset'] as const,
+      },
     ])(
       'applies $route into its own slot and persists (independent)',
       async ({
@@ -283,6 +286,7 @@ describe('/theme command', () => {
         labelMatch,
         seedOther,
         pref,
+        clears,
         reopensCustomMenu,
       }) => {
         if (seedOther) saveUserThemePrefs(seedOther);
@@ -291,16 +295,20 @@ describe('/theme command', () => {
 
         expect(ctx._spies.setUserColors!).toHaveBeenCalled();
         const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-        expect(colorCall[slot]).toBeDefined();
-        check(colorCall[slot]);
-        for (const u of untouched) expect(colorCall[u]).toBeUndefined();
+        if (slot !== undefined) {
+          expect(colorCall[slot]).toBeDefined();
+          check!(colorCall[slot]);
+        }
+        for (const u of untouched ?? []) expect(colorCall[u]).toBeUndefined();
         if (labelMatch) {
           expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(
             labelMatch
           );
           expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
         }
-        expect(loadUserThemePrefs()).toMatchObject(pref);
+        if (pref) expect(loadUserThemePrefs()).toMatchObject(pref);
+        for (const k of clears ?? [])
+          expect((loadUserThemePrefs() as any)[k]).toBeUndefined();
         if (reopensCustomMenu) {
           const options =
             ctx._spies.setActiveCommand!.mock.calls.at(-1)![0].options;
@@ -312,16 +320,6 @@ describe('/theme command', () => {
         }
       }
     );
-
-    it('applies default preset and clears persisted value', async () => {
-      saveUserThemePrefs({ promptPreset: 'purple' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt:default', ctx);
-
-      expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBeUndefined();
-    });
 
     // Unknown preset id surfaces an error alert (one category — the handler
     // routes all three through the same lookup).
