@@ -1547,15 +1547,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     }
     const cfg = getVerboseConfig();
 
-    // Active density preset = whichever preset's display config AND filter
-    // list exactly match the saved one. `null` when the user has hand-toggled
-    // into a shape that doesn't correspond to any preset — the menu shows
-    // "Density: custom" in that case.
-    //
-    // `default` and `full` share an identical display config; the
-    // differentiator is the filter list (DENSITY_FILTERS — `['all']` for
-    // full, `[]` for the rest). When the display matches multiple presets,
-    // the filter list disambiguates.
+    // `null` when the saved shape matches no preset (hand-toggled custom).
+    // `default` and `full` share a display config, so the filter list
+    // (DENSITY_FILTERS — `['all']` for full, `[]` for the rest) disambiguates.
     const detectActivePreset = (): DensityPreset | null => {
       const curCfg = getVerboseConfig();
       const cur = curCfg.display ?? DEFAULT_DISPLAY;
@@ -1567,15 +1561,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return null;
     };
 
-    // Short-form summary for menu rows: `none` / `all` / comma-joined.
     const fmtFilters = (f: string[]) => {
       if (f.length === 0) return 'none';
       if (f.length === 1 && f[0] === 'all') return 'all';
       return f.join(', ');
     };
-    // Long-form for system announcements: collapses with a `+N more` count when
-    // the joined form would wrap (lite's word-break splits on char count, not
-    // commas). Budget derives from terminal width (120-col fallback).
+    // Collapses with a `+N more` count when the joined form would wrap (lite's
+    // word-break splits on char count, not commas). Budget from terminal width.
     const fmtFiltersForAnnounce = (f: string[]) => {
       const joined = f.join(', ');
       if (f.length <= 1) return fmtFilters(f);
@@ -1610,33 +1602,20 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    // Pretty-print a numeric cap for menu summaries and value-row descriptions.
-    // Both `null` and any non-positive value mean "unbounded" — we never want
-    // a 0 or negative value to render as a plausible cap. `unit` defaults to
-    // `lines` for backward-compatible use; chars caps pass `chars`.
+    // Both `null` and any non-positive value mean "unbounded" — never render a
+    // 0 or negative value as a plausible cap.
     const fmtCap = (
       cap: number | null,
       unit: 'lines' | 'chars' = 'lines'
     ): string => (cap == null || cap <= 0 ? 'unlimited' : `${cap} ${unit}`);
 
-    // Stash the parent route consumed by CommandMenu's ESC handler. Pass
-    // `null` for the top menu so the next ESC fully exits, otherwise set
-    // `'menu:top'` so ESC navigates one level up. The store flag is one-shot:
-    // CommandMenu clears it on consume, so we must rewrite it every time we
-    // re-open a sub-menu (e.g. after a toggle re-opens the same menu).
+    // Parent route consumed by CommandMenu's ESC handler (`null` exits, a
+    // `menu:*` route navigates up). The store flag is one-shot: CommandMenu
+    // clears it on consume, so we rewrite it every time we re-open a sub-menu.
     const setReturn = (route: string | null) => {
       ctx.setVerboseReturnOnEscape?.(route);
     };
 
-    // Open a menu with the given options, reusing the same SlashCommand
-    // shape so the menu component renders consistently. The header chip the
-    // user sees in the prompt area is the command name (`/verbosity`); the
-    // submenu state lives entirely in the option set.
-    //
-    // `initialIndex` chooses which row the cursor lands on. Defaults to 0;
-    // submenus always pass 0, the top menu passes the row of the submenu the
-    // user just exited (so ESC + Enter is idempotent). Clamped by the menu
-    // component to stay within the option list.
     const openMenuWith = (
       options: Array<{
         value: string;
@@ -1664,14 +1643,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
     const onOff = (b: boolean) => (b ? '[on]' : '[off]');
 
-    // Top-menu row index for each submenu key — used by ESC-back to land the
-    // cursor on the row the user descended from. Must stay in sync with the
-    // option order in `openTopMenu`. `thinking` is the inline toggle row,
-    // not a submenu — included so re-opens after toggling land on the same
-    // row (otherwise the cursor jumps to row 0). The standalone "Reset to
-    // defaults" row is gone — picking the `default` preset from the density
-    // menu now serves that purpose, and the menu has a top-level entry
-    // confirmation when changing presets.
+    // Top-menu row index per submenu key — ESC-back lands the cursor on the
+    // row the user descended from. Must stay in sync with `openTopMenu`'s
+    // option order. `thinking`/`tasks` are inline toggle rows, not submenus,
+    // but are included so re-opens after toggling don't jump to row 0.
     const TOP_ROW_BY_KEY: Record<string, number> = {
       density: 0,
       tool: 1,
@@ -1685,22 +1660,15 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const openTopMenu = (fromKey?: string) => {
       setReturn(null);
       const cur = getVerboseConfig();
-      // Use getVerboseDisplay so the rendered menu reflects the unified
-      // chat.showThinking value from cli.json — without this, the row
-      // would show whatever lite_verbose.json was last written with even
-      // if /settings → Display had since toggled the modern-TUI side.
-      // Filter rows below still read from `cur.filters`.
+      // getVerboseDisplay so the menu reflects the unified chat.showThinking
+      // value from cli.json (the modern-TUI side), not the possibly-stale
+      // lite_verbose.json copy. Filter rows below still read `cur.filters`.
       const display = getVerboseDisplay();
       const preset = detectActivePreset();
       const presetLabel = preset ?? 'custom';
-      // Sub-menu summaries — short one-liners so the user sees current state
-      // without having to drill in. Compact wording (`args: inline`) wins
-      // over verbose key:value because the menu rows have limited width.
       const toolSummary = `args: ${display.toolArgsMode} · reasoning: ${display.showToolReasoning ? 'on' : 'off'} · elapsed: ${display.showElapsed ? 'on' : 'off'}`;
-      // Summary surfaces only the user-meaningful knobs (steps + responses
-      // + full output). `roles` / `prompts` / `deps` are nested under the
-      // step list and adjust in lockstep with it — calling them out
-      // separately bloats the summary.
+      // Surfaces only user-meaningful knobs; `roles`/`prompts`/`deps` nest
+      // under the step list and move in lockstep with it.
       const subSummaryParts: string[] = [];
       if (display.subagent.pipeline) {
         const sublist: string[] = [];
@@ -1719,8 +1687,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           ? '(all hidden)'
           : subSummaryParts.join(' · ');
       const outSummary = fmtFilters(cur.filters);
-      // Compact two-axis summary: lines/chars per cap, since both can be
-      // independently active. Longest form fits within typical menu width.
       const truncSummary = `args ${fmtCap(display.argsMaxLines)}/${fmtCap(display.argsMaxChars, 'chars')} · output ${fmtCap(display.outputMaxLines)}/${fmtCap(display.outputMaxChars, 'chars')}`;
 
       openMenuWith(
@@ -1773,9 +1739,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    // Per-preset description shared between the density menu rows and the
-    // confirmation submenu. Centralized so the confirm row title can match
-    // the row the user just selected without drift.
+    // Shared by the density menu rows and the confirm submenu so the confirm
+    // title matches the selected row without drift.
     const PRESET_DESC: Record<DensityPreset, string> = {
       minimal: 'name only · no args, no reasoning',
       lean: 'inline arg chip, no reasoning, full elapsed',
@@ -1783,9 +1748,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       full: '1:1 of what the parent agent sees · all filters on · no truncation',
     };
 
-    // Density menu — entry point when a preset is active. Lists all four
-    // presets plus a Custom row (→ config menu). Selecting a preset routes to
-    // the `menu:density:confirm:<preset>` gate rather than committing.
+    // Density menu — smart-entry point when a preset is active. Selecting a
+    // preset routes to the `menu:density:confirm:<preset>` gate, not a commit.
     const openDensityMenu = (initialIndex = 0) => {
       // ESC fully exits — no parent above the entry point.
       setReturn(null);
@@ -1795,8 +1759,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         label: string;
         description: string;
       }> = DENSITY_PRESETS.map((p) => ({
-        // `menu:`-prefixed internal navigation: without the prefix the route
-        // handler falls through to "Unknown subcommand" for every preset.
         value: `menu:density:confirm:${p}`,
         label: p,
         description:
@@ -1813,9 +1775,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openMenuWith(options, initialIndex, 'density');
     };
 
-    // Confirmation gate for a density preset. Cancel comes first so the default
-    // cursor lands on a safe row; Yes commits (display + filters) and re-opens
-    // the density menu. `which` names the picked preset in the confirmation.
+    // Cancel comes first so the default cursor lands on a safe row; Yes commits
+    // (display + filters) and re-opens the density menu.
     const openPresetConfirmMenu = (which: DensityPreset) => {
       setReturn('menu:density');
       openMenuWith(
@@ -1835,18 +1796,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           { value: 'menu:density', label: '← back', description: '' },
         ],
         0,
-        // The preview pane reads VerbosityPreviewKey 'density' for any
-        // preset-related menu — same fixture set as the density menu itself,
-        // since the confirmation is essentially "look at this preview, are
-        // you sure?".
+        // Preview pane reuses the 'density' fixture set for the confirm gate.
         'density'
       );
     };
 
-    // The four truncation knobs share a heading (editor title), a unit, and a
-    // value accessor onto the display config. Both the numeric editor and the
-    // truncation MENUS row builder read this table so the field→cap mapping
-    // lives in one place.
+    // Shared field→cap mapping for the four truncation knobs (heading, unit,
+    // value accessor). Read by both the numeric editor and the MENUS builder.
     const TRUNC_FIELDS: Record<
       TruncationField,
       {
@@ -1883,12 +1839,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       description?: string;
       group?: string;
     };
-    // The four sectioned submenus share identical plumbing — `setReturn(route)`,
-    // a trailing `← back` row encoding the section, `openMenuWith(rows, 0, key)`
-    // (previewKey == key for all four). Only the row content differs and stays
-    // genuinely dynamic (reads live display/config), so each entry is a thunk;
-    // `openMenu` does the shared parts once. The density confirm gate and
-    // numeric editor are special single-purpose cases kept out of this table.
+    // The four sectioned submenus share identical plumbing (done once in
+    // `openMenu`); only the dynamic row content differs, so each entry is a
+    // thunk that reads live display/config. The density confirm gate and
+    // numeric editor are single-purpose cases kept out of this table.
     type MenuKey = 'tool' | 'subagent' | 'truncation' | 'output';
     const MENUS: Record<MenuKey, () => MenuRow[]> = {
       tool: () => {
@@ -1956,14 +1910,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           },
         ];
       },
-      // Four independent caps (line + char limits for args and output). Line
-      // caps are visual-row counts; char caps cut individual values at N chars.
       // Each row routes to the numeric editor (CommandMenu renders it when
       // previewKey ends with `:edit`).
       truncation: () => {
         const display = getVerboseDisplay();
-        // Compact per-row presentation (label + group); value accessor + unit
-        // come from the shared TRUNC_FIELDS table.
         const rows: Array<[TruncationField, string, string]> = [
           ['argsLines', 'Args · lines', 'Tool args'],
           ['argsChars', 'Args · chars per value', 'Tool args'],
@@ -1984,9 +1934,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         const cur = getVerboseConfig();
         const isAll = cur.filters.includes('all');
         const filterSet = new Set(cur.filters);
-        // Master row toggles between every-on (`['all']`) and every-off (`[]`).
-        // Label flips so the row reads as the action it performs: when all are
-        // on it says "none" (pressing clears); inverse off.
+        // Master row label flips to read as the action it fires: when every
+        // tool is on it says "none" (press clears), inverse when off.
         const masterLabel = isAll ? 'none' : 'all';
         const masterDesc = isAll
           ? '[active] · every tool · press to clear'
@@ -2009,9 +1958,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     };
 
     const openMenu = (key: MenuKey) => {
-      // ESC from a section submenu returns to the top menu on that section's
-      // row (`menu:top:<key>`); the trailing `← back` row encodes the same.
-      // previewKey is the menu key itself.
+      // ESC returns to the top menu on this section's row (`menu:top:<key>`);
+      // the trailing `← back` row encodes the same route.
       const backRoute = `menu:top:${key}`;
       setReturn(backRoute);
       openMenuWith(
@@ -2024,9 +1972,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    // Open the numeric editor for one of the four caps. The single menu row is
-    // a dummy placeholder — CommandMenu renders VerbosityTruncationEditor when
-    // previewKey ends with `:edit` and the editor handles all keypresses.
+    // The single menu row is a placeholder — CommandMenu renders
+    // VerbosityTruncationEditor when previewKey ends with `:edit`.
     const openTruncationEditor = (which: TruncationField) => {
       // Esc from the editor returns to the Truncation submenu, NOT the top.
       setReturn('menu:truncation');
@@ -2063,11 +2010,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
     // ── Routing ────────────────────────────────────────────────────────────
 
-    // Bare /verbosity: smart entry. Lands in the density menu when an active
-    // preset is detected (the simple, common case), else in the config menu
-    // (custom configurations want the per-knob view). The two routes
-    // `menu:density` and `menu:config` let internal dispatch reach either
-    // one explicitly without going through the smart router.
+    // Bare /verbosity: smart entry — density menu when a preset is active
+    // (common case), else the config menu. `menu:density` / `menu:config`
+    // let internal dispatch reach either one explicitly.
     if (trimmed === '' || trimmed === 'config') {
       if (trimmed === 'config') {
         openTopMenu();
@@ -2078,9 +2023,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
       return true;
     }
-    // Explicit config-menu route — used by the Custom row in the density
-    // menu and by ESC-back from a submenu. Keeps the bare /verbosity smart
-    // routing separate from "I explicitly want the per-knob menu".
     if (trimmed === 'menu:config') {
       openTopMenu();
       return true;
@@ -2089,9 +2031,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openTopMenu();
       return true;
     }
-    // `menu:top:<key>` — used by ESC-back from a submenu (and by the `← back`
-    // rows) so the cursor lands on the row representing that submenu instead
-    // of resetting to row 0.
+    // `menu:top:<key>` lands the cursor on the row for that submenu rather
+    // than resetting to row 0 (used by ESC-back and the `← back` rows).
     if (trimmed.startsWith('menu:top:')) {
       const fromKey = trimmed.slice('menu:top:'.length);
       openTopMenu(fromKey);
@@ -2101,9 +2042,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openDensityMenu();
       return true;
     }
-    // Confirmation gate for a density preset. `menu:density:confirm:<preset>`
-    // is what the density menu rows route to on Enter — opens the per-preset
-    // confirm submenu without committing.
     {
       const confirmMatch = trimmed.match(/^menu:density:confirm:([a-z]+)$/);
       if (confirmMatch) {
@@ -2126,12 +2064,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
     }
 
-    // Section-menu aliases keyed by every route that reaches them: the internal
-    // `menu:<section>` dispatch AND the friendly breadcrumb aliases users type
-    // (`/verbosity tool`, `/settings verbosity truncation`). The first word was
-    // already lowercased above, so multi-word forms like "tool calls" match in
-    // lower case. `density` is intentionally absent: bare `density` is the CLI
-    // set-preset form, and the density menu is the smart-entry default.
+    // Section-menu aliases: internal `menu:<section>` dispatch plus friendly
+    // forms users type. `density` is intentionally absent — bare `density` is
+    // the CLI set-preset form, and the density menu is the smart-entry default.
     {
       const MENU_ALIASES: Record<string, MenuKey> = {
         'menu:tool': 'tool',
@@ -2153,8 +2088,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
     }
 
-    // /verbosity on / off remain as CLI aliases for backward compat — they
-    // map onto the filter list since the master enabled toggle is gone.
+    // CLI aliases — map onto the filter list (the master enabled toggle is gone).
     if (trimmed === 'on') {
       setVerboseConfig({ filters: ['all'] });
       showStatus();
@@ -2170,11 +2104,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
     if (trimmed === 'all' || trimmed === 'filter:all') {
-      // CLI form (`/verbosity all`) is a one-shot reset to every-on — the user
-      // typed "all" so we honor that literal intent. Menu row routes here as
-      // `filter:all` and is the toggle: every-on flips to every-off, anything
-      // else flips to every-on. The label on the menu row swaps too so the
-      // user sees the action that will fire.
+      // CLI `all` is a one-shot reset to every-on; the menu's `filter:all`
+      // row is a toggle (every-on flips to every-off, else flips to every-on).
       if (trimmed === 'all') {
         setVerboseConfig({ filters: ['all'] });
         showStatus('verbosity: filters reset');
@@ -2186,11 +2117,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openMenu('output');
       return true;
     }
-    // CLI-form `/verbosity reset` is preserved as a power-user shortcut for
-    // the `default` preset's exact effect (display = DEFAULT_DISPLAY,
-    // filters = []). It bypasses the menu confirmation since the user opted
-    // in by typing the verb. The standalone Reset row in the menu is gone —
-    // picking the `default` preset now serves that purpose.
+    // CLI `reset` is a power-user shortcut for the `default` preset; bypasses
+    // the menu confirmation since the user opted in by typing the verb.
     if (trimmed === 'reset') {
       applyDensityPreset('default');
       ctx.announceSystem('verbosity: reset to defaults');
@@ -2198,21 +2126,17 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Bare preset name (e.g. `/verbosity full`) routes to the same code path
-    // as `/verbosity density <preset>`. The menu surfaces preset names as
-    // first-class entries, so users naturally type the bare name; rejecting
-    // them with "Unknown subcommand" was a sharp edge.
+    // Bare preset name (e.g. `/verbosity full`) — same path as
+    // `/verbosity density <preset>` (the menu surfaces these as first-class).
     if (DENSITY_PRESETS.includes(trimmed as DensityPreset)) {
       applyDensityPreset(trimmed as DensityPreset);
       ctx.announceSystem(`verbosity: density set to ${trimmed}`);
       return true;
     }
 
-    // Density: CLI (`density <preset>`) commits immediately; menu form is
-    // `density:apply:<preset>` (post-confirmation Yes). `density:<preset>`
-    // is preserved as a CLI shortcut form. Both apply the preset's display
-    // AND filter list — picking a preset is a clean reset to that preset's
-    // full intent.
+    // CLI `density <preset>` commits immediately; menu form is
+    // `density:apply:<preset>` (post-confirmation Yes); `density:<preset>` is
+    // a CLI shortcut. All apply the preset's display AND filter list.
     const densityCliMatch = trimmed.match(/^density(?:\s+(.+))?$/);
     const densityMenuMatch = trimmed.match(/^density:([a-z]+)$/);
     const densityApplyMatch = trimmed.match(/^density:apply:([a-z]+)$/);
@@ -2237,15 +2161,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
       applyDensityPreset(preset as DensityPreset);
       ctx.announceSystem(`verbosity: density set to ${preset}`);
-      // Picking a preset is a finish action — close the menu entirely so
-      // the user lands back at the prompt instead of bouncing back into the
-      // density submenu. The status announcement above is what tells them
-      // the change took effect; an open menu after commit had been read as
-      // "did the click do anything?" by users.
-      //
-      // Both the menu form (density:apply:<preset>, post-confirmation Yes)
-      // and the CLI shortcut form (density:<preset>) close. The verb form
-      // (`density <preset>`) was already silent.
+      // Picking a preset is a finish action — close the overlay so the user
+      // lands at the prompt. An open menu after commit read as "did that do
+      // anything?". The verb form (`density <preset>`) had no open menu.
       if (densityApplyMatch || densityMenuMatch) {
         ctx.setActiveCommand(null);
         ctx.setVerboseReturnOnEscape(null);
@@ -2253,15 +2171,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Display flag toggles: set:<key> — flips the boolean. Args mode uses
-    // the explicit `set:toolArgsMode:<value>` form because it's a 3-state.
+    // Display flag toggles: set:<key> flips the boolean. Args mode uses the
+    // explicit `set:toolArgsMode:<value>` form because it's a 3-state.
     if (trimmed.startsWith('set:')) {
       const rest = trimmed.slice('set:'.length);
-      // Use getVerboseDisplay so the !display.showThinkingContent flip
-      // computes off the unified value (cli.json override) rather than
-      // the verbose-config.json copy that may be stale.
+      // getVerboseDisplay so toggles compute off the unified value (cli.json
+      // override), not the possibly-stale verbose-config.json copy.
       const display = getVerboseDisplay();
-      // Tool-menu boolean toggles: flip one display field, reopen the tool menu.
       const TOOL_BOOL_TOGGLES: Record<
         string,
         'showToolReasoning' | 'showElapsed' | 'showWriteDiffs'
@@ -2313,11 +2229,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         openMenu('tool');
         return true;
       }
-      // Truncation cap setters. All four knobs share `set:<field>:<value>`
-      // where value is either `null` (unlimited) or a positive integer. The
-      // saved field is `null | number` — non-numeric / non-positive values
-      // collapse to `null` upstream in mergeDisplay so a corrupt value can't
-      // silently truncate everything to 0.
+      // Truncation cap setters: `set:<field>:<value>` where value is `null`
+      // (unlimited) or a positive integer. Non-positive/non-numeric values
+      // collapse to `null` so a corrupt value can't truncate everything to 0.
       const capMatch = rest.match(
         /^(argsMaxLines|outputMaxLines|argsMaxChars|outputMaxChars):(null|\d+)$/
       );
@@ -2338,9 +2252,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           value = Number.isFinite(n) && n > 0 ? n : null;
         }
         setVerboseConfig({ display: { ...display, [field]: value } });
-        // After committing a value from the editor, return to the truncation
-        // submenu so the user sees the updated cap on the row they just
-        // edited and can navigate elsewhere or pick the other cap.
+        // Return to the truncation submenu so the user sees the updated cap.
         openMenu('truncation');
         return true;
       }
