@@ -3192,12 +3192,7 @@ const PREVIEW_FIXTURE_SHELL = toolFixture({
   output: [
     'On branch feature/lite-tui-mode',
     'Changes not staged for commit:',
-    '  (use "git add <file>..." to update what will be committed)',
-    '  (use "git restore <file>..." to discard changes in working directory)',
     '\tmodified:   packages/tui/src/lite/render.ts',
-    '\tmodified:   packages/tui/src/commands/effects.ts',
-    '',
-    'no changes added to commit (use "git add" and/or "git commit -a")',
   ].join('\n'),
   finishTime: 1240,
 });
@@ -3209,11 +3204,7 @@ const PREVIEW_FIXTURE_READ = toolFixture({
     operations: [{ path: '/etc/hosts', limit: 50 }],
     __tool_use_purpose: 'inspect hostnames for the dev cluster',
   },
-  output: [
-    '127.0.0.1 localhost',
-    '::1       localhost',
-    '127.0.1.1 cloud-desktop',
-  ].join('\n'),
+  output: ['127.0.0.1 localhost', '127.0.1.1 cloud-desktop'].join('\n'),
   finishTime: 18,
 });
 
@@ -3229,14 +3220,12 @@ const PREVIEW_FIXTURE_GREP = toolFixture({
   },
   output: [
     'packages/tui/src/api/auth/legacy.ts:42:    legacy_auth_middleware,',
-    'packages/tui/src/edge/handlers/login.ts:15:  wrap(legacyAuthMiddleware)',
     'packages/tui/src/middleware/legacy.ts:1:export const legacy_auth_middleware = (',
-    'packages/tui/src/scripts/migrate.ts:88:// references legacyAuthMiddleware',
   ].join('\n'),
   finishTime: 96,
 });
 
-/** Long-output (12-line) shell fixture so outputMaxLines=5 is visibly clipped. */
+/** Long-output shell fixture (>5 rows) so outputMaxLines=5 is visibly clipped. */
 const PREVIEW_FIXTURE_LONG_OUTPUT = toolFixture({
   id: 'preview-long',
   name: 'shell',
@@ -3249,11 +3238,6 @@ const PREVIEW_FIXTURE_LONG_OUTPUT = toolFixture({
     '  "name": "@kiro/tui",',
     '  "version": "0.1.0",',
     '  "type": "module",',
-    '  "scripts": {',
-    '    "build": "tsc -b",',
-    '    "test": "vitest run",',
-    '    "lint": "eslint src"',
-    '  },',
     '  "dependencies": {',
     '    "ink": "^4.0.0",',
     '    "react": "^18.2.0"',
@@ -3273,10 +3257,8 @@ const PREVIEW_FIXTURE_MCP = toolFixture({
     __tool_use_purpose: 'check prior context for the migration plan',
   },
   output: [
-    '3 memories matched:',
+    '2 memories matched:',
     '  · 2026-04-02 — legacy_auth_middleware deprecation announcement',
-    '  · 2026-04-15 — session-token store rollout plan',
-    '  · 2026-05-01 — compliance review of token storage',
   ].join('\n'),
   finishTime: 240,
 });
@@ -3331,9 +3313,7 @@ const PREVIEW_SUBAGENT_SUMMARIES: SubagentStageSummary[] = [
       '4 call sites: api/auth/, edge/handlers/, middleware/legacy.ts, scripts/migrate.ts',
     taskResult: [
       'api/auth/legacy.ts:42 — imports legacy_auth_middleware',
-      'edge/handlers/login.ts:15 — wraps the login route',
       'middleware/legacy.ts:1 — defines the export',
-      'scripts/migrate.ts:88 — references it for migration metadata',
     ].join('\n'),
   },
   {
