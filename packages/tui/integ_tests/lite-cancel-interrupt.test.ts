@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
  * Bug-mine 5.1-5.7: cancel/interrupt invariants in lite mode. Non-obvious bits:
@@ -18,13 +22,7 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   });
 
   it('cancel mid-stream shows "Cancelled streaming" once, no duplicated partial content [bug-mine 5.1]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-no-duplicate')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-no-duplicate');
 
     // Inject content event before submitting so the mock session delivers it
     await testCase.mockSessionUpdate({
@@ -62,13 +60,7 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   }, 30000);
 
   it('rapid double Ctrl+C is idempotent via cancelInProgress guard [bug-mine 5.2]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-idempotent')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-idempotent');
 
     // Inject a content event so there's something to cancel
     await testCase.mockSessionUpdate({
@@ -106,13 +98,7 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   }, 30000);
 
   it('cancel disposes stream handler before async cancel — no ghost content from old turn [bug-mine 5.3]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-no-ghost')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-no-ghost');
 
     // Turn 1: inject content
     await testCase.mockSessionUpdate({
@@ -157,19 +143,11 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
     expect(lastModel!.content).toContain('TURN2_UNIQUE_MARKER');
     expect(lastModel!.content).not.toContain('TURN1_UNIQUE_MARKER');
 
-    // Clean exit
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('Ctrl+C when idle increments exitSequence but does not crash [bug-mine 5.4]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-idle-exit-seq')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-idle-exit-seq');
 
     // Verify we are idle (not processing)
     let store = await testCase.getStore();
@@ -200,13 +178,7 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   }, 30000);
 
   it('Esc during subagent panel open does not cancel agent turn [bug-mine 5.5]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-esc-panel')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-esc-panel');
 
     // Set up a subagent scenario so the panel has content to show
     await testCase.mockSessionUpdate({
@@ -252,18 +224,11 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
     // Clean up: complete the turn and exit
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('Esc cancels turn cleanly and app recovers for new input [bug-mine 5.6]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-esc-recovers')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-esc-recovers');
 
     // Inject content and start a turn so isProcessing=true
     await testCase.mockSessionUpdate({
@@ -312,18 +277,11 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
       await testCase.completeTurn();
       await testCase.sleepMs(100);
     }
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('cancel drains queued message immediately after clearing isProcessing [bug-mine 5.7]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-cancel-drain-queue')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-cancel-drain-queue');
 
     // Inject content and start turn 1
     await testCase.mockSessionUpdate({
@@ -369,7 +327,6 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
       await testCase.completeTurn();
       await testCase.sleepMs(100);
     }
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });

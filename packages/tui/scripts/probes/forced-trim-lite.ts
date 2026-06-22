@@ -12,6 +12,7 @@
  */
 
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
+import { streamReply } from '../../e2e_tests/lite/helpers/responses';
 import {
   createProbeContext,
   slugify,
@@ -63,19 +64,7 @@ async function main() {
         { silent: true }
       );
       await tc.pushSendMessageResponse(null, { silent: true });
-      await tc.pushSendMessageResponse(
-        [
-          {
-            kind: 'event',
-            data: {
-              kind: 'AssistantResponseEvent',
-              data: { content: `PRE_TRIM_RESPONSE_${i}` },
-            },
-          },
-        ],
-        { silent: true }
-      );
-      await tc.pushSendMessageResponse(null, { silent: true });
+      await streamReply(tc, `PRE_TRIM_RESPONSE_${i}`, { silent: true });
 
       await tc.sendKeys(`pre ${i}\r`);
       await tc.waitForText(`PRE_TRIM_RESPONSE_${i}`, 15000);
@@ -99,16 +88,7 @@ async function main() {
       const marker = `POST_TRIM_MARKER_${i}_XYZ`;
       postTrimMarkers.push(marker);
 
-      await tc.pushSendMessageResponse(
-        [
-          {
-            kind: 'event',
-            data: { kind: 'AssistantResponseEvent', data: { content: marker } },
-          },
-        ],
-        { silent: true }
-      );
-      await tc.pushSendMessageResponse(null, { silent: true });
+      await streamReply(tc, marker, { silent: true });
 
       await tc.sendKeys(`post ${i}\r`);
       await tc.waitForText(marker, 15000);

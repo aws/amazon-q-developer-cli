@@ -19,6 +19,8 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { CMD_CHAT_NEW, typeSlashCommand } from './lite/helpers/commands';
+import { streamReply } from './lite/helpers/responses';
 
 // Bracketed paste escape sequences
 const PASTE_START = '\x1b[200~';
@@ -57,7 +59,7 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
       // Any exit (0 or signal-based) is acceptable — the key assertion is no hang
       expect(exitCode).toBeDefined();
     },
-    30000,
+    30000
   );
 
   // ─── 2. cancel-state-recovery ──────────────────────────────────────────────
@@ -72,13 +74,8 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     await testCase.waitForText('>', 15000);
     await testCase.getSessionId();
 
-    // Push a streaming response that never closes — keeps the turn open
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: { kind: 'AssistantResponseEvent', data: { content: 'Thinking...' } },
-      },
-    ]);
+    // Stream a response that never closes — keeps the turn open for cancel.
+    await streamReply(testCase, 'Thinking...', { keepOpen: true });
 
     // Send prompt
     await testCase.sendKeys('test prompt');
@@ -94,15 +91,12 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     // isProcessing must clear after cancel
     const afterCancel = await testCase.waitForStoreCondition(
       (s) => !s.isProcessing,
-      5000,
+      5000
     );
     expect(afterCancel.isProcessing).toBe(false);
 
     // Verify we can still send a second prompt (not stuck)
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SECOND_OK' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SECOND_OK');
 
     await testCase.sendKeys('second');
     await testCase.sleepMs(100);
@@ -110,9 +104,11 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
 
     const afterSecond = await testCase.waitForStoreCondition(
       (s) => s.messages.length > afterCancel.messages.length,
-      10000,
+      10000
     );
-    expect(afterSecond.messages.length).toBeGreaterThan(afterCancel.messages.length);
+    expect(afterSecond.messages.length).toBeGreaterThan(
+      afterCancel.messages.length
+    );
   }, 60000);
 
   // ─── 4. chat-command ───────────────────────────────────────────────────────
@@ -130,33 +126,26 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     const initialSessionId = await testCase.getSessionId();
 
     // Complete a turn
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'First reply.' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'First reply.');
 
     await testCase.sendKeys('hi');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
     await testCase.waitForIdle(15000);
 
-    // Issue /chat new
-    for (const char of '/chat new') {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-    await testCase.pressEnter();
+    await typeSlashCommand(testCase, CMD_CHAT_NEW);
 
     // Wait for session ID to change
     const afterNew = await testCase.waitForStoreCondition(
       (s) => s.sessionId !== initialSessionId && s.sessionId !== null,
-      15000,
+      15000
     );
     expect(afterNew.sessionId).not.toBe(initialSessionId);
 
     // Old messages should be gone
-    const hasOldContent = afterNew.messages.some((m) => m.content.includes('First reply.'));
+    const hasOldContent = afterNew.messages.some((m) =>
+      m.content.includes('First reply.')
+    );
     expect(hasOldContent).toBe(false);
   }, 60000);
 
@@ -173,10 +162,7 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     await testCase.getSessionId();
 
     // Push response so message can be submitted
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Got paste.' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'Got paste.');
 
     // Paste multi-line indented text via bracketed paste
     const pastedText = 'function foo() {\n  return 42;\n}';
@@ -189,7 +175,8 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     expect(snapshot).not.toContain('[201~');
 
     // The pasted content should be visible (either inline or as a chip)
-    const hasFunctionText = snapshot.includes('function foo()') || snapshot.includes('3 lines');
+    const hasFunctionText =
+      snapshot.includes('function foo()') || snapshot.includes('3 lines');
     expect(hasFunctionText).toBe(true);
 
     // Submit and verify response

@@ -16,6 +16,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
+import { streamReply } from '../../e2e_tests/lite/helpers/responses';
 import {
   createProbeContext,
   writeDoneMarker,
@@ -80,19 +81,7 @@ async function driveSequence(runIndex: number): Promise<string> {
       await tc.pushSendMessageResponse(null, { silent: true });
 
       // Final response after tool — marks the end of this turn
-      await tc.pushSendMessageResponse(
-        [
-          {
-            kind: 'event' as const,
-            data: {
-              kind: 'AssistantResponseEvent' as const,
-              data: { content: `END_TURN_${turn}` },
-            },
-          },
-        ] as any,
-        { silent: true }
-      );
-      await tc.pushSendMessageResponse(null, { silent: true });
+      await streamReply(tc, `END_TURN_${turn}`, { silent: true });
 
       await tc.sendKeys(`turn${turn}`);
       await tc.sleepMs(100);

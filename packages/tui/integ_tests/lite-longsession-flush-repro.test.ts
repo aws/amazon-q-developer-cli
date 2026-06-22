@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
  * Long-session reproduction harness (autonomous repro for the lite flush /
@@ -71,14 +75,10 @@ describe('lite long-session flush/newline repro', () => {
   }
 
   it('streamed turns in a small viewport: no wave / dup / drop', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-longsession-flush-repro')
-      .withLite()
-      .withTerminal({ width: 90, height: 24 })
-      .withTimeout(90000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-longsession-flush-repro', {
+      terminal: { width: 90, height: 24 },
+      timeout: 90000,
+    });
 
     const TURNS = 12;
     let worstRun = 0;
@@ -174,8 +174,7 @@ describe('lite long-session flush/newline repro', () => {
       console.log('[findings]\n' + findings.join('\n'));
     }
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
 
     // A legitimate section break is a single blank row; 2 can happen around
     // headed/structural blocks. >2 internal consecutive blanks = a wave.
@@ -183,14 +182,10 @@ describe('lite long-session flush/newline repro', () => {
     expect(findings).toEqual([]);
   }, 120000);
   it('tall streamed response (overflows viewport) flushes without a blank wave', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-longsession-tall-stream')
-      .withLite()
-      .withTerminal({ width: 90, height: 20 })
-      .withTimeout(60000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-longsession-tall-stream', {
+      terminal: { width: 90, height: 20 },
+      timeout: 60000,
+    });
 
     // Stream a response far taller than the 20-row viewport, one line per
     // chunk. While streaming, the live region's physical height exceeds the
@@ -223,18 +218,16 @@ describe('lite long-session flush/newline repro', () => {
 
       const snap = testCase.getSnapshot();
       const { run, at } = maxInternalBlankRun(snap);
-       
+
       console.log(
         `[tall-stream] turn ${turn} maxInternalBlankRun=${run}@${at}`
       );
       if (run > 2) {
-         
         console.log(testCase.getSnapshotFormatted());
       }
       expect(run).toBeLessThanOrEqual(2);
     }
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 90000);
 });

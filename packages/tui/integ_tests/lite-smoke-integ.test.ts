@@ -19,6 +19,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
+import { launchLiteInteg } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 // Control keys
 const CTRL_A = '\x01';
@@ -65,13 +66,7 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 1. basic-lifecycle
   it('launches in lite mode, shows prompt, exits cleanly', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-lifecycle')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-lifecycle');
 
     const store = await testCase.getStore();
     expect(store.uiMode).toBe('lite');
@@ -85,13 +80,7 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 2. keyboard-shortcuts — Ctrl+A, Ctrl+K, Ctrl+Y
   it('Ctrl+A moves to start, Ctrl+K kills, Ctrl+Y yanks', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-keyboard')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-keyboard');
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(200);
@@ -118,13 +107,7 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 3. multiline-input — Ctrl+J newline, arrow navigation
   it('Ctrl+J creates newline, Up arrow navigates between lines', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-multiline')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-multiline');
 
     // Create multi-line: "line1\nline2"
     await testCase.sendKeys('line1');
@@ -155,14 +138,9 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 4. word-deletion — Ctrl+W
   it('Ctrl+W deletes word backward', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-word-deletion')
-      .withLite()
-      .withTerminal({ width: 60, height: 20 })
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-word-deletion', {
+      terminal: { width: 60, height: 20 },
+    });
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(200);
@@ -180,14 +158,9 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 5. word-movement — Alt+F / Alt+B
   it('Alt+F and Alt+B move cursor by word', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-word-movement')
-      .withLite()
-      .withTerminal({ width: 60, height: 20 })
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-word-movement', {
+      terminal: { width: 60, height: 20 },
+    });
 
     const origin = testCase.getCursorPosition();
 
@@ -209,13 +182,7 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 6. reverse-search — Ctrl+R
   it('Ctrl+R opens reverse-i-search prompt', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-reverse-search')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-reverse-search');
 
     // Submit a command to create history
     await testCase.sendKeys('hello world');
@@ -245,13 +212,7 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 7. slash-command-autocomplete
   it('typing /cl syncs commandInputValue and does not crash', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-slash-autocomplete')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-slash-autocomplete');
 
     // Type a slash command prefix slowly to trigger autocomplete
     for (const char of '/cl') {
@@ -273,14 +234,9 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
   // 8. undo — Ctrl+_ restores killed text
   it('Ctrl+_ undoes a kill-line operation', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-smoke-undo')
-      .withLite()
-      .withTerminal({ width: 60, height: 20 })
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-smoke-undo', {
+      terminal: { width: 60, height: 20 },
+    });
 
     await testCase.sendKeys('hello world');
     await testCase.sleepMs(200);

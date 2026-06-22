@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
  * Bug-mine 1.2: Tool batch held until contiguous done-prefix settles.
@@ -22,13 +26,7 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
   });
 
   it('tools appear in creation order regardless of completion order', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-tool-batch-order')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-tool-batch-order');
 
     // Helper: queue the scenario events (two tools, out-of-order completion)
     const injectToolEvents = async () => {
@@ -90,7 +88,6 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
     expect(betaLine).not.toBe(-1);
     expect(alphaLine).toBeLessThan(betaLine);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });

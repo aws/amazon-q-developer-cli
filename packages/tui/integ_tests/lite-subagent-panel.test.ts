@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole, type MessageType } from '../src/stores/app-store';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 type ToolUseMessage = Extract<MessageType, { role: MessageRole.ToolUse }>;
 
@@ -63,13 +67,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
   }
 
   it('panel keyboard + footer behavior: seed (4.1), Ctrl+O/Esc toggle, arrows do not leak to prompt', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-subagent-panel-keyboard')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-subagent-panel-keyboard');
 
     // Type input first so we can later prove arrows don't leak to the prompt.
     await testCase.sendKeys('test input');
@@ -128,18 +126,11 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('panel auto-closes when all subagents complete (4.6)', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-subagent-panel-autoclose')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-subagent-panel-autoclose');
 
     const delivered = await injectAndWaitForMessages(testCase, 2);
     expect(delivered).toBe(true);
@@ -167,8 +158,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   /**
@@ -180,13 +170,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
    * firstAlpha < firstBeta (no reorder). Anchor: PR #2643 footer ordering.
    */
   it('completed stage stays in original position (4.2: terminated session seed)', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-subagent-panel-order')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-subagent-panel-order');
 
     const delivered = await injectAndWaitForMessages(testCase, 2);
     expect(delivered).toBe(true);
@@ -239,7 +223,6 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });

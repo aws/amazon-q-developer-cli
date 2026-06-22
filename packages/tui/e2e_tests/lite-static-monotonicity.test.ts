@@ -15,6 +15,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { streamReply } from './lite/helpers/responses';
 
 describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -38,10 +39,7 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     await testCase.getSessionId();
 
     // --- Turn 1 ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'FIRST_RESPONSE_MARKER_ABC' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'FIRST_RESPONSE_MARKER_ABC');
 
     await testCase.sendKeys('hello');
     await testCase.sleepMs(100);
@@ -51,14 +49,13 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
 
     // Snapshot after first turn
     const snap1 = testCase.getSnapshot();
-    const firstIdx = snap1.findIndex(l => l.includes('FIRST_RESPONSE_MARKER_ABC'));
+    const firstIdx = snap1.findIndex((l) =>
+      l.includes('FIRST_RESPONSE_MARKER_ABC')
+    );
     expect(firstIdx).toBeGreaterThan(-1);
 
     // --- Turn 2 ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'SECOND_RESPONSE_MARKER_XYZ' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'SECOND_RESPONSE_MARKER_XYZ');
 
     await testCase.sendKeys('again');
     await testCase.sleepMs(100);
@@ -68,20 +65,23 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
 
     // Verify both are present and in monotonic order
     const snap2 = testCase.getSnapshot();
-    const first2Idx = snap2.findIndex(l => l.includes('FIRST_RESPONSE_MARKER_ABC'));
-    const second2Idx = snap2.findIndex(l => l.includes('SECOND_RESPONSE_MARKER_XYZ'));
+    const first2Idx = snap2.findIndex((l) =>
+      l.includes('FIRST_RESPONSE_MARKER_ABC')
+    );
+    const second2Idx = snap2.findIndex((l) =>
+      l.includes('SECOND_RESPONSE_MARKER_XYZ')
+    );
     expect(first2Idx).toBeGreaterThan(-1); // first still exists byte-for-byte
     expect(second2Idx).toBeGreaterThan(first2Idx); // second is below first
 
     // No duplicate of first response (trailer not re-emitted)
-    const firstOccurrences = snap2.filter(l => l.includes('FIRST_RESPONSE_MARKER_ABC'));
+    const firstOccurrences = snap2.filter((l) =>
+      l.includes('FIRST_RESPONSE_MARKER_ABC')
+    );
     expect(firstOccurrences.length).toBe(1);
 
     // --- Turn 3 ---
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'THIRD_RESPONSE_MARKER_999' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'THIRD_RESPONSE_MARKER_999');
 
     await testCase.sendKeys('third');
     await testCase.sleepMs(100);
@@ -92,9 +92,9 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     const snap3 = testCase.getSnapshot();
     console.log('Final snapshot:\n' + testCase.getSnapshotFormatted());
 
-    const f3 = snap3.findIndex(l => l.includes('FIRST_RESPONSE_MARKER_ABC'));
-    const s3 = snap3.findIndex(l => l.includes('SECOND_RESPONSE_MARKER_XYZ'));
-    const t3 = snap3.findIndex(l => l.includes('THIRD_RESPONSE_MARKER_999'));
+    const f3 = snap3.findIndex((l) => l.includes('FIRST_RESPONSE_MARKER_ABC'));
+    const s3 = snap3.findIndex((l) => l.includes('SECOND_RESPONSE_MARKER_XYZ'));
+    const t3 = snap3.findIndex((l) => l.includes('THIRD_RESPONSE_MARKER_999'));
 
     // All three are present (no silent drops from monotonic cursor violation)
     expect(f3).toBeGreaterThan(-1);
@@ -102,8 +102,12 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     expect(t3).toBeGreaterThan(s3);
 
     // No duplicates of any marker (no re-emission)
-    const secondOccurrences = snap3.filter(l => l.includes('SECOND_RESPONSE_MARKER_XYZ'));
-    const thirdOccurrences = snap3.filter(l => l.includes('THIRD_RESPONSE_MARKER_999'));
+    const secondOccurrences = snap3.filter((l) =>
+      l.includes('SECOND_RESPONSE_MARKER_XYZ')
+    );
+    const thirdOccurrences = snap3.filter((l) =>
+      l.includes('THIRD_RESPONSE_MARKER_999')
+    );
     expect(firstOccurrences.length).toBe(1);
     expect(secondOccurrences.length).toBe(1);
     expect(thirdOccurrences.length).toBe(1);

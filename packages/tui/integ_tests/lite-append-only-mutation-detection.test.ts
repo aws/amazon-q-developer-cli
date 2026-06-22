@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
  * Bug-mine 1.1, 1.3: lite append-only contract. Once an item is flushed to
@@ -18,13 +22,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
   });
 
   it('committed content survives later turns: markers grow monotonically, exactly once each', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-append-only-monotonic')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-append-only-monotonic');
 
     // --- Turn 1: marker A ---
     await testCase.mockSessionUpdate({
@@ -95,18 +93,11 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     );
     expect(contentMessages.length).toBeGreaterThanOrEqual(2);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('/chat new clears scrollback — positive control for detection (bug-mine 1.1)', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-append-only-clear-positive-ctrl')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-append-only-clear-positive-ctrl');
 
     // Inject a CommandsUpdate event so the store knows about /chat.
     // Without this, /chat new is treated as a regular chat message since
@@ -202,7 +193,6 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     );
     expect(hasOldContent).toBe(false);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });

@@ -1,50 +1,19 @@
 /**
- * Integ test: Subagent kill ladder (Ctrl+X two-stage arm → kill).
- *
- * Filed in the original test brief as e2e because the kill ladder is a
- * user-facing keybinding documented in PR #2643's surface area. Implemented
- * here as integ because the assertions all live at the TUI layer
- * (store.sessions[id].status, store.subagentPanelOpen, no-op-after-window),
- * and a true e2e exercise would require driving a real backend subagent
- * pipeline — the mock-backed path covers the same regression class with
- * deterministic timing.
- *
- * 1. WHAT user-observable behavior does this assert?
- *    Per PR #2643 "Subagents > Kill ladder (Ctrl+X)":
- *      - First Ctrl+X while the subagent panel is open ARMS the kill (the
- *        store records armedKillSessionId; the LiteLayout shows a yellow
- *        "ctrl+x KILL" chip + "esc cancel" hint).
- *      - A second Ctrl+X within the 2s window invokes terminateSession
- *        and flips the focused stage's session status to 'terminated'.
- *      - A second Ctrl+X AFTER the 2s window does NOT kill — the prior
- *        arm timed out and re-pressing only re-arms (kills nothing).
- *
- * 2. WHAT class of regression would this catch?
- *    Anyone who edits the kill-ladder timing in
- *    src/components/layout/lite/LiteLayout.tsx (the 2000ms setTimeout
- *    or the armedKillSessionId comparison) or refactors
- *    `subagentSessionIdByName` and forgets to keep the focused-stage
- *    lookup, would break the Ctrl+X kill path. Symmetrically, anyone
- *    who removes the 2s safety window — making the FIRST press kill
- *    immediately — would also fail this test, because the test asserts
- *    the first press only arms (status stays 'busy').
- *
- * 3. Could the test pass even if the feature is broken?
- *    No. Each assertion targets a distinct observable transition:
- *      - After 1st Ctrl+X: status === 'busy' (NOT terminated)
- *      - After 2nd Ctrl+X within window: status === 'terminated'
- *      - After single Ctrl+X + 2.2s wait + 2nd Ctrl+X (re-arm only):
- *        status of a SECOND stage stays 'busy' (kill never fires)
- *    A broken implementation that ignored Ctrl+X, killed on first
- *    press, or ignored the window would fail at least one assertion.
- *
- * Anchor: PR #2643 surface area (Subagents > Kill ladder Ctrl+X) +
- *          src/components/layout/lite/LiteLayout.tsx:1611-1703 (kill ladder).
+ * Subagent kill ladder (Ctrl+X): first press arms, a second within 2s
+ * terminates, a second after the window only re-arms (kills nothing).
+ * Integ (not e2e): all assertions are at the TUI store layer and the mock
+ * backend gives deterministic timing for the 2s window.
+ * Anchor: PR #2643 (Subagents > Kill ladder Ctrl+X);
+ *          src/components/layout/lite/LiteLayout.tsx:1611-1703.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 describe('lite subagent kill ladder Ctrl+X', () => {
   let testCase: TestCase | null = null;
@@ -103,13 +72,9 @@ describe('lite subagent kill ladder Ctrl+X', () => {
   }
 
   it('first Ctrl+X arms (status stays busy); second within 2s terminates', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-kill-ladder-arm-then-kill')
-      .withLite()
-      .withTimeout(20000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-kill-ladder-arm-then-kill', {
+      timeout: 20000,
+    });
 
     const stage = await seedStage(
       testCase,
@@ -153,18 +118,13 @@ describe('lite subagent kill ladder Ctrl+X', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('second Ctrl+X after the 2s window only re-arms (does not kill)', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-kill-ladder-window-expires')
-      .withLite()
-      .withTimeout(20000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-kill-ladder-window-expires', {
+      timeout: 20000,
+    });
 
     const stage = await seedStage(
       testCase,
@@ -203,7 +163,6 @@ describe('lite subagent kill ladder Ctrl+X', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });

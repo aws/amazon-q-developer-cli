@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { LITE_HISTORY_RENDER_CAP } from '../src/components/layout/lite/static-flush';
 import { CMD_CHAT } from './lite/helpers/commands';
+import { streamReply } from './lite/helpers/responses';
 
 describe('lite history cap [bug-mine 2.7]', () => {
   let testCase: E2ETestCase | null = null;
@@ -48,7 +49,13 @@ describe('lite history cap [bug-mine 2.7]', () => {
     for (let i = 0; i < totalTurns; i++) {
       const marker = `HIST_MSG_${String(i).padStart(3, '0')}`;
       await acp.pushResponse(sessionId, [
-        { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: `Response ${marker}` } } },
+        {
+          kind: 'event',
+          data: {
+            kind: 'AssistantResponseEvent',
+            data: { content: `Response ${marker}` },
+          },
+        },
       ]);
       await acp.pushResponse(sessionId, null);
       await acp.prompt(sessionId, `Turn ${marker}`);
@@ -84,7 +91,10 @@ describe('lite history cap [bug-mine 2.7]', () => {
     expect(store.messages.length).toBeGreaterThan(LITE_HISTORY_RENDER_CAP);
 
     // Verify liteStaticSkipBefore is set correctly: messages.length - 70.
-    const expectedSkip = Math.max(0, store.messages.length - LITE_HISTORY_RENDER_CAP);
+    const expectedSkip = Math.max(
+      0,
+      store.messages.length - LITE_HISTORY_RENDER_CAP
+    );
     expect(store.liteStaticSkipBefore).toBe(expectedSkip);
     expect(store.liteStaticSkipBefore).toBeGreaterThan(0);
 
@@ -114,10 +124,7 @@ describe('lite history cap [bug-mine 2.7]', () => {
     await testCase.waitForIdle(15000);
     await testCase.sleepMs(500);
 
-    await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'POST_RESUME_LIVE_MSG' } } },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await streamReply(testCase, 'POST_RESUME_LIVE_MSG');
 
     await testCase.sendKeys('post resume check');
     await testCase.sleepMs(100);
@@ -125,6 +132,8 @@ describe('lite history cap [bug-mine 2.7]', () => {
     await testCase.waitForText('POST_RESUME_LIVE_MSG', 30000);
 
     const snap2 = testCase.getSnapshot();
-    expect(snap2.some(line => line.includes('POST_RESUME_LIVE_MSG'))).toBe(true);
+    expect(snap2.some((line) => line.includes('POST_RESUME_LIVE_MSG'))).toBe(
+      true
+    );
   }, 240000);
 });

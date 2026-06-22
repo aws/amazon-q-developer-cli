@@ -25,6 +25,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
+import { streamReply } from '../../e2e_tests/lite/helpers/responses';
 import { createProbeContext, linearSlope, runProbe } from './probe-utils';
 
 const ctx = createProbeContext('session-lifetime-lite');
@@ -85,19 +86,7 @@ async function main() {
     // Drive turns
     for (let i = 1; i <= TURN_COUNT; i++) {
       // Queue the mock response BEFORE sending the user message
-      await tc.pushSendMessageResponse(
-        [
-          {
-            kind: 'event',
-            data: {
-              kind: 'AssistantResponseEvent',
-              data: { content: `Response ${i} of ${TURN_COUNT}` },
-            },
-          },
-        ],
-        { silent: true }
-      );
-      await tc.pushSendMessageResponse(null, { silent: true });
+      await streamReply(tc, `Response ${i} of ${TURN_COUNT}`, { silent: true });
 
       // Type and send the user message (separate typing from submit, with delay)
       await tc.sendKeys(`turn ${i}`);

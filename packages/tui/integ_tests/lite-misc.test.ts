@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
-import { CMD_CLEAR, typeSlashCommand } from '../e2e_tests/lite/helpers/commands';
+import {
+  CMD_CLEAR,
+  typeSlashCommand,
+} from '../e2e_tests/lite/helpers/commands';
+import {
+  exitLiteInteg,
+  launchLiteInteg,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
  * Bug-mine category 10: miscellaneous lite-mode edge cases.
@@ -26,13 +33,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     typeSlashCommand(tc, cmd, { trailingSpace: true, postEnterMs: 800 });
 
   it('live region leading separator matches static spacing [bug-mine 10.1]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-1-spacing')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-1-spacing');
 
     // Inject a tool event (live rendering)
     await testCase.mockSessionUpdate({
@@ -47,7 +48,9 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
 
     // Capture live snapshot (tool still in progress)
     const liveSnapshot = testCase.getSnapshot();
-    const liveReadLine = liveSnapshot.findIndex((line) => line.includes('Read'));
+    const liveReadLine = liveSnapshot.findIndex((line) =>
+      line.includes('Read')
+    );
 
     // Complete the turn — flushes to static
     await testCase.completeTurn();
@@ -75,18 +78,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     const staticIsBlank = staticPrefix.trim() === '';
     expect(staticIsBlank).toBe(liveIsBlank);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('finished tool has no duplicate bar in snapshot [bug-mine 10.2]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-2-no-dup')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-2-no-dup');
 
     // Inject tool then finish it immediately
     await testCase.mockSessionUpdate({
@@ -113,18 +109,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     // Should appear exactly once — no duplicate from a cleanup race
     expect(shellLines.length).toBe(1);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('tool line and output bar appear without extra gap [bug-mine 10.3]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-3-concat')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-3-concat');
 
     // Inject a tool with streaming output via ToolCallUpdate
     await testCase.mockSessionUpdate({
@@ -163,18 +152,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       nearbyLines.includes('echo');
     expect(hasContentNearby).toBe(true);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('inner subagent tools carry agentName for batch isolation [bug-mine 10.4]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-4-subagent-isolation')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-4-subagent-isolation');
 
     // Inject a parent tool (visible in main chat)
     await testCase.mockSessionUpdate({
@@ -235,18 +217,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('transient alert appears then auto-dismisses [bug-mine 10.5]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-5-transient-alert')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-5-transient-alert');
 
     // To trigger a transient alert, we need the TUI to be processing.
     // Inject a tool and start a turn but DON'T complete it:
@@ -288,18 +263,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
 
     await testCase.completeTurn();
     await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('/clear in lite writes CSI escape and wipes visible terminal [bug-mine 10.8]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-8-clear')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-8-clear');
 
     // Register /clear as a known command (mock mode doesn't auto-send
     // CommandsUpdate from the backend)
@@ -366,18 +334,11 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       rawOutput.includes('\x1b[2J') || rawOutput.includes('\x1b[3J');
     expect(hasWipeSequence).toBe(true);
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 
   it('astral chars (emoji) kept intact across chunk boundaries [bug-mine 10.10]', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-misc-10-10-emoji')
-      .withLite()
-      .withTimeout(15000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-misc-10-10-emoji');
 
     // Inject content with emoji characters
     await testCase.mockSessionUpdate({
@@ -406,7 +367,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     const fullOutput = snapshot.join('\n');
     expect(fullOutput).toContain('Great success!');
 
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
+    await exitLiteInteg(testCase);
   }, 30000);
 });
