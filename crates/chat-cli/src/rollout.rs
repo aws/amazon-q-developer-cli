@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn test_voice_requires_nightly() {
+    fn test_voice_enabled_for_all_internal() {
         // Nightly + internal → voice enabled
         let rollout = Rollout {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
@@ -409,7 +409,7 @@ mod tests {
         };
         assert_eq!(rollout.variation(Feature::Voice), Some(TREATMENT));
 
-        // Stable + internal → voice NOT enabled
+        // Stable + internal → voice enabled (no channel gate)
         let rollout_stable = Rollout {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
             client_id: Some(Uuid::from_u128(1)),
@@ -417,7 +417,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout_stable.variation(Feature::Voice), None);
+        assert_eq!(rollout_stable.variation(Feature::Voice), Some(TREATMENT));
 
         // Nightly + external → voice NOT enabled (segment=internal)
         let rollout_external = Rollout {
