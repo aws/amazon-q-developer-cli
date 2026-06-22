@@ -563,20 +563,59 @@ describe('renderVerbosityPreview', () => {
     }
   });
 
-  test('truncation:output preview reflects the passed-in output cap', () => {
-    // 60-line fixture; cap to 5 — overflow marker should mention 55 dropped.
-    const display = { ...FULL_DISPLAY, outputMaxLines: 5 };
-    const text = renderVerbosityPreview('truncation:output', display, ['all']);
-    const stripped = stripAnsi(text);
-    expect(stripped).toContain('+55 more lines');
-  });
-
-  test('truncation:output preview with unlimited cap shows no marker', () => {
-    const display = { ...FULL_DISPLAY, outputMaxLines: null };
-    const text = renderVerbosityPreview('truncation:output', display, ['all']);
-    const stripped = stripAnsi(text);
-    expect(stripped).not.toContain('more lines)');
-  });
+  // truncation:output preview: a 60-line fixture is capped at outputMaxLines.
+  // The preview widens empty filters so the cap is always visible (prepending a
+  // "preview-only" hint), but suppresses that hint when the user's filters
+  // already cover the chosen tool. Fixture tool follows enabled categories.
+  test.each<{
+    name: string;
+    cap: number | null;
+    filters: string[];
+    contains?: string[];
+    absent?: string[];
+  }>([
+    {
+      name: 'reflects the passed-in output cap (55 of 60 dropped)',
+      cap: 5,
+      filters: ['all'],
+      contains: ['+55 more lines'],
+    },
+    {
+      name: 'unlimited cap shows no marker',
+      cap: null,
+      filters: ['all'],
+      absent: ['more lines)'],
+    },
+    {
+      name: 'widens empty filters so the bar renders, with a preview-only hint',
+      cap: 5,
+      filters: [],
+      contains: ['+55 more lines', 'preview-only'],
+    },
+    {
+      name: 'picks fs_read when only read is enabled; no hint (matches reality)',
+      cap: 5,
+      filters: ['read'],
+      contains: ['fs_read'],
+      absent: ['preview-only'],
+    },
+    {
+      name: 'suppresses hint when filters already cover the tool (shell)',
+      cap: 5,
+      filters: ['shell'],
+      absent: ['preview-only'],
+    },
+  ])(
+    'truncation:output preview $name',
+    ({ cap, filters, contains, absent }) => {
+      const display = { ...FULL_DISPLAY, outputMaxLines: cap };
+      const stripped = stripAnsi(
+        renderVerbosityPreview('truncation:output', display, filters)
+      );
+      for (const c of contains ?? []) expect(stripped).toContain(c);
+      for (const a of absent ?? []) expect(stripped).not.toContain(a);
+    }
+  );
 
   test('output preview honors the filter override (no bar when filters empty)', () => {
     // With filters: [] the output bars are gated off, so the rendered
@@ -591,42 +630,6 @@ describe('renderVerbosityPreview', () => {
     const text = renderVerbosityPreview('output', FULL_DISPLAY, ['all']);
     const stripped = stripAnsi(text);
     expect(stripped).toContain('│ On branch feature');
-  });
-
-  test('truncation:output preview widens filters so the bar always renders', () => {
-    // User has empty filters — in real scrollback nothing would surface.
-    // The truncation preview deliberately widens so the cap is visible,
-    // and prepends a hint explaining the gap between preview and reality.
-    const display = { ...FULL_DISPLAY, outputMaxLines: 5 };
-    const text = renderVerbosityPreview('truncation:output', display, []);
-    const stripped = stripAnsi(text);
-    // Cap fired despite empty saved filters.
-    expect(stripped).toContain('+55 more lines');
-    // Hint surfaces so the user understands this is preview-only.
-    expect(stripped).toContain('preview-only');
-  });
-
-  test('truncation:output preview picks a tool from the user enabled categories', () => {
-    // User has only `read` enabled — the fixture should use fs_read so the
-    // demo matches a tool they'd actually see in real scrollback.
-    const display = { ...FULL_DISPLAY, outputMaxLines: 5 };
-    const text = renderVerbosityPreview('truncation:output', display, ['read']);
-    const stripped = stripAnsi(text);
-    // fs_read tool name appears in the preview.
-    expect(stripped).toContain('fs_read');
-    // No "preview-only" hint since the user's filters already cover the
-    // chosen tool — the demo matches their real scrollback.
-    expect(stripped).not.toContain('preview-only');
-  });
-
-  test('truncation:output preview suppresses hint when filters already cover the tool', () => {
-    // User has shell enabled — fixture picks shell and renders without hint.
-    const display = { ...FULL_DISPLAY, outputMaxLines: 5 };
-    const text = renderVerbosityPreview('truncation:output', display, [
-      'shell',
-    ]);
-    const stripped = stripAnsi(text);
-    expect(stripped).not.toContain('preview-only');
   });
 
   test('top preview includes a richer fixture mix (write + grep + mcp + agent)', () => {
