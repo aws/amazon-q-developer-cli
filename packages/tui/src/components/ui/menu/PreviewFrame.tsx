@@ -5,10 +5,9 @@ import { Divider } from '../divider/Divider.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
 /**
- * Shared "Preview" chrome for the verbosity menus: a top-margin divider with a
- * dim `Preview` label above the rendered body. The scrollable pane keeps its
- * own variant (counter label + fixed-height body); this covers the two inline
- * sites (mini preview, truncation editor) that share identical framing.
+ * Shared inline "Preview" chrome: a divider with a dim `Preview` label above
+ * the body. Used by the mini preview and the truncation editor; the scrollable
+ * pane has its own variant (counter + fixed-height body).
  */
 export const PreviewFrame: React.FC<{ children: React.ReactNode }> = ({
   children,

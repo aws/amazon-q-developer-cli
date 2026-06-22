@@ -39,38 +39,11 @@ function nextDown(v: number): number {
 }
 
 /**
- * Numeric editor for the truncation cap. Renders a value chevron (`◀  N  ▶`)
- * plus a live preview pane reflecting the in-progress value. The keypress
- * handler below spells out the full keymap; commit/cancel route to the caller.
- */
-export type TruncationEditorField =
-  | 'argsLines'
-  | 'argsChars'
-  | 'outputLines'
-  | 'outputChars';
-
-// Narrowed to the numeric cap keys this editor edits, so indexing the display
-// config yields `number | null` rather than the full union of field types.
-type CapKey =
-  | 'argsMaxLines'
-  | 'argsMaxChars'
-  | 'outputMaxLines'
-  | 'outputMaxChars';
-
-/**
  * Per-field topology: the saved-config cap key, the preview fixture, and the
- * editor heading. Both args caps share the args fixture; both output caps
- * share the output fixture. Single source so the value/display/heading
- * derivations below don't each re-encode the field→key mapping by hand.
+ * editor heading. Single source so the value/display/heading derivations below
+ * don't re-encode the field→key mapping by hand.
  */
-const FIELD_META: Record<
-  TruncationEditorField,
-  {
-    configKey: CapKey;
-    previewKey: 'truncation:args' | 'truncation:output';
-    heading: string;
-  }
-> = {
+const FIELD_META = {
   argsLines: {
     configKey: 'argsMaxLines',
     previewKey: 'truncation:args',
@@ -91,7 +64,10 @@ const FIELD_META: Record<
     previewKey: 'truncation:output',
     heading: 'Tool output · chars per line',
   },
-};
+} as const;
+
+export type TruncationEditorField = keyof typeof FIELD_META;
+type CapKey = (typeof FIELD_META)[TruncationEditorField]['configKey'];
 
 /** Saved-config cap key for an editor field, for the `set:<key>:<value>` route. */
 export function truncationConfigKey(which: TruncationEditorField): CapKey {
@@ -139,6 +115,13 @@ export const VerbosityTruncationEditor: React.FC<{
   const digitModeRef = useRef(digitMode);
   digitModeRef.current = digitMode;
 
+  // Set value + digitMode together; arrow/backspace/u clear digitMode, digit
+  // input sets it (controls append-vs-replace on the next digit).
+  const setDraft = (next: number | null, digit = false) => {
+    setValue(next);
+    setDigitMode(digit);
+  };
+
   useKeypress((input, key) => {
     if (key.escape) {
       onCancel();
@@ -149,18 +132,13 @@ export const VerbosityTruncationEditor: React.FC<{
       return;
     }
     if (key.leftArrow) {
-      const cur = valueRef.current ?? 5;
-      const next = nextDown(cur);
-      setValue(next === 0 ? null : next);
-      setDigitMode(false);
+      const next = nextDown(valueRef.current ?? 5);
+      setDraft(next === 0 ? null : next);
       return;
     }
     if (key.rightArrow) {
-      const cur = valueRef.current ?? 5;
       // From null we start at 5 (matches the original "5 lines" preset).
-      const next = valueRef.current == null ? 5 : nextUp(cur);
-      setValue(next);
-      setDigitMode(false);
+      setDraft(valueRef.current == null ? 5 : nextUp(valueRef.current));
       return;
     }
     if (key.backspace || key.delete) {
@@ -168,18 +146,15 @@ export const VerbosityTruncationEditor: React.FC<{
       if (cur == null) return;
       const s = String(cur);
       if (s.length <= 1) {
-        setValue(null);
-        setDigitMode(false);
+        setDraft(null);
       } else {
         const next = parseInt(s.slice(0, -1), 10);
-        setValue(Number.isFinite(next) && next > 0 ? next : null);
-        setDigitMode(true);
+        setDraft(Number.isFinite(next) && next > 0 ? next : null, true);
       }
       return;
     }
     if (input === 'u' || input === 'U') {
-      setValue(null);
-      setDigitMode(false);
+      setDraft(null);
       return;
     }
     // Digit input — append in digitMode, replace otherwise. `0` alone
@@ -188,23 +163,18 @@ export const VerbosityTruncationEditor: React.FC<{
     if (/^[0-9]$/.test(input)) {
       const d = parseInt(input, 10);
       if (digitModeRef.current && valueRef.current != null) {
-        const next = valueRef.current * 10 + d;
-        setValue(Math.min(MAX_CAP, next));
+        setDraft(Math.min(MAX_CAP, valueRef.current * 10 + d), true);
       } else {
-        setValue(d === 0 ? null : d);
+        setDraft(d === 0 ? null : d, true);
       }
-      setDigitMode(true);
       return;
     }
   });
 
-  // Display string for the value chevron. `null` shows `unlimited`;
-  // numeric values show as-is, padded so the chevrons don't jiggle.
   const valueText = value == null ? 'unlimited' : String(value);
 
-  // Build the live preview using the in-progress draft. We pass a display
-  // override so the preview renders the cap the user is editing, not the
-  // saved one.
+  // Override the cap being edited so the preview reflects the in-progress
+  // draft, not the saved value.
   const display = useMemo(
     (): VerboseDisplayConfig => ({
       ...getVerboseDisplay(),

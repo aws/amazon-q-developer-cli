@@ -7,11 +7,9 @@ export interface AtMenuItem {
 }
 
 /**
- * Whether a slash command should surface in the menu for the current UI mode.
- * Single source of truth shared by CommandMenu (which filters its list) and
- * PromptInput (which must back off Enter/Tab in sync with what's rendered).
- * liteOnly commands bind to lite-mode rendering hooks and would no-op/error in
- * TUI, so they're hidden there.
+ * Whether a slash command should surface for the current UI mode. Shared by
+ * CommandMenu (filters its list) and PromptInput (backs off Enter/Tab in sync);
+ * liteOnly commands bind lite-only rendering hooks, so they're hidden in TUI.
  */
 export function isCommandVisibleInUiMode(
   cmd: AvailableCommand,

@@ -23,18 +23,14 @@ import {
 import { PromptsMenu } from './menu/PromptsMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
 import { VerbosityPreviewPane } from './menu/VerbosityPreviewPane.js';
+import { useVerbosityPreview } from './menu/useVerbosityPreview.js';
 import {
   VerbosityTruncationEditor,
   truncationConfigKey,
 } from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
-import {
-  DENSITY_DISPLAY,
-  DENSITY_FILTERS,
-  DENSITY_PRESETS,
-  type DensityPreset,
-} from '../../lite/verbose.js';
+import { DENSITY_DISPLAY, DENSITY_FILTERS } from '../../lite/verbose.js';
 
 const VERBOSITY_PREVIEW_KEYS = new Set<string>([
   'top',
@@ -93,32 +89,15 @@ export const CommandMenu: React.FC = () => {
 
   const [fileResults, setFileResults] = useState<string[]>([]);
 
-  // Two keys so a stray `p` while typing can't pop a preview: Ctrl+P is the
-  // master switch (hidden ↔ mini), `p` refines (mini → expanded).
-  type PreviewMode = 'mini' | 'expanded' | 'hidden';
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('hidden');
+  const { previewMode, setPreviewMode, draftPreset, handleHighlight } =
+    useVerbosityPreview(activeCommand);
 
-  const [draftPreset, setDraftPreset] = useState<DensityPreset | null>(null);
-
-  // Menu key: remount when the menu's shape (command, option values) or
-  // initialIndex changes so the cursor re-clamps and initialIndex re-applies.
-  // Description-only changes are ignored (toggle re-opens of the same submenu
-  // produce identical option values) so the cursor stays on the toggled row.
+  // Remount the menu when its shape (command, option values, initialIndex)
+  // changes so the cursor re-clamps; description-only changes (toggle re-opens
+  // of the same submenu) keep the cursor on the toggled row.
   const activeCommandKey = activeCommand
     ? `${activeCommand.command.name}|${activeCommand.initialIndex ?? 0}|${activeCommand.options.map((o) => o.value).join('\0')}`
     : '';
-  // Reset preview state ONLY when leaving /verbosity entirely — within it,
-  // state must persist across submenu switches (density → tool → output) so
-  // an armed preview doesn't disappear. Depend only on the command name so
-  // submenu shape changes don't trip a reset.
-  const activeCommandName = activeCommand?.command.name ?? null;
-  useEffect(() => {
-    if (activeCommandName !== '/verbosity') {
-      if (previewMode !== 'hidden') setPreviewMode('hidden');
-      if (draftPreset !== null) setDraftPreset(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCommandName]);
 
   const highlightedRef = useRef<{ label: string; description: string } | null>(
     null
@@ -439,9 +418,9 @@ export const CommandMenu: React.FC = () => {
     }
     setPromptHint(null);
 
-    // Verbose before settings (see priority note above): step up ONE
-    // verbosity level by re-dispatching with the saved parent route. Only
-    // once verboseReturn is null does returnToSettings re-open /settings.
+    // Verbose before settings (priority note above): step up ONE verbosity
+    // level by re-dispatching the saved parent route; only once verboseReturn
+    // is null does returnToSettings re-open /settings.
     if (verboseReturn) {
       setVerboseReturnOnEscape(null);
       handleUserInput(`/verbosity ${verboseReturn}`);
@@ -472,26 +451,6 @@ export const CommandMenu: React.FC = () => {
   const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
 
   useKeypress((input, key) => {
-    // Verbosity preview keymap. Gated to liteOnly commands with a preview
-    // fixture; Menu.tsx yields Ctrl+P on liteOnly menus so this can claim it.
-    const isLiteMenu =
-      activeCommand?.command.meta?.liteOnly === true &&
-      activeCommand.previewKey;
-    if (isLiteMenu) {
-      if (key.ctrl && (input === 'p' || input === 'P')) {
-        setPreviewMode((m) => (m === 'hidden' ? 'mini' : 'hidden'));
-        return;
-      }
-      if (
-        previewMode !== 'expanded' &&
-        previewMode !== 'hidden' &&
-        (input === 'p' || input === 'P')
-      ) {
-        setPreviewMode('expanded');
-        return;
-      }
-    }
-
     // Ctrl+C inside any menu surface = Esc (one level). Without this it falls
     // through to AppContainer's double-Ctrl+C quit flow — a startling
     // overreaction to backing out of a menu.
@@ -521,29 +480,6 @@ export const CommandMenu: React.FC = () => {
       handleAtMenuEscape();
     }
   });
-
-  const handleActiveCommandHighlight = useCallback(
-    (item: { label: string; description: string }) => {
-      if (!activeCommand) return;
-      const opt = activeCommand.options.find((o) => o.label === item.label);
-      if (!opt) return;
-
-      // /verbosity density rows: track the highlighted preset so the inline
-      // preview can draft-render it; non-preset rows (Custom / back / Cancel)
-      // clear the draft so the preview reverts to the saved config.
-      if (activeCommand.command.name === '/verbosity') {
-        const m =
-          opt.value.match(/^menu:density:confirm:([a-z]+)$/) ??
-          opt.value.match(/^density:apply:([a-z]+)$/);
-        if (m && DENSITY_PRESETS.includes(m[1] as DensityPreset)) {
-          setDraftPreset(m[1] as DensityPreset);
-        } else {
-          setDraftPreset(null);
-        }
-      }
-    },
-    [activeCommand]
-  );
 
   if (showAtMenu && !activeCommand) {
     return (
@@ -717,7 +653,7 @@ export const CommandMenu: React.FC = () => {
               }
             }
           }}
-          onHighlight={handleActiveCommandHighlight}
+          onHighlight={handleHighlight}
           onEscape={handleActiveCommandClose}
           showSelectedIndicator={true}
           searchable={isSearchable}
