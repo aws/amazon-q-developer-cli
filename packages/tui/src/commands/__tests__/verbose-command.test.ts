@@ -875,6 +875,8 @@ describe('/verbosity ESC navigation flag', () => {
     ['menu:truncation', 'menu:top:truncation'],
     ['menu:density:confirm:lean', 'menu:density'],
     ['set:showToolReasoning', 'menu:top:tool'],
+    // Editor submenu returns one level up to its parent section menu.
+    ['menu:truncation:argsLines:edit', 'menu:truncation'],
   ] as const)('%p arms verboseReturnOnEscape to %p', (arg, route) => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, arg);
@@ -1005,23 +1007,8 @@ describe('/verbosity Truncation submenu', () => {
     }
   );
 
-  it('opening menu:truncation arms ESC to return to the top menu', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:truncation');
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe('menu:top:truncation');
-  });
-
-  it('opening menu:truncation:argsLines:edit arms ESC to return to the truncation menu', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:truncation:argsLines:edit');
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe('menu:truncation');
-  });
+  // ESC return-route arming for menu:truncation and its edit submenu is
+  // covered by the parameterized table in `/verbosity ESC navigation flag`.
 });
 
 describe('/verbosity top menu Output filters row summary', () => {
