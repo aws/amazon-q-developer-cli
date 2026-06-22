@@ -1842,91 +1842,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    const openToolMenu = () => {
-      setReturn('menu:top:tool');
-      const display = getVerboseDisplay();
-      const argModeRow = (mode: ToolArgsMode) => ({
-        value: `set:toolArgsMode:${mode}`,
-        label: `Args: ${mode}`,
-        description: display.toolArgsMode === mode ? '[active]' : '',
-        group: 'Args display',
-      });
-      openMenuWith(
-        [
-          {
-            value: 'set:showToolReasoning',
-            label: 'Reasoning ("why")',
-            description: onOff(display.showToolReasoning),
-            group: 'Per-tool toggles',
-          },
-          {
-            value: 'set:showElapsed',
-            label: 'Elapsed time',
-            description: onOff(display.showElapsed),
-            group: 'Per-tool toggles',
-          },
-          {
-            value: 'set:showWriteDiffs:tool',
-            label: 'Write diffs',
-            description: onOff(display.showWriteDiffs),
-            group: 'Per-tool toggles',
-          },
-          argModeRow('off'),
-          argModeRow('inline'),
-          argModeRow('block'),
-          { value: 'menu:top:tool', label: '← back', description: '' },
-        ],
-        0,
-        'tool'
-      );
-    };
-
-    const openSubagentMenu = () => {
-      setReturn('menu:top:subagent');
-      const cur = getVerboseConfig();
-      const sub = (cur.display ?? DEFAULT_DISPLAY).subagent;
-      const row = (key: keyof typeof sub, label: string) => ({
-        value: `set:subagent:${key}`,
-        label,
-        description: onOff(sub[key]),
-        group: 'Subagent display',
-      });
-      // prompts/roles only emit when the master step list is on (renderer wraps
-      // both in `if (sub.pipeline && ...)`), so drop the dependent rows when
-      // pipeline is off — they'd be dead toggles.
-      const stepRows = sub.pipeline
-        ? [
-            row('prompts', 'Show step instructions'),
-            row('roles', 'Show step role labels'),
-          ]
-        : [];
-      // Full taskResult body is gated by the `subagent` filter (mirrors what
-      // `output` does for tool output bars); surface it here too.
-      const filterSet = new Set(cur.filters);
-      const fullOutputOn =
-        cur.filters.includes('all') || filterSet.has('subagent');
-      openMenuWith(
-        [
-          row('pipeline', 'Show subagent steps'),
-          ...stepRows,
-          row('responses', 'Show response summary'),
-          {
-            value: 'set:subagent:fullOutput',
-            label: 'Show full output (verbose)',
-            description: onOff(fullOutputOn),
-            group: 'Subagent display',
-          },
-          { value: 'menu:top:subagent', label: '← back', description: '' },
-        ],
-        0,
-        'subagent'
-      );
-    };
-
-    // Truncation submenu: four independent caps (line + char limits for args
-    // and output). Line caps are visual-row counts; char caps cut individual
-    // values at N chars. Each row routes to the numeric editor (CommandMenu
-    // renders it when previewKey ends with `:edit`).
     const TRUNC_HEADINGS: Record<TruncationField, string> = {
       argsLines: 'Tool args · lines',
       argsChars: 'Tool args · chars per value',
@@ -1948,39 +1863,175 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           return display.outputMaxChars;
       }
     };
-    const openTruncationMenu = () => {
-      setReturn('menu:top:truncation');
-      const display = getVerboseDisplay();
+
+    type MenuRow = {
+      value: string;
+      label: string;
+      description?: string;
+      group?: string;
+    };
+    // The four sectioned submenus share identical plumbing — `setReturn(route)`,
+    // a trailing `← back` row encoding the section, and `openMenuWith(rows, 0,
+    // previewKey)`. Only the row content differs and stays genuinely dynamic
+    // (reads live display/config), so each entry is a `rows()` thunk. `openMenu`
+    // does the shared parts once. The density confirm gate and numeric editor
+    // are special single-purpose cases kept out of this table.
+    //
+    // Subagent: prompts/roles only emit when the master step list is on (the
+    // renderer wraps both in `if (sub.pipeline && ...)`), so they're dropped
+    // when pipeline is off — they'd be dead toggles. fullOutput piggybacks on
+    // the `subagent` filter token (mirrors what `output` does for tool bars).
+    const MENUS: Record<
+      'tool' | 'subagent' | 'truncation' | 'output',
+      { previewKey: string; rows: () => MenuRow[] }
+    > = {
+      tool: {
+        previewKey: 'tool',
+        rows: () => {
+          const display = getVerboseDisplay();
+          const argModeRow = (mode: ToolArgsMode): MenuRow => ({
+            value: `set:toolArgsMode:${mode}`,
+            label: `Args: ${mode}`,
+            description: display.toolArgsMode === mode ? '[active]' : '',
+            group: 'Args display',
+          });
+          return [
+            {
+              value: 'set:showToolReasoning',
+              label: 'Reasoning ("why")',
+              description: onOff(display.showToolReasoning),
+              group: 'Per-tool toggles',
+            },
+            {
+              value: 'set:showElapsed',
+              label: 'Elapsed time',
+              description: onOff(display.showElapsed),
+              group: 'Per-tool toggles',
+            },
+            {
+              value: 'set:showWriteDiffs:tool',
+              label: 'Write diffs',
+              description: onOff(display.showWriteDiffs),
+              group: 'Per-tool toggles',
+            },
+            argModeRow('off'),
+            argModeRow('inline'),
+            argModeRow('block'),
+          ];
+        },
+      },
+      subagent: {
+        previewKey: 'subagent',
+        rows: () => {
+          const cur = getVerboseConfig();
+          const sub = (cur.display ?? DEFAULT_DISPLAY).subagent;
+          const row = (key: keyof typeof sub, label: string): MenuRow => ({
+            value: `set:subagent:${key}`,
+            label,
+            description: onOff(sub[key]),
+            group: 'Subagent display',
+          });
+          const stepRows = sub.pipeline
+            ? [
+                row('prompts', 'Show step instructions'),
+                row('roles', 'Show step role labels'),
+              ]
+            : [];
+          const fullOutputOn =
+            cur.filters.includes('all') || cur.filters.includes('subagent');
+          return [
+            row('pipeline', 'Show subagent steps'),
+            ...stepRows,
+            row('responses', 'Show response summary'),
+            {
+              value: 'set:subagent:fullOutput',
+              label: 'Show full output (verbose)',
+              description: onOff(fullOutputOn),
+              group: 'Subagent display',
+            },
+          ];
+        },
+      },
+      truncation: {
+        previewKey: 'truncation',
+        // Four independent caps (line + char limits for args and output). Line
+        // caps are visual-row counts; char caps cut individual values at N
+        // chars. Each row routes to the numeric editor (CommandMenu renders it
+        // when previewKey ends with `:edit`).
+        rows: () => {
+          const display = getVerboseDisplay();
+          return [
+            {
+              value: 'menu:truncation:argsLines:edit',
+              label: 'Args · lines',
+              description: fmtCap(display.argsMaxLines),
+              group: 'Tool args',
+            },
+            {
+              value: 'menu:truncation:argsChars:edit',
+              label: 'Args · chars per value',
+              description: fmtCap(display.argsMaxChars, 'chars'),
+              group: 'Tool args',
+            },
+            {
+              value: 'menu:truncation:outputLines:edit',
+              label: 'Output · lines',
+              description: fmtCap(display.outputMaxLines),
+              group: 'Tool output',
+            },
+            {
+              value: 'menu:truncation:outputChars:edit',
+              label: 'Output · chars per line',
+              description: fmtCap(display.outputMaxChars, 'chars'),
+              group: 'Tool output',
+            },
+          ];
+        },
+      },
+      output: {
+        previewKey: 'output',
+        rows: () => {
+          const cur = getVerboseConfig();
+          const isAll = cur.filters.includes('all');
+          const filterSet = new Set(cur.filters);
+          // Master row toggles between every-on (`['all']`) and every-off
+          // (`[]`). Label flips so the row reads as the action it performs:
+          // when all are on it says "none" (pressing clears); inverse off.
+          const masterLabel = isAll ? 'none' : 'all';
+          const masterDesc = isAll
+            ? '[active] · every tool · press to clear'
+            : 'turn every tool on';
+          return [
+            {
+              value: 'filter:all',
+              label: masterLabel,
+              description: masterDesc,
+              group: 'Filter',
+            },
+            ...VERBOSE_CATEGORIES.map((category) => ({
+              value: `category:${category}`,
+              label: category,
+              description: onOff(isAll || filterSet.has(category)),
+              group: 'Filter',
+            })),
+          ];
+        },
+      },
+    };
+
+    type MenuKey = keyof typeof MENUS;
+    const openMenu = (key: MenuKey) => {
+      // ESC from a section submenu returns to the top menu on that section's
+      // row (`menu:top:<key>`); the trailing `← back` row encodes the same.
+      const backRoute = `menu:top:${key}`;
+      setReturn(backRoute);
       openMenuWith(
         [
-          {
-            value: 'menu:truncation:argsLines:edit',
-            label: 'Args · lines',
-            description: fmtCap(display.argsMaxLines),
-            group: 'Tool args',
-          },
-          {
-            value: 'menu:truncation:argsChars:edit',
-            label: 'Args · chars per value',
-            description: fmtCap(display.argsMaxChars, 'chars'),
-            group: 'Tool args',
-          },
-          {
-            value: 'menu:truncation:outputLines:edit',
-            label: 'Output · lines',
-            description: fmtCap(display.outputMaxLines),
-            group: 'Tool output',
-          },
-          {
-            value: 'menu:truncation:outputChars:edit',
-            label: 'Output · chars per line',
-            description: fmtCap(display.outputMaxChars, 'chars'),
-            group: 'Tool output',
-          },
-          { value: 'menu:top:truncation', label: '← back', description: '' },
+          ...MENUS[key].rows(),
+          { value: backRoute, label: '← back', description: '' },
         ],
         0,
-        'truncation'
+        MENUS[key].previewKey
       );
     };
 
@@ -2006,40 +2057,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ],
         0,
         `truncation:${which}:edit`
-      );
-    };
-
-    const openOutputMenu = () => {
-      setReturn('menu:top:output');
-      const cur = getVerboseConfig();
-      const isAll = cur.filters.includes('all');
-      const filterSet = new Set(cur.filters);
-      // Master row toggles between every-on (`['all']`) and every-off (`[]`).
-      // Label flips so the row reads as the action it will perform: when all
-      // are currently on, the row says "none" because pressing it turns
-      // everything off. Inverse for the off state.
-      const masterLabel = isAll ? 'none' : 'all';
-      const masterDesc = isAll
-        ? '[active] · every tool · press to clear'
-        : 'turn every tool on';
-      openMenuWith(
-        [
-          {
-            value: 'filter:all',
-            label: masterLabel,
-            description: masterDesc,
-            group: 'Filter',
-          },
-          ...VERBOSE_CATEGORIES.map((category) => ({
-            value: `category:${category}`,
-            label: category,
-            description: onOff(isAll || filterSet.has(category)),
-            group: 'Filter',
-          })),
-          { value: 'menu:top:output', label: '← back', description: '' },
-        ],
-        0,
-        'output'
       );
     };
 
@@ -2123,29 +2140,29 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
     }
 
-    // Section-menu openers keyed by every route that reaches them: the internal
+    // Section-menu aliases keyed by every route that reaches them: the internal
     // `menu:<section>` dispatch AND the friendly breadcrumb aliases users type
     // (`/verbosity tool`, `/settings verbosity truncation`). The first word was
     // already lowercased above, so multi-word forms like "tool calls" match in
     // lower case. `density` is intentionally absent: bare `density` is the CLI
     // set-preset form, and the density menu is the smart-entry default.
     {
-      const MENU_OPENERS: Record<string, () => void> = {
-        'menu:tool': openToolMenu,
-        tool: openToolMenu,
-        tools: openToolMenu,
-        'tool calls': openToolMenu,
-        'menu:subagent': openSubagentMenu,
-        subagent: openSubagentMenu,
-        subagents: openSubagentMenu,
-        'menu:output': openOutputMenu,
-        output: openOutputMenu,
-        'menu:truncation': openTruncationMenu,
-        truncation: openTruncationMenu,
+      const MENU_ALIASES: Record<string, MenuKey> = {
+        'menu:tool': 'tool',
+        tool: 'tool',
+        tools: 'tool',
+        'tool calls': 'tool',
+        'menu:subagent': 'subagent',
+        subagent: 'subagent',
+        subagents: 'subagent',
+        'menu:output': 'output',
+        output: 'output',
+        'menu:truncation': 'truncation',
+        truncation: 'truncation',
       };
-      const opener = MENU_OPENERS[trimmed];
-      if (opener) {
-        opener();
+      const key = MENU_ALIASES[trimmed];
+      if (key) {
+        openMenu(key);
         return true;
       }
     }
@@ -2180,7 +2197,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       const cur = getVerboseConfig();
       const wasAll = cur.filters.length === 1 && cur.filters[0] === 'all';
       setVerboseConfig({ filters: wasAll ? [] : ['all'] });
-      openOutputMenu();
+      openMenu('output');
       return true;
     }
     // CLI-form `/verbosity reset` is preserved as a power-user shortcut for
@@ -2272,7 +2289,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         setVerboseConfig({
           display: { ...display, [toolToggleField]: !display[toolToggleField] },
         });
-        openToolMenu();
+        openMenu('tool');
         return true;
       }
       if (rest === 'showThinkingContent') {
@@ -2307,7 +2324,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       if (argMatch) {
         const mode = argMatch[1] as ToolArgsMode;
         setVerboseConfig({ display: { ...display, toolArgsMode: mode } });
-        openToolMenu();
+        openMenu('tool');
         return true;
       }
       // Truncation cap setters. All four knobs share `set:<field>:<value>`
@@ -2338,7 +2355,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         // After committing a value from the editor, return to the truncation
         // submenu so the user sees the updated cap on the row they just
         // edited and can navigate elsewhere or pick the other cap.
-        openTruncationMenu();
+        openMenu('truncation');
         return true;
       }
       const subMatch = rest.match(
@@ -2353,14 +2370,14 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             subagent: { ...display.subagent, [key]: !cur },
           },
         });
-        openSubagentMenu();
+        openMenu('subagent');
         return true;
       }
       // fullOutput piggybacks on the `subagent` filter token (same gate the
       // renderer uses for the verbose `full output:` body).
       if (rest === 'subagent:fullOutput') {
         toggleFilterToken('subagent');
-        openSubagentMenu();
+        openMenu('subagent');
         return true;
       }
       ctx.showAlert(`Unknown toggle: ${rest}`, 'error', 3000);
@@ -2427,7 +2444,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
       toggleFilterToken(cat);
       // Re-open the output sub-menu so the user can keep toggling categories.
-      openOutputMenu();
+      openMenu('output');
       return true;
     }
 
