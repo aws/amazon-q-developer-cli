@@ -1101,9 +1101,6 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     const content = JSON.stringify({
       command: 'this-is-a-pretty-long-shell-command --with --flags',
       path: 'a/very/long/path/to/some/deeply/nested/file.ts',
-      // Explicit purpose so the tool-name line shows reasoning rather than
-      // falling back to args.command (which would then carry pre-clip text
-      // for an unrelated reason).
       // Explicit purpose so the tool-name line shows reasoning, not args.command.
       __tool_use_purpose: 'demo block-mode arg clipping',
     });
