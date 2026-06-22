@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
-import { Divider } from '../divider/Divider.js';
+import { PreviewFrame } from './PreviewFrame.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
@@ -102,6 +102,11 @@ const FIELD_META: Record<
     heading: 'Tool output · chars per line',
   },
 };
+
+/** Saved-config cap key for an editor field, for the `set:<key>:<value>` route. */
+export function truncationConfigKey(which: TruncationEditorField): CapKey {
+  return FIELD_META[which].configKey;
+}
 
 export const VerbosityTruncationEditor: React.FC<{
   which: TruncationEditorField;
@@ -250,13 +255,9 @@ export const VerbosityTruncationEditor: React.FC<{
           )}
         </Text>
       </Box>
-      <Box flexDirection="column" marginTop={1}>
-        <Divider />
-        <Box paddingX={1} flexDirection="column">
-          <Text>{dim('Preview')}</Text>
-          <Text>{previewText}</Text>
-        </Box>
-      </Box>
+      <PreviewFrame>
+        <Text>{previewText}</Text>
+      </PreviewFrame>
     </Box>
   );
 };

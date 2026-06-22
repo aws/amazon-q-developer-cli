@@ -19,23 +19,13 @@ import {
   filterPromptsByQuery,
   buildAtMenuItems,
 } from './command-menu-utils.js';
-import {
-  getBundledTheme,
-  buildBundledPreview,
-  buildCurrentPreview,
-  buildFallbackDiff,
-  getPromptPreset,
-  getResponsePreset,
-  getDiffPreset,
-  promptPresets,
-  responsePresets,
-  diffPresets,
-  loadUserThemePrefs,
-} from '../../theme/user-theme.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
 import { VerbosityPreviewPane } from './menu/VerbosityPreviewPane.js';
-import { VerbosityTruncationEditor } from './menu/VerbosityTruncationEditor.js';
+import {
+  VerbosityTruncationEditor,
+  truncationConfigKey,
+} from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
 import {
@@ -54,79 +44,6 @@ const VERBOSITY_PREVIEW_KEYS = new Set<string>([
   'truncation:args',
   'truncation:output',
 ]);
-
-/**
- * Render the /theme menu preview for a highlighted option value. Pure given
- * the resolved theme colors + the auto-preview getter, so the highlight
- * handler stays a thin dispatcher. Returns the preview string to stash
- * (possibly `null`), or `undefined` to leave the current preview untouched
- * (e.g. a bundled id that didn't resolve, or a row with no preview).
- */
-function buildThemeMenuPreview(
-  value: string,
-  themeColors: ReturnType<typeof useTheme>['colors'],
-  getAutoPreview: (() => string) | null
-): string | null | undefined {
-  const fallbackDiff = buildFallbackDiff({
-    added: {
-      background: themeColors.diff.added.background,
-      bar: themeColors.diff.added.bar,
-      highlight: themeColors.diff.added.highlight,
-    },
-    removed: {
-      background: themeColors.diff.removed.background,
-      bar: themeColors.diff.removed.bar,
-      highlight: themeColors.diff.removed.highlight,
-    },
-  });
-
-  if (value.startsWith('bundled:')) {
-    const themeId = value.slice('bundled:'.length);
-    // Auto — base theme preview with no user overrides.
-    if (themeId === 'default') return getAutoPreview?.() || null;
-    const theme = getBundledTheme(themeId);
-    return theme
-      ? buildBundledPreview(theme, fallbackDiff, themeColors.brand)
-      : undefined;
-  }
-
-  if (value === 'custom') {
-    return buildCurrentPreview(
-      loadUserThemePrefs(),
-      fallbackDiff,
-      themeColors.brand
-    );
-  }
-
-  // Custom prompt/response/diff preset: combine the highlighted preset
-  // (whichever of prompt/response/diff its value names) with the saved
-  // config for the other two.
-  const prefs = loadUserThemePrefs();
-  for (const kind of ['prompt', 'response', 'diff'] as const) {
-    if (!value.startsWith(`${kind}:`)) continue;
-    const presetId = value.slice(kind.length + 1);
-    const prompt =
-      (kind === 'prompt'
-        ? getPromptPreset(presetId)
-        : getPromptPreset(prefs.promptPreset)) ?? promptPresets[0]!;
-    const response =
-      (kind === 'response'
-        ? getResponsePreset(presetId)
-        : getResponsePreset(prefs.responsePreset)) ?? responsePresets[0]!;
-    const diff =
-      (kind === 'diff'
-        ? getDiffPreset(presetId)
-        : getDiffPreset(prefs.diffPreset)) ?? diffPresets[0]!;
-    return buildBundledPreview(
-      { id: 'preview', label: 'Preview', prompt, response, diff },
-      fallbackDiff,
-      themeColors.brand
-    );
-  }
-
-  // Other rows (Prompt style, Response text color, …) keep the current preview.
-  return undefined;
-}
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -171,18 +88,12 @@ export const CommandMenu: React.FC = () => {
   const setVerboseReturnOnEscape = useAppStore(
     (state) => state.setVerboseReturnOnEscape
   );
-  const themeReturnOnEscape = useAppStore((state) => state.themeReturnOnEscape);
-  const setThemeReturnOnEscape = useAppStore(
-    (state) => state.setThemeReturnOnEscape
-  );
   const setCommandShadowText = useAppStore(
     (state) => state.setCommandShadowText
   );
   const kiro = useAppStore((state) => state.kiro);
-  const { getColor, colors: themeColors } = useTheme();
+  const { getColor } = useTheme();
   const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
-  const setThemePreview = useAppStore((state) => state.setThemePreview);
-  const getAutoPreview = useAppStore((state) => state._autoPreviewGetter);
 
   const [fileResults, setFileResults] = useState<string[]>([]);
 
@@ -201,19 +112,16 @@ export const CommandMenu: React.FC = () => {
   const activeCommandKey = activeCommand
     ? `${activeCommand.command.name}|${activeCommand.initialIndex ?? 0}|${activeCommand.options.map((o) => o.value).join('\0')}`
     : '';
-  // Reset preview state ONLY when leaving /verbosity entirely. Within it,
-  // preview state persists across submenu switches so an armed preview
-  // doesn't disappear when walking density → tool → output. draftPreset is
-  // also nulled here so a stale preset can't leak into a future session.
+  // Reset preview state ONLY when leaving /verbosity entirely — within it,
+  // state must persist across submenu switches (density → tool → output) so
+  // an armed preview doesn't disappear. Depend only on the command name so
+  // submenu shape changes don't trip a reset.
   const activeCommandName = activeCommand?.command.name ?? null;
   useEffect(() => {
     if (activeCommandName !== '/verbosity') {
       if (previewMode !== 'hidden') setPreviewMode('hidden');
       if (draftPreset !== null) setDraftPreset(null);
     }
-    // Depend only on the command name: submenu shape changes within
-    // /verbosity must not trigger a reset, and previewMode/draftPreset are
-    // read-only here (we act on the command-leaving transition only).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCommandName]);
 
@@ -519,14 +427,12 @@ export const CommandMenu: React.FC = () => {
   }, [setActiveTrigger, setPromptHint]);
 
   // Close the activeCommand overlay one level. Esc consumes the nested
-  // return-on-escape stashes in priority order: theme > verbose > settings,
-  // so drilling in via /settings → Theme escapes one /theme level at a time
-  // before settings takes back over. Each stash is cleared on consume.
+  // return-on-escape stashes in priority order: verbose > settings, so
+  // drilling in via /settings → Verbosity escapes one level at a time before
+  // settings takes back over. Each stash is cleared on consume.
   const handleActiveCommandClose = useCallback(() => {
     const returnToSettings = settingsReturnOnEscape;
     const verboseReturn = verboseReturnOnEscape;
-    // Empty string = "go back to bare /theme"; null = "close the overlay".
-    const themeReturn = themeReturnOnEscape;
 
     // Only clear input if the command menu system owns it (slash trigger
     // active). When the subcommand dropdown was opened by Tab from
@@ -537,13 +443,7 @@ export const CommandMenu: React.FC = () => {
       clearCommandInput();
     }
     setPromptHint(null);
-    setThemePreview(null);
 
-    if (themeReturn !== null) {
-      setThemeReturnOnEscape(null);
-      handleUserInput(themeReturn === '' ? '/theme' : `/theme ${themeReturn}`);
-      return;
-    }
     // Verbose before settings (see priority note above): step up ONE
     // verbosity level by re-dispatching with the saved parent route. Only
     // once verboseReturn is null does returnToSettings re-open /settings.
@@ -563,24 +463,18 @@ export const CommandMenu: React.FC = () => {
     activeTrigger,
     settingsReturnOnEscape,
     verboseReturnOnEscape,
-    themeReturnOnEscape,
     setActiveCommand,
     clearCommandInput,
     setPromptHint,
     setSettingsReturnOnEscape,
     setVerboseReturnOnEscape,
-    setThemeReturnOnEscape,
-    setThemePreview,
     reopenSettingsMenu,
     handleUserInput,
   ]);
 
   // True while any nested return-on-escape route is stashed — i.e. the user
   // drilled in from a parent menu, so Esc steps back rather than closing.
-  const hasReturnStash =
-    settingsReturnOnEscape ||
-    verboseReturnOnEscape ||
-    themeReturnOnEscape !== null;
+  const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
 
   // /verbosity preview keymap. Gated to liteOnly commands with a preview
   // fixture so Ctrl+P / p don't fire in modern-TUI menus (Menu.tsx yields
@@ -638,30 +532,15 @@ export const CommandMenu: React.FC = () => {
     }
   });
 
-  const themePreview = useAppStore((state) => state.themePreview);
-
-  const isThemeMenu = activeCommand?.command.name === '/theme';
-
-  // Clear the stashed theme preview once the user leaves /theme so it can't
-  // bleed into an unrelated menu opened next.
-  useEffect(() => {
-    if (!isThemeMenu && themePreview) {
-      setThemePreview(null);
-    }
-  }, [isThemeMenu, themePreview, setThemePreview]);
-
   const handleActiveCommandHighlight = useCallback(
     (item: { label: string; description: string }) => {
       if (!activeCommand) return;
       const opt = activeCommand.options.find((o) => o.label === item.label);
       if (!opt) return;
 
-      // /verbosity density-menu rows: track the highlighted preset so the
-      // inline preview can draft-render it. Both `menu:density:confirm:<preset>`
-      // (the density menu) and `density:apply:<preset>` (the confirmation
-      // submenu's Yes row) carry a preset name we want to draft. The
-      // Custom / ← back / Cancel rows clear the draft so the preview
-      // reverts to the saved config.
+      // /verbosity density rows: track the highlighted preset so the inline
+      // preview can draft-render it; non-preset rows (Custom / back / Cancel)
+      // clear the draft so the preview reverts to the saved config.
       if (activeCommand.command.name === '/verbosity') {
         const m =
           opt.value.match(/^menu:density:confirm:([a-z]+)$/) ??
@@ -672,17 +551,8 @@ export const CommandMenu: React.FC = () => {
           setDraftPreset(null);
         }
       }
-
-      if (!isThemeMenu) return;
-
-      const next = buildThemeMenuPreview(
-        opt.value,
-        themeColors,
-        getAutoPreview
-      );
-      if (next !== undefined) setThemePreview(next);
     },
-    [isThemeMenu, activeCommand, setThemePreview, themeColors, getAutoPreview]
+    [activeCommand]
   );
 
   if (showAtMenu && !activeCommand) {
@@ -774,16 +644,7 @@ export const CommandMenu: React.FC = () => {
         | 'argsChars'
         | 'outputLines'
         | 'outputChars';
-      // Map the editor field onto the saved-config key used by the
-      // `set:<field>:<value>` setter route.
-      const settingKey = (
-        {
-          argsLines: 'argsMaxLines',
-          argsChars: 'argsMaxChars',
-          outputLines: 'outputMaxLines',
-          outputChars: 'outputMaxChars',
-        } as const
-      )[which];
+      const settingKey = truncationConfigKey(which);
       return (
         <Box flexDirection="column">
           {verbosityHeader}
@@ -811,6 +672,15 @@ export const CommandMenu: React.FC = () => {
           ? (previewKey as VerbosityPreviewKey)
           : null;
 
+    // A highlighted density preset draft-renders that preset's display/filters
+    // in the preview without persisting; no draft = saved config.
+    const densityOverride = draftPreset
+      ? {
+          display: DENSITY_DISPLAY[draftPreset],
+          filters: DENSITY_FILTERS[draftPreset],
+        }
+      : null;
+
     // Expanded preview: swap the menu surface for the scrollable pane. The
     // pane owns its own keypresses; `p` cycles forward to hidden, Esc
     // collapses back to mini. Only meaningful inside /verbosity, but the
@@ -822,12 +692,8 @@ export const CommandMenu: React.FC = () => {
           {verbosityHeader}
           <VerbosityPreviewPane
             which={verbosityPreviewKey}
-            displayOverride={
-              draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined
-            }
-            filtersOverride={
-              draftPreset ? DENSITY_FILTERS[draftPreset] : undefined
-            }
+            displayOverride={densityOverride?.display}
+            filtersOverride={densityOverride?.filters}
             onCollapse={() => setPreviewMode('mini')}
             onHide={() => setPreviewMode('hidden')}
           />
@@ -889,24 +755,11 @@ export const CommandMenu: React.FC = () => {
           liteOnly={activeCommand.command.meta?.liteOnly === true}
           closeMenuActionLabel={hasReturnStash ? '← back' : 'to close'}
         />
-        {themePreview && (
-          <Box flexDirection="column" marginTop={1}>
-            <Divider />
-            <Box paddingX={1} flexDirection="column">
-              <Text>{secondaryColor('Preview')}</Text>
-              <Text>{themePreview}</Text>
-            </Box>
-          </Box>
-        )}
         {verbosityPreviewKey && previewMode === 'mini' && (
           <VerbosityPreview
             which={verbosityPreviewKey}
-            displayOverride={
-              draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined
-            }
-            filtersOverride={
-              draftPreset ? DENSITY_FILTERS[draftPreset] : undefined
-            }
+            displayOverride={densityOverride?.display}
+            filtersOverride={densityOverride?.filters}
           />
         )}
         {verbosityPreviewKey && (

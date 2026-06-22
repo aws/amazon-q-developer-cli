@@ -121,12 +121,6 @@ export interface PromptInputProps {
   triggerRules?: TriggerRule[];
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
-  /**
-   * When true, vertical arrows (↑↓) and shifted horizontal arrows are
-   * reserved for the parent's lite controls (e.g. subagent panel scroll/
-   * cycle); normal left/right cursor movement stays local to the input.
-   */
-  suppressArrows?: boolean;
 }
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
@@ -175,7 +169,6 @@ export const PromptInput = React.memo(function PromptInput({
   triggerRules = [],
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
-  suppressArrows = false,
 }: PromptInputProps) {
   const {
     activeTrigger,
@@ -891,16 +884,21 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
-      // Esc in queue restore mode: abandon the edit, exit restore. The slot
-      // is untouched so the original message stays in line. Not in restore?
-      // fall through to the LiteLayout handler (cancel/etc).
-      if (key.escape && queueRestoreRef.current) {
+      // Exit queue-restore mode and reset to an empty compose buffer.
+      const clearQueueRestoreInput = () => {
         queueRestoreRef.current = null;
         setEditingQueueIndex(null);
         const newSegs: Segment[] = [{ type: 'text', value: '' }];
         setSegments(newSegs);
         setCursor(0);
         syncToStore(newSegs);
+      };
+
+      // Esc in queue restore mode: abandon the edit, exit restore. The slot
+      // is untouched so the original message stays in line. Not in restore?
+      // fall through to the LiteLayout handler (cancel/etc).
+      if (key.escape && queueRestoreRef.current) {
+        clearQueueRestoreInput();
         return;
       }
 
@@ -909,17 +907,12 @@ export const PromptInput = React.memo(function PromptInput({
       // buffer (reserved, no behavior today).
       if (key.ctrl && userInput === 'x' && queueRestoreRef.current) {
         const restore = queueRestoreRef.current;
-        queueRestoreRef.current = null;
-        setEditingQueueIndex(null);
         // Translate the restore index against the current queue snapshot —
         // processQueue may have shifted slots while the user was editing.
         if (restore.index < queuedMessagesRef.current.length) {
           removeQueuedMessage(restore.index);
         }
-        const newSegs: Segment[] = [{ type: 'text', value: '' }];
-        setSegments(newSegs);
-        setCursor(0);
-        syncToStore(newSegs);
+        clearQueueRestoreInput();
         return;
       }
 
@@ -1134,9 +1127,6 @@ export const PromptInput = React.memo(function PromptInput({
           applyEdit(deleteForward(segments, cursor));
         }
       } else if (key.leftArrow) {
-        // suppressArrows reserves only shifted ←/→ for the parent (e.g. lite's
-        // subagent cycle); unmodified left/right still move the input cursor.
-        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         if (key.ctrl || key.meta) {
           // Ctrl+Left or Cmd+Left - move word backward
@@ -1145,7 +1135,6 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.max(0, cursor - 1));
         }
       } else if (key.rightArrow) {
-        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         // Accept shadow text when cursor is at end of input
         if (commandShadowText && cursor === totalWidth(segments)) {
@@ -1164,7 +1153,6 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.min(totalWidth(segments), cursor + 1));
         }
       } else if (key.upArrow) {
-        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
@@ -1214,7 +1202,6 @@ export const PromptInput = React.memo(function PromptInput({
           syncToStore(newSegs);
         }
       } else if (key.downArrow) {
-        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it

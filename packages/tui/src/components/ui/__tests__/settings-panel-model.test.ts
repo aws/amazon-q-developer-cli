@@ -39,24 +39,20 @@ function rowIds(
 
 describe('settings-panel-model', () => {
   describe('top-level menu', () => {
-    it('exposes the five shared top items in order (tui / no uiMode)', () => {
-      // verbosity is lite-only and must NOT appear in tui (or when uiMode is
-      // omitted) — its handler errors with "lite mode only".
-      expect(rowIds({ type: 'top' })).toEqual([
-        'display',
-        'theme',
-        'terminal',
-        'keybindings',
-        'history',
-      ]);
-      expect(rowIds({ type: 'top' }, defaultSnapshot, 'tui')).toEqual([
-        'display',
-        'theme',
-        'terminal',
-        'keybindings',
-        'history',
-      ]);
-    });
+    // verbosity is lite-only and must NOT appear in tui (or when uiMode is
+    // omitted) — its handler errors with "lite mode only".
+    it.each([[undefined], ['tui' as const]])(
+      'exposes the five shared top items in order (uiMode=%s)',
+      (uiMode) => {
+        expect(rowIds({ type: 'top' }, defaultSnapshot, uiMode)).toEqual([
+          'display',
+          'theme',
+          'terminal',
+          'keybindings',
+          'history',
+        ]);
+      }
+    );
 
     it('splices the lite-only verbosity row in after display (lite)', () => {
       expect(rowIds({ type: 'top' }, defaultSnapshot, 'lite')).toEqual([
@@ -261,43 +257,24 @@ describe('settings-panel-model', () => {
   });
 
   describe('verbosityBreadcrumb', () => {
-    it('roots at /settings – verbosity for the top menu / unknown / undefined', () => {
-      expect(verbosityBreadcrumb('top')).toBe('/settings – verbosity');
-      expect(verbosityBreadcrumb(undefined)).toBe('/settings – verbosity');
-      expect(verbosityBreadcrumb('bogus')).toBe('/settings – verbosity');
-    });
-
-    it('deepens one level per sub-screen', () => {
-      expect(verbosityBreadcrumb('density')).toBe(
-        '/settings – verbosity – density'
-      );
-      expect(verbosityBreadcrumb('tool')).toBe(
-        '/settings – verbosity – tool calls'
-      );
-      expect(verbosityBreadcrumb('subagent')).toBe(
-        '/settings – verbosity – subagent'
-      );
-      expect(verbosityBreadcrumb('output')).toBe(
-        '/settings – verbosity – output'
-      );
-    });
-
-    it('maps every truncation flavor (incl. numeric editor) to the truncation breadcrumb', () => {
-      expect(verbosityBreadcrumb('truncation')).toBe(
-        '/settings – verbosity – truncation'
-      );
-      expect(verbosityBreadcrumb('truncation:args')).toBe(
-        '/settings – verbosity – truncation'
-      );
-      expect(verbosityBreadcrumb('truncation:output')).toBe(
-        '/settings – verbosity – truncation'
-      );
-      expect(verbosityBreadcrumb('truncation:argsLines:edit')).toBe(
-        '/settings – verbosity – truncation'
-      );
-      expect(verbosityBreadcrumb('truncation:outputChars:edit')).toBe(
-        '/settings – verbosity – truncation'
-      );
+    // Roots (top / unknown / undefined), one sub-screen per row, and every
+    // truncation flavor (submenu, args/output fixtures, numeric editor) all
+    // collapsing to the single truncation breadcrumb.
+    it.each([
+      ['top', '/settings – verbosity'],
+      [undefined, '/settings – verbosity'],
+      ['bogus', '/settings – verbosity'],
+      ['density', '/settings – verbosity – density'],
+      ['tool', '/settings – verbosity – tool calls'],
+      ['subagent', '/settings – verbosity – subagent'],
+      ['output', '/settings – verbosity – output'],
+      ['truncation', '/settings – verbosity – truncation'],
+      ['truncation:args', '/settings – verbosity – truncation'],
+      ['truncation:output', '/settings – verbosity – truncation'],
+      ['truncation:argsLines:edit', '/settings – verbosity – truncation'],
+      ['truncation:outputChars:edit', '/settings – verbosity – truncation'],
+    ] as const)('maps %s → %s', (previewKey, expected) => {
+      expect(verbosityBreadcrumb(previewKey)).toBe(expected);
     });
   });
 });

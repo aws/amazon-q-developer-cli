@@ -360,17 +360,14 @@ export function screenTitle(screen: Screen): string {
 }
 
 /**
- * `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu,
- * derived from the menu's previewKey. CommandMenu renders verbosity (not the
- * Explorer SettingsPanel) so it can't use {@link screenTitle}. Unknown /
- * undefined keys fall back to the root so the header never reads as a bare
- * command name.
+ * `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu.
+ * CommandMenu renders verbosity (not the Explorer SettingsPanel) so it can't
+ * use {@link screenTitle}; unknown keys fall back to the root.
  */
 export function verbosityBreadcrumb(previewKey?: string): string {
   const ROOT = '/settings – verbosity';
   if (!previewKey || previewKey === 'top') return ROOT;
-  // All truncation flavors (`truncation`, `truncation:args/output`, and the
-  // numeric-editor `truncation:<field>:edit`) live under the truncation screen.
+  // All truncation flavors collapse to the single truncation screen.
   if (previewKey === 'truncation' || previewKey.startsWith('truncation:')) {
     return `${ROOT} – truncation`;
   }

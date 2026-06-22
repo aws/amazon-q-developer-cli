@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
-import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
-import { Divider } from '../divider/Divider.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { PreviewFrame } from './PreviewFrame.js';
 import {
   renderVerbosityPreview,
   buildRenderTheme,
@@ -22,7 +21,6 @@ export const VerbosityPreview: React.FC<{
   filtersOverride?: readonly string[];
 }> = ({ which, displayOverride, filtersOverride }) => {
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  const secondary = useMemo(() => getColor('secondary'), [getColor]);
   // Per-render theme: the preview surface needs to match what scrollback
   // looks like with the user's chosen theme, otherwise picking a preset
   // would still show the synthetic preview with hardcoded purple/cyan.
@@ -44,12 +42,8 @@ export const VerbosityPreview: React.FC<{
   if (!preview) return null;
 
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Divider />
-      <Box paddingX={1} flexDirection="column">
-        <Text>{secondary('Preview')}</Text>
-        <Text>{preview}</Text>
-      </Box>
-    </Box>
+    <PreviewFrame>
+      <Text>{preview}</Text>
+    </PreviewFrame>
   );
 };
