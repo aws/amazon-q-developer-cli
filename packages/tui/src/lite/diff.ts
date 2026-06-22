@@ -12,8 +12,8 @@ import {
   wrapAnsiLine,
   resolveLanguageFromPathLite,
   highlightLineSafe,
-} from './render/text.js';
-import type { RenderTheme } from './render/theme.js';
+  type RenderTheme,
+} from './render.js';
 
 // Legacy hardcoded fallbacks used when no theme is supplied (tests, snapshot
 // callers, mid-mount pure-context renders). Kept in lockstep with
