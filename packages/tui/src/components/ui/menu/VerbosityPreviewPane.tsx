@@ -1,22 +1,7 @@
 /**
- * VerbosityPreviewPane — full-height scrollable preview surface for the
- * /verbosity menu.
- *
- * Lives in place of the menu's input area when the user presses `p` from
- * within /verbosity. Renders the same synthetic scrollback the inline
- * preview does, but un-clipped, with internal scroll state so the user can
- * page through long fixtures (e.g. truncation samples).
- *
- * The chrome is intentionally distinct from LiteSubagentPanel — that one
- * is bordered top-and-bottom with a subagent name tag, this one is a single
- * top divider with a "Preview" caption and a footer hint. Same scroll
- * vocabulary (↑↓ rows, Ctrl+B/F page, Ctrl+A/Z top/bot) so muscle memory
- * carries over without making the user think they entered the subagent
- * monitor by mistake.
- *
- * Pure-ish: takes the current fixture key + draft display config, builds
- * lines once, holds offset state internally. All keypress handling lives
- * here so CommandMenu can keep its existing routing untouched.
+ * Full-height scrollable /verbosity preview, shown in place of the menu's
+ * input area when the user presses `p`. Same fixtures as the inline preview
+ * but un-clipped, with its own scroll offset and keypress handling.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box } from '../../../renderer.js';
@@ -39,21 +24,13 @@ import chalk from 'chalk';
 interface VerbosityPreviewPaneProps {
   /** Which fixture set to render. Picked from the active /verbosity submenu. */
   which: VerbosityPreviewKey;
-  /** Optional draft override — lets the truncation editor pass an
-   *  in-progress cap value before it's saved, and the density menu pass
-   *  a highlighted preset. Defaults to the saved config. */
+  /** Draft overrides for an in-progress truncation cap / highlighted density
+   *  preset; default to the saved config. */
   displayOverride?: VerboseDisplayConfig;
-  /** Optional draft filter override — paired with displayOverride for the
-   *  density menu's draft preview, since picking a preset rewrites filters
-   *  too. */
   filtersOverride?: readonly string[];
-  /** Pressing `p` here collapses the pane back to the inline (mini) preview
-   *  — the refine direction in reverse. The user can keep navigating the
-   *  menu with the small preview underneath. */
+  /** `p` collapses the pane back to the inline (mini) preview. */
   onCollapse: () => void;
-  /** Pressing Ctrl+P here closes the preview entirely (back to hidden) so
-   *  the user can opt out without two keypresses. Esc remains the safe-back
-   *  action that returns to mini, matching the menu surface's Esc semantics. */
+  /** Ctrl+P closes the preview entirely (back to hidden). */
   onHide: () => void;
 }
 
@@ -102,22 +79,17 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
   }, [maxOffset, offset]);
 
   useKeypress((input, key) => {
-    // Ctrl+P from inside the pane: master switch back to hidden — matches
-    // the menu surface's keymap so the user can fully opt out of preview
-    // mode from any state without intermediate stops.
     if (key.ctrl && (input === 'p' || input === 'P')) {
       onHide();
       return;
     }
     if (input === 'p' || input === 'P') {
-      // Refine direction in reverse: expanded → mini. Parent owns the
-      // state machine; we just signal "shrink".
       onCollapse();
       return;
     }
+    // Esc is the safe-back action: returns to the menu with the mini preview,
+    // NOT the hidden state.
     if (key.escape) {
-      // Esc remains the safe-back action — drops the user back to the menu
-      // surface with the inline (mini) preview, NOT into the hidden state.
       onCollapse();
       return;
     }
@@ -166,10 +138,6 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
     if (totalLines > PANE_VISIBLE_LINES) {
       parts.push('↑↓ scroll', 'ctrl+b/f page', 'ctrl+a/z top/bot');
     }
-    // `p` shrinks back to mini (refine in reverse), Ctrl+P fully hides
-    // the preview, Esc returns to the menu surface with mini underneath.
-    // Three distinct actions so the user can pick the level of preview
-    // they want without overshooting.
     parts.push('p shrink', 'ctrl+p hide', 'esc back');
     return chalk.dim(parts.join(' · '));
   })();

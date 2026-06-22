@@ -260,14 +260,9 @@ const FullToolContent = React.memo(function FullToolContent({
       // cancelled chip reads "Cancelled <task>" not "Cancelled file".
       let target: string;
       if (SESSION_TOOL_NAMES.has(name)) {
-        const task =
-          typeof parsed.task === 'string'
-            ? parsed.task
-            : typeof parsed.target === 'string'
-              ? parsed.target
-              : typeof parsed.name === 'string'
-                ? parsed.name
-                : null;
+        const task = (['task', 'target', 'name'] as const)
+          .map((k) => parsed[k])
+          .find((v) => typeof v === 'string') as string | undefined;
         target = task
           ? `"${task.slice(0, 40)}${task.length > 40 ? '…' : ''}"`
           : name;

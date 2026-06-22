@@ -360,39 +360,30 @@ export function screenTitle(screen: Screen): string {
 }
 
 /**
- * Breadcrumb title for the lite `/verbosity` menu, derived from the menu's
- * `previewKey`. Verbosity is rendered by CommandMenu (not the Explorer-based
- * SettingsPanel) because of its live preview + truncation editor, so it can't
- * use {@link screenTitle}; this maps each sub-screen to the same
- * `/settings – verbosity – <sub>` breadcrumb the other settings show in their
- * panel header, deepening one level per drilldown.
- *
- * `previewKey` values come from the verbosity effect's `openMenuWith(..., key)`
- * calls: `top` (root), `density`, `tool`, `subagent`, `output`, `truncation`
- * (and `truncation:args` / `truncation:output`), plus the numeric-editor keys
- * `truncation:<field>:edit`. Unknown / undefined keys fall back to the root
- * breadcrumb so the header never reads as a bare command name.
+ * `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu,
+ * derived from the menu's previewKey. CommandMenu renders verbosity (not the
+ * Explorer SettingsPanel) so it can't use {@link screenTitle}. Unknown /
+ * undefined keys fall back to the root so the header never reads as a bare
+ * command name.
  */
 export function verbosityBreadcrumb(previewKey?: string): string {
   const ROOT = '/settings – verbosity';
   if (!previewKey || previewKey === 'top') return ROOT;
-  const SUB_LABEL: Record<string, string> = {
-    density: 'density',
-    tool: 'tool calls',
-    subagent: 'subagent',
-    output: 'output',
-    truncation: 'truncation',
-    'truncation:args': 'truncation',
-    'truncation:output': 'truncation',
-  };
-  // Numeric-editor keys look like `truncation:argsLines:edit` — they live under
-  // the truncation screen, so show the truncation breadcrumb.
-  if (/^truncation:.*:edit$/.test(previewKey)) {
+  // All truncation flavors (`truncation`, `truncation:args/output`, and the
+  // numeric-editor `truncation:<field>:edit`) live under the truncation screen.
+  if (previewKey === 'truncation' || previewKey.startsWith('truncation:')) {
     return `${ROOT} – truncation`;
   }
-  const sub = SUB_LABEL[previewKey];
+  const sub = VERBOSITY_BREADCRUMB_LABELS[previewKey];
   return sub ? `${ROOT} – ${sub}` : ROOT;
 }
+
+const VERBOSITY_BREADCRUMB_LABELS: Record<string, string> = {
+  density: 'density',
+  tool: 'tool calls',
+  subagent: 'subagent',
+  output: 'output',
+};
 
 /** Sub-screen prompt shown under the title (top screen has none). */
 export function screenDescription(screen: Screen): string | undefined {

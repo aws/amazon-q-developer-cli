@@ -48,30 +48,17 @@ export interface MenuProps {
   showFooterHints?: boolean;
   /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
   preserveLabelColors?: boolean;
-  /**
-   * Action wording rendered after the close-menu key in the footer (e.g.
-   * `to cancel`, `to close`, `← back`). Default `to cancel`. The leading
-   * separator is the prop's responsibility — `← back` has none, `to close`
-   * has a leading space.
-   */
+  /** Wording after the close-menu key in the footer; the leading separator is
+   *  the prop's responsibility (`← back` none, `to close` a space). Default
+   *  `to cancel`. */
   closeMenuActionLabel?: string;
-  /**
-   * Initial cursor row when the menu mounts. Defaults to 0. Clamped to
-   * `0..items.length-1`. Caller is responsible for re-keying the Menu
-   * (e.g. `key={activeCommand}`) when the menu identity changes — initial
-   * index only takes effect on mount.
-   */
+  /** Initial cursor row; clamped to range, applied on mount only (re-key to
+   *  re-apply). Defaults to 0. */
   initialIndex?: number;
   /** Static title shown above the menu items (rendered regardless of searchable). */
   title?: string;
-  /**
-   * Lite-mode-only opt-in for the symmetric arrow-shortcut bindings:
-   * right→Enter when no onRightArrow handler is set, left→Esc when not
-   * searchable. Kept off by default so modern-TUI menus (/agent, /model,
-   * etc.) preserve their existing behavior. Set true via the active
-   * command's `meta.liteOnly` so /verbosity and /verbose pick it up
-   * without affecting other surfaces.
-   */
+  /** Lite-only: enable symmetric arrow shortcuts (right→Enter, left→Esc). Off
+   *  by default so modern-TUI menus keep their behavior. */
   liteOnly?: boolean;
 }
 
@@ -210,12 +197,8 @@ export const Menu = React.memo(function Menu({
 
   useKeypress((input, key) => {
     // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation).
-    // In liteOnly menus, Ctrl+P is reserved as the /verbosity preview
-    // arm chord (CommandMenu's keypress handler claims it). Falling
-    // through to plain up-arrow navigation would shadow the preview
-    // toggle so the user could never open the inline preview pane.
-    // Plain ↑ still works for navigation in those menus; only the chord
-    // is yielded.
+    // Yield Ctrl+P to lite preview controls (CommandMenu claims it); plain ↑
+    // still navigates.
     if (key.upArrow || (!liteOnly && key.ctrl && input === 'p')) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow || (key.ctrl && input === 'n')) {
@@ -238,20 +221,14 @@ export const Menu = React.memo(function Menu({
       !onRightArrow &&
       selectedIndex >= 0
     ) {
-      // Right arrow as Enter when the menu didn't claim the right arrow
-      // for a drill-in handler. Lets users commit a selection without
-      // moving fingers off the arrow cluster — paired with left = Esc
-      // below, both navigation directions become arrows. Lite menus only:
-      // ungating this in modern TUI auto-responds to ApprovalRequest
-      // dropdowns (which render Menu without liteOnly and rely on their
-      // own useKeypress for arrow drill-in).
+      // Right arrow as Enter when no drill-in handler claimed it — lite menus
+      // allow arrow-cluster select. Lite-only: ungating it in modern TUI would
+      // auto-respond to ApprovalRequest dropdowns (Menu without liteOnly).
       const selectedItem = displayItems[selectedIndex];
       if (selectedItem) onSelect(selectedItem);
     } else if (liteOnly && key.leftArrow && onEscape && !searchable) {
-      // Left arrow as Esc — symmetric with right = Enter. Suppressed in
-      // searchable menus because left/right are needed to navigate the
-      // search input cursor (handled implicitly by the input field).
-      // Lite menus only — see right-arrow branch above for rationale.
+      // Left arrow as Esc, symmetric with right = Enter. Suppressed in
+      // searchable menus where left/right drive the search-input cursor.
       onEscape();
     } else if (!searchable) {
       // Reserved for future use

@@ -11,30 +11,14 @@ import {
 import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
 
 /**
- * Renders the synthetic-scrollback preview pane shown beneath the /verbosity
- * menu. Reads live config every render so toggling a knob (which re-opens
- * the same submenu) reflects in the next frame.
- *
- * `which` selects the fixture set (top/density/tool/subagent/output/
- * truncation:args/truncation:output). For the truncation editor's in-progress
- * value, the editor mounts its own preview by passing draft caps via
- * `displayOverride`. The density menu uses both overrides to draft-preview
- * a highlighted preset before the user commits.
+ * Inline synthetic-scrollback preview beneath the /verbosity menu. Reads live
+ * config every render so toggling a knob reflects on the next frame.
  */
 export const VerbosityPreview: React.FC<{
   which: VerbosityPreviewKey;
-  /**
-   * Optional draft display override — used by the truncation editor to
-   * preview a not-yet-committed cap value, and by the density menu to
-   * draft-preview a highlighted preset. When omitted, current config is
-   * read from disk via getVerboseDisplay().
-   */
+  /** Draft overrides for an in-progress truncation cap / highlighted density
+   *  preset; default to saved config read from disk. */
   displayOverride?: ReturnType<typeof getVerboseDisplay>;
-  /**
-   * Optional draft filter override — paired with displayOverride for the
-   * density menu's draft preview, since picking a preset rewrites filters
-   * too. When omitted, filters are read from disk.
-   */
   filtersOverride?: readonly string[];
 }> = ({ which, displayOverride, filtersOverride }) => {
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();

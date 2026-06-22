@@ -122,10 +122,9 @@ export interface PromptInputProps {
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
   /**
-   * When true, arrow keys (↑↓←→) are forwarded to whatever component owns
-   * the focus instead of editing the input or navigating history. Used by
-   * lite mode's subagent panel so the user can scroll/cycle while the
-   * input stays mounted for typing.
+   * When true, vertical arrows (↑↓) and shifted horizontal arrows are
+   * reserved for the parent's lite controls (e.g. subagent panel scroll/
+   * cycle); normal left/right cursor movement stays local to the input.
    */
   suppressArrows?: boolean;
 }
@@ -243,11 +242,8 @@ export const PromptInput = React.memo(function PromptInput({
   const replaceQueuedMessage = useAppStore(
     (state) => state.replaceQueuedMessage
   );
-  // Lite mode mirrors queue-restore state into the store so the layout can
-  // render an "editing queued #N" header above the input. The store is the
-  // single source of truth for editing-state visibility — keeping it in sync
-  // with queueRestoreRef means `replaceQueuedMessage` (which already clears
-  // editingQueueIndex) and external sites that flip the index also win.
+  // Mirror queue-restore state into the store (the source of truth for the
+  // "editing queued #N" header) so external index flips stay in sync.
   const setEditingQueueIndex = useAppStore(
     (state) => state.setEditingQueueIndex
   );
@@ -324,24 +320,16 @@ export const PromptInput = React.memo(function PromptInput({
     () => getVisibleText(segments).startsWith('!'),
     [segments]
   );
-  // Build a stable Set of known slash command names so the input-syntax
-  // pass only colorizes recognized commands. Without this, any leading
-  // `/word` (including paths like `/tmp/foo`) gets the command color and
-  // the rest renders as path color — the eye reads the line as two-toned
-  // even though it's a single token. Memoized on the command list so we
-  // don't rebuild the Set on every keystroke.
+  // Only colorize recognized commands so a leading path (`/tmp/foo`) doesn't
+  // get the command color and read as two-toned.
   const knownSlashNames = useMemo(
     () => new Set(slashCommands.map((c) => c.name)),
     [slashCommands]
   );
-  // Apply lightweight token coloring (slash command / URLs) on top of the
-  // primary color so the user's eye separates "what is this" tokens from
-  // prose without changing the buffer's underlying styling. Path tokens
-  // (`/tmp/foo`, `./src/bar`) render as primary color — coloring them as
-  // info/cyan made the line two-toned in light themes where cyan is hard
-  // to read against the surface, and the bracket-around-the-path file
-  // attachment chip already disambiguates real attachments from typed
-  // paths. The highlighter is a no-op fast path when no span matches.
+  // Lightweight token coloring (slash command / URL) over primary. Path tokens
+  // stay primary on purpose — cyan was hard to read on light themes and the
+  // attachment chip already disambiguates real attachments. No-op when no span
+  // matches.
   const stylePromptText = useCallback(
     (text: string): string => {
       if (!text) return '';
@@ -882,10 +870,9 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
-      // Esc while in queue restore mode: abandon the edit, exit restore.
-      // The slot is untouched in queuedMessages, so the original message
-      // stays in line. Don't `return` if not in restore — let the LiteLayout
-      // handler take over (cancel/etc).
+      // Esc in queue restore mode: abandon the edit, exit restore. The slot
+      // is untouched so the original message stays in line. Not in restore?
+      // fall through to the LiteLayout handler (cancel/etc).
       if (key.escape && queueRestoreRef.current) {
         queueRestoreRef.current = null;
         setEditingQueueIndex(null);
@@ -897,10 +884,8 @@ export const PromptInput = React.memo(function PromptInput({
       }
 
       // Ctrl+X while editing a queued slot: drop the queued message entirely.
-      // Faster than "clear the buffer + Enter" (which triggers the empty-edit
-      // delete path) and works even if the user has typed new content. Only
-      // fires while restore is active so it doesn't shadow Ctrl+X in the
-      // normal compose buffer (which has no behavior today and is reserved).
+      // Gated to restore mode so it doesn't shadow Ctrl+X in the compose
+      // buffer (reserved, no behavior today).
       if (key.ctrl && userInput === 'x' && queueRestoreRef.current) {
         const restore = queueRestoreRef.current;
         queueRestoreRef.current = null;
@@ -964,12 +949,10 @@ export const PromptInput = React.memo(function PromptInput({
           // Stop active /voice recording
           voiceStop();
         } else {
-          // Queue restore mode: Enter commits the edited text back into the
-          // queue at its original slot so message order is preserved. Falls
-          // back to a normal submit if the slot drained while editing.
-          // If the edited text is empty (whitespace-only), delete the slot
-          // entirely instead of leaving an empty queued message — Enter on
-          // an emptied edit reads as "discard this queued message".
+          // Queue restore mode: Enter commits the edit back into its original
+          // slot (preserving order), falling back to a fresh submit if the
+          // slot drained. Empty edit deletes the slot ("discard this queued
+          // message").
           const restore = queueRestoreRef.current;
           if (restore) {
             const content = buildContent(segments);
@@ -1130,11 +1113,8 @@ export const PromptInput = React.memo(function PromptInput({
           applyEdit(deleteForward(segments, cursor));
         }
       } else if (key.leftArrow) {
-        // suppressArrows only blocks unmodified ↑/↓ — horizontal arrows
-        // remain available so the user can still move the input cursor while
-        // a parent handler claims arrows for navigation. Shift+← may still
-        // be claimed by the parent (e.g. lite's subagent panel cycle binding)
-        // — bail in that case so we don't fight over the keystroke.
+        // suppressArrows reserves only shifted ←/→ for the parent (e.g. lite's
+        // subagent cycle); unmodified left/right still move the input cursor.
         if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         if (key.ctrl || key.meta) {
