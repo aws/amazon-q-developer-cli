@@ -35,10 +35,8 @@ import {
 import { renderSubagentFinalBlock } from './subagent.js';
 
 export function renderSystemError(message: string): string {
-  // Only color the first line's `error:` prefix red. Subsequent lines (e.g.
-  // a per-item list under the header) keep their own embedded chalk codes,
-  // which would otherwise be clobbered by an outer chalk.red wrap.
-  // No trailing newline — vertical spacing is owned by needsLeadingBlank.
+  // Only red the first line's `error:` prefix — wrapping the rest in chalk.red
+  // would clobber embedded chalk codes on per-item lines below the header.
   const [first, ...rest] = message.split('\n');
   const head = chalk.red(`error: ${first ?? ''}`);
   if (rest.length === 0) return head;
@@ -78,158 +76,70 @@ export interface MessageLike {
   name?: string;
   isFinished?: boolean;
   result?: { status: string; error?: string; output?: unknown };
-  /**
-   * Approval-prompt outcome stamped on the store message (`ToolUseStatus`);
-   * `'rejected'` when the user denied the tool call. Kept as `string` (like
-   * `result.status` above) so the store's `MessageType` stays structurally
-   * assignable without the render layer importing the store enum. Distinct
-   * from a `result.status` of `'error'`/`'cancelled'` — a rejected call may
-   * carry no `result` at all. Read in the `tool_use` branch to paint the
-   * `DENIED` chip.
-   */
+  /** `'rejected'` when the user denied the call. Kept as `string` (like
+   *  result.status) so the store's MessageType stays structurally assignable
+   *  without importing its enum. Distinct from result.status 'error'/
+   *  'cancelled' — a rejected call may carry no `result` at all. */
   status?: string;
   success?: boolean;
   standalone?: boolean;
   agentName?: string;
   startTime?: number;
   finishTime?: number;
-  /**
-   * Freeform thinking text the model produced before its spoken reply.
-   * Only set on Model messages (other roles ignore it). Rendered as a
-   * dedicated block above the agent's text when
-   * {@link VerboseDisplayConfig.showThinkingContent} is on. Distinct from
-   * `__tool_use_purpose` (the per-tool-call "why" surfaced via
-   * {@link VerboseDisplayConfig.showToolReasoning}).
-   */
+  /** Model's freeform reasoning, shown above its reply when
+   *  showThinkingContent is on. Distinct from `purpose` (per-tool-call why). */
   thinking?: string;
-  /**
-   * Per-tool "why" preserved verbatim from the model's `__tool_use_purpose`
-   * field. Captured at the ACP boundary in app-store.ts before the
-   * ToolCall handler's per-shape synthesis rebuilds `content` (which drops
-   * the field for edit-kind tools). Read by
-   * {@link extractToolReasoning} as the primary source for the reasoning
-   * slot; the JSON-blob fallback handles tool kinds whose handler keeps
-   * the field in `content`.
-   */
+  /** Per-tool "why" preserved verbatim from `__tool_use_purpose`, captured at
+   *  the ACP boundary before per-shape synthesis rebuilds `content` and drops
+   *  it for edit-kind tools. Primary source for extractToolReasoning. */
   purpose?: string;
-  /**
-   * `true` when this Model message is carrying the streaming output of a
-   * `!` shell-escape command (handled in app-store's shell-escape branch),
-   * not the agent's inference output. Routes rendering to
-   * {@link renderShellOutputBlock} instead of {@link renderAgentMessage}
-   * so the row gets a brand-purple `! ` left gutter — visually distinct
-   * from agent prose, and signaling that any keystrokes the user types
-   * while this is in flight are forwarded to the PTY rather than into
-   * the prompt buffer.
-   */
+  /** `true` when this Model message carries `!` shell-escape output, not agent
+   *  inference — routes to renderShellOutputBlock (`! ` gutter) and bypasses
+   *  markdown so shell `*`/`_` aren't styled. */
   shellOutput?: boolean;
 }
 
 export interface SubagentStageSummary {
   /** Stage name (matches the stage's agentName / session name). */
   stageName: string;
-  /**
-   * The compressed `contextSummary` field from the stage's `summary` tool
-   * call — meant by Kiro's backend as a parent-consumable digest distinct
-   * from the long `taskResult` body. We harvest it directly off the inner
-   * `summary` tool message because the agent_crew joiner discards it
-   * before it reaches the parent's combined output string.
-   *
-   * May be empty when a stage answered in a single turn and skipped the
-   * compressed digest — render falls back to {@link taskResult}.
-   */
+  /** Compressed digest from the stage's `summary` tool call, harvested off
+   *  the inner message (the agent_crew joiner discards it before the parent's
+   *  combined output). May be empty — render falls back to taskResult. */
   contextSummary: string;
-  /**
-   * Long-form result body from the same `summary` tool call. Used as a
-   * fallback when `contextSummary` is empty (short tasks, failsafe-path
-   * summaries from the Rust agent_crew backend). Capped at render time
-   * to keep the section terminal-friendly.
-   */
+  /** Long-form result body; fallback when contextSummary is empty. */
   taskResult: string;
 }
 
 export interface RenderContext {
-  /**
-   * Tool-call ID currently awaiting approval (if any). Render of that
-   * tool's chat-log entry suppresses its diff, since the diff is also
-   * shown above in the approval prompt and we don't want it twice.
-   */
+  /** Tool-call awaiting approval; its scrollback entry suppresses the diff
+   *  (already shown in the approval prompt above). */
   pendingApprovalToolCallId?: string | null;
-  /** Terminal columns for diff full-row backgrounds. */
   termCols?: number;
-  /**
-   * Per-subagent-invocation stage summaries, keyed by the parent
-   * `subagent` tool's message id. Built once in LiteLayout from the
-   * inner `summary` tool calls; used by renderSubagentFinalBlock to
-   * render a compact "Summary of findings" body in non-verbose mode.
-   */
+  /** Per-invocation stage summaries keyed by parent `subagent` tool id;
+   *  feeds renderSubagentFinalBlock's compact "Summary of findings". */
   subagentSummariesById?: Map<string, SubagentStageSummary[]>;
-  /**
-   * Resolves a stage name to its per-agent input color (used for `[stage]`
-   * chips in the pipeline tree). Optional — when omitted, callers fall back
-   * to a single neutral accent so the renderer stays usable in tests / pure
-   * contexts that don't have a theme available.
-   */
+  /** Stage → per-agent input color for `[stage]` chips; neutral fallback. */
   getStageInputColor?: (stageName: string) => (text: string) => string;
-  /**
-   * Brighter shade of the same per-agent color, used for response chips
-   * (▸ stage) so the eye separates "what we sent in" from "what the agent
-   * returned" while keeping a single agent identity.
-   */
+  /** Brighter shade of the same color for `▸ stage` response chips. */
   getStageOutputColor?: (stageName: string) => (text: string) => string;
-  /**
-   * Display knobs from /verbose config. Optional — when omitted the renderer
-   * reads from disk via getVerboseDisplay(). Tests pass an explicit override
-   * to keep render output deterministic.
-   */
+  /** /verbose display knobs; read from disk when omitted (tests override). */
   display?: VerboseDisplayConfig;
-  /**
-   * Filter list override for `shouldShowToolOutput` gating. When omitted the
-   * renderer reads filters from disk via getVerboseConfig(). The /verbosity
-   * preview pane passes a draft list so toggling output-bar filters reflects
-   * in the synthetic preview without touching saved config.
-   */
+  /** Filter override for shouldShowToolOutput; the /verbosity preview passes
+   *  a draft list so toggles reflect without touching saved config. */
   filtersOverride?: readonly string[];
-  /**
-   * Theme accessors for the user-visible colors that depend on /theme. When
-   * omitted, the renderer falls back to its hardcoded kiroDark defaults so
-   * tests / pure-context callers don't have to wire a theme through. Lite
-   * mode passes a real theme via {@link buildRenderTheme}.
-   */
+  /** /theme accessors; falls back to kiroDark defaults for pure contexts. */
   theme?: RenderTheme;
-  /**
-   * Resolves the active agent's name (custom agents, swapped via /agent) to
-   * the per-agent color the footer uses for its agent chip. Lite mode wires
-   * this from `getAgentColor` in `agentColors.ts` so scrollback's role tag
-   * matches the footer color for the same agent. When omitted, the role tag
-   * falls back to `theme.brand` (kiro_default's color), keeping tests and
-   * pure-context callers usable without a theme.
-   */
+  /** Agent name → footer chip color, so the role tag matches the footer. */
   getAgentTagColor?: (agentName: string) => (text: string) => string;
-  /**
-   * Spinner glyph to substitute into the status slot of running, non-trivial
-   * tool calls. Set by the live region so an in-flight tool's row in the
-   * chat log picks up motion while every other dimension (args, diff,
-   * reasoning) renders identically to its eventual settled state. Omit
-   * (or leave undefined) on the static path so finalized rows show the
-   * post-run elapsed/done status instead of a frozen spinner glyph baked
-   * into already-flushed scrollback.
-   */
+  /** Spinner glyph for the running status slot. Set only on the live path;
+   *  left unset on the static path so flushed rows show settled status, not a
+   *  frozen spinner. */
   runningSpinner?: string;
-  /**
-   * Active glyph set (Unicode or ASCII fallback). Threaded from
-   * `useGlyphs()` in lite components — switches the box-drawing chars used
-   * by the markdown table renderer, blockquote bar (`│`), bar-prefixed
-   * tool output (`│`), thinking-block rules (`─`), and HR. When absent,
-   * defaults to `UNICODE_GLYPHS` via {@link resolveGlyphs} so tests and
-   * pure-context callers don't need to wire the field through.
-   */
+  /** Active glyph set (Unicode/ASCII); defaults to UNICODE_GLYPHS. */
   glyphs?: Glyphs;
 }
 
-/**
- * Render any message type to a plain text string for Static output.
- */
+/** Render any message type to a plain text string for Static output. */
 export function renderMessageToText(
   msg: MessageLike,
   mainAgentName?: string,
@@ -243,29 +153,13 @@ export function renderMessageToText(
       if (isErrorContent(msg.content)) {
         return renderSystemError(msg.content);
       }
-      // Shell-escape Model messages carry the streaming output of a `!`
-      // bash command — not agent inference. Render with the gutter
-      // formatter so they're visually distinct from agent prose. Same
-      // helper drives the in-flight live region row in LiteLiveRegion,
-      // so the live→static flush is a no-op visual transition (the
-      // committed scrollback row looks identical to the last live frame).
-      //
-      // Bypasses the agentText / thinking compose path entirely:
-      //   - No `Kiro:` tag — bash output isn't from the agent.
-      //   - No thinking block — shell-escape commands don't emit Thought
-      //     events; `msg.thinking` is unset for these rows.
-      //   - No markdown rendering — bash output is raw text + ANSI escapes,
-      //     and forcing markdown through it would mangle programs that
-      //     emit `*` (e.g. shell glob output, fzf prompts) or `_` (e.g.
-      //     filenames with underscores) as italic.
+      // Shell-escape output bypasses the agent/thinking/markdown path: no
+      // `Kiro:` tag, no thinking block, and no markdown (raw bash output's
+      // `*`/`_` would otherwise render as italic).
       if (msg.shellOutput) {
         return renderShellOutputBlock(msg.content, ctx.theme, ctx.termCols);
       }
-      // Use the message's own agentName when set (subagent stages), falling
-      // back to mainAgentName so the role tag matches whichever persona
-      // produced the line. termCols drives the markdown wrapper's per-line
-      // column budget so paragraphs/lists/tables/code wrap cleanly without
-      // tripping the terminal's own wrap on top of pre-wrapped ANSI.
+      // Prefer the message's own agentName (subagent stages); fall back to main.
       const display = ctx.display ?? getVerboseDisplay();
       const agentText = renderAgentMessage(
         msg.content,
@@ -275,12 +169,7 @@ export function renderMessageToText(
         ctx.getAgentTagColor,
         ctx.glyphs
       );
-      // Persisted thinking block: shows the model's freeform thinking above
-      // its spoken text in scrollback. Gated by display.showThinkingContent
-      // so the lean and minimal density presets don't bloat the chat with
-      // thinking text. Borders use the active theme's brand color so
-      // /theme bundled:dark|light reflows them consistently with the agent
-      // role tag below.
+      // Thinking block above the spoken text, gated by showThinkingContent.
       const thinkingBlock =
         display.showThinkingContent && msg.thinking
           ? renderThinkingBlock(
@@ -292,10 +181,7 @@ export function renderMessageToText(
           : '';
       if (!thinkingBlock) return agentText;
       if (!agentText) return thinkingBlock;
-      // Blank row between the bottom rule and the spoken `Kiro:` line — without
-      // it the rule glues directly to the role tag and the section reads as
-      // one tightly-packed slab. The leading blank above the block is supplied
-      // by needsLeadingBlank when the prior row is a User or ToolUse.
+      // Blank row so the bottom rule doesn't glue to the `Kiro:` line.
       return thinkingBlock + '\n\n' + agentText;
     }
 
@@ -318,11 +204,9 @@ export function renderMessageToText(
       const isRead = isReadTool(msg.name || '');
       const display = ctx.display ?? getVerboseDisplay();
 
-      // Subagent tool: render a single canonical block per pipeline run.
-      // The parent's tool result IS what the parent agent sees, so we show
-      // it in full with no truncation. Per-stage tool calls (Read/Grep/etc.)
-      // are hidden from the chat log entirely — they live only in the
-      // footer activity strip while running.
+      // Subagent tool: one canonical block per pipeline run, shown in full
+      // (it's what the parent agent sees). Per-stage tool calls are hidden
+      // from the chat log (they live in the footer activity strip).
       if (isParentSubagentTool(msg.name)) {
         const elapsed =
           msg.startTime && msg.finishTime
@@ -342,18 +226,9 @@ export function renderMessageToText(
             filtersOverride: ctx.filtersOverride,
             glyphs: ctx.glyphs,
             rejected: isRejected,
-            // Live-region spinner glyph (or SPINNER_PLACEHOLDER) for the
-            // running tail. Without this, the subagent header showed a
-            // static ' ...' even when actively running, while every other
-            // non-trivial tool got a braille spin — visual inconsistency
-            // and a missed motion signal.
             runningSpinner: ctx.runningSpinner,
-            // Same yellow-' ...' override as renderToolCall when the
-            // parent subagent tool itself is awaiting approval. Stage
-            // approvals are surfaced separately by the footer activity
-            // strip's `requesting-permission` phase, so this only fires
-            // for the rare case where the subagent tool is in the user's
-            // approval list.
+            // Fires only when the parent subagent tool itself awaits approval;
+            // stage approvals go through the footer activity strip instead.
             awaitingApproval:
               !!ctx.pendingApprovalToolCallId &&
               ctx.pendingApprovalToolCallId === msg.id,
@@ -361,18 +236,10 @@ export function renderMessageToText(
         );
       }
 
-      // Task list tool (todo_list / task / todo): the schema is owned by
-      // the agent crate (stable wire format), so we render a per-command
-      // structured body instead of dumping the raw args JSON. Display name
-      // overridden to `tasks` so it matches what {@link LiteTaskTray} and
-      // /verbose call this surface — same word, two places, one mental
-      // model. The output bar is suppressed entirely: the tray already
-      // surfaces the authoritative tasks state, and the raw tool result
-      // is a JSON dump of every task that would just duplicate it.
-      //
-      // Falls through to the generic path when the args don't parse or
-      // the command is unrecognized, so a future schema change shows
-      // SOMETHING in scrollback instead of a bare tool name.
+      // Task list tool (todo_list / task / todo): render a per-command
+      // structured body instead of the raw args JSON; display name → `tasks`
+      // to match the tray + /verbose. Falls through to generic on malformed
+      // args so a schema change still shows something.
       if (msg.name && TASK_TOOL_NAMES.has(msg.name)) {
         const taskBlock = formatTaskToolBody(
           msg.content,
@@ -384,10 +251,7 @@ export function renderMessageToText(
             ? extractToolReasoning(msg.content, msg.purpose)
             : undefined;
           const info: ToolCallRenderInfo = {
-            // Override the wire name so users see "tasks" everywhere —
-            // /verbose category is "task", the tray header says "tasks",
-            // and the user's note "it's called task list, not todo list"
-            // applies. The wire name (`todo_list`) is a legacy alias.
+            // Override the wire name (legacy alias `todo_list`) → "tasks".
             name: 'tasks',
             status,
             description: reasoning,
@@ -404,35 +268,23 @@ export function renderMessageToText(
               ctx.pendingApprovalToolCallId === msg.id,
           };
           const header = renderToolCall(info, ctx.theme);
-          // Honor `toolArgsMode === 'off'`: minimal density preset users
-          // get the bare header line. Other modes both show the full body
-          // — the structured task-list view is the whole point of the
-          // special case, so collapsing it to a single arg chip in
-          // `inline` mode (the way generic tools do) would defeat it.
+          // `off` mode gets the bare header; other modes show the full body
+          // (the structured task view is the point — don't collapse to a chip).
           if (
             display.toolArgsMode === 'off' ||
             taskBlock.bodyLines.length === 0
           ) {
             return header;
           }
-          // argsMaxLines bounds the body's visual height so a 50-task
-          // create call doesn't dominate scrollback. The marker counts
-          // dropped lines so the user knows there's more above the cap.
+          // argsMaxLines bounds body height; marker counts dropped lines.
           const capped = applyLineCap(
             taskBlock.bodyLines,
             display.argsMaxLines,
             (n) => chalk.dim(`  ... (truncated; +${n} more lines)`)
           );
           const body = header + '\n' + capped.join('\n');
-          // On success we suppress the verbose output bar — the
-          // {@link LiteTaskTray} already surfaces the authoritative state
-          // and the raw tool result is a JSON dump that just duplicates
-          // the tray. On error, surface the error body so the user has
-          // something to act on — without this, a TaskStore filesystem
-          // failure would render only `tasks <cmd> FAILED` and leave the
-          // user blind to the actual cause unless the agent's follow-up
-          // prose happened to explain. Matches how write tools (also
-          // diff-rendered, also tray-adjacent) handle errors.
+          // Suppress the output bar on success (the tray is authoritative);
+          // on error, surface the body so the user sees the cause.
           if (msg.result?.status !== 'error') return body;
           return (
             body +
@@ -450,21 +302,9 @@ export function renderMessageToText(
         // taskBlock === null — args malformed; fall through to generic.
       }
 
-      // Reasoning ("why") rendering is gated by display.showToolReasoning.
-      // The slot only ever surfaces the agent's actual `__tool_use_purpose`
-      // — never a synthesized one-liner from args. The previous block/off-
-      // mode fallback (extractToolPurpose's args waterfall: command → path
-      // → pattern → query) painted whatever string it found in brand purple,
-      // which made every tool-call line look like the agent had reasoned
-      // about the call. In block mode that string then duplicated the first
-      // row of the args tree below it (path: foo.ts in purple, then path:
-      // foo.ts in white). In off mode it lied about being reasoning at all.
-      //
-      // Symmetric across modes now: purple = real reasoning the agent gave
-      // us. When the agent omits __tool_use_purpose, the slot stays empty
-      // and the args block (block mode) or args chip (inline mode) speaks
-      // for itself. Off mode without reasoning shows a bare tool name —
-      // acceptable given off mode is opt-in minimalism.
+      // Reasoning slot (gated by showToolReasoning) only ever surfaces the
+      // agent's real `__tool_use_purpose`, never a synthesized args one-liner
+      // — so purple always means "the agent reasoned about this call".
       const inlineArg =
         display.toolArgsMode === 'inline'
           ? extractInlineArg(msg.name || '', msg.content, display.argsMaxChars)
@@ -484,55 +324,25 @@ export function renderMessageToText(
           display.showElapsed && msg.startTime && msg.finishTime
             ? msg.finishTime - msg.startTime
             : undefined,
-        // Live region threads its spinner glyph here so a running tool's
-        // chat-log row picks up motion. Static path leaves it unset and
-        // gets ' ...' for the running slot, which is the correct
-        // post-flush appearance for any settled row.
         runningSpinner: ctx.runningSpinner,
-        // When this tool is the current pending-approval target, the
-        // running-status slot flips to a yellow ' ...' instead of the
-        // spinner. Truthful "waiting on you, not me" signal — the agent
-        // isn't progressing while approval is pending, so painting the
-        // braille spin would lie. Same trust color as the approval
-        // prompt's [t] hotkey, so the eye links the tool body to the
-        // prompt below the input as a single visual unit.
+        // Pending-approval target: running slot flips to a yellow ' ...'
+        // (the agent isn't progressing, so the spinner would lie).
         awaitingApproval:
           !!ctx.pendingApprovalToolCallId &&
           ctx.pendingApprovalToolCallId === msg.id,
       };
       if (isWrite && msg.content) {
-        // Suppress the diff body in two cases: (1) a pending approval is
-        // active for this tool call (the diff is already shown above the
-        // input as part of the approval prompt — duplicating it in
-        // scrollback wastes vertical space), or (2) the user has turned
-        // off the per-/verbosity "Write diffs" toggle. Both fall through
-        // to renderToolCall's bare-header path; the row still appears in
-        // scrollback so there's evidence the write fired. Errors still
-        // surface via the renderVerboseOutput call below.
+        // Suppress the diff when this call is awaiting approval (already shown
+        // in the prompt) or the user turned off the Write-diffs toggle; the
+        // header row still records that the write fired.
         const suppressDiff =
           (!!ctx.pendingApprovalToolCallId &&
             ctx.pendingApprovalToolCallId === msg.id) ||
           !display.showWriteDiffs;
-        // Write tools always show their diff (the actionable preview),
-        // including denied calls — the user just saw the diff on the
-        // approval prompt above, so falling back to a raw key:value
-        // args tree (`command:`, `path:`, `content:` rows) for the
-        // post-deny scrollback row is jarring and reads worse than the
-        // diff form. The DENIED status renders in the header line via
-        // `info.rejected`. The block-args tree is suppressed in non-
-        // block modes, but the diff itself is the point of the call so
-        // we keep it.
-        //
-        // Write diffs render in full — they're the payload the user is
-        // reviewing and materialize whole at finish time, so unlike read
-        // tool bodies they deliberately opt out of the outputMaxLines
-        // cap. The trailing success line that used to render via
-        // renderVerboseOutput is gone — the diff already shows the
-        // change happened, the literal
-        // "Successfully created X (N lines)." that the agent returns
-        // is just chrome noise. Errors still surface (renderVerboseOutput
-        // bypasses the filter check on the error path), so a failed
-        // write still gets its red bar block under the diff.
+        // Write diffs render in full (the payload being reviewed), including
+        // denied calls — falling back to a raw args tree post-deny reads
+        // worse than the diff. No trailing success line; errors still surface
+        // below via renderVerboseOutput (which bypasses the filter check).
         const writeRender = renderWriteToolCall(info, msg.content, {
           suppressDiff,
           termCols: ctx.termCols,
@@ -552,12 +362,9 @@ export function renderMessageToText(
           )
         );
       }
-      // Read tools render the file body in a structured form (path header
-      // + numbered, syntax-highlighted body) — same shape as write/diff so
-      // scrollback reads consistently across reads and writes. The output
-      // bar is skipped because the structured body already shows the file
-      // content. Filter list still gates rendering: when read isn't in
-      // the user's filters, fall through to the bare tool-call line.
+      // Read tools render a structured body (path header + numbered,
+      // highlighted lines); the output bar is skipped (body shows content).
+      // Filters still gate it — fall through to the bare line when read isn't enabled.
       if (
         isRead &&
         msg.content &&
@@ -573,31 +380,12 @@ export function renderMessageToText(
         });
       }
       const toolLine = renderToolCall(info, ctx.theme);
-      // Block mode: full key:value tree under the name. Inline + off: nothing
-      // below the tool line — the chip on the same line is all the user gets.
-      // Use the line-array form so we can cap visual rows before joining;
-      // the array entries are already post-wrap, so each one is one visual
-      // row in the terminal.
+      // Block mode: full key:value tree under the name. Inline/off: nothing
+      // (the chip is all the user gets).
       if (display.toolArgsMode === 'block') {
-        // P438130055 + follow-up: pass perValueLineCap=null so the
-        // block-level applyLineCap below is the single source of truth
-        // for capping in block mode.
-        //
-        // Earlier iteration kept a hardcoded 5-line per-value cap when
-        // argsMaxLines was finite, intending to give multi-arg tools
-        // fairness ("one noisy multi-line value can't dominate the
-        // bounded block"). The cost was a confusing marker count: the
-        // per-value clamp emits its own "(+N more lines)" marker, then
-        // applyLineCap chops that marker off as one row, so the block-
-        // level marker reports "+1 more lines" while dozens of source
-        // lines are actually hidden.
-        //
-        // Block-mode rendering is now deterministic — the user's
-        // argsMaxLines is the only cap that fires, and its marker
-        // counts visual rows that ARE source lines (since
-        // formatArgLines no longer collapses values internally). The
-        // unlimited-toggle fix from P438130055 still works the same:
-        // null cap, no truncation anywhere.
+        // perValueLineCap=null so the block-level applyLineCap below is the
+        // single cap (P438130055): a per-value clamp would emit its own
+        // marker that applyLineCap then miscounts as one row.
         const argsLines = formatToolArgLines(
           msg.name || '',
           msg.content,
@@ -649,21 +437,7 @@ export function renderMessageToText(
   }
 }
 
-/**
- * Which fixture-set the /verbosity menu wants previewed. Each preview pane is
- * sized for one specific submenu's knobs:
- *
- *   `top` / `density` — generic mix (shell + read + finished subagent).
- *   `tool`           — same generic mix; emphasizes args / reasoning / elapsed.
- *   `subagent`       — pipeline+responses-rich subagent so subagent toggles
- *                      reshape it visibly.
- *   `output`         — generic mix; bars appear/vanish per filter list.
- *   `truncation:args`   — single tool with a 50-key args fixture.
- *   `truncation:output` — single tool with a 60-line output fixture.
- *
- * Each fixture is module-level so the preview is cheap and never allocates
- * lazily during a render frame.
- */
+/** Which fixture-set the /verbosity menu wants previewed (one per submenu). */
 export type VerbosityPreviewKey =
   | 'top'
   | 'density'
@@ -890,9 +664,7 @@ const PREVIEW_FIXTURE_USER: MessageLike = {
   content: 'find the legacy auth middleware',
 };
 
-/** Build a 50-key args fixture for the truncation:args preview. The block-args
- *  renderer emits one visual row per key, so 50 keys produces ~50 rows under
- *  the tool name and a tight cap clips visibly. */
+/** 50-key args fixture for truncation:args (one row per key → tight cap clips). */
 function buildTruncationArgsFixture(): MessageLike {
   const args: Record<string, unknown> = {
     __tool_use_purpose: 'demo a tool with many args',
@@ -912,12 +684,9 @@ function buildTruncationArgsFixture(): MessageLike {
   };
 }
 
-/** Build a 60-line output fixture for the truncation:output preview. The
- *  tool name is chosen so the fixture's output bar always renders under
- *  the caller-provided filter list — when the user has narrowed filters
- *  (e.g. only `read` enabled), we pick a tool from one of the enabled
- *  categories so the cap demo uses a tool they actually see in real
- *  scrollback. Falls back to `shell` when no narrow filters apply. */
+/** 60-line output fixture for truncation:output. Picks a tool from the user's
+ *  enabled categories (shell→read→grep→mcp) so the cap demo uses a tool they
+ *  actually see; falls back to shell. */
 function buildTruncationOutputFixture(
   filters: readonly string[] = ['all']
 ): MessageLike {
@@ -927,10 +696,6 @@ function buildTruncationOutputFixture(
       `line ${String(i).padStart(2, '0')}: lorem ipsum dolor sit amet`
     );
   }
-  // Pick a tool name from the user's enabled categories so the fixture
-  // matches a tool they'd see for real. Order of preference: shell (most
-  // common) → read → grep → mcp. If filters is `['all']` or empty, default
-  // to shell; we'll widen filters later for empty.
   const isAll = filters.includes('all');
   const choose = (): { name: string; command: string; purpose: string } => {
     if (isAll || filters.includes('shell')) {
@@ -970,8 +735,7 @@ function buildTruncationOutputFixture(
     };
   };
   const pick = choose();
-  // fs_read uses the `operations: [{ path }]` shape; everything else takes
-  // a generic command/query.
+  // fs_read uses operations:[{path}]; others take a generic command/query.
   const content =
     pick.name === 'fs_read'
       ? JSON.stringify({
@@ -1005,11 +769,7 @@ function buildTruncationOutputFixture(
   };
 }
 
-/**
- * Section-spacing rule for preview rendering. Delegates to the shared
- * {@link needsLeadingBlankByRole} so this preview layer stays in lockstep
- * with the chat log + live region without a hand-sync comment.
- */
+/** Section-spacing for preview rendering; delegates to needsLeadingBlankByRole. */
 function previewNeedsLeadingBlank(
   prev: MessageLike,
   next: MessageLike
@@ -1018,21 +778,10 @@ function previewNeedsLeadingBlank(
 }
 
 /**
- * Render a synthetic example of what scrollback looks like with the given
- * display config and filter list. Pure — no disk I/O, no shared state.
- *
- * `display` and `filters` are taken as-is so the menu can pass an in-progress
- * draft (e.g. the current cap value being edited) without writing to disk.
- *
- * The output is capped at MAX_PREVIEW_ROWS visual rows so the pane doesn't
- * eat the whole screen on short terminals. Truncation is tail-side with a
- * dim marker — the eye stays anchored at the top so the visual diff between
- * two settings doesn't move.
- *
- * Truncation:output specifically: when the caller wants to preview an
- * in-progress cap value (different from `display.outputMaxLines`), pass the
- * draft cap as the optional `outputCapOverride` argument; the fixture is
- * rendered with that cap instead. Same idea for args.
+ * Render a synthetic scrollback example for the given display/filter draft.
+ * Pure (no disk I/O); takes args as-is so the menu can pass an in-progress
+ * draft. Tail-clipped to MAX_PREVIEW_ROWS (anchored at top so the diff between
+ * two settings doesn't shift) unless `expanded`.
  */
 export function renderVerbosityPreview(
   key: VerbosityPreviewKey,
@@ -1040,11 +789,8 @@ export function renderVerbosityPreview(
   filters: readonly string[],
   options: { expanded?: boolean; theme?: RenderTheme } = {}
 ): string {
-  // For the truncation:output preview, pick the fixture tool first (based
-  // on the user's enabled categories) so we widen filters only when needed.
-  // When the user has at least one filter that already covers the chosen
-  // tool, leave their filters alone — the cap demo then matches what they'd
-  // see in real scrollback.
+  // truncation:output: pick the fixture tool first, then widen filters only
+  // if the user's filters don't already cover it.
   let outputFixture: MessageLike | null = null;
   if (key === 'truncation:output') {
     outputFixture = buildTruncationOutputFixture(filters);
@@ -1068,10 +814,7 @@ export function renderVerbosityPreview(
     case 'top':
     case 'density':
     case 'tool': {
-      // Generic mix — short and long outputs, write w/ diff, MCP, agent
-      // message — so the user sees one of each kind they'll actually
-      // encounter. Order: user → quick read → write → grep → MCP → long
-      // shell → agent message → subagent.
+      // Generic mix — one of each kind the user will encounter.
       messages.push(
         PREVIEW_FIXTURE_USER,
         PREVIEW_FIXTURE_READ,
@@ -1085,9 +828,7 @@ export function renderVerbosityPreview(
       break;
     }
     case 'output':
-      // The output submenu's whole job is to show what filters do — we want
-      // a tool from each major category present so toggles produce visible
-      // changes. Keeps the agent message + subagent so the picture is whole.
+      // One tool per category so filter toggles produce visible changes.
       messages.push(
         PREVIEW_FIXTURE_USER,
         PREVIEW_FIXTURE_SHELL,
@@ -1102,11 +843,8 @@ export function renderVerbosityPreview(
       messages.push(PREVIEW_FIXTURE_USER, PREVIEW_FIXTURE_SUBAGENT);
       break;
     case 'truncation:args':
-      // Pair the synthetic 50-key fixture with a representative real tool
-      // so the user sees how the cap interacts with realistic args (the
-      // shell command, the grep pattern) rather than only synthetic key_NN
-      // pairs. Realistic tools come first so the cap impact is the first
-      // thing the eye lands on.
+      // Real tools first, then the synthetic 50-key fixture, so the cap
+      // impact is what the eye lands on.
       messages.push(
         PREVIEW_FIXTURE_GREP,
         PREVIEW_FIXTURE_SHELL,
@@ -1114,21 +852,14 @@ export function renderVerbosityPreview(
       );
       break;
     case 'truncation:output':
-      // Reuse the fixture computed above so the widened previewFilters and
-      // the rendered fixture stay aligned (avoids picking 'fs_read' but
-      // widening for 'shell').
+      // Reuse the fixture from above so previewFilters stays aligned.
       if (outputFixture) messages.push(outputFixture);
       break;
   }
 
   const blocks: string[] = [];
 
-  // Hint when we had to widen filters to make the fixture's bar render.
-  // Without this, a user with empty filters would assume the cap "doesn't
-  // work" because the bar happens to not surface in their normal scrollback
-  // either. We only nudge when the widening actually changed something —
-  // when the user's filters already cover the chosen tool, the cap demo
-  // mirrors their real behavior and no nudge is needed.
+  // Nudge only when we actually widened the user's filters to show the bar.
   if (
     key === 'truncation:output' &&
     outputFixture &&
@@ -1145,19 +876,12 @@ export function renderVerbosityPreview(
   for (const msg of messages) {
     const text = renderMessageToText(msg, 'Kiro', ctx);
     if (!text) continue;
-    // Mirror the chat log's section-spacing rules so the preview shows the
-    // same visual rhythm the user gets in real scrollback. See the
-    // {@link needsLeadingBlank} helper for the canonical rules; we inline a
-    // copy here to avoid a layer-crossing import (this module sits below
-    // the components/layout/lite folder).
     const blank = prevMsg ? previewNeedsLeadingBlank(prevMsg, msg) : false;
     blocks.push(blank ? `\n${text}` : text);
     prevMsg = msg;
   }
   const joined = blocks.join('\n');
-  // Expanded mode skips the row clip — the pane viewer paginates with its
-  // own scroll offset, so cutting at 16 rows would defeat the point of
-  // the expanded view.
+  // Expanded mode skips the clip — the pane viewer paginates itself.
   if (options.expanded) return joined;
   const lines = joined.split('\n');
   const MAX_PREVIEW_ROWS = 16;
@@ -1172,11 +896,8 @@ export function renderVerbosityPreview(
 }
 
 /**
- * Widen the user's filter list so the synthetic preview can demonstrate a
- * cap that depends on the output bar being visible. We don't want to mutate
- * the saved config — this only runs when rendering the truncation:output
- * fixture. The widened list is the user's own list with the fixture's
- * matching category added (or `['all']` if the user already has 'all').
+ * Add the fixture's category to a copy of the user's filters so the
+ * truncation:output bar renders (never mutates saved config).
  */
 function widenFiltersForPreview(
   filters: readonly string[],
@@ -1184,9 +905,7 @@ function widenFiltersForPreview(
 ): readonly string[] {
   if (filters.includes('all')) return filters;
   if (shouldShowToolOutput(needTool, filters)) return filters;
-  // Add the matching category so the fixture's output renders. Using the
-  // category (rather than the exact tool name) means a `shell` widen also
-  // covers any other shell-categorized tools the fixture set might gain.
+  // Widen by category so other tools in that category are covered too.
   const cat = categorize(needTool);
   if (cat == null) return [...filters, needTool];
   return [...filters, cat];

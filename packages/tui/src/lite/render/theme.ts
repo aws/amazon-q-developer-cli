@@ -61,77 +61,37 @@ export const DEFAULT_USER_TAG = chalk.bold.cyan;
 export const softSuccessOutput = chalk.hex('#a3c0a3');
 
 /**
- * Per-render theme accessors. Pass via {@link RenderContext.theme} so the
- * renderer stays pure (no React/store imports) but visuals follow the active
- * theme. Each field is a chalk-like `(s) => string` so the wrapper can apply
- * `.bold` / `.dim` chains itself.
+ * Per-render theme accessors. Passed via {@link RenderContext.theme} so the
+ * renderer stays pure (no React/store imports) while visuals follow the active
+ * theme. Each field is a chalk-like `(s) => string` (fg unless noted as a bg
+ * tint), and every one falls back to a legacy hardcoded color when the theme
+ * is unavailable so pure-context callers / snapshots stay green.
  */
 export interface RenderTheme {
-  /** Agent name color (was hardcoded brand purple). Used for "Kiro:" /
-   *  custom-agent-name role tags and for in-line tool reasoning text. */
   brand: (s: string) => string;
-  /** Subagent response chip color (was hardcoded pink). Distinct from the
-   *  per-agent input color so the eye separates input from output. */
   responseChip: (s: string) => string;
-  /** "You:" tag color (was hardcoded bold cyan). Picks up the user's chosen
-   *  prompt text color so light-mode swaps to a darker accent automatically. */
   userTag: (s: string) => string;
-  /** Body wrapper for the user's submitted message in scrollback. Applies the
-   *  prompt preset's text color and (when set) bg color, mirroring the
-   *  `<Box backgroundColor>` highlight that standard mode paints in
-   *  `Message.tsx`. Skipped on the bare role tag so the `You:` accent stays
-   *  clean. */
+  /** User message body: prompt text + (optional) bg, mirroring standard
+   *  mode's `<Box backgroundColor>`. Skipped on the bare role tag. */
   userBody: (s: string) => string;
-  /** Inline code (`` `backtick` ``) span color. Maps to theme `highlight` slot
-   *  in lite mode (kiroDark: `#0087FF`, kiroLight: `#005fff`). The misleading
-   *  `seg.quote` flag in {@link MarkdownSegment} is set on `codespan` tokens
-   *  by the marked-based parser — historical naming, not a blockquote tie-in.
-   *  Modern TUI's `MarkdownRenderer` uses the same slot for the same flag.
-   *  Falls back to `chalk.cyan` when the theme is unavailable, matching the
-   *  prior hardcoded color. */
+  /** Inline code span. The `seg.quote` flag that selects this is set on
+   *  `codespan` tokens by the marked parser — historical naming, not a
+   *  blockquote tie-in (modern TUI's MarkdownRenderer matches). */
   inlineCode: (s: string) => string;
-  /** Link label color. Maps to theme `link` slot (typically blue). Underline
-   *  is applied separately by the renderer so links stay visually distinct
-   *  on themes whose `link` color matches prose. Falls back to `chalk.cyan`. */
   link: (s: string) => string;
-  /** Secondary text color, used for the dim `(url)` trailer that follows
-   *  link labels when the visible text differs from the URL. Maps to theme
-   *  `secondary` slot (typically grey). Falls back to `chalk.dim`. */
+  /** Dim `(url)` trailer after a link whose text differs from the URL. */
   secondary: (s: string) => string;
-  /** Diff "added" line background tint. Maps to theme
-   *  `diff.added.background` (kiroDark: `#2d3a30`, kiroLight: `#d4f0d4`).
-   *  Used by {@link renderUnifiedDiff} to paint the soft tint behind
-   *  added rows; the renderer extracts the leading SGR open from
-   *  `wrapper('')` so it can re-assert the bg after every full reset
-   *  cli-highlight emits between syntax tokens (see `applyBg` in
-   *  `diff.ts`). Falls back to `chalk.bgHex('#1F2D22')` (legacy SGR
-   *  `\x1b[48;2;31;45;34m`) when the theme is unavailable, matching
-   *  the prior hardcoded diff palette. */
   diffAddedBg: (s: string) => string;
-  /** Diff "removed" line background tint. Maps to theme
-   *  `diff.removed.background` (kiroDark: `#3a2d2f`, kiroLight:
-   *  `#f0d4d4`). Falls back to `chalk.bgHex('#2D1F22')` (legacy SGR
-   *  `\x1b[48;2;45;31;34m`). */
   diffRemovedBg: (s: string) => string;
-  /** Diff "added" gutter glyph color (the `+` left-of-line accent).
-   *  Maps to theme `diff.added.bar` (kiroDark: `#80ffb5`, kiroLight:
-   *  `#5de89d`). The renderer composes this wrapper with `chalk.bold`
-   *  so the glyph stays readable on themes whose bar color is a light
-   *  pastel. Falls back to `chalk.hex('#80ffb5')`. */
   diffAddedBar: (s: string) => string;
-  /** Diff "removed" gutter glyph color (the `-` left-of-line accent).
-   *  Maps to theme `diff.removed.bar` (kiroDark: `#ff8080`, kiroLight:
-   *  `#eb5c5c`). Falls back to `chalk.hex('#ff8080')`. */
   diffRemovedBar: (s: string) => string;
 }
 
 /**
- * Fallback {@link RenderTheme} used by tests and pure-context callers that
- * don't thread a theme through. Mirrors the prior hardcoded chalk colors so
- * existing snapshots / ANSI-code assertions stay green when no theme is
- * supplied. Lite mode itself always passes a real theme via
- * {@link buildRenderTheme}; this is purely the "no theme available"
- * fallback shape.
+ * Fallback theme for tests / pure-context callers that don't thread a theme.
+ * Mirrors the prior hardcoded chalk colors so snapshots stay green. The diff
+ * bgHex values must match diff.ts's ADDED_BG_OPEN / REMOVED_BG_OPEN constants
+ * exactly (applyBg re-asserts those SGRs across cli-highlight resets).
  */
 const DEFAULT_RENDER_THEME: RenderTheme = {
   brand,
@@ -141,24 +101,12 @@ const DEFAULT_RENDER_THEME: RenderTheme = {
   inlineCode: chalk.cyan,
   link: chalk.cyan,
   secondary: chalk.dim,
-  // Hardcoded diff fallbacks. The bgHex values produce the legacy SGR
-  // open codes `\x1b[48;2;31;45;34m` / `\x1b[48;2;45;31;34m` that the
-  // diff renderer's `applyBg` re-asserts after every cli-highlight reset
-  // — match the prior `ADDED_BG_OPEN` / `REMOVED_BG_OPEN` constants in
-  // `diff.ts` exactly so existing snapshot tests stay green when no
-  // theme is supplied. The bar fg colors mirror the prior `ADDED_BAR` /
-  // `REMOVED_BAR` hex values for the same reason.
   diffAddedBg: chalk.bgHex('#1F2D22'),
   diffRemovedBg: chalk.bgHex('#2D1F22'),
   diffAddedBar: chalk.hex('#80ffb5'),
   diffRemovedBar: chalk.hex('#ff8080'),
 };
 
-/**
- * Resolve a theme from an optional argument. Centralizes the
- * "no theme → DEFAULT_RENDER_THEME" decision so callers don't each have to
- * do `theme ?? DEFAULT_RENDER_THEME`.
- */
 export function resolveTheme(t?: RenderTheme): RenderTheme {
   return t ?? DEFAULT_RENDER_THEME;
 }
@@ -246,27 +194,15 @@ export function buildRenderTheme(
   }
   return {
     brand: safeChalk('brand', brand),
-    // Theme doesn't carry a dedicated "response chip" slot — accent reads
-    // the closest, and we still get a per-theme shift (kiroLight vs Dark).
+    // No dedicated "response chip" slot — accent is the closest, still shifts per theme.
     responseChip: safeChalk('accent', responseChip),
     userTag: (s: string) => chalk.bold(userTagColorFn(s)),
     userBody: userBodyFn,
-    // Markdown body slots — see {@link RenderTheme} for what each maps to.
-    // `highlight` is the theme's "callout / pop" color, used for inline
-    // code; `link` is the link slot (blue in kiroDark/Light); `secondary`
-    // is the muted text slot used for the `(url)` trailer after links.
-    // Each falls back to its prior hardcoded color when the theme accessor
-    // throws, keeping pure-context callers unaffected.
     inlineCode: safeChalk('highlight', chalk.cyan),
     link: safeChalk('link', chalk.cyan),
     secondary: safeChalk('secondary', chalk.dim),
-    // Diff body slots — see {@link RenderTheme} for what each maps to.
-    // Bg slots use `safeBgChalk` so the wrapper paints the background
-    // (cli-highlight's resets need real bg SGRs to re-assert across
-    // syntax tokens). Bar slots are FG colors used for the +/- glyphs;
-    // `safeChalk` is fine. Each falls back to its prior hardcoded color
-    // when the theme accessor throws or returns a non-string, keeping
-    // pure-context callers and snapshot tests unaffected.
+    // Bg slots use safeBgChalk (cli-highlight resets need real bg SGRs to
+    // re-assert); bar slots are fg glyph colors.
     diffAddedBg: safeBgChalk('diff.added.background', chalk.bgHex('#1F2D22')),
     diffRemovedBg: safeBgChalk(
       'diff.removed.background',

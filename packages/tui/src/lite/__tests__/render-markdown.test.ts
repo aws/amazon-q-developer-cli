@@ -42,9 +42,6 @@ afterAll(() => {
   }
 });
 
-// Force chalk colors for consistent test output
-chalk.level = 3;
-
 describe('renderUserMessage', () => {
   test('single line with You: tag', () => {
     const stripped = stripAnsi(renderUserMessage('hello'));

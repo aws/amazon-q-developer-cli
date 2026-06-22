@@ -22,14 +22,20 @@ import {
 } from './theme.js';
 import { wrapStyled, stripAnsiQuick, highlightLineSafe } from './text.js';
 
+/**
+ * COPY-PASTE INVARIANT (load-bearing across this file): prose, code blocks,
+ * list items, blockquotes, and shell output each emit ONE logical line per
+ * source line (no width-aware wrapping). The Static <Text wrap="overflow"> in
+ * LiteLayout lets the terminal soft-wrap visually, so the clipboard keeps the
+ * original logical line. Baking \n at every visual row boundary used to corrupt
+ * URLs, shell commands, and run-on prose when they crossed the terminal edge.
+ * Only structural blocks whose prefix must repeat per row (tables, list
+ * markers, blockquote bars) wrap at termCols on purpose.
+ */
 export function renderUserMessage(text: string, theme?: RenderTheme): string {
-  // `You:` role tag at the head, then the body painted with the user's prompt
-  // preset colors. /theme bundled:dark|light + /theme prompt:<id> drive these
-  // via buildRenderTheme — so a Purple preset paints white-on-violet across
-  // the body, matching what standard mode does with `<Box backgroundColor>`.
-  // Continuation lines get no leading indent so the message copies cleanly
-  // out of the terminal — the previous "  " gutter put two spaces in front of
-  // every wrapped row in the clipboard.
+  // `You:` tag + body painted with the user's prompt preset colors (so a
+  // Purple preset paints white-on-violet, like standard mode's <Box bg>).
+  // Continuation lines get no leading indent (see COPY-PASTE INVARIANT).
   const lines = text.split('\n');
   const first = lines[0] ?? '';
   const rest = lines.slice(1);
@@ -41,20 +47,10 @@ export function renderUserMessage(text: string, theme?: RenderTheme): string {
 }
 
 /**
- * Render an agent (model) message as styled, wrapped markdown.
- *
- * Markdown rendering is scoped here intentionally — tool outputs, user
- * messages, and system messages stay plain text. Streaming partial-block
- * text would reflow as fences/lists/tables come in (`# foo` becomes a
- * heading only after the trailing space, `|a|b|` becomes a table only
- * after the separator row), so the live region renders streaming chunks
- * verbatim and re-parses to markdown only when the message finalizes
- * here, on its way to <Static>.
- *
- * `termCols` (when known) drives soft-wrapping for paragraphs, list items,
- * blockquotes, and tables. Without it, paragraphs flow on a single logical
- * line and the terminal does its own wrap; tables fall back to natural
- * widths. Lite passes process.stdout.columns through RenderContext.termCols.
+ * Render an agent (model) message as styled markdown. Only finalized messages
+ * are parsed here (streaming chunks render verbatim in the live region) since
+ * partial-block text reflows as fences/lists/tables arrive. `termCols` drives
+ * wrapping for structural blocks (tables etc.); see COPY-PASTE INVARIANT.
  */
 export function renderAgentMessage(
   content: string,
@@ -65,28 +61,20 @@ export function renderAgentMessage(
   glyphs?: Glyphs
 ): string {
   if (!content.trim()) return '';
-  // Default to "Kiro" for the user-facing tag. When the active agent has a
-  // distinct name (custom agents, swapped via /agent), use it verbatim so
-  // the user can tell which persona answered.
+  // Use the active agent's name verbatim (custom agents / swapped via /agent)
+  // so the user can tell which persona answered; default "Kiro".
   const tag = agentName && agentName.trim() ? agentName : 'Kiro';
-  // Per-agent color for the role tag so scrollback matches what the footer
-  // shows for the same agent (getAgentColor in agentColors.ts). Falls back
-  // to theme.brand for the default agent (getAgentColor maps kiro_default →
-  // brand internally) and for callers without an agent-color resolver
-  // (tests / pure contexts).
+  // Per-agent role-tag color so scrollback matches the footer (getAgentColor);
+  // falls back to theme.brand for the default agent and pure contexts.
   const tagColorFn =
     getAgentTagColor && agentName
       ? getAgentTagColor(agentName)
       : (theme?.brand ?? brand);
-  // `chalk.x.bold` works on chalk fns; user-provided fns from the theme
-  // are plain string→string and don't compose. Wrap manually to keep the
-  // bolded role tag without losing the theme color.
+  // Theme fns are plain string→string and don't compose with chalk.x.bold,
+  // so bold the colored tag manually to keep both.
   const tagBold = applyBold(tagColorFn(`${tag}:`));
   const tagPrefix = `${tag}: `;
-  // Reserve the role-tag width on the first markdown line so wrapping
-  // accounts for it (otherwise the body line that starts with `Kiro: ` is
-  // measured as if it had no prefix and overflows). Subsequent lines use
-  // the full width.
+  // Reserve the role-tag width on the first line so wrapping accounts for it.
   const cols = termCols && termCols > 0 ? termCols : 0;
   const firstWidth = cols ? Math.max(20, cols - tagPrefix.length) : 0;
   const restWidth = cols ? Math.max(20, cols) : 0;
@@ -100,17 +88,10 @@ export function renderAgentMessage(
   );
   if (body.length === 0) return tagBold;
   const [first, ...rest] = body;
-  // Structural blocks (tables, fenced code, blockquotes, horizontal rules)
-  // render their first line as visual chrome — top border `┌────┐`, fence
-  // ```` ``` ````, bar `│ `, rule `─────`. Gluing the role tag onto that
-  // first line shifts ONLY the first row right by `Kiro: ` width while
-  // every subsequent row sits at column 0, breaking alignment (table
-  // borders no longer line up with cells, code fences hang off the
-  // content, blockquote bars go ragged). When the body opens with one of
-  // those blocks, drop the role tag onto its own line so the entire
-  // structural block stays at column 0. Inline markdown (paragraphs,
-  // headers, lists) keeps the inline form so the common case still reads
-  // as `Kiro: <reply>` without an awkward leading newline.
+  // When the body opens with a structural block whose first row is chrome
+  // (table border, code fence, blockquote bar, rule), gluing `Kiro: ` onto
+  // it shifts only row 0 right and breaks alignment — so put the tag on its
+  // own line. Inline markdown keeps the `Kiro: <reply>` form.
   if (firstBlockNeedsOwnLine(content)) {
     return tagBold + '\n' + body.join('\n');
   }
@@ -119,24 +100,10 @@ export function renderAgentMessage(
 }
 
 /**
- * True when the first parsed markdown segment is a structural block whose
- * rendered first line is visual chrome — table top border, fenced code
- * delimiter, blockquote bar, or horizontal rule. Such blocks must paint at
- * column 0 to keep their inner geometry aligned, so {@link renderAgentMessage}
- * uses this to decide between inline (`Kiro: <body>`) and own-line
- * (`Kiro:\n<body>`) framing.
- *
- * Note: headers and list items intentionally stay inline. A header's first
- * line is plain styled text (no chrome), and list items lead with a short
- * `- ` / `1. ` marker that reads naturally after the role tag. Adding them
- * here would force a leading newline on the most common short-reply shapes
- * (bulleted answers, simple headed responses) without an alignment payoff.
- *
- * Cost: one `parseMarkdown` pass on the content. {@link renderMarkdownToLines}
- * also calls `parseMarkdown` so the same content is tokenized twice — both
- * passes are O(n) and run once per finalized agent message, never in the
- * spinner loop. The duplication is preferable to threading the segment list
- * through the renderer's signature.
+ * True when the first markdown segment is a structural block whose first row
+ * is chrome (table border / code fence / blockquote bar / rule) and so must
+ * paint at column 0. Headers and list items deliberately stay inline (no
+ * chrome on row 0; a leading `- ` reads fine after the role tag).
  */
 function firstBlockNeedsOwnLine(text: string): boolean {
   const segments = parseMarkdown(text);
@@ -151,15 +118,9 @@ function firstBlockNeedsOwnLine(text: string): boolean {
 }
 
 /**
- * Render the agent's reasoning ("thinking") block as a self-contained section
- * that lives in scrollback above the agent's spoken text. Top + bottom purple
- * rules bracket a dim italic body, indented two spaces. The body wraps at
- * the terminal width using the same {@link wrapAnsiLine} pipeline the rest of
- * lite uses, so long reasoning paragraphs don't run off the right edge.
- *
- * Callers should only invoke this when {@link VerboseDisplayConfig.showReasoningContent}
- * is true. Returns `''` when the input is empty so callers can unconditionally
- * concatenate.
+ * Render the agent's reasoning ("thinking") block: brand-colored top/bottom
+ * rules bracketing a dim-italic body. Callers gate on
+ * showReasoningContent; returns '' for empty input.
  */
 export function renderThinkingBlock(
   thinking: string,
@@ -169,33 +130,18 @@ export function renderThinkingBlock(
 ): string {
   if (!thinking || !thinking.trim()) return '';
   const cols = termCols && termCols > 0 ? termCols : 0;
-  // Body sits flush with the rules at column 0 — no indent. Earlier the body
-  // was indented two spaces so the rules read as a section header above an
-  // inset block, but the section identifier (`─── thinking ───`) is already
-  // unambiguous on its own and the inset added visual noise without payoff.
   const indent = '';
-  // Brand color for the rules so the section stands out from the dim italic
-  // body. Use theme.brand when available so /theme bundled:dark|light actually
-  // re-skins the borders.
   const brandFn = theme?.brand ?? brand;
   const ruleWidth = cols > 0 ? Math.max(20, Math.min(cols, 80)) : 32;
   const g = resolveGlyphs(glyphs);
-  // ASCII mode: lineHorizontal becomes '-', rules degrade gracefully (e.g.
-  // `--- thinking ---------` instead of `─── thinking ──────────`). The label
-  // stays in its slot so the section header still reads as one.
+  // ASCII mode: lineHorizontal degrades to '-'; the label stays in slot.
   const h = g.lineHorizontal;
   const topRule = brandFn(
     h.repeat(3) + ' thinking ' + h.repeat(Math.max(3, ruleWidth - 13))
   );
   const bottomRule = brandFn(h.repeat(Math.max(3, ruleWidth)));
-  // Each source line of the thinking text becomes one logical body row.
-  // The terminal soft-wraps long lines visually; the 2-space indent + dim
-  // italic style apply to the first visual row, and continuation rows
-  // inherit the dim italic SGR state across the soft-wrap (terminals
-  // don't reset SGR on visual wrap boundaries). The previous wrapAnsiLine
-  // pass made each visual row its own logical line, baking \n into the
-  // rendered string and breaking copy-paste of reasoning paragraphs that
-  // exceeded the terminal width.
+  // One logical body row per source line (see COPY-PASTE INVARIANT); the
+  // terminal soft-wraps long lines and carries the dim-italic SGR across rows.
   const sourceLines = thinking.split('\n');
   // Trim trailing blank rows so the bottom rule sits flush against the body.
   while (
@@ -206,46 +152,17 @@ export function renderThinkingBlock(
   }
   if (sourceLines.length === 0) return '';
   const body = sourceLines
-    // Dim italic — the original treatment, restored. The purple
-    // top/bottom rules already identify this region as the reasoning
-    // section, so the body recedes into a soft "atmospheric prose" tier.
-    // Different from tool output (which carries a sage-green tint
-    // signaling "result") and from agent prose (full default fg);
-    // three blocks, three distinct tones.
     .map((r) => indent + chalk.dim.italic(r || ' '))
     .join('\n');
   return [topRule, body, bottomRule].join('\n');
 }
 
 /**
- * Render the streaming output of a `!` shell-escape command. Each source
- * line (split on `\n`) gets a brand-purple `! ` left gutter, making the
- * row visually distinct from agent prose (`Kiro: …` tag) and from
- * thinking (`──── thinking ────` rules + dim italic).
- *
- * Visual signal: the `!` echoes the `!` glyph the user typed to enter
- * shell-escape mode in the first place, and the `! ` swap on the input
- * row while the command is in flight. Three places, one cue — gutter
- * on output, prompt on input, original `!` on the User message that
- * launched the command.
- *
- * Per-source-line gutter (not per visual row): each `\n` boundary in the
- * raw PTY output gets one gutter; the terminal soft-wraps overlong lines
- * visually, with the wrapped continuation flowing under the gutter
- * column. Same compromise {@link renderThinkingBlock} makes for its body
- * — keeps copy-paste of long shell command output as one logical line
- * per output line, which matches what a real terminal would show. The
- * wrapAnsiLine pipeline isn't used here because shell output is already
- * positioned at column 0 by the bash process; re-wrapping it would also
- * fight any cursor-positioning escapes the program emits (mwinit's PIN
- * prompt, sudo's password row, etc.).
- *
- * Trailing blank lines are trimmed so the output's last visible row sits
- * flush against whatever follows it (input box during streaming, the
- * next message after the command exits and this row commits to static).
- *
- * Returns `''` when the buffer is empty so callers can pre-render
- * whether or not data has arrived yet.
+ * Render `!` shell-escape command output: a brand `! ` gutter per source line,
+ * echoing the `!` the user typed to enter the mode. One gutter per source line
+ * (see COPY-PASTE INVARIANT); not re-wrapped because shell output is already
+ * column-0 positioned and may carry cursor-positioning escapes. Trailing blanks
+ * trimmed; returns '' for empty input.
  */
 export function renderShellOutputBlock(
   content: string,
@@ -255,30 +172,19 @@ export function renderShellOutputBlock(
   if (!content) return '';
   const brandFn = theme?.brand ?? brand;
   const gutter = brandFn('! ');
-  // Drop only trailing blank lines — leading blanks in shell output are
-  // sometimes meaningful (e.g. a tool that prints a blank row before its
-  // banner) and the gutter should still appear there.
+  // Drop only trailing blanks — leading blanks can be meaningful.
   const lines = content.split('\n');
   while (lines.length > 0 && !lines[lines.length - 1]?.trim()) {
     lines.pop();
   }
   if (lines.length === 0) return '';
-  // termCols is accepted for API symmetry with renderThinkingBlock /
-  // renderAgentMessage, but intentionally unused: re-wrapping shell
-  // output would mangle programs that emit cursor-positioning escapes
-  // or rely on column-aligned output (htop-style ascii UIs, the column
-  // alignment in `ls -l`, etc.). Better to let the terminal soft-wrap
-  // — same default the streaming live region's <Text wrap="overflow">
-  // uses for tool bodies.
+  // Accepted for API symmetry but unused on purpose (see fn doc).
   void termCols;
   return lines.map((line) => gutter + line).join('\n');
 }
 
-/**
- * Bold-wrap a string that may already carry an ANSI color sequence. We rely
- * on chalk.bold which inserts \x1b[1m...\x1b[22m — not a full reset — so the
- * caller's foreground color survives the wrap.
- */
+/** chalk.bold inserts \x1b[1m...\x1b[22m (not a full reset) so a pre-existing
+ *  foreground color survives the wrap. */
 function applyBold(s: string): string {
   return chalk.bold(s);
 }
@@ -286,19 +192,10 @@ function applyBold(s: string): string {
 // ─── Markdown → ANSI Lines ───────────────────────────────────────────────────
 
 /**
- * Turn a markdown string into a list of ANSI-styled visual rows ready to
- * concatenate with `\n` and emit to <Static>. Wrapping is visible-width aware
- * so emojis, CJK, and ANSI escapes don't blow up the column count.
- *
- * Block spacing rule: every block (heading, paragraph, list, code, table,
- * blockquote, hr) is separated by a blank line, except adjacent list items
- * at the same indent level (which pack tightly). This mirrors the TUI
- * MarkdownRenderer's `marginTop` defaults so lite scrollback reads the
- * same way as standard mode.
- *
- * `restWidth`/`firstLineWidth` of 0 means "skip width-aware wrapping" —
- * paragraphs flow as one logical line and the terminal wraps. Tests use
- * width 0 so they aren't sensitive to terminal size.
+ * Turn markdown into ANSI-styled rows ready to `\n`-join into <Static>.
+ * Blocks are blank-line separated except adjacent same-indent list items
+ * (mirrors TUI MarkdownRenderer's marginTop). `restWidth`/`firstLineWidth` of
+ * 0 skips width-aware wrapping (tests use 0; see COPY-PASTE INVARIANT).
  */
 export function renderMarkdownToLines(
   text: string,
@@ -325,22 +222,9 @@ export function renderMarkdownToLines(
       textGroup = [];
       return;
     }
-    // Paragraphs flow as one logical line per source paragraph — only
-    // splitting on \n that the markdown carries itself (e.g. <br>). No
-    // width-aware wrapping. The Static <Text> in LiteLayout uses
-    // wrap="overflow" so twinki doesn't re-wrap either; the terminal
-    // handles the visual wrap. Copy-paste from scrollback then preserves
-    // the original logical line, which is the load-bearing reason — long
-    // URLs, code-like prose, and run-on sentences used to copy with hard
-    // \n at every visual row boundary, breaking links the moment they
-    // crossed the terminal edge. wrapStyled(s, 0, 0) is the explicit
-    // "no wrap" path, returning s.split('\n').
-    //
-    // The firstLineWidth / restWidth parameters threaded into this
-    // function are still consumed by block elements below (list items,
-    // blockquotes, tables) where structural prefixes (`- `, `│ `, column
-    // borders) MUST repeat on every visual row — those still wrap at
-    // termCols on purpose.
+    // One logical line per source paragraph; wrapStyled(s, 0, 0) is the
+    // explicit no-wrap path (see COPY-PASTE INVARIANT). firstLineWidth/
+    // restWidth are still consumed by the structural blocks below.
     void firstLineWidth;
     void restWidth;
     appendBlock(out, isFirstBlock, () => wrapStyled(styled, 0, 0));
@@ -379,11 +263,7 @@ export function renderMarkdownToLines(
   return out;
 }
 
-/**
- * Append a block's lines to `out`, with a leading blank line when this is
- * not the first block in the message. Centralizing the blank-line rule here
- * keeps block separators consistent across paragraphs/lists/tables/code.
- */
+/** Append a block's lines, with a leading blank when not the first block. */
 function appendBlock(
   out: string[],
   isFirstBlock: boolean,
@@ -401,17 +281,11 @@ function renderBlockSegment(
 ): string[] {
   const g = resolveGlyphs(glyphs);
   if (seg.codeBlock) return renderCodeBlock(seg.codeBlock, width);
-  // Block elements (headers, bold headings, blockquotes, list items) carry
-  // their content as a raw markdown string in `seg.text` — `parseMarkdown`
-  // intentionally doesn't recurse into block bodies (see the parser test
-  // "should keep list item text raw for inline parsing"). The renderer is
-  // responsible for re-lexing that text through the inline path so
-  // `**bold**`, `` `code` ``, `*italic*`, `[link](url)`, etc. surface as
-  // styled output instead of bleeding through as literal markers. We use
-  // `renderInlineMarkdown` here for the same reason table cells do —
-  // it goes through `parseInlineMarkdown` first, while `renderInlineSegment`
-  // only honors flags already set on the segment and would otherwise return
-  // the raw text unchanged.
+  // INLINE RE-LEX CONTRACT: parseMarkdown keeps block bodies (headers,
+  // blockquotes, list items, table cells) raw in seg.text, so the renderer
+  // re-lexes them via renderInlineMarkdown (parseInlineMarkdown) to surface
+  // **bold**/`code`/links. renderInlineSegment alone only honors flags
+  // already on the segment and would emit the raw markers.
   if (seg.header) {
     const inline = renderInlineMarkdown(seg.text, theme);
     return wrapStyled(chalk.bold(inline), width, width);
@@ -425,12 +299,7 @@ function renderBlockSegment(
     const inline = renderInlineMarkdown(seg.text, theme);
     const prefix = chalk.dim(`${g.lineVertical} `);
     const styled = chalk.italic(inline);
-    // Blockquotes emit as one logical line with the leading │ prefix.
-    // The terminal soft-wraps long quotes visually; only the first
-    // visual row carries the bar glyph. The leading prefix is preserved
-    // in copy-paste, matching the markdown source's `> ` semantics —
-    // pasting a multi-row blockquote yields one logical quote string,
-    // not N hard-wrapped chunks each carrying their own bar glyph.
+    // One logical line with a leading │ (see COPY-PASTE INVARIANT).
     if (!inline) return [prefix];
     return [prefix + styled];
   }
@@ -451,18 +320,10 @@ function renderListItem(
   const indent = '  '.repeat(list.indent);
   const bullet = list.ordered ? `${list.number ?? 1}.` : '-';
   const head = `${indent}${bullet} `;
-  // Re-lex the list item's body through the inline path so `**bold**`,
-  // `` `code` ``, links, etc. surface as styled output. See the comment
-  // on `renderBlockSegment` for the contract.
+  // Re-lex body via inline path (see INLINE RE-LEX CONTRACT).
   const inline = renderInlineMarkdown(seg.text, theme);
   if (!inline) return [head.trimEnd()];
-  // List item bodies emit as one logical line. Long bodies (URLs, run-on
-  // sentences) soft-wrap visually via the terminal, but the clipboard
-  // sees one logical line — so triple-click selection of a bullet item
-  // copies the whole item without injected \n. The hanging-indent
-  // continuation that the previous wrap produced is sacrificed for that
-  // copy fidelity; the leading bullet on the first visual row keeps the
-  // list semantic clear and matches the markdown source's `- ` syntax.
+  // One logical line with a leading bullet (see COPY-PASTE INVARIANT).
   return [head + inline];
 }
 
@@ -473,14 +334,7 @@ function renderCodeBlock(
   const lines: string[] = [];
   const lang = code.language ? ` ${code.language}` : '';
   lines.push(chalk.dim(`\`\`\`${lang}`));
-  // Code lines are emitted as-is — terminal soft-wraps anything wider than
-  // the available column count. The previous behavior baked \n at every
-  // visual row boundary into the rendered string, which copy-pasted as
-  // hard newlines mid-line and corrupted shell commands, multi-line
-  // identifiers, and inline URLs in the snippet. The Static <Text> in
-  // LiteLayout uses wrap="overflow" so twinki passes the long lines
-  // through to the terminal verbatim, preserving single-logical-line
-  // copy semantics for code blocks.
+  // Code lines emitted as-is, one per source line (see COPY-PASTE INVARIANT).
   const body = (code.code ?? '').replace(/\n+$/, '').split('\n');
   const language = resolveHighlightLanguage(code.language);
   for (const line of body) {
@@ -514,11 +368,8 @@ function renderMarkdownTable(
 
   if (termWidth > 0) constrainColumnWidths(colWidths, termWidth);
 
-  // Glyphs picked from the active set — Unicode box-drawing in the default
-  // mode, ASCII `+` / `-` / `|` fallbacks when `chat.allowAsciiArt=false`.
-  // Note teeLeft/teeRight semantics: in modern TUI's modeling, teeLeft is `┤`
-  // (joining a vertical from the right) and teeRight is `├` (joining a
-  // vertical from the left). We map them through directly.
+  // Active glyph set (Unicode box-drawing / ASCII fallbacks). teeLeft=┤,
+  // teeRight=├ (modern TUI's semantics), mapped through directly.
   const g = resolveGlyphs(glyphs);
   const cornerTL = g.cornerTopLeft;
   const cornerTR = g.cornerTopRight;
@@ -579,18 +430,9 @@ function renderMarkdownTable(
 }
 
 /**
- * Render a single markdown segment as inline ANSI. Recurses into children
- * for nested formatting (e.g. **bold _italic_**). Block-level fields on the
- * outer segment (header/listItem/...) are ignored — callers strip them
- * before passing in so this stays inline-only.
- *
- * Color slots are pulled from {@link RenderTheme} — `inlineCode` for
- * codespans (the `seg.quote` flag set by the marked-based parser; the name
- * is historical, not a blockquote tie-in), `link` for the link label, and
- * `secondary` for the dim `(url)` trailer. When no theme is supplied
- * (tests / pure-context callers), the renderer falls back to
- * {@link DEFAULT_RENDER_THEME}, whose values match the prior hardcoded
- * `chalk.cyan` / `chalk.dim` so existing assertions stay green.
+ * Render a markdown segment as inline ANSI, recursing into children. Color
+ * slots come from the theme (inlineCode for codespans — the `seg.quote` flag
+ * is historical naming, not a blockquote tie-in).
  */
 function renderInlineSegment(
   seg: MarkdownSegment,
@@ -605,15 +447,11 @@ function renderInlineSegment(
     if (seg.italic) return chalk.italic(inner);
     if (seg.strikethrough) return chalk.strikethrough(inner);
     if (seg.link) {
-      // Underline applied independently of the theme color so links stay
-      // visually distinct on themes whose `link` slot matches prose. Modern
-      // TUI uses OSC8 hyperlinks (capability-detected) instead — lite stays
-      // on the underline+color form, which works in every terminal.
+      // Underline applied separately from theme color so links stay distinct
+      // on themes whose link slot matches prose (lite uses underline+color,
+      // not OSC8, so it works in every terminal).
       const labeled = chalk.underline(t.link(inner));
-      // Hide the URL when the visible label already equals the URL — the
-      // bare-link case is the common one and a `(url)` trailer doubles the
-      // text. Otherwise keep the trailer so users can read where a link
-      // points without an OSC8-aware terminal.
+      // Drop the `(url)` trailer when the label already equals the URL.
       const stripped = stripAnsiQuick(inner);
       if (stripped === seg.link.url) return labeled;
       return labeled + t.secondary(` (${seg.link.url})`);
@@ -628,17 +466,12 @@ function renderInlineSegment(
 }
 
 /**
- * Inline markdown renderer for table cells — `parseMarkdown` doesn't recurse
- * into row text, so cells arrive as raw strings that may still contain
- * **bold**, *italic*, `code`, and link syntax. Re-lex with the parser's
- * inline path and stitch the segments together.
+ * Re-lex a raw block/cell body through the inline path (see INLINE RE-LEX
+ * CONTRACT). Uses marked's lexInline so leading `#`/`-` aren't promoted to
+ * headings/lists inside a cell.
  */
 function renderInlineMarkdown(s: string, theme?: RenderTheme): string {
   if (!s) return '';
-  // Inline path uses marked's lexInline so block markers like leading `#`
-  // or `-` aren't promoted into headings/lists when they appear inside a
-  // table cell. Children/bold/italic/code/link composition matches the
-  // paragraph renderer.
   const segs = parseInlineMarkdown(s);
   const t = resolveTheme(theme);
   return segs.map((seg) => renderInlineSegment(seg, t)).join('');

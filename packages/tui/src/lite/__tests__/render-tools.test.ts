@@ -3,6 +3,7 @@ import './setup-chalk-level.js';
 import {
   describe,
   test,
+  it,
   expect,
   beforeEach,
   beforeAll,
@@ -49,9 +50,6 @@ afterAll(() => {
     }
   }
 });
-
-// Force chalk colors for consistent test output
-chalk.level = 3;
 
 describe('renderToolCall', () => {
   test('running tool shows ellipsis', () => {
@@ -859,221 +857,169 @@ describe('verbose output envelope unwrapping', () => {
     ...overrides,
   });
 
-  test('shell envelope: {items:[{Json:{stdout, stderr, exit_status}}]} surfaces stdout only on success', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          result: {
-            status: 'success',
-            output: {
-              items: [
-                {
-                  Json: {
-                    exit_status: 'exit status: 0',
-                    stdout: 'hello world\n',
-                    stderr: '',
-                  },
+  const READ_ARGS = JSON.stringify({ operations: [{ path: '/tmp/x' }] });
+
+  it.each<{
+    name: string;
+    overrides: Record<string, unknown>;
+    contains: string[];
+    absent?: string[];
+    /** Min number of `│` bar rows (multi-line-per-bar regression). */
+    minBars?: number;
+  }>([
+    {
+      name: 'shell {items:[{Json:{stdout...}}]} surfaces stdout only on success',
+      overrides: {
+        result: {
+          status: 'success',
+          output: {
+            items: [
+              {
+                Json: {
+                  exit_status: 'exit status: 0',
+                  stdout: 'hello world\n',
+                  stderr: '',
                 },
-              ],
-            },
+              },
+            ],
           },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('hello world');
-    // Envelope keys must not leak into the bar.
-    expect(out).not.toContain('exit_status');
-    expect(out).not.toContain('"items"');
-    expect(out).not.toContain('"Json"');
-    // Trailing literal-newline marker also gone (real \n at end was trimmed).
-    expect(out).not.toContain('\\n');
-    // (exit 0) is implicit success — no exit-code suffix on success.
-    expect(out).not.toContain('(exit 0)');
-  });
-
-  test('shell envelope: multi-line stdout renders as real newlines, not literal "\\n"', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          result: {
-            status: 'success',
-            output: {
-              items: [
-                {
-                  Json: {
-                    exit_status: 'exit status: 0',
-                    stdout: 'line one\nline two\nline three',
-                    stderr: '',
-                  },
+        },
+      },
+      contains: ['hello world'],
+      // No envelope-key leakage, trailing \n trimmed, no implicit (exit 0).
+      absent: ['exit_status', '"items"', '"Json"', '\\n', '(exit 0)'],
+    },
+    {
+      name: 'shell multi-line stdout → real newlines, one bar per line',
+      overrides: {
+        result: {
+          status: 'success',
+          output: {
+            items: [
+              {
+                Json: {
+                  exit_status: 'exit status: 0',
+                  stdout: 'line one\nline two\nline three',
+                  stderr: '',
                 },
-              ],
-            },
+              },
+            ],
           },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('line one');
-    expect(out).toContain('line two');
-    expect(out).toContain('line three');
-    // No literal backslash-n in the rendered output.
-    expect(out).not.toContain('\\n');
-    // Each line should have its own bar prefix — at least 3 occurrences.
-    const barCount = out.split('\n').filter((l) => l.includes('│')).length;
-    expect(barCount).toBeGreaterThanOrEqual(3);
-  });
-
-  test('shell envelope: non-zero exit and stderr both surface', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          result: {
-            status: 'success',
-            output: {
-              items: [
-                {
-                  Json: {
-                    exit_status: 'exit status: 1',
-                    stdout: '',
-                    stderr: 'something failed',
-                  },
+        },
+      },
+      contains: ['line one', 'line two', 'line three'],
+      absent: ['\\n'],
+      minBars: 3,
+    },
+    {
+      name: 'shell non-zero exit and stderr both surface',
+      overrides: {
+        result: {
+          status: 'success',
+          output: {
+            items: [
+              {
+                Json: {
+                  exit_status: 'exit status: 1',
+                  stdout: '',
+                  stderr: 'something failed',
                 },
-              ],
-            },
+              },
+            ],
           },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('(exit 1)');
-    expect(out).toContain('[stderr] something failed');
-  });
-
-  test('read envelope: {content:[{text}]} surfaces inner text', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          name: 'fs_read',
-          content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
-          result: {
-            status: 'success',
-            output: {
-              content: [{ text: 'first line\nsecond line\nthird line' }],
-            },
+        },
+      },
+      contains: ['(exit 1)', '[stderr] something failed'],
+    },
+    {
+      name: 'read {content:[{text}]} surfaces inner text',
+      overrides: {
+        name: 'fs_read',
+        content: READ_ARGS,
+        result: {
+          status: 'success',
+          output: {
+            content: [{ text: 'first line\nsecond line\nthird line' }],
           },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('first line');
-    expect(out).toContain('second line');
-    expect(out).toContain('third line');
-    expect(out).not.toContain('"content"');
-    expect(out).not.toContain('"text"');
-    expect(out).not.toContain('\\n');
-  });
-
-  test('items[0].Text envelope unwraps to the inner string', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          name: 'fs_read',
-          content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
-          result: {
-            status: 'success',
-            output: { items: [{ Text: 'plain inner text\nwith newline' }] },
+        },
+      },
+      contains: ['first line', 'second line', 'third line'],
+      absent: ['"content"', '"text"', '\\n'],
+    },
+    {
+      name: 'items[0].Text unwraps to the inner string',
+      overrides: {
+        name: 'fs_read',
+        content: READ_ARGS,
+        result: {
+          status: 'success',
+          output: { items: [{ Text: 'plain inner text\nwith newline' }] },
+        },
+      },
+      contains: ['plain inner text', 'with newline'],
+      absent: ['"items"', '"Text"'],
+    },
+    {
+      // Reading only items[0] dropped the rest — all items must surface.
+      name: 'multi-item Text envelope concatenates every item',
+      overrides: {
+        name: 'fs_read',
+        content: READ_ARGS,
+        result: {
+          status: 'success',
+          output: {
+            items: [
+              { Text: 'first block' },
+              { Text: 'second block' },
+              { Json: { text: 'third block' } },
+            ],
           },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('plain inner text');
-    expect(out).toContain('with newline');
-    expect(out).not.toContain('"items"');
-    expect(out).not.toContain('"Text"');
-  });
-
-  test('multi-item Text envelope concatenates every item (no silent drop)', () => {
-    // A tool can emit several content blocks. Reading only items[0] dropped
-    // the rest; all Text items must surface.
+        },
+      },
+      contains: ['first block', 'second block', 'third block'],
+    },
+    {
+      name: 'unknown shape falls back to JSON with literal \\n un-escaped',
+      overrides: {
+        name: 'mcp__some__tool',
+        content: JSON.stringify({ query: 'x' }),
+        result: {
+          status: 'success',
+          output: { weird_field: 'a\nb\nc', other: 42 },
+        },
+      },
+      contains: ['weird_field', 'a', 'b', 'c'],
+      absent: ['\\n'],
+    },
+    {
+      name: 'plain string output (no envelope) renders verbatim',
+      overrides: {
+        result: { status: 'success', output: 'hi from stdout\nsecond line' },
+      },
+      contains: ['hi from stdout', 'second line'],
+    },
+    {
+      // Empty stdout + zero exit + no stderr → bar renders nothing; no crash/leak.
+      name: 'shell envelope with missing stdout/stderr does not crash',
+      overrides: {
+        result: {
+          status: 'success',
+          output: { items: [{ Json: { exit_status: 'exit status: 0' } }] },
+        },
+      },
+      contains: ['execute_bash'],
+      absent: ['"items"'],
+    },
+  ])('$name', ({ overrides, contains, absent, minBars }) => {
     const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          name: 'fs_read',
-          content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
-          result: {
-            status: 'success',
-            output: {
-              items: [
-                { Text: 'first block' },
-                { Text: 'second block' },
-                { Json: { text: 'third block' } },
-              ],
-            },
-          },
-        }),
-        'kiro_default'
-      )
+      renderMessageToText(toolMsg(overrides), 'kiro_default')
     );
-    expect(out).toContain('first block');
-    expect(out).toContain('second block');
-    expect(out).toContain('third block');
-  });
-
-  test('unknown shape: falls back to JSON with literal \\n un-escaped to real newlines', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          name: 'mcp__some__tool',
-          content: JSON.stringify({ query: 'x' }),
-          result: {
-            status: 'success',
-            output: { weird_field: 'a\nb\nc', other: 42 },
-          },
-        }),
-        'kiro_default'
-      )
-    );
-    // Fallback JSON is rendered, but multi-line strings inside it expand
-    // to real newlines instead of "\\n".
-    expect(out).toContain('weird_field');
-    expect(out).not.toContain('\\n');
-    // The "a", "b", "c" fragments should each show on their own line.
-    expect(out).toContain('a');
-    expect(out).toContain('b');
-    expect(out).toContain('c');
-  });
-
-  test('plain string output (no envelope) renders verbatim', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          result: { status: 'success', output: 'hi from stdout\nsecond line' },
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('hi from stdout');
-    expect(out).toContain('second line');
-  });
-
-  test('shell envelope with missing stdout/stderr fields does not crash', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg({
-          result: {
-            status: 'success',
-            output: { items: [{ Json: { exit_status: 'exit status: 0' } }] },
-          },
-        }),
-        'kiro_default'
-      )
-    );
-    // No crash, no envelope leakage. Empty stdout + zero exit + no stderr
-    // means the bar renders nothing — that's fine.
-    expect(out).toContain('execute_bash');
-    expect(out).not.toContain('"items"');
+    for (const c of contains) expect(out).toContain(c);
+    for (const a of absent ?? []) expect(out).not.toContain(a);
+    if (minBars != null) {
+      const barCount = out.split('\n').filter((l) => l.includes('│')).length;
+      expect(barCount).toBeGreaterThanOrEqual(minBars);
+    }
   });
 });
 
@@ -2330,183 +2276,131 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
     result: { status: 'success', output: 'ok' },
   });
 
-  test('grep with pattern + relative path: combines as "pattern in path"', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('grep', {
-          pattern: 'wrapAnsiLine',
-          path: 'packages/tui/src',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('grep [wrapAnsiLine in packages/tui/src]');
-  });
+  // `CWD` in an args path / contains / absent string is substituted with
+  // process.cwd() (the repo TUI dir) at run time so the cwd-shortening cases
+  // can assert the absolute prefix is stripped.
+  const cwd = process.cwd();
+  const sub = (s: string) => s.replace('CWD', cwd);
 
-  test('grep with absolute path inside cwd: shortens to cwd-relative', () => {
-    // process.cwd() at test time IS the repo's TUI package dir; an absolute
-    // path inside cwd should strip the prefix.
-    const cwd = process.cwd();
+  it.each<{
+    name: string;
+    tool: string;
+    args: Record<string, unknown>;
+    contains: string;
+    absent?: string[];
+    /** Assert cwd doesn't leak — whole output, or only the chip slice. */
+    noCwd?: 'output' | 'chip';
+  }>([
+    {
+      name: 'grep pattern + relative path → "pattern in path"',
+      tool: 'grep',
+      args: { pattern: 'wrapAnsiLine', path: 'packages/tui/src' },
+      contains: 'grep [wrapAnsiLine in packages/tui/src]',
+    },
+    {
+      name: 'grep absolute path inside cwd → cwd-relative',
+      tool: 'grep',
+      args: { pattern: 'foo', path: 'CWD/src/lite' },
+      contains: 'grep [foo in src/lite]',
+      noCwd: 'output',
+    },
+    {
+      name: 'grep pattern only drops the " in path" suffix',
+      tool: 'grep',
+      args: { pattern: 'wrapAnsiLine' },
+      contains: 'grep [wrapAnsiLine]',
+      absent: [' in '],
+    },
+    {
+      name: 'grep path "." dropped (adds no info)',
+      tool: 'grep',
+      args: { pattern: 'foo', path: '.' },
+      contains: 'grep [foo]',
+      absent: [' in ', '[foo in .'],
+    },
+    {
+      name: 'glob pattern + path → " in "',
+      tool: 'glob',
+      args: { pattern: '**/*.tsx', path: 'src/components' },
+      contains: 'glob [**/*.tsx in src/components]',
+    },
+    {
+      name: 'fs_write strReplace → "edit <path>" (not the discriminator)',
+      tool: 'fs_write',
+      args: {
+        command: 'strReplace',
+        path: 'src/lite/render.ts',
+        oldStr: 'foo',
+        newStr: 'bar',
+      },
+      contains: 'fs_write [edit src/lite/render.ts]',
+      absent: ['[strReplace]'],
+    },
+    {
+      name: 'fs_write create → "create <path>"',
+      tool: 'fs_write',
+      args: { command: 'create', path: 'src/foo.ts', content: 'hello' },
+      contains: 'fs_write [create src/foo.ts]',
+    },
+    {
+      name: 'fs_write insert → "insert <path>"',
+      tool: 'fs_write',
+      args: {
+        command: 'insert',
+        path: 'src/foo.ts',
+        insertLine: 5,
+        content: 'hello',
+      },
+      contains: 'fs_write [insert src/foo.ts]',
+    },
+    {
+      name: 'fs_write delete → "delete <path>"',
+      tool: 'fs_write',
+      args: { command: 'delete', path: 'src/foo.ts' },
+      contains: 'fs_write [delete src/foo.ts]',
+    },
+    {
+      // The diff body below the tool line legitimately shows the full path;
+      // only the chip slice must be cwd-free, hence noCwd: 'chip'.
+      name: 'fs_write absolute path inside cwd shortened in chip',
+      tool: 'fs_write',
+      args: {
+        command: 'strReplace',
+        path: 'CWD/src/foo.ts',
+        oldStr: 'a',
+        newStr: 'b',
+      },
+      contains: 'fs_write [edit src/foo.ts]',
+      noCwd: 'chip',
+    },
+    {
+      // Legacy "command means shell" branch, gated to SHELL_TOOL_NAMES so
+      // fs_write's `command` discriminator can't hijack it.
+      name: 'shell shows the command',
+      tool: 'shell',
+      args: { command: 'git status' },
+      contains: 'shell [git status]',
+    },
+    {
+      name: 'read bare path renders shortened',
+      tool: 'fs_read',
+      args: { operations: [{ path: 'CWD/src/lite/render.ts' }] },
+      contains: '[src/lite/render.ts]',
+      noCwd: 'output',
+    },
+  ])('$name', ({ tool, args, contains, absent, noCwd }) => {
+    const resolvedArgs = JSON.parse(sub(JSON.stringify(args)));
     const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('grep', {
-          pattern: 'foo',
-          path: `${cwd}/src/lite`,
-        }),
-        'kiro_default'
-      )
+      renderMessageToText(toolMsg(tool, resolvedArgs), 'kiro_default')
     );
-    expect(out).toContain('grep [foo in src/lite]');
-    // The absolute prefix MUST be stripped — that's the whole point of the
-    // shortening pass.
-    expect(out).not.toContain(cwd);
-  });
-
-  test('grep with pattern only: drops the " in path" suffix', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('grep', { pattern: 'wrapAnsiLine' }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('grep [wrapAnsiLine]');
-    expect(out).not.toContain(' in ');
-  });
-
-  test('grep with path: ".": drops "." since it adds no info', () => {
-    // path="." just means "current directory", which the user already sees
-    // in the footer. Including it would clutter the chip with a uselessly
-    // empty location indicator.
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('grep', { pattern: 'foo', path: '.' }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('grep [foo]');
-    expect(out).not.toContain(' in ');
-    expect(out).not.toContain('[foo in .');
-  });
-
-  test('glob with pattern + path: combines via " in "', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('glob', {
-          pattern: '**/*.tsx',
-          path: 'src/components',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('glob [**/*.tsx in src/components]');
-  });
-
-  test('fs_write with command="strReplace": chip says "edit <path>"', () => {
-    // The discriminator-only chip ("[strReplace]") was the old behavior — a
-    // useless chip that hid the file being edited.
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_write', {
-          command: 'strReplace',
-          path: 'src/lite/render.ts',
-          oldStr: 'foo',
-          newStr: 'bar',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('fs_write [edit src/lite/render.ts]');
-    expect(out).not.toContain('[strReplace]');
-  });
-
-  test('fs_write with command="create": chip says "create <path>"', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_write', {
-          command: 'create',
-          path: 'src/foo.ts',
-          content: 'hello',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('fs_write [create src/foo.ts]');
-  });
-
-  test('fs_write with command="insert": chip says "insert <path>"', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_write', {
-          command: 'insert',
-          path: 'src/foo.ts',
-          insertLine: 5,
-          content: 'hello',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('fs_write [insert src/foo.ts]');
-  });
-
-  test('fs_write with command="delete": chip says "delete <path>"', () => {
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_write', { command: 'delete', path: 'src/foo.ts' }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('fs_write [delete src/foo.ts]');
-  });
-
-  test('fs_write absolute path inside cwd: shortened in chip', () => {
-    // Only the inline chip is asserted on — the diff body fs_write also
-    // emits below the tool line legitimately includes the full path
-    // (that's a separate render path, unrelated to inline mode).
-    const cwd = process.cwd();
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_write', {
-          command: 'strReplace',
-          path: `${cwd}/src/foo.ts`,
-          oldStr: 'a',
-          newStr: 'b',
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('fs_write [edit src/foo.ts]');
-    // The CHIP itself must NOT contain the cwd prefix — locate the chip
-    // boundaries (`[...]` around `edit ...`) and assert only on that slice.
-    const chipMatch = out.match(/fs_write \[([^\]]+)\]/);
-    expect(chipMatch).not.toBeNull();
-    expect(chipMatch![1]).not.toContain(cwd);
-  });
-
-  test('shell tool still shows the command (gated to SHELL_TOOL_NAMES)', () => {
-    // Sanity check: the legacy "command means shell" branch was retained,
-    // just gated to actual shell tool names so fs_write's `command` field
-    // (which is a discriminator, not a shell command) doesn't accidentally
-    // hijack this branch.
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('shell', { command: 'git status' }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('shell [git status]');
-  });
-
-  test('read tool: bare path renders shortened', () => {
-    const cwd = process.cwd();
-    const out = stripAnsi(
-      renderMessageToText(
-        toolMsg('fs_read', {
-          operations: [{ path: `${cwd}/src/lite/render.ts` }],
-        }),
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('[src/lite/render.ts]');
-    expect(out).not.toContain(cwd);
+    expect(out).toContain(contains);
+    for (const a of absent ?? []) expect(out).not.toContain(a);
+    if (noCwd === 'output') {
+      expect(out).not.toContain(cwd);
+    } else if (noCwd === 'chip') {
+      const chipMatch = out.match(/fs_write \[([^\]]+)\]/);
+      expect(chipMatch).not.toBeNull();
+      expect(chipMatch![1]).not.toContain(cwd);
+    }
   });
 });
