@@ -4,6 +4,32 @@
  * update only this file -- all tests import from here.
  */
 
+import type { TestCase } from '../../../src/test-utils/TestCase';
+import type { E2ETestCase } from '../../E2ETestCase';
+
+/**
+ * Type a slash command char-by-char (the per-char delay avoids the
+ * autocomplete menu intercepting Enter), then submit.
+ *
+ * Defaults match the e2e usage (no trailing space, 200ms settle, no extra
+ * post-submit wait). The integ TestCase path is behaviorally load-bearing on
+ * `trailingSpace: true` + a longer `postEnterMs` settle — pass those.
+ */
+export async function typeSlashCommand(
+  tc: E2ETestCase | TestCase,
+  command: string,
+  opts: { trailingSpace?: boolean; postEnterMs?: number } = {}
+): Promise<void> {
+  const text = opts.trailingSpace ? command + ' ' : command;
+  for (const char of text) {
+    await tc.sendKeys(char);
+    await tc.sleepMs(30);
+  }
+  await tc.sleepMs(200);
+  await tc.pressEnter();
+  if (opts.postEnterMs) await tc.sleepMs(opts.postEnterMs);
+}
+
 export const CMD_LITE = '/lite';
 export const CMD_TUI = '/tui';
 export const CMD_VERBOSITY = '/verbose';

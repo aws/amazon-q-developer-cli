@@ -34,17 +34,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI } from './lite/helpers/commands';
-
-/** Helper: type a slash command char-by-char to avoid autocomplete race. */
-async function typeSlashCommand(tc: E2ETestCase, command: string): Promise<void> {
-  for (const char of command) {
-    await tc.sendKeys(char);
-    await tc.sleepMs(30);
-  }
-  await tc.sleepMs(200);
-  await tc.pressEnter();
-}
+import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
 
 describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
   let testCase: E2ETestCase | null = null;
@@ -84,60 +74,51 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + chunk4Content } } },
     ]);
 
-    // Send user message to trigger the response
     await testCase.sendKeys('start streaming');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for chunk 3 to render (confirming events 1-3 emitted)
+    // chunk 3 rendered confirms events 1-3 emitted
     await testCase.waitForText(chunk3Content, 15000);
 
-    // Verify we are still streaming
     const midStreamStore = await testCase.getStore();
     expect(midStreamStore.isProcessing).toBe(true);
 
-    // --- QUEUE THE SWAP COMMAND MID-STREAM ---
     // In lite mode, /tui during processing is QUEUED (fires at turn-end).
     await typeSlashCommand(testCase, CMD_TUI);
 
-    // Confirm the command was queued (transient alert appears)
     await testCase.waitForText('queued', 5000);
 
-    // Mode should NOT have changed yet (still processing)
+    // Mode must NOT have changed yet (still processing).
     const storeAfterQueue = await testCase.getStore();
     expect(storeAfterQueue.uiMode).toBe('lite');
     expect(storeAfterQueue.isProcessing).toBe(true);
 
-    // --- COMPLETE THE STREAM ---
-    // Push remaining events + null. This unblocks the peek for event 4 and
-    // completes the stream. The queue then drains, firing /tui.
+    // Push remaining events + null: unblocks the peek for event 4 and
+    // completes the stream; the queue then drains, firing /tui.
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + postQueueContent } } },
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: ' ' + finalContent } } },
     ]);
     await testCase.pushSendMessageResponse(null);
 
-    // Wait for the mode to actually swap (queue drains after stream ends)
+    // Mode swaps once the queue drains after the stream ends.
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'tui',
       15000,
     );
     await testCase.waitForIdle(15000);
 
-    // Wait for the post-swap TUI repaint to actually land in the terminal.
-    // waitForIdle only checks isProcessing — it returns the moment the
-    // queue drains, which is when the swap fires, not when the new mode
-    // has finished painting. Without this, getSnapshot() races the TUI
-    // rerender and the screen snapshot can come back blank (~50% on this
-    // machine). waitForText polls the live xterm parse so it returns
-    // as soon as the content appears, not after a fixed sleep.
+    // waitForIdle only checks isProcessing — it returns the moment the queue
+    // drains (the swap fires), not when the new mode finished painting.
+    // Without this, getSnapshot() races the TUI rerender and the screen can
+    // come back blank (~50% on this machine). waitForText polls the live
+    // xterm parse so it returns as soon as the content appears.
     await testCase.waitForText(finalContent, 15000);
 
-    // --- ASSERTIONS ---
     const finalStore = await testCase.getStore();
     expect(finalStore.uiMode).toBe('tui');
 
-    // All chunk content must be in the store messages
     const allMessageText = finalStore.messages
       .map((m) => JSON.stringify(m))
       .join(' ');
@@ -149,7 +130,6 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     expect(allMessageText).toContain(postQueueContent);
     expect(allMessageText).toContain(finalContent);
 
-    // The final content should be visible in TUI mode
     const snapshot = testCase.getSnapshot();
     const allScreenText = snapshot.join('\n');
     expect(allScreenText).toContain(finalContent);
@@ -188,22 +168,19 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
 
-    // Send user message to trigger the response
     await testCase.sendKeys('begin stream');
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Wait for the stream to complete and content to render
     await testCase.waitForText(finalContent, 15000);
     await testCase.waitForIdle(15000);
 
-    // Verify TUI rendered all content
     const storeBeforeSwap = await testCase.getStore();
     expect(storeBeforeSwap.uiMode).toBe('tui');
     expect(storeBeforeSwap.isProcessing).toBe(false);
 
-    // --- SWAP TO LITE (immediately after stream completes) ---
-    // Bug 2.1/2.2: TUI's static cursor has advanced. Lite must realign.
+    // Swap to lite right after the stream completes. Bug 2.1/2.2: TUI's
+    // static cursor has advanced; lite must realign.
     await typeSlashCommand(testCase, CMD_LITE);
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'lite',
@@ -211,8 +188,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     );
     await testCase.sleepMs(500);
 
-    // --- VERIFY POST-SWAP BEHAVIOR ---
-    // Bug 2.1: Messages from the TUI era must be in the store after swap
+    // Bug 2.1: TUI-era messages must survive the swap into the store.
     const storeAfterSwap = await testCase.getStore();
     expect(storeAfterSwap.uiMode).toBe('lite');
     const allMessageText = storeAfterSwap.messages
@@ -221,9 +197,8 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     expect(allMessageText).toContain(chunk1Content);
     expect(allMessageText).toContain(finalContent);
 
-    // Bug 2.2: A new message in lite mode must render correctly (no missing
-    // first batch due to stale cursor). Push a new response and verify it
-    // appears in the terminal.
+    // Bug 2.2: a new lite message must render correctly (no missing first
+    // batch due to stale cursor).
     const liteNewContent = 'LITE_NEW_AFTER_SWAP_MARKER';
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: liteNewContent } } },
@@ -236,12 +211,11 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     await testCase.waitForText(liteNewContent, 15000);
     await testCase.waitForIdle(10000);
 
-    // The new lite message must be visible on screen
     const snapshot = testCase.getSnapshot();
     const allScreenText = snapshot.join('\n');
     expect(allScreenText).toContain(liteNewContent);
 
-    // Store must have both the old TUI content and new lite content
+    // Store must have both the old TUI content and new lite content.
     const finalStore = await testCase.getStore();
     const finalMessageText = finalStore.messages
       .map((m) => JSON.stringify(m))

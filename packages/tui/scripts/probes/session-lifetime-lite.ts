@@ -22,14 +22,16 @@
  *   SAMPLE_EVERY_N        sample memory every N turns (default: 10)
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
+import { createProbeContext, linearSlope, runProbe } from './probe-utils';
 
-const PROBE_NAME = 'session-lifetime-lite';
+const ctx = createProbeContext('session-lifetime-lite');
+const PROBE_NAME = ctx.name;
+const OUTPUT_DIR = ctx.outputDir;
 const TURN_COUNT = parseInt(process.env.LITE_PROBE_TURNS ?? '100', 10);
 const RSS_CEILING_MB = parseInt(process.env.RSS_CEILING_MB ?? '250', 10);
-const OUTPUT_DIR = process.env.PROBE_OUTPUT_DIR ?? './probe-output';
 const SAMPLE_EVERY_N = parseInt(process.env.SAMPLE_EVERY_N ?? '10', 10);
 
 interface Sample {
@@ -41,10 +43,11 @@ interface Sample {
 }
 
 async function main() {
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  const started = Date.now();
+  const started = ctx.startedAt;
 
-  console.log(`[${PROBE_NAME}] Starting: ${TURN_COUNT} turns, RSS ceiling ${RSS_CEILING_MB} MB`);
+  console.log(
+    `[${PROBE_NAME}] Starting: ${TURN_COUNT} turns, RSS ceiling ${RSS_CEILING_MB} MB`
+  );
 
   // Launch CLI in lite mode with E2ETestCase harness
   const tc = await E2ETestCase.builder()
@@ -146,24 +149,14 @@ async function main() {
     const skipBefore = finalStore.liteStaticSkipBefore ?? 0;
     const historyCapEngaged = skipBefore > 0;
 
-    // Compute RSS slope from samples (simple linear regression post-warmup)
+    // RSS slope (MB/turn) post-warmup — flags unbounded growth.
     const warmupTurn = Math.min(20, Math.floor(TURN_COUNT / 5));
     const postWarmupSamples = samples.filter((s) => s.turn >= warmupTurn);
-    let slopeMbPerTurn = 0;
-    if (postWarmupSamples.length >= 2) {
-      const xs = postWarmupSamples.map((s) => s.turn);
-      const ys = postWarmupSamples.map((s) => s.rssKb / 1024); // MB
-      const n = xs.length;
-      const xMean = xs.reduce((a, b) => a + b, 0) / n;
-      const yMean = ys.reduce((a, b) => a + b, 0) / n;
-      let num = 0;
-      let den = 0;
-      for (let j = 0; j < n; j++) {
-        num += (xs[j]! - xMean) * (ys[j]! - yMean);
-        den += (xs[j]! - xMean) ** 2;
-      }
-      slopeMbPerTurn = den !== 0 ? num / den : 0;
-    }
+    const slopeMbPerTurn = linearSlope(
+      postWarmupSamples,
+      (s) => s.turn,
+      (s) => s.rssKb / 1024
+    );
 
     // Results
     console.log(`\n=== RESULTS ===`);
@@ -172,16 +165,24 @@ async function main() {
     console.log(`  Baseline RSS:      ${baselineRssMb.toFixed(1)} MB`);
     console.log(`  Final RSS:         ${finalRssMb.toFixed(1)} MB`);
     console.log(`  RSS delta:         ${rssDeltaMb.toFixed(1)} MB`);
-    console.log(`  RSS slope:         ${(slopeMbPerTurn * 1000).toFixed(2)} KB/turn`);
+    console.log(
+      `  RSS slope:         ${(slopeMbPerTurn * 1000).toFixed(2)} KB/turn`
+    );
     console.log(`  RSS ceiling:       ${RSS_CEILING_MB} MB`);
     console.log(`  Messages in store: ${finalMsgCount}`);
-    console.log(`  History cap:       ${historyCapEngaged ? `engaged (skip=${skipBefore})` : 'NOT engaged'}`);
+    console.log(
+      `  History cap:       ${historyCapEngaged ? `engaged (skip=${skipBefore})` : 'NOT engaged'}`
+    );
 
     // Write metrics JSON
     const metrics = {
       probe: PROBE_NAME,
       timestamp: new Date().toISOString(),
-      config: { turnCount: TURN_COUNT, rssCeilingMb: RSS_CEILING_MB, sampleEveryN: SAMPLE_EVERY_N },
+      config: {
+        turnCount: TURN_COUNT,
+        rssCeilingMb: RSS_CEILING_MB,
+        sampleEveryN: SAMPLE_EVERY_N,
+      },
       results: {
         durationMs: elapsedMs,
         turnsCompleted: TURN_COUNT,
@@ -242,12 +243,4 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  writeFileSync(
-    join(OUTPUT_DIR, `${PROBE_NAME}-error.log`),
-    String(err instanceof Error ? err.stack ?? err.message : err)
-  );
-  console.error(`[${PROBE_NAME}] PROBE CRASH:`, err);
-  process.exit(2);
-});
+await runProbe(ctx, main);

@@ -20,17 +20,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI } from './lite/helpers/commands';
-
-/** Helper: type a slash command char-by-char to avoid autocomplete race. */
-async function typeSlashCommand(tc: E2ETestCase, command: string): Promise<void> {
-  for (const char of command) {
-    await tc.sendKeys(char);
-    await tc.sleepMs(30);
-  }
-  await tc.sleepMs(200);
-  await tc.pressEnter();
-}
+import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
 
 describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   let testCase: E2ETestCase | null = null;
@@ -53,7 +43,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    // Complete a turn in lite mode
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'LITE_RESPONSE_MARKER' } } },
     ]);
@@ -65,7 +54,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('LITE_RESPONSE_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
-    // Switch to TUI mode
     await typeSlashCommand(testCase, CMD_TUI);
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'tui',
@@ -73,7 +61,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     );
     await testCase.sleepMs(500);
 
-    // Key invariant (bug 2.1): messages from the lite era are preserved in store
+    // Bug 2.1: lite-era messages are preserved in store after the swap.
     const store = await testCase.getStore();
     expect(store.uiMode).toBe('tui');
     const hasLiteContent = store.messages.some(
@@ -81,7 +69,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     );
     expect(hasLiteContent).toBe(true);
 
-    // Verify TUI mode is functional: send a new message
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'TUI_AFTER_SWAP' } } },
     ]);
@@ -119,7 +106,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('TUI_CONTENT_BEFORE_SWAP', 15000);
     await testCase.waitForIdle(10000);
 
-    // Switch to lite mode — type char-by-char for command recognition
     await typeSlashCommand(testCase, CMD_LITE);
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'lite',
@@ -142,12 +128,11 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('LITE_AFTER_SWAP_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
-    // The new lite message must be visible on screen (bug 2.1 fix)
+    // The new lite message must be visible on screen (bug 2.1 fix).
     const snap = testCase.getSnapshot();
     const allText = snap.join('\n');
     expect(allText).toContain('LITE_AFTER_SWAP_MARKER');
 
-    // Store confirms lite mode
     const store = await testCase.getStore();
     expect(store.uiMode).toBe('lite');
   }, 60000);
@@ -162,7 +147,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForSlashCommands();
     await testCase.getSessionId();
 
-    // Turn 1 — complete in TUI
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'TUI_TURN_ONE_REPLY' } } },
     ]);
@@ -174,7 +158,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('TUI_TURN_ONE_REPLY', 15000);
     await testCase.waitForIdle(10000);
 
-    // Turn 2 — complete in TUI
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'TUI_TURN_TWO_REPLY' } } },
     ]);
@@ -186,7 +169,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('TUI_TURN_TWO_REPLY', 15000);
     await testCase.waitForIdle(10000);
 
-    // Cold-swap to lite — type char-by-char to ensure command recognition
     await typeSlashCommand(testCase, CMD_LITE);
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'lite',
@@ -201,11 +183,10 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     expect(storeAfterSwap.uiMode).toBe('lite');
     expect(storeAfterSwap.liteScrollbackClearToken).toBeGreaterThan(0);
 
-    // All messages from TUI should still be in the store (not lost)
+    // All TUI messages survive the swap (not lost).
     const msgCount = storeAfterSwap.messages.length;
     expect(msgCount).toBeGreaterThanOrEqual(4); // 2 user + 2 assistant at minimum
 
-    // Send a new message in lite mode — it should appear normally
     await testCase.pushSendMessageResponse([
       { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'LITE_NEW_REPLY' } } },
     ]);
@@ -217,7 +198,6 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     await testCase.waitForText('LITE_NEW_REPLY', 15000);
     await testCase.waitForIdle(10000);
 
-    // The new lite message must appear on screen
     const snap = testCase.getSnapshot();
     const allText = snap.join('\n');
     expect(allText).toContain('LITE_NEW_REPLY');

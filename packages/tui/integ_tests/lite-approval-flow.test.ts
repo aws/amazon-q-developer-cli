@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { AgentEventType, ApprovalOptionId } from '../src/types/agent-events';
+import { AgentEventType } from '../src/types/agent-events';
+import {
+  injectApproval,
+  ALLOW_REJECT_OPTIONS,
+} from '../e2e_tests/lite/helpers/approvals';
 
 /**
  * Bug-mine 3.1, 3.2, 3.3, 3.4, 3.6: Lite approval flow behavior.
@@ -25,70 +29,6 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
       testCase = null;
     }
   });
-
-  /**
-   * Helper: inject a tool call followed by an approval request. Returns the
-   * resolve function so the test can programmatically answer the approval.
-   */
-  async function injectApproval(
-    tc: TestCase,
-    opts: {
-      toolCallId: string;
-      toolName: string;
-      sessionId?: string;
-    }
-  ): Promise<{ resolve: (response: any) => void }> {
-    let resolveRef: ((response: any) => void) | null = null;
-
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: opts.toolCallId,
-      name: opts.toolName,
-      kind: 'shell' as any,
-      args: { command: `echo ${opts.toolCallId}` },
-      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-    });
-
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-        toolCall: {
-          toolCallId: opts.toolCallId,
-          title: opts.toolName,
-          rawInput: { command: `echo ${opts.toolCallId}` },
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.AllowAlways,
-            name: 'Allow Always',
-            optionId: 'allow_always',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: ((response: any) => {
-          resolveRef?.(response);
-        }) as any,
-      },
-    } as any);
-
-    return {
-      resolve: (response: any) => {
-        resolveRef = null;
-        // The resolve is stored on the store's pendingApproval — we don't
-        // need to call it ourselves in most tests; pressing 'y' does.
-      },
-    };
-  }
 
   it('[bug-mine 3.1] typing guard defers approval prompt via APPROVAL_IDLE_MS debounce', async () => {
     testCase = await TestCase.builder()
@@ -246,49 +186,19 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.waitForVisibleText('ask a question', 10000);
 
     // Inject first approval with trust options so 't' opens the submenu
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-trust-a',
-      name: 'Shell',
-      kind: 'shell' as any,
-      args: { command: 'echo a' },
-    });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        toolCall: {
-          toolCallId: 'tool-trust-a',
-          title: 'Shell',
-          rawInput: { command: 'echo a' },
+    await injectApproval(testCase, {
+      toolCallId: 'tool-trust-a',
+      toolName: 'Shell',
+      rawInput: { command: 'echo a' },
+      trustOptions: [
+        {
+          label: 'Trust echo commands',
+          display: 'echo *',
+          setting_key: 'shell.echo',
+          patterns: ['echo *'],
         },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.AllowAlways,
-            name: 'Allow Always',
-            optionId: 'allow_always',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        trustOptions: [
-          {
-            label: 'Trust echo commands',
-            display: 'echo *',
-            setting_key: 'shell.echo',
-            patterns: ['echo *'],
-          },
-        ],
-        resolve: (() => {}) as any,
-      },
-    } as any);
+      ],
+    });
 
     await testCase.typeAndSubmit('go');
     // Wait for the debounce to pass so the approval is visible
@@ -315,35 +225,13 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
       kind: 'write' as any,
       args: { path: '/tmp/b.txt' },
     });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        toolCall: {
-          toolCallId: 'tool-trust-b',
-          title: 'Write',
-          rawInput: { path: '/tmp/b.txt', content: 'hello' },
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.AllowAlways,
-            name: 'Allow Always',
-            optionId: 'allow_always',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: (() => {}) as any,
-      },
-    } as any);
-    await testCase.sleepMs(500);
+    await injectApproval(testCase, {
+      toolCallId: 'tool-trust-b',
+      toolName: 'Write',
+      rawInput: { path: '/tmp/b.txt', content: 'hello' },
+      withPrecedingToolCall: false,
+      settleMs: 500,
+    });
 
     // The trust submenu should have reset — we should see "needs approval"
     // (the default page), not "trust scope" (the trust submenu).
@@ -383,36 +271,12 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     //
     // First: a tool call from the main agent (no sessionId -> agentName =
     // currentAgent.name = 'main-agent')
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-main-1',
-      name: 'Shell',
-      kind: 'shell' as any,
-      args: { command: 'echo main' },
+    await injectApproval(testCase, {
+      toolCallId: 'tool-main-1',
+      toolName: 'Shell',
+      rawInput: { command: 'echo main' },
+      options: ALLOW_REJECT_OPTIONS,
     });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        toolCall: {
-          toolCallId: 'tool-main-1',
-          title: 'Shell',
-          rawInput: { command: 'echo main' },
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: (() => {}) as any,
-      },
-    } as any);
 
     // Second: a tool call FROM a subagent (different agentName)
     await testCase.mockSessionUpdate({
@@ -423,30 +287,14 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
       args: { path: '/tmp/sub.txt' },
       sessionId: SUBAGENT_SESSION,
     });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        sessionId: SUBAGENT_SESSION,
-        toolCall: {
-          toolCallId: 'tool-sub-1',
-          title: 'Write',
-          rawInput: { path: '/tmp/sub.txt', content: 'sub' },
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: (() => {}) as any,
-      },
-    } as any);
+    await injectApproval(testCase, {
+      toolCallId: 'tool-sub-1',
+      toolName: 'Write',
+      sessionId: SUBAGENT_SESSION,
+      rawInput: { path: '/tmp/sub.txt', content: 'sub' },
+      options: ALLOW_REJECT_OPTIONS,
+      withPrecedingToolCall: false,
+    });
 
     await testCase.typeAndSubmit('check');
     await testCase.sleepMs(300);

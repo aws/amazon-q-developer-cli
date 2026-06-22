@@ -16,7 +16,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI } from './lite/helpers/commands';
+import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
 
 describe('queued message survives mode swap', () => {
   let testCase: E2ETestCase | null = null;
@@ -66,15 +66,9 @@ describe('queued message survives mode swap', () => {
     expect(store.isProcessing).toBe(true);
 
     // --- Queue /tui while processing (lite mode queues known slash commands) ---
-    // Type "/tui " (with trailing space) so the slash command menu doesn't
-    // intercept Enter. Without the space, the menu handles Enter itself and
-    // doesn't clear PromptInput's local segments buffer.
-    for (const char of '/tui ') {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-    await testCase.pressEnter();
+    // trailingSpace so the slash command menu doesn't intercept Enter; without
+    // it the menu handles Enter and doesn't clear PromptInput's segments buffer.
+    await typeSlashCommand(testCase, CMD_TUI, { trailingSpace: true });
 
     // Wait for the "queued" transient alert (confirms submit + clear)
     await testCase.waitForText('queued', 5000);
@@ -169,25 +163,15 @@ describe('queued message survives mode swap', () => {
     expect(store.isProcessing).toBe(true);
 
     // --- Queue /tui (lite→tui swap) ---
-    // Trailing space prevents slash menu from intercepting Enter
-    for (const char of '/tui ') {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-    await testCase.pressEnter();
+    // trailingSpace prevents the slash menu from intercepting Enter.
+    await typeSlashCommand(testCase, CMD_TUI, { trailingSpace: true });
 
     // Wait for the "queued" alert (confirms submit + input cleared)
     await testCase.waitForText('queued', 5000);
     await testCase.sleepMs(300);
 
     // --- Queue /lite (tui→lite swap back) ---
-    for (const char of '/lite ') {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-    await testCase.pressEnter();
+    await typeSlashCommand(testCase, CMD_LITE, { trailingSpace: true });
 
     // Wait for /lite to appear in the queue
     await testCase.waitForStoreCondition(

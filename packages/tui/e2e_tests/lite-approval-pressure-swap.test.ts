@@ -32,7 +32,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI } from './lite/helpers/commands';
+import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
 
 describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -226,20 +226,12 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     expect(duringApproval.isProcessing).toBe(true);
     expect(duringApproval.uiMode).toBe('tui');
 
-    // In TUI mode, type /lite into the PromptBar. The chars go to PromptBar
-    // because the Menu only captures arrows/Enter/Esc, not printable chars.
-    for (const char of CMD_LITE) {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-
-    // Press Enter. This simultaneously:
-    //   1. Fires Menu.onSelect for the highlighted option (Allow Once)
-    //   2. Fires PromptBar.onSubmit with the typed text (/lite)
-    // The approval resolves (tool executes). handleUserInput('/lite') runs
-    // but since isProcessing is still true, it's rejected.
-    await testCase.pressEnter();
+    // In TUI mode, type /lite into the PromptBar (Menu only captures
+    // arrows/Enter/Esc, not printable chars). No trailing space: Enter must
+    // simultaneously fire Menu.onSelect (Allow Once) AND PromptBar.onSubmit
+    // (/lite). The approval resolves; handleUserInput('/lite') is rejected
+    // because isProcessing is still true.
+    await typeSlashCommand(testCase, CMD_LITE);
 
     // Wait for the tool to complete and turn to finish
     await testCase.waitForIdle(15000);
@@ -253,12 +245,7 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
 
     // Now that everything is idle, /lite should work
     await testCase.waitForSlashCommands();
-    for (const char of CMD_LITE) {
-      await testCase.sendKeys(char);
-      await testCase.sleepMs(30);
-    }
-    await testCase.sleepMs(200);
-    await testCase.pressEnter();
+    await typeSlashCommand(testCase, CMD_LITE);
 
     await testCase.waitForStoreCondition(
       (s) => s.uiMode === 'lite',

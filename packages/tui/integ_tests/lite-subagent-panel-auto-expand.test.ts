@@ -1,52 +1,22 @@
 /**
- * Integ test: Subagent panel auto-expand on inner approval.
+ * Subagent panel auto-expand on inner approval (PR #2643;
+ * LiteLayout.tsx:1557-1588 snapshot/restore effect).
  *
- * 1. WHAT user-observable behavior does this assert?
- *    Per PR #2643 "Subagents > Auto-expand on inner approval": when a
- *    pending approval belongs to a subagent stage (i.e. the approving
- *    ToolUse message has agentName !== mainAgent.name), the lite layout
- *    auto-opens the subagent trace panel and points it at that stage.
- *    When the approval clears, the panel state restores to whatever
- *    it was before the auto-expand.
- *
- *    Two cases (asserted via the only state the Zustand store exposes
- *    here, `subagentPanelOpen` — the per-component `subagentOpenIndex`
- *    isn't on the store, so we can't assert focus index directly):
- *      (a) Panel was closed before the approval: panelOpen flips
- *          false → true on approval, and back to false on clear.
- *      (b) Panel was already open: panelOpen stays true after the
- *          approval lands, AND remains true after the approval clears.
- *          This proves the snapshot-restore path didn't close a panel
- *          that was open prior to the auto-expand.
- *
- * 2. WHAT class of regression would this catch?
- *    Anyone who refactors the auto-expand effect in
- *    src/components/layout/lite/LiteLayout.tsx:1557-1588 and forgets to
- *    snapshot the prior state would lose case (b)'s "stays open":
- *    the panel would close on approval clear even though it was open
- *    before. Anyone who removes the `subagentRequestingName` === null
- *    branch (the restore path) would leave the panel pinned forever
- *    after the user answers. Anyone who breaks the "is this approval
- *    for a subagent" check (msg.agentName !== mainAgent.name) would
- *    auto-open on every parent-agent approval, spamming the panel
- *    on regular tool runs.
- *
- * 3. Could the test pass even if the feature is broken?
- *    No.
- *      Case (a): a bug that never opened the panel would fail the
- *      first transition (false → true); one that never restored
- *      would fail the second (true → false).
- *      Case (b): a snapshot-restore bug that always closes on clear
- *      (instead of restoring to "was-open") would fail the
- *      stays-open-after-clear assertion.
- *
- * Anchor: PR #2643 "Auto-expand on inner approval" + LiteLayout.tsx:1557.
+ * When a pending approval belongs to a subagent stage (agentName !==
+ * mainAgent.name) the panel auto-opens; on clear it restores its prior state.
+ * Two cases, asserted via store `subagentPanelOpen`:
+ *   (a) was-closed: false→true on approval, back to false on clear.
+ *   (b) was-open: stays true on approval AND after clear (proves the
+ *       snapshot-restore didn't close a panel that was open beforehand).
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
-import { ApprovalOptionId } from '../src/types/agent-events';
+import {
+  injectApproval,
+  ALLOW_REJECT_OPTIONS,
+} from '../e2e_tests/lite/helpers/approvals';
 
 describe('lite subagent panel auto-expand on inner approval', () => {
   let testCase: TestCase | null = null;
@@ -93,44 +63,23 @@ describe('lite subagent panel auto-expand on inner approval', () => {
     await tc.sleepMs(150);
   }
 
-  async function injectApproval(
+  // Inner approval ties to a ToolCall message seedPipeline already created
+  // (with sessionId set), so no preceding ToolCall is injected here.
+  const injectInnerApproval = (
     tc: TestCase,
     toolCallId: string,
     sessionId: string,
     toolName: string
-  ): Promise<void> {
-    // Inner approval requires the matching ToolCall message to already
-    // exist with agentName resolved to the stage. seedPipeline created
-    // those ToolCall messages with sessionId set; the approval event then
-    // ties to one of them by toolCallId.
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ApprovalRequest,
-      value: {
-        sessionId,
-        toolCall: {
-          toolCallId,
-          title: toolName,
-          rawInput: { path: `/tmp/${toolName}.txt` },
-        },
-        permissionOptions: [
-          {
-            kind: ApprovalOptionId.AllowOnce,
-            name: 'Allow Once',
-            optionId: 'allow_once',
-          },
-          {
-            kind: ApprovalOptionId.RejectOnce,
-            name: 'Reject Once',
-            optionId: 'reject_once',
-          },
-        ],
-        resolve: (() => {
-          /* noop — store-side clear is what we drive in the test */
-        }) as any,
-      },
-    } as any);
-    await tc.sleepMs(250);
-  }
+  ) =>
+    injectApproval(tc, {
+      toolCallId,
+      toolName,
+      sessionId,
+      rawInput: { path: `/tmp/${toolName}.txt` },
+      options: ALLOW_REJECT_OPTIONS,
+      withPrecedingToolCall: false,
+      settleMs: 250,
+    });
 
   it('auto-opens panel from CLOSED on inner approval; closes on clear', async () => {
     testCase = await TestCase.builder()
@@ -158,7 +107,12 @@ describe('lite subagent panel auto-expand on inner approval', () => {
     expect(store.subagentPanelOpen).toBe(false);
 
     // Inject an approval for stage A's tool.
-    await injectApproval(testCase, 'tool-stageA-1', 'session-stageA', 'Read');
+    await injectInnerApproval(
+      testCase,
+      'tool-stageA-1',
+      'session-stageA',
+      'Read'
+    );
 
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(true);
@@ -218,7 +172,12 @@ describe('lite subagent panel auto-expand on inner approval', () => {
     // Approval comes from stage B. Auto-expand snapshots the prior state
     // (panel open) and points the panel at stage B. The panel remains
     // visibly open during the approval — observable via subagentPanelOpen.
-    await injectApproval(testCase, 'tool-stageB-1', 'session-stageB', 'Read');
+    await injectInnerApproval(
+      testCase,
+      'tool-stageB-1',
+      'session-stageB',
+      'Read'
+    );
 
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(true);

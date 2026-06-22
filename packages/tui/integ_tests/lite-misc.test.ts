@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
-import { CMD_CLEAR } from '../e2e_tests/lite/helpers/commands';
+import { CMD_CLEAR, typeSlashCommand } from '../e2e_tests/lite/helpers/commands';
 
 /**
  * Bug-mine category 10: miscellaneous lite-mode edge cases.
@@ -21,19 +21,9 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     }
   });
 
-  /**
-   * Helper: type a slash command character-by-character (avoiding the
-   * autocomplete menu intercepting Enter) then submit.
-   */
-  async function typeCommand(tc: TestCase, cmd: string): Promise<void> {
-    for (const ch of cmd + ' ') {
-      await tc.sendKeys(ch);
-      await tc.sleepMs(30);
-    }
-    await tc.sleepMs(200);
-    await tc.sendKeys('\r');
-    await tc.sleepMs(800);
-  }
+  // Integ TestCase path: trailing space + 800ms settle are load-bearing here.
+  const typeCommand = (tc: TestCase, cmd: string) =>
+    typeSlashCommand(tc, cmd, { trailingSpace: true, postEnterMs: 800 });
 
   it('live region leading separator matches static spacing [bug-mine 10.1]', async () => {
     testCase = await TestCase.builder()
