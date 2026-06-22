@@ -1088,9 +1088,7 @@ export const LiteLayout: React.FC = () => {
       row.activeToolName = m.name;
       row.activeToolDetail = extractFooterToolDetail(m.name, m.content);
       row.activeToolFinished = !!m.isFinished;
-      // If THIS message is the one currently waiting on user approval, flip
-      // the row's phase. Done after activeToolName/Detail are set so the
-      // chip can include the tool name verbatim.
+      // Set after activeToolName/Detail so the chip includes the tool name.
       if (approvalToolCallId && m.id === approvalToolCallId) {
         row.phase = 'requesting-permission';
       }
@@ -1441,9 +1439,9 @@ export const LiteLayout: React.FC = () => {
         )}
       </Static>
 
-      {/* Welcome banner — live-region row outside <Static> so resize reflows it.
-          The length === 0 gate keeps it exclusive with the swap-with-content
-          static push above (no double KIRO art). */}
+      {/* Outside <Static> so resize reflows it. The length === 0 gate keeps it
+          exclusive with the swap-with-content static push above (no double
+          KIRO art). */}
       {showWelcomeBanner && staticItemsRef.current.length === 0 && (
         <Text wrap="overflow">{welcomeBannerText}</Text>
       )}
@@ -1457,7 +1455,6 @@ export const LiteLayout: React.FC = () => {
       {agentError && <Text>{chalk.red(`error: ${agentError}`)}</Text>}
       <LiteLiveRegion />
 
-      {/* Spec-artifact generation banner — self-renders null when idle. */}
       <ArtifactGenerationCard />
       {surveyPrompt && (
         <SurveyPromptBar
@@ -1500,7 +1497,6 @@ export const LiteLayout: React.FC = () => {
           )}
         </Text>
       )}
-      {/* Toggle Ctrl+X (handled at the layout level above). */}
       <LiteTaskTray />
       <Divider />
 
@@ -1624,7 +1620,7 @@ export const LiteLayout: React.FC = () => {
             </Box>
           )}
           {/* Slash-command dropdown + /settings menu render BELOW the input
-              (matches the TUI). Self-renders null when inactive. */}
+              (matches the TUI). */}
           <CommandMenu />
           {exitSequence > 0 && (
             <Text>{chalk.dim('Press Ctrl+C or Ctrl+D again to exit')}</Text>
@@ -1632,8 +1628,8 @@ export const LiteLayout: React.FC = () => {
         </Box>
       )}
 
-      {/* Ctrl+O replaces the focused subagent row with a fixed-height trace
-          panel (one row per stage otherwise). */}
+      {/* One row per active stage; Ctrl+O expands the focused row into a
+          fixed-height trace panel. */}
       {activeSubagents.length > 0 &&
         (() => {
           const visible = activeSubagents;
