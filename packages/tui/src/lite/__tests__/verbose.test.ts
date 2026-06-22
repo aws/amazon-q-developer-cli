@@ -374,16 +374,18 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
   });
 
   test.each([
-    ['minimal', 5],
-    ['lean', 10],
-    ['default', 5],
-  ] as const)('density "%s" caps output at %i lines', (preset, cap) => {
-    expect(DENSITY_DISPLAY[preset].outputMaxLines).toBe(cap);
-  });
-
-  test('density "default" leaves argsMaxLines unbounded', () => {
-    expect(DENSITY_DISPLAY.default.argsMaxLines).toBeNull();
-  });
+    ['minimal', 5, undefined],
+    ['lean', 10, undefined],
+    ['default', 5, null], // 'default' density leaves argsMaxLines unbounded
+  ] as const)(
+    'density "%s" caps output at %i lines',
+    (preset, cap, argsMaxLines) => {
+      expect(DENSITY_DISPLAY[preset].outputMaxLines).toBe(cap);
+      if (argsMaxLines !== undefined) {
+        expect(DENSITY_DISPLAY[preset].argsMaxLines).toBe(argsMaxLines);
+      }
+    }
+  );
 
   // Picking a preset is a clean reset of filters to the preset's shape, not a
   // partial patch — so a prior custom filter set ('shell','mcp') is replaced.

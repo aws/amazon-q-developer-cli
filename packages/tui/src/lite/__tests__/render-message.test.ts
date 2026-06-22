@@ -594,19 +594,25 @@ describe('renderVerbosityPreview', () => {
     }
   );
 
-  test('output preview honors the filter override (no bar when filters empty)', () => {
-    // With filters: [] the output bars are gated off, so the rendered
-    // preview should not include the `│ ` output bar that appears under
-    // each tool when filters allow it.
-    const text = renderVerbosityPreview('output', FULL_DISPLAY, []);
-    const stripped = stripAnsi(text);
-    expect(stripped).not.toContain('│ On branch feature');
-  });
-
-  test('output preview with all filter shows the output bar', () => {
-    const text = renderVerbosityPreview('output', FULL_DISPLAY, ['all']);
-    const stripped = stripAnsi(text);
-    expect(stripped).toContain('│ On branch feature');
+  // `│ ` output bars are gated by the filter list: empty filters suppress them,
+  // ['all'] surfaces them under each tool.
+  it.each<{ name: string; filters: string[]; present: boolean }>([
+    {
+      name: 'honors the filter override (no bar when filters empty)',
+      filters: [],
+      present: false,
+    },
+    {
+      name: 'with all filter shows the output bar',
+      filters: ['all'],
+      present: true,
+    },
+  ])('output preview $name', ({ filters, present }) => {
+    const stripped = stripAnsi(
+      renderVerbosityPreview('output', FULL_DISPLAY, filters)
+    );
+    if (present) expect(stripped).toContain('│ On branch feature');
+    else expect(stripped).not.toContain('│ On branch feature');
   });
 
   test('top preview includes a richer fixture mix (write + grep + mcp + agent)', () => {

@@ -312,6 +312,27 @@ describe('renderSubagentFinalBlock', () => {
       contains: [],
       absent: ['response summary:', '┌─ error:'],
     },
+    {
+      // Fully-empty stages get no chip, but a later non-empty stage still
+      // renders — stage chips only appear in the responses section, so the
+      // whole-output absent check is equivalent to scoping it there.
+      name: 'skips stages with neither contextSummary nor taskResult',
+      stageSummaries: [
+        { stageName: 'a', contextSummary: '', taskResult: '' },
+        { stageName: 'b', contextSummary: '   ', taskResult: '   ' },
+        {
+          stageName: 'combine',
+          contextSummary: 'The only summary that matters.',
+          taskResult: '',
+        },
+      ],
+      contains: [
+        'response summary:',
+        '▸ combine',
+        'The only summary that matters.',
+      ],
+      absent: ['▸ a', '▸ b'],
+    },
   ])('$name', ({ stageSummaries, contains, absent }) => {
     const stripped = stripAnsi(
       renderSubagentFinalBlock(
@@ -324,34 +345,6 @@ describe('renderSubagentFinalBlock', () => {
     );
     for (const c of contains) expect(stripped).toContain(c);
     for (const a of absent ?? []) expect(stripped).not.toContain(a);
-  });
-
-  test('skips stages with neither contextSummary nor taskResult', () => {
-    const stageSummaries = [
-      { stageName: 'a', contextSummary: '', taskResult: '' },
-      { stageName: 'b', contextSummary: '   ', taskResult: '   ' },
-      {
-        stageName: 'combine',
-        contextSummary: 'The only summary that matters.',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      heavyResult,
-      'done',
-      1000,
-      stageSummaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('response summary:');
-    expect(stripped).toContain('▸ combine');
-    expect(stripped).toContain('The only summary that matters.');
-    // Fully-empty stages don't get their own chip.
-    const responsesStart = stripped.indexOf('response summary:');
-    const insideResponses = stripped.slice(responsesStart);
-    expect(insideResponses).not.toContain('▸ a');
-    expect(insideResponses).not.toContain('▸ b');
   });
 
   test('renders error state with FAILED tail and red-coloured body, even with stageSummaries', () => {
@@ -534,146 +527,139 @@ describe('renderSubagentFinalBlock verbose mode', () => {
     output: 'Pipeline done.',
   };
 
-  test('verbose: raw output section uses red ▸ chips with full taskResult', () => {
-    setVerboseConfig({ filters: ['subagent'] });
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: 'A is fine.',
-        taskResult:
-          'Long raw report from stage A.\n' +
-          Array.from({ length: 60 }, (_, i) => `raw-line-${i}`).join('\n'),
-      },
-      {
-        stageName: 'b',
-        contextSummary: 'B is fine.',
-        taskResult: 'Short raw from B.',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      1234,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    // raw output section rendered AT ALL
-    expect(stripped).toContain('full output:');
-    // chips for each stage in raw section
-    const rawIdx = stripped.indexOf('full output:');
-    const responsesIdx = stripped.indexOf('response summary:');
-    expect(rawIdx).toBeGreaterThanOrEqual(0);
-    expect(responsesIdx).toBeGreaterThan(rawIdx);
-    // Order: pipeline → raw output → responses (summary). The summary
-    // chip with the same stage name has to come AFTER its raw output
-    // counterpart so the digest is what the eye lands on last.
-    const rawSection = stripped.slice(rawIdx, responsesIdx);
-    expect(rawSection).toContain('▸ a');
-    expect(rawSection).toContain('▸ b');
-    // Full uncapped taskResult (60 lines) renders — no "+N more lines" cap.
-    expect(rawSection).toContain('raw-line-0');
-    expect(rawSection).toContain('raw-line-59');
-    expect(rawSection).not.toMatch(/\(\+\d+ more lines\)/);
-    // Responses section still has the digest.
-    const responsesSection = stripped.slice(responsesIdx);
-    expect(responsesSection).toContain('A is fine.');
-    expect(responsesSection).toContain('B is fine.');
-  });
+  // Raw "full output:" section is gated by the verbose filter list and only
+  // renders the (uncapped) taskResult of non-empty stages; the "response
+  // summary:" digest always renders. Order invariant: pipeline → raw output →
+  // responses, so the same-named summary chip lands last.
+  const HEAVY_RAW =
+    'Long raw report from stage A.\n' +
+    Array.from({ length: 60 }, (_, i) => `raw-line-${i}`).join('\n');
+  type SubResult = { status: string; output?: string; error?: string };
+  test.each<{
+    name: string;
+    filters: string[];
+    result?: SubResult;
+    status?: 'error' | 'cancelled' | 'running' | 'done';
+    summaries: {
+      stageName: string;
+      contextSummary: string;
+      taskResult: string;
+    }[];
+    contains?: string[];
+    absent?: string[];
+    rawContains?: string[];
+    rawAbsent?: string[];
+    responsesContains?: string[];
+    requireRawBeforeResponses?: boolean;
+    rawNoCap?: boolean;
+  }>([
+    {
+      name: 'raw output section uses red ▸ chips with full (uncapped) taskResult',
+      filters: ['subagent'],
+      summaries: [
+        { stageName: 'a', contextSummary: 'A is fine.', taskResult: HEAVY_RAW },
+        {
+          stageName: 'b',
+          contextSummary: 'B is fine.',
+          taskResult: 'Short raw from B.',
+        },
+      ],
+      contains: ['full output:'],
+      rawContains: ['▸ a', '▸ b', 'raw-line-0', 'raw-line-59'],
+      responsesContains: ['A is fine.', 'B is fine.'],
+      requireRawBeforeResponses: true,
+      rawNoCap: true,
+    },
+    {
+      name: 'filter not matching subagent: no raw output section',
+      filters: ['shell'],
+      summaries: [
+        {
+          stageName: 'a',
+          contextSummary: 'A is fine.',
+          taskResult: 'this should NOT appear',
+        },
+      ],
+      absent: ['full output:', 'this should NOT appear'],
+      contains: ['response summary:', 'A is fine.'],
+    },
+    {
+      name: 'verbose off: compact summary only (no raw section)',
+      filters: [],
+      summaries: [
+        {
+          stageName: 'a',
+          contextSummary: 'A digest',
+          taskResult: 'long raw body that must stay hidden',
+        },
+      ],
+      absent: ['full output:', 'long raw body that must stay hidden'],
+      contains: ['response summary:', 'A digest'],
+    },
+    {
+      name: 'stage with empty taskResult is skipped in raw section',
+      filters: ['subagent'],
+      summaries: [
+        { stageName: 'a', contextSummary: 'digest A', taskResult: '' },
+        { stageName: 'b', contextSummary: 'digest B', taskResult: 'has body' },
+      ],
+      rawAbsent: ['▸ a'],
+      rawContains: ['▸ b', 'has body'],
+      responsesContains: ['digest A', 'digest B'],
+    },
+    {
+      name: 'error path: raw output suppressed; error block still renders',
+      filters: ['subagent'],
+      result: { status: 'error', error: 'stage timeout' },
+      status: 'error',
+      summaries: [
+        { stageName: 'a', contextSummary: '', taskResult: 'should not appear' },
+      ],
+      absent: ['full output:', 'should not appear'],
+      contains: ['FAILED', 'stage timeout'],
+    },
+  ])(
+    'verbose: $name',
+    ({
+      filters,
+      result,
+      status,
+      summaries,
+      contains = [],
+      absent = [],
+      rawContains = [],
+      rawAbsent = [],
+      responsesContains = [],
+      requireRawBeforeResponses,
+      rawNoCap,
+    }) => {
+      setVerboseConfig({ filters });
+      const stripped = stripAnsi(
+        renderSubagentFinalBlock(
+          subagentContent,
+          result ?? heavyResult,
+          status ?? 'done',
+          1234,
+          summaries
+        )
+      );
+      for (const c of contains) expect(stripped).toContain(c);
+      for (const a of absent) expect(stripped).not.toContain(a);
 
-  test('verbose with filter not matching subagent: no raw output section', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: 'A is fine.',
-        taskResult: 'this should NOT appear',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).not.toContain('full output:');
-    expect(stripped).not.toContain('this should NOT appear');
-    // Summary block still renders unchanged.
-    expect(stripped).toContain('response summary:');
-    expect(stripped).toContain('A is fine.');
-  });
-
-  test('verbose off: behaves identically to non-verbose (compact summary only)', () => {
-    setVerboseConfig({ filters: [] });
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: 'A digest',
-        taskResult: 'long raw body that must stay hidden',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      500,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).not.toContain('full output:');
-    expect(stripped).not.toContain('long raw body that must stay hidden');
-    expect(stripped).toContain('response summary:');
-    expect(stripped).toContain('A digest');
-  });
-
-  test('verbose: stage with empty taskResult is skipped in raw section', () => {
-    setVerboseConfig({ filters: ['subagent'] });
-    const summaries = [
-      { stageName: 'a', contextSummary: 'digest A', taskResult: '' },
-      { stageName: 'b', contextSummary: 'digest B', taskResult: 'has body' },
-    ];
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      500,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    const rawIdx = stripped.indexOf('full output:');
-    const responsesIdx = stripped.indexOf('response summary:');
-    const rawSection = stripped.slice(rawIdx, responsesIdx);
-    // Only b appears in raw section.
-    expect(rawSection).not.toContain('▸ a');
-    expect(rawSection).toContain('▸ b');
-    expect(rawSection).toContain('has body');
-    // Both still in summary.
-    const responsesSection = stripped.slice(responsesIdx);
-    expect(responsesSection).toContain('digest A');
-    expect(responsesSection).toContain('digest B');
-  });
-
-  test('verbose error path: raw output suppressed; error block still renders', () => {
-    setVerboseConfig({ filters: ['subagent'] });
-    const errResult = { status: 'error', error: 'stage timeout' };
-    const summaries = [
-      { stageName: 'a', contextSummary: '', taskResult: 'should not appear' },
-    ];
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      errResult,
-      'error',
-      undefined,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).not.toContain('full output:');
-    expect(stripped).not.toContain('should not appear');
-    expect(stripped).toContain('FAILED');
-    expect(stripped).toContain('stage timeout');
-  });
+      const rawIdx = stripped.indexOf('full output:');
+      const responsesIdx = stripped.indexOf('response summary:');
+      if (requireRawBeforeResponses) {
+        expect(rawIdx).toBeGreaterThanOrEqual(0);
+        expect(responsesIdx).toBeGreaterThan(rawIdx);
+      }
+      const rawSection = stripped.slice(rawIdx, responsesIdx);
+      for (const c of rawContains) expect(rawSection).toContain(c);
+      for (const a of rawAbsent) expect(rawSection).not.toContain(a);
+      if (rawNoCap) expect(rawSection).not.toMatch(/\(\+\d+ more lines\)/);
+      const responsesSection = stripped.slice(responsesIdx);
+      for (const c of responsesContains) expect(responsesSection).toContain(c);
+    }
+  );
 });
 
 // Markdown rendering for subagent outputs is the same pipeline used by the
