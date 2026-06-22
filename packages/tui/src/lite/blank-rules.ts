@@ -1,4 +1,3 @@
-/** Blank-line rule between adjacent lite rows, role-keyed. */
 export type BlankRuleRole = 'user' | 'model' | 'tool_use' | 'system';
 
 export function needsLeadingBlankByRole(

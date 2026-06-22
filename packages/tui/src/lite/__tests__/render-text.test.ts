@@ -1,38 +1,27 @@
-import { describe, test, expect, beforeAll, afterAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import chalk from 'chalk';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { renderAgentMessage } from '../render.js';
 import stripAnsi from 'strip-ansi';
 
-// Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
-// real ~/.kiro/settings/lite_verbose.json. The directory is removed
-// after the suite finishes.
-let tmpHome: string | undefined;
-let originalKiroHome: string | undefined;
-beforeAll(() => {
-  originalKiroHome = process.env.KIRO_HOME;
-  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
-  process.env.KIRO_HOME = tmpHome;
-});
-afterAll(() => {
-  if (originalKiroHome === undefined) {
-    delete process.env.KIRO_HOME;
-  } else {
-    process.env.KIRO_HOME = originalKiroHome;
-  }
-  if (tmpHome) {
-    try {
-      rmSync(tmpHome, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  }
-});
-
 // Force chalk colors for consistent test output
 chalk.level = 3;
+
+// Asserts the regression we fixed: no lone (unpaired) UTF-16 surrogate leaks
+// through a wrap boundary, which would render as a garbled replacement char.
+function assertNoLoneSurrogates(s: string): void {
+  for (let k = 0; k < s.length; k++) {
+    const code = s.charCodeAt(k);
+    const isHigh = code >= 0xd800 && code <= 0xdbff;
+    const isLow = code >= 0xdc00 && code <= 0xdfff;
+    if (isHigh) {
+      const next = s.charCodeAt(k + 1);
+      expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
+      k++; // skip the low surrogate we just validated
+    } else if (isLow) {
+      throw new Error(`lone low surrogate at index ${k}`);
+    }
+  }
+}
 
 // Surrogate-pair-aware wrap: emoji at U+1F000+ are two UTF-16 code units, but
 // must stay paired across wrap boundaries. The previous code-unit iteration in
@@ -50,21 +39,7 @@ describe('astral-codepoint wrap safety', () => {
     const out = renderAgentMessage(line, undefined, undefined, 14);
     const stripped = stripAnsi(out);
     // Each emoji must appear intact — never as a lone surrogate.
-    // A lone high surrogate in JS toString is U+D83C (which is "\uD83C"),
-    // but stripAnsi keeps it; assert no lone surrogates leak through.
-    for (let k = 0; k < stripped.length; k++) {
-      const code = stripped.charCodeAt(k);
-      const isHigh = code >= 0xd800 && code <= 0xdbff;
-      const isLow = code >= 0xdc00 && code <= 0xdfff;
-      if (isHigh) {
-        const next = stripped.charCodeAt(k + 1);
-        expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
-        k++; // skip the low surrogate we just validated
-      } else if (isLow) {
-        // a low surrogate without a preceding high is the bug we fixed
-        throw new Error(`lone low surrogate at index ${k}`);
-      }
-    }
+    assertNoLoneSurrogates(stripped);
     // And every row in the output must start with an emoji boundary, never
     // mid-codepoint. Splitting on '\n' and re-checking the first char.
     for (const row of stripped.split('\n')) {
@@ -96,18 +71,7 @@ describe('astral-codepoint wrap safety', () => {
     const out = renderAgentMessage(md, undefined, undefined, 30);
     const stripped = stripAnsi(out);
     // No lone surrogate in the output.
-    for (let k = 0; k < stripped.length; k++) {
-      const code = stripped.charCodeAt(k);
-      const isLow = code >= 0xdc00 && code <= 0xdfff;
-      const isHigh = code >= 0xd800 && code <= 0xdbff;
-      if (isHigh) {
-        const next = stripped.charCodeAt(k + 1);
-        expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
-        k++;
-      } else if (isLow) {
-        throw new Error(`lone low surrogate in fenced output at index ${k}`);
-      }
-    }
+    assertNoLoneSurrogates(stripped);
     // All 40 emoji survive the wrap.
     const matches = stripped.match(/\p{Extended_Pictographic}/gu) ?? [];
     expect(matches.length).toBe(40);

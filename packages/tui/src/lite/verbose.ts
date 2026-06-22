@@ -51,23 +51,17 @@ export interface VerboseDisplayConfig {
   toolArgsMode: ToolArgsMode;
   showElapsed: boolean;
   subagent: SubagentDisplayConfig;
-  /** Model's freeform pre-response thinking (live + persisted). Distinct from
-   *  showToolReasoning (per-tool-call why). Unified with the modern TUI's
-   *  chat.showThinking — see CLI.JSON CONTRACT below. */
+  /** Distinct from showToolReasoning (per-tool why); unified with the modern
+   *  TUI's chat.showThinking — see CLI.JSON CONTRACT below. */
   showThinkingContent: boolean;
-  /** Suppress only the write diff body (header still renders so the write is
-   *  evidenced); errors still surface. */
+  /** Suppress only the write diff body; the header still evidences the write. */
   showWriteDiffs: boolean;
-  /** Whether the lite task tray renders (independent of the per-tool filters). */
   showTasks: boolean;
-  /** Max visual rows in the block-args tree; null = unbounded. Append-only:
-   *  caps apply on first render only (Static-owned scrollback never reflows). */
+  /** null = unbounded. Append-only: caps apply on first render only
+   *  (Static-owned scrollback never reflows). Same for the other *Max* fields. */
   argsMaxLines: number | null;
-  /** Max visual rows in the output `│` bar; null = unbounded (append-only). */
   outputMaxLines: number | null;
-  /** Max chars per args value (chip + block tree) before `…`; null = unbounded. */
   argsMaxChars: number | null;
-  /** Max chars per output-bar row before `…`; null = unbounded. */
   outputMaxChars: number | null;
 }
 

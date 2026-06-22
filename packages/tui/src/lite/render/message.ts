@@ -100,13 +100,12 @@ export interface MessageLike {
 }
 
 export interface SubagentStageSummary {
-  /** Stage name (matches the stage's agentName / session name). */
   stageName: string;
   /** Compressed digest from the stage's `summary` tool call, harvested off
    *  the inner message (the agent_crew joiner discards it before the parent's
    *  combined output). May be empty — render falls back to taskResult. */
   contextSummary: string;
-  /** Long-form result body; fallback when contextSummary is empty. */
+  /** Fallback when contextSummary is empty. */
   taskResult: string;
 }
 

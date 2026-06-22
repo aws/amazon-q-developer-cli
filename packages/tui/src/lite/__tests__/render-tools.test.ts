@@ -1,18 +1,7 @@
 import './setup-chalk-level.js';
 
-import {
-  describe,
-  test,
-  it,
-  expect,
-  beforeEach,
-  beforeAll,
-  afterAll,
-} from 'vitest';
+import { describe, test, it, expect, beforeEach, afterAll } from 'vitest';
 import chalk from 'chalk';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import {
   renderToolCall,
   renderMessageToText,
@@ -26,54 +15,20 @@ import {
   type VerboseDisplayConfig,
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
+import { useTempKiroHome } from './temp-kiro-home.js';
 
-// Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
-// real ~/.kiro/settings/lite_verbose.json. The directory is removed
-// after the suite finishes.
-let tmpHome: string | undefined;
-let originalKiroHome: string | undefined;
-beforeAll(() => {
-  originalKiroHome = process.env.KIRO_HOME;
-  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
-  process.env.KIRO_HOME = tmpHome;
-});
-afterAll(() => {
-  if (originalKiroHome === undefined) {
-    delete process.env.KIRO_HOME;
-  } else {
-    process.env.KIRO_HOME = originalKiroHome;
-  }
-  if (tmpHome) {
-    try {
-      rmSync(tmpHome, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  }
-});
+useTempKiroHome();
 
-// Restore the all-flags-on / default-cap display so a suite that mutated the
-// global verbose config doesn't leak into the next file's expectations.
+// Restore the all-flags-on display (unbounded output, 80-char arg cap) so a
+// suite that mutated the global verbose config doesn't leak into the next file.
 function restoreFullDefaults() {
   setVerboseConfig({
     filters: [],
     display: {
-      showToolReasoning: true,
-      toolArgsMode: 'block',
-      showElapsed: true,
-      subagent: {
-        pipeline: true,
-        prompts: true,
-        roles: true,
-        deps: true,
-        responses: true,
-      },
-      showThinkingContent: true,
-      showTasks: true,
-      argsMaxLines: null,
+      ...DEFAULT_DISPLAY,
+      subagent: { ...DEFAULT_DISPLAY.subagent },
       outputMaxLines: null,
       argsMaxChars: 80,
-      outputMaxChars: null,
     },
   });
   resetVerboseCache();
@@ -1066,23 +1021,10 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   // argsMaxChars=80, every other cap unbounded) and patch only the cap(s)
   // under test, so each row reads as "this cap, this expectation".
   const BASE_DISPLAY: VerboseDisplayConfig = {
-    showToolReasoning: true,
-    toolArgsMode: 'block',
-    showElapsed: true,
-    subagent: {
-      pipeline: true,
-      prompts: true,
-      roles: true,
-      deps: true,
-      responses: true,
-    },
-    showThinkingContent: true,
-    showWriteDiffs: true,
-    showTasks: true,
-    argsMaxLines: null,
+    ...DEFAULT_DISPLAY,
+    subagent: { ...DEFAULT_DISPLAY.subagent },
     outputMaxLines: null,
     argsMaxChars: 80,
-    outputMaxChars: null,
   };
   const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
     setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
@@ -1688,22 +1630,10 @@ describe('pretty-printed tool output (json envelopes)', () => {
   test('outputMaxLines applies to the json tree the same way it does to text', () => {
     setVerboseConfig({
       display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
+        ...DEFAULT_DISPLAY,
+        subagent: { ...DEFAULT_DISPLAY.subagent },
         outputMaxLines: 3,
         argsMaxChars: 80,
-        outputMaxChars: null,
       },
     });
     // 10 top-level keys → 10 rows pre-cap. Cap at 3 should drop 7.
@@ -1803,23 +1733,10 @@ describe('display.toolArgsMode rendering', () => {
   });
 
   const BASE_DISPLAY: VerboseDisplayConfig = {
-    showToolReasoning: true,
-    toolArgsMode: 'block',
-    showElapsed: true,
-    subagent: {
-      pipeline: true,
-      prompts: true,
-      roles: true,
-      deps: true,
-      responses: true,
-    },
-    showThinkingContent: true,
-    showWriteDiffs: true,
-    showTasks: true,
-    argsMaxLines: null,
+    ...DEFAULT_DISPLAY,
+    subagent: { ...DEFAULT_DISPLAY.subagent },
     outputMaxLines: null,
     argsMaxChars: 80,
-    outputMaxChars: null,
   };
   const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
     setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
@@ -1891,22 +1808,13 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
     resetVerboseCache();
     setVerboseConfig({
       display: {
+        ...DEFAULT_DISPLAY,
+        subagent: { ...DEFAULT_DISPLAY.subagent },
         showToolReasoning: false,
         toolArgsMode: 'inline',
         showElapsed: false,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
         outputMaxLines: null,
         argsMaxChars: 200,
-        outputMaxChars: null,
       },
     });
   });

@@ -1,15 +1,5 @@
-import {
-  describe,
-  test,
-  expect,
-  beforeEach,
-  beforeAll,
-  afterAll,
-} from 'vitest';
+import { describe, test, expect, beforeEach, afterAll } from 'vitest';
 import chalk from 'chalk';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import {
   formatSubagentApprovalLines,
   renderSubagentFinalBlock,
@@ -21,31 +11,9 @@ import {
   DENSITY_DISPLAY,
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
+import { useTempKiroHome } from './temp-kiro-home.js';
 
-// Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
-// real ~/.kiro/settings/lite_verbose.json. The directory is removed
-// after the suite finishes.
-let tmpHome: string | undefined;
-let originalKiroHome: string | undefined;
-beforeAll(() => {
-  originalKiroHome = process.env.KIRO_HOME;
-  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
-  process.env.KIRO_HOME = tmpHome;
-});
-afterAll(() => {
-  if (originalKiroHome === undefined) {
-    delete process.env.KIRO_HOME;
-  } else {
-    process.env.KIRO_HOME = originalKiroHome;
-  }
-  if (tmpHome) {
-    try {
-      rmSync(tmpHome, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  }
-});
+useTempKiroHome();
 
 // Force chalk colors for consistent test output
 chalk.level = 3;
@@ -502,7 +470,34 @@ describe('display.subagent section toggles', () => {
   ];
   const heavyResult = { status: 'success', output: 'Pipeline done.' };
 
-  test('pipeline toggle off hides the entire pipeline tree', () => {
+  // Each case flips one or two subagent section toggles off and asserts what
+  // disappears (absent) while the rest stays (contains). All sections start on.
+  test.each([
+    [
+      'pipeline off hides the entire pipeline tree',
+      { pipeline: false },
+      ['response summary:', 'A digest body.'],
+      ['pipeline:', '[a]'],
+    ],
+    [
+      'prompts off hides per-stage prompt body but keeps the stage chips',
+      { prompts: false },
+      ['pipeline:', '[a]', '[b]'],
+      ['Look at file A.', 'Look at file B.'],
+    ],
+    [
+      'roles + deps off strip the role chip and ← deps annotations',
+      { roles: false, deps: false },
+      ['[a]'],
+      ['(minimal)', '← a'],
+    ],
+    [
+      'responses off suppresses the entire digest section',
+      { responses: false },
+      ['pipeline:'],
+      ['response summary:', 'A digest body.', 'B digest body.'],
+    ],
+  ] as const)('%s', (_name, subagentToggles, contains, absent) => {
     const block = renderSubagentFinalBlock(
       subagentContent,
       heavyResult,
@@ -511,139 +506,16 @@ describe('display.subagent section toggles', () => {
       summaries,
       {
         display: {
-          showToolReasoning: true,
-          toolArgsMode: 'block',
-          showElapsed: true,
-          showThinkingContent: true,
-          showTasks: true,
-          argsMaxLines: null,
+          ...DEFAULT_DISPLAY,
+          subagent: { ...DEFAULT_DISPLAY.subagent, ...subagentToggles },
           outputMaxLines: null,
           argsMaxChars: 80,
-          outputMaxChars: null,
-          showWriteDiffs: true,
-          subagent: {
-            pipeline: false,
-            prompts: true,
-            roles: true,
-            deps: true,
-            responses: true,
-          },
         },
       }
     );
     const stripped = stripAnsi(block);
-    expect(stripped).not.toContain('pipeline:');
-    expect(stripped).not.toContain('[a]');
-    expect(stripped).toContain('response summary:');
-    expect(stripped).toContain('A digest body.');
-  });
-
-  test('prompts toggle off hides per-stage prompt body but keeps the stage chips', () => {
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      1000,
-      summaries,
-      {
-        display: {
-          showToolReasoning: true,
-          toolArgsMode: 'block',
-          showElapsed: true,
-          showThinkingContent: true,
-          showTasks: true,
-          argsMaxLines: null,
-          outputMaxLines: null,
-          argsMaxChars: 80,
-          outputMaxChars: null,
-          showWriteDiffs: true,
-          subagent: {
-            pipeline: true,
-            prompts: false,
-            roles: true,
-            deps: true,
-            responses: true,
-          },
-        },
-      }
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('pipeline:');
-    expect(stripped).toContain('[a]');
-    expect(stripped).toContain('[b]');
-    expect(stripped).not.toContain('Look at file A.');
-    expect(stripped).not.toContain('Look at file B.');
-  });
-
-  test('roles + deps toggles strip the role chip and ← deps annotations', () => {
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      1000,
-      summaries,
-      {
-        display: {
-          showToolReasoning: true,
-          toolArgsMode: 'block',
-          showElapsed: true,
-          showThinkingContent: true,
-          showTasks: true,
-          argsMaxLines: null,
-          outputMaxLines: null,
-          argsMaxChars: 80,
-          outputMaxChars: null,
-          showWriteDiffs: true,
-          subagent: {
-            pipeline: true,
-            prompts: true,
-            roles: false,
-            deps: false,
-            responses: true,
-          },
-        },
-      }
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('[a]');
-    expect(stripped).not.toContain('(minimal)');
-    expect(stripped).not.toContain('← a');
-  });
-
-  test('responses toggle off suppresses the entire digest section', () => {
-    const block = renderSubagentFinalBlock(
-      subagentContent,
-      heavyResult,
-      'done',
-      1000,
-      summaries,
-      {
-        display: {
-          showToolReasoning: true,
-          toolArgsMode: 'block',
-          showElapsed: true,
-          showThinkingContent: true,
-          showTasks: true,
-          argsMaxLines: null,
-          outputMaxLines: null,
-          argsMaxChars: 80,
-          outputMaxChars: null,
-          showWriteDiffs: true,
-          subagent: {
-            pipeline: true,
-            prompts: true,
-            roles: true,
-            deps: true,
-            responses: false,
-          },
-        },
-      }
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('pipeline:');
-    expect(stripped).not.toContain('response summary:');
-    expect(stripped).not.toContain('A digest body.');
-    expect(stripped).not.toContain('B digest body.');
+    for (const c of contains) expect(stripped).toContain(c);
+    for (const a of absent) expect(stripped).not.toContain(a);
   });
 });
 
@@ -839,100 +711,57 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
   });
   const okResult = { status: 'success', output: 'irrelevant' };
 
-  test('contextSummary: heading markdown rendered (`#` stripped)', () => {
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: '# Findings\n\nFirst line.',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
+  const renderStageBody = (
+    contextSummary: string,
+    taskResult: string
+  ): string =>
+    stripAnsi(
+      renderSubagentFinalBlock(baseContent, okResult, 'done', 1000, [
+        { stageName: 'a', contextSummary, taskResult },
+      ])
     );
-    const stripped = stripAnsi(block);
-    // Heading text remains; `#` marker is stripped by the markdown renderer.
-    expect(stripped).toContain('Findings');
-    expect(stripped).not.toContain('# Findings');
-    expect(stripped).toContain('First line.');
+
+  // Stage body text (contextSummary, or taskResult when contextSummary is
+  // empty) renders through the same markdown pipeline as agent prose: markers
+  // stripped, body preserved.
+  test.each([
+    [
+      'contextSummary heading (`#` stripped)',
+      '# Findings\n\nFirst line.',
+      '',
+      ['Findings', 'First line.'],
+      ['# Findings'],
+    ],
+    [
+      'contextSummary bold/italic/code markers stripped',
+      '**bold** and *italic* and `code`.',
+      '',
+      ['bold', 'italic', 'code'],
+      ['**bold**', '*italic*', '`code`'],
+    ],
+    [
+      'taskResult fallback when contextSummary empty',
+      '',
+      '## Result\n\n- one\n- two',
+      ['Result', '- one', '- two'],
+      ['## Result'],
+    ],
+  ] as const)('%s', (_name, contextSummary, taskResult, contains, absent) => {
+    const stripped = renderStageBody(contextSummary, taskResult);
+    for (const c of contains) expect(stripped).toContain(c);
+    for (const a of absent) expect(stripped).not.toContain(a);
   });
 
   test('contextSummary: list markers rendered through markdown list pipeline', () => {
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: '- alpha\n- beta\n- gamma',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    // Markdown list pipeline preserves the `-` glyph as the bullet but
-    // packs items with no blank-line separators (vs. plain split which
-    // emits each line independently). Adjacent items should appear on
-    // consecutive output lines.
+    const stripped = renderStageBody('- alpha\n- beta\n- gamma', '');
+    // The markdown list pipeline packs items with no blank-line separators
+    // (vs. plain split which emits each line independently), so adjacent items
+    // land on consecutive output lines.
     expect(stripped).toContain('- alpha');
     expect(stripped).toContain('- beta');
     expect(stripped).toContain('- gamma');
-    const stageStart = stripped.indexOf('▸ a');
-    const stageBody = stripped.slice(stageStart);
+    const stageBody = stripped.slice(stripped.indexOf('▸ a'));
     expect(stageBody).toMatch(/- alpha\s*\n\s*- beta/);
-  });
-
-  test('contextSummary: bold/italic markers stripped', () => {
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: '**bold** and *italic* and `code`.',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('bold');
-    expect(stripped).toContain('italic');
-    expect(stripped).toContain('code');
-    expect(stripped).not.toContain('**bold**');
-    expect(stripped).not.toContain('*italic*');
-    expect(stripped).not.toContain('`code`');
-  });
-
-  test('taskResult fallback: markdown rendered when contextSummary empty', () => {
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: '',
-        taskResult: '## Result\n\n- one\n- two',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
-    expect(stripped).toContain('Result');
-    expect(stripped).not.toContain('## Result');
-    expect(stripped).toContain('- one');
-    expect(stripped).toContain('- two');
   });
 
   test('verbose full output: markdown rendered for taskResult', () => {

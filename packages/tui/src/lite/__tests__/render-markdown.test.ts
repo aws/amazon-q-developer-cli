@@ -1,10 +1,7 @@
 import './setup-chalk-level.js';
 
-import { describe, test, expect, beforeAll, afterAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import chalk from 'chalk';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import {
   renderUserMessage,
   renderAgentMessage,
@@ -16,31 +13,9 @@ import {
   type RenderTheme,
 } from '../render.js';
 import stripAnsi from 'strip-ansi';
+import { useTempKiroHome } from './temp-kiro-home.js';
 
-// Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
-// real ~/.kiro/settings/lite_verbose.json. The directory is removed
-// after the suite finishes.
-let tmpHome: string | undefined;
-let originalKiroHome: string | undefined;
-beforeAll(() => {
-  originalKiroHome = process.env.KIRO_HOME;
-  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
-  process.env.KIRO_HOME = tmpHome;
-});
-afterAll(() => {
-  if (originalKiroHome === undefined) {
-    delete process.env.KIRO_HOME;
-  } else {
-    process.env.KIRO_HOME = originalKiroHome;
-  }
-  if (tmpHome) {
-    try {
-      rmSync(tmpHome, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  }
-});
+useTempKiroHome();
 
 describe('renderUserMessage', () => {
   test('single line with You: tag', () => {

@@ -184,8 +184,6 @@ export interface CommandContext {
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */
   resetMessages: () => void;
-  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
-  markMessagesFromHistory: (fromIndex: number) => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
   /** Lite-only: signal LiteLayout to wipe scrollback + render cache.
@@ -200,7 +198,7 @@ export interface CommandContext {
   ) => Promise<void>;
   /** Create a stream event handler for processing agent events into messages.
    *  Lite passes `{ fromHistory: true }` when replaying a resumed session so
-   *  the handler renders cheaply (see session-load / markMessagesFromHistory). */
+   *  the handler renders cheaply. */
   createStreamEventHandler: (options?: {
     fromHistory?: boolean;
   }) => StreamEventHandler;

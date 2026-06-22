@@ -1,85 +1,40 @@
 import chalk from 'chalk';
 import { UNICODE_GLYPHS, type Glyphs } from '../../utils/glyphs.js';
 
-/**
- * Resolve the glyph set for this render. ASCII mode (env `KIRO_ASCII_MODE=1`
- * or `chat.allowAsciiArt=false`) flips every box-drawing / decorative char
- * in lite scrollback to its ASCII fallback. Callers thread the active set
- * through {@link RenderContext.glyphs} (set in LiteLayout from
- * `useGlyphs()`); pure-context callers (tests, sub-renderers without a
- * ctx) get UNICODE_GLYPHS so existing snapshot/assertion shape is preserved
- * without per-test wiring.
- */
 export function resolveGlyphs(g?: Glyphs): Glyphs {
   return g ?? UNICODE_GLYPHS;
 }
 
-/** AWS-style exception name patterns. Matched only when followed by a
- *  colon-shaped error frame, never as bare prose mentions. The previous
- *  loose match re-styled an entire agent message as a system error any
- *  time it discussed `AccessDeniedException` / `ThrottlingException` /
- *  etc., which is a normal thing for the agent to do when explaining what
- *  could go wrong. We now require the exception name to lead a line and
- *  be followed by `:` plus authoritative-error context — i.e., the form
- *  AWS clients actually surface. */
+// Must be frame-shaped (exception name leading a line, followed by `:`), not a
+// bare prose mention — else an agent message explaining `AccessDeniedException`
+// would be re-styled wholesale as a system error.
 const ERROR_FRAME_RE =
   /(^|\n)\s*(?:ValidationException|ThrottlingException|ServiceException|AccessDeniedException|ResourceNotFoundException|InternalServerException)\s*:/;
 
-/** Detect AWS-style exceptions surfaced as model speech so we can re-render
- *  them as system errors. Only fires on actual error frames (`Name: ...`
- *  at the start of a line), not on prose that merely mentions an exception
- *  name in passing. */
 export function isErrorContent(text: string): boolean {
   return ERROR_FRAME_RE.test(text);
 }
 
-/**
- * Default chalk wrappers used when no theme is provided to the renderer
- * (e.g. unit tests, storybook). Mirror the kiroDark base theme so behavior
- * doesn't visibly change for callers that haven't been wired up yet.
- *
- * When a theme IS available, callers pass {@link RenderContext.theme} and the
- * renderer reads `theme.brand` / `theme.responseChip` / `theme.userTag` from
- * there instead. This is how /theme bundled:dark|light actually changes the
- * colors of agent text, "You:" tag, and subagent response chips in lite mode.
- */
+// Default chalk wrappers for callers that don't thread a theme (tests, pure
+// contexts); mirror the kiroDark base theme. When a theme IS available, callers
+// pass RenderContext.theme and the renderer reads from there instead.
 export const brand = chalk.hex('#C19AFF');
 export const responseChip = chalk.hex('#FF8FB1');
 export const DEFAULT_USER_TAG = chalk.bold.cyan;
-/**
- * Tool-output body tint — soft sage-green that reads as "successful
- * result" without being a loud accent. Errors render in red (loud,
- * demand attention); success output in this subtle green keeps the
- * "result" semantic without annoying the eye. Sits at ~75% luminance
- * with low saturation so it differentiates from neutral white agent
- * prose / args values, but doesn't compete with them for attention.
- *
- * Bar glyph stays dim (neutral chrome) so the green is the load-bearing
- * color of the block; the `│` margin is still in the same family as
- * other dim structural glyphs (table borders, blockquote bars, etc.).
- */
+// Tool-output body tint — soft sage-green reads as "successful result" without
+// competing with neutral prose; errors stay loud red.
 export const softSuccessOutput = chalk.hex('#a3c0a3');
 
-/**
- * Per-render theme accessors. Passed via {@link RenderContext.theme} so the
- * renderer stays pure (no React/store imports) while visuals follow the active
- * theme. Each field is a chalk-like `(s) => string` (fg unless noted as a bg
- * tint), and every one falls back to a legacy hardcoded color when the theme
- * is unavailable so pure-context callers / snapshots stay green.
- */
+// Per-render theme accessors, passed via RenderContext.theme so the renderer
+// stays pure. Each field is a chalk-like `(s) => string`; every one falls back
+// to a legacy hardcoded color when the theme is unavailable.
 export interface RenderTheme {
   brand: (s: string) => string;
   responseChip: (s: string) => string;
   userTag: (s: string) => string;
-  /** User message body: prompt text + (optional) bg, mirroring standard
-   *  mode's `<Box backgroundColor>`. Skipped on the bare role tag. */
   userBody: (s: string) => string;
-  /** Inline code span. The `seg.quote` flag that selects this is set on
-   *  `codespan` tokens by the marked parser — historical naming, not a
-   *  blockquote tie-in (modern TUI's MarkdownRenderer matches). */
   inlineCode: (s: string) => string;
   link: (s: string) => string;
-  /** Dim `(url)` trailer after a link whose text differs from the URL. */
   secondary: (s: string) => string;
   diffAddedBg: (s: string) => string;
   diffRemovedBg: (s: string) => string;
@@ -87,12 +42,8 @@ export interface RenderTheme {
   diffRemovedBar: (s: string) => string;
 }
 
-/**
- * Fallback theme for tests / pure-context callers that don't thread a theme.
- * Mirrors the prior hardcoded chalk colors so snapshots stay green. The diff
- * bgHex values must match diff.ts's ADDED_BG_OPEN / REMOVED_BG_OPEN constants
- * exactly (applyBg re-asserts those SGRs across cli-highlight resets).
- */
+// The diff bgHex values must match diff.ts's ADDED_BG_OPEN / REMOVED_BG_OPEN
+// constants exactly (applyBg re-asserts those SGRs across cli-highlight resets).
 const DEFAULT_RENDER_THEME: RenderTheme = {
   brand,
   responseChip,
@@ -111,13 +62,8 @@ export function resolveTheme(t?: RenderTheme): RenderTheme {
   return t ?? DEFAULT_RENDER_THEME;
 }
 
-/**
- * Build a {@link RenderTheme} from a theme's `getColor` accessor and the
- * user's prompt-tag color. Cheap; LiteLayout calls this per render, but the
- * resulting object is stable as long as the inputs are. Each token falls
- * back to the previous hardcoded color when the resolver throws — keeps the
- * lite render functional even if a custom theme misses a slot.
- */
+// Each token falls back to a hardcoded color when the resolver throws — keeps
+// lite render functional even if a custom theme misses a slot.
 export function buildRenderTheme(
   getColor: (path: string) => any,
   getUserPromptColor?: () => any,
@@ -136,17 +82,10 @@ export function buildRenderTheme(
       return fallback;
     }
   };
-  // Bg-mode chalk lookup. The theme's `getColor` accessor builds an
-  // FG-mode chalk wrapper by default (mode='fg' inside
-  // `getTerminalChalkColor`), so `safeChalk('diff.added.background', …)`
-  // would paint the BG color as the FOREGROUND — we need a real bg
-  // wrapper for the diff body tint. Read the resolved hex off the
-  // wrapper's `.hex` property and rebuild as a bg-mode chalk. The
-  // 256-color sentinel `ansi256(N)` (returned for `has256 && !has16m`
-  // terminals) gets routed through `chalk.bgAnsi256` to preserve the
-  // original color-table index — going through `bgHex` would
-  // double-convert through hex approximation and lose precision on
-  // older terminals.
+  // getColor builds an FG-mode wrapper, so for diff bg tints we read its
+  // resolved hex and rebuild as bg-mode chalk. The ansi256(N) sentinel (256-
+  // color terminals) routes through bgAnsi256 to preserve the color-table
+  // index — bgHex would double-convert through hex and lose precision.
   const safeBgChalk = (
     path: string,
     fallback: (s: string) => string

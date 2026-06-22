@@ -367,42 +367,33 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
     expect(DEFAULT_DISPLAY.outputMaxLines).toBe(5);
   });
 
-  test('density "minimal" caps output at 5 lines', () => {
-    expect(DENSITY_DISPLAY.minimal.outputMaxLines).toBe(5);
+  test.each([
+    ['minimal', 5],
+    ['lean', 10],
+    ['default', 5],
+  ] as const)('density "%s" caps output at %i lines', (preset, cap) => {
+    expect(DENSITY_DISPLAY[preset].outputMaxLines).toBe(cap);
   });
 
-  test('density "lean" caps output at 10 lines', () => {
-    expect(DENSITY_DISPLAY.lean.outputMaxLines).toBe(10);
-  });
-
-  test('density "default" inherits the 5-line output cap from DEFAULT_DISPLAY', () => {
+  test('density "default" leaves argsMaxLines unbounded', () => {
     expect(DENSITY_DISPLAY.default.argsMaxLines).toBeNull();
-    expect(DENSITY_DISPLAY.default.outputMaxLines).toBe(5);
   });
 
-  test('applyDensityPreset(minimal) sets outputMaxLines=5 and clears filters', () => {
-    applyDensityPreset('minimal');
-    expect(getVerboseConfig().display!.outputMaxLines).toBe(5);
-    // Density now resets filters to the preset's filter shape — minimal
-    // uses [], same as default. Picking a preset is a clean reset, not a
-    // partial display patch.
-    expect(getVerboseConfig().filters).toEqual([]);
-  });
-
-  test('applyDensityPreset(full) writes filters: ["all"]', () => {
-    applyDensityPreset('full');
-    // Full is the only preset whose filter shape is `['all']`.
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  test('applyDensityPreset(default) resets to the shell-only filter list', () => {
-    setVerboseConfig({ filters: ['shell', 'mcp'] });
-    applyDensityPreset('default');
-    // Default density is the canonical fresh-install shape: shell stdout
-    // streams, no other tool output. Custom filter sets get replaced —
-    // picking a preset is a clean reset, not a merge.
-    expect(getVerboseConfig().filters).toEqual(['shell']);
-  });
+  // Picking a preset is a clean reset of filters to the preset's shape, not a
+  // partial patch — so a prior custom filter set ('shell','mcp') is replaced.
+  test.each([
+    ['minimal', [], 5],
+    ['full', ['all'], DENSITY_DISPLAY.full.outputMaxLines],
+    ['default', ['shell'], 5],
+  ] as const)(
+    'applyDensityPreset(%s) resets filters and output cap',
+    (preset, expectedFilters, expectedCap) => {
+      setVerboseConfig({ filters: ['shell', 'mcp'] });
+      applyDensityPreset(preset);
+      expect(getVerboseConfig().filters).toEqual([...expectedFilters]);
+      expect(getVerboseConfig().display!.outputMaxLines).toBe(expectedCap);
+    }
+  );
 
   test('mergeDisplay accepts positive integers and persists them', () => {
     setVerboseConfig({

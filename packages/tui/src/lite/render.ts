@@ -1,8 +1,3 @@
-/**
- * Re-export barrel for the lite render module.
- * Implementation split into render/*.ts submodules for maintainability.
- * Public API is unchanged — all 30 exports are re-exported here.
- */
 export type { RenderTheme } from './render/theme.js';
 export { isErrorContent, buildRenderTheme } from './render/theme.js';
 export { wrapAnsiLine, wrapAtWords } from './render/text.js';
