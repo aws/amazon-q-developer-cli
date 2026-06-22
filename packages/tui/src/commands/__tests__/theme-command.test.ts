@@ -225,7 +225,10 @@ describe('/theme command', () => {
     // setUserColors is called with (prompt, response, diff) slots; applying one
     // category fills ONLY its slot and leaves the others undefined. Each row
     // pins the affected slot's color, an unchanged-slot guard, the alert label,
-    // and the persisted pref. Covers prompt/response/diff in one table.
+    // and the persisted pref. Covers prompt/response/diff in one table. Rows
+    // with `seedOther` also pin independent persistence: a pre-saved pref in a
+    // DIFFERENT category must survive the write (toMatchObject(pref) includes
+    // the seed), so applying one slot never clobbers another's persisted value.
     it.each([
       {
         route: 'prompt:purple',
@@ -236,7 +239,8 @@ describe('/theme command', () => {
         },
         untouched: [1],
         labelMatch: 'Purple',
-        pref: { promptPreset: 'purple' },
+        seedOther: { responsePreset: 'dark' },
+        pref: { promptPreset: 'purple', responsePreset: 'dark' },
       },
       {
         route: 'response:light',
@@ -244,7 +248,8 @@ describe('/theme command', () => {
         check: (c: any) => expect(c.truecolor).toBe('#FFFFFF'),
         untouched: [0],
         labelMatch: 'Light',
-        pref: { responsePreset: 'light' },
+        seedOther: { promptPreset: 'forest' },
+        pref: { responsePreset: 'light', promptPreset: 'forest' },
       },
       {
         route: 'response:dark',
@@ -259,11 +264,25 @@ describe('/theme command', () => {
         check: (c: any) => expect(c.id).toBe('colorblind-dark'),
         untouched: [0, 1],
         labelMatch: 'Accessible',
-        pref: { diffPreset: 'colorblind-dark' },
+        seedOther: { promptPreset: 'ocean', responsePreset: 'dark' },
+        pref: {
+          diffPreset: 'colorblind-dark',
+          promptPreset: 'ocean',
+          responsePreset: 'dark',
+        },
       },
     ])(
-      'applies $route into its own slot and persists',
-      async ({ route, slot, check, untouched, labelMatch, pref }) => {
+      'applies $route into its own slot and persists (independent)',
+      async ({
+        route,
+        slot,
+        check,
+        untouched,
+        labelMatch,
+        seedOther,
+        pref,
+      }) => {
+        if (seedOther) saveUserThemePrefs(seedOther);
         const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
         await dispatch(themeCmd, route, ctx);
 
@@ -311,41 +330,6 @@ describe('/theme command', () => {
         await dispatch(themeCmd, `${category}:nonexistent`, ctx);
 
         expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
-      }
-    );
-  });
-
-  describe('independent persistence', () => {
-    // Applying one category preset persists it WITHOUT clobbering the others'
-    // pre-saved prefs. `seed` is the unrelated pref(s) that must survive.
-    it.each([
-      {
-        route: 'prompt:ocean',
-        seed: { responsePreset: 'dark' },
-        expected: { promptPreset: 'ocean', responsePreset: 'dark' },
-      },
-      {
-        route: 'response:light',
-        seed: { promptPreset: 'forest' },
-        expected: { promptPreset: 'forest', responsePreset: 'light' },
-      },
-      {
-        route: 'diff:colorblind-dark',
-        seed: { promptPreset: 'ocean', responsePreset: 'dark' },
-        expected: {
-          promptPreset: 'ocean',
-          responsePreset: 'dark',
-          diffPreset: 'colorblind-dark',
-        },
-      },
-    ])(
-      '$route persists without affecting other categories',
-      async ({ route, seed, expected }) => {
-        saveUserThemePrefs(seed);
-        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-        await dispatch(themeCmd, route, ctx);
-
-        expect(loadUserThemePrefs()).toMatchObject(expected);
       }
     );
   });
