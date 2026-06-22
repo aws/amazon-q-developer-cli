@@ -6,7 +6,11 @@ import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 import { renderVerbosityPreview } from '../../../lite/render.js';
-import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
+import {
+  getVerboseConfig,
+  getVerboseDisplay,
+  type VerboseDisplayConfig,
+} from '../../../lite/verbose.js';
 
 const MAX_CAP = 99999;
 
@@ -55,6 +59,50 @@ export type TruncationEditorField =
   | 'outputLines'
   | 'outputChars';
 
+// Narrowed to the numeric cap keys this editor edits, so indexing the display
+// config yields `number | null` rather than the full union of field types.
+type CapKey =
+  | 'argsMaxLines'
+  | 'argsMaxChars'
+  | 'outputMaxLines'
+  | 'outputMaxChars';
+
+/**
+ * Per-field topology: the saved-config cap key, the preview fixture, and the
+ * editor heading. Both args caps share the args fixture; both output caps
+ * share the output fixture. Single source so the value/display/heading
+ * derivations below don't each re-encode the field→key mapping by hand.
+ */
+const FIELD_META: Record<
+  TruncationEditorField,
+  {
+    configKey: CapKey;
+    previewKey: 'truncation:args' | 'truncation:output';
+    heading: string;
+  }
+> = {
+  argsLines: {
+    configKey: 'argsMaxLines',
+    previewKey: 'truncation:args',
+    heading: 'Tool args · lines',
+  },
+  argsChars: {
+    configKey: 'argsMaxChars',
+    previewKey: 'truncation:args',
+    heading: 'Tool args · chars per value',
+  },
+  outputLines: {
+    configKey: 'outputMaxLines',
+    previewKey: 'truncation:output',
+    heading: 'Tool output · lines',
+  },
+  outputChars: {
+    configKey: 'outputMaxChars',
+    previewKey: 'truncation:output',
+    heading: 'Tool output · chars per line',
+  },
+};
+
 export const VerbosityTruncationEditor: React.FC<{
   which: TruncationEditorField;
   onCommit: (value: number | null) => void;
@@ -64,19 +112,10 @@ export const VerbosityTruncationEditor: React.FC<{
   const dim = useMemo(() => getColor('secondary'), [getColor]);
 
   // Seed from saved config so the editor opens on the current value.
-  const initial = useMemo(() => {
-    const display = getVerboseDisplay();
-    switch (which) {
-      case 'argsLines':
-        return display.argsMaxLines;
-      case 'argsChars':
-        return display.argsMaxChars;
-      case 'outputLines':
-        return display.outputMaxLines;
-      case 'outputChars':
-        return display.outputMaxChars;
-    }
-  }, [which]);
+  const initial = useMemo(
+    () => getVerboseDisplay()[FIELD_META[which].configKey],
+    [which]
+  );
 
   const [value, setValue] = useState<number | null>(initial);
   // True once the user has typed a digit since open/last-arrow. Controls
@@ -171,45 +210,23 @@ export const VerbosityTruncationEditor: React.FC<{
   // Build the live preview using the in-progress draft. We pass a display
   // override so the preview renders the cap the user is editing, not the
   // saved one.
-  const display = useMemo(() => {
-    const base = getVerboseDisplay();
-    switch (which) {
-      case 'argsLines':
-        return { ...base, argsMaxLines: value };
-      case 'argsChars':
-        return { ...base, argsMaxChars: value };
-      case 'outputLines':
-        return { ...base, outputMaxLines: value };
-      case 'outputChars':
-        return { ...base, outputMaxChars: value };
-    }
-  }, [which, value]);
+  const display = useMemo(
+    (): VerboseDisplayConfig => ({
+      ...getVerboseDisplay(),
+      [FIELD_META[which].configKey]: value,
+    }),
+    [which, value]
+  );
 
   const filters = useMemo(() => getVerboseConfig().filters, []);
 
-  // Both args caps share the args fixture; both output caps share the output
-  // fixture. The cap unit (lines vs chars) is reflected in the heading.
-  const previewKey =
-    which === 'argsLines' || which === 'argsChars'
-      ? 'truncation:args'
-      : 'truncation:output';
+  const previewKey = FIELD_META[which].previewKey;
   const previewText = useMemo(
     () => renderVerbosityPreview(previewKey, display, filters),
     [previewKey, display, filters]
   );
 
-  const heading = (() => {
-    switch (which) {
-      case 'argsLines':
-        return 'Tool args · lines';
-      case 'argsChars':
-        return 'Tool args · chars per value';
-      case 'outputLines':
-        return 'Tool output · lines';
-      case 'outputChars':
-        return 'Tool output · chars per line';
-    }
-  })();
+  const heading = FIELD_META[which].heading;
 
   return (
     <Box flexDirection="column">

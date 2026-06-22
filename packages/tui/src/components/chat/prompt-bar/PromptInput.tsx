@@ -326,10 +326,8 @@ export const PromptInput = React.memo(function PromptInput({
     () => new Set(slashCommands.map((c) => c.name)),
     [slashCommands]
   );
-  // Lightweight token coloring (slash command / URL) over primary. Path tokens
-  // stay primary on purpose — cyan was hard to read on light themes and the
-  // attachment chip already disambiguates real attachments. No-op when no span
-  // matches.
+  // Path tokens stay primary on purpose — cyan was hard to read on light
+  // themes and the attachment chip already disambiguates real attachments.
   const stylePromptText = useCallback(
     (text: string): string => {
       if (!text) return '';
@@ -803,6 +801,29 @@ export const PromptInput = React.memo(function PromptInput({
       let segments = segmentsRef.current;
       let cursor = cursorRef.current;
 
+      // Shared ↑/↓ queue-restore application: commit the dirty slot, install
+      // the new restore state, and (when loadSegments) replace the input with
+      // the queued text. `up` skips the load when it walked past the oldest
+      // entry so the same keypress can fall through to CommandHistory.
+      const applyQueueNav = (
+        result: Extract<ReturnType<typeof navigateQueueUp>, { kind: 'queue' }>,
+        loadSegments: boolean
+      ) => {
+        if (result.replace) {
+          replaceQueuedMessage(result.replace.index, result.replace.text);
+        }
+        queueRestoreRef.current = result.state;
+        setEditingQueueIndex(result.state ? result.state.index : null);
+        if (!loadSegments) return;
+        suppressNextTriggerRef.current = true;
+        setPromptHint(null);
+        const newSegs: Segment[] = [{ type: 'text', value: result.loadText }];
+        setSegments(newSegs);
+        setCursor(result.loadText.length);
+        syncToStore(newSegs);
+        inputMetrics.markStateUpdate();
+      };
+
       // Don't process input during shell escape — AppContainer forwards it to the PTY
       if (shellEscapeActive) return;
 
@@ -1169,26 +1190,11 @@ export const PromptInput = React.memo(function PromptInput({
             queuedMessagesRef.current
           );
           if (result.kind === 'queue') {
-            if (result.replace) {
-              replaceQueuedMessage(result.replace.index, result.replace.text);
-            }
-            queueRestoreRef.current = result.state;
-            setEditingQueueIndex(result.state ? result.state.index : null);
             // state === null means we just walked past the oldest entry —
-            // fall through to CommandHistory below so this single keypress
-            // produces a useful navigation.
-            if (result.state != null) {
-              suppressNextTriggerRef.current = true;
-              setPromptHint(null);
-              const newSegs: Segment[] = [
-                { type: 'text', value: result.loadText },
-              ];
-              setSegments(newSegs);
-              setCursor(result.loadText.length);
-              syncToStore(newSegs);
-              inputMetrics.markStateUpdate();
-              return;
-            }
+            // install state but skip the load so this single keypress falls
+            // through to CommandHistory below for a useful navigation.
+            applyQueueNav(result, result.state != null);
+            if (result.state != null) return;
           }
           // 'history' / 'noop' / queue-exit — fall through to CommandHistory
         }
@@ -1231,20 +1237,7 @@ export const PromptInput = React.memo(function PromptInput({
             queuedMessagesRef.current
           );
           if (result.kind === 'queue') {
-            if (result.replace) {
-              replaceQueuedMessage(result.replace.index, result.replace.text);
-            }
-            queueRestoreRef.current = result.state;
-            setEditingQueueIndex(result.state ? result.state.index : null);
-            suppressNextTriggerRef.current = true;
-            setPromptHint(null);
-            const newSegs: Segment[] = [
-              { type: 'text', value: result.loadText },
-            ];
-            setSegments(newSegs);
-            setCursor(result.loadText.length);
-            syncToStore(newSegs);
-            inputMetrics.markStateUpdate();
+            applyQueueNav(result, true);
             return;
           }
         }
