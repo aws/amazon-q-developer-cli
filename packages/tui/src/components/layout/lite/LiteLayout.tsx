@@ -142,10 +142,8 @@ export const LiteLayout: React.FC = () => {
   const { allowAsciiArt } = useAllowAsciiArt();
   const animationPaused = useAnimationPaused();
 
-  // Panel show-flags (flipped by backend slash commands via commands/effects).
-  // Only needed here to build anyPanelOpen, which drives the input-area swap
-  // and gates the always-armed Esc/Ctrl+C handler so Esc closing a panel
-  // doesn't also fire cancelMessage.
+  // Panel show-flags — needed here to build anyPanelOpen, which drives the
+  // input-area swap and gates the always-armed Esc/Ctrl+C handler.
   const {
     showContextBreakdown,
     showHelpPanel,
@@ -206,9 +204,8 @@ export const LiteLayout: React.FC = () => {
   const pendingSwap = usePendingSwap();
   const pendingAgentName = pendingSwap?.name ?? null;
 
-  // Subagent inline-trace panel (Ctrl+O). subagentOpenIndex = which subagent
-  // in `activeSubagents` is inspected; null = closed. The open boolean is
-  // mirrored into app-store so AppContainer's dispatch stops Esc from also
+  // Subagent inline-trace panel (Ctrl+O). subagentOpenIndex = inspected stage
+  // (null = closed); mirrored into app-store so dispatch stops Esc from also
   // firing a stream cancel.
   const sessions = useAppStore((s) => s.sessions);
   const setSubagentPanelOpen = useAppStore((s) => s.setSubagentPanelOpen);
@@ -216,10 +213,9 @@ export const LiteLayout: React.FC = () => {
     null
   );
   const [subagentScrollOffset, setSubagentScrollOffset] = useState(0);
-  // Git branch in the status footer. Sync at mount for first paint, then async
-  // on every turn boundary (isProcessing true→false) — catches branch changes
-  // the agent just made. Async so a slow `git rev-parse` can't stall a render;
-  // no mid-turn polling (footer is hidden while the live region paints).
+  // Git branch in the status footer: sync at mount, then async on each turn
+  // boundary (catches branch changes the agent made). Async so a slow
+  // `git rev-parse` can't stall a render.
   const [gitBranch, setGitBranch] = useState<string | null>(getGitBranch);
   const prevIsProcessingRef = useRef(isProcessing);
   useEffect(() => {
@@ -234,10 +230,8 @@ export const LiteLayout: React.FC = () => {
       cancelled = true;
     };
   }, [isProcessing]);
-  // Auto-follow: when true, the panel ignores scrollOffset and stays pinned
-  // to the latest trace line. Disabled when the user scrolls up; re-enabled
-  // when they scroll back to the floor (the panel reports totalLines via
-  // onLinesChange so we know where the floor is).
+  // Auto-follow: panel stays pinned to the latest trace line; disabled when the
+  // user scrolls up, re-enabled at the floor (panel reports totalLines).
   const [subagentFollowBottom, setSubagentFollowBottom] = useState(true);
   const [subagentTotalLines, setSubagentTotalLines] = useState(0);
   useEffect(() => {
@@ -1084,12 +1078,10 @@ export const LiteLayout: React.FC = () => {
         });
       }
       const row = byStage.get(m.agentName)!;
-      // Phase transitions: running → (requesting-permission ↔ running) →
-      // summarizing → complete. The permission phase is reversible — when
-      // the user answers, pendingApproval clears and the row falls back to
-      // running on the next render. Complete and killed are terminal — both
-      // get an early-continue so the message walk can't downgrade them back
-      // to running on the next render.
+      // Phases: running → (requesting-permission ↔ running) → summarizing →
+      // complete. Permission is reversible (falls back to running when approval
+      // clears). Complete + killed are terminal — early-continue so the walk
+      // can't downgrade them back to running.
       if (row.phase === 'complete' || row.phase === 'killed') continue;
       if (m.name === 'summary') {
         row.phase = m.isFinished ? 'complete' : 'summarizing';
@@ -1110,17 +1102,13 @@ export const LiteLayout: React.FC = () => {
       }
     }
 
-    // Surfacing subagent rows is gated on a parent subagent tool being in
-    // flight (early-returned above). Without that gate, completed rows from
-    // a prior subagent run would resurrect on the next processing turn:
-    // user sends a new message → isProcessing flips on → this memo re-runs
-    // over a message list that still contains the old subagent's tool
-    // entries → byStage repopulates them at phase: 'complete'.
+    // Rows only surface while a parent subagent tool is in flight (gated by the
+    // early-return above) — else a prior run's completed rows would resurrect
+    // when isProcessing flips on for the next turn.
     const rows: SubagentRow[] = order.map((name) => byStage.get(name)!);
 
-    // Parent finalize phase: every stage we know about is complete but
-    // the parent subagent tool itself is still working (concatenating all
-    // stage summaries into the combined response). Surface one footnote.
+    // Parent finalize phase: every known stage is complete but the parent tool
+    // is still concatenating their summaries. Surface one footnote.
     const summarizingPhase =
       rows.length > 0 && rows.every((r) => r.phase === 'complete');
 
@@ -1134,10 +1122,9 @@ export const LiteLayout: React.FC = () => {
     pendingApproval,
   ]);
 
-  // Map subagent display names to sessionIds so the open panel can subscribe
-  // to the right session-conversation slice. The lookup is name-based — the
-  // backend doesn't expose stage→session in the strip row data — but stage
-  // names are unique within a single subagent invocation so this is reliable.
+  // Map subagent display names to sessionIds so the open panel can subscribe to
+  // the right slice. Name-based (backend doesn't expose stage→session), but
+  // stage names are unique within one invocation so it's reliable.
   const subagentSessionIdByName = useMemo(() => {
     const out = new Map<string, string>();
     for (const [id, s] of sessions) {
@@ -1451,9 +1438,8 @@ export const LiteLayout: React.FC = () => {
 
   return (
     <Box flexDirection="column">
-      {/* Scrollback: finalized messages, append-only. wrap="overflow" writes
-          item.text as-is and lets the terminal soft-wrap, so copy-paste
-          preserves logical lines (wideLines enabled at index.tsx). */}
+      {/* Scrollback: append-only. wrap="overflow" soft-wraps so copy-paste
+          keeps logical lines (wideLines enabled at index.tsx). */}
       <Static items={staticItems}>
         {(item) => (
           <Text key={item.id} wrap="overflow">
@@ -1462,17 +1448,15 @@ export const LiteLayout: React.FC = () => {
         )}
       </Static>
 
-      {/* Welcome banner — live-region row while the welcome screen is active,
-          outside <Static> so a resize reflows it instead of an empty viewport.
-          The length === 0 gate keeps it mutually exclusive with the
-          swap-with-content static push above (no double KIRO art). */}
+      {/* Welcome banner — live-region row outside <Static> so resize reflows it.
+          The length === 0 gate keeps it exclusive with the swap-with-content
+          static push above (no double KIRO art). */}
       {showWelcomeBanner && staticItemsRef.current.length === 0 && (
         <Text wrap="overflow">{welcomeBannerText}</Text>
       )}
 
-      {/* Agent's standalone greeting, alongside the banner. Filtered out of the
-          static eligible set while showWelcomeBanner; commits to <Static> via
-          the fallback path once the welcome screen ends. */}
+      {/* Agent's standalone greeting alongside the banner; commits to <Static>
+          via the fallback path once the welcome screen ends. */}
       {showWelcomeBanner && welcomeGreetingText && (
         <Text wrap="overflow">{welcomeGreetingText}</Text>
       )}
@@ -1480,8 +1464,7 @@ export const LiteLayout: React.FC = () => {
       {agentError && <Text>{chalk.red(`error: ${agentError}`)}</Text>}
       <LiteLiveRegion />
 
-      {/* Spec-artifact generation banner — self-renders null when no
-          generation is in flight, so it's safe to mount unconditionally. */}
+      {/* Spec-artifact generation banner — self-renders null when idle. */}
       <ArtifactGenerationCard />
       {surveyPrompt && (
         <SurveyPromptBar
@@ -1490,10 +1473,9 @@ export const LiteLayout: React.FC = () => {
         />
       )}
 
-      {/* Queued messages — preview rows only (full text lives in the store,
-          restored verbatim on pull-back). previewLine cap + wrap="truncate-end"
-          bound each row's cost by width — rendering full text here hung the UI
-          on multi-KB paste. Hidden during shell escape. */}
+      {/* Queued messages — preview rows only (full text lives in the store).
+          previewLine cap + truncate-end bound each row by width; rendering full
+          text here hung the UI on multi-KB paste. Hidden during shell escape. */}
       {queuedMessages.length > 0 && !isShellEscape && (
         <Box flexDirection="column">
           {queuedMessages.map((msg, i) => {
@@ -1573,9 +1555,7 @@ export const LiteLayout: React.FC = () => {
           );
         })()}
 
-      {/* Boot indicator — single dim row for in-flight async setup. Rationale
-          on the showBootIndicator memo above. Inline (not memoized) so elapsed
-          updates every bootFrame tick. */}
+      {/* Boot indicator — inline (not memoized) so it ticks every bootFrame. */}
       {showBootIndicator && (
         <Text>
           {formatBootIndicator(
@@ -1601,10 +1581,9 @@ export const LiteLayout: React.FC = () => {
         </Box>
       )}
 
-      {/* Backend-driven panels (/context, /mcp, /help, ...). Replace the input
-          area while open (same components InlineLayout mounts). They own Esc
-          via Panel.tsx; the always-armed handler short-circuits Esc when
-          anyPanelOpen so it doesn't also cancel the turn. */}
+      {/* Backend-driven panels (/context, /mcp, /help, ...) replace the input
+          area while open. They own Esc via Panel.tsx; the always-armed handler
+          short-circuits Esc when anyPanelOpen so it doesn't also cancel. */}
       {!showApproval && anyPanelOpen && (
         <Box flexDirection="column">
           <BackendPanels handlers={handlers} />
@@ -1630,12 +1609,9 @@ export const LiteLayout: React.FC = () => {
               )}
             </Text>
           )}
-          {/* Input row — glyph + box pick up the user's prompt preset colors so
-              /theme re-skins the lite input. width="100%" + inner flexShrink={1}
-              are load-bearing for multi-line wrap: without an explicit row
-              width Yoga sizes the row to the `> ` glyph and Text has nothing to
-              wrap against. Hidden while /verbosity is active (breadcrumb header
-              takes the input's place). */}
+          {/* Input row. width="100%" + inner flexShrink={1} are load-bearing for
+              multi-line wrap (else Yoga sizes the row to the `> ` glyph and Text
+              has nothing to wrap against). Hidden while /verbosity is active. */}
           {!verbosityMenuActive && (
             <Box flexDirection="row" width="100%" backgroundColor={promptBgHex}>
               <Text>
