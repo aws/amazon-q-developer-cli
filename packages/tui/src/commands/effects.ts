@@ -57,6 +57,7 @@ import {
   validateTokens,
   VERBOSE_CATEGORIES,
   applyDensityPreset,
+  sameDisplay,
   DENSITY_PRESETS,
   DENSITY_DISPLAY,
   DENSITY_FILTERS,
@@ -2523,31 +2524,6 @@ function sameFilters(a: readonly string[], b: readonly string[]): boolean {
   const set = new Set(a);
   for (const t of b) {
     if (!set.has(t)) return false;
-  }
-  return true;
-}
-
-/** Deep-equality on display configs — used to detect which density preset
- *  (if any) is currently active. */
-function sameDisplay(
-  a: import('../lite/verbose.js').VerboseDisplayConfig,
-  b: import('../lite/verbose.js').VerboseDisplayConfig
-): boolean {
-  if (
-    a.showToolReasoning !== b.showToolReasoning ||
-    a.toolArgsMode !== b.toolArgsMode ||
-    a.showElapsed !== b.showElapsed ||
-    a.showThinkingContent !== b.showThinkingContent ||
-    a.showWriteDiffs !== b.showWriteDiffs ||
-    a.argsMaxLines !== b.argsMaxLines ||
-    a.outputMaxLines !== b.outputMaxLines ||
-    a.argsMaxChars !== b.argsMaxChars ||
-    a.outputMaxChars !== b.outputMaxChars
-  )
-    return false;
-  const ks = ['pipeline', 'prompts', 'roles', 'deps', 'responses'] as const;
-  for (const k of ks) {
-    if (a.subagent[k] !== b.subagent[k]) return false;
   }
   return true;
 }
