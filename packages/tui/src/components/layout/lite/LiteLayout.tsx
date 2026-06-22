@@ -551,9 +551,6 @@ export const LiteLayout: React.FC = () => {
     return () => clearInterval(t);
   }, [showBootIndicator, pendingAgentName, loadingMessage, animationPaused]);
 
-  // MCP failures surface once via the McpServerInitFailure transient alert (NOT
-  // also a scrollback line — that left a duplicate warning pinned forever).
-
   // KIRO welcome banner, shown while no real chat has happened this session.
   // `liteWelcomeEmitted`: cross-mount suppression flag, set true on unmount so a
   // lite→tui→lite swap doesn't re-flash the banner; resetMessages clears it.
@@ -716,9 +713,6 @@ export const LiteLayout: React.FC = () => {
       });
     }
   }
-
-  // Cursor realignment on a real boundary is handled by the clear-token block
-  // above; we don't realign on bare remounts (see _liteLastObservedClearToken).
 
   // Queue-drain input restore. A queued slash command that opens a picker
   // stashes the user's pre-drain input in `queuedInputRestore` (see app-store);
