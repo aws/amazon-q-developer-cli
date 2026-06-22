@@ -19,7 +19,11 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_CHAT_NEW, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_CHAT_NEW,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 // Bracketed paste escape sequences
@@ -72,9 +76,7 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     // keepOpen so the turn stays open until we cancel it.
     await streamReply(testCase, 'Thinking...', { keepOpen: true });
 
-    await testCase.sendKeys('test prompt');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'test prompt');
 
     await testCase.waitForStoreCondition((s) => s.isProcessing === true, 10000);
 
@@ -89,9 +91,7 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
     // A second prompt must still go through (turn not stuck).
     await streamReply(testCase, 'SECOND_OK');
 
-    await testCase.sendKeys('second');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'second');
 
     const afterSecond = await testCase.waitForStoreCondition(
       (s) => s.messages.length > afterCancel.messages.length,

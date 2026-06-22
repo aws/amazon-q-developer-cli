@@ -9,6 +9,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { sendUserMessage } from './lite/helpers/commands';
 import {
   applyTheme,
   BRAND_DARK_RGB,
@@ -47,9 +48,7 @@ describe('lite /theme reflow during stream', () => {
     const liveContent = 'THEME_LIVE_AFTER_SWAP_MARKER';
     await streamReply(testCase, liveContent);
 
-    await testCase.sendKeys('reflow probe');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'reflow probe');
 
     await testCase.waitForText(liveContent, 15000);
     await testCase.waitForIdle(15000);
@@ -82,9 +81,7 @@ describe('lite /theme reflow during stream', () => {
     // Turn 1 under dark; wait for stream completion so it commits to <Static>.
     const turn1Content = 'THEME_FROZEN_ROW_DARK_TURN_ONE';
     await streamReply(testCase, turn1Content);
-    await testCase.sendKeys('first turn');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'first turn');
     await testCase.waitForText(turn1Content, 15000);
     await testCase.waitForIdle(15000);
 
@@ -101,9 +98,7 @@ describe('lite /theme reflow during stream', () => {
 
     const turn2Content = 'THEME_FROZEN_ROW_LIGHT_TURN_TWO';
     await streamReply(testCase, turn2Content);
-    await testCase.sendKeys('second turn');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'second turn');
     await testCase.waitForText(turn2Content, 15000);
     await testCase.waitForIdle(15000);
 

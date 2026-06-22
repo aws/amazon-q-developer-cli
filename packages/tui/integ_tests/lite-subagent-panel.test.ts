@@ -6,14 +6,15 @@ import {
   exitLiteInteg,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 type ToolUseMessage = Extract<MessageType, { role: MessageRole.ToolUse }>;
 
 /**
  * Bug-mine 4.1, 4.2, 4.6: lite subagent panel behavior.
- * - 4.1 rows seeded from sessions, not just messages (early-thinking stages show immediately).
- * - 4.2 terminated sessions seeded so completed stages keep position (no reshuffle to tail).
- * - 4.6 panel auto-clamps/closes when the focused subagent disappears (no trapped arrows on empty viewport).
+ * - 4.1 rows seeded from sessions, not just messages.
+ * - 4.2 terminated sessions keep position (no reshuffle to tail).
+ * - 4.6 panel auto-clamps/closes when the focused subagent disappears.
  */
 describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
   let testCase: TestCase | null = null;
@@ -25,42 +26,27 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     }
   });
 
-  // Two-stage subagent pipeline. The parent `subagent` tool MUST stay unfinished
-  // to gate the activeSubagents memo; stage tool calls carry a sessionId so they
-  // resolve to per-stage agent names.
-  async function injectSubagentPipeline(tc: TestCase): Promise<void> {
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'subagent-parent-001',
-      name: 'subagent',
-      args: { pipeline: 'test-pipeline' },
+  async function injectAndWaitForMessages(tc: TestCase): Promise<boolean> {
+    await seedSubagentPipeline(tc, {
+      parentId: 'subagent-parent-001',
+      prompt: 't0',
+      stages: [
+        {
+          toolId: 'tool-stage-a-1',
+          name: 'Read',
+          kind: 'read',
+          args: { path: '/tmp/alpha.txt' },
+          sessionId: 'session-alpha',
+        },
+        {
+          toolId: 'tool-stage-b-1',
+          name: 'Shell',
+          kind: 'shell',
+          args: { command: 'echo beta' },
+          sessionId: 'session-beta',
+        },
+      ],
     });
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-stage-a-1',
-      name: 'Read',
-      kind: 'read',
-      args: { path: '/tmp/alpha.txt' },
-      sessionId: 'session-alpha',
-    });
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-stage-b-1',
-      name: 'Shell',
-      kind: 'shell',
-      args: { command: 'echo beta' },
-      sessionId: 'session-beta',
-    });
-  }
-
-  async function injectAndWaitForMessages(
-    tc: TestCase,
-    _minToolMessages: number
-  ): Promise<boolean> {
-    await injectSubagentPipeline(tc);
-    await tc.typeAndSubmit('t0');
-    await tc.sleepMs(300);
-
     const store = await tc.getStore();
     const toolMessages = store.messages.filter((m) => m.role === 'tool_use');
     return toolMessages.length >= 2;
@@ -73,7 +59,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     await testCase.sendKeys('test input');
     await testCase.sleepMs(100);
 
-    const delivered = await injectAndWaitForMessages(testCase, 2);
+    const delivered = await injectAndWaitForMessages(testCase);
     expect(delivered).toBe(true);
 
     // 4.1: parent subagent tool + >=2 stage tools (agentName != main agent) seeded.
@@ -132,7 +118,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
   it('panel auto-closes when all subagents complete (4.6)', async () => {
     testCase = await launchLiteInteg('lite-subagent-panel-autoclose');
 
-    const delivered = await injectAndWaitForMessages(testCase, 2);
+    const delivered = await injectAndWaitForMessages(testCase);
     expect(delivered).toBe(true);
 
     // Open the panel
@@ -172,7 +158,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
   it('completed stage stays in original position (4.2: terminated session seed)', async () => {
     testCase = await launchLiteInteg('lite-subagent-panel-order');
 
-    const delivered = await injectAndWaitForMessages(testCase, 2);
+    const delivered = await injectAndWaitForMessages(testCase);
     expect(delivered).toBe(true);
 
     // Inject a summary tool for stage A that finishes (marks stage A complete)

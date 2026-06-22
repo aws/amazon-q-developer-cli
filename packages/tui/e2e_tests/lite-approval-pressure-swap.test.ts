@@ -15,8 +15,14 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_LITE,
+  CMD_TUI,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
+import { pushWriteApprovalEvent } from './lite/helpers/approvals';
 
 describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -39,32 +45,16 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.getSessionId();
 
     // Stream 1: a write ToolUseEvent that requires approval.
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'ToolUseEvent',
-          data: {
-            tool_use_id: 'pressure-swap-lite-write',
-            name: 'write',
-            input: JSON.stringify({
-              command: 'create',
-              path: '/tmp/pressure-swap-lite.txt',
-              content: 'pressure swap test',
-            }),
-            stop: true,
-          },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await pushWriteApprovalEvent(testCase, {
+      toolUseId: 'pressure-swap-lite-write',
+      path: '/tmp/pressure-swap-lite.txt',
+      content: 'pressure swap test',
+    });
 
     // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File created successfully.');
 
-    await testCase.sendKeys('write a test file');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'write a test file');
 
     await testCase.waitForText('needs approval', 15000);
 
@@ -131,32 +121,16 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
     await testCase.getSessionId();
 
     // Stream 1: a write ToolUseEvent that requires approval.
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'ToolUseEvent',
-          data: {
-            tool_use_id: 'pressure-swap-tui-write',
-            name: 'write',
-            input: JSON.stringify({
-              command: 'create',
-              path: '/tmp/pressure-swap-tui.txt',
-              content: 'pressure swap test',
-            }),
-            stop: true,
-          },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await pushWriteApprovalEvent(testCase, {
+      toolUseId: 'pressure-swap-tui-write',
+      path: '/tmp/pressure-swap-tui.txt',
+      content: 'pressure swap test',
+    });
 
     // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File written successfully.');
 
-    await testCase.sendKeys('write a test file');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'write a test file');
 
     await testCase.waitForText('requires approval', 15000);
 

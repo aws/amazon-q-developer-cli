@@ -7,7 +7,12 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_LITE,
+  CMD_TUI,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 describe('queued message survives mode swap', () => {
@@ -34,18 +39,14 @@ describe('queued message survives mode swap', () => {
     // Turn 1 warms the session.
     await streamReply(testCase, 'Turn one done.');
 
-    await testCase.sendKeys('warm up');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'warm up');
     await testCase.waitForText('Turn one done', 15000);
     await testCase.waitForIdle(10000);
 
     // Turn 2 keepOpen so the stream stays open while we queue behind it.
     await streamReply(testCase, 'Still thinking.', { keepOpen: true });
 
-    await testCase.sendKeys('turn two');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn two');
     await testCase.sleepMs(500);
 
     let store = await testCase.getStore();
@@ -61,9 +62,7 @@ describe('queued message survives mode swap', () => {
     expect(store.queuedMessages).toContain(CMD_TUI);
     await testCase.sleepMs(300);
 
-    await testCase.sendKeys('QUEUED_FOLLOWUP');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'QUEUED_FOLLOWUP');
     await testCase.sleepMs(500);
 
     await testCase.waitForStoreCondition(
@@ -110,17 +109,13 @@ describe('queued message survives mode swap', () => {
 
     await streamReply(testCase, 'Warm up done.');
 
-    await testCase.sendKeys('warm up');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'warm up');
     await testCase.waitForText('Warm up done', 15000);
     await testCase.waitForIdle(10000);
 
     await streamReply(testCase, 'Processing.', { keepOpen: true });
 
-    await testCase.sendKeys('turn two');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn two');
     await testCase.sleepMs(500);
 
     let store = await testCase.getStore();
@@ -140,9 +135,7 @@ describe('queued message survives mode swap', () => {
     );
     await testCase.sleepMs(300);
 
-    await testCase.sendKeys('QUEUED_MSG_LITE');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'QUEUED_MSG_LITE');
     await testCase.sleepMs(500);
 
     await testCase.waitForStoreCondition(

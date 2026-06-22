@@ -22,15 +22,19 @@
  *   SAMPLE_EVERY_N        sample memory every N turns (default: 10)
  */
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
 import { streamReply } from '../../e2e_tests/lite/helpers/responses';
-import { createProbeContext, linearSlope, runProbe } from './probe-utils';
+import {
+  createProbeContext,
+  linearSlope,
+  runProbe,
+  writeDoneMarker,
+  writeFinding,
+  writeMetrics,
+} from './probe-utils';
 
 const ctx = createProbeContext('session-lifetime-lite');
 const PROBE_NAME = ctx.name;
-const OUTPUT_DIR = ctx.outputDir;
 const TURN_COUNT = parseInt(process.env.LITE_PROBE_TURNS ?? '100', 10);
 const RSS_CEILING_MB = parseInt(process.env.RSS_CEILING_MB ?? '250', 10);
 const SAMPLE_EVERY_N = parseInt(process.env.SAMPLE_EVERY_N ?? '10', 10);
@@ -163,8 +167,7 @@ async function main() {
       `  History cap:       ${historyCapEngaged ? `engaged (skip=${skipBefore})` : 'NOT engaged'}`
     );
 
-    // Write metrics JSON
-    const metrics = {
+    writeMetrics(ctx, {
       probe: PROBE_NAME,
       timestamp: new Date().toISOString(),
       config: {
@@ -185,13 +188,8 @@ async function main() {
       },
       samples,
       pass: finalRssMb <= RSS_CEILING_MB,
-    };
-    writeFileSync(
-      join(OUTPUT_DIR, `${PROBE_NAME}.json`),
-      JSON.stringify(metrics, null, 2)
-    );
+    });
 
-    // Findings
     const findings: string[] = [];
 
     if (finalRssMb > RSS_CEILING_MB) {
@@ -200,9 +198,8 @@ async function main() {
       );
     }
 
-    // Note: liteStaticSkipBefore only engages on session RESUME (loading
-    // history from disk), not during live streaming. For live sessions the
-    // Ink <Static> cursor simply appends new items. This is expected.
+    // liteStaticSkipBefore only engages on session RESUME (loading history from
+    // disk), not during live streaming — the live cursor just appends. Expected.
     if (!historyCapEngaged && TURN_COUNT >= 50) {
       console.log(
         `  Note: History cap not engaged during live session ` +
@@ -218,13 +215,42 @@ async function main() {
       );
     }
 
+    const WORK_ITEM = '02-session-lifetime-lite';
     if (findings.length > 0) {
       console.log(`\n  FINDINGS:`);
-      for (const f of findings) console.log(`    - ${f}`);
+      for (const f of findings) {
+        console.log(`    - ${f}`);
+        writeFinding(ctx, {
+          slug: f.slice(0, 40),
+          title: f,
+          severity: 'spiral',
+          description: f,
+          evidence: [
+            `Turns: ${TURN_COUNT}`,
+            `Baseline RSS: ${baselineRssMb.toFixed(1)} MB`,
+            `Final RSS: ${finalRssMb.toFixed(1)} MB (ceiling ${RSS_CEILING_MB} MB)`,
+            `RSS slope: ${(slopeMbPerTurn * 1000).toFixed(2)} KB/turn`,
+          ].join('\n'),
+          workItem: WORK_ITEM,
+          review: '03-unbounded-growth',
+          technique: '10',
+          file: 'packages/tui/src/components/layout/lite/static-flush.ts',
+        });
+      }
+      writeDoneMarker(ctx, {
+        workItem: WORK_ITEM,
+        findingsEmitted: findings.length,
+        summary: `FAIL: ${findings.length} finding(s) after ${TURN_COUNT} turns in ${elapsedMs} ms.`,
+      });
       console.log(`\n[${PROBE_NAME}] FAIL (${findings.length} finding(s))`);
       process.exit(1);
     }
 
+    writeDoneMarker(ctx, {
+      workItem: WORK_ITEM,
+      findingsEmitted: 0,
+      summary: `PASS after ${TURN_COUNT} turns in ${elapsedMs} ms (final RSS ${finalRssMb.toFixed(1)} MB).`,
+    });
     console.log(`\n[${PROBE_NAME}] PASS`);
     process.exit(0);
   } finally {

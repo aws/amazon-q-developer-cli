@@ -15,7 +15,12 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_LITE,
+  CMD_TUI,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { assistantEvent } from './lite/helpers/responses';
 
 describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
@@ -56,9 +61,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
       assistantEvent(' ' + chunk4Content),
     ]);
 
-    await testCase.sendKeys('start streaming');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'start streaming');
 
     // chunk 3 rendered confirms events 1-3 emitted
     await testCase.waitForText(chunk3Content, 15000);
@@ -147,9 +150,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
 
-    await testCase.sendKeys('begin stream');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'begin stream');
 
     await testCase.waitForText(finalContent, 15000);
     await testCase.waitForIdle(15000);
@@ -179,9 +180,7 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     await testCase.pushSendMessageResponse([assistantEvent(liteNewContent)]);
     await testCase.pushSendMessageResponse(null);
 
-    await testCase.sendKeys('new lite msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'new lite msg');
     await testCase.waitForText(liteNewContent, 15000);
     await testCase.waitForIdle(10000);
 

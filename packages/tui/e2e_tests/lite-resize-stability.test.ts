@@ -68,50 +68,37 @@ describe('lite resize stability [bug-mine 1.7]', () => {
       await testCase!.waitForIdle(10000);
     };
 
-    await sendTurn('first', 'TURN_1_MARKER_ALPHA');
-    await sendTurn('second', 'TURN_2_MARKER_BRAVO');
-    await sendTurn('third', 'TURN_3_MARKER_CHARLIE');
+    const markers = [
+      'TURN_1_MARKER_ALPHA',
+      'TURN_2_MARKER_BRAVO',
+      'TURN_3_MARKER_CHARLIE',
+    ];
+    await sendTurn('first', markers[0]!);
+    await sendTurn('second', markers[1]!);
+    await sendTurn('third', markers[2]!);
+
+    // Right-trimmed line content for each marker in a snapshot.
+    const markerLine = (snap: string[], m: string) =>
+      extractMarkerLines(snap, m)[0];
 
     // --- Capture pre-resize snapshot ---
     const snapBefore = testCase.getSnapshot();
-    const marker1Before = extractMarkerLines(snapBefore, 'TURN_1_MARKER_ALPHA');
-    const marker2Before = extractMarkerLines(snapBefore, 'TURN_2_MARKER_BRAVO');
-    const marker3Before = extractMarkerLines(
-      snapBefore,
-      'TURN_3_MARKER_CHARLIE'
-    );
-
-    expect(marker1Before.length).toBe(1);
-    expect(marker2Before.length).toBe(1);
-    expect(marker3Before.length).toBe(1);
+    const before: Record<string, string | undefined> = {};
+    for (const m of markers) {
+      expect(extractMarkerLines(snapBefore, m).length).toBe(1);
+      before[m] = markerLine(snapBefore, m);
+    }
 
     // --- Resize wider: 80 -> 120 columns ---
     resizePty(testCase, 120, 40);
     await testCase.sleepMs(200);
 
+    // No re-emission that scrambles old rows; line content byte-for-byte.
     const snapAfterWide = testCase.getSnapshot();
-    const marker1AfterWide = extractMarkerLines(
-      snapAfterWide,
-      'TURN_1_MARKER_ALPHA'
-    );
-    const marker2AfterWide = extractMarkerLines(
-      snapAfterWide,
-      'TURN_2_MARKER_BRAVO'
-    );
-    const marker3AfterWide = extractMarkerLines(
-      snapAfterWide,
-      'TURN_3_MARKER_CHARLIE'
-    );
-
-    // Markers must still be present (no re-emission that could scramble them)
-    expect(marker1AfterWide.length).toBe(1);
-    expect(marker2AfterWide.length).toBe(1);
-    expect(marker3AfterWide.length).toBe(1);
-
-    // Content of marker lines must be identical (byte-for-byte text preserved)
-    expect(marker1AfterWide[0]).toBe(marker1Before[0]);
-    expect(marker2AfterWide[0]).toBe(marker2Before[0]);
-    expect(marker3AfterWide[0]).toBe(marker3Before[0]);
+    for (const m of markers) {
+      expect(extractMarkerLines(snapAfterWide, m).length).toBe(1);
+      expect(markerLine(snapAfterWide, m)).toBe(before[m]);
+    }
 
     // --- Send a new message at 120 cols — must render correctly ---
     await sendTurn('wide', 'POST_RESIZE_WIDE_DELTA');
@@ -120,82 +107,39 @@ describe('lite resize stability [bug-mine 1.7]', () => {
     expect(
       snapAfterNewMsg.some((l) => l.includes('POST_RESIZE_WIDE_DELTA'))
     ).toBe(true);
-
-    // Old markers still intact after new message at new width
-    expect(extractMarkerLines(snapAfterNewMsg, 'TURN_1_MARKER_ALPHA')[0]).toBe(
-      marker1Before[0]
-    );
-    expect(extractMarkerLines(snapAfterNewMsg, 'TURN_2_MARKER_BRAVO')[0]).toBe(
-      marker2Before[0]
-    );
-    expect(
-      extractMarkerLines(snapAfterNewMsg, 'TURN_3_MARKER_CHARLIE')[0]
-    ).toBe(marker3Before[0]);
+    for (const m of markers) {
+      expect(markerLine(snapAfterNewMsg, m)).toBe(before[m]);
+    }
 
     // --- Resize narrower: 120 -> 60 columns ---
     resizePty(testCase, 60, 40);
     await testCase.sleepMs(200);
 
+    // All markers present, exactly once (TUI did not re-emit).
     const snapAfterNarrow = testCase.getSnapshot();
     const allTextNarrow = snapAfterNarrow.join('\n');
-
-    // All markers still present in the buffer
-    expect(allTextNarrow).toContain('TURN_1_MARKER_ALPHA');
-    expect(allTextNarrow).toContain('TURN_2_MARKER_BRAVO');
-    expect(allTextNarrow).toContain('TURN_3_MARKER_CHARLIE');
-    expect(allTextNarrow).toContain('POST_RESIZE_WIDE_DELTA');
-
-    // No duplicates after narrow resize (TUI did not re-emit)
-    const narrowMarker1 = extractMarkerLines(
-      snapAfterNarrow,
-      'TURN_1_MARKER_ALPHA'
-    );
-    const narrowMarker2 = extractMarkerLines(
-      snapAfterNarrow,
-      'TURN_2_MARKER_BRAVO'
-    );
-    const narrowMarker3 = extractMarkerLines(
-      snapAfterNarrow,
-      'TURN_3_MARKER_CHARLIE'
-    );
-    const narrowMarkerWide = extractMarkerLines(
-      snapAfterNarrow,
-      'POST_RESIZE_WIDE_DELTA'
-    );
-    expect(narrowMarker1.length).toBe(1);
-    expect(narrowMarker2.length).toBe(1);
-    expect(narrowMarker3.length).toBe(1);
-    expect(narrowMarkerWide.length).toBe(1);
+    for (const m of [...markers, 'POST_RESIZE_WIDE_DELTA']) {
+      expect(allTextNarrow).toContain(m);
+      expect(extractMarkerLines(snapAfterNarrow, m).length).toBe(1);
+    }
 
     // --- Send another message at 60 cols — must render ---
     await sendTurn('narrow', 'POST_RESIZE_NARROW_ECHO');
 
     const snapFinal = testCase.getSnapshot();
-
-    // Final message rendered
     expect(snapFinal.some((l) => l.includes('POST_RESIZE_NARROW_ECHO'))).toBe(
       true
     );
 
-    // All original markers intact — no re-emission, no scrambling
+    // All markers intact, exactly once — no re-emission, no scrambling.
     const finalAllText = snapFinal.join('\n');
-    expect(finalAllText).toContain('TURN_1_MARKER_ALPHA');
-    expect(finalAllText).toContain('TURN_2_MARKER_BRAVO');
-    expect(finalAllText).toContain('TURN_3_MARKER_CHARLIE');
-    expect(finalAllText).toContain('POST_RESIZE_WIDE_DELTA');
-    expect(finalAllText).toContain('POST_RESIZE_NARROW_ECHO');
-
-    // Still exactly one occurrence of each marker (no duplicates from re-emission)
-    expect(extractMarkerLines(snapFinal, 'TURN_1_MARKER_ALPHA').length).toBe(1);
-    expect(extractMarkerLines(snapFinal, 'TURN_2_MARKER_BRAVO').length).toBe(1);
-    expect(extractMarkerLines(snapFinal, 'TURN_3_MARKER_CHARLIE').length).toBe(
-      1
-    );
-    expect(extractMarkerLines(snapFinal, 'POST_RESIZE_WIDE_DELTA').length).toBe(
-      1
-    );
-    expect(
-      extractMarkerLines(snapFinal, 'POST_RESIZE_NARROW_ECHO').length
-    ).toBe(1);
+    for (const m of [
+      ...markers,
+      'POST_RESIZE_WIDE_DELTA',
+      'POST_RESIZE_NARROW_ECHO',
+    ]) {
+      expect(finalAllText).toContain(m);
+      expect(extractMarkerLines(snapFinal, m).length).toBe(1);
+    }
   }, 90000);
 });

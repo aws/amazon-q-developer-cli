@@ -19,7 +19,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { LITE_HISTORY_RENDER_CAP } from '../src/components/layout/lite/static-flush';
-import { CMD_CHAT } from './lite/helpers/commands';
+import { CMD_CHAT, sendUserMessage } from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 describe('lite history cap [bug-mine 2.7]', () => {
@@ -126,9 +126,7 @@ describe('lite history cap [bug-mine 2.7]', () => {
 
     await streamReply(testCase, 'POST_RESUME_LIVE_MSG');
 
-    await testCase.sendKeys('post resume check');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'post resume check');
     await testCase.waitForText('POST_RESUME_LIVE_MSG', 30000);
 
     const snap2 = testCase.getSnapshot();

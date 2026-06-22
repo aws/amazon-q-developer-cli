@@ -1,46 +1,21 @@
 /**
- * Knight Rider scenario S1 — long lite session: shell + stream + cancel + recover.
+ * Knight Rider scenario S1 — lite append-only contract across a 4-turn session:
+ * short prompt → shell tool with live streaming → streaming response cancelled
+ * mid-stream (Ctrl+C) → clean follow-up turn.
  *
- * 1. WHAT user-observable behavior does this assert?
- *    The lite append-only contract holds across a 4-turn session that
- *    composes (a) a short prompt, (b) a real shell tool with live
- *    output streaming, (c) a streaming response that the user cancels
- *    mid-stream with Ctrl+C, and (d) a clean follow-up turn after
- *    cancellation. PR #2643's restored cancel-path (commit b7d6f4be1
- *    "fix(lite,tui): restore regressed UX from PR-split") owns this
- *    end-to-end behavior; the regression class it guards against
- *    ("shell streaming wrote to liveOutputs, cancel didn't clear it,
- *    next turn rendered with stale tool live region") only fires after
- *    a full sequence.
+ * Regression classes guarded (commit b7d6f4be1, PR #2643 restored cancel-path):
+ *   - cancel leaves stale liveOutputs for the cancelled tool id.
+ *   - cancel leaves isProcessing=true (no further turns possible).
+ *   - post-cancel turn re-emits the prior turn's tool row (orphan ToolUse).
  *
- * 2. WHAT class of regression would this catch?
- *    - cancelMessage failing to clear liveOutputs for the tool-id of
- *      the cancelled turn → next turn's renderer reads stale stdout.
- *    - cancelMessage leaving isProcessing true → no further turns
- *      possible from the user's perspective.
- *    - A new turn after cancel accidentally re-emitting the prior
- *      turn's tool row (orphan ToolUse leak).
- *    - Append-only mutation: the committed scrollback for turns 1-2
- *      changing after turns 3-4 — would surface as differing
- *      findAllTextCells() output for the historical agent tag.
- *
- * 3. Could the test pass even if the feature is broken?
- *    No. The post-cancel checks pin (a) liveOutputs empty for the
- *    cancelled tool id, (b) isProcessing false, (c) tool-use message
- *    count exactly equal to 1 (only turn 2's shell), and (d) the
- *    final turn's content visible in scrollback — all four would
- *    fail under the regression classes above.
- *
- * Scenario, infra, and runtime gating defined in
- * docs/design/lite-tui-action-items.md (Knight Rider for Lite TUI).
- *
- * Cost: ~30s wall-clock, ~250MB RSS peak. Env-gated by
- * KIRO_RUN_KNIGHT_RIDER_TESTS=1; default `bun test` skips this file.
+ * Cost ~30s / ~250MB RSS. Env-gated by KIRO_RUN_KNIGHT_RIDER_TESTS=1; default
+ * `bun test` skips this file.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import { LiteSequence } from './lite/helpers/sequence';
+import { assistantEvent, streamReply } from './lite/helpers/responses';
 
 const KR_ENABLED = process.env.KIRO_RUN_KNIGHT_RIDER_TESTS === '1';
 
@@ -75,16 +50,7 @@ describe.skipIf(!KR_ENABLED)(
         // Turn 1 — short greeting prompt.
         const turn1Marker = 'KR_S1_TURN_ONE_HELLO';
         await seq.step('turn 1: short hello prompt', async () => {
-          await testCase!.pushSendMessageResponse([
-            {
-              kind: 'event',
-              data: {
-                kind: 'AssistantResponseEvent',
-                data: { content: turn1Marker },
-              },
-            },
-          ]);
-          await testCase!.pushSendMessageResponse(null);
+          await streamReply(testCase!, turn1Marker);
           await testCase!.sendKeys('hello');
           await testCase!.sleepMs(100);
           await testCase!.pressEnter();
@@ -118,16 +84,7 @@ describe.skipIf(!KR_ENABLED)(
             },
           ]);
           await testCase!.pushSendMessageResponse(null);
-          await testCase!.pushSendMessageResponse([
-            {
-              kind: 'event',
-              data: {
-                kind: 'AssistantResponseEvent',
-                data: { content: turn2Marker },
-              },
-            },
-          ]);
-          await testCase!.pushSendMessageResponse(null);
+          await streamReply(testCase!, turn2Marker);
           await testCase!.sendKeys('run a shell');
           await testCase!.sleepMs(100);
           await testCase!.pressEnter();
@@ -143,10 +100,8 @@ describe.skipIf(!KR_ENABLED)(
           }
         );
 
-        // Capture the post-turn-2 scrollback footprint. Append-only
-        // monotonicity: the bytes that committed by the end of turn 2
-        // must still be present after turns 3 and 4. We pin this on the
-        // turn-1 + turn-2 markers being findable across the timeline.
+        // Append-only monotonicity: turn 1+2 markers must stay visible after
+        // turns 3 and 4 commit.
         const beforeTurn3Snapshot = testCase!.getSnapshot().join('\n');
         expect(beforeTurn3Snapshot).toContain(turn1Marker);
         expect(beforeTurn3Snapshot).toContain(turn2Marker);
@@ -159,13 +114,7 @@ describe.skipIf(!KR_ENABLED)(
           async () => {
             for (let i = 0; i < 6; i++) {
               await testCase!.pushSendMessageResponse([
-                {
-                  kind: 'event',
-                  data: {
-                    kind: 'AssistantResponseEvent',
-                    data: { content: `chunk-${i} ` },
-                  },
-                },
+                assistantEvent(`chunk-${i} `),
               ]);
             }
             // DO NOT close the stream here — leave it open so the user is
@@ -207,26 +156,13 @@ describe.skipIf(!KR_ENABLED)(
           }
         );
 
-        // Turn 4 — clean follow-up. Push the closing null FIRST so the
-        // queued turn-3 chunks plus the null all flush, then push the
-        // turn-4 response.
+        // Turn 4 — clean follow-up.
         const turn4Marker = 'KR_S1_TURN_FOUR_FINAL';
         await seq.step('turn 4: final clean prompt', async () => {
-          // Drain any remaining turn-3 chunks first by closing that
-          // stream (the cancelled prompt's stream is no longer being
-          // read by the agent, but the queue must end somewhere so a
-          // fresh turn is allowed).
+          // Drain remaining turn-3 chunks by closing that stream first, so a
+          // fresh turn is allowed; then stream the turn-4 response.
           await testCase!.pushSendMessageResponse(null);
-          await testCase!.pushSendMessageResponse([
-            {
-              kind: 'event',
-              data: {
-                kind: 'AssistantResponseEvent',
-                data: { content: turn4Marker },
-              },
-            },
-          ]);
-          await testCase!.pushSendMessageResponse(null);
+          await streamReply(testCase!, turn4Marker);
           await testCase!.sendKeys('final prompt');
           await testCase!.sleepMs(100);
           await testCase!.pressEnter();

@@ -7,7 +7,12 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_LITE,
+  CMD_TUI,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
@@ -33,9 +38,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
 
     await streamReply(testCase, 'LITE_RESPONSE_MARKER');
 
-    await testCase.sendKeys('hello');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'hello');
     await testCase.waitForText('LITE_RESPONSE_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
@@ -53,9 +56,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
 
     await streamReply(testCase, 'TUI_AFTER_SWAP');
 
-    await testCase.sendKeys('tui msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'tui msg');
     await testCase.waitForText('TUI_AFTER_SWAP', 15000);
     await testCase.waitForIdle(10000);
 
@@ -76,9 +77,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     // Complete a turn in TUI mode (advances the static cursor)
     await streamReply(testCase, 'TUI_CONTENT_BEFORE_SWAP');
 
-    await testCase.sendKeys('hello tui');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'hello tui');
     await testCase.waitForText('TUI_CONTENT_BEFORE_SWAP', 15000);
     await testCase.waitForIdle(10000);
 
@@ -92,9 +91,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     // the old totalStaticWritten from TUI's renders.
     await streamReply(testCase, 'LITE_AFTER_SWAP_MARKER');
 
-    await testCase.sendKeys('first lite');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'first lite');
     await testCase.waitForText('LITE_AFTER_SWAP_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
@@ -119,17 +116,13 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
 
     await streamReply(testCase, 'TUI_TURN_ONE_REPLY');
 
-    await testCase.sendKeys('turn one');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn one');
     await testCase.waitForText('TUI_TURN_ONE_REPLY', 15000);
     await testCase.waitForIdle(10000);
 
     await streamReply(testCase, 'TUI_TURN_TWO_REPLY');
 
-    await testCase.sendKeys('turn two');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn two');
     await testCase.waitForText('TUI_TURN_TWO_REPLY', 15000);
     await testCase.waitForIdle(10000);
 
@@ -150,9 +143,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
 
     await streamReply(testCase, 'LITE_NEW_REPLY');
 
-    await testCase.sendKeys('new lite msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'new lite msg');
     await testCase.waitForText('LITE_NEW_REPLY', 15000);
     await testCase.waitForIdle(10000);
 

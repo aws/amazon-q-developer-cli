@@ -17,7 +17,8 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI } from './lite/helpers/commands';
+import { CMD_LITE, CMD_TUI, sendUserMessage } from './lite/helpers/commands';
+import { pushWriteApprovalEvent } from './lite/helpers/approvals';
 
 describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -42,31 +43,14 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     await testCase.waitForText('>', 15000);
     await testCase.getSessionId();
 
-    // Queue a tool-use event that requires approval
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'ToolUseEvent',
-          data: {
-            tool_use_id: 'write-needs-approval-lite',
-            name: 'write',
-            input: JSON.stringify({
-              command: 'create',
-              path: '/tmp/approval-swap-lite.txt',
-              content: 'test content',
-            }),
-            stop: true,
-          },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await pushWriteApprovalEvent(testCase, {
+      toolUseId: 'write-needs-approval-lite',
+      path: '/tmp/approval-swap-lite.txt',
+      content: 'test content',
+    });
 
     // Send a message to trigger the response stream
-    await testCase.sendKeys('write a file');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'write a file');
 
     // Wait for the approval prompt to appear
     await testCase.waitForText('needs approval', 15000);
@@ -79,7 +63,7 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     // AND pendingApproval is cleared
     const afterEsc = await testCase.waitForStoreCondition(
       (s) => !s.isProcessing,
-      10000,
+      10000
     );
     expect(afterEsc.pendingApproval).toBeNull();
     expect(afterEsc.isProcessing).toBe(false);
@@ -90,10 +74,7 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'tui',
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'tui', 10000);
 
     // Verify no stale approval state leaked into TUI mode
     const afterSwap = await testCase.getStore();
@@ -115,31 +96,14 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     await testCase.waitForText('ask a question', 15000);
     await testCase.getSessionId();
 
-    // Queue a tool-use event that requires approval
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'ToolUseEvent',
-          data: {
-            tool_use_id: 'write-needs-approval-tui',
-            name: 'write',
-            input: JSON.stringify({
-              command: 'create',
-              path: '/tmp/approval-swap-tui.txt',
-              content: 'approval test content',
-            }),
-            stop: true,
-          },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+    await pushWriteApprovalEvent(testCase, {
+      toolUseId: 'write-needs-approval-tui',
+      path: '/tmp/approval-swap-tui.txt',
+      content: 'approval test content',
+    });
 
     // Send a message to trigger the response stream
-    await testCase.sendKeys('write a file');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'write a file');
 
     // Wait for the approval prompt to appear
     await testCase.waitForText('requires approval', 15000);
@@ -150,7 +114,7 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     // Verify the turn is fully cancelled
     const afterEsc = await testCase.waitForStoreCondition(
       (s) => !s.isProcessing,
-      10000,
+      10000
     );
     expect(afterEsc.pendingApproval).toBeNull();
     expect(afterEsc.isProcessing).toBe(false);
@@ -161,10 +125,7 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    await testCase.waitForStoreCondition(
-      (s) => s.uiMode === 'lite',
-      10000,
-    );
+    await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
 
     // Bug-mine 2.1: cursor realignment via useLayoutEffect must ensure
     // the user's original message appears in lite scrollback after swap.

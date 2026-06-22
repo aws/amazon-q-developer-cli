@@ -22,6 +22,22 @@ describe('lite queued message editing', () => {
   });
 
   /**
+   * KIRO_TEST_MOCK_TURN_TIMEOUT_MS=20000 keeps the turn alive past the 2s mock
+   * auto-resolve so queued messages don't drain mid-test. These tests rely on
+   * afterEach's force-kill for cleanup: the Ctrl+C ladder can't cleanly exit
+   * while multiple queued messages are in flight (each Ctrl+C interrupts a turn
+   * rather than closing).
+   */
+  function launchQueueEditCase(name: string): Promise<TestCase> {
+    return TestCase.builder()
+      .withTestName(name)
+      .withLite()
+      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
+      .withTimeout(20000)
+      .launch();
+  }
+
+  /**
    * Boots lite, types a real message to start a turn (so isProcessing=true),
    * then queues two further chat messages. Returns the queued texts.
    */
@@ -47,14 +63,7 @@ describe('lite queued message editing', () => {
   }
 
   it('pulling a queued slot back via ↑ shows the editing header and loads the text', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-queue-edit-pull-shows-header')
-      .withLite()
-      // Keep the turn alive past the 2s mock auto-resolve so queued
-      // messages don't drain on us mid-test.
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
+    testCase = await launchQueueEditCase('lite-queue-edit-pull-shows-header');
 
     await setupQueueWithTwoEntries(testCase);
 
@@ -66,23 +75,11 @@ describe('lite queued message editing', () => {
     expect(store.editingQueueIndex).toBe(1);
     expect(store.commandInputValue).toBe('queue_second_message');
 
-    // Editing header is visible on screen.
     await testCase.waitForVisibleText('editing queued #2', 3000);
-
-    // afterEach cleanup() kills the PTY. Tests using
-    // KIRO_TEST_MOCK_TURN_TIMEOUT_MS=20000 with multiple queued messages
-    // can't reliably exit via the Ctrl+C ladder because each Ctrl+C
-    // interrupts a turn rather than cleanly closing — leave the cleanup
-    // path to afterEach's force-kill.
   }, 30000);
 
   it('edit + Enter writes back to the same slot, preserving queue length and FIFO order', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-queue-edit-resubmit')
-      .withLite()
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
+    testCase = await launchQueueEditCase('lite-queue-edit-resubmit');
 
     const { first } = await setupQueueWithTwoEntries(testCase);
 
@@ -94,35 +91,21 @@ describe('lite queued message editing', () => {
     expect(store.editingQueueIndex).toBe(1);
     expect(store.queuedMessages.length).toBe(2);
 
-    // Replace the loaded body with 'queue_second_edited'. Ctrl+U clears
-    // line, then type. Then Enter to commit.
     await testCase.sendKeys('\x15'); // Ctrl+U: kill-line back-to-start
     await testCase.sleepMs(100);
     await testCase.typeAndSubmit('queue_second_edited');
     await testCase.sleepMs(250);
 
     store = await testCase.getStore();
-    // Queue length stays 2 (replace, not append). FIFO is preserved —
-    // the edited entry stays at index 1, ahead of any new submissions.
+    // Replace, not append: length stays 2 and the edit stays at index 1.
     expect(store.queuedMessages.length).toBe(2);
     expect(store.queuedMessages[0]).toBe(first);
     expect(store.queuedMessages[1]).toBe('queue_second_edited');
     expect(store.editingQueueIndex).toBeNull();
-
-    // afterEach cleanup() kills the PTY. Tests using
-    // KIRO_TEST_MOCK_TURN_TIMEOUT_MS=20000 with multiple queued messages
-    // can't reliably exit via the Ctrl+C ladder because each Ctrl+C
-    // interrupts a turn rather than cleanly closing — leave the cleanup
-    // path to afterEach's force-kill.
   }, 30000);
 
   it('cancelling the edit (Esc) leaves the queue intact', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-queue-edit-cancel')
-      .withLite()
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
+    testCase = await launchQueueEditCase('lite-queue-edit-cancel');
 
     const { first, second } = await setupQueueWithTwoEntries(testCase);
 
@@ -144,11 +127,5 @@ describe('lite queued message editing', () => {
     // Queue must be byte-for-byte unchanged.
     expect(store.queuedMessages).toEqual(queueBefore);
     expect(store.queuedMessages).toEqual([first, second]);
-
-    // afterEach cleanup() kills the PTY. Tests using
-    // KIRO_TEST_MOCK_TURN_TIMEOUT_MS=20000 with multiple queued messages
-    // can't reliably exit via the Ctrl+C ladder because each Ctrl+C
-    // interrupts a turn rather than cleanly closing — leave the cleanup
-    // path to afterEach's force-kill.
   }, 30000);
 });

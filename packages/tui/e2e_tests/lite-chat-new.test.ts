@@ -9,7 +9,11 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_CHAT_NEW, typeSlashCommand } from './lite/helpers/commands';
+import {
+  CMD_CHAT_NEW,
+  typeSlashCommand,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 /**
@@ -52,25 +56,19 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await streamReply(testCase, 'SESSION1_TURN1_MARKER');
 
-    await testCase.sendKeys('turn one');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn one');
     await testCase.waitForText('SESSION1_TURN1_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
     await streamReply(testCase, 'SESSION1_TURN2_MARKER');
 
-    await testCase.sendKeys('turn two');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn two');
     await testCase.waitForText('SESSION1_TURN2_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
     await streamReply(testCase, 'SESSION1_TURN3_MARKER');
 
-    await testCase.sendKeys('turn three');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'turn three');
     await testCase.waitForText('SESSION1_TURN3_MARKER', 15000);
     await testCase.waitForIdle(10000);
 
@@ -128,17 +126,13 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await streamReply(testCase, 'DUPE_CHECK_ALPHA');
 
-    await testCase.sendKeys('alpha msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'alpha msg');
     await testCase.waitForText('DUPE_CHECK_ALPHA', 15000);
     await testCase.waitForIdle(10000);
 
     await streamReply(testCase, 'DUPE_CHECK_BETA');
 
-    await testCase.sendKeys('beta msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'beta msg');
     await testCase.waitForText('DUPE_CHECK_BETA', 15000);
     await testCase.waitForIdle(10000);
 
@@ -204,9 +198,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await streamReply(testCase, 'SCROLLBACK_PRESERVE_CHECK');
 
-    await testCase.sendKeys('preserve test');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'preserve test');
     await testCase.waitForText('SCROLLBACK_PRESERVE_CHECK', 15000);
     await testCase.waitForIdle(10000);
 
@@ -234,9 +226,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
 
     await streamReply(testCase, 'AFTER_CHAT_NEW_WORKS');
 
-    await testCase.sendKeys('new session msg');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'new session msg');
     await testCase.waitForText('AFTER_CHAT_NEW_WORKS', 15000);
     await testCase.waitForIdle(10000);
 

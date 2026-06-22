@@ -9,11 +9,11 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { AgentEventType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 describe('lite subagent kill ladder Ctrl+X', () => {
   let testCase: TestCase | null = null;
@@ -25,49 +25,27 @@ describe('lite subagent kill ladder Ctrl+X', () => {
     }
   });
 
-  /**
-   * Seeds the minimum state needed for activeSubagents to be non-empty.
-   *
-   * Ordering matters:
-   *   - Inject the parent `subagent` ToolCall + the stage ToolCall first.
-   *     These flow through the agent stream and stamp messages with
-   *     agentName + sessionId.
-   *   - typeAndSubmit triggers the mocked prompt, which drains the queue
-   *     and processes those ToolCalls. The `subagent` ToolCall handler
-   *     wipes any pre-existing ephemeral sessions (see
-   *     src/stores/app-store.ts:2475 → SESSION_TOOL_NAMES) — so we
-   *     can't seed the session BEFORE this point.
-   *   - mockAddSession after the prompt is in flight (isProcessing=true)
-   *     adds the stage to sessions.values() without being wiped.
-   *
-   * Returns the (name, sessionId) the test should focus on.
-   */
   async function seedStage(
     tc: TestCase,
     sessionId: string,
     name: string,
     toolId: string
   ): Promise<{ sessionId: string; name: string }> {
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: `subagent-parent-${sessionId}`,
-      name: 'subagent',
-      args: { pipeline: 'kill-ladder-test' },
+    await seedSubagentPipeline(tc, {
+      parentId: `subagent-parent-${sessionId}`,
+      pipeline: 'kill-ladder-test',
+      prompt: 'arm',
+      stages: [
+        {
+          toolId,
+          name: 'Read',
+          kind: 'read',
+          args: { path: `/tmp/${name}.txt` },
+          sessionId,
+        },
+      ],
+      addSessionsAfter: [{ id: sessionId, name, status: 'busy' }],
     });
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: toolId,
-      name: 'Read',
-      kind: 'read',
-      args: { path: `/tmp/${name}.txt` },
-      sessionId,
-    });
-    await tc.typeAndSubmit('arm');
-    await tc.sleepMs(300);
-    // Seed AFTER the parent subagent ToolCall has been processed so it
-    // doesn't wipe our ephemeral session row.
-    await tc.mockAddSession({ id: sessionId, name, status: 'busy' });
-    await tc.sleepMs(150);
     return { sessionId, name };
   }
 

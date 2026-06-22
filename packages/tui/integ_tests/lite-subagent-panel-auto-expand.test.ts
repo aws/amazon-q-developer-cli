@@ -12,11 +12,11 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { AgentEventType } from '../src/types/agent-events';
 import {
   injectApproval,
   ALLOW_REJECT_OPTIONS,
 } from '../e2e_tests/lite/helpers/approvals';
+import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 describe('lite subagent panel auto-expand on inner approval', () => {
   let testCase: TestCase | null = null;
@@ -28,39 +28,27 @@ describe('lite subagent panel auto-expand on inner approval', () => {
     }
   });
 
-  /** Seed parent subagent + N stage rows, with sessions populated. */
   async function seedPipeline(
     tc: TestCase,
     stages: Array<{ sessionId: string; name: string; toolId: string }>
   ): Promise<void> {
-    await tc.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'subagent-parent-autoexpand',
-      name: 'subagent',
-      args: { pipeline: 'auto-expand-test' },
-    });
-    for (const s of stages) {
-      await tc.mockSessionUpdate({
-        type: AgentEventType.ToolCall,
-        id: s.toolId,
+    await seedSubagentPipeline(tc, {
+      parentId: 'subagent-parent-autoexpand',
+      pipeline: 'auto-expand-test',
+      prompt: 'begin pipeline',
+      stages: stages.map((s) => ({
+        toolId: s.toolId,
         name: 'Read',
         kind: 'read',
         args: { path: `/tmp/${s.name}.txt` },
         sessionId: s.sessionId,
-      });
-    }
-    await tc.typeAndSubmit('begin pipeline');
-    await tc.sleepMs(300);
-    // Seed sessions AFTER the parent subagent ToolCall fires so its
-    // "wipe ephemeral sessions" branch doesn't clobber them.
-    for (const s of stages) {
-      await tc.mockAddSession({
+      })),
+      addSessionsAfter: stages.map((s) => ({
         id: s.sessionId,
         name: s.name,
         status: 'busy',
-      });
-    }
-    await tc.sleepMs(150);
+      })),
+    });
   }
 
   // Inner approval ties to a ToolCall message seedPipeline already created

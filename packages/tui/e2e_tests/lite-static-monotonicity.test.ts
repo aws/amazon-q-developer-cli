@@ -15,6 +15,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
+import { sendUserMessage } from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
@@ -41,9 +42,7 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     // --- Turn 1 ---
     await streamReply(testCase, 'FIRST_RESPONSE_MARKER_ABC');
 
-    await testCase.sendKeys('hello');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'hello');
     await testCase.waitForText('FIRST_RESPONSE_MARKER_ABC', 15000);
     await testCase.waitForIdle(10000);
 
@@ -57,9 +56,7 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     // --- Turn 2 ---
     await streamReply(testCase, 'SECOND_RESPONSE_MARKER_XYZ');
 
-    await testCase.sendKeys('again');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'again');
     await testCase.waitForText('SECOND_RESPONSE_MARKER_XYZ', 15000);
     await testCase.waitForIdle(10000);
 
@@ -83,9 +80,7 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     // --- Turn 3 ---
     await streamReply(testCase, 'THIRD_RESPONSE_MARKER_999');
 
-    await testCase.sendKeys('third');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+    await sendUserMessage(testCase, 'third');
     await testCase.waitForText('THIRD_RESPONSE_MARKER_999', 15000);
     await testCase.waitForIdle(10000);
 

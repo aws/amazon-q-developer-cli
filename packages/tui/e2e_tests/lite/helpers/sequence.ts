@@ -1,24 +1,4 @@
-/**
- * LiteSequence — optional sugar over E2ETestCase for the Knight Rider
- * compositional scenarios (S1-S5 in docs/design/lite-tui-action-items.md).
- *
- * The scenarios are deliberately long sequences of cross-component
- * interactions; readability + post-mortem evidence matter more than they
- * do in focused tests. This helper:
- *
- *   1. Wraps `step(label, fn)` so the call site reads as a timeline.
- *   2. Wraps `expect(label, predicate)` so the failed-step name lands in
- *      the error message (bun-test's stack trace alone doesn't tell you
- *      WHICH of 12 sequential expects blew up).
- *   3. Captures per-step HTML snapshots in memory; `dumpHtml()` writes
- *      them out alongside the test's regular snapshot.html on failure.
- *      Default is dump-on-failure (caller's try/finally) so the
- *      test-outputs/ tree doesn't fill with KB of evidence for every
- *      successful run.
- *
- * No additions to E2ETestCase. No subclassing. Tests that don't want the
- * timeline can keep using E2ETestCase directly.
- */
+/** Timeline helper for KR lite scenarios; dumps per-step HTML on failure. */
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -45,11 +25,6 @@ export class LiteSequence {
     this.startedAt = Date.now();
   }
 
-  /**
-   * Run a step (an action that drives the TUI). Captures the post-step
-   * HTML snapshot for the on-failure dump. Re-throws on failure so the
-   * test fails loudly; the partial timeline is still preserved.
-   */
   async step(label: string, fn: () => Promise<void>): Promise<void> {
     let ok = true;
     let errMsg: string | undefined;
@@ -64,11 +39,7 @@ export class LiteSequence {
     this.recordStep('step', label, ok);
   }
 
-  /**
-   * Assert an invariant against the current store. The label is
-   * incorporated into the error so a failure says "expect(<label>) failed"
-   * rather than just "AssertionError: expected true to be true".
-   */
+  /** Label is folded into the thrown error so the failing step is named. */
   async expect(
     label: string,
     predicate: (s: AppState) => boolean
@@ -103,7 +74,7 @@ export class LiteSequence {
     });
   }
 
-  /** Write a per-step HTML timeline (one file per step + linking index.html) alongside the test's outputs; call on failure so passing runs don't bloat test-outputs/. */
+  /** Write a per-step HTML timeline; call on failure so passing runs don't bloat test-outputs/. */
   async dumpHtml(): Promise<string | null> {
     if (this.steps.length === 0) return null;
     const outDir = path.join(
@@ -148,7 +119,6 @@ export class LiteSequence {
     return outDir;
   }
 
-  /** Number of timeline entries recorded so far. Used in tests for sanity checks. */
   get length(): number {
     return this.steps.length;
   }

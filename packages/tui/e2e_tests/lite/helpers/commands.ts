@@ -30,6 +30,21 @@ export async function typeSlashCommand(
   if (opts.postEnterMs) await tc.sleepMs(opts.postEnterMs);
 }
 
+/**
+ * Type a user prompt and submit it. E2ETestCase has no typeAndSubmit
+ * convenience (unlike integ TestCase), so the type/settle/enter triplet is
+ * otherwise hand-rolled at every e2e call site.
+ */
+export async function sendUserMessage(
+  tc: E2ETestCase,
+  text: string,
+  settleMs = 100
+): Promise<void> {
+  await tc.sendKeys(text);
+  await tc.sleepMs(settleMs);
+  await tc.pressEnter();
+}
+
 export const CMD_LITE = '/lite';
 export const CMD_TUI = '/tui';
 export const CMD_CHAT = '/chat';
