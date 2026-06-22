@@ -34,15 +34,12 @@ use crate::agent::tools::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::util::consts::{
-    USER_AGENT_APP_NAME,
-    USER_AGENT_ENV_VAR,
-    USER_AGENT_VERSION_KEY,
-    USER_AGENT_VERSION_VALUE,
-};
 use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::shell::wrap_cmd_with_fd_limit;
-use crate::agent::util::truncate_safe;
+use crate::agent::util::{
+    insert_user_agent,
+    truncate_safe,
+};
 use crate::util::providers::SystemProvider;
 
 /// Maximum tool response size in bytes (actual service limit is 800_000).
@@ -683,26 +680,9 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
     // /dev/null, editors like vim and nvim hang indefinitely instead of exiting.
     env_vars.insert("GIT_EDITOR".to_string(), "true".to_string());
 
-    // Set up additional metadata for the AWS CLI user agent
-    let user_agent_metadata_value =
-        format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
-
-    // Check if the user agent metadata env var already exists
-    let existing_value = std::env::var(USER_AGENT_ENV_VAR).ok();
-
-    // If the user agent metadata env var already exists, append to it, otherwise set it
-    if let Some(existing_value) = existing_value {
-        if !existing_value.is_empty() {
-            env_vars.insert(
-                USER_AGENT_ENV_VAR.to_string(),
-                format!("{existing_value} {user_agent_metadata_value}"),
-            );
-        } else {
-            env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
-        }
-    } else {
-        env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
-    }
+    // Set up AWS CLI user-agent metadata, preserving any caller-set value and
+    // appending the driving ACP client token when present.
+    insert_user_agent(&mut env_vars);
 
     env_vars
 }
@@ -710,6 +690,11 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::util::consts::{
+        USER_AGENT_APP_NAME,
+        USER_AGENT_ENV_VAR,
+        USER_AGENT_VERSION_KEY,
+    };
     use crate::util::test::TestBase;
 
     // ── Streamed chunks are sanitized ────────────────────────

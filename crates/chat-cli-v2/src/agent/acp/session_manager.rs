@@ -1350,6 +1350,12 @@ impl SessionManager {
                 version,
                 resp_sender,
             } => {
+                // Stamp the driving ACP client name so child `aws` CLI invocations carry an
+                // `acp-client/<name>` userAgent token for CloudTrail attribution. This is
+                // intentionally separate from `KIRO_CLI_CLIENT_APPLICATION`, telemetry, and the
+                // SDK user-agent interceptor, none of which are touched here. The sanitize+stamp
+                // lives in `stamp_acp_client_name`; telemetry below still receives the RAW name.
+                stamp_acp_client_name(&self.os.env, &name);
                 self.acp_client_info = Some(crate::telemetry::AcpClientInfo::new(name, version));
                 _ = resp_sender.send(Ok(()));
             },
@@ -3613,6 +3619,35 @@ impl SessionManagerHandle {
     }
 }
 
+/// Stamps the sanitized driving ACP client name into the process environment so
+/// that child `aws` CLI invocations carry an `acp-client/<name>` userAgent token
+/// for CloudTrail attribution.
+///
+/// The `name` from `Initialize` is attacker-controlled, so it is sanitized first
+/// (length-capped, and stripped of NUL — which would panic `set_var` — plus
+/// spaces and `/`, which could otherwise forge extra userAgent tokens). A name
+/// with nothing usable left (e.g. `"///"`) clears any previously-set value so a
+/// stale name can't persist across a re-`Initialize`. Only
+/// `ACP_CLIENT_NAME_ENV_VAR` is touched; telemetry and
+/// `KIRO_CLI_CLIENT_APPLICATION` are unaffected.
+fn stamp_acp_client_name(env: &crate::os::Env, name: &str) {
+    // SAFETY (both arms): called early during session init — same risk profile
+    // as the other `set_var` calls in this codebase (e.g.
+    // `env_var::publish_session_id`).
+    match agent::util::sanitize_acp_client_name(name) {
+        Some(sanitized) => unsafe {
+            env.set_var(agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR, &sanitized);
+        },
+        // Nothing usable in `name`: clear any prior value rather than leaving a
+        // stale one behind. `Env` exposes no `remove_var`, so we set an empty
+        // string; the user-agent formatter omits empty values via its
+        // `!is_empty()` guard, making an empty value equivalent to unset.
+        None => unsafe {
+            env.set_var(agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR, "");
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use agent::util::truncate_safe;
@@ -3856,5 +3891,85 @@ mod tests {
             vec!["b".to_string()],
             "the failed stage itself must never be selected for cancellation"
         );
+    }
+
+    // ── stamp_acp_client_name tests ─────────────────────────────────────
+    // The Initialize path stamps the SANITIZED ACP client name into the env so
+    // child `aws` CLI calls carry an `acp-client/<name>` userAgent token. The
+    // raw name is left to telemetry (AcpClientInfo); only the env var is
+    // sanitized here. A junk-only name clears any previously-set value.
+
+    #[test]
+    fn stamp_acp_client_name_sanitizes_multiword_name() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "Visual Studio Code");
+        assert_eq!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(),
+            "VisualStudioCode",
+            "spaces must be stripped so the name can't forge extra UA tokens"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_strips_nul_without_panic() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A NUL byte would panic the real `set_var`; it must be dropped, not stored.
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "a\u{0}b");
+        assert_eq!(env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(), "ab");
+    }
+
+    #[test]
+    fn stamp_acp_client_name_junk_only_clears_var() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // Nothing survives the allowlist, so the var is cleared. `Env` has no
+        // `remove_var`, so the cleared state is an empty string (or unset); the
+        // UA formatter omits both via its `!is_empty()` guard.
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "///");
+        assert!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).map(|v| v.is_empty()).unwrap_or(true),
+            "junk-only name must clear (empty/unset) the env var"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_junk_clears_prior_value() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A previously-stamped value must not survive a re-`Initialize` whose
+        // name sanitizes to nothing — otherwise stale attribution would leak
+        // into later `aws` calls.
+        let env = Env::from_slice(&[(ACP_CLIENT_NAME_ENV_VAR, "MeshClaw")]);
+        super::stamp_acp_client_name(&env, "///");
+        assert!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).map(|v| v.is_empty()).unwrap_or(true),
+            "a junk name must clear the previously-stamped value"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_valid_overwrites_prior_value() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A second `Initialize` with a valid name replaces the prior one
+        // (last-writer-wins: a single driving client per process).
+        let env = Env::from_slice(&[(ACP_CLIENT_NAME_ENV_VAR, "MeshClaw")]);
+        super::stamp_acp_client_name(&env, "kiro-tui");
+        assert_eq!(env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(), "kiro-tui");
     }
 }

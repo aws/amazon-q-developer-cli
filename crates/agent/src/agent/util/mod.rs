@@ -31,7 +31,17 @@ fn get_file_size(md: &std::fs::Metadata) -> u64 {
 }
 
 use bstr::ByteSlice as _;
-use consts::env_var::CLI_IS_INTEG_TEST;
+use consts::env_var::{
+    ACP_CLIENT_NAME_ENV_VAR,
+    CLI_IS_INTEG_TEST,
+};
+use consts::{
+    ACP_CLIENT_UA_TOKEN,
+    USER_AGENT_APP_NAME,
+    USER_AGENT_ENV_VAR,
+    USER_AGENT_VERSION_KEY,
+    USER_AGENT_VERSION_VALUE,
+};
 use error::{
     ErrorContext as _,
     UtilError,
@@ -158,6 +168,82 @@ pub async fn read_file_with_max_limit(
 
 pub fn is_integ_test() -> bool {
     std::env::var_os(CLI_IS_INTEG_TEST).is_some_and(|s| !s.is_empty())
+}
+
+/// Builds the value of the `AWS_EXECUTION_ENV` user-agent header shared by every
+/// `aws`-spawning tool.
+///
+/// `existing` is any caller-set value, preserved verbatim as a prefix.
+/// `acp_client`, when present and non-empty, is appended as an
+/// `acp-client/<name>` token so AWS CLI calls can be attributed to the driving
+/// ACP client (e.g. in CloudTrail). When `acp_client` is `None` or empty the
+/// output is byte-identical to the previous behavior.
+///
+/// Kept as a pure function so the three env builders share one formatter and
+/// tests can exercise every branch without mutating the process environment
+/// (which is `unsafe` and unsound under the multi-threaded test harness on
+/// Rust ≥1.83).
+pub fn build_user_agent_value(existing: Option<&str>, acp_client: Option<&str>) -> String {
+    let metadata = format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
+    let mut value = match existing {
+        Some(v) if !v.is_empty() => format!("{v} {metadata}"),
+        _ => metadata,
+    };
+    if let Some(client) = acp_client
+        && !client.is_empty()
+    {
+        value.push_str(&format!(" {ACP_CLIENT_UA_TOKEN}/{client}"));
+    }
+    value
+}
+
+/// Inserts the shared `AWS_EXECUTION_ENV` user-agent value into an environment
+/// map for a spawned `aws`-invoking child process.
+///
+/// Reads the existing `AWS_EXECUTION_ENV` and the driving-client name
+/// (`ACP_CLIENT_NAME_ENV_VAR`) *from the map itself*. Callers build the map via
+/// `std::env::vars().collect()`, so reading from the map is equivalent to
+/// reading the process environment while avoiding a second lookup. The computed
+/// value is written back under `USER_AGENT_ENV_VAR`.
+///
+/// This is the single point of truth for the three env builders (`use_aws`,
+/// `execute_cmd` unix/windows); each keeps only its own extra keys. Behavior is
+/// byte-identical to the previous inline logic, including when
+/// `ACP_CLIENT_NAME_ENV_VAR` is unset (the token is simply omitted).
+pub fn insert_user_agent(env_vars: &mut std::collections::HashMap<String, String>) {
+    let value = build_user_agent_value(
+        env_vars.get(USER_AGENT_ENV_VAR).map(String::as_str),
+        env_vars.get(ACP_CLIENT_NAME_ENV_VAR).map(String::as_str),
+    );
+    env_vars.insert(USER_AGENT_ENV_VAR.to_string(), value);
+}
+
+/// Sanitizes an ACP client name for safe use as a user-agent token value.
+///
+/// Keeps only `[A-Za-z0-9._-]`, caps the result at 64 characters, and returns
+/// `None` if nothing usable remains. The ASCII allowlist drops spaces, `/`,
+/// newlines, NUL, other control characters, and unicode. This prevents two
+/// distinct issues with the attacker-controlled `Initialize` name:
+/// - a NUL byte would panic `set_var` (a denial-of-service vector), and
+/// - spaces or `/` would let a name forge extra user-agent tokens in `AWS_EXECUTION_ENV` (e.g. `"x
+///   acp-client/y"`).
+///
+/// Sanitization is lossy and not injective: distinct names can map to the same
+/// token (e.g. `"a/b"` and `"ab"` both yield `"ab"`). This is acceptable for
+/// best-effort attribution, which does not require a reversible mapping.
+///
+/// Pure and side-effect free so it can be unit-tested without mutating the
+/// process environment.
+pub fn sanitize_acp_client_name(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        // Cap length: `AWS_EXECUTION_ENV` imposes no hard limit, so bound this
+        // attacker-controlled token to keep the user-agent value from growing
+        // unboundedly on hostile input.
+        .take(64)
+        .collect();
+    if cleaned.is_empty() { None } else { Some(cleaned) }
 }
 
 #[cfg(test)]
@@ -297,5 +383,64 @@ mod tests {
     async fn test_read_file_with_max_limit_nonexistent() {
         let result = read_file_with_max_limit("/nonexistent/path", 100, "...").await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn sanitize_keeps_plain_name() {
+        assert_eq!(sanitize_acp_client_name("meshclaw").as_deref(), Some("meshclaw"));
+    }
+
+    #[test]
+    fn sanitize_drops_spaces() {
+        // Spaces are stripped so a multiword name can't introduce extra UA tokens.
+        assert_eq!(
+            sanitize_acp_client_name("Visual Studio Code").as_deref(),
+            Some("VisualStudioCode")
+        );
+    }
+
+    #[test]
+    fn sanitize_drops_spaces_and_slashes() {
+        // A name crafted to forge tokens (spaces + `/`) must lose both.
+        let out = sanitize_acp_client_name("x AmazonQ-For-CLI Version/9.9").expect("non-empty");
+        assert!(!out.contains(' '), "result must not contain spaces: {out}");
+        assert!(!out.contains('/'), "result must not contain slashes: {out}");
+    }
+
+    #[test]
+    fn sanitize_strips_nul_without_panic() {
+        // NUL would panic `set_var`; it must be removed, not preserved.
+        assert_eq!(sanitize_acp_client_name("a\u{0}b").as_deref(), Some("ab"));
+    }
+
+    #[test]
+    fn sanitize_returns_none_when_nothing_usable() {
+        assert_eq!(sanitize_acp_client_name("///"), None);
+        assert_eq!(sanitize_acp_client_name("   "), None);
+        assert_eq!(sanitize_acp_client_name(""), None);
+    }
+
+    #[test]
+    fn sanitize_caps_length_at_64() {
+        let long = "a".repeat(200);
+        assert_eq!(sanitize_acp_client_name(&long).map(|s| s.len()), Some(64));
+    }
+
+    #[test]
+    fn sanitized_name_yields_exactly_one_acp_client_token() {
+        // End-to-end: a messy multiword name, once sanitized, produces exactly one
+        // well-formed `acp-client/<name>` token with no stray spaces inside it.
+        let sanitized = sanitize_acp_client_name("Visual Studio Code").expect("non-empty");
+        let ua = build_user_agent_value(None, Some(&sanitized));
+        assert_eq!(
+            ua.matches(" acp-client/").count(),
+            1,
+            "expected exactly one acp-client token, got: {ua}"
+        );
+        let token = ua
+            .split(' ')
+            .find(|t| t.starts_with("acp-client/"))
+            .expect("token present");
+        assert_eq!(token, "acp-client/VisualStudioCode");
     }
 }
