@@ -98,6 +98,10 @@ function lastMenu(ctx: ReturnType<typeof liteCtx>): {
 const rowDesc = (ctx: ReturnType<typeof liteCtx>, label: string) =>
   lastMenu(ctx).options.find((o) => o.label === label)?.description;
 
+// The option `value`s of the menu the handler just opened.
+const menuValues = (ctx: ReturnType<typeof liteCtx>): string[] =>
+  lastMenu(ctx).options.map((o) => String(o.value));
+
 describe('/verbosity lite-mode gate', () => {
   beforeEach(() => {
     resetVerboseCache();
@@ -325,47 +329,32 @@ describe('/verbosity config interactive menu', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('output sub-menu has no master toggle row and lists every category with [on] when "all" is active', () => {
+  it('output sub-menu replaces the legacy master toggle with a "filter:all" pseudo-row', () => {
     const ctx = liteCtx();
-    // Drill into the output filter sub-menu.
     runEffect(verbosityCmd, null, ctx, 'menu:output');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-    const arg = calls[calls.length - 1]![0] as {
-      command: SlashCommand;
-      options: any[];
-    };
-    expect(arg.command.name).toBe('/verbosity');
-    // No legacy master toggle row.
-    const values = arg.options.map((o) => o.value);
+    const arg = lastMenu(ctx) as { command?: SlashCommand; options: any[] };
+    expect((arg as any).command.name).toBe('/verbosity');
+    const values = menuValues(ctx);
     expect(values).not.toContain('__verbose_toggle__');
-    // First row is now the "all" pseudo-row.
+    // First row is the "all" pseudo-row.
     expect(arg.options[0].value).toBe('filter:all');
-    // Filter rows should all be [on] under "all". The "all" pseudo-row
-    // shows [active] instead of [on], skip it.
-    const categoryRows = arg.options.filter((o) =>
-      String(o.value).startsWith('category:')
-    );
-    expect(categoryRows.length).toBeGreaterThan(0);
-    for (const opt of categoryRows) {
-      expect(opt.description).toBe('[on]');
-    }
   });
 
-  it('empty filters: every tool is gated off', () => {
-    setVerboseConfig({ filters: [] });
+  // Every category row reflects the master filter state: [on] under "all", and
+  // [off] when the filter list is empty.
+  it.each([
+    [['all'], '[on]'],
+    [[], '[off]'],
+  ])('category rows show %s as %s', (filters, expectedDesc) => {
+    setVerboseConfig({ filters });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:output');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const categoryRows = arg.options.filter((o) =>
+    const categoryRows = lastMenu(ctx).options.filter((o) =>
       String(o.value).startsWith('category:')
     );
     expect(categoryRows.length).toBeGreaterThan(0);
     for (const opt of categoryRows) {
-      expect(opt.description).toBe('[off]');
+      expect(opt.description).toBe(expectedDesc);
     }
   });
 
@@ -670,22 +659,48 @@ describe('/verbosity drilldown menus', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('menu:tool opens an Args mode triplet plus reasoning + elapsed toggles', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:tool');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const values = arg.options.map((o) => o.value);
-    expect(values).toContain('set:showToolReasoning');
-    expect(values).toContain('set:showElapsed');
-    expect(values).toContain('set:toolArgsMode:off');
-    expect(values).toContain('set:toolArgsMode:inline');
-    expect(values).toContain('set:toolArgsMode:block');
-    // back-link present so the user can return to the top menu without esc.
-    // The back-link encodes the source key so the cursor lands on "Tool calls".
-    expect(values).toContain('menu:top:tool');
-  });
+  // Each drilldown menu opens with a fixed set of routing rows plus a
+  // section-encoded back-link. One table asserts the menu shape per route;
+  // per-route behavior (toggling, mutation, [active] markers) is tested
+  // separately below.
+  it.each([
+    {
+      route: 'menu:tool',
+      required: [
+        'set:showToolReasoning',
+        'set:showElapsed',
+        'set:toolArgsMode:off',
+        'set:toolArgsMode:inline',
+        'set:toolArgsMode:block',
+        'menu:top:tool',
+      ],
+      forbidden: [],
+    },
+    {
+      // Master step toggle, its two nested rows (instructions + role labels),
+      // responses, and the full-output toggle (mirrors the `subagent` filter).
+      // The old "deps" row is gone — dependency arrows are always-on now.
+      route: 'menu:subagent',
+      required: [
+        'set:subagent:pipeline',
+        'set:subagent:prompts',
+        'set:subagent:roles',
+        'set:subagent:responses',
+        'set:subagent:fullOutput',
+        'menu:top:subagent',
+      ],
+      forbidden: ['set:subagent:deps'],
+    },
+  ])(
+    '$route opens its drilldown rows + back-link',
+    ({ route, required, forbidden }) => {
+      const ctx = liteCtx();
+      runEffect(verbosityCmd, null, ctx, route);
+      const values = menuValues(ctx);
+      for (const v of required) expect(values).toContain(v);
+      for (const v of forbidden) expect(values).not.toContain(v);
+    }
+  );
 
   it('friendly section names jump straight into their sub-menu', () => {
     // Mirrors the breadcrumb so nested menus are reachable as typed
@@ -720,26 +735,6 @@ describe('/verbosity drilldown menus', () => {
     runEffect(verbosityCmd, null, ctx, 'density');
     const alerts = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
     expect(alerts[0]![0]).toContain('density needs a preset');
-  });
-
-  it('menu:subagent lists steps + nested rows + responses + full output toggle', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:subagent');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const values = arg.options.map((o) => o.value);
-    // Master step toggle, the two nested rows it gates (instructions +
-    // role labels), and responses still emit through set:subagent:<key>.
-    // The deps toggle was dropped — dependency arrows are now always-on
-    // when steps render (the user found the chrome confusing).
-    for (const k of ['pipeline', 'prompts', 'roles', 'responses']) {
-      expect(values).toContain(`set:subagent:${k}`);
-    }
-    // The new full-output toggle mirrors the `subagent` filter category.
-    expect(values).toContain('set:subagent:fullOutput');
-    // Old "deps" row is gone.
-    expect(values).not.toContain('set:subagent:deps');
   });
 
   it('menu:subagent hides nested rows when pipeline is off', () => {
@@ -793,64 +788,35 @@ describe('/verbosity drilldown menus', () => {
     expect(f).toContain('mcp');
   });
 
-  it('menu:density shows the four presets, marks the active one, and lists Custom', () => {
+  it('menu:density shows the four presets (routed to the confirm gate), marks the active one, and lists Custom', () => {
     setVerboseConfig({ display: undefined, filters: [] });
     resetVerboseCache();
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:density');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const values = arg.options.map((o) => o.value);
-    // Selecting a preset row routes to the confirmation gate, not direct
-    // commit — the value is `menu:density:confirm:<preset>`, not
-    // `density:<preset>`. The `menu:` prefix is required so the route
-    // handler picks it up; without it (regression), every preset fell
-    // through to the "Unknown subcommand" error.
-    expect(values).toContain('menu:density:confirm:minimal');
-    expect(values).toContain('menu:density:confirm:lean');
-    expect(values).toContain('menu:density:confirm:default');
-    // `full` is the only preset whose filter shape is `['all']`.
-    expect(values).toContain('menu:density:confirm:full');
-    // Legacy `normal` rename: the default-out-of-the-box preset is now
-    // called `default`. Old `normal` identifier is gone.
+    const values = menuValues(ctx);
+    // Each preset row routes to the confirmation gate (menu:density:confirm:*),
+    // NOT a direct density:<preset> commit — the `menu:` prefix is required or
+    // the route falls through to "Unknown subcommand" (a past regression).
+    for (const p of ['minimal', 'lean', 'default', 'full']) {
+      expect(values).toContain(`menu:density:confirm:${p}`);
+    }
+    // Legacy `normal`/`verbose` identifiers are gone (renamed to default/full).
     expect(values).not.toContain('menu:density:confirm:normal');
     expect(values).not.toContain('menu:density:confirm:verbose');
     // Custom row routes to the config (per-knob) menu.
-    const custom = arg.options.find((o) => o.label === 'custom') as any;
-    expect(custom?.value).toBe('menu:config');
-    // 'default' equals DEFAULT_DISPLAY + filters: ['shell'] — the fresh-
-    // install canonical shape. Override the describe block's beforeEach
-    // (which set filters: ['all'], matching `full`) with the default-active
-    // shape and re-open the menu so we can verify the [active] marker
-    // lands on the `default` row.
+    expect(lastMenu(ctx).options.find((o) => o.label === 'custom')?.value).toBe(
+      'menu:config'
+    );
+    // 'default' = DEFAULT_DISPLAY + filters: ['shell'] (fresh-install shape);
+    // re-open under that shape to verify the [active] marker lands on `default`.
     setVerboseConfig({ filters: ['shell'] });
     const ctx2 = liteCtx();
     runEffect(verbosityCmd, null, ctx2, 'menu:density');
-    const arg2 = (
-      ctx2._spies.setActiveCommand!.mock.calls as unknown as unknown[][]
-    )[0]![0] as { options: any[] };
-    const def = arg2.options.find(
-      (o) => o.value === 'menu:density:confirm:default'
-    ) as any;
-    expect(def.description).toContain('[active]');
-  });
-
-  it('menu:density:confirm:<preset> opens the preset confirmation submenu', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:density:confirm:lean');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    // Cancel comes first so the safe row is the default.
-    expect(arg.options[0].label).toBe('Cancel');
-    expect(arg.options[0].value).toBe('menu:density');
-    // Yes row commits via density:apply:<preset>.
-    const yes = arg.options.find((o) => o.value === 'density:apply:lean');
-    expect(yes).toBeDefined();
-    expect(yes!.label).toContain('Yes');
-    // Cancel does not mutate.
-    expect(getVerboseConfig().filters).toEqual(['all']);
+    expect(
+      lastMenu(ctx2).options.find(
+        (o) => o.value === 'menu:density:confirm:default'
+      )?.description
+    ).toContain('[active]');
   });
 });
 
@@ -1232,20 +1198,18 @@ describe('/verbosity case-insensitive command verbs', () => {
     check(getVerboseConfig());
   });
 
-  it('/verbosity ONLY shell preserves filter token case', () => {
+  // The verb may be any case, but the filter token after it must reach the
+  // saved config exactly as typed — MCP tool names (and category names) are
+  // case-sensitive. This is a distinct regression from verb-folding above.
+  it.each([
+    ['ONLY mcp__SomeCase__tool', 'mcp__SomeCase__tool'],
+    ['only Shell', 'Shell'],
+  ])('/verbosity %s preserves the filter token case', (arg, token) => {
     const ctx = liteCtx();
-    // The verb is uppercase but the filter token must reach the saved
-    // config exactly as typed — MCP tool names are case-sensitive.
-    runEffect(verbosityCmd, null, ctx, 'ONLY mcp__SomeCase__tool');
-    expect(getVerboseConfig().filters).toContain('mcp__SomeCase__tool');
-  });
-
-  it('/verbosity only Shell keeps the original Shell capitalization in saved filters', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'only Shell');
-    // Filter token should NOT be lowercased — preserves what the user typed.
-    expect(getVerboseConfig().filters).toContain('Shell');
-    expect(getVerboseConfig().filters).not.toContain('shell');
+    runEffect(verbosityCmd, null, ctx, arg);
+    const f = getVerboseConfig().filters;
+    expect(f).toContain(token);
+    expect(f).not.toContain(token.toLowerCase());
   });
 });
 

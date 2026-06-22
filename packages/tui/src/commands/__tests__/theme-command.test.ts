@@ -162,24 +162,17 @@ describe('/theme command', () => {
   });
 
   describe('/theme custom', () => {
-    it('shows prompt, response, and diff category selection', async () => {
+    it('shows prompt/response/diff category selection and sets a preview', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'custom', ctx);
 
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
       const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
       const options = call[0].options;
       expect(options).toHaveLength(3);
       expect(options[0].value).toBe('prompt');
       expect(options[1].value).toBe('response');
       expect(options[2].value).toBe('diff');
-    });
-
-    it('sets theme preview when entering custom flow', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'custom', ctx);
-
-      expect(ctx._spies.setThemePreview!).toHaveBeenCalled();
+      // Entering custom seeds the live preview.
       const previewCall = ctx._spies.setThemePreview!.mock.calls[0]!;
       expect(typeof previewCall[0]).toBe('string');
       expect(previewCall[0].length).toBeGreaterThan(0);
@@ -338,23 +331,11 @@ describe('/theme command', () => {
   });
 
   describe('diff presets', () => {
-    it('/theme diff shows diff preset options', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff', ctx);
-
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const options = call[0].options;
-      expect(options.length).toBeGreaterThan(0);
-      expect(
-        options.find((o: any) => o.value === 'diff:default')
-      ).toBeDefined();
-      expect(
-        options.find((o: any) => o.value === 'diff:colorblind-dark')
-      ).toBeDefined();
-    });
-
-    it('applies colorblind-dark diff preset and persists', async () => {
+    // Unique to diff: writes only the diff color slot (arg index 2; prompt +
+    // response untouched) and surfaces the preset's own label. The category's
+    // option list, [active] marker, default-clear, unknown-preset error, and
+    // persistence are all covered by the parameterized it.each blocks above.
+    it('applies colorblind-dark diff preset, sets only the diff slot, and persists', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'diff:colorblind-dark', ctx);
 
@@ -368,26 +349,8 @@ describe('/theme command', () => {
       expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Accessible');
       expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
 
-      const prefs = loadUserThemePrefs();
-      expect(prefs.diffPreset).toBe('colorblind-dark');
+      expect(loadUserThemePrefs().diffPreset).toBe('colorblind-dark');
     });
-
-    it('applies default diff preset and clears persisted value', async () => {
-      saveUserThemePrefs({ diffPreset: 'colorblind-dark' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff:default', ctx);
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.diffPreset).toBeUndefined();
-    });
-
-    // Unknown diff preset error is covered by the parameterized unknown-preset
-    // it.each in the "applying presets" describe above.
-
-    // Bundled-theme diff/baseTheme persistence is covered by the parameterized
-    // "applies bundled $id theme" test above (it asserts diffPreset + baseTheme
-    // in expectedPrefs). The diff [active] marker is covered by the
-    // parameterized "[active] markers" it.each above.
   });
 
   describe('ESC navigation flag (themeReturnOnEscape)', () => {
