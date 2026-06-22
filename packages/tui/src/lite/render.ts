@@ -3325,43 +3325,31 @@ function buildTruncationOutputFixture(
       `line ${String(i).padStart(2, '0')}: lorem ipsum dolor sit amet`
     );
   }
-  const isAll = filters.includes('all');
+  // Pick a tool from the user's enabled categories so the demo uses one they
+  // actually see. Unmatched filters fall back to shell — renderVerbosityPreview
+  // then widens the override list with shell so the bar still shows.
+  const SHELL = {
+    name: 'shell',
+    command: 'cat fixture.txt',
+    purpose: 'demo a tool with long output',
+  };
   const choose = (): { name: string; command: string; purpose: string } => {
-    if (isAll || filters.includes('shell')) {
-      return {
-        name: 'shell',
-        command: 'cat fixture.txt',
-        purpose: 'demo a tool with long output',
-      };
-    }
-    if (filters.includes('read')) {
-      return {
-        name: 'fs_read',
-        command: '',
-        purpose: 'demo a long file read',
-      };
-    }
-    if (filters.includes('grep')) {
+    if (filters.includes('all') || filters.includes('shell')) return SHELL;
+    if (filters.includes('read'))
+      return { name: 'fs_read', command: '', purpose: 'demo a long file read' };
+    if (filters.includes('grep'))
       return {
         name: 'grep',
         command: '',
         purpose: 'demo a grep with many matches',
       };
-    }
-    if (filters.includes('mcp')) {
+    if (filters.includes('mcp'))
       return {
         name: 'mcp__demo__long-output',
         command: '',
         purpose: 'demo an MCP tool with long output',
       };
-    }
-    // Fall back to shell — the widening logic in renderVerbosityPreview
-    // will add the shell category to the override list so the bar shows.
-    return {
-      name: 'shell',
-      command: 'cat fixture.txt',
-      purpose: 'demo a tool with long output',
-    };
+    return SHELL;
   };
   const pick = choose();
   // fs_read uses operations:[{path}]; others take a generic command/query.

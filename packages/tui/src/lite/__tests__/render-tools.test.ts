@@ -100,40 +100,43 @@ describe('renderToolCall', () => {
       [],
       [],
     ],
+    [
+      'shows MCP server source',
+      {
+        name: 'InternalSearch',
+        mcpServer: 'builder-mcp',
+        status: 'done' as const,
+      },
+      ['builder-mcp', 'InternalSearch'],
+      [],
+      [],
+    ],
+    [
+      'shows description when provided',
+      {
+        name: 'execute_bash',
+        description: 'Running tests',
+        status: 'running' as const,
+      },
+      ['Running tests'],
+      [],
+      [],
+    ],
+    [
+      // raw asserts the dim SGR (\x1b[2m), not just the name, so this row
+      // actually covers the "dimmed" behavior it claims.
+      'trivial tools are dimmed',
+      { name: 'fs_read', status: 'done' as const, isTrivial: true },
+      ['fs_read'],
+      [],
+      ['\x1b[2m'],
+    ],
   ])('%s', (_name, input, contains, notContains, rawContains) => {
     const result = renderToolCall(input);
     const plain = stripAnsi(result);
     for (const c of contains) expect(plain).toContain(c);
     for (const n of notContains) expect(plain).not.toContain(n);
     for (const r of rawContains) expect(result).toContain(r);
-  });
-
-  test('shows MCP server source', () => {
-    const result = renderToolCall({
-      name: 'InternalSearch',
-      mcpServer: 'builder-mcp',
-      status: 'done',
-    });
-    expect(result).toContain('builder-mcp');
-    expect(result).toContain('InternalSearch');
-  });
-
-  test('shows description when provided', () => {
-    const result = renderToolCall({
-      name: 'execute_bash',
-      description: 'Running tests',
-      status: 'running',
-    });
-    expect(result).toContain('Running tests');
-  });
-
-  test('trivial tools are dimmed', () => {
-    const result = renderToolCall({
-      name: 'fs_read',
-      status: 'done',
-      isTrivial: true,
-    });
-    expect(result).toContain('fs_read');
   });
 
   test('inline arg chip renders next to tool name', () => {
