@@ -446,153 +446,140 @@ export type VerbosityPreviewKey =
   | 'truncation:args'
   | 'truncation:output';
 
-const PREVIEW_FIXTURE_SHELL: MessageLike = {
+/** Build a finished, successful tool-use preview fixture, hoisting the shared
+ *  role/startTime/isFinished/result-envelope boilerplate the literals repeat. */
+function toolFixture(f: {
+  id: string;
+  name: string;
+  content: Record<string, unknown>;
+  output?: string;
+  finishTime: number;
+}): MessageLike {
+  return {
+    id: f.id,
+    role: 'tool_use',
+    name: f.name,
+    content: JSON.stringify(f.content),
+    result: { status: 'success', output: f.output ?? '' },
+    startTime: 0,
+    finishTime: f.finishTime,
+    isFinished: true,
+  };
+}
+
+const PREVIEW_FIXTURE_SHELL = toolFixture({
   id: 'preview-shell',
-  role: 'tool_use',
   name: 'shell',
-  content: JSON.stringify({
+  content: {
     command: 'git status',
     __tool_use_purpose: 'check working tree state before commit',
-  }),
-  result: {
-    status: 'success',
-    output: [
-      'On branch feature/lite-tui-mode',
-      'Changes not staged for commit:',
-      '  (use "git add <file>..." to update what will be committed)',
-      '  (use "git restore <file>..." to discard changes in working directory)',
-      '\tmodified:   packages/tui/src/lite/render.ts',
-      '\tmodified:   packages/tui/src/commands/effects.ts',
-      '',
-      'no changes added to commit (use "git add" and/or "git commit -a")',
-    ].join('\n'),
   },
-  startTime: 0,
+  output: [
+    'On branch feature/lite-tui-mode',
+    'Changes not staged for commit:',
+    '  (use "git add <file>..." to update what will be committed)',
+    '  (use "git restore <file>..." to discard changes in working directory)',
+    '\tmodified:   packages/tui/src/lite/render.ts',
+    '\tmodified:   packages/tui/src/commands/effects.ts',
+    '',
+    'no changes added to commit (use "git add" and/or "git commit -a")',
+  ].join('\n'),
   finishTime: 1240,
-  isFinished: true,
-};
+});
 
-const PREVIEW_FIXTURE_READ: MessageLike = {
+const PREVIEW_FIXTURE_READ = toolFixture({
   id: 'preview-read',
-  role: 'tool_use',
   name: 'fs_read',
-  content: JSON.stringify({
+  content: {
     operations: [{ path: '/etc/hosts', limit: 50 }],
     __tool_use_purpose: 'inspect hostnames for the dev cluster',
-  }),
-  result: {
-    status: 'success',
-    output: [
-      '127.0.0.1 localhost',
-      '::1       localhost',
-      '127.0.1.1 cloud-desktop',
-    ].join('\n'),
   },
-  startTime: 0,
+  output: [
+    '127.0.0.1 localhost',
+    '::1       localhost',
+    '127.0.1.1 cloud-desktop',
+  ].join('\n'),
   finishTime: 18,
-  isFinished: true,
-};
+});
 
 /** Grep fixture — long pattern argument so the preview demonstrates how
  *  argsMaxChars clips a single value without affecting other rows. */
-const PREVIEW_FIXTURE_GREP: MessageLike = {
+const PREVIEW_FIXTURE_GREP = toolFixture({
   id: 'preview-grep',
-  role: 'tool_use',
   name: 'grep',
-  content: JSON.stringify({
+  content: {
     pattern: 'legacy_auth_middleware|legacyAuthMiddleware|LegacyAuthMiddleware',
     path: 'packages/tui/src',
     __tool_use_purpose: 'enumerate every flavor of the legacy middleware name',
-  }),
-  result: {
-    status: 'success',
-    output: [
-      'packages/tui/src/api/auth/legacy.ts:42:    legacy_auth_middleware,',
-      'packages/tui/src/edge/handlers/login.ts:15:  wrap(legacyAuthMiddleware)',
-      'packages/tui/src/middleware/legacy.ts:1:export const legacy_auth_middleware = (',
-      'packages/tui/src/scripts/migrate.ts:88:// references legacyAuthMiddleware',
-    ].join('\n'),
   },
-  startTime: 0,
+  output: [
+    'packages/tui/src/api/auth/legacy.ts:42:    legacy_auth_middleware,',
+    'packages/tui/src/edge/handlers/login.ts:15:  wrap(legacyAuthMiddleware)',
+    'packages/tui/src/middleware/legacy.ts:1:export const legacy_auth_middleware = (',
+    'packages/tui/src/scripts/migrate.ts:88:// references legacyAuthMiddleware',
+  ].join('\n'),
   finishTime: 96,
-  isFinished: true,
-};
+});
 
 /** Long-output (12-line) shell fixture so outputMaxLines=5 is visibly clipped. */
-const PREVIEW_FIXTURE_LONG_OUTPUT: MessageLike = {
+const PREVIEW_FIXTURE_LONG_OUTPUT = toolFixture({
   id: 'preview-long',
-  role: 'tool_use',
   name: 'shell',
-  content: JSON.stringify({
+  content: {
     command: 'cat package.json',
     __tool_use_purpose: 'inspect dependencies',
-  }),
-  result: {
-    status: 'success',
-    output: [
-      '{',
-      '  "name": "@kiro/tui",',
-      '  "version": "0.1.0",',
-      '  "type": "module",',
-      '  "scripts": {',
-      '    "build": "tsc -b",',
-      '    "test": "vitest run",',
-      '    "lint": "eslint src"',
-      '  },',
-      '  "dependencies": {',
-      '    "ink": "^4.0.0",',
-      '    "react": "^18.2.0"',
-      '  }',
-      '}',
-    ].join('\n'),
   },
-  startTime: 0,
+  output: [
+    '{',
+    '  "name": "@kiro/tui",',
+    '  "version": "0.1.0",',
+    '  "type": "module",',
+    '  "scripts": {',
+    '    "build": "tsc -b",',
+    '    "test": "vitest run",',
+    '    "lint": "eslint src"',
+    '  },',
+    '  "dependencies": {',
+    '    "ink": "^4.0.0",',
+    '    "react": "^18.2.0"',
+    '  }',
+    '}',
+  ].join('\n'),
   finishTime: 32,
-  isFinished: true,
-};
+});
 
 /** MCP-routed fixture — name is `mcp__*` so the `mcp` filter category gates
  *  it. Useful for showing how filter choices reshape the preview. */
-const PREVIEW_FIXTURE_MCP: MessageLike = {
+const PREVIEW_FIXTURE_MCP = toolFixture({
   id: 'preview-mcp',
-  role: 'tool_use',
   name: 'mcp__nova-memory-mcp__recall',
-  content: JSON.stringify({
+  content: {
     query: 'legacy auth middleware migration',
     __tool_use_purpose: 'check prior context for the migration plan',
-  }),
-  result: {
-    status: 'success',
-    output: [
-      '3 memories matched:',
-      '  · 2026-04-02 — legacy_auth_middleware deprecation announcement',
-      '  · 2026-04-15 — session-token store rollout plan',
-      '  · 2026-05-01 — compliance review of token storage',
-    ].join('\n'),
   },
-  startTime: 0,
+  output: [
+    '3 memories matched:',
+    '  · 2026-04-02 — legacy_auth_middleware deprecation announcement',
+    '  · 2026-04-15 — session-token store rollout plan',
+    '  · 2026-05-01 — compliance review of token storage',
+  ].join('\n'),
   finishTime: 240,
-  isFinished: true,
-};
+});
 
 /** Write fixture — exercises the diff renderer so users can see what
  *  write-tool calls look like under different verbosity settings. */
-const PREVIEW_FIXTURE_WRITE: MessageLike = {
+const PREVIEW_FIXTURE_WRITE = toolFixture({
   id: 'preview-write',
-  role: 'tool_use',
   name: 'fs_write',
-  content: JSON.stringify({
+  content: {
     command: 'str_replace',
     path: 'packages/tui/src/middleware/legacy.ts',
     old_str: 'export const legacy_auth_middleware = (req, res, next) => {',
     new_str: 'export const legacyAuthMiddleware = (req, res, next) => {',
     __tool_use_purpose: 'rename the legacy middleware export to camelCase',
-  }),
-  result: { status: 'success', output: '' },
-  startTime: 0,
+  },
   finishTime: 64,
-  isFinished: true,
-};
+});
 
 /** Agent prose fixture so the preview isn't wall-to-wall tool blocks. */
 const PREVIEW_FIXTURE_AGENT: MessageLike = {
@@ -602,7 +589,7 @@ const PREVIEW_FIXTURE_AGENT: MessageLike = {
     "Found four call sites for the legacy middleware. I'll rename the export to camelCase, then fix the import sites in order: edge handler, API auth, migration script.",
 };
 
-const PREVIEW_SUBAGENT_CONTENT = JSON.stringify({
+const PREVIEW_SUBAGENT_CONTENT = {
   task: 'find every place the legacy auth middleware is wired up',
   stages: [
     {
@@ -620,7 +607,7 @@ const PREVIEW_SUBAGENT_CONTENT = JSON.stringify({
       depends_on: ['scan'],
     },
   ],
-});
+};
 
 const PREVIEW_SUBAGENT_SUMMARIES: SubagentStageSummary[] = [
   {
@@ -643,16 +630,12 @@ const PREVIEW_SUBAGENT_SUMMARIES: SubagentStageSummary[] = [
   },
 ];
 
-const PREVIEW_FIXTURE_SUBAGENT: MessageLike = {
+const PREVIEW_FIXTURE_SUBAGENT = toolFixture({
   id: 'preview-subagent',
-  role: 'tool_use',
   name: 'subagent',
   content: PREVIEW_SUBAGENT_CONTENT,
-  result: { status: 'success', output: '' },
-  startTime: 0,
   finishTime: 4200,
-  isFinished: true,
-};
+});
 
 const PREVIEW_FIXTURE_USER: MessageLike = {
   id: 'preview-user',
@@ -668,16 +651,12 @@ function buildTruncationArgsFixture(): MessageLike {
   for (let i = 1; i <= 50; i++) {
     args[`key_${String(i).padStart(2, '0')}`] = `value-${i}`;
   }
-  return {
+  return toolFixture({
     id: 'preview-trunc-args',
-    role: 'tool_use',
     name: 'mcp__demo__many_args',
-    content: JSON.stringify(args),
-    result: { status: 'success', output: '' },
-    startTime: 0,
+    content: args,
     finishTime: 50,
-    isFinished: true,
-  };
+  });
 }
 
 /** 60-line output fixture for truncation:output. Picks a tool from the user's
@@ -732,37 +711,24 @@ function buildTruncationOutputFixture(
   };
   const pick = choose();
   // fs_read uses operations:[{path}]; others take a generic command/query.
-  const content =
+  const content: Record<string, unknown> =
     pick.name === 'fs_read'
-      ? JSON.stringify({
+      ? {
           operations: [{ path: '/tmp/fixture.txt' }],
           __tool_use_purpose: pick.purpose,
-        })
+        }
       : pick.name.startsWith('mcp__')
-        ? JSON.stringify({
-            query: 'fixture',
-            __tool_use_purpose: pick.purpose,
-          })
+        ? { query: 'fixture', __tool_use_purpose: pick.purpose }
         : pick.name === 'grep'
-          ? JSON.stringify({
-              pattern: 'fixture',
-              path: '.',
-              __tool_use_purpose: pick.purpose,
-            })
-          : JSON.stringify({
-              command: pick.command,
-              __tool_use_purpose: pick.purpose,
-            });
-  return {
+          ? { pattern: 'fixture', path: '.', __tool_use_purpose: pick.purpose }
+          : { command: pick.command, __tool_use_purpose: pick.purpose };
+  return toolFixture({
     id: 'preview-trunc-output',
-    role: 'tool_use',
     name: pick.name,
     content,
-    result: { status: 'success', output: lines.join('\n') },
-    startTime: 0,
+    output: lines.join('\n'),
     finishTime: 80,
-    isFinished: true,
-  };
+  });
 }
 
 /** Section-spacing for preview rendering; delegates to needsLeadingBlankByRole. */
