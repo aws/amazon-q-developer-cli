@@ -671,10 +671,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (args) {
       if (args === '' || args === 'main') {
         ctx.setActiveSession('');
-        // Lite drops 'success' alerts (app-store.ts ~3479), so showAlert
-        // alone disappears in lite. The main-chat branch has no other
-        // visible cue, which made the swap look like nothing happened.
-        // TUI keeps the toast; lite gets a System row in scrollback.
+        // Lite drops 'success' alerts (app-store.ts ~3479), so confirmations
+        // go to scrollback via announceSystem; TUI keeps the transient toast.
         if (ctx.getUiMode?.() === 'lite') {
           ctx.announceSystem('Switched to main chat');
         } else {
@@ -768,9 +766,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Add to store
       ctx.addSession(session);
 
-      // Lite drops 'success' alerts, so the spawn confirmation would
-      // silently disappear there. Route to scrollback in lite, keep
-      // TUI's transient toast.
+      // Lite drops 'success' alerts — scrollback in lite, toast in TUI.
       if (ctx.getUiMode?.() === 'lite') {
         ctx.announceSystem(
           `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`
@@ -966,10 +962,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Clipboard contents are invisible — without a confirmation the user
-    // can't tell whether /copy worked. Lite drops 'success' alerts, so
-    // the toast disappears in lite. Route to scrollback in lite, toast
-    // in TUI.
+    // Clipboard contents are invisible — confirm the copy. Lite drops
+    // 'success' alerts, so scrollback in lite, toast in TUI.
     if (ctx.getUiMode?.() === 'lite') {
       ctx.announceSystem('Copied to clipboard');
     } else {
@@ -1047,10 +1041,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   showSessionId: (_result, ctx) => {
     const sessionId = ctx.kiro.sessionId ?? 'none';
-    // /session-id's whole point is to print the ID for the user to copy.
-    // Lite drops 'success' alerts, so the toast disappears in lite —
-    // putting the row in scrollback also lets the user scroll back to it
-    // later. TUI keeps the long toast.
+    // /session-id prints the ID for the user to copy. Lite drops 'success'
+    // alerts, so it goes to scrollback (scrollable later); TUI keeps the toast.
     if (ctx.getUiMode?.() === 'lite') {
       ctx.announceSystem(`Session ID: ${sessionId}`);
     } else {
@@ -1525,30 +1517,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Resolve the canonical /verbosity SlashCommand from the registry so the
-    // menu's command chip and CommandMenu's `command.name === '/verbosity'`
-    // detection (Ctrl+P preview toggle, density-row draft highlight, stale
-    // state reset) work identically regardless of how the handler was
-    // reached — direct typing or `/settings verbosity`. Without this, entering
-    // via /settings produces an activeCommand whose name is `/settings`, and
-    // CommandMenu's checks silently fail.
-    //
-    // Mirrors the showThemeMenu pattern at the top of that handler:
-    // resolve the canonical cmd, bail silently if not registered (a
-    // production-impossible case kept defensive for tests). Suppressed in
-    // tests that only register the settings cmd — those tests fall back to
-    // `cmd`, the legacy behavior.
+    // Resolve the canonical /verbosity command so CommandMenu's
+    // `command.name === '/verbosity'` checks fire whether reached by direct
+    // typing or `/settings verbosity` (else the name is `/settings`). Falls
+    // back to `cmd` when not registered (tests that only register settings).
     const verbosityCmd =
       ctx.slashCommands.find((c) => c.name === '/verbosity') ?? cmd;
 
     // Case folding for command matching. Internal-dispatch forms (`menu:*`,
-    // `set:*`, `category:*`, `filter:*`, `reset:*`) never come from user
-    // typing — the menu writes them with exact casing — so we preserve them
-    // unchanged. Everything else lowercases its first whitespace-bounded
-    // word so verbs like `ON`, `ALL`, `Density` match the routing branches,
-    // while filter tokens after the first word keep their original case
-    // (MCP tool names like `mcp__nova-memory-mcp__remember` are
-    // case-sensitive).
+    // `set:*`, ...) are written by the menu with exact casing, so preserve
+    // them. Otherwise lowercase only the first word (so `ON`/`Density` match
+    // the routing verbs) while keeping later filter tokens' case (MCP tool
+    // names are case-sensitive).
     const rawTrimmed = args.trim();
     const isInternalDispatch =
       /^(menu|set|category|filter|reset):/.test(rawTrimmed) &&
@@ -2063,6 +2043,21 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
+    // Toggle a single filter token, expanding the implicit `['all']` set into
+    // the explicit category list first so dropping one token doesn't leave the
+    // user with everything still on. Shared by the per-category rows and the
+    // subagent full-output toggle (which piggybacks on the `subagent` token).
+    const toggleFilterToken = (token: string) => {
+      const curFilters = getVerboseConfig().filters;
+      const baseline = curFilters.includes('all')
+        ? Array.from(VERBOSE_CATEGORIES)
+        : [...curFilters];
+      const filterSet = new Set(baseline);
+      if (filterSet.has(token)) filterSet.delete(token);
+      else filterSet.add(token);
+      setVerboseConfig({ filters: Array.from(filterSet) });
+    };
+
     // ── Routing ────────────────────────────────────────────────────────────
 
     // Bare /verbosity: smart entry. Lands in the density menu when an active
@@ -2118,22 +2113,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
     }
-    if (trimmed === 'menu:tool') {
-      openToolMenu();
-      return true;
-    }
-    if (trimmed === 'menu:subagent') {
-      openSubagentMenu();
-      return true;
-    }
-    if (trimmed === 'menu:output') {
-      openOutputMenu();
-      return true;
-    }
-    if (trimmed === 'menu:truncation') {
-      openTruncationMenu();
-      return true;
-    }
     {
       const editMatch = trimmed.match(
         /^menu:truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
@@ -2144,27 +2123,27 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
     }
 
-    // Friendly section names — let users jump straight into a sub-menu by its
-    // breadcrumb name, both as `/verbosity <section>` and (forwarded by the
-    // settings router) `/settings verbosity <section>`. Mirrors the nested
-    // breadcrumb so the menus are discoverable as typed subcommands. The first
-    // word was already lowercased by the case-folding above, so multi-word
-    // forms like "tool calls" compare in lower case here.
-    //
-    // `density` is intentionally NOT here: bare `density` is the existing CLI
-    // form (`density <preset>`) handled below, and the density menu is already
-    // the smart-entry default for bare `/verbosity` on a preset.
+    // Section-menu openers keyed by every route that reaches them: the internal
+    // `menu:<section>` dispatch AND the friendly breadcrumb aliases users type
+    // (`/verbosity tool`, `/settings verbosity truncation`). The first word was
+    // already lowercased above, so multi-word forms like "tool calls" match in
+    // lower case. `density` is intentionally absent: bare `density` is the CLI
+    // set-preset form, and the density menu is the smart-entry default.
     {
-      const SECTION_OPENERS: Record<string, () => void> = {
+      const MENU_OPENERS: Record<string, () => void> = {
+        'menu:tool': openToolMenu,
         tool: openToolMenu,
         tools: openToolMenu,
         'tool calls': openToolMenu,
+        'menu:subagent': openSubagentMenu,
         subagent: openSubagentMenu,
         subagents: openSubagentMenu,
+        'menu:output': openOutputMenu,
         output: openOutputMenu,
+        'menu:truncation': openTruncationMenu,
         truncation: openTruncationMenu,
       };
-      const opener = SECTION_OPENERS[trimmed];
+      const opener = MENU_OPENERS[trimmed];
       if (opener) {
         opener();
         return true;
@@ -2279,26 +2258,19 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // computes off the unified value (cli.json override) rather than
       // the verbose-config.json copy that may be stale.
       const display = getVerboseDisplay();
-      if (rest === 'showToolReasoning') {
+      // Tool-menu boolean toggles: flip one display field, reopen the tool menu.
+      const TOOL_BOOL_TOGGLES: Record<
+        string,
+        'showToolReasoning' | 'showElapsed' | 'showWriteDiffs'
+      > = {
+        showToolReasoning: 'showToolReasoning',
+        showElapsed: 'showElapsed',
+        'showWriteDiffs:tool': 'showWriteDiffs',
+      };
+      const toolToggleField = TOOL_BOOL_TOGGLES[rest];
+      if (toolToggleField) {
         setVerboseConfig({
-          display: {
-            ...display,
-            showToolReasoning: !display.showToolReasoning,
-          },
-        });
-        openToolMenu();
-        return true;
-      }
-      if (rest === 'showElapsed') {
-        setVerboseConfig({
-          display: { ...display, showElapsed: !display.showElapsed },
-        });
-        openToolMenu();
-        return true;
-      }
-      if (rest === 'showWriteDiffs:tool') {
-        setVerboseConfig({
-          display: { ...display, showWriteDiffs: !display.showWriteDiffs },
+          display: { ...display, [toolToggleField]: !display[toolToggleField] },
         });
         openToolMenu();
         return true;
@@ -2384,21 +2356,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         openSubagentMenu();
         return true;
       }
-      // fullOutput: piggybacks on the `subagent` filter token (same gate the
-      // renderer already uses for the verbose `full output:` body). Mirrors
-      // the category:<name> toggle logic so behavior is consistent — when
-      // filters is `['all']`, expand to the full category list before
-      // dropping `subagent`; otherwise just add or remove the token.
+      // fullOutput piggybacks on the `subagent` filter token (same gate the
+      // renderer uses for the verbose `full output:` body).
       if (rest === 'subagent:fullOutput') {
-        const curFilters = getVerboseConfig().filters;
-        const isAll = curFilters.includes('all');
-        const baseline = isAll
-          ? Array.from(VERBOSE_CATEGORIES)
-          : [...curFilters];
-        const filterSet = new Set(baseline);
-        if (filterSet.has('subagent')) filterSet.delete('subagent');
-        else filterSet.add('subagent');
-        setVerboseConfig({ filters: Array.from(filterSet) });
+        toggleFilterToken('subagent');
         openSubagentMenu();
         return true;
       }
@@ -2464,22 +2425,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ctx.showAlert(`Unknown category: ${cat}`, 'error', 3000);
         return true;
       }
-      const cur = getVerboseConfig();
-      const isAll = cur.filters.includes('all');
-      // First toggle out of "all" expands the implicit set so we can drop
-      // a single category from it. Without this, removing one category
-      // from "all" would silently leave the user with everything still on.
-      const baseline = isAll
-        ? Array.from(VERBOSE_CATEGORIES)
-        : [...cur.filters];
-      const filterSet = new Set(baseline);
-      if (filterSet.has(cat)) {
-        filterSet.delete(cat);
-      } else {
-        filterSet.add(cat);
-      }
-      const next = Array.from(filterSet);
-      setVerboseConfig({ filters: next });
+      toggleFilterToken(cat);
       // Re-open the output sub-menu so the user can keep toggling categories.
       openOutputMenu();
       return true;
