@@ -251,12 +251,95 @@ def download_node() -> NodePaths:
     return result
 
 
+def _resolve_pkg_dir(name: str, from_dir: pathlib.Path, nm_root: pathlib.Path) -> pathlib.Path | None:
+    """Resolve a package directory using node's node_modules resolution: walk up
+    from `from_dir` checking each `node_modules/<name>`, then fall back to the
+    install root. Returns None if the package is not installed (e.g. an optional
+    dependency that was skipped for this platform)."""
+    d = from_dir
+    while True:
+        cand = d / "node_modules" / name
+        if (cand / "package.json").exists():
+            return cand
+        parent = d.parent
+        if parent == d:
+            break
+        d = parent
+    root_cand = nm_root / name
+    return root_cand if (root_cand / "package.json").exists() else None
+
+
+def _kas_runtime_closure(nm_root: pathlib.Path, agent_dir: pathlib.Path, seeds: list[str]) -> set[pathlib.Path]:
+    """Compute the transitive package closure of `seeds` against the installed
+    tree, walking dependencies + optionalDependencies + peerDependencies. Whole
+    packages are resolved (never partial), so each package's own dynamic
+    require()s still work at runtime."""
+    visited: set[pathlib.Path] = set()
+    queue: list[tuple[str, pathlib.Path]] = [(name, agent_dir) for name in seeds]
+    while queue:
+        name, from_dir = queue.pop()
+        pkg_dir = _resolve_pkg_dir(name, from_dir, nm_root)
+        if pkg_dir is None or pkg_dir in visited:
+            continue
+        visited.add(pkg_dir)
+        try:
+            with open(pkg_dir / "package.json") as f:
+                pkg = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        deps = {
+            **pkg.get("dependencies", {}),
+            **pkg.get("optionalDependencies", {}),
+            **pkg.get("peerDependencies", {}),
+        }
+        for dep in deps:
+            queue.append((dep, pkg_dir))
+    return visited
+
+
+def _stage_trimmed_kas_tree(nm_root: pathlib.Path, manifest_path: pathlib.Path, staged_root: pathlib.Path) -> None:
+    """Stage a minimal node_modules containing only the bundled acp-server.js and
+    the transitive closure of its runtime externals (read from the manifest that
+    @kiro/agent's esbuild bundle emits). Everything else in the dependency tree is
+    already inlined into acp-server.js and is dead weight on disk."""
+    with open(manifest_path) as f:
+        seeds = json.load(f)["externals"]
+
+    agent_dir = nm_root / "@kiro" / "agent"
+    closure = _kas_runtime_closure(nm_root, agent_dir, seeds)
+
+    staged_nm = staged_root / "node_modules"
+    shutil.rmtree(staged_root, ignore_errors=True)
+    staged_nm.mkdir(parents=True)
+
+    for pkg_dir in closure:
+        rel = pkg_dir.relative_to(nm_root)
+        shutil.copytree(pkg_dir, staged_nm / rel, symlinks=False, dirs_exist_ok=True)
+
+    # @kiro/agent: ship only dist/server (the bundle + manifest + xhr worker) and
+    # package.json. The rest of dist/ is the library build, sourcemaps, and .d.ts
+    # files that never run.
+    agent_out = staged_nm / "@kiro" / "agent"
+    (agent_out / "dist" / "server").mkdir(parents=True, exist_ok=True)
+    shutil.copy(agent_dir / "package.json", agent_out / "package.json")
+    shutil.copytree(agent_dir / "dist" / "server", agent_out / "dist" / "server", symlinks=False, dirs_exist_ok=True)
+
+    info(f"Trimmed KAS tree to {len(closure)} runtime-external packages (from manifest)")
+
+
 def build_kas_bundle() -> pathlib.Path:
-    """Install @kiro/agent and create a tar.gz bundle of node_modules.
+    """Install @kiro/agent and create a tar.gz bundle for embedding in the CLI.
 
     The @kiro/agent version is read from packages/tui/package.json's @kiro/client
     dep so the bundled server stays in lockstep with the client the TUI uses.
-    """
+
+    acp-server.js is a self-contained esbuild bundle: all pure-JS dependencies are
+    inlined. Only packages that ship wasm/native assets loaded at runtime (and
+    optional natives) must remain on disk. @kiro/agent emits the authoritative list
+    of these as dist/server/acp-server.externals.json; we trim node_modules to the
+    bundle + the transitive closure of that list. If the manifest is absent (an
+    older @kiro/agent that predates it), we fall back to shipping the full tree so
+    this build stays correct regardless of which agent version is pinned."""
     import tarfile
 
     tui_pkg_path = pathlib.Path("packages/tui/package.json")
@@ -267,28 +350,65 @@ def build_kas_bundle() -> pathlib.Path:
         raise RuntimeError(f"@kiro/client not found in {tui_pkg_path} dependencies")
     info(f"Using @kiro/agent@{kas_version} (from packages/tui/package.json @kiro/client)")
 
-    kas_dir = BUILD_DIR / "kas"
-    shutil.rmtree(kas_dir, ignore_errors=True)
-    kas_dir.mkdir(exist_ok=True)
+    # Local-build path: trim directly against an installed kiro-agent checkout
+    # instead of installing @kiro/agent from CodeArtifact. The checkout's
+    # node_modules already holds every runtime external at the exact versions its
+    # locally-built bundle was compiled against, so there is no registry install
+    # and no version skew. Build the bundle in the checkout first:
+    #   npm ci && npm run build:server-bundle -w packages/kiro-agent
+    #   KAS_LOCAL_AGENT_DIR=/path/to/kiro-agent  (the monorepo checkout root)
+    local_agent = os.environ.get("KAS_LOCAL_AGENT_DIR")
+    if local_agent:
+        checkout = pathlib.Path(local_agent).expanduser().resolve()
+        nm_root = checkout / "node_modules"
+        manifest_path = nm_root / "@kiro" / "agent" / "dist" / "server" / "acp-server.externals.json"
+        if not manifest_path.exists():
+            raise RuntimeError(
+                f"KAS_LOCAL_AGENT_DIR={local_agent}: expected a built bundle + manifest at "
+                f"{manifest_path}. In your kiro-agent checkout run: "
+                f"npm ci && npm run build:server-bundle -w packages/kiro-agent"
+            )
+        info(f"Local build: trimming against kiro-agent checkout {checkout} (no registry install)")
+        staged_root = BUILD_DIR / "kas-staged"
+        _stage_trimmed_kas_tree(nm_root, manifest_path, staged_root)
+        tar_source = staged_root / "node_modules"
+    else:
+        kas_dir = BUILD_DIR / "kas"
+        shutil.rmtree(kas_dir, ignore_errors=True)
+        kas_dir.mkdir(exist_ok=True)
 
-    pkg = {
-        "type": "module",
-        "dependencies": {"@kiro/agent": kas_version},
-    }
-    with open(kas_dir / "package.json", "w") as f:
-        json.dump(pkg, f)
+        pkg = {
+            "type": "module",
+            "dependencies": {"@kiro/agent": kas_version},
+        }
+        with open(kas_dir / "package.json", "w") as f:
+            json.dump(pkg, f)
 
-    npmrc = pathlib.Path(".npmrc")
-    if npmrc.exists():
-        shutil.copy(npmrc, kas_dir / ".npmrc")
+        npmrc = pathlib.Path(".npmrc")
+        if npmrc.exists():
+            shutil.copy(npmrc, kas_dir / ".npmrc")
 
-    info("Installing @kiro/agent dependencies")
-    run_cmd(["bun", "install"], cwd=kas_dir)
+        info("Installing @kiro/agent dependencies")
+        run_cmd(["bun", "install"], cwd=kas_dir)
+
+        nm_root = kas_dir / "node_modules"
+        manifest_path = nm_root / "@kiro" / "agent" / "dist" / "server" / "acp-server.externals.json"
+        if manifest_path.exists():
+            staged_root = BUILD_DIR / "kas-staged"
+            _stage_trimmed_kas_tree(nm_root, manifest_path, staged_root)
+            tar_source = staged_root / "node_modules"
+        else:
+            warn(
+                "acp-server.externals.json not found in @kiro/agent; shipping the full "
+                "node_modules untrimmed. Update @kiro/agent to a version that emits the "
+                "runtime-externals manifest to enable trimming."
+            )
+            tar_source = nm_root
 
     bundle_path = BUILD_DIR / "kas-bundle.tar.gz"
     info(f"Creating KAS bundle at {bundle_path}")
     with tarfile.open(bundle_path, "w:gz") as tar:
-        tar.add(kas_dir / "node_modules", arcname="node_modules")
+        tar.add(tar_source, arcname="node_modules")
 
     info(f"KAS bundle: {bundle_path} ({bundle_path.stat().st_size / 1024 / 1024:.1f} MB)")
     return bundle_path.absolute()
