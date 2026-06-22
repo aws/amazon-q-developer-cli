@@ -865,68 +865,28 @@ describe('/verbosity ESC navigation flag', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('opening the top menu clears verboseReturnOnEscape', () => {
+  // ESC return-route contract (CommandMenu re-dispatches this route on ESC):
+  //   - top + density (top-level entries) → null (fully exits)
+  //   - each config submenu → menu:top:<key> (re-opens config on its row)
+  //   - preset confirmation → menu:density (back to density menu)
+  //   - toggling a per-knob setting re-arms the submenu's return route so ESC
+  //     after a toggle goes back one level, not fully out.
+  it.each([
+    ['', null],
+    ['menu:density', null],
+    ['menu:tool', 'menu:top:tool'],
+    ['menu:subagent', 'menu:top:subagent'],
+    ['menu:output', 'menu:top:output'],
+    ['menu:truncation', 'menu:top:truncation'],
+    ['menu:density:confirm:lean', 'menu:density'],
+    ['set:showToolReasoning', 'menu:top:tool'],
+  ] as const)('%p arms verboseReturnOnEscape to %p', (arg, route) => {
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, '');
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    // Most recent setReturn call should be null — top menu fully exits on ESC.
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe(null);
-  });
-
-  it('opening any config sub-menu sets verboseReturnOnEscape to "menu:top:<key>"', () => {
-    // Each config submenu encodes its source key in the return route so the
-    // top (config) menu re-opens with the cursor on the row the user
-    // descended from. The density menu is its own top-level entry now and
-    // uses null setReturn instead.
-    const expected: Record<string, string> = {
-      'menu:tool': 'menu:top:tool',
-      'menu:subagent': 'menu:top:subagent',
-      'menu:output': 'menu:top:output',
-      'menu:truncation': 'menu:top:truncation',
-    };
-    for (const [sub, route] of Object.entries(expected)) {
-      const ctx = liteCtx();
-      runEffect(verbosityCmd, null, ctx, sub);
-      const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe(route);
-    }
-  });
-
-  it('opening menu:density clears the ESC return route (top-level entry)', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:density');
+    runEffect(verbosityCmd, null, ctx, arg);
     const calls = ctx._spies.setVerboseReturnOnEscape!.mock
       .calls as unknown as unknown[][];
     const last = calls[calls.length - 1];
-    // Density is a top-level entry, not a config-menu submenu — ESC fully
-    // exits rather than navigating back one level.
-    expect(last?.[0]).toBe(null);
-  });
-
-  it('preset confirmation arms ESC to return to the density menu', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:density:confirm:lean');
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe('menu:density');
-  });
-
-  it('toggling a setting from a config sub-menu re-arms the flag for the next ESC', () => {
-    const ctx = liteCtx();
-    // Toggle a per-knob setting — handler re-opens the relevant submenu.
-    runEffect(verbosityCmd, null, ctx, 'set:showToolReasoning');
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    // After re-open, the flag must again point at the tool submenu's
-    // top-menu return route. Without re-arming, ESC after one toggle would
-    // fully exit instead of going back one level.
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe('menu:top:tool');
+    expect(last?.[0]).toBe(route);
   });
 });
 
@@ -936,34 +896,27 @@ describe('/verbosity cursor positioning (initialIndex)', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('opens the entry menu with cursor at row 0', () => {
+  // Entry menu, bare config menu, and every submenu open with the cursor at
+  // row 0 so the chevron is visible.
+  it.each([
+    '',
+    'menu:top',
+    'menu:density',
+    'menu:density:confirm:default',
+    'menu:density:confirm:lean',
+    'menu:tool',
+    'menu:subagent',
+    'menu:output',
+    'menu:truncation',
+    'menu:truncation:argsLines:edit',
+    'menu:truncation:outputLines:edit',
+  ])('opens %p with cursor at row 0', (sub) => {
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, '');
+    runEffect(verbosityCmd, null, ctx, sub);
     const calls = ctx._spies.setActiveCommand!.mock
       .calls as unknown as unknown[][];
     const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
     expect(arg.initialIndex).toBe(0);
-  });
-
-  it('opens each submenu with cursor at row 0 (so the chevron is visible)', () => {
-    for (const sub of [
-      'menu:density',
-      'menu:density:confirm:default',
-      'menu:density:confirm:lean',
-      'menu:tool',
-      'menu:subagent',
-      'menu:output',
-      'menu:truncation',
-      'menu:truncation:argsLines:edit',
-      'menu:truncation:outputLines:edit',
-    ]) {
-      const ctx = liteCtx();
-      runEffect(verbosityCmd, null, ctx, sub);
-      const calls = ctx._spies.setActiveCommand!.mock
-        .calls as unknown as unknown[][];
-      const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
-      expect(arg.initialIndex).toBe(0);
-    }
   });
 
   it('config menu re-entered via menu:top:<key> lands on the matching row', () => {
@@ -990,15 +943,6 @@ describe('/verbosity cursor positioning (initialIndex)', () => {
       const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
       expect(arg.initialIndex).toBe(idx);
     }
-  });
-
-  it('config menu via bare menu:top still opens with cursor at row 0', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:top');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { initialIndex?: number };
-    expect(arg.initialIndex).toBe(0);
   });
 });
 
@@ -1499,25 +1443,31 @@ describe('/verbosity case-insensitive command verbs', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('/verbosity ON works the same as /verbosity on', () => {
-    setVerboseConfig({ filters: [] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'ON');
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  it('/verbosity OFF works the same as /verbosity off', () => {
-    setVerboseConfig({ filters: ['all'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'OFF');
-    expect(getVerboseConfig().filters).toEqual([]);
-  });
-
-  it('/verbosity ALL works the same as /verbosity all', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'ALL');
-    expect(getVerboseConfig().filters).toEqual(['all']);
+  // The verb is folded to lowercase; uppercase/mixed-case forms behave like
+  // the canonical lowercase verb. (Token-case preservation is a SEPARATE
+  // regression — see the two `only ...` tests below.)
+  it.each([
+    ['ON', { filters: [] }, (c: any) => expect(c.filters).toEqual(['all'])],
+    ['OFF', { filters: ['all'] }, (c: any) => expect(c.filters).toEqual([])],
+    [
+      'ALL',
+      { filters: ['shell'] },
+      (c: any) => expect(c.filters).toEqual(['all']),
+    ],
+    [
+      'DENSITY lean',
+      { filters: ['all'] },
+      (c: any) => expect(c.display!.toolArgsMode).toBe('inline'),
+    ],
+    [
+      'DENSITY:lean',
+      { filters: ['all'] },
+      (c: any) => expect(c.display!.toolArgsMode).toBe('inline'),
+    ],
+  ] as const)('/verbosity %s folds the verb', (arg, initial, check) => {
+    setVerboseConfig(initial as any);
+    runEffect(verbosityCmd, null, liteCtx(), arg);
+    check(getVerboseConfig());
   });
 
   it('/verbosity Status works the same as /verbosity status', () => {
@@ -1528,12 +1478,6 @@ describe('/verbosity case-insensitive command verbs', () => {
       .calls as unknown as unknown[][];
     expect(calls.length).toBeGreaterThan(0);
     expect(getVerboseConfig().filters).toEqual(['shell']);
-  });
-
-  it('/verbosity DENSITY lean applies the preset (verb is case-insensitive)', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'DENSITY lean');
-    expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
   });
 
   it('/verbosity ONLY shell preserves filter token case', () => {
@@ -1579,12 +1523,8 @@ describe('/verbosity density colon form (Bug D)', () => {
     expect(calls[0]![0]).toContain('Unknown density preset');
     expect(calls[0]![1]).toBe('error');
   });
-
-  it('/verbosity DENSITY:lean is accepted (case-insensitive verb)', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'DENSITY:lean');
-    expect(getVerboseConfig().display!.toolArgsMode).toBe('inline');
-  });
+  // Case-insensitive `DENSITY:lean` verb is covered by the case-folding
+  // it.each above.
 });
 
 // Sanity test: the help-panel local-command merge skips liteOnly entries when

@@ -1,11 +1,7 @@
 /**
- * LiteLiveRegion: Shows active tool calls + streaming content + thinking.
- *
- * UX:
- * - ALL running tool calls shown simultaneously
- * - Thinking timer resets per thinking batch (not per turn)
- * - Thinking content shown dim/italic
- * - Streaming content NOT height-bounded — terminal scrolls naturally
+ * LiteLiveRegion: active tool calls + streaming content + thinking. All running
+ * tools shown at once; thinking timer resets per batch; streaming content is
+ * not height-bounded (terminal scrolls naturally).
  */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Text } from '../../../renderer.js';
@@ -36,12 +32,7 @@ import {
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 import chalk from 'chalk';
 
-// Lite-specific pacman frames (Unicode mode only). When ASCII mode is on,
-// the live region falls back to the canonical `quarterSpinner` set
-// (`-\|/`) so /settings allowAsciiArt or KIRO_ASCII_MODE=1 produces a
-// spinner that copies into any terminal. The pacman is a lite UX flourish;
-// the fallback keeps the spinner visible without baking Unicode shapes
-// into ASCII users' scrollback.
+// Lite pacman frames (Unicode only). ASCII mode falls back to quarterSpinner.
 const PACMAN_SPINNER_FRAMES: readonly string[] = [
   'ᗢ',
   'ᗣ',
@@ -54,17 +45,11 @@ const PACMAN_SPINNER_FRAMES: readonly string[] = [
 ];
 const SPINNER_INTERVAL = 150;
 
-// Sentinel substituted per spinner tick into the status slot of a running,
-// non-trivial tool's rendered chat-log row. Two US-separator control chars
-// — picked so it can't collide with anything else in tool args, ANSI
-// escapes (chalk uses \x1B[...), markdown bodies, or terminal output. The
-// row itself is built ONCE per (id, content) tuple via
-// `renderMessageToText` with `runningSpinner: SPINNER_PLACEHOLDER`, then
-// each render does a single `replaceAll` to swap the current spinner glyph
-// in. That keeps the args/diff/reasoning identical to the row's eventual
-// settled appearance — the bug being fixed is that the OLD live-region
-// formatter showed only the tool name + a single `__tool_use_purpose`
-// chip, hiding the actual command/path/diff while a trusted tool ran.
+// Sentinel for a running tool's spinner slot. Two US-separator control chars,
+// picked so they can't collide with tool args, ANSI escapes, or output. The
+// row is built ONCE per (id, content) via renderMessageToText with this
+// placeholder, then each tick does a single replaceAll to swap the glyph in —
+// so the heavy args/diff/reasoning render isn't redone every 150ms.
 const SPINNER_PLACEHOLDER = '\x1F\x1F';
 
 export const LiteLiveRegion: React.FC = () => {
@@ -72,63 +57,37 @@ export const LiteLiveRegion: React.FC = () => {
   const messages = useAppStore((s) => s.messages);
   const retryStatus = useAppStore((s) => s.retryStatus);
   const thinkingContent = useAppStore((s) => s.thinkingContent);
-  // Live model output for the in-flight turn. Subscribing to this primitive
-  // (instead of deriving it from `messages` and the last Model row) means
-  // per-chunk updates only re-render this component — they don't invalidate
-  // every memo with `[messages]` deps in LiteLayout.
+  // Subscribe to the streamingContent primitive (not derived from `messages`)
+  // so per-chunk updates re-render only this component, not every
+  // [messages]-dep memo in LiteLayout.
   const streamingContent = useAppStore((s) => s.streamingContent);
-  // Per-tool streaming output buffers. The store flushes ToolCallUpdate
-  // chunks into this map on a timer (a few times per second), keyed by
-  // tool-call id; entries are deleted on ToolCallFinished so the live
-  // region's preview disappears the moment the tool's static rendering
-  // takes over. Subscribing here is the single binding that drives the
-  // tool-output streaming preview — without it, lite mode showed nothing
-  // below an in-flight tool until completion.
+  // Per-tool streaming output buffers (store flushes ToolCallUpdate chunks
+  // here, deleted on finish). The single binding driving the tool-output preview.
   const liveOutputs = useAppStore((s) => s.liveOutputs);
   const pendingApproval = useAppStore((s) => s.pendingApproval);
   const currentAgent = useAppStore((s) => s.currentAgent);
-  // Shell-escape (`!command`) flag. When true, the in-flight turn is a PTY-
-  // backed bash command, not agent inference: the live region collapses to
-  // a single brand-purple `! `-gutter row that streams the bash output
-  // directly. Spinners, thinking, tool batches, and the agent streaming
-  // path are all suppressed for the duration — none apply to a bash PTY,
-  // and showing an agent "thinking" indicator over interactive bash is
-  // exactly the bug this branch fixes (mwinit/sudo/brew-OTP appearing
-  // hung). The user's keystrokes still forward to the PTY via
-  // AppContainer's always-armed shellEscapeWriter handler — this branch
-  // only changes what the user SEES, not where their input goes.
+  // Shell-escape (`!command`): the live region collapses to a single
+  // brand-purple `! `-gutter row streaming PTY output. Spinner/thinking/tool
+  // paths are all suppressed — showing a "thinking" indicator over interactive
+  // bash (mwinit/sudo/brew-OTP) is the hung-looking bug this branch fixes.
   const isShellEscape = useAppStore((s) => s.isShellEscape);
   const pendingSwap = usePendingSwap();
-  // Accessibility wiring (1:1 with modern TUI):
-  //   - useGlyphs / useSpinners — switch box-drawing chars + spinner frame
-  //     sets between Unicode and ASCII based on /settings allowAsciiArt
-  //     (and the KIRO_ASCII_MODE=1 env override).
-  //   - useAllowAsciiArt — read alongside useSpinners so the lite-specific
-  //     pacman frame set can fall back to quarterSpinner in ASCII mode
-  //     (the canonical Spinners type doesn't carry a 'pacman' field —
-  //     it's a lite-only flourish).
-  //   - useAnimationPaused — true when /settings allowAnimations is off.
-  //     Used to skip the 150ms setInterval and hold a single static frame
-  //     so users with motion-sensitive setups don't see anything cycling.
+  // Accessibility wiring (1:1 with TUI): glyph/spinner Unicode↔ASCII,
+  // allowAsciiArt (pacman→quarterSpinner fallback), animation-paused.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
   const animationPaused = useAnimationPaused();
-  // Pacman in Unicode mode (lite UX flourish), quarterSpinner ASCII frames
-  // when allowAsciiArt=false. Memoized on the toggle so the closure inside
-  // the spinner interval reads a stable reference.
+  // Pacman (Unicode) / quarterSpinner (ASCII). Memoized so the interval closure
+  // reads a stable reference.
   const mainSpinnerFrames = useMemo<readonly string[]>(
     () => (allowAsciiArt ? PACMAN_SPINNER_FRAMES : spinners.quarterSpinner),
     [allowAsciiArt, spinners.quarterSpinner]
   );
-  // Tool spinner uses the canonical brailleRotate set so the in-flight
-  // tool row matches what Spinner.tsx renders elsewhere — and ASCII mode
-  // degrades to the same `-\|/` rotation Spinner.tsx falls back to.
+  // brailleRotate so the tool row matches Spinner.tsx elsewhere.
   const toolSpinnerFrames = spinners.brailleRotate;
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  // Streaming `Kiro:` / `<agent>:` tag color follows the agent's assigned
-  // palette color. Default agent uses brand; others hash to the 20-color
-  // palette — matching the bar color shown on finalized messages.
+  // Streaming agent-tag color from the agent's palette slot (matches finalized).
   const agentTagFn = useMemo<(s: string) => string>(() => {
     try {
       const name = currentAgent?.name;
@@ -146,9 +105,7 @@ export const LiteLiveRegion: React.FC = () => {
       return chalk.hex('#C19AFF');
     }
   }, [getColor, currentAgent?.name]);
-  // Full RenderTheme for the thinking block. Lets renderThinkingBlock paint
-  // its purple rules with the same brand slot the rest of lite uses, so
-  // /theme swaps reflow the live preview the same way they reflow scrollback.
+  // Full RenderTheme so /theme swaps reflow the live preview like scrollback.
   const renderTheme = useMemo(
     () => buildRenderTheme(getColor, getUserPromptColor, getUserPromptBgHex),
     [getColor, getUserPromptColor, getUserPromptBgHex]
@@ -158,25 +115,13 @@ export const LiteLiveRegion: React.FC = () => {
   const [elapsed, setElapsed] = useState(0);
   const thinkingStartRef = useRef(Date.now());
   const prevHadContentRef = useRef(false);
-  // The elapsed counter is only displayed in the "thinking only" branch
-  // (no live content, no active tools). When tools are running or text is
-  // streaming, elapsed is invisible — gate setElapsed on this ref so we
-  // don't force a re-render every 150ms for a value that nothing reads.
-  // A ref is safe here: it's read inside the interval callback, never
-  // affects what the render produces, and is updated on each render.
+  // The elapsed counter and spinner only show in certain branches. These refs
+  // (read in the interval callback, updated each render) gate setElapsed /
+  // setFrame so we don't re-render every 150ms for a value nothing displays.
   const elapsedVisibleRef = useRef(true);
-  // Same idea for the spinner glyph: when the live region is showing only
-  // streaming model text (no tools, no thinking-only label, no retry status),
-  // no spinner is on screen and bumping `frame` would re-render the whole
-  // component for a value that nothing displays. Default true so the very
-  // first interval tick is allowed; subsequent ticks read whatever the prior
-  // render computed.
   const spinnerVisibleRef = useRef(true);
-  // Tracks whether the previous tick was inside the no-activity branch
-  // (no streaming text, no tools). When we transition INTO that branch
-  // (after a tool finishes, between two model rounds), the elapsed counter
-  // should restart from 0 — the indicator otherwise reads as a permanent
-  // turn-elapsed clock instead of a per-round one.
+  // Was the prior tick idle (no streaming/tools)? Transitioning INTO idle
+  // restarts the elapsed counter so it reads per-round, not whole-turn.
   const prevIdleVisibleRef = useRef(false);
 
   // Reset thinking timer when a new thinking batch starts
@@ -196,32 +141,20 @@ export const LiteLiveRegion: React.FC = () => {
       return;
     }
     thinkingStartRef.current = Date.now();
-    // Animation-paused: hold the current frame and skip the elapsed counter
-    // tick. The spinner's currently-rendered glyph is whatever index `frame`
-    // points to — which stays put when we skip the interval. This matches
-    // the modern TUI Spinner pattern (last-frame freeze) so users with
-    // motion-sensitive setups see a steady glyph instead of a frozen-blank
-    // slot. Elapsed counter resets to 0 to avoid showing a stale timestamp
-    // from a prior round.
+    // Animation-paused: hold the current frame (last-frame freeze) and reset
+    // elapsed to avoid a stale timestamp.
     if (animationPaused) {
       setElapsed(0);
       return;
     }
     const t = setInterval(() => {
-      // Skip the React re-render entirely when the live region currently
-      // shows only streaming model text — there's no spinner glyph or elapsed
-      // counter on screen, so bumping `frame` would dirty the whole component
-      // (and its tool-line substitution / renderThinkingBlock work) for zero
-      // visual change. The same predicate also gates setElapsed.
+      // Gate both setState calls on the visibility refs — skip when nothing on
+      // screen reads them (streaming-only with no spinner/counter).
       if (spinnerVisibleRef.current) {
         setFrame((f) => f + 1);
       }
-      // Don't count elapsed while waiting for approval, or while a /agent
-      // swap is mid-flight (the message is queued, the model isn't running
-      // yet, so a climbing "thinking 4s" timer would lie to the user).
-      // Also skip when the elapsed counter isn't visible (tools running or
-      // text streaming) — the setState would just dirty React for no
-      // visual change.
+      // Don't count elapsed while waiting for approval or a mid-flight /agent
+      // swap (the model isn't running, a climbing timer would lie).
       if (!pendingApproval && !pendingSwap && elapsedVisibleRef.current) {
         setElapsed(Date.now() - thinkingStartRef.current);
       }
@@ -239,45 +172,21 @@ export const LiteLiveRegion: React.FC = () => {
     }
   }, [pendingSwap, isProcessing]);
 
-  // Live streaming content comes straight from the streamingContent slot —
-  // no walk over `messages`, no per-chunk memo invalidation downstream.
   const liveContent = isProcessing ? streamingContent : '';
 
-  // Memoize the rendered thinking block so spinner ticks (every 150ms)
-  // don't re-run wrapAnsiLine over the entire accumulated reasoning text.
-  // The content is monotonic-append per round — only changes when the model
-  // emits a new Thought chunk or when /theme swaps `renderTheme`. termCols
-  // changes only on resize. Re-computing when any of those shift keeps the
-  // block visually correct without paying the wrap cost on every tick.
+  // Memoize the rendered thinking block so 150ms spinner ticks don't re-wrap
+  // the accumulated reasoning text (content is monotonic-append per round).
   const termCols = process.stdout.columns ?? 80;
   const thinkingBlockMemo = useMemo(() => {
     if (!thinkingContent) return '';
     return renderThinkingBlock(thinkingContent, renderTheme, termCols, glyphs);
   }, [thinkingContent, renderTheme, termCols, glyphs]);
 
-  // Live shell-escape output. The store seeds an empty Model row with
-  // `shellOutput: true` when the user runs a `!` command, then streams
-  // PTY chunks into its `content`. We find that row by walking from the
-  // tail (it's the most recent Model message during shell escape) and
-  // hand the body to {@link renderShellOutputBlock} for the brand-purple
-  // `! ` left gutter. The same helper is also reachable via
-  // `renderMessageToText` for committed scrollback rows, so the live →
-  // static flush is a no-op visual transition: same gutter glyph, same
-  // brand color, same line breaks.
-  //
-  // Empty content (PTY hasn't emitted anything yet) returns '' so the
-  // JSX below can render an "executing" placeholder line — without
-  // that, the user would see literally nothing for the first few hundred
-  // ms while the bash process starts up. The placeholder lives in the
-  // shell-escape return branch, not in this memo, so it doesn't fight
-  // the empty-state contract that {@link renderShellOutputBlock} relies
-  // on for empty-buffer reuse elsewhere.
-  //
-  // Memoized on (messages, renderTheme, termCols) — the messages
-  // reference changes per chunk delivery (when content lands), and
-  // /theme swaps reflow the gutter color via renderTheme. termCols is
-  // here for API symmetry; the helper deliberately doesn't wrap (lets
-  // the terminal soft-wrap so cursor-positioning escapes survive).
+  // Live shell-escape output. The store seeds an empty `shellOutput: true`
+  // Model row and streams PTY chunks into it; find it from the tail and render
+  // the brand-purple `! ` gutter via renderShellOutputBlock (same helper used
+  // for committed rows, so the live→static flush is a no-op visual transition).
+  // Empty content returns '' so the JSX renders an "executing" placeholder.
   const shellOutputBlockMemo = useMemo(() => {
     if (!isShellEscape) return '';
     let row: MessageType | null = null;
@@ -293,35 +202,12 @@ export const LiteLiveRegion: React.FC = () => {
   }, [isShellEscape, messages, renderTheme, termCols]);
 
   // Memoize the streaming markdown render so spinner ticks / unrelated
-  // re-renders (a tool starting alongside the model's prose, an approval
-  // landing) don't pay for a full markdown parse + ANSI wrap pass over the
-  // accumulated `liveContent`. The content is monotonic-append per round
-  // (each chunk extends the buffer), so a fresh full re-parse on each
-  // chunk delivery is correct — and that's the only time we actually
-  // need new output. Empty buffer short-circuits to '' so the JSX below
-  // can rely on the memo's truthiness without re-checking liveContent.
-  //
-  // Why route streaming text through the same `renderAgentMessage` that
-  // finalized agent rows use: the rendered output is visually identical
-  // to the eventual settled scrollback row — same `<agent>:` tag, same
-  // markdown styling (bold, italic, code, links, lists, blockquotes,
-  // tables, headers, code blocks), same line-wrap policy, same theme
-  // colors. The flush from live region to <Static> becomes a no-op
-  // visual transition rather than a "plain text → styled text" flicker.
-  //
-  // Bleed risk: the marked-based inline lexer treats unclosed `**`, `*`,
-  // `_`, `` ` ``, `~~`, `[` as literal text (verified via probe: e.g.
-  // `parseInlineMarkdown('**hello')` → `[{ text: '**hello' }]`). Block-
-  // level markers commit immediately when complete; partial like `## H`
-  // shows as a styled header which is fine. The wrapAnsiLine + ANSI
-  // closer preservation infrastructure in render.ts (commits b5b834516
-  // and 0b49875ec) is already battle-tested for finalized content; the
-  // streaming path now reuses it unchanged.
-  //
-  // No `tryAppendMarkdownDelta` cache yet — typical streaming buffers
-  // are small enough that the parse cost is dominated by React /
-  // twinki render cost. If profiling shows this becomes a hotspot, the
-  // modern TUI's MarkdownRenderer caching pattern transplants cleanly.
+  // re-renders don't re-parse + re-wrap the accumulated `liveContent` (full
+  // re-parse per chunk is correct since the buffer is monotonic-append).
+  // Routed through the same renderAgentMessage that finalized rows use, so the
+  // live→static flush is a no-op visual transition (no plain→styled flicker).
+  // Marked treats unclosed inline emphasis as literal text, so a half-arrived
+  // `**bold` doesn't bleed (verified by probe).
   const streamingBlockMemo = useMemo(() => {
     if (!liveContent) return '';
     return renderAgentMessage(
@@ -329,10 +215,8 @@ export const LiteLiveRegion: React.FC = () => {
       currentAgent?.name,
       renderTheme,
       termCols,
-      // `renderAgentMessage` looks up the agent tag color by name. We've
-      // already resolved that lookup once into `agentTagFn` above, so
-      // wrap into the (name) => fn shape it expects and ignore the name
-      // parameter — there's only one streaming agent per live region.
+      // agentTagFn already resolved above; wrap into the (name) => fn shape
+      // (one streaming agent per live region, so name is ignored).
       () => agentTagFn,
       glyphs
     );
@@ -345,22 +229,10 @@ export const LiteLiveRegion: React.FC = () => {
     glyphs,
   ]);
 
-  // The "active tool batch" — the trailing run of tool messages from the
-  // FIRST still-unfinished tool onward. Finished tools earlier in the run
-  // (the contiguous "done prefix") are flushed to <Static> by LiteLayout as
-  // soon as their predecessors complete, so the live region only shows
-  // tools that are actually in flight (or that are blocked by an earlier
-  // unfinished tool to preserve creation order in scrollback).
-  //
-  // Mirror the rule in static-flush.ts/computeActiveToolBatchIds — the two
-  // walks must agree on which tool ids belong to the live region, otherwise
-  // a finished tool could appear in both static and the live region.
-  //
-  // Inner subagent tools (any ToolUse with agentName != main agent) are
-  // ignored entirely here — those render in the footer activity strip
-  // instead, and the parent `subagent` tool is what surfaces in the chat
-  // area. Treating them as invisible means they neither break the trailing
-  // tool run nor force the parent into the live region a second time.
+  // Active tool batch — trailing run from the first still-unfinished tool.
+  // MUST mirror static-flush.ts/computeActiveToolBatchIds or a finished tool
+  // could appear in both static and the live region. Inner subagent tools are
+  // skipped (they render in the footer strip, not here).
   const activeTools = useMemo(() => {
     if (!isProcessing) return [];
     const mainAgent = currentAgent?.name;
@@ -393,15 +265,8 @@ export const LiteLiveRegion: React.FC = () => {
     }
     if (firstUnfinished === -1) return [];
     const run = messages.slice(firstUnfinished).filter((m) => !isHidden(m));
-    // Project only the fields the live region actually needs downstream:
-    //   - id   → key for liveBarsByToolId / renderedToolBodies lookup
-    //   - name → fed to renderLiveStreamingOutputBar's per-tool filter
-    //   - isFinished → gates the live output bar (skip when settled)
-    //   - msg  → reference to the original MessageType so renderMessageToText
-    //            produces the canonical chat-log row (args, diff, reasoning,
-    //            output) for in-flight tools — same body as the eventual
-    //            settled rendering, just with SPINNER_PLACEHOLDER in the
-    //            status slot to be substituted per tick.
+    // Project the fields downstream needs: id (lookup key), name (output
+    // filter), isFinished (gates the output bar), msg (canonical row render).
     return run.map((m) => ({
       id: m.id,
       name: (m as any).name as string,
@@ -410,15 +275,9 @@ export const LiteLiveRegion: React.FC = () => {
     }));
   }, [messages, isProcessing, currentAgent]);
 
-  // Whether the live region needs a leading blank line. The rule mirrors the
-  // static separator logic so the visible gap between sections is the same
-  // before and after the live content lands in <Static> — preventing the
-  // "chat shifted up by one row" effect on flush.
-  //
-  // The "next" role is whichever live content is about to render — a tool
-  // batch, streaming model text, or nothing at all. Once we know prev/next,
-  // delegate to the shared blank-rules helper so this branch stays in lockstep
-  // with the canonical rules used by <Static> and the /verbosity preview.
+  // Leading blank for the live region? Mirrors the static separator rule so
+  // the gap is identical before/after flush (no "chat shifted up a row").
+  // The "next" role is the live content about to render (tool batch / model).
   const needsLeadingSeparator = useMemo(() => {
     if (!isProcessing) return false;
     if (activeTools.length === 0 && !liveContent) return false;
@@ -448,51 +307,28 @@ export const LiteLiveRegion: React.FC = () => {
     return needsLeadingBlankByRole(prev.role, nextRole);
   }, [messages, isProcessing, activeTools, liveContent]);
 
-  // Per-tool live streaming output bars. For each in-flight tool the user
-  // has output enabled for (via /verbosity filters), pull the accumulated
-  // source lines out of `liveOutputs` and tail-window them through the
-  // shared bar formatter so the live preview matches the eventual static
-  // rendering exactly — same indent, same `│` glyph, same per-line char
-  // clip, same line cap, same "+N more lines above" marker phrasing.
-  //
-  // Hoisted ABOVE the `if (!isProcessing) return null` and the retryStatus
-  // early returns because React hooks must be called unconditionally — moving
-  // the useMemo below those branches would change the hook call order across
-  // renders and trip rules-of-hooks. The cost is unchanged: when not
-  // processing, activeTools is `[]` (the prior memo bails on isProcessing)
-  // so this loop body never runs.
-  //
-  // The map is recomputed when liveOutputs identity, the active-tools list,
-  // the cap inputs, or the saved filters change. A spinner tick that doesn't
-  // touch any of those slots reuses the prior map — important because the
-  // 150ms spinner cadence would otherwise rewrap output buffers six times a
-  // second.
+  // Per-tool live output bars: pull accumulated lines from `liveOutputs` and
+  // tail-window them through the shared bar formatter so the preview matches
+  // the eventual static rendering. Hoisted above the early returns (hooks must
+  // run unconditionally); cost is zero when not processing since activeTools
+  // is []. Recomputed only on real deps so 150ms ticks reuse the prior map.
   const display = getVerboseDisplay();
   // getVerboseFilters() (not getVerboseConfig().filters) so the cli.json
-  // CHAT_TOOLS_FILTERS override written by the modern-TUI settings panel
-  // reaches the live render gate. Re-read every render so a mid-session
-  // /verbosity filter change takes effect, but key the memo on the joined
-  // content so the array identity stays stable across spinner ticks (the
-  // downstream memos depend on it; churning it would rewrap output 6×/sec).
+  // CHAT_TOOLS_FILTERS override reaches the live gate. Key the memo on the
+  // joined content so the array identity stays stable across spinner ticks.
   const filtersKey = getVerboseFilters().join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filtersOverride = useMemo(() => getVerboseFilters(), [filtersKey]);
   const liveBarsByToolId = useMemo(() => {
     const out = new Map<string, string[]>();
     for (const tool of activeTools) {
-      // Skip finished tools — they're rendered to <Static> by LiteLayout
-      // and their liveOutputs entry has already been cleared by the store's
-      // ToolCallFinished handler. Defensive: even if cleanup races, a
-      // finished tool's live bar would duplicate the static bar that's
-      // about to land just above it.
+      // Skip finished tools — LiteLayout renders them to <Static>; a live bar
+      // would duplicate the static one about to land above it.
       if (tool.isFinished) continue;
       const sourceChunks = liveOutputs.get(tool.id);
       if (!sourceChunks || sourceChunks.length === 0) continue;
-      // main bumped liveOutputs to chunks (string[][]) for O(1) append on
-      // hot stdout. The bar formatter still works in flat lines, so flatten
-      // at the boundary. The tail-window cap inside the formatter bounds
-      // the work it does — flatten cost is O(total lines) per render, but
-      // these arrays are small relative to terminal output volume.
+      // liveOutputs is chunks (string[][]) for O(1) append; flatten at the
+      // boundary (the formatter's tail-window cap bounds the work).
       const sourceLines = sourceChunks.flat();
       const bar = renderLiveStreamingOutputBar(tool.name, sourceLines, {
         outputMaxLines: display.outputMaxLines,
@@ -513,35 +349,17 @@ export const LiteLiveRegion: React.FC = () => {
     filtersOverride,
   ]);
 
-  // Canonical render of each in-flight tool's chat-log row. Same formatter
-  // that produces the eventual settled scrollback row, so a running shell
-  // / fs_write / fs_read shows its full args, diff body, or file body
-  // immediately — fixing the bug where a trusted tool ran to completion
-  // while the live region only ever showed `<tool> <one-arg-or-purpose> ⠋`,
-  // hiding the actual command/path/diff from the user.
-  //
-  // We render with `runningSpinner: SPINNER_PLACEHOLDER` so the heavy work
-  // (JSON.parse, tree formatting, diff rendering, markdown wrap) only re-
-  // runs when one of the deps below actually shifts — content delivery,
-  // approval state, terminal width, theme, or which tool joined/left the
-  // batch. Per-render we just `replaceAll` the placeholder with the active
-  // spinner glyph; the substitution is O(line length) and runs once per
-  // tool per frame instead of O(args+diff) per tool per frame.
-  //
-  // Theme, display config, and filters: the helper reads these via its own
-  // ctx fallbacks (theme via `buildRenderTheme` here, display/filters via
-  // getVerboseDisplay / getVerboseConfig at call time). Theme identity is
-  // tracked in deps so /theme swaps reflow the live preview the same way
-  // they reflow scrollback.
+  // Canonical render of each in-flight tool's chat-log row (same formatter as
+  // the settled row) so a running shell/fs_write/fs_read shows its full args /
+  // diff / body immediately, not just `<tool> ⠋`. Rendered with
+  // runningSpinner: SPINNER_PLACEHOLDER so the heavy work only reruns on real
+  // dep shifts; per tick we just replaceAll the placeholder. Theme tracked in
+  // deps so /theme swaps reflow the preview.
   const renderedToolBodies = useMemo(() => {
     const out = new Map<string, string>();
-    // Per-stage color resolver — same lookup `LiteLayout`'s static-rendering
-    // ctx uses (LiteLayout.tsx:1042-1053). Without these resolvers, the
-    // subagent tool's pipeline tree fell back to chalk.blue (#0000ee) for
-    // every [stage] tag while the tool was in flight, then snapped to per-
-    // agent palette shades the moment the tool finalized and migrated to
-    // <Static>. The shift was visible as a color flicker on settle. Same
-    // resolver covers input chip, output chip, and agent role-tag color.
+    // Per-stage color resolver (same as LiteLayout's static ctx) — without it
+    // the subagent pipeline tree flickered from chalk.blue to palette shades
+    // on settle.
     const stageColor = (stageName: string) =>
       getAgentColor(stageName, getColor);
     const ctx: RenderContext = {
@@ -576,28 +394,12 @@ export const LiteLiveRegion: React.FC = () => {
 
   if (!isProcessing) return null;
 
-  // Shell-escape branch: collapse the live region to a single brand-purple
-  // `! ` gutter row that streams the PTY's output. The body comes from the
-  // shell-output Model message in app-store; this branch just paints it.
-  //
-  // Why this fires BEFORE the spinner / retry / tool / thinking branches:
-  // none of those concepts apply to a `!` command. The store sets
-  // `isProcessing: true` (so the input box renders the right chrome and
-  // Ctrl+C still cancels), but agent inference is NOT running. The bug
-  // we're fixing here is exactly that — without this branch, the live
-  // region falls into the "thinking..." idle case and the user sees an
-  // infinite spinner over a bash command that's actually waiting for
-  // their input.
-  //
-  // Empty buffer placeholder: bash hasn't emitted anything yet (the
-  // process is spawning, or the program is reading input before printing
-  // a prompt). Show a dim "executing..." line so the user gets immediate
-  // feedback that their `!` command landed. The line uses the same `! `
-  // gutter color so it visually matches the streamed output that's about
-  // to replace it. wrap="overflow" mirrors the policy on every other
-  // shell row — the renderShellOutputBlock body isn't wrapped, so the
-  // terminal soft-wraps long lines visually without us baking \n into
-  // the buffer (which would mangle programs that emit cursor escapes).
+  // Shell-escape branch: collapse to a single `! ` gutter row streaming PTY
+  // output. Fires BEFORE spinner/retry/tool/thinking — none apply to a `!`
+  // command (isProcessing is true only for input chrome + Ctrl+C). Without
+  // this the user sees an infinite "thinking" spinner over interactive bash.
+  // Empty buffer → dim "executing..." placeholder. wrap="overflow" lets the
+  // terminal soft-wrap (baking \n would mangle programs emitting cursor escapes).
   if (isShellEscape) {
     spinnerVisibleRef.current = false;
     elapsedVisibleRef.current = false;
@@ -613,10 +415,7 @@ export const LiteLiveRegion: React.FC = () => {
     );
   }
 
-  // Spinner glyphs sourced from the active frame sets — pacman in Unicode,
-  // quarterSpinner in ASCII (main); brailleRotate in Unicode, the canonical
-  // `-\|/` rotation in ASCII (tool). Brand color stays the same across modes
-  // — the accessibility toggles only swap the GLYPH, not the color.
+  // Spinner glyphs from the active frame sets (brand color is mode-invariant).
   const spinner = chalk.hex('#C19AFF')(
     mainSpinnerFrames[frame % mainSpinnerFrames.length]
   );
@@ -625,8 +424,7 @@ export const LiteLiveRegion: React.FC = () => {
   );
 
   if (retryStatus) {
-    // Retry banner has the spinner glyph attached to the status message — keep
-    // ticking so the user sees the retry in motion.
+    // Retry banner shows the spinner — keep ticking.
     spinnerVisibleRef.current = true;
     return (
       <Text>
@@ -635,15 +433,8 @@ export const LiteLiveRegion: React.FC = () => {
     );
   }
 
-  // Tool call lines — one per active tool. Each row is the canonical
-  // chat-log render baked at memo-build time with SPINNER_PLACEHOLDER in
-  // the running-status slot; here we substitute the active spinner glyph.
-  // Trivial tools' rendered text contains no placeholder (renderToolCall
-  // ignores the spinner override for them), so `replaceAll` is a no-op
-  // there — they keep their dim ' ...' suffix. Finished tools held in the
-  // batch (waiting on an earlier in-flight tool to preserve creation order
-  // in scrollback) also have no placeholder — they show their post-run
-  // status (elapsed, FAILED, cancelled) verbatim.
+  // Tool call lines — substitute the active spinner glyph into each pre-baked
+  // row. Trivial / finished tools have no placeholder, so replaceAll no-ops.
   const toolLines = activeTools.map((tool) => {
     const body = renderedToolBodies.get(tool.id);
     if (!body) return '';
@@ -651,31 +442,19 @@ export const LiteLiveRegion: React.FC = () => {
       ? body.replaceAll(SPINNER_PLACEHOLDER, toolSpinner)
       : body;
   });
-  // Mirror "is the elapsed counter currently visible?" into the ref the
-  // interval reads. The thinking-only branch below is the only place
-  // elapsed renders, so the ref is true exactly when both inputs are empty.
+  // Mirror visibility into the refs the interval reads. Elapsed shows only in
+  // the idle/thinking-only branch; the spinner shows idle OR tools OR thinking
+  // (streaming-only has none — skip setFrame so long text streams don't
+  // re-render every 150ms).
   const idleVisible = !liveContent && toolLines.length === 0;
   elapsedVisibleRef.current = idleVisible;
-  // Mirror "is a spinner glyph currently on screen?" into the ref the
-  // interval reads. The spinner shows in three places: idle/thinking branch
-  // (always), tool batch branch (when at least one tool is rendered), and the
-  // thinking-block header (when /verbose · Thinking content is on with text).
-  // Streaming-only with no tools and no thinking has no spinner — skip the
-  // setFrame in that case so the whole component doesn't re-render every
-  // 150ms during long agent text streams.
   spinnerVisibleRef.current =
     idleVisible || toolLines.length > 0 || !!thinkingContent;
-  // Round-boundary reset: when we re-enter the idle state after streaming
-  // text or a tool batch (both common between model rounds), the counter
-  // should start over from 0. Without this, the same "thinking 47s" value
-  // persists across the whole turn — readers can't tell whether the model
-  // is stuck on this round or just took a long total time.
+  // Round-boundary reset: re-entering idle restarts the counter (else "thinking
+  // 47s" persists whole-turn). setElapsed(0) in render is safe — prevIdle flips
+  // true next pass, so it doesn't loop.
   if (idleVisible && !prevIdleVisibleRef.current) {
     thinkingStartRef.current = Date.now();
-    // setElapsed(0) is safe in render: React batches the update and re-renders
-    // without infinite-looping because prevIdleVisibleRef will be true on the
-    // next pass. Without this, the stale `elapsed` value lingers for one
-    // 150ms tick before the interval refreshes it.
     if (elapsed !== 0) setElapsed(0);
   }
   prevIdleVisibleRef.current = idleVisible;
@@ -697,11 +476,8 @@ export const LiteLiveRegion: React.FC = () => {
       );
     }
     if (thinkingContent) {
-      // Thinking content is gated by /verbose · Thinking content. When off,
-      // we still surface the spinner with the "thinking" label (so the user
-      // knows the model is reasoning) but skip the live preview itself —
-      // matches the lean / minimal density presets where the body would be
-      // visual noise.
+      // Gated by /verbose Thinking content: off → spinner + "thinking" label
+      // but no preview body (lean/minimal presets).
       const showThinking = getVerboseDisplay().showThinkingContent;
       if (!showThinking) {
         return (
@@ -711,13 +487,8 @@ export const LiteLiveRegion: React.FC = () => {
           </Text>
         );
       }
-      // Render the same purple-bordered block we use in scrollback so the
-      // live preview matches the finalized output 1:1 — the prior version
-      // showed only the trailing 3 lines as plain dim italic, which made
-      // earlier reasoning chunks vanish as new ones arrived. renderThinkingBlock
-      // returns top rule + full body + bottom rule; the body wraps at the
-      // terminal width via the same wrapAnsiLine pipeline static rows use.
-      // Reuse the memoized output so spinner ticks don't re-wrap the body.
+      // Same purple-bordered block as scrollback (memoized) so the preview
+      // matches finalized output 1:1 and earlier reasoning stays visible.
       const block = thinkingBlockMemo;
       return (
         <Box flexDirection="column">
@@ -729,10 +500,7 @@ export const LiteLiveRegion: React.FC = () => {
         </Box>
       );
     }
-    // No thinking tokens, no streaming, no active tools — render the plain
-    // "thinking" label. We don't have a reliable signal for whether the
-    // agent is actually waiting on inference vs. between rounds, so we
-    // don't try to draw that distinction.
+    // No thinking/streaming/tools — plain "thinking" label.
     return (
       <Text>
         {spinner} {chalk.dim('thinking')}
@@ -741,50 +509,29 @@ export const LiteLiveRegion: React.FC = () => {
     );
   }
 
-  // Bake the leading blank into the first row's text rather than rendering it
-  // as a sibling `<Text> </Text>`. A single-space Text element is normalized to
-  // an empty string by twinki's wrap pipeline (every wrapped line is
-  // `trimEnd()`-ed before flush), and an empty Text inside a flex column
-  // collapses to zero rows on the next render — the gap doesn't appear until
-  // the row that follows it commits content. That's what made the user see
-  // their prompt glued to a pending tool until the tool finished. Inlining the
-  // newline guarantees the visual gap is part of the row that needs it, so
-  // it survives every render pass.
-  // Thinking content is gated by /verbose · Thinking content. When off, the
-  // thinking preview line above tools is suppressed entirely — same rule as
-  // the thinking-only branch above. The active tool block still renders
-  // normally; we just don't show the live thinking text alongside it.
+  // Leading blanks are BAKED into the row text, never rendered as a sibling
+  // `<Text> </Text>`: twinki trimEnd()s wrapped lines and collapses an empty
+  // Text in a flex column to zero rows, so the gap wouldn't appear until the
+  // following row commits (this glued the prompt to a pending tool). Inlining
+  // the '\n' makes the gap part of the row that needs it.
   //
-  // When showThinkingContent is on, the live preview persists across tools
-  // and streaming rather than disappearing the moment a tool fires or text
-  // starts streaming. The block accumulates every Thought chunk emitted on
-  // this round, so prior reasoning paragraphs stay readable while the model
-  // moves into spoken text — matching the scrollback section that lands at
-  // commit time.
+  // Thinking preview gated by /verbose Thinking content; when on it persists
+  // across tools + streaming (accumulating every Thought chunk this round).
   const showThinkingContent = getVerboseDisplay().showThinkingContent;
   const showThinkingPreviewBlock = showThinkingContent && !!thinkingContent;
-  // Reuse the memoized rendered block — interleaved with the leading-separator
-  // logic below. Empty string when the helper declines to render
-  // (whitespace-only thinking or terminal too narrow) or the user has the
-  // /verbose preview off.
   const thinkingBlockText = showThinkingPreviewBlock ? thinkingBlockMemo : '';
   const hasThinkingBlock = !!thinkingBlockText;
-  // Order of rows in this region: [optional leading blank] → thinking block →
-  // [blank between block and tools/streaming] → tools → [blank between tools
-  // and streaming] → streaming text. The blanks below the thinking block live
-  // inside the block's own Text element (baked as trailing '\n') so a single
-  // empty <Text> sibling can't collapse out — same trick we use above for
-  // the leading separator.
+  // Row order: [leading blank] → thinking block → [blank] → tools → [blank] →
+  // streaming. Blanks below the block live inside its own Text (baked '\n') so
+  // an empty sibling can't collapse out.
   const thinkingBlockWithBreaks = hasThinkingBlock
     ? (needsLeadingSeparator ? '\n' : '') +
       thinkingBlockText +
-      // Trailing blank when content follows the block, so the bottom rule
-      // doesn't glue to the first tool line or the streaming `Kiro:` row.
+      // Trailing blank so the bottom rule doesn't glue to the next row.
       (toolLines.length > 0 || liveContent ? '\n' : '')
     : null;
-  // When the thinking block is taking the leading-separator slot, the tool
-  // rows + streaming text don't need to bake their own — the block already
-  // emitted it.
+  // When the thinking block took the leading-separator slot, tools + streaming
+  // don't bake their own.
   const firstToolWithBreak =
     needsLeadingSeparator && toolLines.length > 0 && !hasThinkingBlock
       ? '\n' + toolLines[0]!
@@ -799,21 +546,12 @@ export const LiteLiveRegion: React.FC = () => {
 
   return (
     <Box flexDirection="column">
-      {/* Persistent thinking block — purple-bordered, full body. Lives above
-          both tools and streaming text so reasoning chunks stay visible
-          while the model speaks or runs tools, instead of vanishing the
-          instant a tool/content event arrives. */}
+      {/* Persistent thinking block above tools + streaming so reasoning stays
+          visible while the model speaks/runs tools. */}
       {hasThinkingBlock && <Text>{thinkingBlockWithBreaks}</Text>}
-      {/* Active tool calls — first row carries the leading blank when no
-          thinking block above already supplied it. Each tool's line is
-          followed by its streaming output bar (if any) so the user sees
-          tool output flow in as it arrives, with the tail-window marker
-          ("+N more lines above") rendered ABOVE the visible window. The
-          bar is concatenated onto the tool line's text via newlines so
-          twinki treats them as a single Static-eligible block — twinki's
-          flex column collapses single-empty Text rows during commit, and
-          a separate <Text> sibling for the bar would race the tool line's
-          mount/update on each spinner tick. */}
+      {/* Active tool calls — each line followed by its output bar (if any),
+          concatenated via \n so twinki treats them as one block (a separate
+          <Text> sibling would race the tool line on each spinner tick). */}
       {toolLines.map((line, i) => {
         const tool = activeTools[i]!;
         const head =
@@ -823,14 +561,9 @@ export const LiteLiveRegion: React.FC = () => {
         const bar = liveBarsByToolId.get(tool.id);
         const body =
           bar && bar.length > 0 ? `${head}\n${bar.join('\n')}` : head;
-        // wrap="overflow" — the tool body is pre-formatted by the canonical
-        // chat-log renderer with its own structural \n at the boundaries
-        // that need them (between args lines, between diff lines, between
-        // bar-prefixed output rows). Twinki's default would re-wrap any
-        // logical line wider than the terminal, baking extra \n into
-        // long shell command lines / file paths / output rows. Overflow
-        // mode preserves single-line semantics so users copying a long
-        // command from a still-running shell tool get one logical line.
+        // wrap="overflow" — body is pre-formatted with its own structural \n;
+        // overflow keeps single-line semantics so a long command copies as one
+        // line (default wrap would bake extra \n into it).
         return (
           <Text key={tool.id} wrap="overflow">
             {body}
@@ -839,20 +572,10 @@ export const LiteLiveRegion: React.FC = () => {
       })}
       {/* Separator between tools and streaming content */}
       {liveContent && toolLines.length > 0 && <Text> </Text>}
-      {/* Streaming content rendered through the same markdown pipeline as
-          finalized agent rows (`renderAgentMessage` → `renderMarkdownToLines`).
-          Bold, italic, code spans, links, lists, headers, blockquotes,
-          code blocks, and tables all style as they stream — visually
-          identical to the eventual settled scrollback row, so the
-          live→static flush is a no-op transition. Marked treats unclosed
-          inline emphasis as literal text (e.g. `**partial` stays plain)
-          so a half-arrived `**bold**` doesn't bleed into anything that
-          follows. When this is the only live row (no tools, no thinking),
-          it carries the leading blank itself. wrap="overflow" mirrors
-          the policy on the Static <Text> in LiteLayout — `renderAgentMessage`
-          emits the stream's own \n and only those, so URLs / long sentences
-          flowing in mid-stream copy as one line just like they do once
-          the message finalizes into scrollback. */}
+      {/* Streaming content through the same renderAgentMessage pipeline as
+          finalized rows (live→static flush is a no-op). Carries the leading
+          blank itself when it's the only live row. wrap="overflow" as in
+          LiteLayout's Static <Text>. */}
       {liveContent && (
         <Text wrap="overflow">
           {standaloneStreamingWithBreak ?? streamingBlockMemo}

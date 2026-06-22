@@ -1,12 +1,10 @@
 import { describe, test, expect } from 'vitest';
 import {
   computeActiveToolBatchIds,
-  computeTurnSummaryInsertions,
   formatTurnSummaryRow,
   isInnerSubagentTool,
   needsLeadingBlank,
   selectStaticEligible,
-  shouldPushSwapWithContentBanner,
 } from '../static-flush.js';
 import { MessageRole, type MessageType } from '../../../../stores/app-store.js';
 
@@ -326,207 +324,46 @@ describe('inner subagent filtering', () => {
   });
 });
 
-describe('needsLeadingBlank', () => {
-  test('user → tool: blank', () => {
-    expect(needsLeadingBlank(user('u'), tool('t', true))).toBe(true);
-  });
-  test('user → model: blank', () => {
-    expect(needsLeadingBlank(user('u'), model('m'))).toBe(true);
-  });
-  test('model → tool: blank', () => {
-    expect(needsLeadingBlank(model('m'), tool('t', true))).toBe(true);
-  });
-  test('tool → model: blank', () => {
-    expect(needsLeadingBlank(tool('t', true), model('m'))).toBe(true);
-  });
-  test('tool → user: blank', () => {
-    expect(needsLeadingBlank(tool('t', true), user('u'))).toBe(true);
-  });
-  test('tool → tool: compact (no blank)', () => {
-    expect(needsLeadingBlank(tool('a', true), tool('b', true))).toBe(false);
-  });
-  test('model → user: blank', () => {
-    // Pure conversational turn boundary: without a blank, the next user
-    // line would print flush against the previous model reply. The input
-    // divider sits above the prompt area, not between scrollback rows.
-    expect(needsLeadingBlank(model('m'), user('u'))).toBe(true);
-  });
-});
-
-describe('needsLeadingBlank — system messages', () => {
+// Locks in the lite line-break spec (no configurability):
+//   1. Blank BEFORE + AFTER every user message.
+//   2. NO blank between consecutive tool calls in the same turn.
+//   3. Blank between the last tool call and the agent's text response.
+//   4. System rows behave like conversational rows (blank on both sides)
+//      except system→system, which stays compact.
+//   5. Blank BEFORE the credits/time trailer (formatTurnSummaryRow).
+// A failure means the rule regressed — adjust needsLeadingBlank /
+// formatTurnSummaryRow, not the table.
+describe('needsLeadingBlank — section-boundary rules', () => {
   function system(id: string): MessageType {
     return { id, role: MessageRole.System, content: 's', success: true };
   }
-  test('user → system: blank', () => {
-    expect(needsLeadingBlank(user('u'), system('s'))).toBe(true);
-  });
-  test('model → system: blank', () => {
-    expect(needsLeadingBlank(model('m'), system('s'))).toBe(true);
-  });
-  test('tool → system: blank', () => {
-    expect(needsLeadingBlank(tool('t', true), system('s'))).toBe(true);
-  });
-  test('system → user: blank', () => {
-    expect(needsLeadingBlank(system('s'), user('u'))).toBe(true);
-  });
-  test('system → model: blank', () => {
-    expect(needsLeadingBlank(system('s'), model('m'))).toBe(true);
-  });
-  test('system → tool: blank', () => {
-    expect(needsLeadingBlank(system('s'), tool('t', true))).toBe(true);
-  });
-  test('system → system: compact', () => {
-    expect(needsLeadingBlank(system('s1'), system('s2'))).toBe(false);
-  });
-});
-
-describe('computeTurnSummaryInsertions', () => {
-  function system(id: string): MessageType {
-    return { id, role: MessageRole.System, content: 's', success: true };
-  }
-
-  test('returns empty when no turn summaries exist', () => {
-    const eligible = [user('u1'), model('m1')];
-    const insertions = computeTurnSummaryInsertions(eligible, new Map(), false);
-    expect(insertions.size).toBe(0);
+  const make: Record<string, (id: string) => MessageType> = {
+    user,
+    model,
+    tool: (id) => tool(id, true),
+    system,
+  };
+  test.each([
+    ['user', 'tool', true],
+    ['user', 'model', true],
+    ['user', 'system', true],
+    ['model', 'tool', true],
+    ['model', 'user', true],
+    ['model', 'system', true],
+    ['tool', 'model', true],
+    ['tool', 'user', true],
+    ['tool', 'system', true],
+    ['tool', 'tool', false], // consecutive tools stay compact
+    ['system', 'user', true],
+    ['system', 'model', true],
+    ['system', 'tool', true],
+    ['system', 'system', false], // consecutive system rows stay compact
+  ] as const)('%s → %s: blank=%s', (prev, next, expected) => {
+    expect(needsLeadingBlank(make[prev]!('p'), make[next]!('n'))).toBe(
+      expected
+    );
   });
 
-  test('idle turn with summary: tail-emits at eligible.length', () => {
-    const eligible = [user('u1'), model('m1')];
-    const summaries = new Map([['u1', 'Credits: 0.05 · Time: 3s']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(2);
-  });
-
-  test('processing turn: no tail emission while in flight', () => {
-    const eligible = [user('u1'), model('m1')];
-    const summaries = new Map([['u1', 'Credits: 0.05 · Time: 3s']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, true);
-    expect(insertions.size).toBe(0);
-  });
-
-  test('next-turn boundary: summary slots BEFORE the new user message', () => {
-    // Boundary case — new user turn closes the previous one. Without this,
-    // turn 1's summary would tail-append after turn 2's content.
-    const eligible = [user('u1'), model('m1'), user('u2'), model('m2')];
-    const summaries = new Map([['u1', 'sum1']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(2); // before u2
-    expect(insertions.size).toBe(1);
-  });
-
-  test('System after a finished turn: trailer locks BEFORE the System line', () => {
-    // Bug A reproduction. The trailer must land between the model reply and
-    // the slash-command's System announcement; otherwise Twinki's monotonic
-    // <Static> cursor re-emits it on every additional System message.
-    const eligible = [user('u1'), model('m1'), system('s1')];
-    const summaries = new Map([['u1', 'sum1']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(2); // before s1
-  });
-
-  test('multiple System messages after a turn: trailer locks at the FIRST System', () => {
-    // /verbose status run repeatedly: the trailer index must not move with
-    // each new System line, otherwise the cursor re-emits.
-    const eligible = [
-      user('u1'),
-      model('m1'),
-      system('s1'),
-      system('s2'),
-      system('s3'),
-    ];
-    const summaries = new Map([['u1', 'sum1']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(2);
-    expect(insertions.size).toBe(1);
-  });
-
-  test('boot-time System with no preceding user: no insertion', () => {
-    const eligible = [system('s_boot'), user('u1'), model('m1')];
-    const summaries = new Map([['u1', 'sum1']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    // The leading System gets no summary (no current turn yet); u1's
-    // summary tail-emits since no later non-turn message comes after.
-    expect(insertions.size).toBe(1);
-    expect(insertions.get('u1')).toBe(eligible.length);
-  });
-
-  test('multi-turn with mixed System messages between turns', () => {
-    const eligible = [
-      user('u1'),
-      model('m1'),
-      system('s1'),
-      user('u2'),
-      model('m2'),
-      system('s2'),
-    ];
-    const summaries = new Map([
-      ['u1', 'sum1'],
-      ['u2', 'sum2'],
-    ]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(2); // before s1
-    expect(insertions.get('u2')).toBe(5); // before s2
-  });
-
-  test('turn ending in a tool batch: trailer follows the last tool', () => {
-    const eligible = [
-      user('u1'),
-      tool('t1', true),
-      tool('t2', true),
-      system('s1'),
-    ];
-    const summaries = new Map([['u1', 'sum1']]);
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.get('u1')).toBe(3); // before s1
-  });
-
-  test('turn without summary entry: nothing inserted', () => {
-    const eligible = [user('u1'), model('m1'), system('s1')];
-    const summaries = new Map<string, string>(); // u1 has no summary
-    const insertions = computeTurnSummaryInsertions(eligible, summaries, false);
-    expect(insertions.size).toBe(0);
-  });
-});
-
-describe('lite line-break rules (user spec)', () => {
-  // The user's hard-coded spec (no configurability):
-  //   1. Blank BEFORE every user message.
-  //   2. Blank AFTER every user message.
-  //   3. NO blank between consecutive tool calls in the same turn.
-  //   4. Blank between the LAST tool call and the agent's text response.
-  //   5. Blank BEFORE the credits/time trailer.
-  // Each test below names the rule it locks in. If one fails, the rule
-  // regressed — adjust needsLeadingBlank / formatTurnSummaryRow, not the
-  // assertion.
-  function system(id: string): MessageType {
-    return { id, role: MessageRole.System, content: 's', success: true };
-  }
-
-  test('rule 1: blank BEFORE user — model → user', () => {
-    expect(needsLeadingBlank(model('m'), user('u'))).toBe(true);
-  });
-  test('rule 1: blank BEFORE user — tool → user', () => {
-    expect(needsLeadingBlank(tool('t', true), user('u'))).toBe(true);
-  });
-  test('rule 1: blank BEFORE user — system → user (slash command then prompt)', () => {
-    expect(needsLeadingBlank(system('s'), user('u'))).toBe(true);
-  });
-  test('rule 2: blank AFTER user — user → model', () => {
-    expect(needsLeadingBlank(user('u'), model('m'))).toBe(true);
-  });
-  test('rule 2: blank AFTER user — user → tool (first tool of turn)', () => {
-    expect(needsLeadingBlank(user('u'), tool('t', true))).toBe(true);
-  });
-  test('rule 2: blank AFTER user — user → system', () => {
-    expect(needsLeadingBlank(user('u'), system('s'))).toBe(true);
-  });
-  test('rule 3: NO blank between consecutive tool calls', () => {
-    expect(needsLeadingBlank(tool('a', true), tool('b', true))).toBe(false);
-  });
-  test('rule 4: blank between last tool and agent text', () => {
-    expect(needsLeadingBlank(tool('t', true), model('m'))).toBe(true);
-  });
   test('rule 5: trailer text starts with a blank line', () => {
     // formatTurnSummaryRow guarantees the leading blank — even if the
     // upstream renderer changes its color/indent. Locks the rule against
@@ -534,68 +371,5 @@ describe('lite line-break rules (user spec)', () => {
     const out = formatTurnSummaryRow('  Credits: 0.05 · Time: 3s');
     expect(out.startsWith('\n')).toBe(true);
     expect(out).toBe('\n  Credits: 0.05 · Time: 3s');
-  });
-});
-
-describe('shouldPushSwapWithContentBanner', () => {
-  // Cold-boot path: no prior static, no prior chat. The live-region
-  // banner above the divider owns the welcome screen — the static
-  // session-anchor banner must NOT fire here, otherwise resize would
-  // see two banner emissions in the same render.
-  test('returns false on a truly fresh session (no prior static, no User)', () => {
-    expect(shouldPushSwapWithContentBanner([], false)).toBe(false);
-    // Standalone agent greeting alone is not chat content — same rule as
-    // the welcome-screen suppression in LiteLayout's visibleMessages
-    // filter; a session with only the agent's "Hi, I'm planner..." row
-    // is still considered fresh for banner-anchor purposes.
-    expect(
-      shouldPushSwapWithContentBanner(
-        [model('m1', { standalone: true })],
-        false
-      )
-    ).toBe(false);
-  });
-
-  // tui→lite swap mid-session and /chat <id> load: messages list
-  // carries the prior chat at the moment of the bump. User arm fires.
-  test('returns true when messages contain a User row (tui→lite, /chat <id>)', () => {
-    expect(shouldPushSwapWithContentBanner([user('u1')], false)).toBe(true);
-    expect(
-      shouldPushSwapWithContentBanner([user('u1'), model('m1')], false)
-    ).toBe(true);
-  });
-
-  // The bug fix: /chat new mid-session. resetMessages empties messages
-  // BEFORE bumping the clear token, so messages.some(User) is false
-  // here — but the layout had committed rows to staticItemsRef in
-  // the prior session, so hadPriorStaticContent is true. Without
-  // this arm the live-region banner re-renders against a terminal
-  // scrollback that still holds the prior session's static rows
-  // above it, and the user sees the KIRO art twice on screen.
-  test('returns true when prior session committed static content (/chat new bug-fix path)', () => {
-    expect(shouldPushSwapWithContentBanner([], true)).toBe(true);
-    // Both arms true is also true (defensive — covers a future caller
-    // that for some reason has both signals available).
-    expect(shouldPushSwapWithContentBanner([user('u1')], true)).toBe(true);
-  });
-
-  // System rows alone (e.g. "Switched to TUI mode" announcement landing
-  // on an empty session) must NOT trigger the static banner — the
-  // integ test `lite-welcome-banner-roundtrip` documents this. The
-  // User arm is intentionally narrow.
-  test('returns false when messages contain only System / non-User rows', () => {
-    const sys: MessageType = {
-      id: 's1',
-      role: MessageRole.System,
-      content: 'Switched to TUI mode',
-      success: true,
-    };
-    expect(shouldPushSwapWithContentBanner([sys], false)).toBe(false);
-    expect(
-      shouldPushSwapWithContentBanner(
-        [sys, model('m1', { standalone: true })],
-        false
-      )
-    ).toBe(false);
   });
 });

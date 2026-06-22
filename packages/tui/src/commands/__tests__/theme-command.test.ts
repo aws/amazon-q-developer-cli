@@ -415,62 +415,22 @@ describe('/theme command', () => {
     //   - null: ESC closes the overlay (no parent above).
     //   - '':   re-dispatches `/theme`        — back to top.
     //   - 'custom': re-dispatches `/theme custom` — back to custom menu.
-
-    it('bare /theme (top-level menu) sets the flag to null — ESC closes the overlay', async () => {
+    // Applying a preset (prompt:<id>) re-arms to '' since the menu re-opens at
+    // the custom level (else the preview-and-keep-tweaking flow feels one-shot).
+    it.each([
+      ['', null],
+      ['custom', ''],
+      ['prompt', 'custom'],
+      ['response', 'custom'],
+      ['diff', 'custom'],
+      ['prompt:purple', ''],
+    ] as const)('/theme %s sets the flag to %p', async (route, expected) => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, '', ctx);
+      await dispatch(themeCmd, route, ctx);
       const calls = ctx._spies.setThemeReturnOnEscape!.mock
         .calls as unknown as unknown[][];
       const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe(null);
-    });
-
-    it('/theme custom sets the flag to "" — ESC re-dispatches bare /theme', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'custom', ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe('');
-    });
-
-    it('/theme prompt sets the flag to "custom" — ESC returns to /theme custom', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt', ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe('custom');
-    });
-
-    it('/theme response sets the flag to "custom"', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'response', ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe('custom');
-    });
-
-    it('/theme diff sets the flag to "custom"', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff', ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe('custom');
-    });
-
-    it('applying a preset (prompt:<id>) re-arms the flag to "" since the menu re-opens at the custom level', async () => {
-      // Without re-arming, ESC after picking a preset (which lands the user
-      // back in the custom menu) would fully close instead of going one
-      // level up — the preview-and-keep-tweaking flow would feel one-shot.
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt:purple', ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe('');
+      expect(last?.[0]).toBe(expected);
     });
   });
 });
