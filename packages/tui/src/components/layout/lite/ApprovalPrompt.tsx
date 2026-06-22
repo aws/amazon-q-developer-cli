@@ -222,10 +222,8 @@ export function ApprovalPrompt({
     }
   })();
 
-  // For write tools, render a proper unified diff (line numbers, surrounding
-  // context, ... separators) instead of the raw key:value args dump. Falls
-  // through to the generic args printer when the tool isn't a write or args
-  // don't parse.
+  // Write tools render a proper unified diff instead of the key:value args
+  // dump; falls through to the generic printer when args don't parse.
   const writeDiffLines = (() => {
     if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
     if (!WRITE_TOOL_NAMES.has(toolMsg.name)) return null;

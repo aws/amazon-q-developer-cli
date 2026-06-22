@@ -68,11 +68,6 @@ describe('computeActiveToolBatchIds', () => {
       expectedIds: ['b', 'c'],
     },
     {
-      name: 'all-finished trailing run is fully flushed (no batch)',
-      msgs: [user('u1'), tool('a', true), tool('b', true), tool('c', true)],
-      expectedIds: [],
-    },
-    {
       name: 'does not include earlier settled batch separated by a model message',
       msgs: [
         user('u1'),

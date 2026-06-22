@@ -1,21 +1,8 @@
 /**
- * Shared close + tab handlers for the backend-driven panel cluster.
- *
- * Both InlineLayout and LiteLayout open the same set of panels (/help, /mcp,
- * /tools, /context, /usage, /stats, /hooks, /knowledge, /code, /tui,
- * /changelog, /rewind, /settings keybindings, /settings display) and close
- * them with the same 3-step pattern:
- *
- *   1. flip the show flag off
- *   2. drop the activeCommand wrapper (so the input re-enables)
- *   3. clearCommandInput (so a half-typed slash stops echoing)
- *
- * The keybindings/display close handlers also branch on
- * settingsReturnOnEscape so /settings → keybindings → Esc returns to the
- * /settings menu instead of the bare prompt.
- *
- * Layout-local concerns (subagent panel, approvals, the always-armed Esc
- * handler that gates on anyPanelOpen) stay in their respective layouts.
+ * Shared close + tab handlers for the backend-driven panel cluster (used by
+ * InlineLayout and LiteLayout). Close = flip show flag off, drop activeCommand,
+ * clearCommandInput. `returnToSettings` panels also honor settingsReturnOnEscape
+ * so /settings → sub-panel → Esc returns to the /settings menu.
  */
 import { useCallback } from 'react';
 import {
@@ -73,11 +60,8 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
   const { kiro } = useKiroClient();
   const settingsReturnOnEscape = useAppStore((s) => s.settingsReturnOnEscape);
 
-  // Every close handler flips its show flag off, drops the activeCommand
-  // wrapper, and clears any half-typed slash. `returnToSettings` additionally
-  // honors settingsReturnOnEscape so a panel opened from /settings bounces back
-  // there. makeClose is called unconditionally and in fixed order each render
-  // (it wraps useCallback), so React hook ordering holds.
+  // makeClose wraps useCallback; it's called unconditionally and in fixed
+  // order each render, so React hook ordering holds (hence the suppression).
   const makeClose = (
     setShow: (open: boolean) => void,
     opts?: { returnToSettings?: boolean }
