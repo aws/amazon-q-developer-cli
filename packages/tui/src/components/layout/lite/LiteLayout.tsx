@@ -1323,7 +1323,6 @@ export const LiteLayout: React.FC = () => {
         disarmKill();
         return;
       }
-      // Esc closes the panel.
       setSubagentOpenIndex(null);
       setSubagentScrollOffset(0);
       setSubagentFollowBottom(true);
@@ -1500,7 +1499,6 @@ export const LiteLayout: React.FC = () => {
         </Box>
       )}
 
-      {/* Footer: divider + input area */}
       {loadingMessage && (
         <Text>
           {chalk.dim(
@@ -1508,8 +1506,7 @@ export const LiteLayout: React.FC = () => {
           )}
         </Text>
       )}
-      {/* Task tray — mirrors <ActivityTray />; self-renders null when empty.
-          Toggle Ctrl+X (handled at the layout level above). */}
+      {/* Toggle Ctrl+X (handled at the layout level above). */}
       <LiteTaskTray />
       <Divider />
 
@@ -1592,7 +1589,6 @@ export const LiteLayout: React.FC = () => {
 
       {!showApproval && !anyPanelOpen && (
         <Box flexDirection="column">
-          {/* Editing-queue header — shows which slot is being edited. */}
           {editingQueueIndex != null && (
             <Text>
               {chalk.cyan(
@@ -1642,8 +1638,8 @@ export const LiteLayout: React.FC = () => {
         </Box>
       )}
 
-      {/* Subagent activity strip — pinned at the bottom, one row per stage.
-          Ctrl+O replaces the focused row with a fixed-height trace panel. */}
+      {/* Ctrl+O replaces the focused subagent row with a fixed-height trace
+          panel (one row per stage otherwise). */}
       {activeSubagents.length > 0 &&
         (() => {
           const visible = activeSubagents;
@@ -1714,7 +1710,6 @@ export const LiteLayout: React.FC = () => {
                   )}
                 </Text>
               )}
-              {/* Discoverability hint — only when the panel is closed. */}
               {openIdx == null && activeSubagents.length > 0 && (
                 <Text>{chalk.dim('  press ctrl+o to expand')}</Text>
               )}

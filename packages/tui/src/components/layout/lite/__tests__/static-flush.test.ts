@@ -179,18 +179,11 @@ describe('selectStaticEligible', () => {
   });
 
   test('drops empty-content Model with thinking when hideThinkingContent is true', () => {
-    // Minimal preset (showThinkingContent: false) bug fix. Without this
-    // gate, the empty-content row stayed in eligible, rendered to '' via
-    // renderMessageToText (since the thinking block is suppressed), and
-    // the LiteLayout delta walk baked a '\n' leading-blank prefix on top
-    // of the empty render — pinning a 2-row gap into <Static>. The next
-    // message also computed its own leading blank against this empty
-    // prevMsg, totaling 3 phantom blank rows where the agent's
-    // Thought-only round used to be. Append-only contract means those
-    // ghost rows persisted until LiteLayout remounted.
-    //
-    // Reproduces every time the agent thinks silently then directly
-    // calls a tool — common enough to be visible in normal use.
+    // Minimal-preset (showThinkingContent: false) bug fix. Without this gate
+    // the empty-content row stayed eligible, rendered to '' (thinking block
+    // suppressed), and the delta walk baked leading-blank prefixes into
+    // <Static> — pinning phantom blank rows where a silent-think-then-tool
+    // round used to be (append-only, so they persisted until remount).
     const msgs: MessageType[] = [
       user('u1'),
       tool('a', true),
@@ -254,18 +247,12 @@ describe('selectStaticEligible', () => {
   });
 
   test('shellOutput Model with empty content stays out of static after cancel', () => {
-    // The trigger for the React duplicate-key bug we fixed in app-store:
-    // user types `!sleep 30`, hits Ctrl+C before any PTY output. The
-    // store no longer inserts a `(no output)` placeholder, so the row's
-    // content stays empty and the empty-Model filter drops it from
-    // eligible. The reason it MUST be filtered: the cancelArmedRef
-    // effect appends a `user interrupted` System row right after
-    // isProcessing flips false — if the empty Model became eligible
-    // mid-cancel, it would shift the System row's index in the eligible
-    // list AFTER the System had already been pushed to <Static>, and
-    // the LiteLayout staticItems delta-walk would push the System row
-    // a second time. Verified end-to-end via Knight Rider; this test
-    // pins the eligibility-side invariant the fix relies on.
+    // Trigger for the React duplicate-key bug fixed in app-store: `!sleep 30`
+    // then Ctrl+C before any PTY output leaves an empty-content shell Model.
+    // It MUST stay filtered — the cancelArmedRef effect pushes a `user
+    // interrupted` System row once isProcessing flips false; an empty Model
+    // turning eligible mid-cancel would shift indices and make the delta walk
+    // double-push the System row. Pins the eligibility-side invariant.
     const shellRow: MessageType = {
       id: 'shell-out-empty',
       role: MessageRole.Model,

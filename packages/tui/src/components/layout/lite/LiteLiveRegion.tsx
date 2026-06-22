@@ -125,8 +125,8 @@ export const LiteLiveRegion: React.FC = () => {
   // restarts the elapsed counter so it reads per-round, not whole-turn.
   const prevIdleVisibleRef = useRef(false);
 
-  // Reset thinking timer when a new thinking batch starts
-  // (thinkingContent goes from empty to non-empty)
+  // Reset the thinking timer when a new thinking batch starts (empty →
+  // non-empty) so the elapsed counter reads per-batch.
   useEffect(() => {
     const hasContent = !!thinkingContent;
     if (!prevHadContentRef.current && hasContent) {
@@ -432,7 +432,6 @@ export const LiteLiveRegion: React.FC = () => {
   }
   prevIdleVisibleRef.current = idleVisible;
 
-  // Thinking state: no content streaming, no tools running
   if (!liveContent && toolLines.length === 0) {
     const secs = Math.floor(elapsed / 1000);
     const timeStr = secs > 0 ? chalk.dim(` ${secs}s`) : '';
@@ -473,7 +472,6 @@ export const LiteLiveRegion: React.FC = () => {
         </Box>
       );
     }
-    // No thinking/streaming/tools — plain "thinking" label.
     return (
       <Text>
         {spinner} {chalk.dim('thinking')}
@@ -543,7 +541,6 @@ export const LiteLiveRegion: React.FC = () => {
           </Text>
         );
       })}
-      {/* Separator between tools and streaming content */}
       {liveContent && toolLines.length > 0 && <Text> </Text>}
       {/* Streaming content through the same renderAgentMessage pipeline as
           finalized rows (live→static flush is a no-op). Carries the leading
