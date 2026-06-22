@@ -295,6 +295,11 @@ pub enum AcpSessionRequest {
     RefreshMcpRegistry {
         registry: Box<dyn agent::mcp::McpRegistry>,
     },
+    /// Background agent config reload — update available agents list.
+    RefreshAgentConfigs {
+        agent_configs: Vec<agent::agent_config::LoadedAgentConfig>,
+        available_agents: Vec<super::session_manager::AgentInfo>,
+    },
     /// Background goal re-injection task failed after retries.
     GoalReinjectionFailed {
         tool_call_id: String,
@@ -410,6 +415,20 @@ impl AcpSessionHandle {
     /// Queue an MCP registry refresh. The session will apply it when idle.
     pub async fn refresh_mcp_registry(&self, registry: Box<dyn agent::mcp::McpRegistry>) -> Result<(), sacp::Error> {
         self.tx.send(AcpSessionRequest::RefreshMcpRegistry { registry }).await
+    }
+
+    /// Queue an agent config refresh. Updates the session's available agents list.
+    pub async fn refresh_agent_configs(
+        &self,
+        agent_configs: Vec<agent::agent_config::LoadedAgentConfig>,
+        available_agents: Vec<super::session_manager::AgentInfo>,
+    ) -> Result<(), sacp::Error> {
+        self.tx
+            .send(AcpSessionRequest::RefreshAgentConfigs {
+                agent_configs,
+                available_agents,
+            })
+            .await
     }
 
     /// Set the model ID for this session
@@ -1008,6 +1027,11 @@ struct AcpSession {
     pending_prompt_response: Option<tokio::sync::Mutex<Responder<PromptResponse>>>,
     /// Agent config to swap to when the session becomes idle (set by registry refresh)
     pending_mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
+    /// Set when the file watcher reports an agent/mcp.json change. Applied as a
+    /// surgical MCP reconcile on the next idle tick. The config is re-derived
+    /// for the *current* agent at apply-time (not captured here) so a concurrent
+    /// swap can't be reverted, and session-injected servers are re-merged.
+    reconcile_pending: bool,
     compaction_summary: Option<String>,
     os: Os,
     cwd: PathBuf,
@@ -1786,6 +1810,7 @@ impl AcpSession {
             api_client,
             pending_prompt_response: None,
             pending_mcp_registry: None,
+            reconcile_pending: false,
             compaction_summary: None,
             os,
             cwd,
@@ -1863,6 +1888,26 @@ impl AcpSession {
                 && let Err(e) = self.agent.refresh_mcp_registry(registry).await
             {
                 warn!(%e, "Failed to apply pending MCP registry refresh");
+            }
+
+            // Apply a flagged surgical MCP reconcile when idle. Driven by the
+            // config file watcher. The config is re-derived for the CURRENT
+            // agent here (not at queue time) and session-injected servers are
+            // re-merged, so a concurrent swap can't be reverted and ACP /
+            // `/mcp add` servers survive the reconcile.
+            if self.pending_prompt_response.is_none() && self.reconcile_pending {
+                self.reconcile_pending = false;
+                if let Some(mut cfg) = self
+                    .agent_configs
+                    .iter()
+                    .find(|c| c.name() == self.current_agent_name)
+                    .cloned()
+                {
+                    self.merge_session_mcp_servers(&mut cfg);
+                    if let Err(e) = self.agent.reconcile_mcp_servers(Box::new(cfg)).await {
+                        warn!(%e, "Failed to apply pending MCP reconcile");
+                    }
+                }
             }
 
             tokio::select! {
@@ -2541,6 +2586,19 @@ impl AcpSession {
             },
             AcpSessionRequest::RefreshMcpRegistry { registry } => {
                 self.pending_mcp_registry = Some(registry);
+            },
+            AcpSessionRequest::RefreshAgentConfigs {
+                agent_configs,
+                available_agents,
+            } => {
+                self.available_agents = available_agents;
+                self.agent_configs = agent_configs;
+                // Flag a surgical MCP reconcile for the next idle tick. The
+                // config is re-derived for the *current* agent at apply-time
+                // (see the loop), not captured here — so a concurrent agent swap
+                // can't be reverted (BUG-2) and session-injected servers survive
+                // (BUG-1).
+                self.reconcile_pending = true;
             },
             AcpSessionRequest::GoalReinjectionFailed { tool_call_id, error } => {
                 tracing::error!("Goal re-injection failed: {error}");

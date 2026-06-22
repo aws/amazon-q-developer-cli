@@ -284,6 +284,15 @@ pub enum AgentRequest {
     /// reuses the `local_mcp_path` / `global_mcp_path` it was constructed
     /// with, so they are not part of this request.
     RefreshMcpRegistry(Box<dyn super::mcp::McpRegistry>),
+    /// Reconcile the running MCP servers against a freshly-loaded agent config,
+    /// surgically (start added servers, stop removed ones, restart changed ones,
+    /// leave unchanged ones running) instead of tearing everything down.
+    ///
+    /// This is the event-driven path used when a watched config file changes:
+    /// it swaps in the new config and reconciles MCP without disturbing servers
+    /// whose config is unchanged. Returns [`AgentError::NotIdle`] if the agent
+    /// is not idle; callers defer until the next idle window.
+    ReconcileMcpServers(Box<LoadedAgentConfig>),
     /// Manually trigger conversation compaction
     CompactConversation,
     /// Clear conversation history

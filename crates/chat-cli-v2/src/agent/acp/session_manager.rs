@@ -120,6 +120,83 @@ pub struct StartSessionResult {
     pub web_tools_enabled: bool,
 }
 
+/// Whether a changed path is a config file we care about: an agent config
+/// (lives under an `agents`/`cli-agents` directory) or an `mcp.json`. Keeps
+/// the watched config directories from triggering reloads on unrelated files.
+fn is_relevant_config_path(path: &std::path::Path) -> bool {
+    if path.file_name().is_some_and(|n| n == "mcp.json") {
+        return true;
+    }
+    // Agent configs are JSON files under an `agents`/`cli-agents` directory.
+    // Require a `.json` extension so unrelated file types in those dirs (logs,
+    // editor temp files) don't trigger reloads. Extension-less paths (e.g.
+    // directory create/remove events) pass so a newly-created agents dir is
+    // still noticed.
+    path.extension().is_none_or(|e| e == "json")
+        && path
+            .components()
+            .any(|c| matches!(c.as_os_str().to_str(), Some("agents" | "cli-agents")))
+}
+
+/// Resolve the directories to watch for config hot-reload.
+///
+/// V2 agents live in `.kiro/agents` (workspace) and `~/.kiro/agents` (global);
+/// these paths come from `PathResolver` so they can't drift from the loader.
+/// The legacy `.amazonq` / `~/.aws/amazonq` "cli-agents" locations are read-only
+/// migration fallbacks (Q-CLI), not V2-native, so they are deliberately not
+/// watched.
+///
+/// Kiro owns `~/.kiro`, so the global agents dir is created here and watched
+/// live — a fresh install hot-reloads without a restart and without the noisy
+/// `$HOME` sentinel the previous design used. The workspace `.kiro/agents` dir
+/// is only materialized when its `.kiro` parent already exists, so we never
+/// create `.kiro` in an arbitrary working directory. `mcp.json` parents are
+/// watched only if they already exist. Returns existing, deduplicated dirs;
+/// each is watched non-recursively.
+fn resolve_watch_targets(
+    workspace_agents_dir: Option<&std::path::Path>,
+    global_agents_dir: Option<&std::path::Path>,
+    local_mcp_path: Option<&std::path::Path>,
+    global_mcp_path: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
+    let mut targets: Vec<PathBuf> = Vec::new();
+
+    // Global agents dir: kiro-owned, created so it's watched live from a fresh install.
+    if let Some(global) = global_agents_dir {
+        let _ = std::fs::create_dir_all(global);
+        targets.push(global.to_path_buf());
+    }
+
+    // Workspace `.kiro/agents`: only materialized when its `.kiro` parent already
+    // exists — never create `.kiro` in an arbitrary working directory.
+    if let Some(workspace) = workspace_agents_dir {
+        if workspace.parent().is_some_and(|kiro| kiro.exists()) {
+            let _ = std::fs::create_dir_all(workspace);
+        }
+        targets.push(workspace.to_path_buf());
+    }
+
+    // mcp.json parents — watched only if they already exist.
+    for parent in [local_mcp_path, global_mcp_path]
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.parent())
+    {
+        targets.push(parent.to_path_buf());
+    }
+
+    // Watch only dirs that exist (the kiro-owned ones we just created always
+    // will), deduplicated.
+    let mut resolved: Vec<PathBuf> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for t in targets {
+        if t.exists() && seen.insert(t.clone()) {
+            resolved.push(t);
+        }
+    }
+    resolved
+}
+
 /// Result returned when spawning an orchestrated session.
 #[derive(Debug, Clone)]
 pub struct SpawnOrchestratedResult {
@@ -378,6 +455,95 @@ impl SessionManagerBuilder {
                         .collect()
                 })
                 .unwrap_or_default();
+
+            // Spawn file watcher for agent config directories (debounced reload on change)
+            if std::env::var(KIRO_TEST_MODE).is_err() {
+                let sm_handle = session_manager_handle_clone.clone();
+                let watch_targets = {
+                    // Resolve agent dirs via the shared PathResolver (same source
+                    // the caller/loader use) so the watcher can't drift. We watch
+                    // the V2 kiro location only — `agents_dir_for_create()` returns
+                    // `.kiro/agents` without the legacy cli-agents migration fallback.
+                    let resolver = crate::util::paths::PathResolver::new(&os);
+                    resolve_watch_targets(
+                        resolver.workspace().agents_dir_for_create().ok().as_deref(),
+                        resolver.global().agents_dir_for_create().ok().as_deref(),
+                        local_mcp_path.as_deref(),
+                        global_mcp_path.as_deref(),
+                    )
+                };
+
+                if !watch_targets.is_empty() {
+                    // ponytail: the watcher task lives for the process lifetime — there is
+                    // no shutdown handle. Fine for today's single, long-lived session
+                    // manager; add a cancellation token if managers become reconstructable.
+                    tokio::spawn(async move {
+                        use notify::{
+                            RecursiveMode,
+                            Watcher,
+                        };
+
+                        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+                        let mut watcher = match notify::RecommendedWatcher::new(
+                            move |res: Result<notify::Event, notify::Error>| {
+                                if let Ok(event) = res {
+                                    // Only trigger on content changes, not metadata
+                                    if matches!(
+                                        event.kind,
+                                        notify::EventKind::Create(_)
+                                            | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+                                            | notify::EventKind::Remove(_)
+                                    ) && event.paths.iter().any(|p| is_relevant_config_path(p))
+                                    {
+                                        // Coalescing signal: the consumer only cares that
+                                        // *something* changed and debounces, so a full channel
+                                        // is benign. Trace-log the drop to aid debugging.
+                                        if let Err(e) = tx.try_send(()) {
+                                            tracing::trace!(
+                                                ?e,
+                                                "config watcher: change-signal channel full, coalescing"
+                                            );
+                                        }
+                                    }
+                                }
+                            },
+                            notify::Config::default(),
+                        ) {
+                            Ok(w) => w,
+                            Err(e) => {
+                                warn!(%e, "Failed to create agent config file watcher");
+                                return;
+                            },
+                        };
+
+                        for dir in &watch_targets {
+                            // Non-recursive: V2 agent dirs are flat and mcp.json is a
+                            // direct child of its watched parent.
+                            if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+                                warn!(?dir, %e, "Failed to watch config path");
+                            } else {
+                                info!(?dir, "Watching config path for changes");
+                            }
+                        }
+
+                        // Debounce: wait 500ms after last event before reloading
+                        loop {
+                            if rx.recv().await.is_none() {
+                                break;
+                            }
+                            // Drain rapid-fire events and wait for quiescence
+                            while let Ok(Some(())) =
+                                tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await
+                            {
+                            }
+                            info!("Agent config file change detected, reloading");
+                            if let Err(e) = sm_handle.reload_agent_configs().await {
+                                error!(%e, "Failed to send agent config reload request");
+                            }
+                        }
+                    });
+                }
+            }
 
             let mut session_manager = SessionManager::new(
                 agent_configs,
@@ -681,6 +847,74 @@ impl SessionManager {
             .map_err(|e| sacp::util::internal_error(format!("Failed to swap agent: {}", e)))?;
 
         Ok(())
+    }
+
+    async fn handle_reload_agent_configs(&mut self) {
+        info!("Reloading agent configs from disk");
+        match load_agents(&RealProvider).await {
+            Ok((mut configs, errors)) => {
+                // Re-apply MCP governance if MCP is disabled
+                if !self.mcp_enabled {
+                    for cfg in &mut configs {
+                        cfg.config_mut().clear_mcp_configs();
+                    }
+                }
+                let loaded_count = configs.len();
+                let error_count = errors.len();
+                for err in &errors {
+                    error!(%err, "Agent config error during reload");
+                }
+                self.agent_configs = configs;
+                self.agent_config_errors = errors
+                    .into_iter()
+                    .map(|e| match e {
+                        agent::agent_config::AgentConfigError::InvalidAgentConfig { path, message } => {
+                            AgentConfigLoadError {
+                                path: Some(path),
+                                message,
+                            }
+                        },
+                        other => AgentConfigLoadError {
+                            path: None,
+                            message: other.to_string(),
+                        },
+                    })
+                    .collect();
+
+                info!(loaded_count, error_count, "Agent configs reloaded");
+
+                // Push updated configs to active sessions
+                let mut available_agents: Vec<AgentInfo> = self
+                    .agent_configs
+                    .iter()
+                    .map(|c| AgentInfo {
+                        name: c.name().to_string(),
+                        description: c.config().description().map(|s| s.to_string()),
+                        source: match c.source() {
+                            agent::agent_config::ConfigSource::Workspace { .. } => "Workspace".to_string(),
+                            agent::agent_config::ConfigSource::Global { .. } => "Global".to_string(),
+                            agent::agent_config::ConfigSource::BuiltIn => "Built-in".to_string(),
+                            agent::agent_config::ConfigSource::Ephemeral => "".to_string(),
+                        },
+                        welcome_message: c.config().welcome_message().map(|s| s.to_string()),
+                    })
+                    .collect();
+                let mut seen = std::collections::HashSet::new();
+                available_agents.retain(|a| seen.insert(a.name.clone()));
+
+                for (session_id, session_handle) in &self.sessions {
+                    if let Err(e) = session_handle
+                        .refresh_agent_configs(self.agent_configs.clone(), available_agents.clone())
+                        .await
+                    {
+                        warn!(?session_id, %e, "Failed to push agent configs to session");
+                    }
+                }
+            },
+            Err(e) => {
+                error!(%e, "Failed to reload agent configs");
+            },
+        }
     }
 
     async fn handle_refresh_registry(&mut self, registry: crate::mcp_registry::McpRegistryResponse) {
@@ -1604,6 +1838,10 @@ impl SessionManager {
             },
             SessionManagerRequestData::GetRegistryData { resp_sender } => {
                 _ = resp_sender.send(self.mcp_registry_data.clone());
+            },
+            SessionManagerRequestData::ReloadAgentConfigs { resp_sender } => {
+                self.handle_reload_agent_configs().await;
+                _ = resp_sender.send(());
             },
         }
     }
@@ -2705,6 +2943,9 @@ pub(crate) enum SessionManagerRequestData {
     GetRegistryData {
         resp_sender: oneshot::Sender<Option<crate::mcp_registry::McpRegistryResponse>>,
     },
+    ReloadAgentConfigs {
+        resp_sender: oneshot::Sender<()>,
+    },
 }
 
 /// Handle for communicating with a [`SessionManager`] actor.
@@ -3357,11 +3598,70 @@ impl SessionManagerHandle {
             .ok()?;
         rx.await.ok()?
     }
+
+    pub async fn reload_agent_configs(&self) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::ReloadAgentConfigs { resp_sender },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send reload request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive reload response"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use agent::util::truncate_safe;
+
+    #[test]
+    fn test_is_relevant_config_path() {
+        use std::path::Path;
+        let rel = super::is_relevant_config_path;
+        // mcp.json anywhere is relevant.
+        assert!(rel(Path::new("/home/u/.kiro/settings/mcp.json")));
+        assert!(rel(Path::new("/proj/.amazonq/mcp.json")));
+        // JSON agent configs under agents / cli-agents dirs.
+        assert!(rel(Path::new("/home/u/.kiro/agents/my.json")));
+        assert!(rel(Path::new("/proj/.amazonq/cli-agents/x.json")));
+        // Directory events (no extension) under an agents dir still pass.
+        assert!(rel(Path::new("/home/u/.kiro/agents")));
+        // Non-JSON files under those dirs are ignored.
+        assert!(!rel(Path::new("/home/u/.kiro/agents/notes.txt")));
+        assert!(!rel(Path::new("/home/u/.kiro/agents/server.log")));
+        // Unrelated paths are ignored.
+        assert!(!rel(Path::new("/home/u/.kiro/steering/foo.md")));
+        assert!(!rel(Path::new("/proj/src/main.rs")));
+    }
+
+    #[test]
+    fn test_resolve_watch_targets_create_policy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("workspace");
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+
+        let ws_agents = cwd.join(".kiro").join("agents");
+        let global_agents = home.join(".kiro").join("agents");
+
+        // Bare cwd (no `.kiro`): the workspace agents dir is NOT created (no
+        // `.kiro` litter) and is not watched; the kiro-owned global dir IS.
+        let targets = super::resolve_watch_targets(Some(&ws_agents), Some(&global_agents), None, None);
+        assert!(!cwd.join(".kiro").exists(), "must not create .kiro in a bare cwd");
+        assert!(!targets.contains(&ws_agents));
+        assert!(global_agents.exists(), "global agents dir should be created");
+        assert!(targets.contains(&global_agents));
+
+        // Once the user has opted into `.kiro`, its agents dir is materialized + watched.
+        std::fs::create_dir_all(cwd.join(".kiro")).unwrap();
+        let targets = super::resolve_watch_targets(Some(&ws_agents), Some(&global_agents), None, None);
+        assert!(ws_agents.exists(), "workspace agents dir created when .kiro exists");
+        assert!(targets.contains(&ws_agents));
+    }
 
     /// Verifies that truncating multi-byte UTF-8 text does not panic.
     /// Reproduces the byte-slicing bug in handle_get_live_activity where

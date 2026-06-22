@@ -377,6 +377,25 @@ impl AgentHandle {
         }
     }
 
+    /// Swap in a freshly-loaded agent config and surgically reconcile its MCP
+    /// servers (start added, stop removed, restart changed, leave unchanged).
+    ///
+    /// Unlike [`swap_agent`](Self::swap_agent), this does not tear down and
+    /// relaunch every server — it only touches servers whose presence or config
+    /// changed. Used by the config file watcher for live, low-churn updates.
+    /// Returns [`AgentError::NotIdle`] if the agent is not idle.
+    pub async fn reconcile_mcp_servers(&self, config: Box<LoadedAgentConfig>) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ReconcileMcpServers(config))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub fn terminate(&self) {
         _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
@@ -1302,6 +1321,7 @@ impl Agent {
             },
             AgentRequest::SwapAgent(args) => self.handle_swap_agent(*args).await,
             AgentRequest::RefreshMcpRegistry(registry) => self.handle_refresh_mcp_registry(registry).await,
+            AgentRequest::ReconcileMcpServers(config) => self.handle_reconcile_mcp_servers(*config).await,
             AgentRequest::CompactConversation => {
                 if !matches!(self.active_state(), ActiveState::Idle) {
                     return Err(AgentError::NotIdle);
@@ -1687,6 +1707,93 @@ impl Agent {
         )
         .await;
         self.launch_mcp_servers().await;
+
+        Ok(AgentResponse::Success)
+    }
+
+    /// Swap in a freshly-loaded agent config and surgically reconcile MCP
+    /// servers. See [`AgentHandle::reconcile_mcp_servers`] for caller-side docs.
+    ///
+    /// This is the event-driven, low-churn counterpart to a full swap: it
+    /// computes the minimal launch/stop/restart plan against the currently
+    /// applied configs and leaves unchanged servers running.
+    async fn handle_reconcile_mcp_servers(
+        &mut self,
+        mut config: LoadedAgentConfig,
+    ) -> Result<AgentResponse, AgentError> {
+        // Idle-only: reconcile may stop/restart servers, which would corrupt an
+        // in-progress turn. Callers defer until the next idle window.
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+
+        // Honour MCP governance: a governance-disabled session runs no servers.
+        if !self.settings.mcp_enabled {
+            config.config_mut().clear_mcp_configs();
+        }
+
+        // Keep registry-driven resolution consistent across the swap, exactly
+        // as swap_agent / refresh_mcp_registry do.
+        if let Some(registry) = self.mcp_registry.as_ref() {
+            registry.apply(&mut config);
+        }
+
+        // Build the new desired MCP set from the fresh config (+ legacy mcp.json).
+        let new_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
+            &config,
+            self.local_mcp_path.as_ref(),
+            self.global_mcp_path.as_ref(),
+        )
+        .await;
+
+        // Diff enabled servers: current (applied) vs desired (new). Only enabled
+        // servers should be running, so disabled entries are filtered from both —
+        // a server toggled to disabled drops out of desired and gets stopped.
+        let to_map = |loaded: &LoadedMcpServerConfigs| {
+            loaded
+                .configs
+                .iter()
+                .filter(|c| c.is_enabled())
+                .map(|c| (c.server_name.clone(), c.config.clone()))
+                .collect::<HashMap<String, _>>()
+        };
+        let current = to_map(&self.cached_mcp_configs);
+        let desired = to_map(&new_mcp_configs);
+        let plan = mcp::reconcile::reconcile_mcp(&current, &desired);
+
+        // Apply surgically. Stops first, then restarts (stop + relaunch), then
+        // launches. Unchanged servers are never touched. Launch init proceeds in
+        // the background; the manager promotes servers on the Initialized event,
+        // so we drop the returned receivers here.
+        for name in &plan.stop {
+            if let Err(e) = self.mcp_manager_handle.stop_server(name.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to stop MCP server during reconcile");
+            }
+        }
+        for (name, cfg) in &plan.restart {
+            if let Err(e) = self.mcp_manager_handle.stop_server(name.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to stop MCP server during reconcile restart");
+            }
+            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to relaunch MCP server during reconcile");
+            }
+        }
+        for (name, cfg) in &plan.launch {
+            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to launch MCP server during reconcile");
+            }
+        }
+
+        // Adopt the new config. Only invalidate the tool-spec and resource
+        // caches when the plan actually changed something — a no-op reconcile
+        // (e.g. an unrelated mcp.json touch) must not drop resource
+        // subscriptions or force a tool-spec rebuild.
+        self.agent_config = config;
+        self.cached_mcp_configs = new_mcp_configs;
+        if !plan.is_empty() {
+            self.cached_tool_specs = None;
+            self.session_resource_paths.clear();
+        }
 
         Ok(AgentResponse::Success)
     }

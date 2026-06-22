@@ -105,6 +105,7 @@
 
 pub mod actor;
 pub mod oauth_util;
+pub mod reconcile;
 pub mod registry;
 pub(crate) mod service;
 pub mod types;
@@ -201,6 +202,22 @@ impl McpManagerHandle {
             .unwrap_or(Err(McpManagerError::Channel))?
         {
             McpManagerResponse::LaunchServer(rx) => Ok(rx),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    /// Terminate and remove a single server by name. Idempotent: stopping a
+    /// server that isn't running succeeds (the desired absence already holds).
+    pub async fn stop_server(&mut self, name: String) -> Result<(), McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::StopServer { server_name: name })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::StopServerAcknowledged => Ok(()),
             other => Err(McpManagerError::Custom(format!(
                 "received unexpected response: {other:?}"
             ))),
@@ -492,6 +509,24 @@ impl McpManager {
                 join_all(futs).await;
                 Ok(McpManagerResponse::TerminateAcknowledged)
             },
+            McpManagerRequest::StopServer { server_name } => {
+                // Targeted termination. A server may be fully running or still
+                // initializing; handle both. Removing the initializing entry
+                // drops its result sender, unblocking any pending launch receiver.
+                if let Some(handle) = self.servers.remove(&server_name) {
+                    if tokio::time::timeout(Duration::from_secs(4), handle.shutdown())
+                        .await
+                        .is_err()
+                    {
+                        warn!(server_name = %server_name, "MCP server did not shut down within timeout");
+                    }
+                } else if let Some((handle, _result_tx)) = self.initializing_servers.remove(&server_name) {
+                    handle.terminate();
+                }
+                // Clear any failed marker so a subsequent relaunch isn't shadowed.
+                self.failed_servers.remove(&server_name);
+                Ok(McpManagerResponse::StopServerAcknowledged)
+            },
         }
     }
 
@@ -575,7 +610,13 @@ pub enum McpManagerRequest {
         tool_name: String,
         args: Option<serde_json::Map<String, Value>>,
     },
-    // TODO: add server targeted termination
+    /// Terminate and remove a single server by name. Idempotent: an unknown
+    /// name is a no-op. Unlike [`Terminate`](Self::Terminate) — which tears
+    /// down every server for shutdown — this targets one server so a changed
+    /// desired set can be reconciled without churning unaffected servers.
+    StopServer {
+        server_name: String,
+    },
     Terminate,
 }
 
@@ -588,6 +629,7 @@ pub enum McpManagerResponse {
     Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
     TerminateAcknowledged,
+    StopServerAcknowledged,
 }
 
 pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;
@@ -1090,6 +1132,58 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let result = mgr.handle_mcp_manager_request(McpManagerRequest::Terminate).await;
         assert!(matches!(result, Ok(McpManagerResponse::TerminateAcknowledged)));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_stop_server_unknown_is_noop() {
+        // Stopping a server that was never launched succeeds — the desired
+        // absence already holds. Keeps the reconcile path idempotent.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::StopServer {
+                server_name: "ghost".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Ok(McpManagerResponse::StopServerAcknowledged)));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_stop_server_removes_only_target() {
+        // A running server is dropped from `servers`; unaffected servers stay.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers
+            .insert("gone".to_string(), McpServerActorHandle::new_dummy("gone"));
+        mgr.servers
+            .insert("kept".to_string(), McpServerActorHandle::new_dummy("kept"));
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::StopServer {
+                server_name: "gone".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Ok(McpManagerResponse::StopServerAcknowledged)));
+        assert!(!mgr.servers.contains_key("gone"));
+        assert!(mgr.servers.contains_key("kept"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_stop_server_removes_initializing_and_clears_failed() {
+        // An initializing server is removed, and any stale failed marker is
+        // cleared so a later relaunch of the same name isn't shadowed.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers
+            .insert("pending".to_string(), (McpServerActorHandle::new_dummy("pending"), tx));
+        mgr.failed_servers.insert("pending".to_string());
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::StopServer {
+                server_name: "pending".to_string(),
+            })
+            .await;
+        assert!(matches!(result, Ok(McpManagerResponse::StopServerAcknowledged)));
+        assert!(!mgr.initializing_servers.contains_key("pending"));
+        assert!(!mgr.failed_servers.contains("pending"));
     }
 
     #[tokio::test]

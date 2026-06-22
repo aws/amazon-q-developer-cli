@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Hot-reload MCP servers when an agent config or mcp.json changes on disk — added, removed, or edited servers are reconciled (only changed servers restart) without losing conversation context."
+}
