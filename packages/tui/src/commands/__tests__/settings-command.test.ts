@@ -60,36 +60,23 @@ describe('/settings command', () => {
   });
 
   describe('bare /settings (no args)', () => {
-    it('opens the SettingsPanel overlay in TUI mode', async () => {
-      // The TUI /settings UI lives in <SettingsPanel> (an Explorer-based
-      // overlay), not in the slash-command active-command machinery.
-      // Bare /settings in TUI mode just flips the panel state on; the
-      // panel itself owns the row list and routing.
-      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
-      // Default mock getUiMode returns 'tui'.
-      await dispatch(settingsCmd, '', ctx);
+    // Both modes render the SAME shared <SettingsPanel> overlay (lite via
+    // <BackendPanels>), so breadcrumb titles / heights / ESC-back match. The
+    // lite-only verbosity row is added inside the panel model (gated on
+    // uiMode), not via the command-menu — so bare /settings just flips the
+    // panel flag in either mode and never opens a command-menu.
+    it.each(['tui', 'lite'] as const)(
+      'opens the SettingsPanel overlay in %s mode (not the command-menu)',
+      async (uiMode) => {
+        const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
+        (ctx as any).getUiMode = () => uiMode;
+        await dispatch(settingsCmd, '', ctx);
 
-      expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
-      expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
-      // TUI mode does not route through the command-menu.
-      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
-    });
-
-    it('opens the same SettingsPanel overlay in lite mode (1:1 with TUI)', async () => {
-      // Lite now renders the SAME shared SettingsPanel (via <BackendPanels>)
-      // instead of a bespoke command-menu — so breadcrumb titles, panel
-      // heights, and ESC-back match TUI. The lite-only verbosity row is added
-      // inside the panel's model (settings-panel-model.ts), gated on uiMode,
-      // not via the command-menu. So bare /settings in lite flips the panel
-      // flag, exactly like TUI, and does NOT open a command-menu.
-      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
-      (ctx as any).getUiMode = () => 'lite';
-      await dispatch(settingsCmd, '', ctx);
-
-      expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
-      expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
-      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
-    });
+        expect(ctx._spies.setShowSettingsPanel!).toHaveBeenCalled();
+        expect(ctx._spies.setShowSettingsPanel!.mock.calls[0]![0]).toBe(true);
+        expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('/settings <subcommand>', () => {
@@ -145,15 +132,10 @@ describe('/settings command', () => {
       // Chip name is the canonical /verbosity, not /settings.
       expect(arg.command.name).toBe('/verbosity');
 
-      // The menu opened in the same shape as a direct /verbosity entry —
-      // previewKey is set (non-null), and the option set is recognizable
-      // as a verbosity menu (density rows or config rows depending on
-      // whether an active preset is detected). The default install (no
-      // saved config) lands in the density menu with previewKey 'density'.
+      // Opened in the same shape as a direct /verbosity entry: previewKey set
+      // and the rows are a recognizable verbosity menu (density or config).
       expect(arg.previewKey).toBeTruthy();
       const labels = arg.options.map((o) => o.label);
-      // Either density rows ('default', 'full', 'custom') OR config rows
-      // ('Tool calls', 'Show output') depending on detected preset state.
       const isDensityMenu =
         labels.includes('default') || labels.includes('full');
       const isConfigMenu = labels.includes('Tool calls');
@@ -199,44 +181,27 @@ describe('/settings command', () => {
     // the subsequent ESC returns to the /settings menu instead of dismissing.
     // This is the hook the overlay close handlers read to decide whether to
     // re-open /settings. See CommandMenu.tsx onEscape / handleCloseKeybindingsPanel.
-    it('sets settingsReturnOnEscape=true when routing to theme', async () => {
-      const ctx = createMockCommandContext({
-        slashCommands: [settingsCmd, themeCmd],
-      });
-      await dispatch(settingsCmd, 'theme', ctx);
+    // verbosity needs /verbosity registered + lite mode so the inner handler
+    // reaches its menu-build path; we still assert the wrapper, not the handler.
+    it.each([
+      { sub: 'theme', extra: [themeCmd], lite: false },
+      { sub: 'keybindings', extra: [], lite: false },
+      { sub: 'verbosity', extra: [verbosityCmd], lite: true },
+    ])(
+      'sets settingsReturnOnEscape=true when routing to $sub',
+      async ({ sub, extra, lite }) => {
+        const ctx = createMockCommandContext({
+          slashCommands: [settingsCmd, ...extra],
+        });
+        if (lite) (ctx as any).getUiMode = () => 'lite';
+        await dispatch(settingsCmd, sub, ctx);
 
-      expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalled();
-      const call = ctx._spies.setSettingsReturnOnEscape!.mock.calls[0]!;
-      expect(call[0]).toBe(true);
-    });
-
-    it('sets settingsReturnOnEscape=true when routing to keybindings', async () => {
-      const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });
-      await dispatch(settingsCmd, 'keybindings', ctx);
-
-      expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalled();
-      const call = ctx._spies.setSettingsReturnOnEscape!.mock.calls[0]!;
-      expect(call[0]).toBe(true);
-    });
-
-    it('sets settingsReturnOnEscape=true when routing to verbosity (lite mode)', async () => {
-      // Register /verbosity in the slash command registry so the inner
-      // verbosityConfig handler's canonical resolution succeeds — without
-      // it the handler falls back to the legacy /settings cmd shape and
-      // the chip-name assertion below would fail.
-      const ctx = createMockCommandContext({
-        slashCommands: [settingsCmd, verbosityCmd],
-      });
-      // Lite mode so the verbosityConfig handler reaches its menu-build
-      // path. The subcommand's handle wrapper sets the flag before
-      // delegating, so this asserts the wrapper, not the inner handler.
-      (ctx as any).getUiMode = () => 'lite';
-      await dispatch(settingsCmd, 'verbosity', ctx);
-
-      expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalled();
-      const call = ctx._spies.setSettingsReturnOnEscape!.mock.calls[0]!;
-      expect(call[0]).toBe(true);
-    });
+        expect(ctx._spies.setSettingsReturnOnEscape!).toHaveBeenCalled();
+        expect(ctx._spies.setSettingsReturnOnEscape!.mock.calls[0]![0]).toBe(
+          true
+        );
+      }
+    );
 
     it('does not set the flag when the subcommand is unknown', async () => {
       const ctx = createMockCommandContext({ slashCommands: [settingsCmd] });

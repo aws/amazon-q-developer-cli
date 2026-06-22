@@ -258,18 +258,15 @@ describe('selectStaticEligible', () => {
 });
 
 describe('inner subagent filtering', () => {
-  test('isInnerSubagentTool flags ToolUse with non-main agentName', () => {
-    expect(
-      isInnerSubagentTool(tool('t', false, { agentName: 'sub-1' }), 'main')
-    ).toBe(true);
-  });
-
-  test('isInnerSubagentTool false for main-agent tools and missing names', () => {
-    expect(
-      isInnerSubagentTool(tool('t', false, { agentName: 'main' }), 'main')
-    ).toBe(false);
-    expect(isInnerSubagentTool(tool('t', false), 'main')).toBe(false);
-    expect(isInnerSubagentTool(user('u'), 'main')).toBe(false);
+  // Only a ToolUse whose agentName differs from the active agent is "inner";
+  // main-agent tools, agentName-less tools, and non-tool rows are not.
+  test.each<[string, MessageType, boolean]>([
+    ['non-main agentName', tool('t', false, { agentName: 'sub-1' }), true],
+    ['main agentName', tool('t', false, { agentName: 'main' }), false],
+    ['missing agentName', tool('t', false), false],
+    ['non-tool row', user('u'), false],
+  ])('isInnerSubagentTool: %s → %s', (_name, msg, expected) => {
+    expect(isInnerSubagentTool(msg, 'main')).toBe(expected);
   });
 
   test('computeActiveToolBatchIds skips inner subagent tools when computing the trailing batch', () => {
