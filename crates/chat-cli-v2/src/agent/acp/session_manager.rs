@@ -426,8 +426,12 @@ pub struct GroupStageResult {
     pub loop_iterations_used: u32,
 }
 
+/// Result delivered to a blocking group waiter: stage results on success, or a
+/// human-readable error string when a stage fails (fail-fast).
+type GroupCompletionResult = Result<Vec<GroupStageResult>, String>;
+
 /// Sender for group completion notifications.
-type GroupCompletionSender = oneshot::Sender<Vec<GroupStageResult>>;
+type GroupCompletionSender = oneshot::Sender<GroupCompletionResult>;
 
 /// Manages session lifecycle (creation, retrieval, termination).
 #[derive(Debug)]
@@ -476,6 +480,10 @@ pub struct SessionManager {
     connection_cx: Option<ConnectionTo<sacp::Client>>,
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
+    /// Map of group_name -> error message. Records a stage failure that occurs
+    /// before the parent registers its blocking waiter; drained by the next
+    /// WaitForGroupCompletion so the parent's tool fails fast instead of hanging.
+    group_failures: HashMap<String, String>,
     /// V1 session exporter for lazy migration of V1 conversations.
     legacy_session_exporter: Arc<dyn LegacySessionExporter>,
     /// Agent config errors encountered during loading at startup.
@@ -550,6 +558,7 @@ impl SessionManager {
             groups: HashMap::new(),
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
+            group_failures: HashMap::new(),
             legacy_session_exporter,
             agent_config_errors,
             mcp_registry_data,
@@ -568,6 +577,24 @@ impl SessionManager {
     ///
     /// If a leaf node has failed, its result, along with its parents results are included in the
     /// group result to be returned by this function. This is to help the main agent retry.
+    /// Select the sessions in `group` that must be actively cancelled when a
+    /// stage fails fast: every session in the group that is still running and is
+    /// not the failed stage itself. Already-terminated stages have nothing to
+    /// cancel, and the failed stage is excluded so it is never targeted twice.
+    fn siblings_to_cancel(
+        orchestrated_sessions: &HashMap<String, OrchestratedSession>,
+        group: &str,
+        failed_stage: &str,
+    ) -> Vec<SessionId> {
+        orchestrated_sessions
+            .values()
+            .filter(|s| s.group.as_deref() == Some(group))
+            .filter(|s| s.name != failed_stage)
+            .filter(|s| s.status != SessionStatus::Terminated)
+            .map(|s| s.session_id.clone())
+            .collect()
+    }
+
     fn collect_group_results(&self, group_name: &str) -> Vec<GroupStageResult> {
         let group: Vec<_> = self
             .orchestrated_sessions
@@ -1332,8 +1359,9 @@ impl SessionManager {
                             self.send_subagent_list_update().await;
                             if let Some(waiter) = self.group_completion_waiters.remove(&group) {
                                 let results = self.collect_group_results(&group);
-                                let _ = waiter.send(results);
+                                let _ = waiter.send(Ok(results));
                             }
+                            self.group_failures.remove(&group);
                             self.orchestrated_sessions
                                 .retain(|_, s| s.group.as_deref() != Some(&group));
                             self.groups.remove(&group);
@@ -1359,23 +1387,74 @@ impl SessionManager {
                 group_name,
                 resp_sender,
             } => {
-                // Check if all sessions in group are already terminated
-                let all_done = self
-                    .orchestrated_sessions
-                    .values()
-                    .filter(|s| s.group.as_deref() == Some(&group_name))
-                    .all(|s| s.status == SessionStatus::Terminated);
-                if all_done {
-                    let results = self.collect_group_results(&group_name);
-                    let _ = resp_sender.send(results);
-                    // Clean up completed group
+                // A stage may have already failed before this waiter registered.
+                if let Some(error) = self.group_failures.remove(&group_name) {
+                    let _ = resp_sender.send(Err(error));
                     self.orchestrated_sessions
                         .retain(|_, s| s.group.as_deref() != Some(&group_name));
                     self.groups.remove(&group_name);
                 } else {
-                    // Store waiter — will be fired when last session terminates
-                    self.group_completion_waiters.insert(group_name, resp_sender);
+                    // Check if all sessions in group are already terminated
+                    let all_done = self
+                        .orchestrated_sessions
+                        .values()
+                        .filter(|s| s.group.as_deref() == Some(&group_name))
+                        .all(|s| s.status == SessionStatus::Terminated);
+                    if all_done {
+                        let results = self.collect_group_results(&group_name);
+                        let _ = resp_sender.send(Ok(results));
+                        // Clean up completed group
+                        self.orchestrated_sessions
+                            .retain(|_, s| s.group.as_deref() != Some(&group_name));
+                        self.groups.remove(&group_name);
+                    } else {
+                        // Store waiter — will be fired when last session terminates
+                        self.group_completion_waiters.insert(group_name, resp_sender);
+                    }
                 }
+            },
+            SessionManagerRequestData::FailGroup {
+                group_name,
+                stage_name,
+                error,
+                resp_sender,
+            } => {
+                let message = format!("stage '{}' failed: {}", stage_name, error);
+                // Surface final state to the TUI before tearing the group down.
+                self.send_subagent_list_update().await;
+                if let Some(waiter) = self.group_completion_waiters.remove(&group_name) {
+                    let _ = waiter.send(Err(message));
+                } else if self.groups.contains_key(&group_name) {
+                    // Waiter not registered yet, but the group is still live, so
+                    // a WaitForGroupCompletion is still expected — record the
+                    // failure so it fails fast. If the group is already gone
+                    // (e.g. another path already completed it, or this is a
+                    // late/duplicate failure), do NOT record: the group key is
+                    // reused across crews with the same task, and a stale entry
+                    // would poison the next same-task crew.
+                    self.group_failures.insert(group_name.clone(), message);
+                }
+                // Abandon the rest of the group: any sibling stages still
+                // running are actively cancelled, so they cannot keep consuming
+                // resources or deliver a late result to a parent whose crew tool
+                // has already returned.
+                let siblings = Self::siblings_to_cancel(&self.orchestrated_sessions, &group_name, &stage_name);
+                for sibling_id in siblings {
+                    if let Some(handle) = self.sessions.remove(&sibling_id)
+                        && tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
+                            .await
+                            .is_err()
+                    {
+                        warn!(
+                            ?sibling_id,
+                            "Sibling session did not shut down within timeout during group failure"
+                        );
+                    }
+                }
+                self.orchestrated_sessions
+                    .retain(|_, s| s.group.as_deref() != Some(&group_name));
+                self.groups.remove(&group_name);
+                _ = resp_sender.send(());
             },
             // --- Orchestration handlers ---
             SessionManagerRequestData::SpawnOrchestratedSession {
@@ -1613,6 +1692,7 @@ impl SessionManager {
         });
 
         // Store orchestrated session metadata
+        let group_name_for_task = group_name.clone();
         let orch_session = OrchestratedSession {
             session_id: new_session_id.clone(),
             name: session_name.clone(),
@@ -1648,6 +1728,7 @@ impl SessionManager {
         let agent_str = agent_name.to_string();
         let task_str = task.to_string();
         let session_name_clone = session_name.clone();
+        let group_name_clone = group_name_for_task;
         let parent_sid = parent_session_id.clone();
         let embedded_msg = format!(
             "You are '{}' — an orchestrated session.\nYour task: {}\n{}\nWhen your task is complete, call the summary tool with your findings.",
@@ -1711,15 +1792,22 @@ impl SessionManager {
                             if persistent {
                                 session_tx.update_session_status(&new_sid, SessionStatus::Idle).await;
                             } else {
-                                session_tx
-                                    .update_session_status(&new_sid, SessionStatus::Terminated)
-                                    .await;
+                                // Mark terminated via terminate_session (which also prunes
+                                // dependents). We intentionally do NOT call
+                                // update_session_status(Terminated) here: its group-completion
+                                // check cannot tell a failed stage (no result) from a
+                                // successful one and would fire the waiter with a spurious
+                                // "Ok/empty" result before fail_group can report the error.
                                 session_tx.terminate_session(&new_sid).await;
                             }
-                            // Only trigger next DAG stages on real failures, not cancellation
+                            // Fail-fast: a stage failed, so the blocking pipeline cannot
+                            // complete. Abort the group's wait with an error instead of
+                            // leaving the parent's subagent tool hanging on pruned
+                            // dependents. Cancellation is driven by the parent itself, so
+                            // it does not fail the group.
                             if !cancelled {
                                 session_tx
-                                    .trigger_pending_stages(&session_name_clone, &parent_sid)
+                                    .fail_group(&group_name_clone, &session_name_clone, &e.to_string())
                                     .await;
                             }
                         },
@@ -1733,7 +1821,7 @@ impl SessionManager {
                         .update_session_status(&new_sid, SessionStatus::Terminated)
                         .await;
                     session_tx
-                        .trigger_pending_stages(&session_name_clone, &parent_sid)
+                        .fail_group(&group_name_clone, &session_name_clone, &e.to_string())
                         .await;
                 },
             }
@@ -2536,7 +2624,13 @@ pub(crate) enum SessionManagerRequestData {
     },
     WaitForGroupCompletion {
         group_name: String,
-        resp_sender: oneshot::Sender<Vec<GroupStageResult>>,
+        resp_sender: oneshot::Sender<GroupCompletionResult>,
+    },
+    FailGroup {
+        group_name: String,
+        stage_name: String,
+        error: String,
+        resp_sender: oneshot::Sender<()>,
     },
     // --- Orchestration requests ---
     SpawnOrchestratedSession {
@@ -2904,7 +2998,7 @@ impl SessionManagerHandle {
     }
 
     /// Wait for all sessions in a group to complete. Blocks until all are Terminated.
-    pub async fn wait_for_group_completion(&self, group_name: String) -> Vec<GroupStageResult> {
+    pub async fn wait_for_group_completion(&self, group_name: String) -> GroupCompletionResult {
         let (resp_sender, rx) = oneshot::channel();
         let _ = self
             .tx
@@ -2916,7 +3010,28 @@ impl SessionManagerHandle {
                 },
             })
             .await;
-        rx.await.unwrap_or_default()
+        rx.await
+            .unwrap_or_else(|_| Err("Group wait channel dropped".to_string()))
+    }
+
+    /// Fail-fast: a stage in a blocking group failed. Abort the group's wait
+    /// with an error so the parent's `subagent` tool returns instead of hanging
+    /// on pruned dependents.
+    pub async fn fail_group(&self, group: &str, stage_name: &str, error: &str) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::FailGroup {
+                    group_name: group.to_string(),
+                    stage_name: stage_name.to_string(),
+                    error: error.to_string(),
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
     }
 
     /// Store pending DAG stages for a crew group.
@@ -3343,5 +3458,103 @@ mod tests {
         let session = make_session(None, Some("NEEDS_CHANGES".to_string()), 0, true);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_none(), "no loop_config means no trigger regardless of signals");
+    }
+
+    // ── siblings_to_cancel tests ────────────────────────────────────────
+
+    fn orch_in_group(
+        id: &str,
+        name: &str,
+        group: &str,
+        status: crate::agent::acp::orchestration::types::SessionStatus,
+    ) -> crate::agent::acp::orchestration::types::OrchestratedSession {
+        use std::time::SystemTime;
+
+        use crate::agent::acp::orchestration::types::*;
+        OrchestratedSession {
+            session_id: sacp::schema::SessionId::new(id.to_string()),
+            name: name.to_string(),
+            task: "t".to_string(),
+            agent_name: "a".to_string(),
+            role: None,
+            parent_session: None,
+            group: Some(group.to_string()),
+            status,
+            created_at: SystemTime::now(),
+            last_activity: SystemTime::now(),
+            human_attached: false,
+            persistent: false,
+            depends_on: vec![],
+            result: None,
+            loop_config: None,
+            loop_iteration: 0,
+            changes_needed: false,
+        }
+    }
+
+    #[test]
+    fn siblings_to_cancel_returns_running_in_group_siblings_only() {
+        use std::collections::HashMap;
+
+        use crate::agent::acp::orchestration::types::SessionStatus;
+        let mut sessions = HashMap::new();
+        // The failed stage (already terminated by the failure branch).
+        sessions.insert(
+            "a".to_string(),
+            orch_in_group("a", "stage-a", "crew-x", SessionStatus::Terminated),
+        );
+        // A still-running sibling — must be cancelled.
+        sessions.insert(
+            "b".to_string(),
+            orch_in_group("b", "stage-b", "crew-x", SessionStatus::Busy),
+        );
+        // A sibling that already finished — nothing to cancel.
+        sessions.insert(
+            "c".to_string(),
+            orch_in_group("c", "stage-c", "crew-x", SessionStatus::Terminated),
+        );
+        // An unrelated session in another group — must be untouched.
+        sessions.insert(
+            "d".to_string(),
+            orch_in_group("d", "stage-d", "other", SessionStatus::Busy),
+        );
+
+        let mut got: Vec<String> = super::SessionManager::siblings_to_cancel(&sessions, "crew-x", "stage-a")
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["b".to_string()],
+            "only the running, in-group, non-failed sibling should be cancelled"
+        );
+    }
+
+    #[test]
+    fn siblings_to_cancel_never_selects_the_failed_stage() {
+        use std::collections::HashMap;
+
+        use crate::agent::acp::orchestration::types::SessionStatus;
+        let mut sessions = HashMap::new();
+        // Failed stage whose status has not yet flipped to Terminated.
+        sessions.insert(
+            "a".to_string(),
+            orch_in_group("a", "stage-a", "crew-x", SessionStatus::Busy),
+        );
+        sessions.insert(
+            "b".to_string(),
+            orch_in_group("b", "stage-b", "crew-x", SessionStatus::Busy),
+        );
+
+        let got: Vec<String> = super::SessionManager::siblings_to_cancel(&sessions, "crew-x", "stage-a")
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            got,
+            vec!["b".to_string()],
+            "the failed stage itself must never be selected for cancellation"
+        );
     }
 }

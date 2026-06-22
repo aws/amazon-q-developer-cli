@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import type { AppState } from '../src/stores/app-store';
+import type { SerializedAppState } from '../src/test-utils/shared/ipc-types';
 import { PtyManager, TerminalSnapshot } from '../src/test-utils/shared/pty-manager';
 import type { CellAttributes } from '../src/test-utils/shared/pty-manager';
 import { createTestDir, type TestPaths } from '../src/test-utils/shared/test-paths';
@@ -303,7 +303,7 @@ export class E2ETestCase {
   /**
    * Gets TUI application state (Zustand store).
    */
-  async getStore(): Promise<AppState> {
+  async getStore(): Promise<SerializedAppState> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
     const response = await this.tuiConnection.sendCommand({ kind: 'GET_STORE' });
     if (response.data.kind !== 'GET_STORE') {
@@ -316,9 +316,9 @@ export class E2ETestCase {
    * Polls the store until the predicate returns true, then returns the matching state.
    */
   async waitForStoreCondition(
-    predicate: (state: AppState) => boolean,
+    predicate: (state: SerializedAppState) => boolean,
     timeout = 10000
-  ): Promise<AppState> {
+  ): Promise<SerializedAppState> {
     const start = Date.now();
     while (Date.now() - start < timeout) {
       const store = await this.getStore();
@@ -385,6 +385,75 @@ export class E2ETestCase {
       await this.sleepMs(50);
     }
     throw new Error('Timeout waiting for session ID');
+  }
+
+  /**
+   * Wait for the first subagent (child) session to appear in the store — i.e. a
+   * session other than the main one, or one carrying a `parentSession`. Throws
+   * on timeout.
+   */
+  async waitForChildSession(timeoutMs = 15000): Promise<string> {
+    const child = await this.waitForNewChildSession(new Set(), timeoutMs);
+    if (child === null) {
+      throw new Error('Timeout waiting for child subagent session to appear');
+    }
+    return child;
+  }
+
+  /**
+   * Wait for a real (spawned) child session whose id is not in `known`. Skips
+   * `pending:*` placeholder entries, which represent DAG stages that have not
+   * spawned yet. Returns the new session id, or null if none appears within the
+   * timeout (e.g. a downstream stage that never spawned).
+   */
+  async waitForNewChildSession(known: Set<string>, timeoutMs = 15000): Promise<string | null> {
+    const mainId = await this.getSessionId();
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const store = await this.getStore();
+      const sessions = store.sessions ?? {};
+      for (const [id, s] of Object.entries(sessions)) {
+        if (id === mainId && !s.parentSession) continue;
+        if (id.startsWith('pending:')) continue;
+        if (!known.has(id)) return id;
+      }
+      await this.sleepMs(100);
+    }
+    return null;
+  }
+
+  /**
+   * Push mock send_message response events for an explicit session id.
+   *
+   * Unlike {@link pushSendMessageResponse}, which targets the main TUI session,
+   * this targets any session by id — needed for subagent/crew child sessions
+   * whose ids are only known at runtime (random UUIDs).
+   *
+   * The agent-side mock registry blocks an unmocked session's `send_message`
+   * until events are pushed, so this can be called lazily after the child
+   * session id is discovered from the store.
+   */
+  async pushSendMessageResponseForSession(
+    sessionId: string,
+    events: MockStreamItem[] | null,
+    options?: { silent?: boolean }
+  ): Promise<void> {
+    if (!this.agentConnection) throw new Error('Agent not connected');
+
+    const cmd = {
+      kind: 'PUSH_SEND_MESSAGE_RESPONSE' as const,
+      session_id: sessionId,
+      events,
+    };
+    const eventsDesc = events ? `${events.length} events` : 'null (end stream)';
+    if (!options?.silent) {
+      console.log(`Sending to agent [session ${sessionId}]: ${eventsDesc}`);
+    }
+
+    const response = await this.agentConnection.sendCommand(cmd);
+    if (response.data.kind === 'ERROR') {
+      throw new Error(`Failed to push send_message response: ${response.data.error}`);
+    }
   }
 
   /**

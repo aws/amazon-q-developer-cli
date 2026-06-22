@@ -7,6 +7,18 @@ import type { AppState } from '../../stores/app-store';
 import type { AgentStreamEvent } from '../../types/agent-events';
 import type { MockStreamItem } from '../../../e2e_tests/types/chat-cli';
 
+/**
+ * The store as it arrives over the IPC boundary. The GET_STORE handler converts
+ * the store's `Map` fields to plain objects (via `Object.fromEntries`) because
+ * `Map`s do not survive JSON serialization, so every `Map<string, V>` field is
+ * a `Record<string, V>` on the receiving side.
+ */
+export type SerializedAppState = {
+  [K in keyof AppState]: AppState[K] extends Map<string, infer V>
+    ? Record<string, V>
+    : AppState[K];
+};
+
 // Import AgentSnapshot type when available from E2E type generation
 // TODO: This will be generated from Rust AgentSnapshot struct
 export interface AgentSnapshot {
@@ -38,7 +50,7 @@ export interface MemoryUsageData {
 }
 
 export type TestResponse =
-  | { kind: 'GET_STORE'; data: AppState }
+  | { kind: 'GET_STORE'; data: SerializedAppState }
   | { kind: 'GET_AGENT_STATE'; data: AgentSnapshot }
   | { kind: 'PUSH_SEND_MESSAGE_RESPONSE' }
   | { kind: 'MOCK_SESSION_UPDATE' }

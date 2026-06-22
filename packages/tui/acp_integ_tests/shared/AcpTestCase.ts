@@ -39,7 +39,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AppState } from '../../src/stores/app-store';
+import type { SerializedAppState } from '../../src/test-utils/shared/ipc-types';
 import type {
   CellAttributes,
   TerminalSnapshot,
@@ -160,7 +160,7 @@ export class AcpTestCase {
   sleepMs(ms: number): Promise<void> {
     return this.inner.sleepMs(ms);
   }
-  getStore(): Promise<AppState> {
+  getStore(): Promise<SerializedAppState> {
     return this.inner.getStore();
   }
   terminalSnapshot(): Promise<TerminalSnapshot> {
@@ -174,10 +174,10 @@ export class AcpTestCase {
    * truthy. See {@link TestCase.waitForStore}.
    */
   waitForStore(
-    predicate: (state: AppState) => boolean,
+    predicate: (state: SerializedAppState) => boolean,
     timeoutMs?: number,
     pollIntervalMs?: number
-  ): Promise<AppState> {
+  ): Promise<SerializedAppState> {
     return this.inner.waitForStore(predicate, timeoutMs, pollIntervalMs);
   }
   getSnapshotFormatted(): string {

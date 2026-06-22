@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AgentStreamEvent } from '../types/agent-events';
-import type { AppState } from '../stores/app-store';
+import type { SerializedAppState } from './shared/ipc-types';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
 import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
@@ -268,7 +268,7 @@ export class TestCase {
    * Retrieves the current application state from the running TUI process via IPC.
    * This provides direct access to the Zustand store state for assertions.
    *
-   * @returns Promise resolving to the current AppState
+   * @returns Promise resolving to the current SerializedAppState
    * @throws Error if IPC communication fails
    * @example
    * ```typescript
@@ -277,7 +277,7 @@ export class TestCase {
    * expect(state.exitSequence).toBe(1);
    * ```
    */
-  async getStore(): Promise<AppState> {
+  async getStore(): Promise<SerializedAppState> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
 
     const response = await this.tuiConnection.sendCommand({
@@ -351,10 +351,10 @@ export class TestCase {
    * without hand-rolling a polling loop.
    */
   async waitForStore(
-    predicate: (state: AppState) => boolean,
+    predicate: (state: SerializedAppState) => boolean,
     timeoutMs = 30_000,
     pollIntervalMs = 100
-  ): Promise<AppState> {
+  ): Promise<SerializedAppState> {
     const deadline = Date.now() + timeoutMs;
     let state = await this.getStore();
     while (!predicate(state)) {
