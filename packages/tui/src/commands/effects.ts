@@ -1842,26 +1842,38 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       );
     };
 
-    const TRUNC_HEADINGS: Record<TruncationField, string> = {
-      argsLines: 'Tool args · lines',
-      argsChars: 'Tool args · chars per value',
-      outputLines: 'Tool output · lines',
-      outputChars: 'Tool output · chars per line',
-    };
-    const truncCap = (
-      display: typeof DEFAULT_DISPLAY,
-      which: TruncationField
-    ): number | null => {
-      switch (which) {
-        case 'argsLines':
-          return display.argsMaxLines;
-        case 'argsChars':
-          return display.argsMaxChars;
-        case 'outputLines':
-          return display.outputMaxLines;
-        case 'outputChars':
-          return display.outputMaxChars;
+    // The four truncation knobs share a heading (editor title), a unit, and a
+    // value accessor onto the display config. Both the numeric editor and the
+    // truncation MENUS row builder read this table so the field→cap mapping
+    // lives in one place.
+    const TRUNC_FIELDS: Record<
+      TruncationField,
+      {
+        heading: string;
+        unit: 'lines' | 'chars';
+        get: (d: typeof DEFAULT_DISPLAY) => number | null;
       }
+    > = {
+      argsLines: {
+        heading: 'Tool args · lines',
+        unit: 'lines',
+        get: (d) => d.argsMaxLines,
+      },
+      argsChars: {
+        heading: 'Tool args · chars per value',
+        unit: 'chars',
+        get: (d) => d.argsMaxChars,
+      },
+      outputLines: {
+        heading: 'Tool output · lines',
+        unit: 'lines',
+        get: (d) => d.outputMaxLines,
+      },
+      outputChars: {
+        heading: 'Tool output · chars per line',
+        unit: 'chars',
+        get: (d) => d.outputMaxChars,
+      },
     };
 
     type MenuRow = {
@@ -1949,32 +1961,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // previewKey ends with `:edit`).
       truncation: () => {
         const display = getVerboseDisplay();
-        return [
-          {
-            value: 'menu:truncation:argsLines:edit',
-            label: 'Args · lines',
-            description: fmtCap(display.argsMaxLines),
-            group: 'Tool args',
-          },
-          {
-            value: 'menu:truncation:argsChars:edit',
-            label: 'Args · chars per value',
-            description: fmtCap(display.argsMaxChars, 'chars'),
-            group: 'Tool args',
-          },
-          {
-            value: 'menu:truncation:outputLines:edit',
-            label: 'Output · lines',
-            description: fmtCap(display.outputMaxLines),
-            group: 'Tool output',
-          },
-          {
-            value: 'menu:truncation:outputChars:edit',
-            label: 'Output · chars per line',
-            description: fmtCap(display.outputMaxChars, 'chars'),
-            group: 'Tool output',
-          },
+        // Compact per-row presentation (label + group); value accessor + unit
+        // come from the shared TRUNC_FIELDS table.
+        const rows: Array<[TruncationField, string, string]> = [
+          ['argsLines', 'Args · lines', 'Tool args'],
+          ['argsChars', 'Args · chars per value', 'Tool args'],
+          ['outputLines', 'Output · lines', 'Tool output'],
+          ['outputChars', 'Output · chars per line', 'Tool output'],
         ];
+        return rows.map(([field, label, group]) => {
+          const { unit, get } = TRUNC_FIELDS[field];
+          return {
+            value: `menu:truncation:${field}:edit`,
+            label,
+            description: fmtCap(get(display), unit),
+            group,
+          };
+        });
       },
       output: () => {
         const cur = getVerboseConfig();
@@ -2027,16 +2030,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Esc from the editor returns to the Truncation submenu, NOT the top.
       setReturn('menu:truncation');
       const display = getVerboseDisplay();
-      const cur = truncCap(display, which);
-      const heading = TRUNC_HEADINGS[which];
-      const unit: 'lines' | 'chars' =
-        which === 'argsChars' || which === 'outputChars' ? 'chars' : 'lines';
+      const { heading, unit, get } = TRUNC_FIELDS[which];
       openMenuWith(
         [
           {
             value: `menu:truncation:${which}:edit`,
             label: heading,
-            description: fmtCap(cur, unit),
+            description: fmtCap(get(display), unit),
             group: heading,
           },
         ],
