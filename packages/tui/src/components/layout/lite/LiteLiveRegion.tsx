@@ -228,9 +228,7 @@ export const LiteLiveRegion: React.FC = () => {
 
   // Active tool batch — the trailing in-flight run, shared with LiteLayout via
   // computeActiveToolBatchIds so a finished tool can't appear in both static
-  // and the live region. Filter messages by the batch ids (preserving creation
-  // order), then project the fields downstream needs: id (lookup key), name
-  // (output filter), isFinished (gates the output bar), msg (canonical render).
+  // and the live region. Project the fields downstream needs per tool.
   const activeTools = useMemo(() => {
     if (!isProcessing) return [];
     const batch = computeActiveToolBatchIds(messages, currentAgent?.name);
@@ -286,9 +284,9 @@ export const LiteLiveRegion: React.FC = () => {
     return needsLeadingBlankByRole(prev.role, nextRole);
   }, [messages, isProcessing, activeTools, liveContent]);
 
-  // Per-tool live output bars: tail-window accumulated `liveOutputs` lines
-  // through the shared bar formatter so the preview matches the eventual static
-  // rendering. Hoisted above the early returns (hooks run unconditionally).
+  // Per-tool live output bars through the shared bar formatter so the preview
+  // matches the eventual static rendering. Hooks run unconditionally, so
+  // hoisted above the early returns.
   const display = getVerboseDisplay();
   // getVerboseFilters() (not getVerboseConfig().filters) so the cli.json
   // CHAT_TOOLS_FILTERS override reaches the live gate. Key the memo on the

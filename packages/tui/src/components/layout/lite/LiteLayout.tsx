@@ -87,13 +87,10 @@ const TRIGGER_RULES = [
 const APPROVAL_IDLE_MS = 2000;
 
 // Last `liteScrollbackClearToken` observed. MODULE-LEVEL (not a per-mount ref)
-// so the clear-token reset block below survives the bare unmount/remount that
-// `mode` toggles (Ctrl+G crew monitor, expanded, session-view) cause WITHOUT a
-// real reset: the twinki bridge's monotonic cursor + accumulatedStaticOutput
-// persist across that cycle, so re-running the reset would duplicate or swallow
-// scrollback. Only resetMessages/setUiMode bump the token. ConversationView
-// uses the same `_lastObservedClearToken` pattern. -1 fires it once on first
-// mount of the process.
+// so the reset block below survives bare unmount/remount (Ctrl+G, session-view)
+// WITHOUT re-running — twinki's monotonic cursor persists across that cycle, so
+// re-resetting would duplicate/swallow scrollback. Only resetMessages/setUiMode
+// bump the token. -1 fires the reset once on first mount.
 let _liteLastObservedClearToken = -1;
 
 export const LiteLayout: React.FC = () => {
@@ -247,11 +244,10 @@ export const LiteLayout: React.FC = () => {
     setSubagentPanelOpen(subagentOpenIndex != null);
   }, [subagentOpenIndex, setSubagentPanelOpen]);
 
-  // Per-session kill ladder (mirrors CrewMonitorLayout): first Ctrl+X arms the
-  // focused subagent's sessionId, second within 2s invokes terminateSession +
-  // cleanup. State lives at the LAYOUT level (not LiteSubagentPanel) because
-  // the kill side-effects need kiro, sessionConversationsStore, and
-  // pendingApproval — all already here; the panel just gets `armedToKill`.
+  // Per-session kill ladder: first Ctrl+X arms the focused subagent's
+  // sessionId, second within 2s invokes terminateSession + cleanup. State lives
+  // at the LAYOUT level (not the panel) because the kill side-effects need kiro,
+  // sessionConversationsStore, and pendingApproval — all already here.
   const kiro = useAppStore((s) => s.kiro);
   const updateSession = useAppStore((s) => s.updateSession);
   const cleanupTerminatedSession = useAppStore(
@@ -280,9 +276,7 @@ export const LiteLayout: React.FC = () => {
   );
 
   // Always-armed Ctrl+C / Escape interrupt. AppContainer's handler ALSO calls
-  // cancelMessage; the store's cancelMessage is idempotent so double-fire is
-  // safe. Belt-and-suspenders: lite has missed this keypress at the wrong
-  // moment before.
+  // cancelMessage (idempotent, so double-fire is safe) — belt-and-suspenders.
   const isProcessingRef = useRef(isProcessing);
   isProcessingRef.current = isProcessing;
   const pendingApprovalRef = useRef(pendingApproval);
@@ -291,12 +285,10 @@ export const LiteLayout: React.FC = () => {
   activeCommandRef.current = activeCommand;
   const activeTriggerRef = useRef(activeTrigger);
   activeTriggerRef.current = activeTrigger;
-  // These refs mirror state the always-armed cancel handler must consult.
-  // Twinki fires every active useKeypress on the same keystroke (no handler
-  // order), so for each surface that owns Esc — subagent panel, backend
-  // panel, queue-edit, /prompts detail — the handler must no-op Esc instead
-  // of cancelling the in-flight turn. goalStatusRef lets the panel safety-net
-  // timeout read the latest goal without re-arming on every tick.
+  // Refs the always-armed cancel handler consults. Twinki fires every active
+  // useKeypress on one keystroke (no ordering), so each surface that owns Esc
+  // (subagent/backend panel, queue-edit, /prompts detail) must no-op Esc here
+  // instead of cancelling the turn. goalStatusRef feeds the safety-net timeout.
   const subagentOpenIndexRef = useRef(subagentOpenIndex);
   subagentOpenIndexRef.current = subagentOpenIndex;
   const anyPanelOpenRef = useRef(anyPanelOpen);
@@ -337,13 +329,9 @@ export const LiteLayout: React.FC = () => {
         return;
       }
     }
-    // Ctrl+C inside any open menu surface = Esc. CommandMenu's own keypress
-    // handler closes the menu (with /settings + /verbose return-on-escape
-    // stash handling); our job here is to roll back AppContainer's
-    // double-Ctrl+C exit increment — that handler runs on the same keystroke
-    // and would otherwise tick toward `process.exit(0)` for a user just
-    // backing out of a menu. queueMicrotask waits until after AppContainer
-    // increments, then we reset to zero.
+    // Ctrl+C inside an open menu = Esc (CommandMenu closes it). Roll back
+    // AppContainer's same-keystroke double-Ctrl+C exit increment so backing out
+    // of a menu doesn't tick toward exit; queueMicrotask runs after it increments.
     const inMenu = activeCommandRef.current || activeTriggerRef.current;
     if (key.ctrl && input === 'c' && inMenu) {
       queueMicrotask(() => resetExitSequence());
@@ -377,9 +365,8 @@ export const LiteLayout: React.FC = () => {
   });
 
   // Approval typing guard: defer showing approval until the user is idle for
-  // APPROVAL_IDLE_MS, so an approval landing mid-typing doesn't intercept the
-  // user's next char (often y/t/n) as a response. The tracker is always active
-  // so pre-arrival keystrokes count. Once visible the prompt never re-hides on
+  // APPROVAL_IDLE_MS, so an approval landing mid-typing doesn't eat the user's
+  // next char as a y/t/n response. Once visible the prompt never re-hides on
   // keystroke — only the boundary effect below (fresh pendingApproval) hides it.
   const lastKeypressRef = useRef(0);
   const [approvalReady, setApprovalReady] = useState(true);
@@ -421,11 +408,9 @@ export const LiteLayout: React.FC = () => {
   const showApproval = pendingApproval && approvalReady;
   showApprovalRef.current = !!showApproval;
 
-  // Emit a "user interrupted" line once a cancelled turn has FULLY settled.
-  // wasCancelled flips true the instant cancelMessage() starts, but appending
-  // a System row while the agent stream is still unwinding would flush a
-  // partial snapshot of the live agent text into <Static> (rendered twice).
-  // Waiting for !isProcessing lets the agent message finalize first.
+  // Emit "user interrupted" only once a cancelled turn has FULLY settled
+  // (!isProcessing). wasCancelled flips true immediately, but appending while
+  // the stream is still unwinding flushes a partial snapshot into <Static>.
   const cancelArmedRef = useRef(false);
   useEffect(() => {
     if (wasCancelled) {
@@ -461,14 +446,12 @@ export const LiteLayout: React.FC = () => {
     return () => clearTimeout(t);
   }, [transientAlert, dismissTransientAlert]);
 
-  // Panel safety-net. Panel-type slash commands freeze the input by design
-  // (activeCommand set with empty options → PromptInput bails). Lite renders
-  // only a curated subset of panels; a command lite does NOT render (today
-  // `/goal`) would otherwise freeze the input dead until the user mashes Esc.
-  // Signal for "unrenderable panel": activeCommand set, empty options (pickers
-  // like /model set non-empty), no panel open. The 600ms delay lets a real
-  // panel open first (flipping anyPanelOpen re-runs this and clears the timer);
-  // if it elapses with no panel, release the input.
+  // Panel safety-net. Panel-type slash commands freeze the input (activeCommand
+  // set + empty options → PromptInput bails). Lite renders only a curated subset
+  // of panels; a command lite does NOT render (today `/goal`) would freeze the
+  // input dead. Detect "unrenderable panel" = activeCommand set + empty options
+  // + no panel open; the 600ms delay lets a real panel open first (which clears
+  // the timer), else release the input.
   useEffect(() => {
     if (!activeCommand) return;
     if (activeCommand.options.length > 0) return; // selection picker — legit
@@ -509,10 +492,9 @@ export const LiteLayout: React.FC = () => {
   ]);
 
   // One-time scrollback confirmation when a NEW goal is set (lite has no goal
-  // chip/panel). Dedup by goal text in a ref — goalStatus also fires every
-  // iteration with the same message. Partial-snapshot guard (same class as the
-  // cancel appender): defer the append past a live streaming Model row so we
-  // don't flush a partial snapshot into <Static>.
+  // chip). Dedup by goal text in a ref (goalStatus re-fires every iteration).
+  // Same partial-snapshot guard as the cancel appender: defer past a live
+  // streaming Model row.
   const announcedGoalRef = useRef<string | null>(null);
   useEffect(() => {
     const msg = goalStatus?.message ?? null;
@@ -550,12 +532,10 @@ export const LiteLayout: React.FC = () => {
     }));
   }, [goalStatus, messages, isProcessing, store]);
 
-  // Boot indicator: one dim row near the status line surfacing in-flight async
-  // setup (agent_connect > session_create > MCP aggregate), hidden the moment
-  // nothing is 'loading'. Replaces a multi-line connecting panel that had two
-  // bugs (outlived its grace window; a misleading per-stage timer). Failure
-  // detail isn't lost — McpServerInitFailure fires a transient alert and /mcp
-  // shows per-server status; this row only answers "anything still loading?".
+  // Boot indicator: one dim row surfacing in-flight async setup (agent_connect >
+  // session_create > MCP aggregate), hidden once nothing is 'loading'. Failure
+  // detail lives elsewhere (McpServerInitFailure alert + /mcp); this only
+  // answers "anything still loading?".
   const showBootIndicator = useMemo(() => {
     for (const info of bootProgress.values()) {
       if (info.status === 'loading') return true;
@@ -580,14 +560,9 @@ export const LiteLayout: React.FC = () => {
   // MCP failures surface once via the McpServerInitFailure transient alert (NOT
   // also a scrollback line — that left a duplicate warning pinned forever).
 
-  // KIRO welcome banner — a live-region <Text> while no messages sent yet AND
-  // the banner hasn't shown this session. The agent's standalone greeting lands
-  // in `messages` before user input, so it's excluded from the "still relevant"
-  // check. Computed once per allowAsciiArt toggle so live-region re-renders
-  // don't re-pick a tip. ASCII mode degrades to single-line "KIRO".
-  //
-  // `liteWelcomeEmitted`: cross-mount suppression flag, set true on unmount so
-  // a lite→tui→lite swap doesn't re-flash the banner; resetMessages clears it.
+  // KIRO welcome banner, shown while no real chat has happened this session.
+  // `liteWelcomeEmitted`: cross-mount suppression flag, set true on unmount so a
+  // lite→tui→lite swap doesn't re-flash the banner; resetMessages clears it.
   const liteWelcomeEmitted = useAppStore((s) => s.liteWelcomeEmitted);
   const setLiteWelcomeEmitted = useAppStore((s) => s.setLiteWelcomeEmitted);
   // Flip on UNMOUNT, not first paint: flipping mid-mount would re-run the
@@ -615,12 +590,10 @@ export const LiteLayout: React.FC = () => {
     const tipLine = formatTipLine(pickTip());
     return `${kiroArt}\n${chalk.dim(`  v${version} · lite`)}\n${tipLine}`;
   }, [allowAsciiArt]);
-  // True until real chat content lands this session OR the banner already
-  // emitted in a prior mount. "Real chat content" = any NON-standalone-greeting
-  // message: gating on User rows alone is too narrow (a /agent or /model System
-  // announcement arrives before the user types, the static memo anchors a
-  // banner against it, and the still-mounted live banner showed a DUPLICATE).
-  // Must mirror the visibleMessages filter exactly.
+  // True until real chat content lands OR the banner already emitted in a prior
+  // mount. "Real chat" = any NON-standalone-greeting message; gating on User
+  // rows alone is too narrow (a System announcement before typing duplicated the
+  // banner). Must mirror the visibleMessages filter exactly.
   const showWelcomeBanner = useMemo(
     () =>
       !liteWelcomeEmitted &&
@@ -699,24 +672,20 @@ export const LiteLayout: React.FC = () => {
   // against this without re-walking the full eligible list.
   const lastAppendedEligibleMsgRef = useRef<MessageType | null>(null);
 
-  // Session boundary (/chat new|<id>|load, /clear, /rewind, lite↔tui swap).
-  // resetMessages/setUiMode bump liteScrollbackClearToken; on a bump (or the -1
-  // first-mount init) we: (1) adjustStaticCursor(MAX) to drop the monotonic
-  // cursor so the next paint lands at index 0; (2) reset staticItemsRef + the
-  // bookkeeping refs; (3) push the KIRO banner at the head when there's prior
-  // content (fresh sessions use the live-region banner instead so resize
-  // reflows it).
+  // Session boundary (/chat new|<id>|load, /clear, /rewind, lite↔tui swap):
+  // resetMessages/setUiMode bump liteScrollbackClearToken. On a bump (or -1
+  // first-mount init): (1) adjustStaticCursor(MAX) so the next paint lands at
+  // index 0; (2) reset staticItemsRef + bookkeeping refs; (3) head-push the KIRO
+  // banner when there's prior content (fresh sessions use the live banner so
+  // resize reflows it).
   //
-  // We deliberately do NOT write CSI 3J/2J — that wipes the whole terminal
-  // scrollback including pre-kiro shell history. Treating /chat new like a
-  // normal command (print below) preserves context; twinki's
-  // accumulatedStaticOutput is 10k-line bounded so growth is safe.
+  // DO NOT write CSI 3J/2J — that wipes the whole terminal scrollback including
+  // pre-kiro shell history. twinki's accumulatedStaticOutput is 10k-line bounded
+  // so printing below is safe.
   //
-  // Runs in the render body (not an effect) because the staticItems memo reads
-  // these refs synchronously during render — a post-commit reset would let the
-  // first render after a bump re-commit the prior session's rows.
-  // (The observed token is module-level for the bare-remount reason documented
-  // on `_liteLastObservedClearToken`.) Cost: one integer compare per render.
+  // Runs in the render body (not an effect): the staticItems memo reads these
+  // refs synchronously, so a post-commit reset would re-commit the prior
+  // session's rows on the first render after a bump.
   const liteScrollbackClearToken = useAppStore(
     (s) => s.liteScrollbackClearToken
   );
@@ -736,15 +705,13 @@ export const LiteLayout: React.FC = () => {
     committedTurnSummariesRef.current = new Set();
     openTurnUserIdRef.current = null;
     lastAppendedEligibleMsgRef.current = null;
-    // Two-armed gate for the swap-with-content session anchor banner. User-arm:
-    // tui→lite mid-session + /chat <id> load (messages carries prior chat).
-    // hadPriorStaticContent-arm: /chat new mid-session (resetMessages empties
-    // messages BEFORE the bump). We deliberately DON'T broaden the User-arm to
-    // all non-greeting roles — System slash-command announcements on an empty
-    // session aren't chat and would re-emit the banner on every empty-session
-    // swap (pinned by integ test `lite-welcome-banner-roundtrip`). The id
-    // includes the clear-token so each swap gets a fresh monotonic id (a fixed
-    // id would make the by-index cursor drop the second emission).
+    // Two-armed gate for the swap-with-content anchor banner. User-arm:
+    // tui→lite + /chat <id> load (messages carries prior chat).
+    // hadPriorStaticContent-arm: /chat new (resetMessages empties messages
+    // before the bump). Don't broaden User-arm to all non-greeting roles —
+    // System slash announcements aren't chat and would re-emit the banner every
+    // empty-session swap (pinned by integ `lite-welcome-banner-roundtrip`). The
+    // id embeds the clear-token so each swap gets a fresh monotonic id.
     if (
       hadPriorStaticContent ||
       messages.some((m) => m.role === MessageRole.User)
@@ -802,12 +769,6 @@ export const LiteLayout: React.FC = () => {
   const staticItems = useMemo(() => {
     const items = staticItemsRef.current;
 
-    // Welcome banner placement is hybrid: a live-region <Text> for the fresh
-    // session (a static-only banner vanishes on resize) + an index-0 static
-    // push once chat lands (so it persists as a session delimiter). Both,
-    // because static-only regressed resize UX (b72df6cd8) and live-only
-    // regressed scrollback persistence.
-
     // Slice the tui→lite bookmark out before selecting eligible rows (slice
     // preserves the tail for the "skip last streaming Model" rule).
     // Welcome-screen suppression: drop standalone-greeting rows (rendered
@@ -833,14 +794,11 @@ export const LiteLayout: React.FC = () => {
       hideThinkingContent
     );
 
-    // Guard against `eligible` shrinking below the high-water mark. The
-    // index-based delta walk assumes eligible only grows, but a message can
-    // flip OUT of eligible after being counted (agentName reclassification,
-    // cleared Model content, /verbose thinking toggle). Left above
-    // eligible.length, the walk never runs and later rows are stranded
-    // (disappear-until-reprompt). Clamp down so the next walk starts valid;
-    // pushedStaticIdsRef dedups so re-walking emitted rows is a no-op. Warn on
-    // the anomaly for a breadcrumb.
+    // Guard against `eligible` shrinking below the high-water mark: the delta
+    // walk assumes eligible only grows, but a message can flip OUT after being
+    // counted (agentName reclassification, cleared content, thinking toggle),
+    // stranding later rows. Clamp so the next walk starts valid (pushedStaticIds
+    // dedups re-walked rows); warn for a breadcrumb.
     if (lastFlushedEligibleCountRef.current > eligible.length) {
       logger.warn('[lite] static high-water above eligible length — clamping', {
         highWater: lastFlushedEligibleCountRef.current,
@@ -1059,12 +1017,10 @@ export const LiteLayout: React.FC = () => {
   }, [contextUsagePercent, isProcessing, streamingContent]);
   const ctxColor = gradientCtxColor(ctxPct);
 
-  // Active-subagents footer strip: one row per running stage in spawn order,
-  // with a per-stage phase (running → summarizing → complete). When every
-  // known stage is complete and the parent `subagent` tool is still in flight,
-  // a "Summarizing N agents..." footnote shows the parent finalize phase. No
-  // overflow collapse — every stage gets a row (the old 3-row cap lied about
-  // pipeline state past 3 stages).
+  // Active-subagents footer strip: one row per running stage in spawn order
+  // with a per-stage phase (running → summarizing → complete). When every stage
+  // is complete but the parent `subagent` tool is still in flight, a
+  // "Summarizing N agents..." footnote shows the finalize phase.
   const { activeSubagents, summarizingPhase } = useMemo<{
     activeSubagents: SubagentRow[];
     summarizingPhase: boolean;
