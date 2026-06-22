@@ -138,42 +138,42 @@ describe('selectBootIndicatorPhase', () => {
 });
 
 describe('formatBootIndicator', () => {
+  // chalk.dim wraps output in escape codes — strip them to assert visible text.
+  // eslint-disable-next-line no-control-regex
+  const ansiStrip = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
+
   test('returns empty string when phase is null', () => {
     expect(formatBootIndicator(null, '⠋')).toBe('');
   });
 
-  test('omits elapsed counter when phase has been loading <= 1s', () => {
-    // Sub-second phases would otherwise flash "(0.0s)" briefly when a
-    // fast loader fires off — visually distracting. Output should be
-    // just spinner + label + ellipsis.
-    const out = formatBootIndicator(
-      { label: 'Connecting to agent', elapsed: 250 },
-      '⠋'
+  // Sub-second phases suppress the elapsed counter so a fast loader doesn't
+  // flash "(0.0s)"; >1s shows it rounded to one decimal place.
+  test.each([
+    [
+      '<= 1s suppresses elapsed',
+      'Connecting to agent',
+      250,
+      '⠋',
+      '  ⠋ Connecting to agent…',
+    ],
+    [
+      '> 1s shows elapsed',
+      'Loading 3/12 MCP server(s)',
+      13700,
+      '⠙',
+      '  ⠙ Loading 3/12 MCP server(s)… (13.7s)',
+    ],
+    [
+      'rounds to 1 decimal',
+      'Initializing workspace',
+      10723,
+      '⠹',
+      '  ⠹ Initializing workspace… (10.7s)',
+    ],
+  ])('%s', (_name, label, elapsed, glyph, expected) => {
+    expect(ansiStrip(formatBootIndicator({ label, elapsed }, glyph))).toBe(
+      expected
     );
-    // Strip ANSI to assert visible content — chalk.dim wraps in escape codes.
-    // eslint-disable-next-line no-control-regex
-    const stripped = out.replace(/\x1B\[[0-9;]*m/g, '');
-    expect(stripped).toBe('  ⠋ Connecting to agent…');
-  });
-
-  test('shows elapsed counter once phase has been loading > 1s', () => {
-    const out = formatBootIndicator(
-      { label: 'Loading 3/12 MCP server(s)', elapsed: 13700 },
-      '⠙'
-    );
-    // eslint-disable-next-line no-control-regex
-    const stripped = out.replace(/\x1B\[[0-9;]*m/g, '');
-    expect(stripped).toBe('  ⠙ Loading 3/12 MCP server(s)… (13.7s)');
-  });
-
-  test('rounds elapsed counter to 1 decimal place', () => {
-    const out = formatBootIndicator(
-      { label: 'Initializing workspace', elapsed: 10723 },
-      '⠹'
-    );
-    // eslint-disable-next-line no-control-regex
-    const stripped = out.replace(/\x1B\[[0-9;]*m/g, '');
-    expect(stripped).toBe('  ⠹ Initializing workspace… (10.7s)');
   });
 
   test('threshold is exclusive — exactly 1s suppresses elapsed', () => {
@@ -182,8 +182,6 @@ describe('formatBootIndicator', () => {
     // stays suppressed; just-over (1001) shows.
     const at = formatBootIndicator({ label: 'X', elapsed: 1000 }, '⠋');
     const just = formatBootIndicator({ label: 'X', elapsed: 1001 }, '⠋');
-    // eslint-disable-next-line no-control-regex
-    const ansiStrip = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
     expect(ansiStrip(at)).toBe('  ⠋ X…');
     expect(ansiStrip(just)).toBe('  ⠋ X… (1.0s)');
   });

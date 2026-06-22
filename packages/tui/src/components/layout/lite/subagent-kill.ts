@@ -13,24 +13,12 @@ import { MessageRole, type MessageType } from '../../../stores/app-store.js';
  * After killing a subagent stage, decide whether the currently-pending
  * approval prompt belonged to that stage and should be dismissed.
  *
- * The pending approval is keyed by `toolCall.toolCallId`. We look up the
- * matching ToolUse message in the parent's `messages` list and compare
- * its `agentName` (the stage name attached when the tool call originated
- * inside a subagent session) against the killed stage's name.
- *
- * Returns false when:
- *   - No approval is pending.
- *   - The pending approval's tool isn't in `messages` (race — backend
- *     hasn't surfaced the ToolUse yet, or it was already finalized).
- *   - The pending approval is for a tool from the MAIN agent or a
- *     different subagent stage (we kill stage A, but stage B's approval
- *     shouldn't be touched).
- *
- * Returns true only when the killed stage owns the pending tool —
- * dropping it prevents the user from staring at an approval prompt for
- * a session that no longer exists. The session's process is gone the
- * moment `terminateSession` lands; any answer to the prompt would just
- * fail silently at the backend.
+ * WHY: the killed stage's process is gone the moment `terminateSession`
+ * lands; any answer to its pending approval would just fail silently at
+ * the backend, so we must drop it rather than leave the user staring at a
+ * prompt for a session that no longer exists. Returns true only when the
+ * killed stage owns the pending tool (matched via the ToolUse message's
+ * `agentName` keyed by `toolCall.toolCallId`).
  */
 export function shouldCancelApprovalForKilledStage(
   pendingApproval: { toolCall: { toolCallId: string | null } } | null,

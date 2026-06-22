@@ -42,50 +42,43 @@ export function formatSubagentRow(
   glyphs: Glyphs = UNICODE_GLYPHS
 ): string {
   const tag = tagColor(`[${sub.name}]`);
+  // Resolve the color once so the truncated branch below reuses it rather
+  // than re-deriving the phase→color mapping.
+  const colorFn =
+    sub.phase === 'complete'
+      ? chalk.green
+      : sub.phase === 'killed'
+        ? chalk.red
+        : sub.phase === 'requesting-permission'
+          ? // Yellow matches the approval prompt's tool-name color and the [t]
+            // hotkey hint above the input — same trust signal, same color.
+            chalk.yellow
+          : chalk.dim;
   let plainAction: string;
-  let coloredAction: string;
   if (sub.phase === 'complete') {
     plainAction = `${glyphs.checkmark} Complete`;
-    coloredAction = chalk.green(plainAction);
   } else if (sub.phase === 'killed') {
     plainAction = `${glyphs.cross} killed`;
-    coloredAction = chalk.red(plainAction);
   } else if (sub.phase === 'requesting-permission') {
-    // Yellow to match the approval prompt's tool-name color and the [t] hotkey
-    // hint above the input — same trust signal, same color.
-    const detail = sub.activeToolName
+    plainAction = sub.activeToolName
       ? `Requesting Permission: ${sub.activeToolName}`
       : 'Requesting Permission';
-    plainAction = detail;
-    coloredAction = chalk.yellow(plainAction);
   } else if (sub.phase === 'summarizing') {
     plainAction = 'Synthesizing...';
-    coloredAction = chalk.dim(plainAction);
   } else if (sub.activeToolName) {
     const tail = sub.activeToolFinished ? '' : '...';
     const detail = sub.activeToolDetail ? ` ${sub.activeToolDetail}` : '';
     plainAction = `${sub.activeToolName}${detail}${tail}`;
-    coloredAction = chalk.dim(plainAction);
   } else {
     plainAction = 'Thinking...';
-    coloredAction = chalk.dim(plainAction);
   }
   const prefix = `[${sub.name}] `;
   const avail = Math.max(10, termCols - prefix.length);
-  if (plainAction.length > avail) {
-    const truncated = plainAction.slice(0, avail - 1) + '…';
-    // Re-color the truncated string in the same style.
-    const reColored =
-      sub.phase === 'complete'
-        ? chalk.green(truncated)
-        : sub.phase === 'killed'
-          ? chalk.red(truncated)
-          : sub.phase === 'requesting-permission'
-            ? chalk.yellow(truncated)
-            : chalk.dim(truncated);
-    return `${tag} ${reColored}`;
-  }
-  return `${tag} ${coloredAction}`;
+  const action =
+    plainAction.length > avail
+      ? plainAction.slice(0, avail - 1) + '…'
+      : plainAction;
+  return `${tag} ${colorFn(action)}`;
 }
 
 /**

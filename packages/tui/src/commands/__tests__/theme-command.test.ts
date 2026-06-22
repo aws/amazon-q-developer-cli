@@ -187,18 +187,35 @@ describe('/theme command', () => {
   });
 
   describe('custom flow — [active] markers', () => {
-    it('shows [active] on the current prompt preset', async () => {
-      saveUserThemePrefs({ promptPreset: 'ocean' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt', ctx);
+    // The seeded preset's row carries [active]; the default row does not.
+    it.each([
+      {
+        route: 'prompt',
+        seed: { promptPreset: 'ocean' },
+        activeValue: 'prompt:ocean',
+        defaultValue: 'prompt:default',
+      },
+      {
+        route: 'diff',
+        seed: { diffPreset: 'colorblind-dark' },
+        activeValue: 'diff:colorblind-dark',
+        defaultValue: 'diff:default',
+      },
+    ])(
+      'shows [active] on the current $route preset',
+      async ({ route, seed, activeValue, defaultValue }) => {
+        saveUserThemePrefs(seed);
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, route, ctx);
 
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const options = call[0].options;
-      const oceanOpt = options.find((o: any) => o.value === 'prompt:ocean');
-      const defaultOpt = options.find((o: any) => o.value === 'prompt:default');
-      expect(oceanOpt.description).toContain('[active]');
-      expect(defaultOpt.description).not.toContain('[active]');
-    });
+        const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
+        const options = call[0].options;
+        const activeOpt = options.find((o: any) => o.value === activeValue);
+        const defaultOpt = options.find((o: any) => o.value === defaultValue);
+        expect(activeOpt.description).toContain('[active]');
+        expect(defaultOpt.description).not.toContain('[active]');
+      }
+    );
 
     it('shows [active] on default when no prefs set', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
@@ -369,22 +386,8 @@ describe('/theme command', () => {
 
     // Bundled-theme diff/baseTheme persistence is covered by the parameterized
     // "applies bundled $id theme" test above (it asserts diffPreset + baseTheme
-    // in expectedPrefs).
-
-    it('shows [active] on current diff preset', async () => {
-      saveUserThemePrefs({ diffPreset: 'colorblind-dark' });
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff', ctx);
-
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const options = call[0].options;
-      const activeOpt = options.find(
-        (o: any) => o.value === 'diff:colorblind-dark'
-      );
-      const defaultOpt = options.find((o: any) => o.value === 'diff:default');
-      expect(activeOpt.description).toContain('[active]');
-      expect(defaultOpt.description).not.toContain('[active]');
-    });
+    // in expectedPrefs). The diff [active] marker is covered by the
+    // parameterized "[active] markers" it.each above.
   });
 
   describe('ESC navigation flag (themeReturnOnEscape)', () => {

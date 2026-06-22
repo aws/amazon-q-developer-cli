@@ -37,15 +37,11 @@ import { needsLeadingBlank } from './static-flush.js';
 import chalk from 'chalk';
 
 interface LiteSubagentPanelProps {
-  /** sessionId of the focused subagent — drives the conversation lookup. */
   sessionId: string;
-  /** Display name shown in the panel header. */
   name: string;
-  /** Index of this subagent within the open list (1-based for display). */
+  /** 1-based for display. */
   position: number;
-  /** Total number of subagents the user can cycle through. */
   total: number;
-  /** Visible line count (caller computes from terminal height). */
   visibleLines: number;
   /** How many lines to skip from the top of the trace. */
   scrollOffset: number;

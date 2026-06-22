@@ -44,13 +44,6 @@ export interface BootIndicatorPhase {
  *
  * Inputs are walked each call (no memo) — caller is expected to refresh
  * on every render so the elapsed value tracks real time.
- *
- * Adding a new boot stage: extend the priority list above with another
- * `bootProgress.get(...)` block. Stages not listed here will silently
- * fail to surface in the indicator — the function falls through to the
- * MCP aggregate or null. The two known stages today come from
- * `setBootStage('agent_connect'|'session_create', ...)` calls in
- * index.tsx; mirror that pattern for new ones.
  */
 export function selectBootIndicatorPhase(
   bootProgress: Map<string, BootProgressEntry>,
