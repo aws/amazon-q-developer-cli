@@ -96,31 +96,42 @@ describe('renderSystemInfo', () => {
 });
 
 describe('renderTurnSummary', () => {
-  test('renders metering usage', () => {
-    const result = renderTurnSummary({
-      meteringUsage: [
-        { value: 1234, unit: 'token', unitPlural: 'tokens' },
-        { value: 567, unit: 'token', unitPlural: 'tokens' },
-      ],
-    });
-    expect(result).toContain('1234 tokens');
-    expect(result).toContain('567 tokens');
-  });
-
-  test('renders duration when provided', () => {
-    const result = renderTurnSummary({
-      meteringUsage: [{ value: 100, unit: 'token', unitPlural: 'tokens' }],
-      durationMs: 3200,
-    });
-    expect(result).toContain('3s');
-  });
-
-  test('singular unit for value=1', () => {
-    const result = renderTurnSummary({
-      meteringUsage: [{ value: 1, unit: 'request', unitPlural: 'requests' }],
-    });
-    expect(result).toContain('1 request');
-    expect(result).not.toContain('1 requests');
+  test.each<{
+    name: string;
+    input: Parameters<typeof renderTurnSummary>[0];
+    contains: string[];
+    absent?: string[];
+  }>([
+    {
+      name: 'renders metering usage',
+      input: {
+        meteringUsage: [
+          { value: 1234, unit: 'token', unitPlural: 'tokens' },
+          { value: 567, unit: 'token', unitPlural: 'tokens' },
+        ],
+      },
+      contains: ['1234 tokens', '567 tokens'],
+    },
+    {
+      name: 'renders duration when provided',
+      input: {
+        meteringUsage: [{ value: 100, unit: 'token', unitPlural: 'tokens' }],
+        durationMs: 3200,
+      },
+      contains: ['3s'],
+    },
+    {
+      name: 'singular unit for value=1',
+      input: {
+        meteringUsage: [{ value: 1, unit: 'request', unitPlural: 'requests' }],
+      },
+      contains: ['1 request'],
+      absent: ['1 requests'],
+    },
+  ])('$name', ({ input, contains, absent }) => {
+    const result = renderTurnSummary(input);
+    for (const c of contains) expect(result).toContain(c);
+    for (const a of absent ?? []) expect(result).not.toContain(a);
   });
 });
 
@@ -134,153 +145,129 @@ describe('renderMessageToText (tool_use)', () => {
     setVerboseConfig({ filters: [] });
   });
 
-  // Reasoning is preferred over args.command for the tool's first-line description.
-  // Reproduces the bug where a shell tool was showing the bare command instead of
-  // the LLM's __tool_use_purpose after approval.
-  test('shell tool shows reasoning on first line, args below', () => {
-    const content = JSON.stringify({
-      command: 'git log --oneline -5',
-      working_dir: '/tmp/repo',
-      __tool_use_purpose: 'Exercise the Shell tool UI with git log',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't1',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          startTime: 0,
-          finishTime: 124,
-        },
-        'kiro_default'
-      )
-    );
-    const lines = out.split('\n');
-    expect(lines[0]).toContain('shell');
-    expect(lines[0]).toContain('Exercise the Shell tool UI with git log');
-    expect(lines[0]).not.toContain('git log --oneline -5');
-    expect(out).toContain('command: git log --oneline -5');
-    expect(out).toContain('working_dir: /tmp/repo');
-    // __tool_use_purpose should not be repeated as an arg row
-    const purposeLines = lines.filter((l) => l.includes('__tool_use_purpose'));
-    expect(purposeLines).toHaveLength(0);
-  });
-
-  // Single short-string args (e.g. recall { query: '...' }) used to be skipped
-  // by formatToolArgs, leaving the user with no visible args after running.
-  test('recall-style single short arg still shows in scrollback', () => {
-    const content = JSON.stringify({
-      query: 'lite TUI tool rendering',
-      __tool_use_purpose: 'check memory for prior context',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't2',
-          role: 'tool_use',
-          name: 'recall',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('check memory for prior context');
-    expect(out).toContain('query: lite TUI tool rendering');
-  });
-
-  // MCP-style nested args (e.g. nova-memory remember messages array of {role, content})
-  // should pretty-print with indented keys, not appear as a JSON blob.
-  test('nested array of objects is pretty-printed with indentation', () => {
-    const content = JSON.stringify({
-      messages: [
-        { role: 'USER', content: 'use some tools test stuff' },
-        { role: 'ASSISTANT', content: 'Ran a bunch of tools.' },
+  // First-line reasoning vs args-block rendering for finished tool calls.
+  // Reasoning (__tool_use_purpose) is preferred over args.command on the header;
+  // when absent, the header stays bare (we don't synthesize from args.command /
+  // path) and the value appears exactly once in the args block below. `headHas`
+  // / `headLacks` assert on line[0]; `once` pins a value appears on exactly one
+  // line (the duplication-bug guard).
+  test.each<{
+    name: string;
+    tool: string;
+    content: Record<string, unknown>;
+    headHas?: string[];
+    headLacks?: string[];
+    contains?: string[];
+    once?: string[];
+    notMatch?: RegExp[];
+    noPurposeRow?: boolean;
+  }>([
+    {
+      name: 'shell tool shows reasoning on first line, args below',
+      tool: 'shell',
+      content: {
+        command: 'git log --oneline -5',
+        working_dir: '/tmp/repo',
+        __tool_use_purpose: 'Exercise the Shell tool UI with git log',
+      },
+      headHas: ['shell', 'Exercise the Shell tool UI with git log'],
+      headLacks: ['git log --oneline -5'],
+      contains: ['command: git log --oneline -5', 'working_dir: /tmp/repo'],
+      noPurposeRow: true,
+    },
+    {
+      // Single short-string args (recall {query}) used to be skipped by
+      // formatToolArgs, leaving no visible args after running.
+      name: 'recall-style single short arg still shows in scrollback',
+      tool: 'recall',
+      content: {
+        query: 'lite TUI tool rendering',
+        __tool_use_purpose: 'check memory for prior context',
+      },
+      contains: [
+        'check memory for prior context',
+        'query: lite TUI tool rendering',
       ],
-      __tool_use_purpose: 'persist conversation',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't3',
-          role: 'tool_use',
-          name: 'remember',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    // Pretty-printed: messages: header, then -, role:, content: lines
-    expect(out).toContain('messages:');
-    expect(out).toContain('-');
-    expect(out).toContain('role: USER');
-    expect(out).toContain('content: use some tools test stuff');
-    expect(out).toContain('role: ASSISTANT');
-    // Should NOT be the single-line JSON blob form
-    expect(out).not.toMatch(/messages:\s*\[\{"role"/);
-  });
-
-  // When the agent omits __tool_use_purpose, the inline reasoning slot
-  // stays empty — we no longer synthesize a one-liner from args.command /
-  // args.path / etc. The args block below still surfaces those values, so
-  // the user isn't blind to what the tool is doing; the difference is that
-  // purple now reliably means "the agent gave us actual reasoning" instead
-  // of "we made something up from the args".
-  test('no inline reasoning when agent omits __tool_use_purpose (block mode)', () => {
-    const content = JSON.stringify({ command: 'ls -la' });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't4',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    const lines = out.split('\n');
-    // First line is the bare tool name — no `ls -la` next to `shell`.
-    expect(lines[0]).toContain('shell');
-    expect(lines[0]).not.toContain('ls -la');
-    // Args block below still shows the command exactly once.
-    expect(out).toContain('command: ls -la');
-    const commandRows = lines.filter((l) => l.includes('ls -la'));
-    expect(commandRows).toHaveLength(1);
-  });
-
-  // Direct repro of the duplication bug: with reasoning enabled and block
-  // mode (the default), the first-line reasoning slot used to fall back to
-  // args.path and paint it purple, while the args block below printed the
-  // exact same path in white. Two `path: foo.ts` rows, one purple, one
-  // white. This test pins the new behavior so the duplicate can't reappear.
-  test('block mode without __tool_use_purpose: path appears exactly once', () => {
-    const content = JSON.stringify({
-      operations: [{ path: '/etc/hosts', limit: 50 }],
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't5',
-          role: 'tool_use',
-          name: 'fs_read',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    const lines = out.split('\n');
-    expect(lines[0]).toContain('fs_read');
-    expect(lines[0]).not.toContain('/etc/hosts');
-    // Path shows up in the args block below — once, not twice.
-    const pathRows = lines.filter((l) => l.includes('/etc/hosts'));
-    expect(pathRows).toHaveLength(1);
-  });
+    },
+    {
+      // MCP nested args (remember messages[]) pretty-print with indented keys,
+      // not a single-line JSON blob.
+      name: 'nested array of objects is pretty-printed with indentation',
+      tool: 'remember',
+      content: {
+        messages: [
+          { role: 'USER', content: 'use some tools test stuff' },
+          { role: 'ASSISTANT', content: 'Ran a bunch of tools.' },
+        ],
+        __tool_use_purpose: 'persist conversation',
+      },
+      contains: [
+        'messages:',
+        '-',
+        'role: USER',
+        'content: use some tools test stuff',
+        'role: ASSISTANT',
+      ],
+      notMatch: [/messages:\s*\[\{"role"/],
+    },
+    {
+      // No __tool_use_purpose → empty reasoning slot (no synthesis from
+      // args.command); args block still shows the command exactly once.
+      name: 'no inline reasoning when agent omits __tool_use_purpose (block mode)',
+      tool: 'shell',
+      content: { command: 'ls -la' },
+      headHas: ['shell'],
+      headLacks: ['ls -la'],
+      contains: ['command: ls -la'],
+      once: ['ls -la'],
+    },
+    {
+      // Duplication-bug repro: the header reasoning slot used to fall back to
+      // args.path (purple) while the args block printed it again (white).
+      name: 'block mode without __tool_use_purpose: path appears exactly once',
+      tool: 'fs_read',
+      content: { operations: [{ path: '/etc/hosts', limit: 50 }] },
+      headHas: ['fs_read'],
+      headLacks: ['/etc/hosts'],
+      once: ['/etc/hosts'],
+    },
+  ])(
+    '$name',
+    ({
+      tool,
+      content,
+      headHas,
+      headLacks,
+      contains,
+      once,
+      notMatch,
+      noPurposeRow,
+    }) => {
+      const out = stripAnsi(
+        renderMessageToText(
+          {
+            id: `t-${tool}`,
+            role: 'tool_use',
+            name: tool,
+            content: JSON.stringify(content),
+            isFinished: true,
+          },
+          'kiro_default'
+        )
+      );
+      const lines = out.split('\n');
+      for (const h of headHas ?? []) expect(lines[0]).toContain(h);
+      for (const h of headLacks ?? []) expect(lines[0]).not.toContain(h);
+      for (const c of contains ?? []) expect(out).toContain(c);
+      for (const o of once ?? [])
+        expect(lines.filter((l) => l.includes(o))).toHaveLength(1);
+      for (const re of notMatch ?? []) expect(out).not.toMatch(re);
+      if (noPurposeRow)
+        expect(
+          lines.filter((l) => l.includes('__tool_use_purpose'))
+        ).toHaveLength(0);
+    }
+  );
 
   // Streaming write-tool guard. Mid-stream the JSON can land with `command`
   // set but `path`/`content` not yet arrived and no `__tool_use_purpose` — the
