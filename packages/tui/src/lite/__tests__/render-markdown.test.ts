@@ -32,26 +32,61 @@ describe('renderUserMessage', () => {
 });
 
 describe('renderAgentMessage', () => {
-  test('renders plain text', () => {
-    const result = renderAgentMessage('Hello world');
-    expect(result).toContain('Hello world');
-  });
-
-  test('renders bold', () => {
-    const result = renderAgentMessage('**bold text**');
-    expect(result).toContain('bold text');
-  });
-
-  test('renders code blocks with language', () => {
-    const result = renderAgentMessage('```typescript\nconst x = 1;\n```');
-    // cli-highlight wraps each syntax token in its own ANSI sequence
-    // (`\x1B[34mconst\x1B[39m x = \x1B[32m1\x1B[39m;`), so a literal
-    // toContain('const x = 1;') misses the highlighted version even when
-    // the code is rendered correctly. Strip ANSI before checking the
-    // logical content — the rest of the file uses the same pattern.
-    const stripped = stripAnsi(result);
-    expect(stripped).toContain('typescript');
-    expect(stripped).toContain('const x = 1;');
+  // Single-feature render-and-assert cases. `contains` is checked on the
+  // ANSI-stripped output (cli-highlight/inline styling wraps tokens in their
+  // own SGR sequences, so a literal substring on the raw string misses the
+  // styled form); `rawContains` checks SGR codes on the un-stripped output.
+  test.each<{
+    name: string;
+    input: string;
+    termCols?: number;
+    contains: string[];
+    rawContains?: string[];
+  }>([
+    {
+      name: 'renders plain text',
+      input: 'Hello world',
+      contains: ['Hello world'],
+    },
+    { name: 'renders bold', input: '**bold text**', contains: ['bold text'] },
+    {
+      name: 'renders code blocks with language',
+      input: '```typescript\nconst x = 1;\n```',
+      contains: ['typescript', 'const x = 1;'],
+    },
+    {
+      name: 'renders list items with bullets',
+      input: '- item one\n- item two',
+      contains: ['- item one', '- item two'],
+    },
+    {
+      name: 'renders ordered lists with their numbers preserved',
+      input: '1. first\n2. second',
+      contains: ['1. first', '2. second'],
+    },
+    {
+      name: 'renders tables with box-drawing borders',
+      input: '| h1 | h2 |\n|----|----|\n| a  | b  |',
+      termCols: 80,
+      // Header content + border chrome at the corners.
+      contains: ['h1', 'h2', '┌', '┘'],
+    },
+    {
+      name: 'renders inline bold inside a sentence',
+      input: 'This is **important** text.',
+      contains: ['This is important text.', 'important'],
+      rawContains: ['\x1b[1m'], // ANSI bold around the inner span
+    },
+    {
+      name: 'blockquote prepends the bar glyph',
+      input: '> a quote',
+      contains: ['│', 'a quote'],
+    },
+  ])('$name', ({ input, termCols, contains, rawContains }) => {
+    const out = renderAgentMessage(input, 'Kiro', undefined, termCols);
+    const stripped = stripAnsi(out);
+    for (const c of contains) expect(stripped).toContain(c);
+    for (const r of rawContains ?? []) expect(out).toContain(r);
   });
 
   // Regression: cli-highlight emits `\x1b[31m"…"\x1b[39m` for shell string
@@ -200,12 +235,6 @@ describe('renderAgentMessage', () => {
     });
   });
 
-  test('renders list items with bullets', () => {
-    const result = renderAgentMessage('- item one\n- item two');
-    expect(result).toContain('- item one');
-    expect(result).toContain('- item two');
-  });
-
   test('empty content returns empty string', () => {
     expect(renderAgentMessage('')).toBe('');
     expect(renderAgentMessage('   ')).toBe('');
@@ -220,30 +249,6 @@ describe('renderAgentMessage', () => {
     expect(lines[0]).toBe('Kiro: Title');
     expect(lines[1]).toBe('');
     expect(lines[2]).toBe('Body paragraph.');
-  });
-
-  test('renders ordered lists with their numbers preserved', () => {
-    const out = stripAnsi(renderAgentMessage('1. first\n2. second'));
-    expect(out).toContain('1. first');
-    expect(out).toContain('2. second');
-  });
-
-  test('renders tables with box-drawing borders', () => {
-    const md = '| h1 | h2 |\n|----|----|\n| a  | b  |';
-    const out = stripAnsi(renderAgentMessage(md, 'Kiro', undefined, 80));
-    // Header content + border chrome at the corners.
-    expect(out).toContain('h1');
-    expect(out).toContain('h2');
-    expect(out).toContain('┌');
-    expect(out).toContain('┘');
-  });
-
-  test('renders inline bold inside a sentence', () => {
-    const result = renderAgentMessage('This is **important** text.');
-    // ANSI bold sequence around the inner span.
-    expect(result).toContain('\x1b[1m');
-    expect(result).toContain('important');
-    expect(stripAnsi(result)).toContain('This is important text.');
   });
 
   test('paragraphs render as one logical line so the terminal can soft-wrap', () => {
@@ -262,12 +267,6 @@ describe('renderAgentMessage', () => {
     // termCols=30 has no effect on the output structure.
     expect(lines.length).toBe(1);
     expect(lines[0]).toBe(`Kiro: ${long}`);
-  });
-
-  test('blockquote prepends the bar glyph', () => {
-    const out = stripAnsi(renderAgentMessage('> a quote'));
-    expect(out).toContain('│');
-    expect(out).toContain('a quote');
   });
 
   // Mid-stream input: when the live region routes streaming text through
