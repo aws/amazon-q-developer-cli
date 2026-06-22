@@ -716,13 +716,6 @@ function unescapeJsonNewlines(s: string): string {
 }
 
 /**
- * Hard-wrap each line of `text` to `availCols`, prefixing every visual row
- * with `barPrefix` (styled by `glyphColor`; body by `bodyColor` or plain).
- * Hard wrap (not terminal soft-wrap) so wrapped rows keep the `│` margin
- * instead of crashing to col 0 — accepts the copy-paste tradeoff since tool
- * output is read more than copied. Uses {@link wrapAnsiLine} (SGR carryover).
- */
-/**
  * Pre-wrap cap on a single source line. wrapAnsiLine allocates a cell object
  * per code point, so one multi-MB line (minified bundle, no-newline JSON blob,
  * giant base64) is tens of millions of objects and OOMs the renderer — and the
@@ -731,6 +724,13 @@ function unescapeJsonNewlines(s: string): string {
  */
 const MAX_INPUT_LINE_CHARS = 200_000;
 
+/**
+ * Hard-wrap each line of `text` to `availCols`, prefixing every visual row
+ * with `barPrefix` (styled by `glyphColor`; body by `bodyColor` or plain).
+ * Hard wrap (not terminal soft-wrap) so wrapped rows keep the `│` margin
+ * instead of crashing to col 0 — accepts the copy-paste tradeoff since tool
+ * output is read more than copied. Uses {@link wrapAnsiLine} (SGR carryover).
+ */
 function formatBarBlock(
   text: string,
   availCols: number,
@@ -831,7 +831,7 @@ export function extractInlineArg(
     typeof args.command === 'string' &&
     args.command.length > 0
   ) {
-    return `[${truncateInline(args.command.split('\n')[0] ?? '', maxChars)}]`;
+    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
   }
 
   // Write tools: verb + relative path (path alone hides the operation).
@@ -855,7 +855,7 @@ export function extractInlineArg(
       else if (args.command === 'append') verb = 'append';
       else if (args.command === 'delete') verb = 'delete';
       else if (fileText != null && oldStr == null) verb = 'create';
-      return `[${truncateInline(`${verb} ${shortenPathForChip(path)}`, maxChars)}]`;
+      return `[${clipChars(`${verb} ${shortenPathForChip(path)}`, maxChars)}]`;
     }
   }
 
@@ -872,14 +872,14 @@ export function extractInlineArg(
       const relPath = shortenPathForChip(pathField);
       // cwd resolves to "." — adds no info (footer already shows cwd).
       if (relPath !== '.') {
-        return `[${truncateInline(`${queryField} in ${relPath}`, maxChars)}]`;
+        return `[${clipChars(`${queryField} in ${relPath}`, maxChars)}]`;
       }
     }
-    return `[${truncateInline(queryField, maxChars)}]`;
+    return `[${clipChars(queryField, maxChars)}]`;
   }
 
   if (typeof args.url === 'string' && args.url.length > 0) {
-    return `[${truncateInline(args.url, maxChars)}]`;
+    return `[${clipChars(args.url, maxChars)}]`;
   }
 
   // Read tools may pass an `operations: [{ path }]` array (multi-read API).
@@ -887,34 +887,25 @@ export function extractInlineArg(
     ? (args.operations[0] as Record<string, unknown> | undefined)
     : undefined;
   if (op && typeof op.path === 'string')
-    return `[${truncateInline(shortenPathForChip(op.path), maxChars)}]`;
+    return `[${clipChars(shortenPathForChip(op.path), maxChars)}]`;
 
   // Path-only tools (read, etc.).
   for (const key of ['path', 'file_path', 'filePath']) {
     const v = args[key];
     if (typeof v === 'string' && v.length > 0)
-      return `[${truncateInline(shortenPathForChip(v), maxChars)}]`;
+      return `[${clipChars(shortenPathForChip(v), maxChars)}]`;
   }
 
   // `name` / `key` are short identifiers — pass through unshortened.
   for (const key of ['name', 'key']) {
     const v = args[key];
     if (typeof v === 'string' && v.length > 0)
-      return `[${truncateInline(v, maxChars)}]`;
+      return `[${clipChars(v, maxChars)}]`;
   }
 
   // Last resort: the purpose extractor, bracketed so it reads as a chip.
   const fallback = extractToolPurpose(content);
-  return fallback ? `[${truncateInline(fallback, maxChars)}]` : undefined;
-}
-
-/** Tail-truncate an inline arg chip at `max` chars. `null` (or non-positive)
- *  means unbounded — return the string unchanged. Honors the user's
- *  argsMaxChars cap so the chip respects /verbosity truncation settings
- *  instead of clipping at a hard-coded constant. */
-function truncateInline(s: string, max: number | null = 80): string {
-  if (max == null || max <= 0) return s;
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  return fallback ? `[${clipChars(fallback, maxChars)}]` : undefined;
 }
 
 /**

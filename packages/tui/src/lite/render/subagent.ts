@@ -75,13 +75,114 @@ export function renderStagePromptLines(
 }
 
 /**
- * Approval-prompt renderer for the `subagent` tool. Replaces the generic
- * key:value JSON dump with a per-stage tree so the user can read the
- * pipeline at a glance: task line, then one block per stage with its role,
- * dependencies, and prompt soft-wrapped to terminal width.
- *
- * Returns one string per line (matches formatToolArgLines's contract so the
- * approval prompt can render each line in its own <Text>).
+ * Per-stage pipeline tree (branch/stem glyphs, `[name]` chip, role/deps chips,
+ * {task}-substituted prompt) shared by the approval prompt and the final block.
+ * Approval always shows role/deps/prompts; the final block gates each via `sub.*`.
+ */
+function renderPipelineStages(
+  stages: SubagentStage[],
+  task: string | null | undefined,
+  opts: {
+    inputColor: (name: string) => (text: string) => string;
+    cols: number;
+    glyphs?: Glyphs;
+    showRoles: boolean;
+    showDeps: boolean;
+    showPrompts: boolean;
+  }
+): string[] {
+  const out: string[] = [];
+  const g = resolveGlyphs(opts.glyphs);
+  out.push(chalk.dim('  pipeline:'));
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i] ?? {};
+    const isLast = i === stages.length - 1;
+    const branch = isLast
+      ? `${g.cornerBottomLeft}${g.lineHorizontal}`
+      : `${g.teeRight}${g.lineHorizontal}`;
+    const stem = isLast ? '  ' : `${g.lineVertical} `;
+    const name = stage.name || `stage-${i + 1}`;
+    const role =
+      opts.showRoles && stage.role ? chalk.dim(` (${stage.role})`) : '';
+    const deps =
+      opts.showDeps &&
+      Array.isArray(stage.depends_on) &&
+      stage.depends_on.length > 0
+        ? chalk.dim(` ← ${stage.depends_on.join(', ')}`)
+        : '';
+    out.push(
+      `    ${chalk.dim(branch)} ${opts.inputColor(name)(`[${name}]`)}${role}${deps}`
+    );
+    // {task} substituted on render so the display matches what the spawned
+    // subagent receives (older binaries ship the raw template; backend also subs).
+    const rawPrompt = stage.prompt_template;
+    const prompt =
+      rawPrompt && task ? rawPrompt.replace(/\{task\}/g, task) : rawPrompt;
+    if (
+      opts.showPrompts &&
+      prompt &&
+      typeof prompt === 'string' &&
+      prompt.length > 0
+    ) {
+      const promptIndent = `    ${chalk.dim(stem)} `;
+      // 7 = width of "    │ " + 1-col safety margin (stdout.columns can be off
+      // by one, otherwise causing stray col-0 soft-wraps).
+      const avail = Math.max(20, opts.cols - 7);
+      out.push(
+        ...renderStagePromptLines(prompt, avail, promptIndent, opts.glyphs)
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * "Chip at col 7 + markdown body at col 9" digest section (shared by `full
+ * output:` and `response summary:`), pre-wrapped via wrapAnsiLine (SGR carryover)
+ * so continuations don't crash to col 0. `truncatedBy` (summary only) appends a
+ * "(+N more lines)" row.
+ */
+function renderDigestSection(
+  header: string,
+  entries: { stageName: string; body: string; truncatedBy?: number }[],
+  opts: { chipFn: (stageName: string) => string; cols: number; glyphs?: Glyphs }
+): string[] {
+  const out: string[] = [];
+  const chipIndent = '       ';
+  const bodyIndent = '         ';
+  const avail = Math.max(20, opts.cols - visibleWidth(bodyIndent));
+  out.push(header);
+  for (let i = 0; i < entries.length; i++) {
+    const stage = entries[i]!;
+    out.push(`${chipIndent}${opts.chipFn(stage.stageName)}`);
+    for (const ml of renderMarkdownToLines(
+      stage.body,
+      avail,
+      avail,
+      opts.glyphs
+    )) {
+      if (ml.length === 0) {
+        out.push('');
+        continue;
+      }
+      for (const visual of wrapAnsiLine(ml, avail, avail)) {
+        out.push(`${bodyIndent}${visual}`);
+      }
+    }
+    if (stage.truncatedBy && stage.truncatedBy > 0) {
+      out.push(
+        `${bodyIndent}${chalk.dim(`(+${stage.truncatedBy} more lines)`)}`
+      );
+    }
+    if (i < entries.length - 1) out.push('');
+  }
+  return out;
+}
+
+/**
+ * Approval-prompt renderer for the `subagent` tool: a per-stage pipeline tree
+ * the user can read at a glance instead of a raw key:value JSON dump. Returns
+ * one string per line (formatToolArgLines's contract, one <Text> per line).
  */
 export function formatSubagentApprovalLines(
   content: string,
@@ -114,46 +215,18 @@ export function formatSubagentApprovalLines(
   const inputColor = (name: string): ((text: string) => string) =>
     colors?.getStageInputColor?.(name) ?? chalk.blue;
   const stages = Array.isArray(args.stages) ? args.stages : [];
-  // No standalone `task:` line — it's already surfaced via each stage's {task}
-  // substitution, so printing it here would duplicate it.
+  // No standalone `task:` line — already surfaced via each stage's {task} sub.
   if (stages.length > 0) {
-    const g = resolveGlyphs(colors?.glyphs);
-    lines.push(chalk.dim('  pipeline:'));
-    for (let i = 0; i < stages.length; i++) {
-      const stage = stages[i] ?? {};
-      const isLast = i === stages.length - 1;
-      const branch = isLast
-        ? `${g.cornerBottomLeft}${g.lineHorizontal}`
-        : `${g.teeRight}${g.lineHorizontal}`;
-      const stem = isLast ? '  ' : `${g.lineVertical} `;
-      const name = stage.name || `stage-${i + 1}`;
-      const role = stage.role ? chalk.dim(` (${stage.role})`) : '';
-      const deps =
-        Array.isArray(stage.depends_on) && stage.depends_on.length > 0
-          ? chalk.dim(` ← ${stage.depends_on.join(', ')}`)
-          : '';
-      lines.push(
-        `    ${chalk.dim(branch)} ${inputColor(name)(`[${name}]`)}${role}${deps}`
-      );
-      // Substitute {task} on render so the display matches what the spawned
-      // subagent receives (belt-and-suspenders for older agent binaries that
-      // ship the raw template; the backend also substitutes).
-      const rawPrompt = stage.prompt_template;
-      const prompt =
-        rawPrompt && args.task
-          ? rawPrompt.replace(/\{task\}/g, args.task)
-          : rawPrompt;
-      if (prompt && typeof prompt === 'string') {
-        const promptIndent = `    ${chalk.dim(stem)} `;
-        // 7 = width of "    │ " + 1-col safety margin (stdout.columns is
-        // sometimes one off, causing stray col-0 soft-wraps otherwise).
-        const indentVisibleCols = 7;
-        const avail = Math.max(20, cols - indentVisibleCols);
-        lines.push(
-          ...renderStagePromptLines(prompt, avail, promptIndent, colors?.glyphs)
-        );
-      }
-    }
+    lines.push(
+      ...renderPipelineStages(stages, args.task, {
+        inputColor,
+        cols,
+        glyphs: colors?.glyphs,
+        showRoles: true,
+        showDeps: true,
+        showPrompts: true,
+      })
+    );
   }
 
   return lines.length > 0 ? lines : null;
@@ -247,43 +320,16 @@ export function renderSubagentFinalBlock(
   // `task` is parsed above only for that substitution.
 
   if (sub.pipeline && stages.length > 0) {
-    const g = resolveGlyphs(colors?.glyphs);
-    lines.push(chalk.dim('  pipeline:'));
-    for (let i = 0; i < stages.length; i++) {
-      const stage = stages[i] ?? {};
-      const isLast = i === stages.length - 1;
-      const branch = isLast
-        ? `${g.cornerBottomLeft}${g.lineHorizontal}`
-        : `${g.teeRight}${g.lineHorizontal}`;
-      const stem = isLast ? '  ' : `${g.lineVertical} `;
-      const name = stage.name || `stage-${i + 1}`;
-      const role = sub.roles && stage.role ? chalk.dim(` (${stage.role})`) : '';
-      const deps =
-        sub.deps &&
-        Array.isArray(stage.depends_on) &&
-        stage.depends_on.length > 0
-          ? chalk.dim(` ← ${stage.depends_on.join(', ')}`)
-          : '';
-      lines.push(
-        `    ${chalk.dim(branch)} ${inputColor(name)(`[${name}]`)}${role}${deps}`
-      );
-      // {task} substitution — see formatSubagentApprovalLines.
-      const rawPrompt = stage.prompt_template;
-      const prompt =
-        rawPrompt && task ? rawPrompt.replace(/\{task\}/g, task) : rawPrompt;
-      if (
-        sub.prompts &&
-        prompt &&
-        typeof prompt === 'string' &&
-        prompt.length > 0
-      ) {
-        const promptIndent = `    ${chalk.dim(stem)} `;
-        const avail = Math.max(20, cols - 7);
-        lines.push(
-          ...renderStagePromptLines(prompt, avail, promptIndent, colors?.glyphs)
-        );
-      }
-    }
+    lines.push(
+      ...renderPipelineStages(stages, task, {
+        inputColor,
+        cols,
+        glyphs: colors?.glyphs,
+        showRoles: sub.roles,
+        showDeps: sub.deps,
+        showPrompts: sub.prompts,
+      })
+    );
   }
 
   // Verbose mode (subagent passes the filter): surface the FULL per-stage
@@ -301,34 +347,13 @@ export function renderSubagentFinalBlock(
       .filter((s) => (s.taskResult ?? '').trim().length > 0)
       .map((s) => ({ stageName: s.stageName, body: s.taskResult }));
     if (rawStages.length > 0) {
-      // Chip at col 7 (parallel to the pipeline `[stage]` chip), body at col 9,
-      // pre-wrapped via wrapAnsiLine (SGR carryover) so continuations don't
-      // crash to col 0.
-      const chipIndent = '       ';
-      const bodyIndent = '         ';
-      const avail = Math.max(20, cols - visibleWidth(bodyIndent));
-      lines.push(chalk.red.bold('  full output:'));
-      for (let i = 0; i < rawStages.length; i++) {
-        const stage = rawStages[i]!;
-        lines.push(`${chipIndent}${chalk.red.bold(`▸ ${stage.stageName}`)}`);
-        for (const ml of renderMarkdownToLines(
-          stage.body,
-          avail,
-          avail,
-          colors?.glyphs
-        )) {
-          if (ml.length === 0) {
-            lines.push('');
-            continue;
-          }
-          for (const visual of wrapAnsiLine(ml, avail, avail)) {
-            lines.push(`${bodyIndent}${visual}`);
-          }
-        }
-        if (i < rawStages.length - 1) {
-          lines.push('');
-        }
-      }
+      lines.push(
+        ...renderDigestSection(chalk.red.bold('  full output:'), rawStages, {
+          chipFn: (n) => chalk.red.bold(`▸ ${n}`),
+          cols,
+          glyphs: colors?.glyphs,
+        })
+      );
     }
   }
 
@@ -376,42 +401,14 @@ export function renderSubagentFinalBlock(
       }
     }
     if (renderable.length > 0) {
-      // Parallels the pipeline section (chip at col 7, body at col 9,
-      // pre-wrapped) but differentiates via header text, pink chip color, and
-      // the ▸ glyph.
-      const chipIndent = '       ';
-      const bodyIndent = '         ';
-      const avail = Math.max(20, cols - visibleWidth(bodyIndent));
-      lines.push(chalk.dim('  response summary:'));
-      for (let i = 0; i < renderable.length; i++) {
-        const stage = renderable[i]!;
-        // Always emit the chip (even single-stage) as the "returned" signal.
-        lines.push(
-          `${chipIndent}${chalk.bold(outputColor(stage.stageName)(`▸ ${stage.stageName}`))}`
-        );
-        for (const ml of renderMarkdownToLines(
-          stage.body,
-          avail,
-          avail,
-          colors?.glyphs
-        )) {
-          if (ml.length === 0) {
-            lines.push('');
-            continue;
-          }
-          for (const visual of wrapAnsiLine(ml, avail, avail)) {
-            lines.push(`${bodyIndent}${visual}`);
-          }
-        }
-        if (stage.truncatedBy > 0) {
-          lines.push(
-            `${bodyIndent}${chalk.dim(`(+${stage.truncatedBy} more lines)`)}`
-          );
-        }
-        if (i < renderable.length - 1) {
-          lines.push('');
-        }
-      }
+      // Always emit the chip (even single-stage) as the "returned" signal.
+      lines.push(
+        ...renderDigestSection(chalk.dim('  response summary:'), renderable, {
+          chipFn: (n) => chalk.bold(outputColor(n)(`▸ ${n}`)),
+          cols,
+          glyphs: colors?.glyphs,
+        })
+      );
     }
   }
 
