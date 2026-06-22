@@ -531,20 +531,29 @@ describe('inline markdown inside block elements', () => {
 describe('markdown scoping', () => {
   // Markdown rendering must be limited to the model role. Tool outputs,
   // user messages, and system messages should pass through unchanged.
-  test('user messages do not render markdown', () => {
-    const out = stripAnsi(renderUserMessage('# not a heading\n**not bold**'));
-    expect(out).toContain('# not a heading');
-    expect(out).toContain('**not bold**');
-  });
-
-  test('system info does not render markdown', () => {
-    const out = stripAnsi(renderSystemInfo('# stays as #'));
-    expect(out).toContain('# stays as #');
-  });
-
-  test('system error does not render markdown', () => {
-    const out = stripAnsi(renderSystemError('**oops**'));
-    expect(out).toContain('**oops**');
+  test.each<{
+    name: string;
+    render: (s: string) => string;
+    contains: string[];
+  }>([
+    {
+      name: 'user messages do not render markdown',
+      render: renderUserMessage,
+      contains: ['# not a heading', '**not bold**'],
+    },
+    {
+      name: 'system info does not render markdown',
+      render: renderSystemInfo,
+      contains: ['# stays as #'],
+    },
+    {
+      name: 'system error does not render markdown',
+      render: renderSystemError,
+      contains: ['**oops**'],
+    },
+  ])('$name', ({ render, contains }) => {
+    const out = stripAnsi(render(contains.join('\n')));
+    for (const c of contains) expect(out).toContain(c);
   });
 
   test('renderMessageToText routes model role through markdown but not tool', () => {
