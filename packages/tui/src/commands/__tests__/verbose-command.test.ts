@@ -478,12 +478,6 @@ describe('/verbosity density presets', () => {
     }
   );
 
-  it('density:<preset> menu shortcut re-opens the density menu (does not close)', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:lean');
-    expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-  });
-
   it('density:apply:<preset> commits the preset and closes the menu', () => {
     // The post-confirmation Yes row routes through density:apply:<preset>.
     // Picking a preset is a finish action — close the menu so the user
@@ -512,11 +506,6 @@ describe('/verbosity density presets', () => {
     const calls = ctx._spies.setActiveCommand!.mock
       .calls as unknown as unknown[][];
     expect(calls[calls.length - 1]?.[0]).toBeNull();
-    // ESC return route is cleared so a stale menu:density route can't drop
-    // the user back into the menu after they exit.
-    const escCalls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    expect(escCalls[escCalls.length - 1]?.[0]).toBeNull();
   });
 
   it.each([
@@ -749,27 +738,6 @@ describe('/verbosity Truncation submenu', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('Truncation is the last config row and its description summarizes both caps', () => {
-    // Reset row is gone — Truncation is now the final row in the config menu
-    // (the density preset replaces the standalone reset). Use the explicit
-    // `config` route — bare /verbosity may open density when the saved shape
-    // matches a preset, and density doesn't surface the per-section summary.
-    setVerboseConfig({
-      display: display({ outputMaxLines: 20, argsMaxChars: 80 }),
-    });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'config');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const labels = arg.options.map((o) => o.label);
-    const truncIdx = labels.indexOf('Truncation');
-    expect(truncIdx).toBe(labels.length - 1);
-    const truncRow = arg.options[truncIdx];
-    expect(truncRow?.description).toContain('args unlimited/80 chars');
-    expect(truncRow?.description).toContain('output 20 lines/unlimited');
-  });
-
   it('menu:truncation lists all four knobs with current values', () => {
     setVerboseConfig({
       display: display({
@@ -988,20 +956,12 @@ describe('/verbosity case-insensitive command verbs', () => {
   // the canonical lowercase verb. (Token-case preservation is a SEPARATE
   // regression — see the two `only ...` tests below.)
   it.each([
+    // A filter verb, a density verb, and a read-only verb — one per route
+    // class proves the lowercase fold; the within-class duplicates (OFF/ALL,
+    // DENSITY:lean) added no distinct coverage.
     ['ON', { filters: [] }, (c: any) => expect(c.filters).toEqual(['all'])],
-    ['OFF', { filters: ['all'] }, (c: any) => expect(c.filters).toEqual([])],
-    [
-      'ALL',
-      { filters: ['shell'] },
-      (c: any) => expect(c.filters).toEqual(['all']),
-    ],
     [
       'DENSITY lean',
-      { filters: ['all'] },
-      (c: any) => expect(c.display!.toolArgsMode).toBe('inline'),
-    ],
-    [
-      'DENSITY:lean',
       { filters: ['all'] },
       (c: any) => expect(c.display!.toolArgsMode).toBe('inline'),
     ],

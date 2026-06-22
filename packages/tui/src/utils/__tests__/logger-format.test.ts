@@ -10,32 +10,44 @@
 import { describe, it, expect } from 'bun:test';
 import { formatArg } from '../logger';
 
+class MyError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'MyError';
+  }
+}
+const withCode = (msg: string, code: string) => {
+  const err: any = new Error(msg);
+  err.code = code;
+  return err;
+};
+
 describe('formatArg', () => {
-  it('serializes plain Error with name and message', () => {
-    const out = formatArg(new Error('boom'));
+  // The non-enumerable Error fields the helper must pull off explicitly: name,
+  // message, stack, .code, and a recursively-serialized .cause. The plain-Error
+  // case also proves the regression that JSON.stringify(Error) === "{}".
+  it.each([
+    {
+      name: 'plain Error (name/message/stack, not "{}")',
+      err: new Error('boom'),
+      expected: { name: 'Error', message: 'boom' },
+    },
+    {
+      name: 'custom Error subclass keeps its name',
+      err: new MyError('custom'),
+      expected: { name: 'MyError', message: 'custom' },
+    },
+    {
+      name: 'includes .code when present',
+      err: withCode('enoent', 'ENOENT'),
+      expected: { message: 'enoent', code: 'ENOENT' },
+    },
+  ])('serializes $name', ({ err, expected }) => {
+    const out = formatArg(err);
+    expect(out).not.toBe('{}');
     const parsed = JSON.parse(out);
-    expect(parsed.name).toBe('Error');
-    expect(parsed.message).toBe('boom');
     expect(typeof parsed.stack).toBe('string');
-  });
-
-  it('serializes custom Error subclass with its name', () => {
-    class MyError extends Error {
-      constructor(msg: string) {
-        super(msg);
-        this.name = 'MyError';
-      }
-    }
-    const parsed = JSON.parse(formatArg(new MyError('custom')));
-    expect(parsed.name).toBe('MyError');
-    expect(parsed.message).toBe('custom');
-  });
-
-  it('includes .code when present', () => {
-    const err: any = new Error('enoent');
-    err.code = 'ENOENT';
-    const parsed = JSON.parse(formatArg(err));
-    expect(parsed.code).toBe('ENOENT');
+    expect(parsed).toMatchObject(expected);
   });
 
   it('recursively serializes .cause when present', () => {
@@ -49,12 +61,11 @@ describe('formatArg', () => {
     expect(innerParsed.name).toBe('Error');
   });
 
-  it('serializes plain objects via JSON.stringify', () => {
-    expect(formatArg({ a: 1, b: 'x' })).toBe('{"a":1,"b":"x"}');
-  });
-
-  it('serializes arrays via JSON.stringify', () => {
-    expect(formatArg([1, 2, 3])).toBe('[1,2,3]');
+  it.each([
+    [{ a: 1, b: 'x' }, '{"a":1,"b":"x"}'],
+    [[1, 2, 3], '[1,2,3]'],
+  ])('serializes %j via JSON.stringify', (value, expected) => {
+    expect(formatArg(value)).toBe(expected);
   });
 
   it('falls back to String() when JSON.stringify throws (circular)', () => {
@@ -67,18 +78,13 @@ describe('formatArg', () => {
     expect(out.length).toBeGreaterThan(0);
   });
 
-  it('passes primitives through String()', () => {
-    expect(formatArg(42)).toBe('42');
-    expect(formatArg('hello')).toBe('hello');
-    expect(formatArg(true)).toBe('true');
-    expect(formatArg(null)).toBe('null');
-    expect(formatArg(undefined)).toBe('undefined');
-  });
-
-  it('regression: Error no longer serializes to "{}"', () => {
-    // The whole reason this helper exists.
-    const out = formatArg(new Error('not empty'));
-    expect(out).not.toBe('{}');
-    expect(out).toContain('not empty');
+  it.each([
+    [42, '42'],
+    ['hello', 'hello'],
+    [true, 'true'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+  ])('passes primitive %p through String()', (value, expected) => {
+    expect(formatArg(value)).toBe(expected);
   });
 });

@@ -241,6 +241,8 @@ describe('/theme command', () => {
         labelMatch: 'Purple',
         seedOther: { responsePreset: 'dark' },
         pref: { promptPreset: 'purple', responsePreset: 'dark' },
+        // Applying a preset re-opens the custom (prompt/response/diff) menu.
+        reopensCustomMenu: true,
       },
       {
         route: 'response:light',
@@ -281,6 +283,7 @@ describe('/theme command', () => {
         labelMatch,
         seedOther,
         pref,
+        reopensCustomMenu,
       }) => {
         if (seedOther) saveUserThemePrefs(seedOther);
         const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
@@ -298,19 +301,17 @@ describe('/theme command', () => {
           expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
         }
         expect(loadUserThemePrefs()).toMatchObject(pref);
+        if (reopensCustomMenu) {
+          const options =
+            ctx._spies.setActiveCommand!.mock.calls.at(-1)![0].options;
+          expect(options.map((o: any) => o.value)).toEqual([
+            'prompt',
+            'response',
+            'diff',
+          ]);
+        }
       }
     );
-
-    it('applying a preset returns to the custom menu (prompt/response/diff rows)', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'prompt:purple', ctx);
-      const lastCall = ctx._spies.setActiveCommand!.mock.calls.at(-1)!;
-      const options = lastCall[0].options;
-      expect(options).toHaveLength(3);
-      expect(options[0].value).toBe('prompt');
-      expect(options[1].value).toBe('response');
-      expect(options[2].value).toBe('diff');
-    });
 
     it('applies default preset and clears persisted value', async () => {
       saveUserThemePrefs({ promptPreset: 'purple' });
@@ -322,15 +323,12 @@ describe('/theme command', () => {
       expect(prefs.promptPreset).toBeUndefined();
     });
 
-    // Unknown preset id surfaces an error alert for every category.
-    it.each(['prompt', 'response', 'diff'])(
-      'shows error for unknown %s preset',
-      async (category) => {
-        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-        await dispatch(themeCmd, `${category}:nonexistent`, ctx);
-
-        expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
-      }
-    );
+    // Unknown preset id surfaces an error alert (one category — the handler
+    // routes all three through the same lookup).
+    it('shows error for an unknown preset', async () => {
+      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+      await dispatch(themeCmd, 'prompt:nonexistent', ctx);
+      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('error');
+    });
   });
 });
