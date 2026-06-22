@@ -1065,7 +1065,7 @@ export function renderToolCall(
   const indentedLines = info.inlineArg ? descLines : descLines.slice(1);
   const firstLine = `${agent}${source}${name}${argChip}${inlineDesc}${statusStr}`;
   if (indentedLines.length === 0) return firstLine;
-  const indent = '    '; // indent for continuation / below-name lines
+  const indent = '    ';
   return [
     firstLine,
     ...indentedLines.map((l) => `${indent}${brandFn(l)}`),

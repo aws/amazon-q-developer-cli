@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, it, expect, beforeEach } from 'vitest';
 import chalk from 'chalk';
 import {
   renderSystemError,
@@ -11,6 +11,7 @@ import {
   setVerboseConfig,
   resetVerboseCache,
   DEFAULT_DISPLAY,
+  type VerboseDisplayConfig,
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
@@ -351,36 +352,125 @@ describe('renderMessageToText for task tools', () => {
     setVerboseConfig({ filters: [] });
   });
 
-  test('todo_list create renders header as `tasks create` plus body', () => {
-    const content = JSON.stringify({
-      command: 'create',
-      task_list_description: 'fix the renderer',
-      tasks: [
-        { task_description: 'first thing' },
-        { task_description: 'second thing' },
-      ],
-    });
-    const out = stripAnsi(
+  // Task-tool (todo_list) message rendering: the header rewrites the wire
+  // name → `tasks` with the command as the inline chip, then a structured
+  // body (gated by toolArgsMode / argsMaxLines). Cases share the same
+  // tool_use message shell and only vary content / verbose config / result.
+  const renderTask = (
+    content: Record<string, unknown>,
+    extra: Partial<{
+      result: { status: string; error?: string };
+      startTime: number;
+      finishTime: number;
+    }> = {}
+  ) =>
+    stripAnsi(
       renderMessageToText(
         {
-          id: 'tt1',
+          id: 'tt',
           role: 'tool_use',
           name: 'todo_list',
-          content,
+          content: JSON.stringify(content),
           isFinished: true,
-          startTime: 0,
-          finishTime: 250,
+          ...extra,
         },
         'kiro_default'
       )
     );
-    const lines = out.split('\n');
-    // Display name is `tasks` (not `todo_list`), with `create` as inline arg.
-    expect(lines[0]).toContain('tasks create');
-    expect(lines[0]).not.toContain('todo_list');
-    expect(out).toContain('first thing');
-    expect(out).toContain('second thing');
-    expect(out).toContain('fix the renderer');
+  it.each<{
+    name: string;
+    content: Record<string, unknown>;
+    display?: Partial<VerboseDisplayConfig>;
+    extra?: Parameters<typeof renderTask>[1];
+    headerContains?: string[];
+    headerAbsent?: string[];
+    contains?: string[];
+    absent?: string[];
+    matches?: RegExp[];
+  }>([
+    {
+      // Display name is `tasks` (not `todo_list`), `create` as inline arg.
+      name: 'create renders header as `tasks create` plus body',
+      content: {
+        command: 'create',
+        task_list_description: 'fix the renderer',
+        tasks: [
+          { task_description: 'first thing' },
+          { task_description: 'second thing' },
+        ],
+      },
+      extra: { startTime: 0, finishTime: 250 },
+      headerContains: ['tasks create'],
+      headerAbsent: ['todo_list'],
+      contains: ['first thing', 'second thing', 'fix the renderer'],
+    },
+    {
+      name: 'toolArgsMode=off suppresses body but keeps the header',
+      content: {
+        command: 'create',
+        task_list_description: 'd',
+        tasks: [{ task_description: 'only task' }],
+      },
+      display: { toolArgsMode: 'off' },
+      headerContains: ['tasks create'],
+      absent: ['only task'],
+    },
+    {
+      name: 'argsMaxLines clamps the body with a truncation marker',
+      content: {
+        command: 'create',
+        task_list_description: 'list with many tasks',
+        tasks: Array.from({ length: 10 }, (_, i) => ({
+          task_description: `task ${i + 1}`,
+        })),
+      },
+      display: { argsMaxLines: 3 },
+      contains: ['task 1'],
+      absent: ['task 10'],
+      matches: [/\.\.\. \(truncated; \+\d+ more lines\)/],
+    },
+    {
+      // Unknown command → formatTaskToolBody returns null and the generic
+      // JSON printer takes over (wire name kept, fields surfaced).
+      name: 'malformed args fall through to generic JSON pretty-printer',
+      content: { command: 'unknown_command', foo: 'bar' },
+      contains: ['todo_list', 'foo: bar'],
+    },
+    {
+      // On error, renderVerboseOutput appends the failure cause below the
+      // structured render (mirrors the write-tool path) so a TaskStore FS
+      // error isn't hidden behind a bare FAILED chip.
+      name: 'errored tool call surfaces the error body below the structured render',
+      content: {
+        command: 'complete',
+        completed_task_ids: ['1'],
+        context_update: 'tried to complete',
+      },
+      extra: {
+        result: {
+          status: 'error',
+          error: 'TaskStore: permission denied writing /tmp/tasks',
+        },
+      },
+      contains: [
+        'tasks complete',
+        'FAILED',
+        'completed:',
+        '#1',
+        'TaskStore: permission denied',
+      ],
+    },
+  ])('todo_list $name', (c) => {
+    if (c.display) {
+      setVerboseConfig({ display: { ...DEFAULT_DISPLAY, ...c.display } });
+    }
+    const out = renderTask(c.content, c.extra);
+    const header = out.split('\n')[0] ?? '';
+    for (const s of c.headerContains ?? []) expect(header).toContain(s);
+    for (const s of c.headerAbsent ?? []) expect(header).not.toContain(s);
+    for (const s of c.contains ?? []) expect(out).toContain(s);
+    for (const s of c.absent ?? []) expect(out).not.toContain(s);
+    for (const re of c.matches ?? []) expect(out).toMatch(re);
   });
 
   test('all three wire aliases (task / todo_list / todo) render with `tasks` display name', () => {
@@ -408,119 +498,6 @@ describe('renderMessageToText for task tools', () => {
       const wordRe = new RegExp(`\\b${wireName}\\b`);
       expect(wordRe.test(out)).toBe(false);
     }
-  });
-
-  test('toolArgsMode=off suppresses body but keeps the header', () => {
-    setVerboseConfig({ display: { ...DEFAULT_DISPLAY, toolArgsMode: 'off' } });
-    const content = JSON.stringify({
-      command: 'create',
-      task_list_description: 'd',
-      tasks: [{ task_description: 'only task' }],
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 'tt-off',
-          role: 'tool_use',
-          name: 'todo_list',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    const lines = out.split('\n');
-    // Header is still there.
-    expect(lines[0]).toContain('tasks create');
-    // Body is suppressed.
-    expect(out).not.toContain('only task');
-  });
-
-  test('argsMaxLines clamps the body with a truncation marker', () => {
-    setVerboseConfig({
-      display: { ...DEFAULT_DISPLAY, argsMaxLines: 3 },
-    });
-    const content = JSON.stringify({
-      command: 'create',
-      task_list_description: 'list with many tasks',
-      tasks: Array.from({ length: 10 }, (_, i) => ({
-        task_description: `task ${i + 1}`,
-      })),
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 'tt-cap',
-          role: 'tool_use',
-          name: 'todo_list',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).toMatch(/\.\.\. \(truncated; \+\d+ more lines\)/);
-    // First couple of tasks visible.
-    expect(out).toContain('task 1');
-    // Later tasks dropped.
-    expect(out).not.toContain('task 10');
-  });
-
-  test('malformed args fall through to generic JSON pretty-printer', () => {
-    // When formatTaskToolBody returns null (unknown command), the generic
-    // path takes over so the user still sees the args. Locks the fallback.
-    const content = JSON.stringify({ command: 'unknown_command', foo: 'bar' });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 'tt-fallback',
-          role: 'tool_use',
-          name: 'todo_list',
-          content,
-          isFinished: true,
-        },
-        'kiro_default'
-      )
-    );
-    // Falls back to the wire name, not 'tasks'.
-    expect(out).toContain('todo_list');
-    // Generic args printer surfaces the fields.
-    expect(out).toContain('foo: bar');
-  });
-
-  test('errored tool call surfaces the error body below the structured render', () => {
-    // Pre-mortem fix: the write-tool path appends renderVerboseOutput on
-    // error so the user sees the actual failure cause. Mirror that here so
-    // a TaskStore filesystem error doesn't leave the user blind with just a
-    // FAILED chip on the header.
-    const content = JSON.stringify({
-      command: 'complete',
-      completed_task_ids: ['1'],
-      context_update: 'tried to complete',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 'tt-error',
-          role: 'tool_use',
-          name: 'todo_list',
-          content,
-          isFinished: true,
-          result: {
-            status: 'error',
-            error: 'TaskStore: permission denied writing /tmp/tasks',
-          },
-        },
-        'kiro_default'
-      )
-    );
-    // Header still shows the structured rendering.
-    expect(out).toContain('tasks complete');
-    expect(out).toContain('FAILED');
-    expect(out).toContain('completed:');
-    expect(out).toContain('#1');
-    // Error message is appended below, not silently swallowed.
-    expect(out).toContain('TaskStore: permission denied');
   });
 });
 
