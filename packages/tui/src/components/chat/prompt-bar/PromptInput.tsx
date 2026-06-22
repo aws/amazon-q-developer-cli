@@ -21,6 +21,7 @@ import {
   stripNonPrintable,
 } from '../../../utils/index.js';
 import { computeInputSpans } from '../../../utils/input-syntax.js';
+import { isCommandVisibleInUiMode } from '../../ui/command-menu-utils.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
@@ -925,25 +926,18 @@ export const PromptInput = React.memo(function PromptInput({
       const prevYank = lastYankRef.current;
       lastYankRef.current = null;
 
-      // Check if slash command menu is visible (has matching commands).
-      // Mirrors CommandMenu's own visibility check so PromptInput defers
-      // navigation keys (Tab, Up/Down, Enter) to the menu while it's
-      // mounted. Crucially this is NOT gated on !isProcessing — the menu
-      // stays mounted during agent streaming so the user can autocomplete
-      // a slash command into the queue, and PromptInput must back off in
-      // sync so its own Enter/Tab handlers don't compete with the menu's.
+      // Mirror CommandMenu's visibility check so PromptInput defers nav keys
+      // (Tab/Up/Down/Enter) to the menu while it's mounted — including during
+      // streaming (NOT gated on !isProcessing), where the menu stays up so the
+      // user can autocomplete a slash command into the queue. The shared
+      // isCommandVisibleInUiMode keeps the liteOnly filter in sync: without it,
+      // typing a liteOnly name in TUI swallows Enter into an empty menu.
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
           ? slashCommands.some(
               (cmd) =>
                 !cmd.meta?.hidden &&
-                // Mirror CommandMenu's liteOnly filter so PromptInput doesn't
-                // claim Enter/Tab for menu items the user can't actually see
-                // (modern TUI hides /verbosity, /tui, etc.). Without this,
-                // typing a liteOnly command name in TUI mode swallows Enter
-                // because slashMenuVisible is true but the rendered menu is
-                // empty — the keystroke goes nowhere.
-                (isLiteMode || !cmd.meta?.liteOnly) &&
+                isCommandVisibleInUiMode(cmd, isLiteMode ? 'lite' : 'tui') &&
                 cmd.name
                   .slice(1)
                   .toLowerCase()

@@ -29,9 +29,8 @@ export const Message = React.memo(function Message({
   barColor,
 }: MessageProps) {
   const { wrapDisabled } = useTheme();
-  // Lite mode also drops chrome; read live so a /tui swap restores chrome on
-  // later rows. Optional read falls back to TUI chrome in Storybook/snapshot
-  // tests that render without an AppStoreContext provider.
+  // Live read so a /tui swap restores chrome on later rows; falls back to TUI
+  // chrome when rendered without an AppStoreContext (Storybook/snapshot tests).
   const isLiteUi = useAppStoreOptional((s) => s.uiMode === 'lite', false);
   const messageStatus: StatusType = status || 'active';
 

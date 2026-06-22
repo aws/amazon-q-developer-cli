@@ -229,11 +229,9 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       setPage('default');
       setFocusedIndex(0);
     } else {
-      // Top-level Esc/leftArrow: interrupt the agent in addition to
-      // cancelling this approval. cancelMessage() calls cancelApproval()
-      // internally, so this also clears the pending approval and any
-      // queued ones — and aborts the agent's current turn so the user
-      // gets the prompt back to type a new instruction.
+      // Top-level Esc/leftArrow: cancelMessage() calls cancelApproval()
+      // internally (clearing this + queued approvals) AND aborts the turn, so
+      // the user gets the prompt back to type a new instruction.
       cancelMessage();
     }
   };

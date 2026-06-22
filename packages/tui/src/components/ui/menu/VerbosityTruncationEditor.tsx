@@ -39,19 +39,9 @@ function nextDown(v: number): number {
 }
 
 /**
- * Numeric editor for the truncation cap. Renders a single value chevron
- * (`◀  N  ▶`) plus a live preview pane below that reflects the in-progress
- * value.
- *
- * Keys:
- *   Esc       — discard draft, return to truncation submenu (caller).
- *   Enter     — commit draft (caller persists via setVerboseConfig).
- *   ←         — step down (asymmetric — small steps near 0, big near max).
- *   →         — step up. From `null` (unlimited), starts at 5.
- *   digit     — append in digit-mode, replace otherwise. Clamp at MAX_CAP.
- *               `0` alone collapses to `null` (unlimited).
- *   Backspace — drop last digit; on 0 or 1 digit go to `null`.
- *   u         — toggle to `null` (unlimited).
+ * Numeric editor for the truncation cap. Renders a value chevron (`◀  N  ▶`)
+ * plus a live preview pane reflecting the in-progress value. The keypress
+ * handler below spells out the full keymap; commit/cancel route to the caller.
  */
 export type TruncationEditorField =
   | 'argsLines'
@@ -240,13 +230,7 @@ export const VerbosityTruncationEditor: React.FC<{
         <Box height={1} />
         <Box>
           <Text>{dim('  ')}</Text>
-          <Text>
-            {blink ? (
-              <Text inverse>{` ◀  ${valueText}  ▶ `}</Text>
-            ) : (
-              <Text>{` ◀  ${valueText}  ▶ `}</Text>
-            )}
-          </Text>
+          <Text inverse={blink}>{` ◀  ${valueText}  ▶ `}</Text>
         </Box>
         <Box height={1} />
         <Text>

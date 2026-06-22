@@ -48,17 +48,15 @@ export interface MenuProps {
   showFooterHints?: boolean;
   /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
   preserveLabelColors?: boolean;
-  /** Wording after the close-menu key in the footer; the leading separator is
-   *  the prop's responsibility (`← back` none, `to close` a space). Default
-   *  `to cancel`. */
+  /** Wording after the close-menu key in the footer; the prop owns its leading
+   *  separator (`← back` none, `to close` a space). Default `to cancel`. */
   closeMenuActionLabel?: string;
   /** Initial cursor row; clamped to range, applied on mount only (re-key to
    *  re-apply). Defaults to 0. */
   initialIndex?: number;
   /** Static title shown above the menu items (rendered regardless of searchable). */
   title?: string;
-  /** Lite-only: enable symmetric arrow shortcuts (right→Enter, left→Esc). Off
-   *  by default so modern-TUI menus keep their behavior. */
+  /** Lite-only: symmetric arrow shortcuts (right→Enter, left→Esc). */
   liteOnly?: boolean;
 }
 
@@ -221,18 +219,16 @@ export const Menu = React.memo(function Menu({
       !onRightArrow &&
       selectedIndex >= 0
     ) {
-      // Right arrow as Enter when no drill-in handler claimed it — lite menus
-      // allow arrow-cluster select. Lite-only: ungating it in modern TUI would
-      // auto-respond to ApprovalRequest dropdowns (Menu without liteOnly).
+      // Right=Enter for lite arrow-cluster select. Lite-only: ungating it in
+      // TUI would auto-respond to ApprovalRequest dropdowns (no liteOnly).
       const selectedItem = displayItems[selectedIndex];
       if (selectedItem) onSelect(selectedItem);
     } else if (liteOnly && key.leftArrow && onEscape && !searchable) {
-      // Left arrow as Esc, symmetric with right = Enter. Suppressed in
-      // searchable menus where left/right drive the search-input cursor.
+      // Left=Esc, symmetric with right. Suppressed in searchable menus where
+      // left/right drive the search-input cursor.
       onEscape();
     } else if (!searchable) {
-      // Non-searchable menus swallow all other keys here so they can't fall
-      // through into the search text-capture branches below.
+      // Swallow other keys so they can't fall through to the search branches.
     } else if (searchable && key.ctrl && input) {
       // TODO: Extract a shared useLineEditor hook backed by Segment[] + input-editing.ts
       // to reuse emacs bindings from PromptInput instead of duplicating here.

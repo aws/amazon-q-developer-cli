@@ -89,8 +89,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   }) {
     const { getColor, wrapDisabled } = useTheme();
     const glyphs = useGlyphs();
-    // Lite mode also drops chrome, but read live from the store so a swap
-    // back to TUI restores the StatusBar bar on subsequent rows.
+    // Live read so a /tui swap restores the StatusBar bar on subsequent rows.
     const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
     const keybindings = useKeybindings();
     // Map tool status to StatusBar status icon

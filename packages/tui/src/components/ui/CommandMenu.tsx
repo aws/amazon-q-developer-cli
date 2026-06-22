@@ -18,6 +18,7 @@ import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   filterPromptsByQuery,
   buildAtMenuItems,
+  isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
@@ -55,13 +56,8 @@ export const CommandMenu: React.FC = () => {
   );
   const { slashCommands: rawSlashCommands } = useCommandState();
   const uiMode = useAppStore((state) => state.uiMode);
-  // Lite-only commands (e.g. /verbose) shouldn't surface in TUI mode — they
-  // bind to lite-mode rendering hooks and would no-op or error there.
   const slashCommands = useMemo(
-    () =>
-      uiMode === 'lite'
-        ? rawSlashCommands
-        : rawSlashCommands.filter((c) => c.meta?.liteOnly !== true),
+    () => rawSlashCommands.filter((c) => isCommandVisibleInUiMode(c, uiMode)),
     [rawSlashCommands, uiMode]
   );
   const handleUserInput = useAppStore((state) => state.handleUserInput);
@@ -97,9 +93,8 @@ export const CommandMenu: React.FC = () => {
 
   const [fileResults, setFileResults] = useState<string[]>([]);
 
-  // /verbosity preview. Two keys so a stray `p` while typing can't pop a
-  // preview: Ctrl+P is the master switch (hidden ↔ mini), `p` is the refine
-  // toggle (mini ↔ expanded).
+  // Two keys so a stray `p` while typing can't pop a preview: Ctrl+P is the
+  // master switch (hidden ↔ mini), `p` refines (mini → expanded).
   type PreviewMode = 'mini' | 'expanded' | 'hidden';
   const [previewMode, setPreviewMode] = useState<PreviewMode>('hidden');
 
@@ -476,35 +471,30 @@ export const CommandMenu: React.FC = () => {
   // drilled in from a parent menu, so Esc steps back rather than closing.
   const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
 
-  // /verbosity preview keymap. Gated to liteOnly commands with a preview
-  // fixture so Ctrl+P / p don't fire in modern-TUI menus (Menu.tsx yields
-  // Ctrl+P on liteOnly menus so this handler can claim it; plain ↑ still
-  // navigates). Ctrl+P toggles hidden ↔ mini (expanded → hidden closes the
-  // pane too); `p` refines mini → expanded (the expanded pane owns its own
-  // `p` for the reverse).
   useKeypress((input, key) => {
+    // Verbosity preview keymap. Gated to liteOnly commands with a preview
+    // fixture; Menu.tsx yields Ctrl+P on liteOnly menus so this can claim it.
     const isLiteMenu =
       activeCommand?.command.meta?.liteOnly === true &&
       activeCommand.previewKey;
-    if (!isLiteMenu) return;
-    if (key.ctrl && (input === 'p' || input === 'P')) {
-      setPreviewMode((m) => (m === 'hidden' ? 'mini' : 'hidden'));
-      return;
+    if (isLiteMenu) {
+      if (key.ctrl && (input === 'p' || input === 'P')) {
+        setPreviewMode((m) => (m === 'hidden' ? 'mini' : 'hidden'));
+        return;
+      }
+      if (
+        previewMode !== 'expanded' &&
+        previewMode !== 'hidden' &&
+        (input === 'p' || input === 'P')
+      ) {
+        setPreviewMode('expanded');
+        return;
+      }
     }
-    if (
-      previewMode !== 'expanded' &&
-      previewMode !== 'hidden' &&
-      (input === 'p' || input === 'P')
-    ) {
-      setPreviewMode('expanded');
-      return;
-    }
-  });
 
-  // Ctrl+C inside any menu surface = Esc (one level). Without this it falls
-  // through to AppContainer's double-Ctrl+C quit flow — a startling
-  // overreaction to backing out of a menu.
-  useKeypress((input, key) => {
+    // Ctrl+C inside any menu surface = Esc (one level). Without this it falls
+    // through to AppContainer's double-Ctrl+C quit flow — a startling
+    // overreaction to backing out of a menu.
     if (!(key.ctrl && input === 'c')) return;
     if (previewMode === 'expanded') {
       // Collapse to the menu, matching the pane's own Esc; closing here would
@@ -610,10 +600,8 @@ export const CommandMenu: React.FC = () => {
       isSelection &&
       activeCommand.command.meta?.searchable !== false;
 
-    // /verbosity truncation editor mode: previewKey ends in `:edit`. Swap
-    // the regular menu for the numeric editor; the editor handles all
-    // keypresses itself and routes back to the truncation submenu via
-    // executeCommandWithArg on commit/cancel.
+    // Truncation editor mode: previewKey ends in `:edit`. Swap the menu for the
+    // numeric editor, which routes back via executeCommandWithArg on commit.
     const previewKey = activeCommand.previewKey;
     const truncEditMatch =
       previewKey &&
@@ -621,12 +609,9 @@ export const CommandMenu: React.FC = () => {
         /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
       );
 
-    // Lite /verbosity gets the same panel chrome as the other settings: a
-    // `/settings – verbosity – <sub>` breadcrumb header + divider above the
-    // menu/preview/editor, deepening one level per drilldown. LiteLayout hides
-    // the input row while this menu is active (see isLiteVerbosityMenu there),
-    // so the breadcrumb sits where the input box was — matching display/theme/
-    // terminal/etc. Gated to lite: in TUI /verbosity is filtered out entirely.
+    // Lite /verbosity gets the settings panel chrome: a breadcrumb header +
+    // divider where the input row sat (LiteLayout hides it; see
+    // isLiteVerbosityMenu there). Gated to lite — TUI filters /verbosity out.
     const isLiteVerbosityMenu =
       uiMode === 'lite' && activeCommand.command.name === '/verbosity';
     const verbosityHeader = isLiteVerbosityMenu ? (
@@ -662,9 +647,8 @@ export const CommandMenu: React.FC = () => {
       );
     }
 
-    // Verbosity submenu preview pane: previewKey is one of the
-    // VerbosityPreviewKey strings. 'truncation' is a submenu, not a fixture
-    // key; map it to 'top' so a generic mix shows next to the cap rows.
+    // 'truncation' is a submenu, not a fixture key; map it to 'top' so a
+    // generic mix shows next to the cap rows.
     const verbosityPreviewKey: VerbosityPreviewKey | null =
       previewKey === 'truncation'
         ? 'top'
@@ -681,11 +665,8 @@ export const CommandMenu: React.FC = () => {
         }
       : null;
 
-    // Expanded preview: swap the menu surface for the scrollable pane. The
-    // pane owns its own keypresses; `p` cycles forward to hidden, Esc
-    // collapses back to mini. Only meaningful inside /verbosity, but the
-    // gate is enforced upstream (we only set previewMode away from 'mini'
-    // when the open command is /verbosity).
+    // Expanded preview: swap the menu surface for the scrollable pane (the
+    // pane owns its own keypresses). The /verbosity gate is enforced upstream.
     if (previewMode === 'expanded' && verbosityPreviewKey) {
       return (
         <Box flexDirection="column">

@@ -7,11 +7,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
-import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useRenderTheme } from './useRenderTheme.js';
 import {
   renderVerbosityPreview,
-  buildRenderTheme,
   type VerbosityPreviewKey,
 } from '../../../lite/render.js';
 import {
@@ -44,12 +43,7 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
   onCollapse,
   onHide,
 }) => {
-  const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  const dim = useMemo(() => getColor('secondary'), [getColor]);
-  const theme = useMemo(
-    () => buildRenderTheme(getColor, getUserPromptColor, getUserPromptBgHex),
-    [getColor, getUserPromptColor, getUserPromptBgHex]
-  );
+  const { theme, dim } = useRenderTheme();
 
   const display = displayOverride ?? getVerboseDisplay();
   const filters = useMemo(
