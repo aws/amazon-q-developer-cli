@@ -14,7 +14,12 @@ import {
   formatSubagentApprovalLines,
   renderSubagentFinalBlock,
 } from '../render.js';
-import { setVerboseConfig, resetVerboseCache } from '../verbose.js';
+import {
+  setVerboseConfig,
+  resetVerboseCache,
+  DEFAULT_DISPLAY,
+  DENSITY_DISPLAY,
+} from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 
 // Redirect KIRO_HOME so the verbose tests don't stomp on the developer's
@@ -1000,4 +1005,83 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
     expect(stripped).toContain('# this is the literal error');
     expect(stripped).toContain('**raw** message');
   });
+});
+
+// Migrated from subagent-render.test.ts. These pass `display` explicitly via
+// the options arg, so they're independent of the global setVerboseConfig state
+// the rest of this file mutates.
+describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
+  // Stage prompt embeds {task} — the substituted text renders inside the
+  // pipeline, so a standalone `task:` line above would duplicate it.
+  const withTaskPlaceholder = JSON.stringify({
+    task: 'Investigate the flush bug',
+    stages: [{ name: 'scan', prompt_template: 'Do this: {task}' }],
+  });
+  // Prompt does NOT reference {task}; the task: line is still dropped (it
+  // duplicates the user's input prompt) and the stage prompt shows verbatim.
+  const noPlaceholder = JSON.stringify({
+    task: 'Investigate the flush bug',
+    stages: [{ name: 'scan', prompt_template: 'Read the static-flush module' }],
+  });
+
+  test('Bug 3: renders a terminal "✗ cancelled" suffix, not the running "..."', () => {
+    const out = stripAnsi(
+      renderSubagentFinalBlock(
+        withTaskPlaceholder,
+        { status: 'cancelled' },
+        'cancelled',
+        undefined,
+        undefined,
+        { display: DEFAULT_DISPLAY }
+      )
+    );
+    const header = out.split('\n')[0]!;
+    expect(header).toContain('✗ cancelled');
+    expect(header).not.toMatch(/subagent\s*\.\.\.$/);
+  });
+
+  // Bug 2: the standalone "task:" key line is always dropped — across the
+  // placeholder/no-placeholder/minimal-preset variants — but the task text
+  // still appears when a stage prompt embeds {task}.
+  test.each([
+    ['prompts on, {task} embedded', withTaskPlaceholder, DEFAULT_DISPLAY, true],
+    ['prompts on, no {task}', noPlaceholder, DEFAULT_DISPLAY, false],
+    [
+      'minimal preset (prompts hidden)',
+      withTaskPlaceholder,
+      DENSITY_DISPLAY.minimal,
+      false,
+    ],
+  ] as const)(
+    'Bug 2: final block omits standalone task: line (%s)',
+    (_name, content, display, taskTextShown) => {
+      const out = stripAnsi(
+        renderSubagentFinalBlock(
+          content,
+          undefined,
+          'running',
+          undefined,
+          undefined,
+          {
+            display,
+          }
+        )
+      );
+      expect(out).not.toMatch(/^\s*task:/m);
+      if (taskTextShown) expect(out).toContain('Investigate the flush bug');
+    }
+  );
+
+  test.each([
+    ['{task} embedded', withTaskPlaceholder, true],
+    ['no {task}', noPlaceholder, false],
+  ] as const)(
+    'Bug 2: approval lines omit standalone task: line (%s)',
+    (_name, content, taskTextShown) => {
+      const lines = formatSubagentApprovalLines(content, 80)!;
+      const out = stripAnsi(lines.join('\n'));
+      expect(out).not.toMatch(/^\s*task:/m);
+      if (taskTextShown) expect(out).toContain('Investigate the flush bug');
+    }
+  );
 });

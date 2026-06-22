@@ -519,9 +519,7 @@ const PREVIEW_FIXTURE_GREP: MessageLike = {
   isFinished: true,
 };
 
-/** Long-output fixture (12 lines) so outputMaxLines=5 is visibly clipped
- *  without needing the dedicated truncation:output fixture. Shell tool, so
- *  it shares the most common filter category. */
+/** Long-output (12-line) shell fixture so outputMaxLines=5 is visibly clipped. */
 const PREVIEW_FIXTURE_LONG_OUTPUT: MessageLike = {
   id: 'preview-long',
   role: 'tool_use',
@@ -597,8 +595,7 @@ const PREVIEW_FIXTURE_WRITE: MessageLike = {
   isFinished: true,
 };
 
-/** Agent-message fixture — demonstrates how reasoning + plain prose render
- *  alongside tool calls. Without it the preview is wall-to-wall tool blocks. */
+/** Agent prose fixture so the preview isn't wall-to-wall tool blocks. */
 const PREVIEW_FIXTURE_AGENT: MessageLike = {
   id: 'preview-agent',
   role: 'model',

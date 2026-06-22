@@ -138,20 +138,15 @@ describe('verbose config', () => {
     expect(cfg.filters).toEqual(['shell', 'mcp']);
   });
 
-  test('filter normalization: ["all"] collapses mixed lists', () => {
-    setVerboseConfig({ filters: ['all', 'shell', 'mcp'] });
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  test('filter normalization: empty list is preserved as off', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    setVerboseConfig({ filters: [] });
-    expect(getVerboseConfig().filters).toEqual([]);
-  });
-
-  test('filter normalization: dedupes and trims', () => {
-    setVerboseConfig({ filters: ['shell', '  shell  ', 'mcp'] });
-    expect(getVerboseConfig().filters).toEqual(['shell', 'mcp']);
+  // Each row applies its filter sets in sequence (last one wins) so the
+  // empty-list case proves a prior non-empty set is cleared, not merged.
+  test.each([
+    ['["all"] collapses mixed lists', [['all', 'shell', 'mcp']], ['all']],
+    ['empty list is preserved as off', [['shell'], []], []],
+    ['dedupes and trims', [['shell', '  shell  ', 'mcp']], ['shell', 'mcp']],
+  ] as const)('filter normalization: %s', (_name, sets, expected) => {
+    for (const filters of sets) setVerboseConfig({ filters: [...filters] });
+    expect(getVerboseConfig().filters).toEqual([...expected]);
   });
 
   test('malformed file falls back to defaults silently', () => {
@@ -257,31 +252,18 @@ describe('shouldShowToolOutput', () => {
 });
 
 describe('categorize', () => {
-  test('mcp__ prefix → mcp', () => {
-    expect(categorize('mcp__nova-memory-mcp__recall')).toBe('mcp');
-  });
-  test('execute_bash → shell', () => {
-    expect(categorize('execute_bash')).toBe('shell');
-  });
-  test('fs_write → null (write deliberately uncategorized; see verbose.ts)', () => {
-    // Write tools render via outputMaxLines / outputMaxChars on the diff
-    // body; their tool result is just a redundant `Successfully ...` line
-    // that duplicates what the diff shows visually. categorize() returning
-    // null means shouldShowToolOutput('fs_write') is false (unless filters
-    // includes 'all' or the literal tool name) — but the call site for
-    // writes already gates renderVerboseOutput on result.status === 'error',
-    // so this is mostly belt-and-suspenders. Errors still surface via the
-    // bypass path inside renderVerboseOutput.
-    expect(categorize('fs_write')).toBeNull();
-  });
-  test('fs_read → read', () => {
-    expect(categorize('fs_read')).toBe('read');
-  });
-  test('subagent → subagent', () => {
-    expect(categorize('subagent')).toBe('subagent');
-  });
-  test('unknown tool → null', () => {
-    expect(categorize('totally_made_up_tool')).toBeNull();
+  // fs_write → null: write is deliberately uncategorized (see verbose.ts) so
+  // shouldShowToolOutput('fs_write') is false; the write call site instead
+  // gates renderVerboseOutput on result.status === 'error'.
+  test.each([
+    ['mcp__nova-memory-mcp__recall', 'mcp'],
+    ['execute_bash', 'shell'],
+    ['fs_write', null],
+    ['fs_read', 'read'],
+    ['subagent', 'subagent'],
+    ['totally_made_up_tool', null],
+  ] as const)('categorize(%p) → %p', (tool, expected) => {
+    expect(categorize(tool)).toBe(expected);
   });
 });
 
@@ -523,32 +505,20 @@ describe('cli.json mirror — write path', () => {
     resetVerboseCache();
   });
 
-  test('display.showThinkingContent mirrors to chat.showThinking', () => {
-    setVerboseConfig({ display: { showThinkingContent: false } });
-    expect(readCliJson()[Settings.CHAT_SHOW_THINKING]).toBe(false);
-  });
-
-  test('display.showTasks mirrors to chat.showTasks', () => {
-    setVerboseConfig({ display: { showTasks: false } });
-    expect(readCliJson()[Settings.CHAT_SHOW_TASKS]).toBe(false);
-  });
-
-  test('display.showToolReasoning mirrors to chat.tools.showReasoning', () => {
-    setVerboseConfig({ display: { showToolReasoning: false } });
-    expect(readCliJson()[Settings.CHAT_TOOLS_SHOW_REASONING]).toBe(false);
-  });
-
-  test('display.showElapsed mirrors to chat.tools.showElapsed', () => {
-    setVerboseConfig({ display: { showElapsed: false } });
-    expect(readCliJson()[Settings.CHAT_TOOLS_SHOW_ELAPSED]).toBe(false);
-  });
-
-  test('display.toolArgsMode mirrors as a string enum', () => {
-    setVerboseConfig({ display: { toolArgsMode: 'inline' } });
-    expect(readCliJson()[Settings.CHAT_TOOLS_ARGS_MODE]).toBe('inline');
-    setVerboseConfig({ display: { toolArgsMode: 'off' } });
-    expect(readCliJson()[Settings.CHAT_TOOLS_ARGS_MODE]).toBe('off');
-  });
+  test.each([
+    ['showThinkingContent', false, Settings.CHAT_SHOW_THINKING, false],
+    ['showTasks', false, Settings.CHAT_SHOW_TASKS, false],
+    ['showToolReasoning', false, Settings.CHAT_TOOLS_SHOW_REASONING, false],
+    ['showElapsed', false, Settings.CHAT_TOOLS_SHOW_ELAPSED, false],
+    ['toolArgsMode', 'inline', Settings.CHAT_TOOLS_ARGS_MODE, 'inline'],
+    ['toolArgsMode', 'off', Settings.CHAT_TOOLS_ARGS_MODE, 'off'],
+  ] as const)(
+    'display.%s=%p mirrors to %s',
+    (prop, value, settingKey, expected) => {
+      setVerboseConfig({ display: { [prop]: value } });
+      expect(readCliJson()[settingKey]).toBe(expected);
+    }
+  );
 
   test('display caps mirror as numbers (positive integers)', () => {
     setVerboseConfig({

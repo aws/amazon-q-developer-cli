@@ -23,6 +23,7 @@ import {
   setVerboseConfig,
   resetVerboseCache,
   DEFAULT_DISPLAY,
+  type VerboseDisplayConfig,
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 
@@ -51,98 +52,119 @@ afterAll(() => {
   }
 });
 
+// Restore the all-flags-on / default-cap display so a suite that mutated the
+// global verbose config doesn't leak into the next file's expectations.
+function restoreFullDefaults() {
+  setVerboseConfig({
+    filters: [],
+    display: {
+      showToolReasoning: true,
+      toolArgsMode: 'block',
+      showElapsed: true,
+      subagent: {
+        pipeline: true,
+        prompts: true,
+        roles: true,
+        deps: true,
+        responses: true,
+      },
+      showThinkingContent: true,
+      showTasks: true,
+      argsMaxLines: null,
+      outputMaxLines: null,
+      argsMaxChars: 80,
+      outputMaxChars: null,
+    },
+  });
+  resetVerboseCache();
+}
+
 describe('renderToolCall', () => {
-  test('running tool shows ellipsis', () => {
-    const result = renderToolCall({ name: 'execute_bash', status: 'running' });
-    expect(result).toContain('execute_bash');
-    expect(result).toContain('...');
-  });
-
-  test('running, non-trivial + runningSpinner override: status shows spinner glyph, no ellipsis', () => {
-    // The lite live region passes a spinner glyph here so the in-flight row
-    // shows motion while every other dimension of the render (args, diff,
-    // reasoning) matches the eventual settled appearance. Locks the contract:
-    // when an override is set on a non-trivial tool, ' ...' is replaced by
-    // the override glyph; when omitted, ' ...' is the default.
-    const result = renderToolCall({
-      name: 'execute_bash',
-      status: 'running',
-      runningSpinner: '⠋',
-    });
+  // STATUS-SLOT CONTRACT: the trailing status glyph reflects the truthful
+  // in-flight state. A threaded runningSpinner replaces ' ...' on non-trivial
+  // tools (so the row shows motion while args/diff/reasoning already match the
+  // settled appearance), but trivial tools (read/grep/glob) ignore it — too
+  // short-lived for a spinner to inform. awaitingApproval always wins over the
+  // spinner with a yellow ' ...' (`\x1b[33m`, matching the approval prompt's
+  // [t] hotkey) since the agent isn't progressing while approval is pending.
+  test.each([
+    [
+      'running shows ellipsis',
+      { name: 'execute_bash', status: 'running' as const },
+      ['execute_bash', '...'],
+      [],
+      [],
+    ],
+    [
+      'running non-trivial + spinner: glyph replaces ellipsis',
+      { name: 'execute_bash', status: 'running' as const, runningSpinner: '⠋' },
+      ['execute_bash', '⠋'],
+      ['...'],
+      [],
+    ],
+    [
+      'running trivial + spinner: keeps ellipsis, ignores glyph',
+      {
+        name: 'fs_read',
+        status: 'running' as const,
+        runningSpinner: '⠋',
+        isTrivial: true,
+      },
+      ['fs_read', '...'],
+      ['⠋'],
+      [],
+    ],
+    [
+      'awaitingApproval non-trivial: yellow ellipsis beats spinner',
+      {
+        name: 'execute_bash',
+        status: 'running' as const,
+        runningSpinner: '⠋',
+        awaitingApproval: true,
+      },
+      ['execute_bash', '...'],
+      ['⠋'],
+      ['\x1b[33m'],
+    ],
+    [
+      'awaitingApproval fires on trivial tools too',
+      {
+        name: 'fs_read',
+        status: 'running' as const,
+        isTrivial: true,
+        awaitingApproval: true,
+      },
+      ['fs_read', '...'],
+      [],
+      ['\x1b[33m'],
+    ],
+    [
+      'done with elapsed shows time',
+      { name: 'fs_write', status: 'done' as const, elapsed: 1500 },
+      ['fs_write', '1.5s'],
+      [],
+      [],
+    ],
+    [
+      'done without elapsed shows nothing extra',
+      { name: 'fs_write', status: 'done' as const },
+      ['fs_write'],
+      [],
+      [],
+    ],
+    [
+      'error shows FAILED',
+      { name: 'shell', status: 'error' as const },
+      ['FAILED'],
+      [],
+      [],
+    ],
+  ])('%s', (_name, input, contains, notContains, rawContains) => {
+    const result = renderToolCall(input);
     const plain = stripAnsi(result);
-    expect(plain).toContain('execute_bash');
-    expect(plain).toContain('⠋');
-    expect(plain).not.toContain('...');
-  });
-
-  test('running, trivial + runningSpinner override: still shows ellipsis', () => {
-    // Trivial tools (read/grep/glob) ignore the spinner override and stick
-    // with ' ...' regardless. They're short-lived enough that a spinner adds
-    // visual noise rather than information.
-    const result = renderToolCall({
-      name: 'fs_read',
-      status: 'running',
-      runningSpinner: '⠋',
-      isTrivial: true,
-    });
-    const plain = stripAnsi(result);
-    expect(plain).toContain('fs_read');
-    expect(plain).toContain('...');
-    expect(plain).not.toContain('⠋');
-  });
-
-  test('awaitingApproval overrides spinner with yellow `...` (non-trivial)', () => {
-    // Locks the truthful "agent isn't progressing while approval is pending"
-    // signal: even though a spinner is threaded through, the awaiting flag
-    // wins. Yellow color matches the approval prompt's [t] hotkey color.
-    const result = renderToolCall({
-      name: 'execute_bash',
-      status: 'running',
-      runningSpinner: '⠋',
-      awaitingApproval: true,
-    });
-    const plain = stripAnsi(result);
-    expect(plain).toContain('execute_bash');
-    expect(plain).toContain('...');
-    expect(plain).not.toContain('⠋');
-    // Yellow SGR pair is what links this row visually to the approval
-    // prompt below the input. chalk.yellow emits `\x1b[33m`.
-    expect(result).toContain('\x1b[33m');
-  });
-
-  test('awaitingApproval also fires on trivial tools', () => {
-    // Read/grep/glob can be denied too — when they are, the row should
-    // still show the yellow waiting signal, not just plain dim ellipsis.
-    const result = renderToolCall({
-      name: 'fs_read',
-      status: 'running',
-      isTrivial: true,
-      awaitingApproval: true,
-    });
-    const plain = stripAnsi(result);
-    expect(plain).toContain('fs_read');
-    expect(plain).toContain('...');
-    expect(result).toContain('\x1b[33m');
-  });
-
-  test('done tool shows elapsed time', () => {
-    const result = renderToolCall({
-      name: 'fs_write',
-      status: 'done',
-      elapsed: 1500,
-    });
-    expect(result).toContain('fs_write');
-    expect(result).toContain('1.5s');
-  });
-
-  test('done tool without elapsed shows nothing extra', () => {
-    const result = renderToolCall({ name: 'fs_write', status: 'done' });
-    expect(result).toContain('fs_write');
-  });
-
-  test('error tool shows FAILED', () => {
-    const result = renderToolCall({ name: 'shell', status: 'error' });
-    expect(result).toContain('FAILED');
+    for (const c of contains) expect(plain).toContain(c);
+    for (const n of notContains) expect(plain).not.toContain(n);
+    for (const r of rawContains) expect(result).toContain(r);
   });
 
   test('shows MCP server source', () => {
@@ -1029,30 +1051,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  afterAll(() => {
-    setVerboseConfig({
-      filters: [],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
-    resetVerboseCache();
-  });
+  afterAll(restoreFullDefaults);
 
   const buildToolMsg = (output: string) => ({
     id: 't-cap-1',
@@ -1063,27 +1062,33 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     result: { status: 'success', output },
   });
 
+  // All cap tests share one fully-populated display baseline (every flag on,
+  // argsMaxChars=80, every other cap unbounded) and patch only the cap(s)
+  // under test, so each row reads as "this cap, this expectation".
+  const BASE_DISPLAY: VerboseDisplayConfig = {
+    showToolReasoning: true,
+    toolArgsMode: 'block',
+    showElapsed: true,
+    subagent: {
+      pipeline: true,
+      prompts: true,
+      roles: true,
+      deps: true,
+      responses: true,
+    },
+    showThinkingContent: true,
+    showWriteDiffs: true,
+    showTasks: true,
+    argsMaxLines: null,
+    outputMaxLines: null,
+    argsMaxChars: 80,
+    outputMaxChars: null,
+  };
+  const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
+    setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
+
   test('outputMaxLines=10 truncates a 30-line output and emits a marker', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 10,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: 10 });
     const lines30 = Array.from({ length: 30 }, (_, i) => `out-${i}`).join('\n');
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(lines30), 'kiro_default')
@@ -1112,26 +1117,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('outputMaxLines=null renders all lines with no marker', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: null });
     const lines = Array.from({ length: 8 }, (_, i) => `out-${i}`).join('\n');
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(lines), 'kiro_default')
@@ -1142,26 +1128,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('outputMaxLines does not fire when source line count fits the cap', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 50,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: 50 });
     const lines = Array.from({ length: 5 }, (_, i) => `out-${i}`).join('\n');
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(lines), 'kiro_default')
@@ -1172,26 +1139,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('cap counts logical (source) lines — long lines no longer multiply against the cap', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 3,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: 3 });
     // `formatBarBlock` hard-wraps long source lines so each visual row
     // carries its own `│ ` prefix (visual alignment beats clipboard
     // fidelity for tool output — readers see a consistent left margin
@@ -1220,26 +1168,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('argsMaxLines=2 caps the block-args tree with a marker', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: 2,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxLines: 2 });
     // Deliberately many top-level keys so block-args produces > 2 visual rows.
     const content = JSON.stringify({
       a: 'one',
@@ -1274,26 +1203,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Block-mode now respects the per-value char cap. Without this the
     // user can set chars-per-value to 1 and watch the args block render
     // identically — confusing because the chip in inline mode honors it.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 10,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxChars: 10 });
     const content = JSON.stringify({
       command: 'this-is-a-pretty-long-shell-command --with --flags',
       path: 'a/very/long/path/to/some/deeply/nested/file.ts',
@@ -1328,26 +1238,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('argsMaxChars=null leaves long string values intact', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: null,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxChars: null });
     const content = JSON.stringify({
       command: 'echo hello-world-from-the-other-side',
     });
@@ -1368,26 +1259,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('argsMaxLines=null leaves the args block untouched', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxLines: null });
     const content = JSON.stringify({ a: 'one', b: 'two', c: 'three' });
     const out = stripAnsi(
       renderMessageToText(
@@ -1417,28 +1289,9 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     //
     // The fix propagates argsMaxLines=null through to perValueLineCap so
     // the multi-line clamp is also lifted — no marker should appear.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        // argsMaxChars=null too so the per-line char cap can't accidentally
-        // truncate a single line and look like the bug.
-        argsMaxChars: null,
-        outputMaxChars: null,
-      },
-    });
+    // argsMaxChars=null too so the per-line char cap can't accidentally
+    // truncate a single line and look like the bug.
+    setDisplay({ argsMaxLines: null, argsMaxChars: null });
     const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
     const content = JSON.stringify({ command: fifty });
     const out = stripAnsi(
@@ -1479,26 +1332,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // 32-line value (cat <<EOF + 30 lines + EOF), the user sees
     // command-head + 4 lines + "(truncated; +27 more lines)" — math
     // checks out: 5 visible, 27 hidden, 32 total.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: 5,
-        outputMaxLines: null,
-        argsMaxChars: null,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxLines: 5, argsMaxChars: null });
     // 32-line value mirrors the user-reported case: cat <<EOF + 30
     // numbered lines + EOF. The exact count matters because the
     // assertion below pins the marker to "+27".
@@ -1543,26 +1377,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Tighter formulation of the rule above. argsMaxLines=10, value with
     // 50 source lines: 10 visible (head + 9 tail rows = 1 + 9 source
     // lines), 40 hidden. Marker reports 40, not 1.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: 10,
-        outputMaxLines: null,
-        argsMaxChars: null,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ argsMaxLines: 10, argsMaxChars: null });
     const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
     const content = JSON.stringify({ command: fifty });
     const out = stripAnsi(
@@ -1603,26 +1418,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // tail-keep applyTailLineCap downstream. A 1MB single line should now
     // render as a clip marker + the last 200K chars wrapped normally,
     // without exhausting heap.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null, // unbounded: prove it doesn't OOM regardless
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: null }); // unbounded: prove it doesn't OOM regardless
     // 1MB single-line payload — same shape as `grep`-matching a minified
     // bundle. Use a printable filler so the visible-width math doesn't add
     // surprise factors on top of the OOM-prevention assertion.
@@ -1657,26 +1453,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // the clip marker. Without this, a future tightening of
     // MAX_INPUT_LINE_CHARS could make legitimate output mysteriously
     // grow a "(line clipped)" marker.
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: null });
     const long = 'y'.repeat(50_000);
     const out = stripAnsi(
       renderMessageToText(buildToolMsg(long), 'kiro_default', {
@@ -1693,26 +1470,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   // Complements the null-cap sibling below by proving the opt-out holds even
   // when a cap IS configured.
   test('outputMaxLines does not cap fs_write create diff (write diffs opt out)', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: 5,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: 5 });
     // 30-line file create with outputMaxLines=5 set: the cap must NOT
     // apply — all 30 added lines render and no truncation marker appears.
     const longContent = Array.from({ length: 30 }, (_, i) => `line-${i}`).join(
@@ -1747,26 +1505,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   });
 
   test('outputMaxLines null leaves write diff uncapped', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ outputMaxLines: null });
     const content = Array.from({ length: 20 }, (_, i) => `line-${i}`).join(
       '\n'
     );
@@ -1861,30 +1600,7 @@ describe('pretty-printed tool output (json envelopes)', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  afterAll(() => {
-    setVerboseConfig({
-      filters: [],
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
-    resetVerboseCache();
-  });
+  afterAll(restoreFullDefaults);
 
   const buildJsonOutputMsg = (output: unknown) => ({
     id: 't-json-1',
@@ -2086,111 +1802,63 @@ describe('display.toolArgsMode rendering', () => {
     result: { status: 'success', output: 'on branch main' },
   });
 
-  test('toolArgsMode "block" renders the full key:value tree (default)', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
-    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    expect(out).toContain('shell');
-    expect(out).toContain('check git state');
-    expect(out).toContain('command: git status');
-    expect(out).toContain('working_dir: /tmp/repo');
-  });
+  const BASE_DISPLAY: VerboseDisplayConfig = {
+    showToolReasoning: true,
+    toolArgsMode: 'block',
+    showElapsed: true,
+    subagent: {
+      pipeline: true,
+      prompts: true,
+      roles: true,
+      deps: true,
+      responses: true,
+    },
+    showThinkingContent: true,
+    showWriteDiffs: true,
+    showTasks: true,
+    argsMaxLines: null,
+    outputMaxLines: null,
+    argsMaxChars: 80,
+    outputMaxChars: null,
+  };
+  const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
+    setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
 
-  test('toolArgsMode "off" hides args entirely; reasoning still shows', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'off',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+  // Each row toggles the args presentation and asserts what the header shows.
+  // 'inline' also flips reasoning off so the chip stands in for the args.
+  test.each([
+    [
+      'block renders the full key:value tree (default)',
+      { toolArgsMode: 'block' as const },
+      [
+        'shell',
+        'check git state',
+        'command: git status',
+        'working_dir: /tmp/repo',
+      ],
+      [],
+    ],
+    [
+      'off hides args entirely; reasoning still shows',
+      { toolArgsMode: 'off' as const },
+      ['shell', 'check git state'],
+      ['command: git status', 'working_dir'],
+    ],
+    [
+      'inline + reasoning off shows tool [arg] chip',
+      { toolArgsMode: 'inline' as const, showToolReasoning: false },
+      ['shell', '[git status]'],
+      ['check git state', 'working_dir: /tmp/repo'],
+    ],
+  ])('toolArgsMode %s', (_name, overrides, contains, absent) => {
+    setDisplay(overrides);
     const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    expect(out).toContain('shell');
-    expect(out).toContain('check git state');
-    expect(out).not.toContain('command: git status');
-    expect(out).not.toContain('working_dir');
-  });
-
-  test('toolArgsMode "inline" + reasoning off shows tool [arg] chip', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: false,
-        toolArgsMode: 'inline',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
-    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    expect(out).toContain('shell');
-    expect(out).toContain('[git status]');
-    expect(out).not.toContain('check git state');
-    expect(out).not.toContain('working_dir: /tmp/repo');
+    for (const c of contains) expect(out).toContain(c);
+    for (const a of absent) expect(out).not.toContain(a);
   });
 
   test('showElapsed false strips the duration tail', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: true,
-        toolArgsMode: 'block',
-        showElapsed: false,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ showElapsed: false });
     const msg = {
       ...buildToolMsg(),
       startTime: 0,
@@ -2203,26 +1871,7 @@ describe('display.toolArgsMode rendering', () => {
   });
 
   test('showToolReasoning false drops the purple "why" segment from the header', () => {
-    setVerboseConfig({
-      display: {
-        showToolReasoning: false,
-        toolArgsMode: 'block',
-        showElapsed: true,
-        subagent: {
-          pipeline: true,
-          prompts: true,
-          roles: true,
-          deps: true,
-          responses: true,
-        },
-        showThinkingContent: true,
-        showTasks: true,
-        argsMaxLines: null,
-        outputMaxLines: null,
-        argsMaxChars: 80,
-        outputMaxChars: null,
-      },
-    });
+    setDisplay({ showToolReasoning: false });
     const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
     expect(out).toContain('shell');
     expect(out).not.toContain('check git state');

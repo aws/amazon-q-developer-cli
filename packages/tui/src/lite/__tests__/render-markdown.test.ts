@@ -199,69 +199,29 @@ describe('renderAgentMessage', () => {
       return state;
     }
 
-    test('long markdown link wrap does not leak underline/color', () => {
-      // 30-col layout forces wrap between the link label and its `(url)`
-      // trailer. That space cell carries `[39m[24m[2m` — three closers in
-      // a row, all of which the bug used to drop.
-      const out = renderAgentMessage(
+    // Each row picks a 30-col width that forces wrap exactly at the
+    // closer-bearing space, then asserts the named attributes are OFF at the
+    // tail. The list-item link case covers the renderListItem→inline path so
+    // a future fix of the paragraph path can't silently regress it.
+    test.each([
+      [
+        'long markdown link',
         'see [click here](https://example.com/path)',
-        'Kiro',
-        undefined,
-        30
-      );
-      const state = ansiStateAtEnd(out);
-      expect(state.underline).toBe(false);
-      expect(state.color).toBe(false);
-    });
-
-    test('bold span wrap does not leak bold', () => {
-      // Padding length tuned so the body width runs out exactly at the
-      // space after `**bold**`. That space carries `\x1b[22m`.
-      const out = renderAgentMessage(
-        'xxxxxxxxxxxxxx **bold** more text',
-        'Kiro',
-        undefined,
-        30
-      );
-      expect(ansiStateAtEnd(out).bold).toBe(false);
-    });
-
-    test('italic span wrap does not leak italic', () => {
-      const out = renderAgentMessage(
-        'xxxxxxxxxxxx *italic* more text',
-        'Kiro',
-        undefined,
-        30
-      );
-      expect(ansiStateAtEnd(out).italic).toBe(false);
-    });
-
-    test('inline code span wrap does not leak color', () => {
-      // `` `code` `` renders via `chalk.cyan(...)` — opener `[36m`, closer
-      // `[39m`. The closer attaches to the space after the closing backtick.
-      const out = renderAgentMessage(
-        'xxxxxxxxxxxxxx `code` more text',
-        'Kiro',
-        undefined,
-        30
-      );
-      expect(ansiStateAtEnd(out).color).toBe(false);
-    });
-
-    test('list item with link wrap does not leak underline/color', () => {
-      // The link path goes through `renderListItem` → `renderInlineMarkdown`
-      // → `renderInlineSegment` (link branch with `chalk.underline.cyan`).
-      // Same wrap mechanism, different block context — pin both code
-      // paths so a future "fix" of one doesn't quietly regress the other.
-      const out = renderAgentMessage(
+        ['underline', 'color'],
+      ],
+      ['bold span', 'xxxxxxxxxxxxxx **bold** more text', ['bold']],
+      ['italic span', 'xxxxxxxxxxxx *italic* more text', ['italic']],
+      ['inline code span', 'xxxxxxxxxxxxxx `code` more text', ['color']],
+      [
+        'list item with link',
         '- see [click here](https://example.com/path)',
-        'Kiro',
-        undefined,
-        30
+        ['underline', 'color'],
+      ],
+    ] as const)('%s wrap does not leak %j', (_name, input, cleared) => {
+      const state = ansiStateAtEnd(
+        renderAgentMessage(input, 'Kiro', undefined, 30)
       );
-      const state = ansiStateAtEnd(out);
-      expect(state.underline).toBe(false);
-      expect(state.color).toBe(false);
+      for (const attr of cleared) expect(state[attr]).toBe(false);
     });
   });
 
@@ -352,44 +312,43 @@ describe('renderAgentMessage', () => {
       return /\x1b\[3m/.test(s);
     }
 
-    test('unclosed bold renders as literal text without applying bold', () => {
-      // Mid-stream: the closing `**` hasn't arrived yet. The marker must
-      // not flip bold on for the remainder of the buffer; the user sees
-      // `**partial` verbatim until the close streams in.
-      const out = renderAgentMessage('**partial bold');
-      expect(stripAnsi(out)).toContain('**partial bold');
-      // Bold SGR may still appear from the role tag's `chalk.bold` — we
-      // only care that it's NOT present on the body slice.
-      const body = out.slice(out.indexOf('**partial bold'));
-      expect(ansiHasBold(body)).toBe(false);
-    });
-
-    test('unclosed underscore italic renders as literal text', () => {
-      const out = renderAgentMessage('_partial italic');
-      expect(stripAnsi(out)).toContain('_partial italic');
-      const body = out.slice(out.indexOf('_partial italic'));
-      expect(ansiHasItalic(body)).toBe(false);
-    });
-
-    test('unclosed inline code renders the backtick as literal', () => {
-      const out = renderAgentMessage('a `partial code');
-      expect(stripAnsi(out)).toContain('`partial code');
-    });
-
-    test('unclosed link renders as literal text', () => {
-      // Both the bracket-only and the bracket-plus-paren variants are
-      // common mid-stream snapshots of `[label](https://…)`. Either
-      // shape must round-trip as literal text — no underline, no link.
-      const a = renderAgentMessage('see [link without close');
-      expect(stripAnsi(a)).toContain('[link without close');
-      const b = renderAgentMessage('see [partial](http');
-      expect(stripAnsi(b)).toContain('[partial](http');
-    });
-
-    test('unclosed strikethrough renders as literal text', () => {
-      const out = renderAgentMessage('~~partial strike');
-      expect(stripAnsi(out)).toContain('~~partial strike');
-    });
+    // Mid-stream: the closing marker hasn't arrived. Each unclosed marker must
+    // render verbatim (no style flipped on for the rest of the buffer) until
+    // the close streams in. `noStyle` is checked on the body slice only —
+    // bold/italic SGR may still come from the role tag's chalk.bold.
+    test.each([
+      ['bold', '**partial bold', '**partial bold', ansiHasBold],
+      [
+        'underscore italic',
+        '_partial italic',
+        '_partial italic',
+        ansiHasItalic,
+      ],
+      ['inline code', 'a `partial code', '`partial code', undefined],
+      [
+        'link (bracket only)',
+        'see [link without close',
+        '[link without close',
+        undefined,
+      ],
+      [
+        'link (bracket+paren)',
+        'see [partial](http',
+        '[partial](http',
+        undefined,
+      ],
+      ['strikethrough', '~~partial strike', '~~partial strike', undefined],
+    ] as const)(
+      'unclosed %s renders as literal text',
+      (_name, input, literal, hasStyle) => {
+        const out = renderAgentMessage(input);
+        expect(stripAnsi(out)).toContain(literal);
+        if (hasStyle) {
+          const body = out.slice(out.indexOf(literal));
+          expect(hasStyle(body)).toBe(false);
+        }
+      }
+    );
 
     test('mixed closed + unclosed: only the closed span styles', () => {
       // Realistic mid-stream payload — one fully-formed bold span
@@ -469,101 +428,108 @@ describe('renderAgentMessage', () => {
 // and bare paragraphs were unaffected because they go through different
 // renderer paths that already invoke `parseInlineMarkdown`.
 describe('inline markdown inside block elements', () => {
-  test('list item: **bold** renders as bold without ** markers', () => {
-    const out = renderAgentMessage('- **bold** text');
-    expect(out).toContain('\x1b[1m'); // ANSI bold
-    expect(stripAnsi(out)).toContain('- bold text');
-    expect(stripAnsi(out)).not.toContain('**');
-  });
+  // contains: stripped substrings that must appear; absent: stripped
+  // substrings that must NOT (markers stripped); ansi: raw SGR codes the
+  // styled span must emit. `\x1b[1m`=bold, `[3m`=italic, `[4m`=underline,
+  // `[36m`=cyan code span.
+  test.each([
+    [
+      'list item: bold',
+      '- **bold** text',
+      ['- bold text'],
+      ['**'],
+      ['\x1b[1m'],
+    ],
+    [
+      'list item: code',
+      '- the `frobnicate` function',
+      ['- the frobnicate function'],
+      ['`'],
+      ['\x1b[36m'],
+    ],
+    [
+      'list item: bold + code combined',
+      '- **Setting**: use the `--flag` argument',
+      ['- Setting: use the --flag argument'],
+      ['**', '`'],
+      ['\x1b[1m', '\x1b[36m'],
+    ],
+    [
+      'list item: italic',
+      '- this is *important* stuff',
+      ['- this is important stuff'],
+      [],
+      ['\x1b[3m'],
+    ],
+    [
+      'list item: link',
+      '- see [docs](https://example.com)',
+      ['docs', 'https://example.com'],
+      [],
+      ['\x1b[4m'],
+    ],
+    [
+      'ordered list: bold + code',
+      '1. first **important** step\n2. second `command` step',
+      ['1. first important step', '2. second command step'],
+      ['**', '`'],
+      [],
+    ],
+    [
+      'nested list: bold + code at every indent',
+      '- top **bold**\n  - nested `code`',
+      ['- top bold', '- nested code'],
+      ['**', '`'],
+      [],
+    ],
+    ['header: code', '# About `foo`', ['About foo'], ['`'], []],
+    [
+      'header: bold',
+      '## The **important** part',
+      ['The important part'],
+      ['**'],
+      [],
+    ],
+    [
+      'bold heading: code',
+      '**Title with `code`**',
+      ['Title with code'],
+      ['`'],
+      [],
+    ],
+    [
+      'blockquote: code',
+      '> see the `--help` flag',
+      ['│', 'see the --help flag'],
+      ['`'],
+      [],
+    ],
+    [
+      'blockquote: bold',
+      '> this is **important**',
+      ['│', 'this is important'],
+      ['**'],
+      [],
+    ],
+  ] as const)(
+    '%s renders styled without markers',
+    (_n, input, contains, absent, ansi) => {
+      const out = renderAgentMessage(input);
+      const stripped = stripAnsi(out);
+      for (const c of contains) expect(stripped).toContain(c);
+      for (const a of absent) expect(stripped).not.toContain(a);
+      for (const code of ansi) expect(out).toContain(code);
+    }
+  );
 
-  test('list item: `code` renders as cyan without backticks', () => {
-    const out = renderAgentMessage('- the `frobnicate` function');
-    expect(out).toContain('\x1b[36m'); // ANSI cyan (code span color)
-    expect(stripAnsi(out)).toContain('- the frobnicate function');
-    expect(stripAnsi(out)).not.toContain('`');
-  });
-
-  test('list item: bold + code combined both render', () => {
-    const out = renderAgentMessage('- **Setting**: use the `--flag` argument');
-    const stripped = stripAnsi(out);
-    expect(out).toContain('\x1b[1m'); // bold
-    expect(out).toContain('\x1b[36m'); // cyan
-    expect(stripped).toContain('- Setting: use the --flag argument');
-    expect(stripped).not.toContain('**');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('list item: italic renders without * markers', () => {
+  test('list item: italic strips lone * markers', () => {
     const out = renderAgentMessage('- this is *important* stuff');
-    expect(out).toContain('\x1b[3m'); // italic
-    expect(stripAnsi(out)).toContain('- this is important stuff');
-    expect(stripAnsi(out)).not.toMatch(/(?<!\*)\*(?!\*)/); // no lone *
+    expect(stripAnsi(out)).not.toMatch(/(?<!\*)\*(?!\*)/);
   });
 
-  test('list item: link renders with underline + url trailer', () => {
+  test('list item: link strips the [label](url) marker shape', () => {
     const out = renderAgentMessage('- see [docs](https://example.com)');
-    const stripped = stripAnsi(out);
-    expect(out).toContain('\x1b[4m'); // underline
-    expect(stripped).toContain('docs');
-    expect(stripped).toContain('https://example.com');
-    expect(stripped).not.toMatch(/\[docs\]\(/);
-  });
-
-  test('ordered list: inline markdown renders inside numbered items', () => {
-    const out = renderAgentMessage(
-      '1. first **important** step\n2. second `command` step'
-    );
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('1. first important step');
-    expect(stripped).toContain('2. second command step');
-    expect(stripped).not.toContain('**');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('nested list: inline markdown renders at every indent level', () => {
-    const out = renderAgentMessage('- top **bold**\n  - nested `code`');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('- top bold');
-    expect(stripped).toContain('- nested code');
-    expect(stripped).not.toContain('**');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('header: inline `code` renders without backticks', () => {
-    const out = renderAgentMessage('# About `foo`');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('About foo');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('header: inline bold renders without ** markers', () => {
-    const out = renderAgentMessage('## The **important** part');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('The important part');
-    expect(stripped).not.toContain('**');
-  });
-
-  test('bold heading: inline `code` renders without backticks', () => {
-    const out = renderAgentMessage('**Title with `code`**');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('Title with code');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('blockquote: inline `code` renders without backticks', () => {
-    const out = renderAgentMessage('> see the `--help` flag');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('│');
-    expect(stripped).toContain('see the --help flag');
-    expect(stripped).not.toContain('`');
-  });
-
-  test('blockquote: inline bold renders without ** markers', () => {
-    const out = renderAgentMessage('> this is **important**');
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('│');
-    expect(stripped).toContain('this is important');
-    expect(stripped).not.toContain('**');
+    expect(stripAnsi(out)).not.toMatch(/\[docs\]\(/);
   });
 
   // The user-reported bug shape: a bulleted list mixing **bold** keys with

@@ -13,8 +13,8 @@ export function resolveLanguageFromPathLite(path?: string): string | undefined {
 export function highlightLineSafe(code: string, language?: string): string {
   if (!code || !language || language === 'plaintext') return code;
   try {
-    // cli-highlight occasionally writes warnings to console.error for
-    // tokenizer hiccups; silence them to avoid corrupting the TTY.
+    // Silence cli-highlight's tokenizer warnings — they write to console.error
+    // and would corrupt the TTY.
     const orig = console.error;
     console.error = () => {};
     try {
@@ -29,16 +29,12 @@ export function highlightLineSafe(code: string, language?: string): string {
 
 /**
  * Tail-clip a string at `maxChars` of visible width (ignoring ANSI escapes
- * and double-width chars), appending `…`. Used by the output bar's per-row
- * char cap. Naive char-count would mistruncate in the middle of an ANSI
- * sequence and corrupt downstream rendering; visibleWidth is the same
- * helper formatBarBlock uses to wrap.
+ * and double-width chars), appending `…`. ANSI-aware: a naive char-count would
+ * cut mid-escape-sequence and corrupt downstream rendering.
  */
 export function clipVisibleWidth(s: string, maxChars: number): string {
   if (visibleWidth(s) <= maxChars) return s;
-  // Walk the string, accumulating chars until we hit the cap. Strip ANSI
-  // along the way using the same regex visibleWidth uses internally — we
-  // re-apply a single chalk.reset at the end so the next row starts clean
+  // Re-apply a single chalk.reset at the end so the next row starts clean
   // even if we cut mid-styled-segment.
   // eslint-disable-next-line no-control-regex
   const ansiRe = /\x1b\[[0-9;]*m/g;
@@ -73,13 +69,8 @@ export function stripAnsiQuick(s: string): string {
 }
 
 /**
- * Visible-width-aware soft wrap for already-styled content. Splits on
- * spaces when possible; falls back to a hard cut on long unbreakable runs
- * (URLs, hashes). ANSI escapes are zero-width and survive wrapping —
- * chalk's bold/italic/color sequences pass through untouched.
- *
- * Width 0 disables wrapping (one-line passthrough). Used by the markdown
- * renderer's tests so output is deterministic across terminal sizes.
+ * Visible-width-aware soft wrap for already-styled content. Width 0 disables
+ * wrapping (one-line passthrough).
  */
 export function wrapStyled(
   s: string,
@@ -102,16 +93,10 @@ export function wrapStyled(
 }
 
 /**
- * Soft-wrap a single (newline-free) ANSI-styled line. Preserves ANSI
- * escapes (zero-width) and falls back to a hard cut on words that exceed
- * the column. Returns at least one row even when input is empty so block
- * separators stay correctly sized.
- *
- * Exported for reuse by `lite/diff.ts` — the diff renderer wraps already-
- * highlighted source so wrapped continuation rows inherit the SGR state
- * that was active mid-token at the wrap boundary (otherwise the bg tint
- * and syntax-highlight color would reset to default at every continuation
- * row's hanging indent).
+ * Soft-wrap a single (newline-free) ANSI-styled line. Preserves ANSI escapes
+ * (zero-width) and hard-cuts overlong words. Returns at least one row even when
+ * input is empty. Exported for `lite/diff.ts`, which relies on the SGR
+ * carryover below so highlighted continuation rows keep their bg/color.
  */
 export function wrapAnsiLine(
   line: string,
@@ -294,19 +279,15 @@ export function wrapAnsiLine(
   return out;
 }
 
-/** Tail-clip a plain string at `max` characters, appending `…`. Identical
- *  semantics to truncateInline but used for block-mode value clipping where
- *  ANSI handling isn't needed (raw values come straight off the parsed JSON
- *  before any styling is applied). */
+/** Tail-clip a plain (un-styled) string at `max` characters, appending `…`. */
 export function clipChars(s: string, max: number | null): string {
   if (max == null || max <= 0) return s;
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
 /**
- * Soft-wrap `value` after a leading `keyPrefix` so the first line is
- * `<dim>keyPrefix</dim>value...` and continuation lines are padded to
- * `continuationCols` visible columns. Wraps at word boundaries when possible.
+ * Soft-wrap `value` after a leading dim `keyPrefix`; continuation lines are
+ * padded to `continuationCols` columns.
  */
 export function wrapKeyedLine(
   keyPrefix: string,

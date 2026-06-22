@@ -314,141 +314,80 @@ describe('renderMessageToText (tool_use)', () => {
     expect(pathRows).toHaveLength(1);
   });
 
-  // Streaming write-tool guard. While the agent is still emitting the tool
-  // call, the JSON can land with `command: 'create'` set but `path` and
-  // `content` not yet streamed in. Combined with no `__tool_use_purpose`,
-  // the prior render template interpolated `undefined` and surfaced
-  // `undefined (0 lines)` next to the tool name — implying the agent had
-  // already decided on a 0-line file at no path. Suppress the summary
-  // entirely until we have a real label; the bare tool-call line + spinner
-  // is the correct "loading" appearance.
-  test('streaming fs_write with no path / purpose: no "undefined (0 lines)"', () => {
-    const content = JSON.stringify({ command: 'create' });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-stream-create',
-          role: 'tool_use',
-          name: 'fs_write',
-          content,
-          isFinished: false,
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).not.toContain('undefined');
-    expect(out).not.toContain('(0 lines)');
-    // The bare tool-call line still renders so the user sees the tool is
-    // in flight.
-    expect(out).toContain('fs_write');
-  });
+  // Streaming write-tool guard. Mid-stream the JSON can land with `command`
+  // set but `path`/`content` not yet arrived and no `__tool_use_purpose` — the
+  // prior template interpolated `undefined`/`(0 lines)` next to the tool name.
+  // Suppress the summary until there's a real label; the bare tool-call line is
+  // the correct "loading" appearance. (Header summary removed in 7bc885a9a.)
+  test.each([
+    ['no path/purpose, create', { command: 'create' }, ['(0 lines)']],
+    ['no path/purpose, insert', { command: 'insert' }, ['+0 lines']],
+    ['path but no content', { command: 'create', path: 'src/foo.ts' }, []],
+  ])(
+    'streaming fs_write (%s): no undefined / line-count noise',
+    (_name, args, extraAbsent) => {
+      const out = stripAnsi(
+        renderMessageToText(
+          {
+            id: `t-stream-${_name}`,
+            role: 'tool_use',
+            name: 'fs_write',
+            content: JSON.stringify(args),
+            isFinished: false,
+          },
+          'kiro_default'
+        )
+      );
+      expect(out).not.toContain('undefined');
+      for (const a of extraAbsent) expect(out).not.toContain(a);
+      expect(out).toContain('fs_write');
+    }
+  );
 
-  test('streaming fs_write insert with no path / purpose: no "undefined +0 lines"', () => {
-    const content = JSON.stringify({ command: 'insert' });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-stream-insert',
-          role: 'tool_use',
-          name: 'fs_write',
-          content,
-          isFinished: false,
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).not.toContain('undefined');
-    expect(out).not.toContain('+0 lines');
-    expect(out).toContain('fs_write');
-  });
-
-  // Streaming write with a path but no content yet: the synthesized
-  // "{path} (N lines)" header summary was removed (7bc885a9a), so this
-  // transient state renders a bare `fs_write` header — the point of the
-  // test is that there's no `undefined` / `(0 lines)` noise in it.
-  test('streaming fs_write with path but no content: renders a clean header', () => {
-    const content = JSON.stringify({
-      command: 'create',
-      path: 'src/foo.ts',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-stream-path',
-          role: 'tool_use',
-          name: 'fs_write',
-          content,
-          isFinished: false,
-        },
-        'kiro_default'
-      )
-    );
-    expect(out).not.toContain('undefined');
-    expect(out).toContain('fs_write');
-  });
-
-  // Denied write tools must STILL render as a diff (with line numbers, +/-
-  // gutter) — same shape the user just saw on the approval prompt. Falling
-  // back to the generic args tree (`command:`, `path:`, `content:` rows)
-  // for the post-deny scrollback row is jarring and reads worse than the
-  // diff form, especially for multi-hundred-line content blobs that turn
-  // into a wall of indented `# line 1\n# line 2\n...` rows. The DENIED
-  // status surfaces in the header line via info.rejected.
-  test('denied fs_write create renders as a diff, not a raw args tree', () => {
-    const content = JSON.stringify({
-      command: 'create',
-      path: 'src/foo.ts',
-      content: 'hello\nworld',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-denied-create',
-          role: 'tool_use',
-          name: 'fs_write',
-          content,
-          isFinished: true,
-          status: 'rejected',
-        } as any,
-        'kiro_default'
-      )
-    );
-    // Header carries DENIED.
-    expect(out).toContain('DENIED');
-    // Diff body present — line-numbered additions for the new file.
-    expect(out).toMatch(/1 \+\s+hello/);
-    expect(out).toMatch(/2 \+\s+world/);
-    // Must NOT fall back to the raw args tree printer.
-    expect(out).not.toMatch(/^\s*command:\s*create/m);
-    expect(out).not.toMatch(/^\s*content:\s*hello/m);
-  });
-
-  test('denied fs_write strReplace renders as a diff with -/+ gutter', () => {
-    const content = JSON.stringify({
-      command: 'strReplace',
-      path: 'src/bar.ts',
-      oldStr: 'old line',
-      newStr: 'new line',
-    });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-denied-edit',
-          role: 'tool_use',
-          name: 'fs_write',
-          content,
-          isFinished: true,
-          status: 'rejected',
-        } as any,
-        'kiro_default'
-      )
-    );
-    expect(out).toContain('DENIED');
-    expect(out).toMatch(/-\s*old line/);
-    expect(out).toMatch(/\+\s*new line/);
-    expect(out).not.toMatch(/^\s*oldStr:\s*old line/m);
-    expect(out).not.toMatch(/^\s*newStr:\s*new line/m);
-  });
+  // Denied write tools must STILL render as a diff (line numbers, +/- gutter) —
+  // the same shape shown on the approval prompt — not the generic args tree,
+  // which reads worse (a wall of indented `content:` rows for big blobs). The
+  // DENIED status surfaces in the header. `present`/`absent` are matched as
+  // regexes; absent guards against the args-tree fallback re-appearing.
+  test.each([
+    [
+      'create',
+      { command: 'create', path: 'src/foo.ts', content: 'hello\nworld' },
+      [/1 \+\s+hello/, /2 \+\s+world/],
+      [/^\s*command:\s*create/m, /^\s*content:\s*hello/m],
+    ],
+    [
+      'strReplace',
+      {
+        command: 'strReplace',
+        path: 'src/bar.ts',
+        oldStr: 'old line',
+        newStr: 'new line',
+      },
+      [/-\s*old line/, /\+\s*new line/],
+      [/^\s*oldStr:\s*old line/m, /^\s*newStr:\s*new line/m],
+    ],
+  ])(
+    'denied fs_write %s renders as a diff, not a raw args tree',
+    (_name, args, present, absent) => {
+      const out = stripAnsi(
+        renderMessageToText(
+          {
+            id: `t-denied-${_name}`,
+            role: 'tool_use',
+            name: 'fs_write',
+            content: JSON.stringify(args),
+            isFinished: true,
+            status: 'rejected',
+          } as any,
+          'kiro_default'
+        )
+      );
+      expect(out).toContain('DENIED');
+      for (const p of present) expect(out).toMatch(p);
+      for (const a of absent) expect(out).not.toMatch(a);
+    }
+  );
 });
 
 describe('renderMessageToText for task tools', () => {

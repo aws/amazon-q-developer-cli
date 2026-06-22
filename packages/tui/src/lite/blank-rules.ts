@@ -1,10 +1,4 @@
-/**
- * Single source of truth for "should there be a blank line between two
- * adjacent rows in lite mode?". Role-keyed (no message body) so both the
- * layout and render sides can use it; each call site maps its own shape to a
- * role. Compact within a turn (tool↔tool, model↔model); blank around user and
- * system rows and across model↔tool boundaries.
- */
+/** Blank-line rule between adjacent lite rows, role-keyed. */
 export type BlankRuleRole = 'user' | 'model' | 'tool_use' | 'system';
 
 export function needsLeadingBlankByRole(
