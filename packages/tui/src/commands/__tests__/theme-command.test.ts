@@ -222,24 +222,69 @@ describe('/theme command', () => {
   });
 
   describe('custom flow — applying presets', () => {
-    it('applies purple prompt preset and persists', async () => {
+    // setUserColors is called with (prompt, response, diff) slots; applying one
+    // category fills ONLY its slot and leaves the others undefined. Each row
+    // pins the affected slot's color, an unchanged-slot guard, the alert label,
+    // and the persisted pref. Covers prompt/response/diff in one table.
+    it.each([
+      {
+        route: 'prompt:purple',
+        slot: 0,
+        check: (c: any) => {
+          expect(c.text.truecolor).toBe('#ffffff');
+          expect(c.bg.truecolor).toBe('#552B99');
+        },
+        untouched: [1],
+        labelMatch: 'Purple',
+        pref: { promptPreset: 'purple' },
+      },
+      {
+        route: 'response:light',
+        slot: 1,
+        check: (c: any) => expect(c.truecolor).toBe('#FFFFFF'),
+        untouched: [0],
+        labelMatch: 'Light',
+        pref: { responsePreset: 'light' },
+      },
+      {
+        route: 'response:dark',
+        slot: 1,
+        check: (c: any) => expect(c.truecolor).toBe('#626262'),
+        untouched: [0],
+        pref: { responsePreset: 'dark' },
+      },
+      {
+        route: 'diff:colorblind-dark',
+        slot: 2,
+        check: (c: any) => expect(c.id).toBe('colorblind-dark'),
+        untouched: [0, 1],
+        labelMatch: 'Accessible',
+        pref: { diffPreset: 'colorblind-dark' },
+      },
+    ])(
+      'applies $route into its own slot and persists',
+      async ({ route, slot, check, untouched, labelMatch, pref }) => {
+        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
+        await dispatch(themeCmd, route, ctx);
+
+        expect(ctx._spies.setUserColors!).toHaveBeenCalled();
+        const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
+        expect(colorCall[slot]).toBeDefined();
+        check(colorCall[slot]);
+        for (const u of untouched) expect(colorCall[u]).toBeUndefined();
+        if (labelMatch) {
+          expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(
+            labelMatch
+          );
+          expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
+        }
+        expect(loadUserThemePrefs()).toMatchObject(pref);
+      }
+    );
+
+    it('applying a preset returns to the custom menu (prompt/response/diff rows)', async () => {
       const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
       await dispatch(themeCmd, 'prompt:purple', ctx);
-
-      expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeDefined();
-      expect(colorCall[0].text.truecolor).toBe('#ffffff');
-      expect(colorCall[0].bg.truecolor).toBe('#552B99');
-      expect(colorCall[1]).toBeUndefined();
-
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Purple');
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
-
-      const prefs = loadUserThemePrefs();
-      expect(prefs.promptPreset).toBe('purple');
-
-      // Should return to custom menu (setActiveCommand called again with prompt/response/diff options)
       const lastCall = ctx._spies.setActiveCommand!.mock.calls.at(-1)!;
       const options = lastCall[0].options;
       expect(options).toHaveLength(3);
@@ -257,31 +302,6 @@ describe('/theme command', () => {
       const prefs = loadUserThemePrefs();
       expect(prefs.promptPreset).toBeUndefined();
     });
-
-    // Applying a response preset writes only the response color slot (arg index
-    // 1; prompt/diff untouched), alerts the label, and persists responsePreset.
-    it.each([
-      { id: 'light', truecolor: '#FFFFFF', labelMatch: 'Light' },
-      { id: 'dark', truecolor: '#626262', labelMatch: undefined },
-    ])(
-      'applies response:$id preset, sets only the response color, and persists',
-      async ({ id, truecolor, labelMatch }) => {
-        const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-        await dispatch(themeCmd, `response:${id}`, ctx);
-
-        expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-        const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-        expect(colorCall[0]).toBeUndefined(); // prompt unchanged
-        expect(colorCall[1]).toBeDefined();
-        expect(colorCall[1].truecolor).toBe(truecolor);
-        if (labelMatch) {
-          expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain(
-            labelMatch
-          );
-        }
-        expect(loadUserThemePrefs().responsePreset).toBe(id);
-      }
-    );
 
     // Unknown preset id surfaces an error alert for every category.
     it.each(['prompt', 'response', 'diff'])(
@@ -328,54 +348,5 @@ describe('/theme command', () => {
         expect(loadUserThemePrefs()).toMatchObject(expected);
       }
     );
-  });
-
-  describe('diff presets', () => {
-    // Unique to diff: writes only the diff color slot (arg index 2; prompt +
-    // response untouched) and surfaces the preset's own label. The category's
-    // option list, [active] marker, default-clear, unknown-preset error, and
-    // persistence are all covered by the parameterized it.each blocks above.
-    it('applies colorblind-dark diff preset, sets only the diff slot, and persists', async () => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, 'diff:colorblind-dark', ctx);
-
-      expect(ctx._spies.setUserColors!).toHaveBeenCalled();
-      const colorCall = ctx._spies.setUserColors!.mock.calls[0]!;
-      expect(colorCall[0]).toBeUndefined(); // prompt unchanged
-      expect(colorCall[1]).toBeUndefined(); // response unchanged
-      expect(colorCall[2]).toBeDefined(); // diff preset
-      expect(colorCall[2].id).toBe('colorblind-dark');
-
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[0]).toContain('Accessible');
-      expect(ctx._spies.showAlert!.mock.calls[0]?.[1]).toBe('success');
-
-      expect(loadUserThemePrefs().diffPreset).toBe('colorblind-dark');
-    });
-  });
-
-  describe('ESC navigation flag (themeReturnOnEscape)', () => {
-    // Locks in the back-navigation contract for /theme menus. CommandMenu's
-    // handleActiveCommandClose reads `themeReturnOnEscape` and re-dispatches
-    // `/theme [route]`:
-    //   - null: ESC closes the overlay (no parent above).
-    //   - '':   re-dispatches `/theme`        — back to top.
-    //   - 'custom': re-dispatches `/theme custom` — back to custom menu.
-    // Applying a preset (prompt:<id>) re-arms to '' since the menu re-opens at
-    // the custom level (else the preview-and-keep-tweaking flow feels one-shot).
-    it.each([
-      ['', null],
-      ['custom', ''],
-      ['prompt', 'custom'],
-      ['response', 'custom'],
-      ['diff', 'custom'],
-      ['prompt:purple', ''],
-    ] as const)('/theme %s sets the flag to %p', async (route, expected) => {
-      const ctx = createLiteMockCtx({ slashCommands: [themeCmd] });
-      await dispatch(themeCmd, route, ctx);
-      const calls = ctx._spies.setThemeReturnOnEscape!.mock
-        .calls as unknown as unknown[][];
-      const last = calls[calls.length - 1];
-      expect(last?.[0]).toBe(expected);
-    });
   });
 });

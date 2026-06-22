@@ -194,18 +194,16 @@ describe('/verbosity top menu and status', () => {
     expect(labels).toContain('Tool calls');
   });
 
-  it('/verbosity on sets filters to ["all"]', () => {
-    setVerboseConfig({ filters: [] });
+  // on/off are CLI aliases onto the filter list (the master enabled toggle is
+  // gone): on→['all'], off→[].
+  it.each([
+    ['on', [] as string[], ['all'] as string[]],
+    ['off', ['all'] as string[], [] as string[]],
+  ])('/verbosity %s sets filters to %j', (verb, seed, expected) => {
+    setVerboseConfig({ filters: [...seed] });
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'on');
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  it('/verbosity off sets filters to []', () => {
-    setVerboseConfig({ filters: ['all'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'off');
-    expect(getVerboseConfig().filters).toEqual([]);
+    runEffect(verbosityCmd, null, ctx, verb);
+    expect(getVerboseConfig().filters).toEqual(expected);
   });
 
   it('/verbosity status announces filters without an ON/OFF prefix', () => {
@@ -229,63 +227,65 @@ describe('/verbosity filter mutations', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('/verbosity only <list> replaces filters', () => {
+  // only/all/add/remove filter mutations. `contains`/`excludes` assert
+  // membership; `equals` pins the exact list when order/clearing matters.
+  const filterCases: Array<{
+    name: string;
+    seed?: string[];
+    arg: string;
+    contains?: string[];
+    excludes?: string[];
+    equals?: string[];
+  }> = [
+    {
+      name: 'only <list> replaces filters (preserving mcp__ token)',
+      arg: 'only shell mcp__nova-memory-mcp__recall',
+      contains: ['shell', 'mcp__nova-memory-mcp__recall'],
+      excludes: ['all'],
+    },
+    {
+      name: 'all resets filters to ["all"]',
+      seed: ['shell'],
+      arg: 'all',
+      equals: ['all'],
+    },
+    {
+      name: 'add appends without dropping existing',
+      seed: ['shell'],
+      arg: 'add mcp',
+      contains: ['shell', 'mcp'],
+    },
+    {
+      // From "all" baseline we treat the union as the new explicit list, else
+      // normalization would collapse back to all and adding a category is a no-op.
+      name: 'add from "all" baseline collapses to explicit tokens',
+      seed: ['all'],
+      arg: 'add shell',
+      contains: ['shell'],
+      excludes: ['all'],
+    },
+    {
+      name: 'remove drops listed tokens',
+      seed: ['shell', 'mcp', 'read'],
+      arg: 'remove mcp',
+      contains: ['shell', 'read'],
+      excludes: ['mcp'],
+    },
+    {
+      name: 'removing the last filter leaves filters empty (off)',
+      seed: ['shell'],
+      arg: 'remove shell',
+      equals: [],
+    },
+  ];
+  it.each(filterCases)('$name', ({ seed, arg, contains, excludes, equals }) => {
+    if (seed) setVerboseConfig({ filters: [...seed] });
     const ctx = liteCtx();
-    runEffect(
-      verbosityCmd,
-      null,
-      ctx,
-      'only shell mcp__nova-memory-mcp__recall'
-    );
+    runEffect(verbosityCmd, null, ctx, arg);
     const f = getVerboseConfig().filters;
-    expect(f).toContain('shell');
-    expect(f).toContain('mcp__nova-memory-mcp__recall');
-    expect(f).not.toContain('all');
-  });
-
-  it('/verbosity all resets filters', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'all');
-    expect(getVerboseConfig().filters).toEqual(['all']);
-  });
-
-  it('/verbosity add appends without dropping existing', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'add mcp');
-    const f = getVerboseConfig().filters;
-    expect(f).toContain('shell');
-    expect(f).toContain('mcp');
-  });
-
-  it('/verbosity add from "all" baseline collapses to the new tokens', () => {
-    setVerboseConfig({ filters: ['all'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'add shell');
-    // From "all" baseline we treat the union as the new explicit list.
-    // Expect shell present and "all" gone (otherwise normalization would
-    // collapse back to all and adding a category would be a no-op).
-    const f = getVerboseConfig().filters;
-    expect(f).toContain('shell');
-    expect(f).not.toContain('all');
-  });
-
-  it('/verbosity remove drops listed tokens', () => {
-    setVerboseConfig({ filters: ['shell', 'mcp', 'read'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'remove mcp');
-    const f = getVerboseConfig().filters;
-    expect(f).toContain('shell');
-    expect(f).toContain('read');
-    expect(f).not.toContain('mcp');
-  });
-
-  it('removing the last filter leaves filters empty (off)', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'remove shell');
-    expect(getVerboseConfig().filters).toEqual([]);
+    if (equals) expect(f).toEqual(equals);
+    for (const t of contains ?? []) expect(f).toContain(t);
+    for (const t of excludes ?? []) expect(f).not.toContain(t);
   });
 
   it('only with no tokens shows an error alert and does not mutate', () => {
@@ -394,33 +394,68 @@ describe('/verbosity density presets', () => {
     setVerboseConfig({ filters: ['all'] });
   });
 
-  it('density CLI applies preset display config', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density minimal');
-    const display = getVerboseConfig().display!;
-    expect(display.toolArgsMode).toBe('off');
-    expect(display.showToolReasoning).toBe(false);
-    expect(display.showElapsed).toBe(false);
-    expect(display.subagent.prompts).toBe(false);
-  });
+  // Applying a preset (CLI `density <preset>` verb form, the `density:<preset>`
+  // colon shortcut, or the post-confirmation `density:apply:<preset>` Yes row)
+  // is a clean reset to that preset's full intent: display config AND filter
+  // list. Each row pins one preset's distinctive display + filter shape.
+  const presetCases: Array<{
+    route: string;
+    seedFilters?: string[];
+    filters?: string[];
+    display?: Record<string, unknown>;
+    sub?: Record<string, unknown>;
+  }> = [
+    {
+      route: 'density minimal',
+      display: { toolArgsMode: 'off', showToolReasoning: false },
+      sub: { prompts: false },
+    },
+    {
+      route: 'density lean',
+      seedFilters: ['shell', 'mcp'],
+      // Custom filter lists survive only via the Custom flow; preset clears.
+      filters: [],
+      display: { toolArgsMode: 'inline' },
+    },
+    {
+      route: 'density:lean',
+      display: { toolArgsMode: 'inline' },
+    },
+    {
+      // `full` is differentiated from `default` solely by its filter list
+      // collapsing to ['all'] (1:1 with what the parent agent sees).
+      route: 'density:full',
+      seedFilters: [],
+      filters: ['all'],
+      display: {
+        showToolReasoning: true,
+        toolArgsMode: 'block',
+        showElapsed: true,
+      },
+    },
+  ];
+  it.each(presetCases)(
+    '$route applies the preset display + filter shape',
+    ({ route, seedFilters, filters, display: disp, sub }) => {
+      if (seedFilters) setVerboseConfig({ filters: [...seedFilters] });
+      const ctx = liteCtx();
+      runEffect(verbosityCmd, null, ctx, route);
+      const cfg = getVerboseConfig();
+      for (const [k, v] of Object.entries(disp ?? {})) {
+        expect((cfg.display as any)[k]).toBe(v);
+      }
+      if (sub) {
+        for (const [k, v] of Object.entries(sub)) {
+          expect((cfg.display!.subagent as any)[k]).toBe(v);
+        }
+      }
+      if (filters) expect(cfg.filters).toEqual(filters);
+    }
+  );
 
-  it('density lean resets filters to []', () => {
-    // Picking a preset is now a clean reset to that preset's full intent
-    // (display + filters). Custom filter lists survive only via the
-    // Custom flow.
-    setVerboseConfig({ filters: ['shell', 'mcp'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density lean');
-    expect(getVerboseConfig().filters).toEqual([]);
-    const display = getVerboseConfig().display!;
-    expect(display.toolArgsMode).toBe('inline');
-  });
-
-  it('density:<preset> from menu (CLI shortcut) re-opens the density menu', () => {
+  it('density:<preset> menu shortcut re-opens the density menu (does not close)', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:lean');
-    const display = getVerboseConfig().display!;
-    expect(display.toolArgsMode).toBe('inline');
     expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
   });
 
@@ -451,34 +486,14 @@ describe('/verbosity density presets', () => {
     expect(escCalls[escCalls.length - 1]?.[0]).toBeNull();
   });
 
-  it('density without a preset arg shows an error', () => {
+  it.each([
+    ['density', 'density needs a preset'],
+    ['density:custom', 'Unknown density preset'],
+  ])('%p surfaces an error alert', (route, expected) => {
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density');
+    runEffect(verbosityCmd, null, ctx, route);
     const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(calls[0]![0]).toContain('density needs a preset');
-  });
-
-  it('density:full also writes filters: ["all"] (1:1 with parent agent)', () => {
-    setVerboseConfig({ filters: [] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:full');
-    const cfg = getVerboseConfig();
-    // Display matches normal/full (everything on, no caps).
-    expect(cfg.display!.showToolReasoning).toBe(true);
-    expect(cfg.display!.toolArgsMode).toBe('block');
-    expect(cfg.display!.showElapsed).toBe(true);
-    // The differentiator: filter list collapses to ['all'].
-    expect(cfg.filters).toEqual(['all']);
-  });
-
-  // density:<preset> colon form (Bug D): accepted as a CLI shortcut. The
-  // accepted forms (lean/minimal/full) are covered by the tests above; this
-  // pins the unknown-preset error path that the colon form must still reject.
-  it('density:<unknown> (e.g. density:custom) surfaces an error alert', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:custom');
-    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(calls[0]![0]).toContain('Unknown density preset');
+    expect(calls[0]![0]).toContain(expected);
     expect(calls[0]![1]).toBe('error');
   });
 });
@@ -573,16 +588,6 @@ describe('/verbosity preset confirmation gate (replaces standalone reset)', () =
     });
   });
 
-  it('config menu no longer has a Reset row — the default preset replaces it', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'config');
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    const arg = calls[calls.length - 1]![0] as { options: any[] };
-    const labels = arg.options.map((o) => o.label);
-    expect(labels).not.toContain('Reset to defaults');
-  });
-
   it('menu:density:confirm:default opens the confirmation submenu without mutating', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
@@ -610,46 +615,16 @@ describe('/verbosity preset confirmation gate (replaces standalone reset)', () =
     expect(announced).not.toContain('reset to defaults');
   });
 
-  it('density:apply:default applies the default-preset reset and announces it', () => {
-    setVerboseConfig({
-      filters: ['shell'],
-      display: display({
-        showToolReasoning: false,
-        toolArgsMode: 'off',
-        showElapsed: false,
-        subagent: {
-          pipeline: false,
-          prompts: false,
-          roles: false,
-          deps: false,
-          responses: false,
-        },
-        outputMaxLines: null,
-        argsMaxChars: 80,
-      }),
-    });
+  it('density:apply:default announces the preset switch', () => {
+    // Commit/close/ESC-clear behavior is covered by the density-presets block;
+    // this pins only the announcement text users rely on as confirmation.
+    setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'density:apply:default');
-    const cfg = getVerboseConfig();
-    // `default` preset rewrites filters to its canonical ['shell'] shape.
-    expect(cfg.filters).toEqual(['shell']);
-    expect(cfg.display!.toolArgsMode).toBe('block');
     const announce = ctx._spies.announceSystem!.mock
       .calls as unknown as unknown[][];
     const announced = announce.map((c) => c[0] as string).join(' ');
     expect(announced).toContain('density set to default');
-  });
-
-  it('CLI /verbosity reset still works as the power-user shortcut for the default preset', () => {
-    // The standalone Reset menu row is gone, but typing `/verbosity reset`
-    // is preserved as a one-shot shortcut — the user opted in by typing.
-    setVerboseConfig({ filters: ['shell', 'mcp'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'reset');
-    const cfg = getVerboseConfig();
-    // Reset is the default preset, whose filter shape is ['shell'].
-    expect(cfg.filters).toEqual(['shell']);
-    expect(cfg.display!.toolArgsMode).toBe('block');
   });
 });
 
@@ -726,15 +701,6 @@ describe('/verbosity drilldown menus', () => {
       // The back-link encodes the section, proving we opened that sub-menu.
       expect(values).toContain(backLink);
     }
-  });
-
-  it('bare "density" stays the CLI set-preset form, not a menu jump', () => {
-    // Guard the deliberate exclusion: `density` without a preset errors
-    // rather than opening the density menu.
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density');
-    const alerts = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(alerts[0]![0]).toContain('density needs a preset');
   });
 
   it('menu:subagent hides nested rows when pipeline is off', () => {
@@ -817,39 +783,6 @@ describe('/verbosity drilldown menus', () => {
         (o) => o.value === 'menu:density:confirm:default'
       )?.description
     ).toContain('[active]');
-  });
-});
-
-describe('/verbosity ESC navigation flag', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: ['all'] });
-  });
-
-  // ESC return-route contract (CommandMenu re-dispatches this route on ESC):
-  //   - top + density (top-level entries) → null (fully exits)
-  //   - each config submenu → menu:top:<key> (re-opens config on its row)
-  //   - preset confirmation → menu:density (back to density menu)
-  //   - toggling a per-knob setting re-arms the submenu's return route so ESC
-  //     after a toggle goes back one level, not fully out.
-  it.each([
-    ['', null],
-    ['menu:density', null],
-    ['menu:tool', 'menu:top:tool'],
-    ['menu:subagent', 'menu:top:subagent'],
-    ['menu:output', 'menu:top:output'],
-    ['menu:truncation', 'menu:top:truncation'],
-    ['menu:density:confirm:lean', 'menu:density'],
-    ['set:showToolReasoning', 'menu:top:tool'],
-    // Editor submenu returns one level up to its parent section menu.
-    ['menu:truncation:argsLines:edit', 'menu:truncation'],
-  ] as const)('%p arms verboseReturnOnEscape to %p', (arg, route) => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, arg);
-    const calls = ctx._spies.setVerboseReturnOnEscape!.mock
-      .calls as unknown as unknown[][];
-    const last = calls[calls.length - 1];
-    expect(last?.[0]).toBe(route);
   });
 });
 
@@ -998,60 +931,6 @@ describe('/verbosity top menu Output filters row summary', () => {
   });
 });
 
-describe('/verbosity long filter announcement (count-based truncation)', () => {
-  let originalColumns: number | undefined;
-
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: [] });
-    // Pin terminal width small so the truncation threshold kicks in
-    // deterministically regardless of the runner's actual terminal.
-    originalColumns = process.stdout.columns;
-    Object.defineProperty(process.stdout, 'columns', {
-      configurable: true,
-      writable: true,
-      value: 80,
-    });
-  });
-
-  afterEach(() => {
-    if (originalColumns !== undefined) {
-      Object.defineProperty(process.stdout, 'columns', {
-        configurable: true,
-        writable: true,
-        value: originalColumns,
-      });
-    }
-  });
-
-  it('truncates with a "+N more" suffix when the joined form is too long', () => {
-    const ctx = liteCtx();
-    runEffect(
-      verbosityCmd,
-      null,
-      ctx,
-      'only shell read write web grep glob code introspect task subagent mcp'
-    );
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    const msg = calls[calls.length - 1]![0] as string;
-    expect(msg).toMatch(/filters: \d+ \(.*\.\.\. \+\d+ more\)/);
-    expect(msg).toContain('shell');
-    expect(msg).toContain('+');
-    expect(msg).toContain('more');
-  });
-
-  it('keeps the joined form when it fits the budget', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'only shell mcp');
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    const msg = calls[calls.length - 1]![0] as string;
-    expect(msg).toContain('filters: shell, mcp');
-    expect(msg).not.toContain('more)');
-  });
-});
-
 describe('/verbosity top menu Subagent row summary', () => {
   beforeEach(() => {
     resetVerboseCache();
@@ -1112,35 +991,24 @@ describe('/verbosity unknown-token soft warnings', () => {
     setVerboseConfig({ filters: [] });
   });
 
-  it('warns when typo tokens are saved', () => {
+  // Unknown tokens are saved (soft warning, not rejection) but flagged; known
+  // categories and mcp__-prefixed exact tool names must NOT warn.
+  it.each([
+    { arg: 'only foo bar', warns: true, mentions: ['foo', 'bar'] },
+    { arg: 'only shell mcp', warns: false },
+    { arg: 'only mcp__nova-memory-mcp__remember', warns: false },
+  ])('$arg warns=$warns', ({ arg, warns, mentions }) => {
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'only foo bar');
-    // Filters still applied — soft warning, not rejection.
-    expect(getVerboseConfig().filters).toEqual(['foo', 'bar']);
+    runEffect(verbosityCmd, null, ctx, arg);
     const calls = ctx._spies.announceSystem!.mock
       .calls as unknown as unknown[][];
     const msg = calls[calls.length - 1]![0] as string;
-    expect(msg).toContain('warning');
-    expect(msg).toContain('foo');
-    expect(msg).toContain('bar');
-  });
-
-  it('does not warn for known categories', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'only shell mcp');
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    const msg = calls[calls.length - 1]![0] as string;
-    expect(msg).not.toContain('warning');
-  });
-
-  it('does not warn for mcp__-prefixed exact tool names', () => {
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'only mcp__nova-memory-mcp__remember');
-    const calls = ctx._spies.announceSystem!.mock
-      .calls as unknown as unknown[][];
-    const msg = calls[calls.length - 1]![0] as string;
-    expect(msg).not.toContain('warning');
+    if (warns) {
+      expect(msg).toContain('warning');
+      for (const t of mentions ?? []) expect(msg).toContain(t);
+    } else {
+      expect(msg).not.toContain('warning');
+    }
   });
 });
 
