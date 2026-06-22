@@ -306,55 +306,105 @@ describe('formatToolArgLines wrap behavior', () => {
   // per-line; line count is a separate concern. After the fix, multi-line
   // values always render up to 5 lines with a delta-count marker mirroring
   // the output bar's "+N more lines above" idiom.
-  test('multi-line string with argsMaxChars set: renders up to 5 lines, not 1', () => {
-    const sevenLines = Array.from({ length: 7 }, (_, i) => `line${i}`).join(
-      '\n'
-    );
-    const content = JSON.stringify({ command: sevenLines });
-    const lines = formatToolArgLines('shell', content, 120, 120);
-    expect(lines).not.toBeNull();
-    const stripped = (lines ?? []).map(stripAnsi);
-    // 5 visible source lines (line0..line4) — line0 sits on the head row
-    // with the key, line1..line4 on continuation rows below.
-    expect(stripped.some((l) => /command:\s*line0/.test(l))).toBe(true);
-    expect(stripped.some((l) => l.includes('line1'))).toBe(true);
-    expect(stripped.some((l) => l.includes('line4'))).toBe(true);
-    // Hidden lines collapse behind the marker.
-    expect(stripped.some((l) => l.includes('line5'))).toBe(false);
-    expect(stripped.some((l) => l.includes('line6'))).toBe(false);
-  });
-
-  test('multi-line marker uses delta count (+N more lines), not total', () => {
-    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: fifty });
-    const lines = formatToolArgLines('shell', content, 120, 120);
+  // Multi-line `command` value rendering: argsMaxChars clips per-line only
+  // (decoupled from line count); perValueLineCap bounds visible source lines
+  // with a "+N more lines" DELTA marker (not a total count). null lifts the
+  // line cap entirely (P438130055: "unlimited" toggle propagates here so a
+  // 50-line heredoc renders fully). undefined keeps the historical 5-line
+  // default for callers (ApprovalPrompt, output bar) that don't pass it.
+  // `lineN` helper: a multi-line string of `line0..line{N-1}`.
+  const lineN = (n: number) =>
+    JSON.stringify({
+      command: Array.from({ length: n }, (_, i) => `line${i}`).join('\n'),
+    });
+  it.each<{
+    name: string;
+    content: string;
+    maxChars: number | null;
+    perValueLineCap?: number | null;
+    contains?: string[];
+    absent?: string[];
+    matches?: RegExp[];
+    notMatches?: RegExp[];
+  }>([
+    {
+      // 7-line value, default cap → line0..line4 visible (line0 on the head
+      // row with the key), line5/line6 hidden behind the marker.
+      name: '7-line value with argsMaxChars set: 5 visible, not collapsed to 1',
+      content: lineN(7),
+      maxChars: 120,
+      contains: ['line1', 'line4'],
+      absent: ['line5', 'line6'],
+      matches: [/command:\s*line0/],
+    },
+    {
+      // Delta = 50 - 5 = 45 hidden. The pre-fix total-count form "(50 lines)"
+      // MUST NOT appear (it falsely implied 50 hidden when only 45 were).
+      name: 'marker uses delta count (+45 more lines), not total',
+      content: lineN(50),
+      maxChars: 120,
+      matches: [/\.\.\. \(\+45 more lines\)/],
+      notMatches: [/\(50 lines\)/],
+    },
+    {
+      name: 'marker omitted when value fits in 5 lines',
+      content: JSON.stringify({ command: ['a', 'b', 'c', 'd'].join('\n') }),
+      maxChars: 120,
+      contains: ['a', 'd'],
+      notMatches: [/more lines/],
+    },
+    {
+      // null perValueLineCap (unlimited): all 50 lines, no marker.
+      name: 'renders all lines when perValueLineCap is null',
+      content: lineN(50),
+      maxChars: null,
+      perValueLineCap: null,
+      contains: ['line0', 'line25', 'line49'],
+      notMatches: [/more lines/],
+    },
+    {
+      // Default cap when perValueLineCap omitted: 10 - 5 = 5 hidden.
+      name: 'defaults to a 5-line per-value cap (back-compat)',
+      content: lineN(10),
+      maxChars: 120,
+      contains: ['line0', 'line4'],
+      absent: ['line5'],
+      matches: [/\.\.\. \(\+5 more lines\)/],
+    },
+    {
+      // Explicit cap is a visible-line count: 50 - 3 = 47 hidden.
+      name: 'explicit perValueLineCap of 3 clips a 50-line value to 3 + marker',
+      content: lineN(50),
+      maxChars: null,
+      perValueLineCap: 3,
+      contains: ['line0', 'line2'],
+      absent: ['line3'],
+      matches: [/\.\.\. \(\+47 more lines\)/],
+    },
+  ])('multi-line $name', (c) => {
+    const lines =
+      c.perValueLineCap === undefined
+        ? formatToolArgLines('shell', c.content, 120, c.maxChars)
+        : formatToolArgLines(
+            'shell',
+            c.content,
+            120,
+            c.maxChars,
+            c.perValueLineCap
+          );
     expect(lines).not.toBeNull();
     const joined = (lines ?? []).map(stripAnsi).join('\n');
-    // Delta = 50 - 5 visible = 45 hidden. Matches the output bar's
-    // "+N more lines above" idiom so the two sections read consistently.
-    expect(joined).toMatch(/\.\.\. \(\+45 more lines\)/);
-    // The pre-fix total-count form ("(50 lines)") MUST NOT appear — that
-    // was the marker that confused users into thinking 50 lines were
-    // hidden when only 45 actually were.
-    expect(joined).not.toMatch(/\(50 lines\)/);
-  });
-
-  test('multi-line marker omitted when value fits in 5 lines', () => {
-    const four = ['a', 'b', 'c', 'd'].join('\n');
-    const content = JSON.stringify({ command: four });
-    const lines = formatToolArgLines('shell', content, 120, 120);
-    expect(lines).not.toBeNull();
-    const joined = (lines ?? []).map(stripAnsi).join('\n');
-    expect(joined).not.toMatch(/more lines/);
-    // All 4 source lines visible.
-    expect(joined).toContain('a');
-    expect(joined).toContain('d');
+    for (const s of c.contains ?? []) expect(joined).toContain(s);
+    for (const s of c.absent ?? []) expect(joined).not.toContain(s);
+    for (const re of c.matches ?? []) expect(joined).toMatch(re);
+    for (const re of c.notMatches ?? []) expect(joined).not.toMatch(re);
   });
 
   test('argsMaxChars clips EACH line of a multi-line value, not just the head', () => {
     // Per-line clip is what the knob's name says. Without this, only the
     // first line was clipped (when collapse fired) and continuation rows
-    // rendered uncapped — confusing inconsistency.
+    // rendered uncapped — confusing inconsistency. Kept standalone: asserts
+    // per-row position (head vs continuation), not just substring presence.
     const content = JSON.stringify({
       command: 'aaaaaaaaaaaaaaaa\nbbbbbbbbbbbbbbbb\ncccccccccccccccc',
     });
@@ -367,56 +417,6 @@ describe('formatToolArgLines wrap behavior', () => {
     // Continuation rows also clipped — same per-line cap applied.
     expect(stripped.some((l) => /^\s+bbbbbbb…/.test(l))).toBe(true);
     expect(stripped.some((l) => /^\s+ccccccc…/.test(l))).toBe(true);
-  });
-
-  // P438130055: the user-facing "unlimited" option for argsMaxLines saves
-  // `null`, but a hardcoded MULTI_LINE_VISIBLE = 5 inside formatArgLines
-  // still clipped each multi-line string value at 5 lines + a delta marker.
-  // The unlimited toggle now propagates through perValueLineCap so a 50-line
-  // shell heredoc renders all 50 lines with no marker.
-  test('multi-line value renders all lines when perValueLineCap is null', () => {
-    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: fifty });
-    const lines = formatToolArgLines('shell', content, 120, null, null);
-    expect(lines).not.toBeNull();
-    const joined = (lines ?? []).map(stripAnsi).join('\n');
-    expect(joined).not.toMatch(/more lines/);
-    // First, middle, and last source lines all visible.
-    expect(joined).toContain('line0');
-    expect(joined).toContain('line25');
-    expect(joined).toContain('line49');
-  });
-
-  test('formatToolArgLines defaults to a 5-line per-value cap (back-compat)', () => {
-    // Locks the default. Callers that don't pass perValueLineCap (e.g.
-    // ApprovalPrompt, formatJsonAsBarLines for output rendering) keep the
-    // historical 5-line clamp so the unlimited fix doesn't accidentally
-    // unleash unbounded multi-line rendering everywhere.
-    const ten = Array.from({ length: 10 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: ten });
-    const lines = formatToolArgLines('shell', content, 120);
-    expect(lines).not.toBeNull();
-    const joined = (lines ?? []).map(stripAnsi).join('\n');
-    // 10 source lines - 5 visible = 5 hidden.
-    expect(joined).toMatch(/\.\.\. \(\+5 more lines\)/);
-    expect(joined).toContain('line0');
-    expect(joined).toContain('line4');
-    expect(joined).not.toContain('line5');
-  });
-
-  test('explicit perValueLineCap of 3 clips a 50-line value to 3 + marker', () => {
-    // Locks that the cap is an actual visible-line count. If a future
-    // refactor changes the param to "max hidden lines" or similar, this
-    // breaks loudly.
-    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: fifty });
-    const lines = formatToolArgLines('shell', content, 120, null, 3);
-    expect(lines).not.toBeNull();
-    const joined = (lines ?? []).map(stripAnsi).join('\n');
-    expect(joined).toContain('line0');
-    expect(joined).toContain('line2');
-    expect(joined).not.toContain('line3');
-    expect(joined).toMatch(/\.\.\. \(\+47 more lines\)/);
   });
 });
 
