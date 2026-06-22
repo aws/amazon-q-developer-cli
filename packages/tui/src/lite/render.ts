@@ -1284,6 +1284,19 @@ export function renderVerboseOutput(
     return truncateToWidth(s, maxCharsPerLine);
   };
 
+  // Shared finalize: tail-window the bar rows (marker tinted to match the
+  // body), prepend the dim "output:" header, then per-row width-clip.
+  const finalize = (
+    lines: string[],
+    markerColor: (s: string) => string
+  ): string => {
+    if (lines.length === 0) return '';
+    const capped = applyTailLineCap(lines, maxLines ?? null, (n) =>
+      markerColor(`${barPrefix}... (truncated; +${n} more lines above)`)
+    );
+    return '\n' + outputHeader + '\n' + capped.map(clipRow).join('\n');
+  };
+
   if (result.status === 'error') {
     // Prefer the explicit error field; fall back to the output envelope so
     // failures that put their reason in the body still surface.
@@ -1294,20 +1307,11 @@ export function renderVerboseOutput(
           ? result.output
           : unwrapToolOutputAsText(result.output);
     }
-    const trimmed = errText.trim();
-    if (trimmed.length === 0) return '';
-    const lines = formatBarBlock(
-      errText,
-      avail,
-      barPrefix,
-      chalk.red,
+    if (errText.trim().length === 0) return '';
+    return finalize(
+      formatBarBlock(errText, avail, barPrefix, chalk.red, chalk.red),
       chalk.red
     );
-    if (lines.length === 0) return '';
-    const capped = applyTailLineCap(lines, maxLines ?? null, (n) =>
-      chalk.red(`${barPrefix}... (truncated; +${n} more lines above)`)
-    );
-    return '\n' + outputHeader + '\n' + capped.map(clipRow).join('\n');
   }
   if (result.output == null) return '';
   const unwrapped: UnwrappedToolOutput =
@@ -1318,35 +1322,30 @@ export function renderVerboseOutput(
   // Structured envelope → key:value tree (same green success tint as text
   // outputs so the success/error signal is consistent across both branches).
   if (unwrapped.kind === 'json') {
-    const treeLines = formatJsonAsBarLines(
-      unwrapped.value,
-      barPrefix,
-      cols,
-      maxCharsPerLine ?? null,
-      softSuccessOutput
+    return finalize(
+      formatJsonAsBarLines(
+        unwrapped.value,
+        barPrefix,
+        cols,
+        maxCharsPerLine ?? null,
+        softSuccessOutput
+      ),
+      chalk.dim
     );
-    if (treeLines.length === 0) return '';
-    const capped = applyTailLineCap(treeLines, maxLines ?? null, (n) =>
-      chalk.dim(`${barPrefix}... (truncated; +${n} more lines above)`)
-    );
-    return '\n' + outputHeader + '\n' + capped.map(clipRow).join('\n');
   }
 
   if (!unwrapped.value.trim()) return '';
   // Dim glyph (chrome) + sage-green body (content); red+red on errors above.
-  const lines = formatBarBlock(
-    unwrapped.value,
-    avail,
-    barPrefix,
-    chalk.dim,
-    softSuccessOutput
+  return finalize(
+    formatBarBlock(
+      unwrapped.value,
+      avail,
+      barPrefix,
+      chalk.dim,
+      softSuccessOutput
+    ),
+    chalk.dim
   );
-  if (lines.length === 0) return '';
-  // Tail-window matching what the user last saw stream in the live region.
-  const capped = applyTailLineCap(lines, maxLines ?? null, (n) =>
-    chalk.dim(`${barPrefix}... (truncated; +${n} more lines above)`)
-  );
-  return '\n' + outputHeader + '\n' + capped.map(clipRow).join('\n');
 }
 
 /**
