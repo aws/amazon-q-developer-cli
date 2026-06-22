@@ -114,6 +114,35 @@ describe('renderToolCall', () => {
       [],
       [],
     ],
+    [
+      'shows MCP server source',
+      {
+        name: 'InternalSearch',
+        mcpServer: 'builder-mcp',
+        status: 'done' as const,
+      },
+      ['builder-mcp', 'InternalSearch'],
+      [],
+      [],
+    ],
+    [
+      'shows description when provided',
+      {
+        name: 'execute_bash',
+        description: 'Running tests',
+        status: 'running' as const,
+      },
+      ['Running tests'],
+      [],
+      [],
+    ],
+    [
+      'trivial tools are dimmed',
+      { name: 'fs_read', status: 'done' as const, isTrivial: true },
+      ['fs_read'],
+      [],
+      [],
+    ],
   ])('%s', (_name, input, contains, notContains, rawContains) => {
     const result = renderToolCall(input);
     const plain = stripAnsi(result);
@@ -122,88 +151,72 @@ describe('renderToolCall', () => {
     for (const r of rawContains) expect(result).toContain(r);
   });
 
-  test('shows MCP server source', () => {
-    const result = renderToolCall({
-      name: 'InternalSearch',
-      mcpServer: 'builder-mcp',
-      status: 'done',
-    });
-    expect(result).toContain('builder-mcp');
-    expect(result).toContain('InternalSearch');
-  });
-
-  test('shows description when provided', () => {
-    const result = renderToolCall({
-      name: 'execute_bash',
-      description: 'Running tests',
-      status: 'running',
-    });
-    expect(result).toContain('Running tests');
-  });
-
-  test('trivial tools are dimmed', () => {
-    const result = renderToolCall({
-      name: 'fs_read',
-      status: 'done',
-      isTrivial: true,
-    });
-    expect(result).toContain('fs_read');
-  });
-
-  test('inline arg chip renders next to tool name', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      status: 'done',
-    });
-    // Strip ANSI to assert structural shape on a single line.
-    const plain = stripAnsi(result);
-    expect(plain).toContain('shell [git status]');
-    // No newline → reasoning isn't taking up a line below.
-    expect(plain.split('\n').length).toBe(1);
-  });
-
-  test('inline arg + reasoning: args inline, reasoning on its own line below', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      description: 'Check the working tree state',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(2);
-    expect(lines[0]).toContain('shell [git status]');
-    // Reasoning on its own indented line below — never inline next to the
-    // tool name when an inline arg is present.
-    expect(lines[0]).not.toContain('Check the working tree state');
-    expect(lines[1]).toContain('Check the working tree state');
-  });
-
-  test('reasoning without inline arg keeps legacy inline-on-first-line shape', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      description: 'Check the working tree state',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(1);
-    expect(lines[0]).toContain('shell');
-    expect(lines[0]).toContain('Check the working tree state');
-  });
-
-  test('multi-line reasoning + inline arg: every reasoning line indents below', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      description: 'First reason\nsecond reason',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(3);
-    expect(lines[0]).toContain('shell [git status]');
-    expect(lines[0]).not.toContain('First reason');
-    expect(lines[1]).toContain('First reason');
-    expect(lines[2]).toContain('second reason');
+  // Inline-arg + reasoning layout. An inline arg chip pins reasoning to its own
+  // line(s) below (never beside the tool name); without an inline arg, reasoning
+  // keeps the legacy inline-on-first-line shape. Each row asserts the exact line
+  // count and per-line contains/absent.
+  it.each<{
+    name: string;
+    input: Parameters<typeof renderToolCall>[0];
+    lineCount: number;
+    lines: { idx: number; contains?: string[]; absent?: string[] }[];
+  }>([
+    {
+      name: 'inline arg chip renders next to tool name (no reasoning line)',
+      input: { name: 'shell', inlineArg: '[git status]', status: 'done' },
+      lineCount: 1,
+      lines: [{ idx: 0, contains: ['shell [git status]'] }],
+    },
+    {
+      name: 'inline arg + reasoning: args inline, reasoning on its own line below',
+      input: {
+        name: 'shell',
+        inlineArg: '[git status]',
+        description: 'Check the working tree state',
+        status: 'done',
+      },
+      lineCount: 2,
+      lines: [
+        {
+          idx: 0,
+          contains: ['shell [git status]'],
+          absent: ['Check the working tree state'],
+        },
+        { idx: 1, contains: ['Check the working tree state'] },
+      ],
+    },
+    {
+      name: 'reasoning without inline arg keeps legacy inline-on-first-line shape',
+      input: {
+        name: 'shell',
+        description: 'Check the working tree state',
+        status: 'done',
+      },
+      lineCount: 1,
+      lines: [{ idx: 0, contains: ['shell', 'Check the working tree state'] }],
+    },
+    {
+      name: 'multi-line reasoning + inline arg: every reasoning line indents below',
+      input: {
+        name: 'shell',
+        inlineArg: '[git status]',
+        description: 'First reason\nsecond reason',
+        status: 'done',
+      },
+      lineCount: 3,
+      lines: [
+        { idx: 0, contains: ['shell [git status]'], absent: ['First reason'] },
+        { idx: 1, contains: ['First reason'] },
+        { idx: 2, contains: ['second reason'] },
+      ],
+    },
+  ])('$name', ({ input, lineCount, lines }) => {
+    const plain = stripAnsi(renderToolCall(input)).split('\n');
+    expect(plain.length).toBe(lineCount);
+    for (const { idx, contains, absent } of lines) {
+      for (const c of contains ?? []) expect(plain[idx]).toContain(c);
+      for (const a of absent ?? []) expect(plain[idx]).not.toContain(a);
+    }
   });
 });
 
@@ -1581,57 +1594,58 @@ describe('display.toolArgsMode rendering', () => {
   const setDisplay = (overrides: Partial<VerboseDisplayConfig>) =>
     setVerboseConfig({ display: { ...BASE_DISPLAY, ...overrides } });
 
-  // Each row toggles the args presentation and asserts what the header shows.
-  // 'inline' also flips reasoning off so the chip stands in for the args.
-  test.each([
-    [
-      'block renders the full key:value tree (default)',
-      { toolArgsMode: 'block' as const },
-      [
+  // Each row toggles a display knob (args presentation / elapsed / reasoning)
+  // and asserts what the header shows. 'inline' also flips reasoning off so the
+  // chip stands in for the args; showElapsed needs timing fields on the msg.
+  it.each<{
+    name: string;
+    overrides: Partial<VerboseDisplayConfig>;
+    msgExtra?: Record<string, unknown>;
+    contains: string[];
+    absent: string[];
+  }>([
+    {
+      name: 'block renders the full key:value tree (default)',
+      overrides: { toolArgsMode: 'block' },
+      contains: [
         'shell',
         'check git state',
         'command: git status',
         'working_dir: /tmp/repo',
       ],
-      [],
-    ],
-    [
-      'off hides args entirely; reasoning still shows',
-      { toolArgsMode: 'off' as const },
-      ['shell', 'check git state'],
-      ['command: git status', 'working_dir'],
-    ],
-    [
-      'inline + reasoning off shows tool [arg] chip',
-      { toolArgsMode: 'inline' as const, showToolReasoning: false },
-      ['shell', '[git status]'],
-      ['check git state', 'working_dir: /tmp/repo'],
-    ],
-  ])('toolArgsMode %s', (_name, overrides, contains, absent) => {
+      absent: [],
+    },
+    {
+      name: 'off hides args entirely; reasoning still shows',
+      overrides: { toolArgsMode: 'off' },
+      contains: ['shell', 'check git state'],
+      absent: ['command: git status', 'working_dir'],
+    },
+    {
+      name: 'inline + reasoning off shows tool [arg] chip',
+      overrides: { toolArgsMode: 'inline', showToolReasoning: false },
+      contains: ['shell', '[git status]'],
+      absent: ['check git state', 'working_dir: /tmp/repo'],
+    },
+    {
+      name: 'showElapsed false strips the duration tail',
+      overrides: { showElapsed: false },
+      msgExtra: { startTime: 0, finishTime: 1500 },
+      contains: ['shell'],
+      absent: ['1.5s', '1500ms'],
+    },
+    {
+      name: 'showToolReasoning false drops the purple "why" segment from the header',
+      overrides: { showToolReasoning: false },
+      contains: ['shell'],
+      absent: ['check git state'],
+    },
+  ])('$name', ({ overrides, msgExtra, contains, absent }) => {
     setDisplay(overrides);
-    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
+    const msg = msgExtra ? { ...buildToolMsg(), ...msgExtra } : buildToolMsg();
+    const out = stripAnsi(renderMessageToText(msg, 'kiro_default'));
     for (const c of contains) expect(out).toContain(c);
     for (const a of absent) expect(out).not.toContain(a);
-  });
-
-  test('showElapsed false strips the duration tail', () => {
-    setDisplay({ showElapsed: false });
-    const msg = {
-      ...buildToolMsg(),
-      startTime: 0,
-      finishTime: 1500,
-    };
-    const out = stripAnsi(renderMessageToText(msg, 'kiro_default'));
-    expect(out).toContain('shell');
-    expect(out).not.toContain('1.5s');
-    expect(out).not.toContain('1500ms');
-  });
-
-  test('showToolReasoning false drops the purple "why" segment from the header', () => {
-    setDisplay({ showToolReasoning: false });
-    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    expect(out).toContain('shell');
-    expect(out).not.toContain('check git state');
   });
 });
 
