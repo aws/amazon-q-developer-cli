@@ -33,6 +33,7 @@ pub use kiro_telemetry_host::{
     TelemetryError,
     TelemetryThread,
     ToolUseEventBuilder,
+    get_accurate_install_method,
     get_install_method,
     govcloud_partition,
 };

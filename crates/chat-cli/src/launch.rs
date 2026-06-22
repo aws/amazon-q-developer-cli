@@ -228,6 +228,13 @@ async fn launch_acp_interactive(
     mode: Option<AgentMode>,
     cli_session_completion_emitted: &mut bool,
 ) -> Result<ExitCode> {
+    // Long-lived session: resolve the Toolbox version in the background so a later
+    // mid-session issue report / diagnostics does not block on it. A plain OS thread
+    // (not a Tokio task) is used so process exit never waits on the probe.
+    std::thread::spawn(|| {
+        kiro_telemetry_host::get_accurate_install_method();
+    });
+
     let asset_paths = extract_tui_assets_if_needed(os).await?;
 
     let args: Vec<String> = std::env::args().collect();
