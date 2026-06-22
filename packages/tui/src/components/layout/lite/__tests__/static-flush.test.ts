@@ -91,160 +91,151 @@ describe('computeActiveToolBatchIds', () => {
 });
 
 describe('selectStaticEligible', () => {
-  test('omits the last unfinished streaming model when isProcessing', () => {
-    const msgs: MessageType[] = [
-      user('u1'),
-      model('m1', { standalone: false }),
-    ];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1']);
-  });
-
-  test('includes a finished standalone model even when isProcessing', () => {
-    const msgs: MessageType[] = [user('u1'), model('m1', { standalone: true })];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'm1']);
-  });
-
-  test('keeps tools in the in-flight batch out of static', () => {
-    const msgs: MessageType[] = [user('u1'), tool('a', false), tool('b', true)];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1']);
-  });
-
-  test('flushes tool batch once every tool is finished', () => {
-    const msgs: MessageType[] = [user('u1'), tool('a', true), tool('b', true)];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a', 'b']);
-  });
-
-  test('preserves creation order on flush', () => {
-    // Even if logically the agent finished `c` first, then `a`, then `b`,
-    // we must render them in the order they were CREATED so the user sees
-    // the same order the agent invoked them.
-    const msgs: MessageType[] = [
-      user('u1'),
-      tool('a', true),
-      tool('b', true),
-      tool('c', true),
-    ];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a', 'b', 'c']);
-  });
-
-  test('deduplicates tool messages by id', () => {
-    const msgs: MessageType[] = [user('u1'), tool('a', true), tool('a', true)];
-    const out = selectStaticEligible(msgs, false);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a']);
-  });
-
-  test('drops empty Model messages between tools', () => {
-    // flushContentToStore pushes a Model with content='' when only Thought
-    // events arrived. The empty Model would otherwise add 3 blank rows
-    // between neighboring tools (own \n prefix splits to 2 blanks, plus the
-    // next tool's \n prefix adds one more). Eligibility skips it so the
-    // tool→tool boundary stays compact.
-    const msgs: MessageType[] = [
-      user('u1'),
-      tool('a', true),
-      model('empty', { content: '' }),
-      tool('b', true),
-    ];
-    const out = selectStaticEligible(msgs, false);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a', 'b']);
-  });
-
-  test('drops whitespace-only Model messages', () => {
-    const msgs: MessageType[] = [
-      user('u1'),
-      model('blank', { content: '   \n\t' }),
-      tool('a', true),
-    ];
-    const out = selectStaticEligible(msgs, false);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a']);
-  });
-
-  test('keeps empty-content Model when thinking is set (default — block renders)', () => {
-    // Default behavior: an empty-content Model with populated thinking
-    // stays in eligible so renderMessageToText can emit the bordered
-    // thinking block. This is the carve-out the fix below depends on
-    // having a complementary toggle for.
-    const msgs: MessageType[] = [
-      user('u1'),
-      model('m1', { content: '', thinking: 'reasoning payload' }),
-      tool('a', true),
-    ];
-    const out = selectStaticEligible(msgs, false);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'm1', 'a']);
-  });
-
-  test('drops empty-content Model with thinking when hideThinkingContent is true', () => {
-    // Minimal-preset (showThinkingContent: false) bug fix. Without this gate
-    // the empty-content row stayed eligible, rendered to '' (thinking block
-    // suppressed), and the delta walk baked leading-blank prefixes into
-    // <Static> — pinning phantom blank rows where a silent-think-then-tool
-    // round used to be (append-only, so they persisted until remount).
-    const msgs: MessageType[] = [
-      user('u1'),
-      tool('a', true),
-      model('m1', { content: '', thinking: 'reasoning payload' }),
-      user('u2'),
-    ];
-    const out = selectStaticEligible(msgs, false, undefined, 'main', true);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'a', 'u2']);
-  });
-
-  test('hideThinkingContent does not drop Model rows that have actual content', () => {
-    // Belt-and-suspenders: the new gate is scoped to empty-content rows
-    // only. A Model with both content and thinking should still appear
-    // in eligible regardless of the toggle — only the persisted thinking
-    // block inside renderMessageToText is suppressed by the toggle, the
-    // spoken text still renders.
-    const msgs: MessageType[] = [
-      user('u1'),
-      model('m1', { content: 'hello', thinking: 'reasoning' }),
-    ];
-    const out = selectStaticEligible(msgs, false, undefined, 'main', true);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'm1']);
-  });
-
-  test('shellOutput Model holds out of static while in flight', () => {
-    // The shell-escape branch in app-store seeds an empty Model with
-    // `shellOutput: true` then streams PTY chunks into its content. While
-    // the command is running (`isProcessing: true`), the row is the trailing
-    // non-standalone Model, so the existing skip rule keeps it out of
-    // <Static>. The live region paints it via `renderShellOutputBlock`
-    // until the PTY exits — at which point isProcessing flips to false
-    // and the row falls back into eligible (verified in the next test).
-    const shellRow: MessageType = {
-      id: 'shell-out',
-      role: MessageRole.Model,
-      content: 'Enter PIN:',
-    };
-    // shellOutput is intentionally not on the MessageType union here
-    // (the field lives in app-store's interleaved type extension); the
-    // skip rule keys on `standalone`, not on `shellOutput`, so the
-    // existing logic covers it without further change.
-    const msgs: MessageType[] = [user('u1'), shellRow];
-    const out = selectStaticEligible(msgs, true);
-    expect(out.map((m) => m.id)).toEqual(['u1']);
-  });
-
-  test('shellOutput Model commits to static once the command exits', () => {
-    // Mirror of the above: when isProcessing flips to false (command
-    // exited cleanly or was cancelled), the trailing-Model skip no longer
-    // fires and the row joins the eligible set. This is what makes the
-    // live → static transition a no-op visual change — the same body
-    // renders via the same helper, just on a different surface.
-    const shellRow: MessageType = {
-      id: 'shell-out',
-      role: MessageRole.Model,
-      content: 'Got: 1234\n[exit code: 0]',
-    };
-    const msgs: MessageType[] = [user('u1'), shellRow];
-    const out = selectStaticEligible(msgs, false);
-    expect(out.map((m) => m.id)).toEqual(['u1', 'shell-out']);
-  });
+  // The shell-escape branch in app-store seeds an empty Model with
+  // `shellOutput: true` then streams PTY chunks into its content. The skip
+  // rule keys on `standalone`, not `shellOutput`, so a trailing non-standalone
+  // Model (shell or plain) holds out of <Static> while isProcessing and falls
+  // back into eligible once it flips false — making the live→static transition
+  // a no-op visual change (same helper, different surface). Each distinct
+  // eligibility rule is one row; the trailing args mirror the real signature
+  // `(msgs, isProcessing, _opts, agentName, hideThinkingContent)`.
+  const shell = (id: string, content: string): MessageType =>
+    ({ id, role: MessageRole.Model, content }) as MessageType;
+  const eligibleCases: Array<{
+    name: string;
+    msgs: MessageType[];
+    isProcessing: boolean;
+    extra?: [undefined, string, boolean];
+    expectedIds: string[];
+  }> = [
+    {
+      name: 'omits the last unfinished streaming model when isProcessing',
+      msgs: [user('u1'), model('m1', { standalone: false })],
+      isProcessing: true,
+      expectedIds: ['u1'],
+    },
+    {
+      name: 'includes a finished standalone model even when isProcessing',
+      msgs: [user('u1'), model('m1', { standalone: true })],
+      isProcessing: true,
+      expectedIds: ['u1', 'm1'],
+    },
+    {
+      name: 'keeps tools in the in-flight batch out of static',
+      msgs: [user('u1'), tool('a', false), tool('b', true)],
+      isProcessing: true,
+      expectedIds: ['u1'],
+    },
+    {
+      name: 'flushes tool batch once every tool is finished',
+      msgs: [user('u1'), tool('a', true), tool('b', true)],
+      isProcessing: true,
+      expectedIds: ['u1', 'a', 'b'],
+    },
+    {
+      // Even if the agent finished `c` first, then `a`, then `b`, we render in
+      // CREATION order so the user sees the order the agent invoked them.
+      name: 'preserves creation order on flush',
+      msgs: [user('u1'), tool('a', true), tool('b', true), tool('c', true)],
+      isProcessing: true,
+      expectedIds: ['u1', 'a', 'b', 'c'],
+    },
+    {
+      name: 'deduplicates tool messages by id',
+      msgs: [user('u1'), tool('a', true), tool('a', true)],
+      isProcessing: false,
+      expectedIds: ['u1', 'a'],
+    },
+    {
+      // flushContentToStore pushes a content='' Model when only Thought events
+      // arrived; it would otherwise add 3 blank rows at the tool→tool boundary
+      // (own \n splits to 2 blanks + next tool's \n adds 1). Skip keeps it tight.
+      name: 'drops empty Model messages between tools',
+      msgs: [
+        user('u1'),
+        tool('a', true),
+        model('empty', { content: '' }),
+        tool('b', true),
+      ],
+      isProcessing: false,
+      expectedIds: ['u1', 'a', 'b'],
+    },
+    {
+      name: 'drops whitespace-only Model messages',
+      msgs: [
+        user('u1'),
+        model('blank', { content: '   \n\t' }),
+        tool('a', true),
+      ],
+      isProcessing: false,
+      expectedIds: ['u1', 'a'],
+    },
+    {
+      // Default: an empty-content Model with populated thinking stays eligible
+      // so renderMessageToText can emit the bordered thinking block. This is
+      // the carve-out the hideThinkingContent gate below complements.
+      name: 'keeps empty-content Model when thinking is set (default block renders)',
+      msgs: [
+        user('u1'),
+        model('m1', { content: '', thinking: 'reasoning payload' }),
+        tool('a', true),
+      ],
+      isProcessing: false,
+      expectedIds: ['u1', 'm1', 'a'],
+    },
+    {
+      // Minimal-preset (showThinkingContent: false) bug fix. Without this gate
+      // the empty-content row stayed eligible, rendered to '' (thinking block
+      // suppressed), and the delta walk baked leading-blank prefixes into
+      // <Static> — pinning phantom blank rows where a silent-think-then-tool
+      // round used to be (append-only, so they persisted until remount).
+      name: 'drops empty-content Model with thinking when hideThinkingContent is true',
+      msgs: [
+        user('u1'),
+        tool('a', true),
+        model('m1', { content: '', thinking: 'reasoning payload' }),
+        user('u2'),
+      ],
+      isProcessing: false,
+      extra: [undefined, 'main', true],
+      expectedIds: ['u1', 'a', 'u2'],
+    },
+    {
+      // Belt-and-suspenders: the gate is scoped to empty-content rows only. A
+      // Model with both content and thinking still appears regardless of the
+      // toggle — only the persisted thinking block inside renderMessageToText
+      // is suppressed; the spoken text still renders.
+      name: 'hideThinkingContent does not drop Model rows that have actual content',
+      msgs: [
+        user('u1'),
+        model('m1', { content: 'hello', thinking: 'reasoning' }),
+      ],
+      isProcessing: false,
+      extra: [undefined, 'main', true],
+      expectedIds: ['u1', 'm1'],
+    },
+    {
+      name: 'shellOutput Model holds out of static while in flight',
+      msgs: [user('u1'), shell('shell-out', 'Enter PIN:')],
+      isProcessing: true,
+      expectedIds: ['u1'],
+    },
+    {
+      name: 'shellOutput Model commits to static once the command exits',
+      msgs: [user('u1'), shell('shell-out', 'Got: 1234\n[exit code: 0]')],
+      isProcessing: false,
+      expectedIds: ['u1', 'shell-out'],
+    },
+  ];
+  test.each(eligibleCases)(
+    '$name',
+    ({ msgs, isProcessing, extra, expectedIds }) => {
+      const out = extra
+        ? selectStaticEligible(msgs, isProcessing, ...extra)
+        : selectStaticEligible(msgs, isProcessing);
+      expect(out.map((m) => m.id)).toEqual(expectedIds);
+    }
+  );
 
   test('shellOutput Model with empty content stays out of static after cancel', () => {
     // Trigger for the React duplicate-key bug fixed in app-store: `!sleep 30`
