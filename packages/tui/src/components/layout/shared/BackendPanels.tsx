@@ -1,16 +1,7 @@
 /**
- * Backend-driven panel cluster — shared between InlineLayout and LiteLayout.
- *
- * Both layouts mount the same set of panels in response to the same set of
- * show-flags. This component returns a fragment of `{showX && <Panel />}`
- * conditionals; each layout decides its own wrapper (LiteLayout wraps in a
- * <Box> inside its !showApproval && anyPanelOpen gate; InlineLayout mounts
- * directly inside <PromptBar>'s children).
- *
- * Show-flag and data state is read from the store directly so the parent
- * layouts don't have to prop-drill 30+ values. Handlers (the close + tab +
- * refresh callbacks) are the only injection point — they're shared via the
- * useBackendPanelHandlers hook in the same folder.
+ * Backend-driven panel cluster shared by InlineLayout and LiteLayout. Reads
+ * show-flag + data state from the store directly (no 30+ prop-drill); each
+ * layout supplies its own wrapper and the shared useBackendPanelHandlers.
  */
 import React, { useMemo } from 'react';
 import { ContextBreakdown } from '../../ui/ContextBreakdown.js';

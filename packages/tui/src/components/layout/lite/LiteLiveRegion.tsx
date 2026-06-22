@@ -63,24 +63,20 @@ export const LiteLiveRegion: React.FC = () => {
   // [messages]-dep memo in LiteLayout.
   const streamingContent = useAppStore((s) => s.streamingContent);
   // Per-tool streaming output buffers (store flushes ToolCallUpdate chunks
-  // here, deleted on finish). The single binding driving the tool-output preview.
+  // here, deleted on finish).
   const liveOutputs = useAppStore((s) => s.liveOutputs);
   const pendingApproval = useAppStore((s) => s.pendingApproval);
   const currentAgent = useAppStore((s) => s.currentAgent);
-  // Shell-escape (`!command`): the live region collapses to a single
-  // brand-purple `! `-gutter row streaming PTY output. Spinner/thinking/tool
-  // paths are all suppressed — showing a "thinking" indicator over interactive
-  // bash (mwinit/sudo/brew-OTP) is the hung-looking bug this branch fixes.
+  // Shell-escape (`!command`) suppresses spinner/thinking/tool paths — a
+  // "thinking" indicator over interactive bash (mwinit/sudo/brew-OTP) is the
+  // hung-looking bug this branch fixes.
   const isShellEscape = useAppStore((s) => s.isShellEscape);
   const pendingSwap = usePendingSwap();
-  // Accessibility wiring — kept 1:1 with the modern TUI. allowAsciiArt drives
-  // the pacman→quarterSpinner fallback below.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
   const animationPaused = useAnimationPaused();
-  // Pacman (Unicode) / quarterSpinner (ASCII). Memoized so the interval closure
-  // reads a stable reference.
+  // Memoized so the interval closure reads a stable reference.
   const mainSpinnerFrames = useMemo<readonly string[]>(
     () => (allowAsciiArt ? PACMAN_SPINNER_FRAMES : spinners.quarterSpinner),
     [allowAsciiArt, spinners.quarterSpinner]
@@ -88,7 +84,6 @@ export const LiteLiveRegion: React.FC = () => {
   // brailleRotate so the tool row matches Spinner.tsx elsewhere.
   const toolSpinnerFrames = spinners.brailleRotate;
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  // Streaming agent-tag color from the agent's palette slot (matches finalized).
   const agentTagFn = useMemo<(s: string) => string>(() => {
     try {
       const name = currentAgent?.name;
@@ -226,9 +221,8 @@ export const LiteLiveRegion: React.FC = () => {
     glyphs,
   ]);
 
-  // Active tool batch — the trailing in-flight run, shared with LiteLayout via
-  // computeActiveToolBatchIds so a finished tool can't appear in both static
-  // and the live region. Project the fields downstream needs per tool.
+  // Active tool batch via computeActiveToolBatchIds (shared with LiteLayout)
+  // so a finished tool can't appear in both static and the live region.
   const activeTools = useMemo(() => {
     if (!isProcessing) return [];
     const batch = computeActiveToolBatchIds(messages, currentAgent?.name);
@@ -397,8 +391,7 @@ export const LiteLiveRegion: React.FC = () => {
   );
 
   if (retryStatus) {
-    // Retry banner shows the spinner — keep ticking.
-    spinnerVisibleRef.current = true;
+    spinnerVisibleRef.current = true; // banner shows the spinner — keep ticking
     return (
       <Text>
         {spinner} {chalk.yellow(retryStatus.message)}
@@ -406,8 +399,8 @@ export const LiteLiveRegion: React.FC = () => {
     );
   }
 
-  // Tool call lines — substitute the active spinner glyph into each pre-baked
-  // row. Trivial / finished tools have no placeholder, so replaceAll no-ops.
+  // Substitute the spinner glyph into each pre-baked row (no placeholder on
+  // trivial/finished tools, so replaceAll no-ops).
   const toolLines = activeTools.map((tool) => {
     const body = renderedToolBodies.get(tool.id);
     if (!body) return '';
@@ -517,12 +510,9 @@ export const LiteLiveRegion: React.FC = () => {
 
   return (
     <Box flexDirection="column">
-      {/* Persistent thinking block above tools + streaming so reasoning stays
-          visible while the model speaks/runs tools. */}
       {hasThinkingBlock && <Text>{thinkingBlockWithBreaks}</Text>}
-      {/* Active tool calls — each line followed by its output bar (if any),
-          concatenated via \n so twinki treats them as one block (a separate
-          <Text> sibling would race the tool line on each spinner tick). */}
+      {/* Tool line + its output bar concatenated via \n into one <Text>: a
+          separate sibling would race the tool line on each spinner tick. */}
       {toolLines.map((line, i) => {
         const tool = activeTools[i]!;
         const head =
