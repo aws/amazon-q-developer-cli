@@ -501,8 +501,7 @@ export const CommandMenu: React.FC = () => {
     handleUserInput,
   ]);
 
-  // True while any nested return-on-escape route is stashed — i.e. the user
-  // drilled in from a parent menu, so Esc steps back rather than closing.
+  // Stashed = drilled in from a parent menu, so Esc steps back, not closes.
   const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
 
   useKeypress((input, key) => {
@@ -645,23 +644,18 @@ export const CommandMenu: React.FC = () => {
 
     // A highlighted density preset draft-renders that preset's display/filters
     // in the preview without persisting; no draft = saved config.
-    const densityOverride = draftPreset
-      ? {
-          display: DENSITY_DISPLAY[draftPreset],
-          filters: DENSITY_FILTERS[draftPreset],
-        }
-      : null;
+    const draftDisplay = draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined;
+    const draftFilters = draftPreset ? DENSITY_FILTERS[draftPreset] : undefined;
 
-    // Expanded preview: swap the menu surface for the scrollable pane (the
-    // pane owns its own keypresses). The /verbosity gate is enforced upstream.
+    // Expanded preview: swap the menu for the scrollable pane (owns its keys).
     if (previewMode === 'expanded' && verbosityPreviewKey) {
       return (
         <Box flexDirection="column">
           {verbosityHeader}
           <VerbosityPreviewPane
             which={verbosityPreviewKey}
-            displayOverride={densityOverride?.display}
-            filtersOverride={densityOverride?.filters}
+            displayOverride={draftDisplay}
+            filtersOverride={draftFilters}
             onCollapse={() => setPreviewMode('mini')}
             onHide={() => setPreviewMode('hidden')}
           />
@@ -725,8 +719,8 @@ export const CommandMenu: React.FC = () => {
         {verbosityPreviewKey && previewMode === 'mini' && (
           <VerbosityPreview
             which={verbosityPreviewKey}
-            displayOverride={densityOverride?.display}
-            filtersOverride={densityOverride?.filters}
+            displayOverride={draftDisplay}
+            filtersOverride={draftFilters}
           />
         )}
         {verbosityPreviewKey && (
