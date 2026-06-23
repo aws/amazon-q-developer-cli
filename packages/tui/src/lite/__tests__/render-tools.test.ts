@@ -515,6 +515,18 @@ describe('formatTaskToolBody', () => {
       contains: ['real one'],
       absentMatch: [/\b2\./, /\b3\./, /\b4\./],
     },
+    {
+      // Single task → only the corner connector, never the mid-list tee.
+      name: 'create with a single task uses only the corner connector',
+      content: {
+        command: 'create',
+        task_list_description: 'just one thing',
+        tasks: [{ task_description: 'Only task' }],
+      },
+      command: 'create',
+      contains: ['└─', 'Only task'],
+      absent: ['├─'],
+    },
   ])('$name', ({ content, command, contains, absent, absentMatch }) => {
     const result = formatTaskToolBody(JSON.stringify(content), 120);
     expect(result).not.toBeNull();
@@ -537,19 +549,6 @@ describe('formatTaskToolBody', () => {
     expect(formatTaskToolBody('not-json')).toBeNull();
     expect(formatTaskToolBody(JSON.stringify({}))).toBeNull();
     expect(formatTaskToolBody(JSON.stringify({ command: 'bogus' }))).toBeNull();
-  });
-
-  test('create with a single task uses only the corner connector', () => {
-    const content = JSON.stringify({
-      command: 'create',
-      task_list_description: 'just one thing',
-      tasks: [{ task_description: 'Only task' }],
-    });
-    const result = formatTaskToolBody(content, 100);
-    expect(result).not.toBeNull();
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    expect(text).toContain('└─');
-    expect(text).not.toContain('├─');
   });
 
   test('create renders optional details under the subject in dim style', () => {
