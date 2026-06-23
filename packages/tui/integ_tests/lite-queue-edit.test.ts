@@ -62,70 +62,82 @@ describe('lite queued message editing', () => {
     return { first, second };
   }
 
-  it('pulling a queued slot back via ↑ shows the editing header and loads the text', async () => {
-    testCase = await launchQueueEditCase('lite-queue-edit-pull-shows-header');
+  // All three share: launch, queue two entries, press ↑ from the empty prompt
+  // (pulls the LAST queued slot back, editingQueueIndex===1). They differ only
+  // in what happens after the pull. Each `after` callback receives the queued
+  // texts captured at setup.
+  it.each([
+    {
+      label: 'pulling via ↑ shows the editing header and loads the text',
+      testName: 'lite-queue-edit-pull-shows-header',
+      after: async (
+        tc: TestCase,
+        _queued: { first: string; second: string }
+      ) => {
+        const store = await tc.getStore();
+        expect(store.commandInputValue).toBe('queue_second_message');
+        await tc.waitForVisibleText('editing queued #2', 3000);
+      },
+    },
+    {
+      label: 'edit + Enter writes back to the same slot (FIFO, no append)',
+      testName: 'lite-queue-edit-resubmit',
+      after: async (
+        tc: TestCase,
+        queued: { first: string; second: string }
+      ) => {
+        let store = await tc.getStore();
+        expect(store.queuedMessages.length).toBe(2);
 
-    await setupQueueWithTwoEntries(testCase);
+        await tc.sendKeys('\x15'); // Ctrl+U: kill-line back-to-start
+        await tc.sleepMs(100);
+        await tc.typeAndSubmit('queue_second_edited');
+        await tc.sleepMs(250);
 
-    // Press ↑ from empty prompt — pulls the LAST queued ('second') back.
-    await testCase.sendKeys('\x1b[A');
-    await testCase.sleepMs(200);
+        store = await tc.getStore();
+        // Replace, not append: length stays 2 and the edit stays at index 1.
+        expect(store.queuedMessages.length).toBe(2);
+        expect(store.queuedMessages[0]).toBe(queued.first);
+        expect(store.queuedMessages[1]).toBe('queue_second_edited');
+        expect(store.editingQueueIndex).toBeNull();
+      },
+    },
+    {
+      label: 'cancelling the edit (Esc) leaves the queue intact',
+      testName: 'lite-queue-edit-cancel',
+      after: async (
+        tc: TestCase,
+        queued: { first: string; second: string }
+      ) => {
+        const queueBefore = (await tc.getStore()).queuedMessages.slice();
+        // Esc clears editingQueueIndex without writing back
+        // (PromptInput.tsx:828 queueRestoreRef Esc handler).
+        await tc.pressEscape();
+        await tc.sleepMs(200);
 
-    const store = await testCase.getStore();
-    expect(store.editingQueueIndex).toBe(1);
-    expect(store.commandInputValue).toBe('queue_second_message');
+        const store = await tc.getStore();
+        expect(store.editingQueueIndex).toBeNull();
+        // Queue must be byte-for-byte unchanged.
+        expect(store.queuedMessages).toEqual(queueBefore);
+        expect(store.queuedMessages).toEqual([queued.first, queued.second]);
+      },
+    },
+  ])(
+    '$label',
+    async ({ testName, after }) => {
+      testCase = await launchQueueEditCase(testName);
 
-    await testCase.waitForVisibleText('editing queued #2', 3000);
-  }, 30000);
+      const queued = await setupQueueWithTwoEntries(testCase);
 
-  it('edit + Enter writes back to the same slot, preserving queue length and FIFO order', async () => {
-    testCase = await launchQueueEditCase('lite-queue-edit-resubmit');
+      // Press ↑ from empty prompt — pulls the LAST queued ('second') back.
+      await testCase.sendKeys('\x1b[A');
+      await testCase.sleepMs(200);
 
-    const { first } = await setupQueueWithTwoEntries(testCase);
+      const store = await testCase.getStore();
+      expect(store.editingQueueIndex).toBe(1);
 
-    // ↑ to pull the second queued back.
-    await testCase.sendKeys('\x1b[A');
-    await testCase.sleepMs(200);
-
-    let store = await testCase.getStore();
-    expect(store.editingQueueIndex).toBe(1);
-    expect(store.queuedMessages.length).toBe(2);
-
-    await testCase.sendKeys('\x15'); // Ctrl+U: kill-line back-to-start
-    await testCase.sleepMs(100);
-    await testCase.typeAndSubmit('queue_second_edited');
-    await testCase.sleepMs(250);
-
-    store = await testCase.getStore();
-    // Replace, not append: length stays 2 and the edit stays at index 1.
-    expect(store.queuedMessages.length).toBe(2);
-    expect(store.queuedMessages[0]).toBe(first);
-    expect(store.queuedMessages[1]).toBe('queue_second_edited');
-    expect(store.editingQueueIndex).toBeNull();
-  }, 30000);
-
-  it('cancelling the edit (Esc) leaves the queue intact', async () => {
-    testCase = await launchQueueEditCase('lite-queue-edit-cancel');
-
-    const { first, second } = await setupQueueWithTwoEntries(testCase);
-
-    // ↑ to pull.
-    await testCase.sendKeys('\x1b[A');
-    await testCase.sleepMs(200);
-
-    let store = await testCase.getStore();
-    expect(store.editingQueueIndex).toBe(1);
-    const queueBefore = [...store.queuedMessages];
-
-    // Esc cancels the edit. PromptInput's queueRestoreRef Esc handler
-    // (PromptInput.tsx:828) clears editingQueueIndex without writing back.
-    await testCase.pressEscape();
-    await testCase.sleepMs(200);
-
-    store = await testCase.getStore();
-    expect(store.editingQueueIndex).toBeNull();
-    // Queue must be byte-for-byte unchanged.
-    expect(store.queuedMessages).toEqual(queueBefore);
-    expect(store.queuedMessages).toEqual([first, second]);
-  }, 30000);
+      await after(testCase, queued);
+    },
+    30000
+  );
 });
