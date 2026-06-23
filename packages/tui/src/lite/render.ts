@@ -1961,20 +1961,12 @@ function extractToolPurpose(content: string): string | undefined {
   return undefined;
 }
 
-/** key: value pairs for scrollback (skips internal fields); null when empty. */
-export function formatToolArgs(
-  toolName: string,
-  content: string
-): string | null {
-  const lines = formatToolArgLines(toolName, content);
-  return lines && lines.length > 0 ? lines.join('\n') : null;
-}
-
 /**
- * Like {@link formatToolArgs} but returns raw lines (so callers can wrap each
- * in their own container). `perValueLineCap` is the per-value multi-line clamp;
- * the block-mode renderer passes null when argsMaxLines is "unlimited" so that
- * toggle means no truncation anywhere (P438130055). Others keep the 5-line default.
+ * key: value pairs for scrollback (skips internal fields); null when empty.
+ * Returns raw lines so callers can wrap each in their own container.
+ * `perValueLineCap` is the per-value multi-line clamp; the block-mode renderer
+ * passes null when argsMaxLines is "unlimited" so that toggle means no
+ * truncation anywhere (P438130055). Others keep the 5-line default.
  */
 export function formatToolArgLines(
   toolName: string,

@@ -148,7 +148,7 @@ describe('renderMessageToText (tool_use)', () => {
     },
     {
       // Single short-string args (recall {query}) used to be skipped by
-      // formatToolArgs, leaving no visible args after running.
+      // formatToolArgLines, leaving no visible args after running.
       name: 'recall-style single short arg still shows in scrollback',
       tool: 'recall',
       content: {
