@@ -59,9 +59,10 @@ afterEach(() => {
 });
 
 async function flush(): Promise<void> {
-  await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  await Promise.resolve();
+  for (let i = 0; i < 3; i += 1) {
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 const TOOL_MSG: MessageType = {
