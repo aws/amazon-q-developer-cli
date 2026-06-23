@@ -689,15 +689,17 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
   });
   const okResult = { status: 'success', output: 'irrelevant' };
 
+  const renderWithSummaries = (
+    summaries: Parameters<typeof renderSubagentFinalBlock>[4]
+  ): string =>
+    stripAnsi(
+      renderSubagentFinalBlock(baseContent, okResult, 'done', 1000, summaries)
+    );
   const renderStageBody = (
     contextSummary: string,
     taskResult: string
   ): string =>
-    stripAnsi(
-      renderSubagentFinalBlock(baseContent, okResult, 'done', 1000, [
-        { stageName: 'a', contextSummary, taskResult },
-      ])
-    );
+    renderWithSummaries([{ stageName: 'a', contextSummary, taskResult }]);
 
   // Stage body text (contextSummary, or taskResult when contextSummary is
   // empty) renders through the same markdown pipeline as agent prose: markers
@@ -744,21 +746,13 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
 
   test('verbose full output: markdown rendered for taskResult', () => {
     setVerboseConfig({ filters: ['subagent'] });
-    const summaries = [
+    const stripped = renderWithSummaries([
       {
         stageName: 'a',
         contextSummary: 'short digest',
         taskResult: '# Heading\n\n**Important** finding.',
       },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
+    ]);
     const rawIdx = stripped.indexOf('full output:');
     const responsesIdx = stripped.indexOf('response summary:');
     const rawSection = stripped.slice(rawIdx, responsesIdx);
@@ -769,21 +763,9 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
   });
 
   test('prompt_template renders markdown (markers stripped, body preserved)', () => {
-    const summaries = [
-      {
-        stageName: 'a',
-        contextSummary: 'body',
-        taskResult: '',
-      },
-    ];
-    const block = renderSubagentFinalBlock(
-      baseContent,
-      okResult,
-      'done',
-      1000,
-      summaries
-    );
-    const stripped = stripAnsi(block);
+    const stripped = renderWithSummaries([
+      { stageName: 'a', contextSummary: 'body', taskResult: '' },
+    ]);
     // prompt_template IS user-authored prose meant for the
     // subagent's model. Markdown styling surfaces (parity with how
     // agent prose, response summaries, and verbose raw output already
