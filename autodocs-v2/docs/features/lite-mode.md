@@ -58,7 +58,7 @@ Density presets (`minimal`, `lean`, `default`, `full`) and the individual tool-o
 
 ## Settings
 
-The default mode persists under `chat.ui.mode` (`"lite"` | `"tui"`) in `~/.kiro/settings/cli.json`; all verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md#persistence).
+The default mode persists under `chat.ui.mode` (`"lite"` | `"tui"`) in `~/.kiro/settings/cli.json`; all verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md).
 
 ## Troubleshooting
 

@@ -3,7 +3,24 @@ doc_meta:
   title: /settings
   description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, verbosity, display, lite]
+  keywords:
+    [
+      settings,
+      preferences,
+      config,
+      theme,
+      keybindings,
+      terminal,
+      history,
+      configure,
+      multi-line,
+      shift-enter,
+      tmux,
+      title,
+      verbosity,
+      display,
+      lite,
+    ]
   related: [theme, title, verbosity, lite]
   validated: 2026-06-05
   commit: 8a53bd9d9
@@ -35,29 +52,29 @@ You can also jump directly to a subcommand:
 
 ## Subcommands
 
-| Subcommand    | Description                                          | Details |
-|---------------|------------------------------------------------------|---------|
-| `display`     | Default UI at startup, animations, ASCII art, icons, and thinking | Toggle display preferences |
-| `verbosity`   | Tool args, reasoning, output filters, density (lite mode only) | See [/verbosity](verbosity.md) |
-| `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
-| `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
-| `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
-| `history`     | Prompt history scope (session or global)             | Choose between per-session or shared history |
+| Subcommand    | Description                                                       | Details                                      |
+| ------------- | ----------------------------------------------------------------- | -------------------------------------------- |
+| `display`     | Default UI at startup, animations, ASCII art, icons, and thinking | Toggle display preferences                   |
+| `verbosity`   | Tool args, reasoning, output filters, density (lite mode only)    | See [/verbosity](verbosity.md)               |
+| `theme`       | Colors, prompt style, diff styling                                | See [/theme](theme.md)                       |
+| `keybindings` | View configurable keyboard shortcuts                              | Read-only; edit in `~/.kiro/settings.json`   |
+| `terminal`    | Shift+Enter / Option+Enter for newlines                           | Configures your terminal app                 |
+| `history`     | Prompt history scope (session or global)                          | Choose between per-session or shared history |
 
-The `verbosity` subcommand only appears in the menu when in lite mode. In TUI mode it is hidden from the menu (though typing `/settings verbosity` directly still routes to the handler, which responds with a lite-mode-only error).
+The `verbosity` subcommand only appears in the menu in lite mode. In TUI mode, typing `/settings verbosity` directly still routes to the handler, which responds with a lite-mode-only error.
 
 ### display
 
 Opens a toggle panel for display settings. Use ↑↓ to navigate, ←→ to toggle, Enter to apply and close, Esc to go back.
 
-| Setting | Key | Default | Effect |
-|---------|-----|---------|--------|
-| Default UI | `chat.ui.mode` | tui | Choose startup UI mode: `tui` (full TUI) or `lite` (lightweight scrollback). Requires lite rollout. |
-| Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
-| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
-| Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
-| Show thinking | `chat.showThinking` | on | When off, collapses model thinking to a plain indicator |
-| Terminal title | `chat.terminalTitle` | off | When on, updates the terminal window title with session info via OSC 0 sequences |
+| Setting        | Key                    | Default      | Effect                                                                                              |
+| -------------- | ---------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| Default UI     | `chat.ui.mode`         | tui          | Choose startup UI mode: `tui` (full TUI) or `lite` (lightweight scrollback). Requires lite rollout. |
+| Animations     | `chat.allowAnimations` | on           | When off, spinners, progress bars, and loading effects show static frames                           |
+| ASCII art      | `chat.allowAsciiArt`   | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII                       |
+| Icons          | `chat.allowIcons`      | on           | When off, hides symbols for status, actions, and labels                                             |
+| Show thinking  | `chat.showThinking`    | on           | When off, collapses model thinking to a plain indicator                                             |
+| Terminal title | `chat.terminalTitle`   | off          | When on, updates the terminal window title with session info via OSC 0 sequences                    |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
 
@@ -98,14 +115,14 @@ The result is shown as a transient notification; the settings overlay closes aut
 
 Before modifying anything, the command writes a `.bak` of the file it's about to edit (for Apple Terminal, it exports the full `com.apple.Terminal` plist). Restoring is just a file copy.
 
-| Terminal | What's written | Where |
-|----------|----------------|-------|
-| VS Code / Cursor / Windsurf | Appends a keybinding: `shift+enter` → `workbench.action.terminal.sendSequence` with `\u001b\r` (Esc + CR) | `~/Library/Application Support/<app>/User/keybindings.json` (Linux / Windows paths differ) |
-| Alacritty | Appends `[[keyboard.bindings]]` entry mapping Shift+Return to `\u001B\r` | `~/.config/alacritty/alacritty.toml` (or `$XDG_CONFIG_HOME`) |
-| Zed | Appends a `Terminal`-scoped `shift-enter` binding sending `\u001b\r` | `~/.config/zed/keymap.json` |
-| Apple Terminal | Sets `useOptionAsMetaKey=true` **and** `Bell=false` on the default and startup profiles, then `killall cfprefsd` to flush the cache | `~/Library/Preferences/com.apple.Terminal.plist` |
-| iTerm2 / WezTerm / Ghostty / Kitty / Warp | Nothing — they already support Shift+Enter natively | — |
-| Windows Terminal, gnome-terminal, JetBrains IDEs, etc. | Nothing — unsupported; use `Ctrl+J` as the workaround | — |
+| Terminal                                               | What's written                                                                                                                      | Where                                                                                      |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| VS Code / Cursor / Windsurf                            | Appends a keybinding: `shift+enter` → `workbench.action.terminal.sendSequence` with `\u001b\r` (Esc + CR)                           | `~/Library/Application Support/<app>/User/keybindings.json` (Linux / Windows paths differ) |
+| Alacritty                                              | Appends `[[keyboard.bindings]]` entry mapping Shift+Return to `\u001B\r`                                                            | `~/.config/alacritty/alacritty.toml` (or `$XDG_CONFIG_HOME`)                               |
+| Zed                                                    | Appends a `Terminal`-scoped `shift-enter` binding sending `\u001b\r`                                                                | `~/.config/zed/keymap.json`                                                                |
+| Apple Terminal                                         | Sets `useOptionAsMetaKey=true` **and** `Bell=false` on the default and startup profiles, then `killall cfprefsd` to flush the cache | `~/Library/Preferences/com.apple.Terminal.plist`                                           |
+| iTerm2 / WezTerm / Ghostty / Kitty / Warp              | Nothing — they already support Shift+Enter natively                                                                                 | —                                                                                          |
+| Windows Terminal, gnome-terminal, JetBrains IDEs, etc. | Nothing — unsupported; use `Ctrl+J` as the workaround                                                                               | —                                                                                          |
 
 **Why Apple Terminal also flips the bell**: enabling `useOptionAsMetaKey` causes Option+<char> sequences to be delivered as escape sequences, which also trip the audio bell on some keypresses. Switching to visual bell avoids the terminal beeping on every Option+Enter. If you'd rather keep the audio bell, you can flip it back in Terminal.app → Settings → <profile> → Advanced → "Audible bell".
 

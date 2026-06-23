@@ -15,11 +15,7 @@ doc_meta:
 
 Switch to lite mode.
 
-## Overview
-
-The `/lite` command switches the current session from the standard TUI to lite mode — a lightweight, scrollback-friendly chat interface. The conversation history is re-rendered in lite format immediately.
-
-Lite mode requires the lite rollout to be enabled in your build (currently internal nightly only). If unavailable, the command shows "Lite mode is not available in this build."
+Switches the session from the standard TUI to lite mode — a lightweight, scrollback-friendly chat interface. See [Lite Mode](../features/lite-mode.md) for behavior.
 
 ## Usage
 
@@ -27,13 +23,7 @@ Lite mode requires the lite rollout to be enabled in your build (currently inter
 /lite
 ```
 
-No arguments. Switches immediately (`System: Switched to lite mode`). On builds where the rollout is off, it reports `System: Lite mode is not available in this build`.
-
-## Behavior
-
-- The full conversation history is re-rendered in lite formatting (`You:` / `Agent:` headers); overlay panels and menus are dismissed.
-- Terminal scrollback is preserved — no CSI 2J/3J clear is issued.
-- `/verbosity` settings take effect immediately on the re-rendered history.
+No arguments. Switches immediately (`System: Switched to lite mode`). On builds where the lite rollout is off (currently internal nightly only), it reports `System: Lite mode is not available in this build`.
 
 Use `/tui` to switch back. To make lite the default, see [Lite Mode → Enabling](../features/lite-mode.md#enabling-lite-mode).
 

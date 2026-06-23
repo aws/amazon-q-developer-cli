@@ -15,12 +15,7 @@ doc_meta:
 
 Switch to TUI mode or show TUI info.
 
-## Overview
-
-The `/tui` command has context-dependent behavior:
-
-- **From lite mode**: Switches to the full panel-based TUI. The conversation is re-rendered using TUI components.
-- **From TUI mode**: Opens the TUI information panel showing what's new in the TUI experience.
+Context-dependent: **from lite mode** it switches to the full panel-based TUI (re-rendering the conversation); **from TUI mode** it opens the TUI info panel.
 
 ## Usage
 

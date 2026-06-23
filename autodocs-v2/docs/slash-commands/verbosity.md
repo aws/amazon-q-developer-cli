@@ -28,13 +28,7 @@ doc_meta:
 
 Configure lite-mode rendering.
 
-## Overview
-
-The `/verbosity` command controls how tool calls, subagent activity, and output bars render in lite mode. It provides both an interactive menu and direct CLI-style subcommands for power users.
-
-This command is only available in lite mode. Running it in TUI mode shows: "/verbosity is only available in lite mode."
-
-`/verbose` is accepted as an alias.
+Controls how tool calls, subagent activity, and output bars render in lite mode (alias: `/verbose`). Only available in lite mode — in TUI mode it shows "/verbosity is only available in lite mode."
 
 ## Usage
 
@@ -85,21 +79,7 @@ Without arguments, opens the interactive configuration menu. With arguments, app
 
 You can also use exact tool names as filter tokens.
 
-## Interactive Menu
-
-With no arguments the menu exposes the same knobs as the tables above with live
-preview; Esc backs out of submenus.
-
-## Persistence
-
-Settings persist in `~/.kiro/settings/cli.json` under the `chat.tools.*` keys
-(`filters`, `showReasoning`, `argsMode`, `showElapsed`, and the `argsMax*` /
-`outputMax*` caps). Changes take effect immediately and survive across sessions.
-
-## Troubleshooting
-
-- **"/verbosity is only available in lite mode"** — switch with `/lite` first.
-- **Filters set but no output** — confirm the category matches (MCP tools need `mcp`); verify with `/verbosity status`.
+With no arguments the menu exposes the same knobs as the tables above with live preview (Esc backs out). Settings persist in `~/.kiro/settings/cli.json` under the `chat.tools.*` keys, take effect immediately, and survive across sessions.
 
 ## Related
 
