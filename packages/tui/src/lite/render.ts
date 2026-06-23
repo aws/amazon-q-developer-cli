@@ -711,8 +711,7 @@ export function renderShellOutputBlock(
     lines.pop();
   }
   if (lines.length === 0) return '';
-  // Accepted for API symmetry but unused on purpose (see fn doc).
-  void termCols;
+  void termCols; // accepted for API symmetry, unused (see fn doc)
   return lines.map((line) => gutter + line).join('\n');
 }
 
@@ -1108,7 +1107,6 @@ export function renderWriteToolCall(
   try {
     const args = JSON.parse(content);
     path = args.path;
-    // snake_case + camelCase fallback — see WIRE FORMAT above.
     const oldStr = args.old_str ?? args.oldStr;
     const newStr = args.new_str ?? args.newStr;
     const fileText = args.file_text ?? args.content;
@@ -1747,7 +1745,6 @@ export function extractInlineArg(
     const path = typeof args.path === 'string' ? args.path : null;
     if (path) {
       let verb = 'write';
-      // snake_case + camelCase fallback (see WIRE FORMAT).
       const oldStr = args.old_str ?? args.oldStr;
       const fileText = args.file_text ?? args.content;
       const insertLine = args.insert_line ?? args.insertLine;
@@ -1855,8 +1852,7 @@ function extractToolPurpose(content: string): string | undefined {
     ) {
       return args.__tool_use_purpose;
     }
-    // No reasoning — derive a single-line summary from args (snake_case +
-    // camelCase fallback, see WIRE FORMAT).
+    // No reasoning — derive a single-line summary from args.
     const oldStr = args.old_str ?? args.oldStr;
     if (
       args.command === 'str_replace' ||
