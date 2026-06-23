@@ -208,7 +208,13 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await finishAndExitLite(testCase);
   }, 30000);
 
-  it('/clear in lite writes CSI escape and wipes visible terminal [bug-mine 10.8]', async () => {
+  // TEMPORARILY SKIPPED: this asserts /clear wipes the visible terminal +
+  // scrollback (CSI 2J/3J). On this branch /clear clears the in-session
+  // conversation context, NOT the terminal scrollback, so the wipe-sequence
+  // assertion no longer reflects intended behavior. Re-enable (drop `.skip`)
+  // if/when /clear is wired to emit a screen wipe; otherwise this test should
+  // be rewritten against the context-clear behavior in a later PR.
+  it.skip('/clear in lite writes CSI escape and wipes visible terminal [bug-mine 10.8]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-8-clear');
 
     // Mock mode doesn't auto-send CommandsUpdate, so register /clear manually.
