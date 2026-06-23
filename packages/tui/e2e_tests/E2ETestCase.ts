@@ -78,12 +78,12 @@ export class E2ETestCase {
       fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
     }
 
-    // Write user settings to $HOME/.kiro/settings/cli.json
-    if (this.options.settings) {
-      const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-      fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
-    }
+    // Default to TUI mode so the first-launch UI-mode picker never blocks E2E
+    // flows. Individual tests can still override this with withGlobalSettings().
+    const settings = { 'chat.ui.mode': 'tui', ...(this.options.settings ?? {}) };
+    const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
 
     // Write any prelaunch files into the sandbox HOME before the CLI spawns
     for (const file of this.options.prelaunchFiles ?? []) {

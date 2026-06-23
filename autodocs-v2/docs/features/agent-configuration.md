@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-10
-  commit: 4b90cad4d
+  validated: 2026-06-22
+  commit: 92b71a022
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked]
-  related: [agent-create, agent-edit, agent-swap, mcp-registry]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources]
+  related: [agent-create, agent-edit, agent-swap, mcp-registry, settings]
 ---
 
 # Agent Configuration
@@ -218,6 +218,16 @@ Context files loaded into agent context. Supports `file://` and `skill://` URI s
 - Specific paths: `file://README.md` or `skill://my-skill.md`
 - Glob patterns: `file://src/**/*.rs` or `skill://.kiro/skills/**/SKILL.md`
 - Absolute or relative paths
+
+**Default resource inheritance**: By default, custom (user-defined) agents automatically inherit a set of default resources — global/workspace steering files, skills, and project marker files like `AGENTS.md` and `README.md`. These are appended to whatever resources you explicitly declare.
+
+To disable this behavior so custom agents only use resources they explicitly declare, set:
+
+```
+/settings set chat.disableInheritingDefaultResources true
+```
+
+Built-in agents always inherit default resources regardless of this setting.
 
 **Skills**: A skill is a resource whose metadata (name, description, path) is loaded at startup, with full content loaded on demand. Skill files must begin with YAML frontmatter:
 
