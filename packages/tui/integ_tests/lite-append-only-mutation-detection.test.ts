@@ -21,40 +21,35 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     }
   });
 
+  /** Inject a Content event with `marker`, submit `prompt`, complete + settle. */
+  async function pushTurn(
+    tc: TestCase,
+    id: string,
+    marker: string,
+    prompt: string
+  ): Promise<void> {
+    await tc.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id,
+      content: { type: ContentType.Text, text: marker },
+    });
+    await tc.typeAndSubmit(prompt);
+    await tc.completeTurn();
+    await tc.sleepMs(400);
+  }
+
   it('committed content survives later turns: markers grow monotonically, exactly once each', async () => {
     testCase = await launchLiteInteg('lite-append-only-monotonic');
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-a',
-      content: { type: ContentType.Text, text: 'MONOTONIC_A_MARKER' },
-    });
-    await testCase.typeAndSubmit('turn1');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
+    await pushTurn(testCase, 'content-a', 'MONOTONIC_A_MARKER', 'turn1');
 
     // Marker A must already be on screen before turn 2 commits it to <Static>.
     expect(
       testCase.getSnapshot().findIndex((l) => l.includes('MONOTONIC_A_MARKER'))
     ).not.toBe(-1);
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-b',
-      content: { type: ContentType.Text, text: 'MONOTONIC_B_MARKER' },
-    });
-    await testCase.typeAndSubmit('turn2');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-c',
-      content: { type: ContentType.Text, text: 'MONOTONIC_C_MARKER' },
-    });
-    await testCase.typeAndSubmit('turn3');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
+    await pushTurn(testCase, 'content-b', 'MONOTONIC_B_MARKER', 'turn2');
+    await pushTurn(testCase, 'content-c', 'MONOTONIC_C_MARKER', 'turn3');
 
     const snap = testCase.getSnapshot();
     const idxA = snap.findIndex((l) => l.includes('MONOTONIC_A_MARKER'));
@@ -140,14 +135,12 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
     expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
     expect(storeAfter.messages.length).toBe(0);
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-postclear',
-      content: { type: ContentType.Text, text: 'AFTER_CLEAR_MARKER_QRS' },
-    });
-    await testCase.typeAndSubmit('post-clear');
-    await testCase.completeTurn();
-    await testCase.sleepMs(500);
+    await pushTurn(
+      testCase,
+      'content-postclear',
+      'AFTER_CLEAR_MARKER_QRS',
+      'post-clear'
+    );
 
     const snapAfter = testCase.getSnapshot();
     const postClearIdx = snapAfter.findIndex((l) =>
