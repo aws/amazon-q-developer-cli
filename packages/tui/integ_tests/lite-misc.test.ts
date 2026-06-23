@@ -11,13 +11,7 @@ import {
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
-/**
- * Bug-mine category 10: miscellaneous lite-mode edge cases.
- *
- * Covers spacing consistency (10.1), race guards (10.2), tool output
- * concatenation (10.3), subagent isolation (10.4), transient alerts (10.5),
- * /clear terminal wipe (10.8), and astral character integrity (10.10).
- */
+/** Bug-mine category 10: miscellaneous lite-mode edge cases (per-it ids below). */
 describe('lite miscellaneous [bug-mine 10.x]', () => {
   let testCase: TestCase | null = null;
 
@@ -45,7 +39,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await testCase.typeAndSubmit('test spacing');
     await testCase.sleepMs(300);
 
-    // Live snapshot (tool still in progress) vs static (after flush).
     const liveSnapshot = testCase.getSnapshot();
     const liveReadLine = liveSnapshot.findIndex((line) =>
       line.includes('Read')
@@ -298,7 +291,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     );
     expect(markerGone).toBe(true);
 
-    // ESC[2J = erase display, ESC[3J = erase scrollback.
     const rawOutput = testCase.getOutput();
     const hasWipeSequence =
       rawOutput.includes('\x1b[2J') || rawOutput.includes('\x1b[3J');

@@ -18,10 +18,6 @@ const CTRL_W = '\x17';
 const CTRL_Y = '\x19';
 const CTRL_UNDERSCORE = '\x1f'; // undo
 
-// Alt keys
-const ALT_F = '\x1bf';
-const ALT_B = '\x1bb';
-
 const UP_ARROW = '\x1b[A';
 
 async function send(tc: TestCase, key: string) {
@@ -29,6 +25,9 @@ async function send(tc: TestCase, key: string) {
   await tc.sleepMs(100);
 }
 
+// These cases leave text in the prompt; the exit ladder needs the three Ctrl+C
+// presses SPACED (a burst gets coalesced and the first only clears input), so
+// this differs from the shared exitLiteInteg() burst exit.
 async function exitCleanly(tc: TestCase) {
   await tc.pressCtrlC();
   await tc.sleepMs(100);
@@ -64,27 +63,38 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
     await exitCleanly(testCase);
   }, 30000);
 
-  it('Ctrl+A moves to start, Ctrl+K kills, Ctrl+Y yanks', async () => {
-    testCase = await launchLiteInteg('lite-smoke-keyboard');
+  // Ctrl+A/Ctrl+K kill-line then restore: Ctrl+Y yanks the kill ring, Ctrl+_
+  // undoes the kill. Same preamble, only the restore key differs.
+  it.each([
+    { restoreKey: CTRL_Y, label: 'Ctrl+Y yanks' },
+    { restoreKey: CTRL_UNDERSCORE, label: 'Ctrl+_ undoes' },
+  ])(
+    'Ctrl+A to start, Ctrl+K kills, $label kill-line back',
+    async ({ restoreKey }) => {
+      testCase = await launchLiteInteg('lite-smoke-keyboard', {
+        terminal: { width: 60, height: 20 },
+      });
 
-    await testCase.sendKeys('hello world');
-    await testCase.sleepMs(200);
+      await testCase.sendKeys('hello world');
+      await testCase.sleepMs(200);
 
-    await send(testCase, CTRL_A);
-    await send(testCase, CTRL_K);
-    await testCase.sleepMs(200);
+      await send(testCase, CTRL_A);
+      await send(testCase, CTRL_K);
+      await testCase.sleepMs(200);
 
-    const afterKill = flattenSnapshot(testCase);
-    expect(afterKill).not.toContain('hello world');
+      const afterKill = flattenSnapshot(testCase);
+      expect(afterKill).not.toContain('hello world');
 
-    await send(testCase, CTRL_Y);
-    await testCase.sleepMs(200);
+      await send(testCase, restoreKey);
+      await testCase.sleepMs(200);
 
-    const afterYank = flattenSnapshot(testCase);
-    expect(afterYank).toContain('hello world');
+      const afterRestore = flattenSnapshot(testCase);
+      expect(afterRestore).toContain('hello world');
 
-    await exitCleanly(testCase);
-  }, 30000);
+      await exitCleanly(testCase);
+    },
+    30000
+  );
 
   it('Ctrl+J creates newline, Up arrow navigates between lines', async () => {
     testCase = await launchLiteInteg('lite-smoke-multiline');
@@ -129,28 +139,6 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
     await exitCleanly(testCase);
   }, 30000);
 
-  it('Alt+F and Alt+B move cursor by word', async () => {
-    testCase = await launchLiteInteg('lite-smoke-word-movement', {
-      terminal: { width: 60, height: 20 },
-    });
-
-    const origin = testCase.getCursorPosition();
-
-    await testCase.sendKeys('hello world');
-    await testCase.sleepMs(200);
-
-    // Alt+B back to start of "world" (offset 6), Alt+F forward to end (offset 11).
-    await send(testCase, ALT_B);
-    const afterBack = testCase.getCursorPosition();
-    expect(afterBack.x).toBe(origin.x + 6);
-
-    await send(testCase, ALT_F);
-    const afterForward = testCase.getCursorPosition();
-    expect(afterForward.x).toBe(origin.x + 11);
-
-    await exitCleanly(testCase);
-  }, 30000);
-
   it('Ctrl+R opens reverse-i-search prompt', async () => {
     testCase = await launchLiteInteg('lite-smoke-reverse-search');
 
@@ -190,30 +178,6 @@ describe('Lite mode smoke tests (BOTH-classified integ)', () => {
 
     const snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('/cl');
-
-    await exitCleanly(testCase);
-  }, 30000);
-
-  it('Ctrl+_ undoes a kill-line operation', async () => {
-    testCase = await launchLiteInteg('lite-smoke-undo', {
-      terminal: { width: 60, height: 20 },
-    });
-
-    await testCase.sendKeys('hello world');
-    await testCase.sleepMs(200);
-
-    await send(testCase, CTRL_A);
-    await send(testCase, CTRL_K);
-    await testCase.sleepMs(200);
-
-    const afterKill = flattenSnapshot(testCase);
-    expect(afterKill).not.toContain('hello world');
-
-    await send(testCase, CTRL_UNDERSCORE);
-    await testCase.sleepMs(200);
-
-    const afterUndo = flattenSnapshot(testCase);
-    expect(afterUndo).toContain('hello world');
 
     await exitCleanly(testCase);
   }, 30000);

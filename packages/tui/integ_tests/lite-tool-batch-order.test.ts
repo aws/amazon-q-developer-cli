@@ -28,42 +28,35 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
   it('tools appear in creation order regardless of completion order', async () => {
     testCase = await launchLiteInteg('lite-tool-batch-order');
 
-    // Helper: queue the scenario events (two tools, out-of-order completion)
-    const injectToolEvents = async () => {
-      // Tool A: created first
-      await testCase!.mockSessionUpdate({
-        type: AgentEventType.ToolCall,
-        id: 'tool-alpha',
-        name: 'Read',
-        kind: 'read',
-        args: { path: '/tmp/alpha.txt' },
-      });
-      // Tool B: created second
-      await testCase!.mockSessionUpdate({
-        type: AgentEventType.ToolCall,
-        id: 'tool-beta',
-        name: 'Shell',
-        kind: 'shell',
-        args: { command: 'echo beta' },
-      });
-      // Tool B finishes FIRST (out-of-order completion)
-      await testCase!.mockSessionUpdate({
-        type: AgentEventType.ToolCallFinished,
-        id: 'tool-beta',
-        result: { status: 'success', output: 'beta output' },
-      });
-      // Tool A finishes SECOND
-      await testCase!.mockSessionUpdate({
-        type: AgentEventType.ToolCallFinished,
-        id: 'tool-alpha',
-        result: { status: 'success', output: 'alpha output' },
-      });
-    };
+    // Two tools created A-then-B; B completes before A (out-of-order). The
+    // contiguous done-prefix hold (static-flush.ts:64-78) must still flush
+    // them in creation order. The synchronous drain in MockSessionClient
+    // delivers these to the per-prompt handler once typeAndSubmit runs.
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCall,
+      id: 'tool-alpha',
+      name: 'Read',
+      kind: 'read',
+      args: { path: '/tmp/alpha.txt' },
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCall,
+      id: 'tool-beta',
+      name: 'Shell',
+      kind: 'shell',
+      args: { command: 'echo beta' },
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tool-beta',
+      result: { status: 'success', output: 'beta output' },
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tool-alpha',
+      result: { status: 'success', output: 'alpha output' },
+    });
 
-    // Inject events then submit. The synchronous drain in MockSessionClient
-    // ensures events are delivered to the per-prompt handler as long as
-    // typeAndSubmit gives the TUI time to process keystrokes.
-    await injectToolEvents();
     await testCase.typeAndSubmit('t0');
     // End the turn so tools are rendered in scrollback
     await testCase.completeTurn();
