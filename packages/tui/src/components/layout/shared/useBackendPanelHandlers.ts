@@ -13,29 +13,7 @@ import {
 } from '../../../stores/selectors.js';
 import { useAppStore, type CodePanelData } from '../../../stores/app-store.js';
 
-export interface BackendPanelHandlers {
-  handleCloseContextBreakdown: () => void;
-  handleCloseUsagePanel: () => void;
-  handleCloseHelpPanel: () => void;
-  handleCloseMcpPanel: () => void;
-  handleCloseToolsPanel: () => void;
-  handleCloseStatsPanel: () => void;
-  handleCloseHooksPanel: () => void;
-  handleCloseKnowledgePanel: () => void;
-  handleCloseCodePanel: () => void;
-  handleCloseChangelogPanel: () => void;
-  handleCloseRewindExplorer: () => void;
-  handleCloseKeybindingsPanel: () => void;
-  handleCloseDisplaySettingsPanel: () => void;
-  handleCloseThemePanel: () => void;
-  handleCloseSettingsPanel: () => void;
-  handleTabFromContext: () => Promise<void>;
-  handleTabFromUsage: () => Promise<void>;
-  handleRefreshCodePanel: () => Promise<void>;
-  handleRewindSelect: (rowId: string) => void;
-}
-
-export function useBackendPanelHandlers(): BackendPanelHandlers {
+export function useBackendPanelHandlers() {
   const {
     setShowContextBreakdown,
     setShowHelpPanel,
@@ -85,27 +63,30 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
       reopenSettingsMenu,
     ]);
 
-  const handleCloseContextBreakdown = makeClose(setShowContextBreakdown);
-  const handleCloseHelpPanel = makeClose(setShowHelpPanel);
-  const handleCloseUsagePanel = makeClose(setShowUsagePanel);
-  const handleCloseMcpPanel = makeClose(setShowMcpPanel);
-  const handleCloseToolsPanel = makeClose(setShowToolsPanel);
-  const handleCloseStatsPanel = makeClose(setShowStatsPanel);
-  const handleCloseHooksPanel = makeClose(setShowHooksPanel);
-  const handleCloseKnowledgePanel = makeClose(setShowKnowledgePanel);
-  const handleCloseCodePanel = makeClose(setShowCodePanel);
-  const handleCloseChangelogPanel = makeClose(setShowChangelogPanel);
-  const handleCloseRewindExplorer = makeClose(setShowRewindExplorer);
-  const handleCloseKeybindingsPanel = makeClose(setShowKeybindingsPanel, {
-    returnToSettings: true,
-  });
-  const handleCloseDisplaySettingsPanel = makeClose(
-    setShowDisplaySettingsPanel,
-    { returnToSettings: true }
-  );
-  const handleCloseThemePanel = makeClose(setShowThemePanel, {
-    returnToSettings: true,
-  });
+  // makeClose calls run unconditionally in fixed order inside this object
+  // literal, so React hook ordering holds (see makeClose suppression above).
+  const closeHandlers = {
+    handleCloseContextBreakdown: makeClose(setShowContextBreakdown),
+    handleCloseUsagePanel: makeClose(setShowUsagePanel),
+    handleCloseHelpPanel: makeClose(setShowHelpPanel),
+    handleCloseMcpPanel: makeClose(setShowMcpPanel),
+    handleCloseToolsPanel: makeClose(setShowToolsPanel),
+    handleCloseStatsPanel: makeClose(setShowStatsPanel),
+    handleCloseHooksPanel: makeClose(setShowHooksPanel),
+    handleCloseKnowledgePanel: makeClose(setShowKnowledgePanel),
+    handleCloseCodePanel: makeClose(setShowCodePanel),
+    handleCloseChangelogPanel: makeClose(setShowChangelogPanel),
+    handleCloseRewindExplorer: makeClose(setShowRewindExplorer),
+    handleCloseKeybindingsPanel: makeClose(setShowKeybindingsPanel, {
+      returnToSettings: true,
+    }),
+    handleCloseDisplaySettingsPanel: makeClose(setShowDisplaySettingsPanel, {
+      returnToSettings: true,
+    }),
+    handleCloseThemePanel: makeClose(setShowThemePanel, {
+      returnToSettings: true,
+    }),
+  };
 
   const handleCloseSettingsPanel = useCallback(() => {
     // Top-level /settings close. Always clears the back-flag so the next
@@ -188,20 +169,7 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
   );
 
   return {
-    handleCloseContextBreakdown,
-    handleCloseUsagePanel,
-    handleCloseHelpPanel,
-    handleCloseMcpPanel,
-    handleCloseToolsPanel,
-    handleCloseStatsPanel,
-    handleCloseHooksPanel,
-    handleCloseKnowledgePanel,
-    handleCloseCodePanel,
-    handleCloseChangelogPanel,
-    handleCloseRewindExplorer,
-    handleCloseKeybindingsPanel,
-    handleCloseDisplaySettingsPanel,
-    handleCloseThemePanel,
+    ...closeHandlers,
     handleCloseSettingsPanel,
     handleTabFromContext,
     handleTabFromUsage,
@@ -209,3 +177,5 @@ export function useBackendPanelHandlers(): BackendPanelHandlers {
     handleRewindSelect,
   };
 }
+
+export type BackendPanelHandlers = ReturnType<typeof useBackendPanelHandlers>;
