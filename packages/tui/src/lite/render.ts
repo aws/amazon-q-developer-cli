@@ -1219,6 +1219,10 @@ const TRIVIAL_TOOLS = new Set([
   ...INTROSPECT_TOOL_NAMES,
 ]);
 
+// Tools that render an inline diff in lite mode. Intentionally distinct from
+// the canonical WRITE_TOOL_NAMES registry: lite only diffs tools that carry a
+// previewable old/new payload (edit/create_file/write_file), and skips
+// delete_file/fs_append which have no diff to show.
 const WRITE_TOOLS = new Set([
   'fs_write',
   'str_replace',
@@ -1227,10 +1231,6 @@ const WRITE_TOOLS = new Set([
   'create_file',
   'write_file',
 ]);
-
-export function isWriteTool(name: string): boolean {
-  return WRITE_TOOLS.has(name);
-}
 
 export function isReadTool(name: string): boolean {
   return READ_TOOL_NAMES.has(name);
@@ -2797,6 +2797,30 @@ export interface RenderContext {
 }
 
 /** Render any message type to a plain text string for Static output. */
+/** True when this exact tool call is the one blocking on a user approval. */
+function isAwaitingApproval(msg: MessageLike, ctx: RenderContext): boolean {
+  return (
+    !!ctx.pendingApprovalToolCallId && ctx.pendingApprovalToolCallId === msg.id
+  );
+}
+
+/** The output bar appended after a tool body (errors bypass the filter check). */
+function verboseOutputSuffix(
+  msg: MessageLike,
+  display: VerboseDisplayConfig,
+  ctx: RenderContext
+): string {
+  return renderVerboseOutput(
+    msg.name || '',
+    msg.result,
+    display.outputMaxLines,
+    ctx.filtersOverride,
+    display.outputMaxChars,
+    ctx.termCols,
+    ctx.glyphs
+  );
+}
+
 export function renderMessageToText(
   msg: MessageLike,
   mainAgentName?: string,
@@ -2857,7 +2881,7 @@ export function renderMessageToText(
             : 'running';
       const showAgent = msg.agentName && msg.agentName !== mainAgentName;
       const agentPrefix = showAgent ? `[${msg.agentName}] ` : undefined;
-      const isWrite = isWriteTool(msg.name || '');
+      const isWrite = WRITE_TOOLS.has(msg.name || '');
       const isRead = isReadTool(msg.name || '');
       const display = ctx.display ?? getVerboseDisplay();
 
@@ -2886,9 +2910,7 @@ export function renderMessageToText(
             runningSpinner: ctx.runningSpinner,
             // Fires only when the parent subagent tool itself awaits approval;
             // stage approvals go through the footer activity strip instead.
-            awaitingApproval:
-              !!ctx.pendingApprovalToolCallId &&
-              ctx.pendingApprovalToolCallId === msg.id,
+            awaitingApproval: isAwaitingApproval(msg, ctx),
           }
         );
       }
@@ -2920,9 +2942,7 @@ export function renderMessageToText(
                 ? msg.finishTime - msg.startTime
                 : undefined,
             runningSpinner: ctx.runningSpinner,
-            awaitingApproval:
-              !!ctx.pendingApprovalToolCallId &&
-              ctx.pendingApprovalToolCallId === msg.id,
+            awaitingApproval: isAwaitingApproval(msg, ctx),
           };
           const header = renderToolCall(info, ctx.theme);
           // `off` mode gets the bare header; other modes show the full body
@@ -2943,18 +2963,7 @@ export function renderMessageToText(
           // Suppress the output bar on success (the tray is authoritative);
           // on error, surface the body so the user sees the cause.
           if (msg.result?.status !== 'error') return body;
-          return (
-            body +
-            renderVerboseOutput(
-              msg.name || '',
-              msg.result,
-              display.outputMaxLines,
-              ctx.filtersOverride,
-              display.outputMaxChars,
-              ctx.termCols,
-              ctx.glyphs
-            )
-          );
+          return body + verboseOutputSuffix(msg, display, ctx);
         }
         // taskBlock === null — args malformed; fall through to generic.
       }
@@ -2984,18 +2993,14 @@ export function renderMessageToText(
         runningSpinner: ctx.runningSpinner,
         // Pending-approval target: running slot flips to a yellow ' ...'
         // (the agent isn't progressing, so the spinner would lie).
-        awaitingApproval:
-          !!ctx.pendingApprovalToolCallId &&
-          ctx.pendingApprovalToolCallId === msg.id,
+        awaitingApproval: isAwaitingApproval(msg, ctx),
       };
       if (isWrite && msg.content) {
         // Suppress the diff when this call is awaiting approval (already shown
         // in the prompt) or the user turned off the Write-diffs toggle; the
         // header row still records that the write fired.
         const suppressDiff =
-          (!!ctx.pendingApprovalToolCallId &&
-            ctx.pendingApprovalToolCallId === msg.id) ||
-          !display.showWriteDiffs;
+          isAwaitingApproval(msg, ctx) || !display.showWriteDiffs;
         // Write diffs render in full (the payload being reviewed), including
         // denied calls — falling back to a raw args tree post-deny reads
         // worse than the diff. No trailing success line; errors still surface
@@ -3006,18 +3011,7 @@ export function renderMessageToText(
           theme: ctx.theme,
         });
         if (msg.result?.status !== 'error') return writeRender;
-        return (
-          writeRender +
-          renderVerboseOutput(
-            msg.name || '',
-            msg.result,
-            display.outputMaxLines,
-            ctx.filtersOverride,
-            display.outputMaxChars,
-            ctx.termCols,
-            ctx.glyphs
-          )
-        );
+        return writeRender + verboseOutputSuffix(msg, display, ctx);
       }
       // Read tools render a structured body (path header + numbered,
       // highlighted lines); the output bar is skipped (body shows content).
@@ -3058,30 +3052,11 @@ export function renderMessageToText(
             toolLine +
             '\n' +
             capped.join('\n') +
-            renderVerboseOutput(
-              msg.name || '',
-              msg.result,
-              display.outputMaxLines,
-              ctx.filtersOverride,
-              display.outputMaxChars,
-              ctx.termCols,
-              ctx.glyphs
-            )
+            verboseOutputSuffix(msg, display, ctx)
           );
         }
       }
-      return (
-        toolLine +
-        renderVerboseOutput(
-          msg.name || '',
-          msg.result,
-          display.outputMaxLines,
-          ctx.filtersOverride,
-          display.outputMaxChars,
-          ctx.termCols,
-          ctx.glyphs
-        )
-      );
+      return toolLine + verboseOutputSuffix(msg, display, ctx);
     }
 
     case 'system':
