@@ -35,7 +35,6 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
 
     await testCase.waitForVisibleText('ask a question', 10000);
 
-    // Verify TUI mode and that we are already initialized
     const storeBefore = await testCase.getStore();
     expect(storeBefore.uiMode).toBe('tui');
     expect(storeBefore.isInitialized).toBe(true);
