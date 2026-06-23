@@ -7,6 +7,13 @@
 import type { TestCase } from '../../../src/test-utils/TestCase';
 import { E2ETestCase } from '../../E2ETestCase';
 
+type LaunchE2EOpts = {
+  terminal?: { width: number; height: number };
+  waitTimeout?: number;
+  waitForCommands?: boolean;
+  getSession?: boolean;
+};
+
 /**
  * Launch the e2e E2ETestCase in lite mode and run the readiness ceremony
  * (wait for prompt, slash-command registry, session id) repeated across every
@@ -14,12 +21,7 @@ import { E2ETestCase } from '../../E2ETestCase';
  */
 export async function launchLiteE2E(
   testName: string,
-  opts: {
-    terminal?: { width: number; height: number };
-    waitTimeout?: number;
-    waitForCommands?: boolean;
-    getSession?: boolean;
-  } = {}
+  opts: LaunchE2EOpts = {}
 ): Promise<E2ETestCase> {
   const tc = await E2ETestCase.builder()
     .withTestName(testName)
@@ -32,19 +34,10 @@ export async function launchLiteE2E(
   return tc;
 }
 
-/**
- * Launch the e2e E2ETestCase in TUI (default) mode and run the readiness
- * ceremony. Sibling of launchLiteE2E for the swap tests whose second `it`
- * boots in TUI mode before switching to lite.
- */
+/** launchLiteE2E sibling for the swap tests' TUI-mode boot (no .withLite()). */
 export async function launchTuiE2E(
   testName: string,
-  opts: {
-    terminal?: { width: number; height: number };
-    waitTimeout?: number;
-    waitForCommands?: boolean;
-    getSession?: boolean;
-  } = {}
+  opts: LaunchE2EOpts = {}
 ): Promise<E2ETestCase> {
   const tc = await E2ETestCase.builder()
     .withTestName(testName)
