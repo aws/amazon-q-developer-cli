@@ -185,6 +185,68 @@ const DEFAULT_CONFIG: VerboseConfig = {
   display: DEFAULT_DISPLAY,
 };
 
+// ── Field metadata ──────────────────────────────────────────────────────────
+// One row per top-level display field maps the local key ↔ its cli.json
+// Settings key. mergeDisplay/getVerboseDisplay/sameDisplay/setVerboseConfig all
+// drive off these tables so a new field is added in one place. `toolArgsMode`
+// and `showThinkingContent` keep bespoke handling (enum / tri-state) below.
+
+type BoolDisplayKey =
+  | 'showToolReasoning'
+  | 'showElapsed'
+  | 'showWriteDiffs'
+  | 'showTasks';
+const BOOL_FIELDS: { local: BoolDisplayKey; setting: string }[] = [
+  { local: 'showToolReasoning', setting: Settings.CHAT_TOOLS_SHOW_REASONING },
+  { local: 'showElapsed', setting: Settings.CHAT_TOOLS_SHOW_ELAPSED },
+  { local: 'showWriteDiffs', setting: Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS },
+  { local: 'showTasks', setting: Settings.CHAT_SHOW_TASKS },
+];
+
+type CapDisplayKey =
+  | 'argsMaxLines'
+  | 'outputMaxLines'
+  | 'argsMaxChars'
+  | 'outputMaxChars';
+// `defaultOnMissing`: char caps fall back to DEFAULT_DISPLAY when the saved
+// field is absent (so a pre-field upgrade keeps the chip cap); line caps treat
+// missing as unbounded.
+const CAP_FIELDS: {
+  local: CapDisplayKey;
+  setting: string;
+  defaultOnMissing: boolean;
+}[] = [
+  {
+    local: 'argsMaxLines',
+    setting: Settings.CHAT_TOOLS_ARGS_MAX_LINES,
+    defaultOnMissing: false,
+  },
+  {
+    local: 'outputMaxLines',
+    setting: Settings.CHAT_TOOLS_OUTPUT_MAX_LINES,
+    defaultOnMissing: false,
+  },
+  {
+    local: 'argsMaxChars',
+    setting: Settings.CHAT_TOOLS_ARGS_MAX_CHARS,
+    defaultOnMissing: true,
+  },
+  {
+    local: 'outputMaxChars',
+    setting: Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS,
+    defaultOnMissing: true,
+  },
+];
+
+type SubagentKey = keyof SubagentDisplayConfig;
+const SUBAGENT_FIELDS: { local: SubagentKey; setting: string }[] = [
+  { local: 'pipeline', setting: Settings.CHAT_SUBAGENT_SHOW_PIPELINE },
+  { local: 'prompts', setting: Settings.CHAT_SUBAGENT_SHOW_PROMPTS },
+  { local: 'roles', setting: Settings.CHAT_SUBAGENT_SHOW_ROLES },
+  { local: 'deps', setting: Settings.CHAT_SUBAGENT_SHOW_DEPS },
+  { local: 'responses', setting: Settings.CHAT_SUBAGENT_SHOW_RESPONSES },
+];
+
 function configPath(): string {
   return kiroHomePath('settings', 'lite_verbose.json');
 }
@@ -206,8 +268,9 @@ function mergeDisplay(raw: unknown): VerboseDisplayConfig {
   };
   if (!raw || typeof raw !== 'object') return out;
   const obj = raw as Record<string, unknown>;
-  if (typeof obj.showToolReasoning === 'boolean')
-    out.showToolReasoning = obj.showToolReasoning;
+  for (const { local } of BOOL_FIELDS) {
+    if (typeof obj[local] === 'boolean') out[local] = obj[local] as boolean;
+  }
   if (
     obj.toolArgsMode === 'off' ||
     obj.toolArgsMode === 'inline' ||
@@ -215,34 +278,19 @@ function mergeDisplay(raw: unknown): VerboseDisplayConfig {
   ) {
     out.toolArgsMode = obj.toolArgsMode;
   }
-  if (typeof obj.showElapsed === 'boolean') out.showElapsed = obj.showElapsed;
   if (typeof obj.showThinkingContent === 'boolean')
     out.showThinkingContent = obj.showThinkingContent;
-  if (typeof obj.showWriteDiffs === 'boolean')
-    out.showWriteDiffs = obj.showWriteDiffs;
-  if (typeof obj.showTasks === 'boolean') out.showTasks = obj.showTasks;
-  out.argsMaxLines = parseLineCap(obj.argsMaxLines);
-  out.outputMaxLines = parseLineCap(obj.outputMaxLines);
-  // Missing char caps fall back to DEFAULT_DISPLAY (not unlimited) so an
-  // upgrade from a pre-field config keeps the current chip cap.
-  out.argsMaxChars =
-    obj.argsMaxChars === undefined
-      ? DEFAULT_DISPLAY.argsMaxChars
-      : parseLineCap(obj.argsMaxChars);
-  out.outputMaxChars =
-    obj.outputMaxChars === undefined
-      ? DEFAULT_DISPLAY.outputMaxChars
-      : parseLineCap(obj.outputMaxChars);
+  for (const { local, defaultOnMissing } of CAP_FIELDS) {
+    out[local] =
+      defaultOnMissing && obj[local] === undefined
+        ? DEFAULT_DISPLAY[local]
+        : parseLineCap(obj[local]);
+  }
   if (obj.subagent && typeof obj.subagent === 'object') {
     const sa = obj.subagent as Record<string, unknown>;
-    for (const k of [
-      'pipeline',
-      'prompts',
-      'roles',
-      'deps',
-      'responses',
-    ] as const) {
-      if (typeof sa[k] === 'boolean') out.subagent[k] = sa[k] as boolean;
+    for (const { local } of SUBAGENT_FIELDS) {
+      if (typeof sa[local] === 'boolean')
+        out.subagent[local] = sa[local] as boolean;
     }
   }
   return out;
@@ -317,25 +365,9 @@ export function getVerboseDisplay(): VerboseDisplayConfig {
   };
 
   const resolved: VerboseDisplayConfig = {
-    showToolReasoning: bool(
-      Settings.CHAT_TOOLS_SHOW_REASONING,
-      cur.showToolReasoning
-    ),
+    ...cur,
+    subagent: { ...cur.subagent },
     toolArgsMode: argsMode(cur.toolArgsMode),
-    showElapsed: bool(Settings.CHAT_TOOLS_SHOW_ELAPSED, cur.showElapsed),
-    subagent: {
-      pipeline: bool(
-        Settings.CHAT_SUBAGENT_SHOW_PIPELINE,
-        cur.subagent.pipeline
-      ),
-      prompts: bool(Settings.CHAT_SUBAGENT_SHOW_PROMPTS, cur.subagent.prompts),
-      roles: bool(Settings.CHAT_SUBAGENT_SHOW_ROLES, cur.subagent.roles),
-      deps: bool(Settings.CHAT_SUBAGENT_SHOW_DEPS, cur.subagent.deps),
-      responses: bool(
-        Settings.CHAT_SUBAGENT_SHOW_RESPONSES,
-        cur.subagent.responses
-      ),
-    },
     // CHAT_SHOW_THINKING is a shared tri-state ('collapsed'|'expanded'|'off';
     // legacy boolean honored). Lite collapses it to: shown unless 'off'/false.
     showThinkingContent: (() => {
@@ -344,22 +376,16 @@ export function getVerboseDisplay(): VerboseDisplayConfig {
       if (v === 'collapsed' || v === 'expanded' || v === true) return true;
       return cur.showThinkingContent;
     })(),
-    showWriteDiffs: bool(
-      Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS,
-      cur.showWriteDiffs
-    ),
-    showTasks: bool(Settings.CHAT_SHOW_TASKS, cur.showTasks),
-    argsMaxLines: cap(Settings.CHAT_TOOLS_ARGS_MAX_LINES, cur.argsMaxLines),
-    outputMaxLines: cap(
-      Settings.CHAT_TOOLS_OUTPUT_MAX_LINES,
-      cur.outputMaxLines
-    ),
-    argsMaxChars: cap(Settings.CHAT_TOOLS_ARGS_MAX_CHARS, cur.argsMaxChars),
-    outputMaxChars: cap(
-      Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS,
-      cur.outputMaxChars
-    ),
   };
+  for (const { local, setting } of BOOL_FIELDS) {
+    resolved[local] = bool(setting, cur[local]);
+  }
+  for (const { local, setting } of CAP_FIELDS) {
+    resolved[local] = cap(setting, cur[local]);
+  }
+  for (const { local, setting } of SUBAGENT_FIELDS) {
+    resolved.subagent[local] = bool(setting, cur.subagent[local]);
+  }
 
   if (sameDisplay(cur, resolved)) return cur; // preserve identity (see fn doc)
   return resolved;
@@ -385,23 +411,13 @@ function sameDisplay(
   a: VerboseDisplayConfig,
   b: VerboseDisplayConfig
 ): boolean {
-  return (
-    a.showToolReasoning === b.showToolReasoning &&
-    a.toolArgsMode === b.toolArgsMode &&
-    a.showElapsed === b.showElapsed &&
-    a.showThinkingContent === b.showThinkingContent &&
-    a.showWriteDiffs === b.showWriteDiffs &&
-    a.showTasks === b.showTasks &&
-    a.argsMaxLines === b.argsMaxLines &&
-    a.outputMaxLines === b.outputMaxLines &&
-    a.argsMaxChars === b.argsMaxChars &&
-    a.outputMaxChars === b.outputMaxChars &&
-    a.subagent.pipeline === b.subagent.pipeline &&
-    a.subagent.prompts === b.subagent.prompts &&
-    a.subagent.roles === b.subagent.roles &&
-    a.subagent.deps === b.subagent.deps &&
-    a.subagent.responses === b.subagent.responses
-  );
+  if (a.toolArgsMode !== b.toolArgsMode) return false;
+  if (a.showThinkingContent !== b.showThinkingContent) return false;
+  for (const { local } of BOOL_FIELDS) if (a[local] !== b[local]) return false;
+  for (const { local } of CAP_FIELDS) if (a[local] !== b[local]) return false;
+  for (const { local } of SUBAGENT_FIELDS)
+    if (a.subagent[local] !== b.subagent[local]) return false;
+  return true;
 }
 
 /** Patch for {@link setVerboseConfig}: display (and subagent) fields are
@@ -463,52 +479,22 @@ export function setVerboseConfig(patch: VerboseConfigPatch): boolean {
   }
   if (patch.display) {
     const d = patch.display;
-    if (d.showToolReasoning !== undefined) {
-      stage(Settings.CHAT_TOOLS_SHOW_REASONING, !!d.showToolReasoning);
+    for (const { local, setting } of BOOL_FIELDS) {
+      if (d[local] !== undefined) stage(setting, !!d[local]);
     }
     if (d.toolArgsMode !== undefined) {
       stage(Settings.CHAT_TOOLS_ARGS_MODE, d.toolArgsMode);
     }
-    if (d.showElapsed !== undefined) {
-      stage(Settings.CHAT_TOOLS_SHOW_ELAPSED, !!d.showElapsed);
-    }
     if (d.showThinkingContent !== undefined) {
       stage(Settings.CHAT_SHOW_THINKING, !!d.showThinkingContent);
     }
-    if (d.showWriteDiffs !== undefined) {
-      stage(Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS, !!d.showWriteDiffs);
-    }
-    if (d.showTasks !== undefined) {
-      stage(Settings.CHAT_SHOW_TASKS, !!d.showTasks);
-    }
-    if (d.argsMaxLines !== undefined) {
-      stage(Settings.CHAT_TOOLS_ARGS_MAX_LINES, d.argsMaxLines);
-    }
-    if (d.outputMaxLines !== undefined) {
-      stage(Settings.CHAT_TOOLS_OUTPUT_MAX_LINES, d.outputMaxLines);
-    }
-    if (d.argsMaxChars !== undefined) {
-      stage(Settings.CHAT_TOOLS_ARGS_MAX_CHARS, d.argsMaxChars);
-    }
-    if (d.outputMaxChars !== undefined) {
-      stage(Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS, d.outputMaxChars);
+    for (const { local, setting } of CAP_FIELDS) {
+      if (d[local] !== undefined) stage(setting, d[local]);
     }
     if (d.subagent) {
       const sa = d.subagent;
-      if (sa.pipeline !== undefined) {
-        stage(Settings.CHAT_SUBAGENT_SHOW_PIPELINE, !!sa.pipeline);
-      }
-      if (sa.prompts !== undefined) {
-        stage(Settings.CHAT_SUBAGENT_SHOW_PROMPTS, !!sa.prompts);
-      }
-      if (sa.roles !== undefined) {
-        stage(Settings.CHAT_SUBAGENT_SHOW_ROLES, !!sa.roles);
-      }
-      if (sa.deps !== undefined) {
-        stage(Settings.CHAT_SUBAGENT_SHOW_DEPS, !!sa.deps);
-      }
-      if (sa.responses !== undefined) {
-        stage(Settings.CHAT_SUBAGENT_SHOW_RESPONSES, !!sa.responses);
+      for (const { local, setting } of SUBAGENT_FIELDS) {
+        if (sa[local] !== undefined) stage(setting, !!sa[local]);
       }
     }
   }
