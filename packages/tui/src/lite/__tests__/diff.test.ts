@@ -201,44 +201,67 @@ describe('renderUnifiedDiff — theme support', () => {
       'short'
     );
 
-  test('legacy SGR is used when no theme is supplied', () => {
-    // Locks in the no-theme fallback contract so a swapped default constant
-    // surfaces here, not just via downstream snapshot breakage.
-    expect(addedShort()).toMatch(LEGACY_ADDED);
-  });
-
-  test('theme-supplied bg SGR replaces the legacy constants for added rows', () => {
-    // Distinctive RGB (10,200,50 bg / 255,0,255 bar) so the assertion can't
-    // accidentally pass against any shipped kiroDark/kiroLight value.
-    const addedEntry = addedShort(themeFor({}));
-    // eslint-disable-next-line no-control-regex
-    expect(addedEntry).toMatch(/\x1b\[48;2;10;200;50m/);
-    // Renderer must replace, not stack, the legacy SGR.
-    expect(addedEntry).not.toMatch(LEGACY_ADDED);
-    // eslint-disable-next-line no-control-regex
-    expect(addedEntry).toMatch(/\x1b\[38;2;255;0;255m/);
-  });
-
-  test('theme-supplied removed slots replace legacy SGR for removed rows', () => {
-    const theme = themeFor({
-      diffRemovedBg: (s) => '\x1b[48;2;204;85;170m' + s + '\x1b[49m',
-      diffRemovedBar: (s) => '\x1b[38;2;0;221;238m' + s + '\x1b[39m',
-    });
-    const removedEntry = entryContaining(
-      renderUnifiedDiff('vanish', '', {
-        path: 'src/foo.ts',
-        termCols: 40,
-        theme,
-      }),
-      'vanish'
-    );
-    // eslint-disable-next-line no-control-regex
-    expect(removedEntry).toMatch(/\x1b\[48;2;204;85;170m/);
-    // eslint-disable-next-line no-control-regex
-    expect(removedEntry).not.toMatch(/\x1b\[48;2;45;31;34m/);
-    // eslint-disable-next-line no-control-regex
-    expect(removedEntry).toMatch(/\x1b\[38;2;0;221;238m/);
-  });
+  // No-theme → legacy fallback; theme-supplied slots must REPLACE (not stack)
+  // the legacy SGR per direction. Distinctive RGBs so an assertion can't
+  // accidentally match a shipped kiroDark/kiroLight value. `absentRaw` guards
+  // the replaced legacy bg from also surfacing. themeOverrides=null → no theme;
+  // {} → the default themeFor slots (added 10,200,50 bg / 255,0,255 bar).
+  test.each<{
+    name: string;
+    old: string;
+    next: string;
+    needle: string;
+    themeOverrides: Partial<Parameters<typeof makeThemeWith>[0]> | null;
+    presentRaw: RegExp[];
+    absentRaw: RegExp[];
+  }>([
+    {
+      name: 'no theme → legacy SGR',
+      old: '',
+      next: 'short',
+      needle: 'short',
+      themeOverrides: null,
+      presentRaw: [LEGACY_ADDED],
+      absentRaw: [],
+    },
+    {
+      name: 'theme bg+bar replace legacy on added rows',
+      old: '',
+      next: 'short',
+      needle: 'short',
+      themeOverrides: {},
+      presentRaw: [/\x1b\[48;2;10;200;50m/, /\x1b\[38;2;255;0;255m/],
+      absentRaw: [LEGACY_ADDED],
+    },
+    {
+      name: 'theme bg+bar replace legacy on removed rows',
+      old: 'vanish',
+      next: '',
+      needle: 'vanish',
+      themeOverrides: {
+        diffRemovedBg: (s: string) => '\x1b[48;2;204;85;170m' + s + '\x1b[49m',
+        diffRemovedBar: (s: string) => '\x1b[38;2;0;221;238m' + s + '\x1b[39m',
+      },
+      presentRaw: [/\x1b\[48;2;204;85;170m/, /\x1b\[38;2;0;221;238m/],
+      absentRaw: [/\x1b\[48;2;45;31;34m/],
+    },
+  ])(
+    '$name',
+    ({ old, next, needle, themeOverrides, presentRaw, absentRaw }) => {
+      const theme =
+        themeOverrides === null ? undefined : themeFor(themeOverrides);
+      const entry = entryContaining(
+        renderUnifiedDiff(old, next, {
+          path: 'src/foo.ts',
+          termCols: 40,
+          theme,
+        }),
+        needle
+      );
+      for (const re of presentRaw) expect(entry).toMatch(re);
+      for (const re of absentRaw) expect(entry).not.toMatch(re);
+    }
+  );
 
   test('theme bg SGR is re-asserted across wrap boundaries', () => {
     // applyBg re-applies the bg after each cli-highlight reset; when the bg
