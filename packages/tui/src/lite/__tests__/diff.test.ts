@@ -182,6 +182,7 @@ function makeThemeWith(diffSlots: {
 }
 
 describe('renderUnifiedDiff — theme support', () => {
+  // eslint-disable-next-line no-control-regex
   const LEGACY_ADDED = /\x1b\[48;2;31;45;34m/; // #1F2D22
   const themeFor = (overrides: Partial<Parameters<typeof makeThemeWith>[0]>) =>
     makeThemeWith({
@@ -230,6 +231,7 @@ describe('renderUnifiedDiff — theme support', () => {
       next: 'short',
       needle: 'short',
       themeOverrides: {},
+      // eslint-disable-next-line no-control-regex
       presentRaw: [/\x1b\[48;2;10;200;50m/, /\x1b\[38;2;255;0;255m/],
       absentRaw: [LEGACY_ADDED],
     },
@@ -242,7 +244,9 @@ describe('renderUnifiedDiff — theme support', () => {
         diffRemovedBg: (s: string) => '\x1b[48;2;204;85;170m' + s + '\x1b[49m',
         diffRemovedBar: (s: string) => '\x1b[38;2;0;221;238m' + s + '\x1b[39m',
       },
+      // eslint-disable-next-line no-control-regex
       presentRaw: [/\x1b\[48;2;204;85;170m/, /\x1b\[38;2;0;221;238m/],
+      // eslint-disable-next-line no-control-regex
       absentRaw: [/\x1b\[48;2;45;31;34m/],
     },
   ])(
