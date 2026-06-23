@@ -98,6 +98,10 @@ export class E2ETestCase {
     this.sandboxEnv = {
       CI: 'false',
       KIRO_CHAT_UI: 'tui',
+      // E2E tests default to the full TUI and opt into lite explicitly via
+      // withLite(). This prevents the first-launch mode picker from intercepting
+      // tests that are not about mode selection.
+      KIRO_UI_MODE: 'tui',
       KIRO_TEST_MODE: '1',
       KIRO_DISABLE_TELEMETRY: '1',
       KIRO_INPUT_METRICS: 'true',
@@ -642,6 +646,18 @@ export class E2ETestCaseBuilder {
   withEnv(env: Record<string, string>): E2ETestCaseBuilder {
     this.options.extraEnv = { ...this.options.extraEnv, ...env };
     return this;
+  }
+
+  withUiMode(mode: 'tui' | 'lite'): E2ETestCaseBuilder {
+    this.withGlobalSettings({ 'chat.ui.mode': mode });
+    return this.withEnv({
+      KIRO_UI_MODE: mode,
+      ...(mode === 'lite' ? { KIRO_LITE_ROLLOUT_ENABLED: '1' } : {}),
+    });
+  }
+
+  withLite(): E2ETestCaseBuilder {
+    return this.withUiMode('lite');
   }
 
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
