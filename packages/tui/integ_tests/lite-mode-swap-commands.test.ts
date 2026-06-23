@@ -25,79 +25,76 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     }
   });
 
-  it('tui→lite via /lite slash command bumps liteScrollbackClearToken and preserves messages', async () => {
-    // Rejected design (bug-mine 2.6): pinning liteStaticSkipBefore to
-    // messages.length on tui→lite would silently drop the user's scrollback.
-    // The shipped contract resets skipBefore to 0 so prior messages repaint.
-    testCase = await TestCase.builder()
-      .withTestName('swap-tui-to-lite')
-      .withGlobalSettings({ 'chat.ui.mode': 'tui' })
-      .withTimeout(15000)
-      .launch();
+  // Cross-mode swap, both directions: bumps liteScrollbackClearToken, resets
+  // liteStaticSkipBefore to 0, and preserves messages[]. The two legs catch
+  // distinct rejected refactors:
+  //  - tui→lite (bug-mine 2.6): pinning skipBefore to messages.length would
+  //    silently drop the user's scrollback; the contract resets it to 0.
+  //  - lite→tui: conditioning the token bump on `uiMode === 'lite'` would skip
+  //    it here, leaving stale lite singletons for the next remount.
+  it.each([
+    {
+      label: 'tui→lite via /lite',
+      start: 'tui' as const,
+      target: 'lite' as const,
+      switchMode: switchToLite,
+      marker: 'TUI_PRE_SWAP_REPLY',
+      contentId: 'tui-pre-swap-content',
+      prompt: 'hello tui',
+    },
+    {
+      label: 'lite→tui via /tui',
+      start: 'lite' as const,
+      target: 'tui' as const,
+      switchMode: switchToTui,
+      marker: 'LITE_PRE_SWAP_REPLY',
+      contentId: 'lite-pre-swap-content',
+      prompt: 'hello lite',
+    },
+  ])(
+    '$label bumps liteScrollbackClearToken and preserves messages',
+    async ({ start, target, switchMode, marker, contentId, prompt }) => {
+      testCase =
+        start === 'tui'
+          ? await TestCase.builder()
+              .withTestName('swap-tui-to-lite')
+              .withGlobalSettings({ 'chat.ui.mode': 'tui' })
+              .withTimeout(15000)
+              .launch()
+          : await launchLiteInteg('swap-lite-to-tui');
+      if (start === 'tui') {
+        await testCase.waitForVisibleText('ask a question', 10000);
+      }
 
-    await testCase.waitForVisibleText('ask a question', 10000);
+      await testCase.mockSessionUpdate({
+        type: AgentEventType.Content,
+        id: contentId,
+        content: { type: 'text' as any, text: marker },
+      });
+      await testCase.typeAndSubmit(prompt);
+      await testCase.completeTurn();
+      await testCase.sleepMs(400);
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'tui-pre-swap-content',
-      content: { type: 'text' as any, text: 'TUI_PRE_SWAP_REPLY' },
-    });
-    await testCase.typeAndSubmit('hello tui');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
+      const storeBefore = await testCase.getStore();
+      expect(storeBefore.uiMode).toBe(start);
+      expect(storeBefore.messages.length).toBeGreaterThan(0);
+      const tokenBefore = storeBefore.liteScrollbackClearToken;
 
-    const storeBefore = await testCase.getStore();
-    expect(storeBefore.uiMode).toBe('tui');
-    expect(storeBefore.messages.length).toBeGreaterThan(0);
-    const tokenBefore = storeBefore.liteScrollbackClearToken;
+      await switchMode(testCase);
 
-    await switchToLite(testCase);
+      const storeAfter = await testCase.getStore();
+      expect(storeAfter.uiMode).toBe(target);
+      expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
+      expect(storeAfter.liteStaticSkipBefore).toBe(0);
+      const allMessageText = storeAfter.messages
+        .map((m) => JSON.stringify(m))
+        .join(' ');
+      expect(allMessageText).toContain(marker);
 
-    const storeAfter = await testCase.getStore();
-    expect(storeAfter.uiMode).toBe('lite');
-    expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
-    expect(storeAfter.liteStaticSkipBefore).toBe(0);
-    const allMessageText = storeAfter.messages
-      .map((m) => JSON.stringify(m))
-      .join(' ');
-    expect(allMessageText).toContain('TUI_PRE_SWAP_REPLY');
-
-    await exitLiteInteg(testCase);
-  }, 30000);
-
-  it('lite→tui via /tui slash command bumps clear token and preserves messages', async () => {
-    // Distinct from the tui→lite leg: catches a refactor that conditions the
-    // token bump on `uiMode === 'lite'` and skips it on lite→tui, leaving
-    // stale lite singletons for the next remount.
-    testCase = await launchLiteInteg('swap-lite-to-tui');
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'lite-pre-swap-content',
-      content: { type: 'text' as any, text: 'LITE_PRE_SWAP_REPLY' },
-    });
-    await testCase.typeAndSubmit('hello lite');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    const storeBefore = await testCase.getStore();
-    expect(storeBefore.uiMode).toBe('lite');
-    expect(storeBefore.messages.length).toBeGreaterThan(0);
-    const tokenBefore = storeBefore.liteScrollbackClearToken;
-
-    await switchToTui(testCase);
-
-    const storeAfter = await testCase.getStore();
-    expect(storeAfter.uiMode).toBe('tui');
-    expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
-    expect(storeAfter.liteStaticSkipBefore).toBe(0);
-    const allMessageText = storeAfter.messages
-      .map((m) => JSON.stringify(m))
-      .join(' ');
-    expect(allMessageText).toContain('LITE_PRE_SWAP_REPLY');
-
-    await exitLiteInteg(testCase);
-  }, 30000);
+      await exitLiteInteg(testCase);
+    },
+    30000
+  );
 
   it('same-mode dispatch is a noop (bug 2.9)', async () => {
     testCase = await launchLiteInteg('swap-noop-same-mode');

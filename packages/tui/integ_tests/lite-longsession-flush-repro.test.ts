@@ -7,20 +7,13 @@ import {
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
- * Long-session reproduction harness (autonomous repro for the lite flush /
- * newline-wave reports).
- *
- * Differences from a naive driver that matter for hitting the real bug:
- *  - SMALL viewport (height 24) so content overflows and the live→static
- *    flush + writeStaticLines overflow-erase path actually fire.
- *  - STREAMED content (delta chunks per turn) so the live region renders a
- *    growing multi-row block before it flushes to <Static> — the transition
- *    where a "wave of newlines after a response" would be emitted.
- *  - Response-only markers (`ZRSP<i>`) that never appear in the user prompt
- *    or tool args, so duplicate detection isn't fooled by legitimate echoes.
- *  - Blank-run scan restricted to the CONTENT region (above the prompt
- *    divider) with trailing padding trimmed, so empty viewport rows below
- *    the prompt aren't counted as a "wave".
+ * Long-session repro for the lite flush / newline-wave reports. To hit the
+ * real bug the driver needs a SMALL viewport (content overflows so the
+ * live→static flush + writeStaticLines overflow-erase path fire) and STREAMED
+ * delta chunks (the live region grows a multi-row block before flushing to
+ * <Static> — where the "wave of newlines after a response" was emitted). The
+ * blank-run scan is restricted to the content region above the prompt divider
+ * so empty viewport rows below the prompt aren't miscounted as a wave.
  */
 describe('lite long-session flush/newline repro', () => {
   let testCase: TestCase | null = null;
