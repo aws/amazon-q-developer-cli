@@ -589,6 +589,22 @@ describe('renderSubagentFinalBlock verbose mode', () => {
       responsesContains: ['digest A', 'digest B'],
     },
     {
+      // Raw "full output:" taskResult routes through the markdown pipeline:
+      // markers strip in the rawSection slice (same pipeline pinned exhaustively
+      // in render-markdown.test.ts).
+      name: 'raw full output renders markdown (markers stripped) for taskResult',
+      filters: ['subagent'],
+      summaries: [
+        {
+          stageName: 'a',
+          contextSummary: 'short digest',
+          taskResult: '# Heading\n\n**Important** finding.',
+        },
+      ],
+      rawContains: ['Heading', 'Important'],
+      rawAbsent: ['# Heading', '**Important**'],
+    },
+    {
       name: 'error path: raw output suppressed; error block still renders',
       filters: ['subagent'],
       result: { status: 'error', error: 'stage timeout' },
@@ -709,24 +725,6 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
     }
   );
 
-  test('verbose full output: markdown rendered for taskResult', () => {
-    setVerboseConfig({ filters: ['subagent'] });
-    const stripped = renderWithSummaries([
-      {
-        stageName: 'a',
-        contextSummary: 'short digest',
-        taskResult: '# Heading\n\n**Important** finding.',
-      },
-    ]);
-    const rawIdx = stripped.indexOf('full output:');
-    const responsesIdx = stripped.indexOf('response summary:');
-    const rawSection = stripped.slice(rawIdx, responsesIdx);
-    expect(rawSection).toContain('Heading');
-    expect(rawSection).not.toContain('# Heading');
-    expect(rawSection).toContain('Important');
-    expect(rawSection).not.toContain('**Important**');
-  });
-
   test('prompt_template renders markdown (markers stripped, body preserved)', () => {
     const stripped = renderWithSummaries([
       { stageName: 'a', contextSummary: 'body', taskResult: '' },
@@ -796,45 +794,58 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
   });
 
   // Bug 2: the standalone "task:" key line is always dropped — across the
-  // placeholder/no-placeholder/minimal-preset variants — but the task text
-  // still appears when a stage prompt embeds {task}.
-  test.each([
-    ['prompts on, {task} embedded', withTaskPlaceholder, DEFAULT_DISPLAY, true],
-    ['prompts on, no {task}', noPlaceholder, DEFAULT_DISPLAY, false],
-    [
-      'minimal preset (prompts hidden)',
-      withTaskPlaceholder,
-      DENSITY_DISPLAY.minimal,
-      false,
-    ],
-  ] as const)(
-    'Bug 2: final block omits standalone task: line (%s)',
-    (_name, content, display, taskTextShown) => {
-      const out = stripAnsi(
-        renderSubagentFinalBlock(
-          content,
-          undefined,
-          'running',
-          undefined,
-          undefined,
-          {
-            display,
-          }
-        )
-      );
-      expect(out).not.toMatch(/^\s*task:/m);
-      if (taskTextShown) expect(out).toContain('Investigate the flush bug');
-    }
-  );
-
-  test.each([
-    ['{task} embedded', withTaskPlaceholder, true],
-    ['no {task}', noPlaceholder, false],
-  ] as const)(
-    'Bug 2: approval lines omit standalone task: line (%s)',
-    (_name, content, taskTextShown) => {
-      const lines = formatSubagentApprovalLines(content, 80)!;
-      const out = stripAnsi(lines.join('\n'));
+  // final-block and approval-lines render paths, the placeholder/no-placeholder
+  // /minimal-preset variants — but the task text still appears when a stage
+  // prompt embeds {task}. `render` carries the path so both share the assertion.
+  const finalBlock = (content: string, display: typeof DEFAULT_DISPLAY) =>
+    stripAnsi(
+      renderSubagentFinalBlock(
+        content,
+        undefined,
+        'running',
+        undefined,
+        undefined,
+        {
+          display,
+        }
+      )
+    );
+  const approvalLines = (content: string) =>
+    stripAnsi(formatSubagentApprovalLines(content, 80)!.join('\n'));
+  test.each<{
+    name: string;
+    render: () => string;
+    taskTextShown: boolean;
+  }>([
+    {
+      name: 'final block, prompts on, {task} embedded',
+      render: () => finalBlock(withTaskPlaceholder, DEFAULT_DISPLAY),
+      taskTextShown: true,
+    },
+    {
+      name: 'final block, prompts on, no {task}',
+      render: () => finalBlock(noPlaceholder, DEFAULT_DISPLAY),
+      taskTextShown: false,
+    },
+    {
+      name: 'final block, minimal preset (prompts hidden)',
+      render: () => finalBlock(withTaskPlaceholder, DENSITY_DISPLAY.minimal),
+      taskTextShown: false,
+    },
+    {
+      name: 'approval lines, {task} embedded',
+      render: () => approvalLines(withTaskPlaceholder),
+      taskTextShown: true,
+    },
+    {
+      name: 'approval lines, no {task}',
+      render: () => approvalLines(noPlaceholder),
+      taskTextShown: false,
+    },
+  ])(
+    'Bug 2: omits standalone task: line ($name)',
+    ({ render, taskTextShown }) => {
+      const out = render();
       expect(out).not.toMatch(/^\s*task:/m);
       if (taskTextShown) expect(out).toContain('Investigate the flush bug');
     }
