@@ -12,6 +12,7 @@ import {
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
+import { expectRender, section } from './expect-render.js';
 
 useTempKiroHome();
 
@@ -315,17 +316,16 @@ describe('renderSubagentFinalBlock', () => {
       absent: ['▸ a', '▸ b'],
     },
   ])('$name', ({ stageSummaries, contains, absent }) => {
-    const stripped = stripAnsi(
+    expectRender(
       renderSubagentFinalBlock(
         baseContent,
         heavyResult,
         'done',
         1000,
         stageSummaries
-      )
+      ),
+      { contains, absent }
     );
-    for (const c of contains) expect(stripped).toContain(c);
-    for (const a of absent ?? []) expect(stripped).not.toContain(a);
   });
 
   test('renders error state with FAILED tail and red-coloured body, even with stageSummaries', () => {
@@ -398,12 +398,13 @@ describe('renderSubagentFinalBlock', () => {
         undefined,
         info
       );
-      const stripped = stripAnsi(block);
-      if (containsMatch) expect(stripped).toMatch(containsMatch);
-      for (const c of contains ?? []) expect(stripped).toContain(c);
-      for (const a of absent ?? []) expect(stripped).not.toContain(a);
-      if (absentMatch) expect(stripped).not.toMatch(absentMatch);
-      for (const r of rawContains ?? []) expect(block).toContain(r);
+      expectRender(block, {
+        contains,
+        absent,
+        matches: containsMatch ? [containsMatch] : undefined,
+        notMatches: absentMatch ? [absentMatch] : undefined,
+        rawContains,
+      });
     }
   );
 });
@@ -479,9 +480,7 @@ describe('display.subagent section toggles', () => {
         },
       }
     );
-    const stripped = stripAnsi(block);
-    for (const c of contains) expect(stripped).toContain(c);
-    for (const a of absent) expect(stripped).not.toContain(a);
+    expectRender(block, { contains, absent });
   });
 });
 
@@ -640,8 +639,7 @@ describe('renderSubagentFinalBlock verbose mode', () => {
           summaries
         )
       );
-      for (const c of contains) expect(stripped).toContain(c);
-      for (const a of absent) expect(stripped).not.toContain(a);
+      expectRender(stripped, { contains, absent });
 
       const rawIdx = stripped.indexOf('full output:');
       const responsesIdx = stripped.indexOf('response summary:');
@@ -649,7 +647,9 @@ describe('renderSubagentFinalBlock verbose mode', () => {
         expect(rawIdx).toBeGreaterThanOrEqual(0);
         expect(responsesIdx).toBeGreaterThan(rawIdx);
       }
-      const rawSection = stripped.slice(rawIdx, responsesIdx);
+      // `rawContains`/`rawAbsent` here are scoped to the "full output:" slice,
+      // not un-stripped ANSI — so assert against the section, not via expectRender.
+      const rawSection = section(stripped, 'full output:', 'response summary:');
       for (const c of rawContains) expect(rawSection).toContain(c);
       for (const a of rawAbsent) expect(rawSection).not.toContain(a);
       if (rawNoCap) expect(rawSection).not.toMatch(/\(\+\d+ more lines\)/);
@@ -716,12 +716,13 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
     'stage body markdown via %s',
     (_name, contextSummary, taskResult) => {
       const stripped = renderStageBody(contextSummary, taskResult);
-      for (const c of COMPOUND_PRESENT) expect(stripped).toContain(c);
-      for (const a of COMPOUND_ABSENT) expect(stripped).not.toContain(a);
+      expectRender(stripped, {
+        contains: COMPOUND_PRESENT,
+        absent: COMPOUND_ABSENT,
+      });
       // List items pack onto consecutive rows (markdown list pipeline, not a
       // blank-separated plain split).
-      const stageBody = stripped.slice(stripped.indexOf('▸ a'));
-      expect(stageBody).toMatch(/- alpha\s*\n\s*- beta/);
+      expect(section(stripped, '▸ a')).toMatch(/- alpha\s*\n\s*- beta/);
     }
   );
 

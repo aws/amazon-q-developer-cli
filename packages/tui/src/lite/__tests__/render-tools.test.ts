@@ -17,6 +17,7 @@ import {
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
 import { setDisplay, restoreFullDefaults } from './verbose-config-helpers.js';
+import { expectRender } from './expect-render.js';
 
 useTempKiroHome();
 
@@ -132,11 +133,11 @@ describe('renderToolCall', () => {
       ['\x1b[2m'],
     ],
   ])('%s', (_name, input, contains, notContains, rawContains) => {
-    const result = renderToolCall(input);
-    const plain = stripAnsi(result);
-    for (const c of contains) expect(plain).toContain(c);
-    for (const n of notContains) expect(plain).not.toContain(n);
-    for (const r of rawContains) expect(result).toContain(r);
+    expectRender(renderToolCall(input), {
+      contains,
+      absent: notContains,
+      rawContains,
+    });
   });
 
   // Inline-arg / reasoning LAYOUT: the inline arg chip stays on the tool-name
@@ -383,11 +384,7 @@ describe('formatToolArgLines wrap behavior', () => {
             c.perValueLineCap
           );
     expect(lines).not.toBeNull();
-    const joined = (lines ?? []).map(stripAnsi).join('\n');
-    for (const s of c.contains ?? []) expect(joined).toContain(s);
-    for (const s of c.absent ?? []) expect(joined).not.toContain(s);
-    for (const re of c.matches ?? []) expect(joined).toMatch(re);
-    for (const re of c.notMatches ?? []) expect(joined).not.toMatch(re);
+    expectRender((lines ?? []).join('\n'), c);
   });
 
   test('argsMaxChars clips EACH line of a multi-line value, not just the head', () => {
@@ -531,10 +528,11 @@ describe('formatTaskToolBody', () => {
     const result = formatTaskToolBody(JSON.stringify(content), 120);
     expect(result).not.toBeNull();
     if (command) expect(result!.command).toBe(command);
-    const text = result!.bodyLines.map(stripAnsi).join('\n');
-    for (const s of contains ?? []) expect(text).toContain(s);
-    for (const s of absent ?? []) expect(text).not.toContain(s);
-    for (const re of absentMatch ?? []) expect(text).not.toMatch(re);
+    expectRender(result!.bodyLines.join('\n'), {
+      contains,
+      absent,
+      notMatches: absentMatch,
+    });
   });
 
   test('list command returns empty body — header line is enough', () => {
@@ -672,11 +670,10 @@ describe('verbose tool output rendering', () => {
     },
   ])('$name', ({ filters, msgOverride, contains, absent }) => {
     setVerboseConfig({ filters });
-    const out = stripAnsi(
-      renderMessageToText(toolMsg(msgOverride), 'kiro_default')
-    );
-    for (const s of contains ?? []) expect(out).toContain(s);
-    for (const s of absent ?? []) expect(out).not.toContain(s);
+    expectRender(renderMessageToText(toolMsg(msgOverride), 'kiro_default'), {
+      contains,
+      absent,
+    });
   });
 
   // The dim "output:" header lands ABOVE the bar so the args block's tail and
@@ -838,8 +835,7 @@ describe('verbose output envelope unwrapping', () => {
     const out = stripAnsi(
       renderMessageToText(toolMsg(overrides), 'kiro_default')
     );
-    for (const c of contains) expect(out).toContain(c);
-    for (const a of absent ?? []) expect(out).not.toContain(a);
+    expectRender(out, { contains, absent });
     if (minBars != null) {
       const barCount = out.split('\n').filter((l) => l.includes('│')).length;
       expect(barCount).toBeGreaterThanOrEqual(minBars);
@@ -1024,9 +1020,10 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     },
   ])('$name', ({ display, content, contains }) => {
     setDisplay(display);
-    const out = renderShellContent(content);
-    for (const s of contains) expect(out).toContain(s);
-    expect(out).not.toMatch(/truncated/);
+    expectRender(renderShellContent(content), {
+      contains,
+      notMatches: [/truncated/],
+    });
   });
 
   // P438130055 + follow-ups: block-mode args truncation. When argsMaxLines is
@@ -1080,11 +1077,12 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     },
   ])('$name', ({ display, value, contains, absent, matches, notMatches }) => {
     setDisplay(display);
-    const out = renderShellArgs(value);
-    for (const s of contains) expect(out).toContain(s);
-    for (const s of absent ?? []) expect(out).not.toContain(s);
-    for (const re of matches ?? []) expect(out).toMatch(re);
-    for (const re of notMatches ?? []) expect(out).not.toMatch(re);
+    expectRender(renderShellArgs(value), {
+      contains,
+      absent,
+      matches,
+      notMatches,
+    });
   });
 
   test('pathologically long single line is clipped before wrap (no OOM)', () => {
@@ -1340,33 +1338,15 @@ describe('pretty-printed tool output (json envelopes)', () => {
       },
       rawContains: [GREEN_SGR],
     },
-  ])(
-    '$name',
-    ({
-      output,
-      msgOverride,
-      display,
-      contains,
-      absent,
-      matches,
-      notMatches,
-      rawContains,
-    }) => {
-      // Only row with `display` fully overrides the caps it asserts, so the
-      // shared all-flags-on baseline is safe here.
-      if (display) setDisplay(display);
-      const msg = msgOverride
-        ? { ...buildJsonOutputMsg(undefined), ...msgOverride }
-        : buildJsonOutputMsg(output);
-      const raw = renderMessageToText(msg, 'kiro_default');
-      const out = stripAnsi(raw);
-      for (const s of contains ?? []) expect(out).toContain(s);
-      for (const s of absent ?? []) expect(out).not.toContain(s);
-      for (const re of matches ?? []) expect(out).toMatch(re);
-      for (const re of notMatches ?? []) expect(out).not.toMatch(re);
-      for (const s of rawContains ?? []) expect(raw).toContain(s);
-    }
-  );
+  ])('$name', ({ output, msgOverride, display, ...spec }) => {
+    // Only row with `display` fully overrides the caps it asserts, so the
+    // shared all-flags-on baseline is safe here.
+    if (display) setDisplay(display);
+    const msg = msgOverride
+      ? { ...buildJsonOutputMsg(undefined), ...msgOverride }
+      : buildJsonOutputMsg(output);
+    expectRender(renderMessageToText(msg, 'kiro_default'), spec);
+  });
 });
 
 describe('display.toolArgsMode rendering', () => {
@@ -1415,9 +1395,10 @@ describe('display.toolArgsMode rendering', () => {
     ],
   ])('toolArgsMode %s', (_name, overrides, contains, absent) => {
     setDisplay(overrides);
-    const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    for (const c of contains) expect(out).toContain(c);
-    for (const a of absent) expect(out).not.toContain(a);
+    expectRender(renderMessageToText(buildToolMsg(), 'kiro_default'), {
+      contains,
+      absent,
+    });
   });
 
   test('showElapsed false strips the duration tail', () => {
@@ -1596,8 +1577,7 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
     const out = stripAnsi(
       renderMessageToText(toolMsg(tool, resolvedArgs), 'kiro_default')
     );
-    expect(out).toContain(contains);
-    for (const a of absent ?? []) expect(out).not.toContain(a);
+    expectRender(out, { contains: [contains], absent });
     if (noCwd === 'output') {
       expect(out).not.toContain(cwd);
     } else if (noCwd === 'chip') {

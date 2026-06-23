@@ -14,6 +14,7 @@ import {
 } from '../verbose.js';
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
+import { expectRender } from './expect-render.js';
 
 useTempKiroHome();
 
@@ -99,9 +100,7 @@ describe('renderTurnSummary', () => {
       absent: ['1 requests'],
     },
   ])('$name', ({ input, contains, absent }) => {
-    const result = renderTurnSummary(input);
-    for (const c of contains) expect(result).toContain(c);
-    for (const a of absent ?? []) expect(result).not.toContain(a);
+    expectRender(renderTurnSummary(input), { contains, absent });
   });
 });
 
@@ -437,9 +436,11 @@ describe('renderMessageToText for task tools', () => {
     const header = out.split('\n')[0] ?? '';
     for (const s of c.headerContains ?? []) expect(header).toContain(s);
     for (const s of c.headerAbsent ?? []) expect(header).not.toContain(s);
-    for (const s of c.contains ?? []) expect(out).toContain(s);
-    for (const s of c.absent ?? []) expect(out).not.toContain(s);
-    for (const re of c.matches ?? []) expect(out).toMatch(re);
+    expectRender(out, {
+      contains: c.contains,
+      absent: c.absent,
+      matches: c.matches,
+    });
   });
 
   test('all three wire aliases (task / todo_list / todo) render with `tasks` display name', () => {

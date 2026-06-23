@@ -14,6 +14,7 @@ import {
 } from '../render.js';
 import stripAnsi from 'strip-ansi';
 import { useTempKiroHome } from './temp-kiro-home.js';
+import { expectRender } from './expect-render.js';
 
 useTempKiroHome();
 
@@ -123,10 +124,10 @@ describe('renderAgentMessage', () => {
       contains: ['│', 'a quote'],
     },
   ])('$name', ({ input, termCols, contains, rawContains }) => {
-    const out = renderAgentMessage(input, 'Kiro', undefined, termCols);
-    const stripped = stripAnsi(out);
-    for (const c of contains) expect(stripped).toContain(c);
-    for (const r of rawContains ?? []) expect(out).toContain(r);
+    expectRender(renderAgentMessage(input, 'Kiro', undefined, termCols), {
+      contains,
+      rawContains,
+    });
   });
 
   // Regression: cli-highlight emits `\x1b[31m"…"\x1b[39m` for shell string
@@ -445,11 +446,11 @@ describe('inline markdown inside block elements', () => {
   ] as const)(
     '%s renders styled without markers',
     (_n, input, contains, absent, ansi) => {
-      const out = renderAgentMessage(input);
-      const stripped = stripAnsi(out);
-      for (const c of contains) expect(stripped).toContain(c);
-      for (const a of absent) expect(stripped).not.toContain(a);
-      for (const code of ansi) expect(out).toContain(code);
+      expectRender(renderAgentMessage(input), {
+        contains,
+        absent,
+        rawContains: ansi,
+      });
     }
   );
 });
@@ -478,8 +479,7 @@ describe('markdown scoping', () => {
       contains: ['**oops**'],
     },
   ])('$name', ({ render, contains }) => {
-    const out = stripAnsi(render(contains.join('\n')));
-    for (const c of contains) expect(out).toContain(c);
+    expectRender(render(contains.join('\n')), { contains });
   });
 
   test('renderMessageToText routes model role through markdown but not tool', () => {
@@ -666,12 +666,15 @@ describe('theme-driven markdown colors', () => {
       plainContains,
       plainAbsent,
     }) => {
-      const out = renderAgentMessage(input, 'Kiro', buildTestTheme(), termCols);
-      for (const s of contains) expect(out).toContain(s);
-      for (const s of notContains ?? []) expect(out).not.toContain(s);
-      const plain = stripAnsi(out);
-      for (const s of plainContains ?? []) expect(plain).toContain(s);
-      for (const s of plainAbsent ?? []) expect(plain).not.toContain(s);
+      expectRender(
+        renderAgentMessage(input, 'Kiro', buildTestTheme(), termCols),
+        {
+          rawContains: contains,
+          rawAbsent: notContains,
+          contains: plainContains,
+          absent: plainAbsent,
+        }
+      );
     }
   );
 
