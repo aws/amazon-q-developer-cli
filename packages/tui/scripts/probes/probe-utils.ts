@@ -1,7 +1,6 @@
 /**
- * Shared boilerplate for the lite-mode blackbox probes (forced-trim,
- * message-ordering, session-lifetime). Each probe keeps only its own
- * threshold/verification logic; everything below is identical ceremony.
+ * Shared boilerplate for the lite-mode blackbox probes. Each probe keeps only
+ * its own threshold/verification logic; everything below is identical ceremony.
  *
  * Exit codes (convention across all probes): 0 = pass, 1 = finding, 2 = crash.
  */
@@ -128,30 +127,6 @@ export function writeDoneMarker(
       '',
     ].join('\n')
   );
-}
-
-/**
- * Ordinary-least-squares slope of y over x for the given samples. Returns 0
- * for fewer than 2 points or a degenerate (zero-variance) x.
- */
-export function linearSlope<T>(
-  samples: T[],
-  x: (s: T) => number,
-  y: (s: T) => number
-): number {
-  if (samples.length < 2) return 0;
-  const xs = samples.map(x);
-  const ys = samples.map(y);
-  const n = xs.length;
-  const xMean = xs.reduce((a, b) => a + b, 0) / n;
-  const yMean = ys.reduce((a, b) => a + b, 0) / n;
-  let num = 0;
-  let den = 0;
-  for (let j = 0; j < n; j++) {
-    num += (xs[j]! - xMean) * (ys[j]! - yMean);
-    den += (xs[j]! - xMean) ** 2;
-  }
-  return den !== 0 ? num / den : 0;
 }
 
 /**
