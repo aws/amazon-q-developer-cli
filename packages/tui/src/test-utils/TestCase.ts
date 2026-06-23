@@ -211,6 +211,19 @@ export class TestCase {
     this.ptyManager.kill();
     this.tuiConnection?.close();
 
+    // Close the IPC listener so its socket / named pipe is released. Without
+    // this the server leaks until the test process exits. On Unix that is
+    // harmless (the next test recreates a fresh socket path), but on Windows
+    // the leaked named pipe keeps its name reserved, so any later test that
+    // reuses the same testName fails to listen (EADDRINUSE).
+    await new Promise<void>((resolve) => {
+      if (!this.ipcServer.listening) {
+        resolve();
+        return;
+      }
+      this.ipcServer.close(() => resolve());
+    });
+
     // Clean up sandbox $KIRO_HOME directory if one was created.
     if (this.sandboxDir) {
       try {

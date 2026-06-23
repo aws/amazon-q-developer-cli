@@ -98,28 +98,63 @@ export const Menu = React.memo(function Menu({
     setSelectedIndex(0);
   }, [searchText]);
 
-  // Calculate the maximum item label length for consistent column alignment
-  const maxLabelLength =
-    Math.max(...displayItems.map((item) => visibleWidth(item.label)), 0) +
-    visibleWidth(prefix);
-
   // Calculate max group column width (0 if no items have groups)
   const hasGroups = displayItems.some((item) => item.group);
   const maxGroupLength = hasGroups
     ? Math.max(...displayItems.map((item) => visibleWidth(item.group ?? '')), 0)
     : 0;
 
-  // Calculate available width for description
   const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
   const spacerWidth = 4; // Box width={4}
   const groupWidth = hasGroups ? maxGroupLength + spacerWidth : 0;
-  const availableDescWidth =
+
+  // Width of the longest label and description, used to size the columns.
+  const rawMaxLabelLength =
+    Math.max(...displayItems.map((item) => visibleWidth(item.label)), 0) +
+    visibleWidth(prefix);
+  const maxDescLength = Math.max(
+    ...displayItems.map((item) => visibleWidth(item.description)),
+    0
+  );
+
+  // Reserve a small sliver so at least a little of the description (e.g. a
+  // relative timestamp like "3 days ago") survives when a long label would
+  // otherwise consume the whole row. Kept intentionally minimal so the
+  // label gets as much room as possible - descriptions get more than this
+  // whenever the label is short, since the cap below only binds for labels
+  // too long to fit the row.
+  const minDescReserve = 9;
+  const descReserve =
+    maxDescLength > 0 ? Math.min(maxDescLength, minDescReserve) : 0;
+
+  // Cap the label column to what fits after the indicator, spacer, group
+  // and the reserved description width. Labels wider than the cap wrap
+  // within their column (rendered in a fixed-width box below) instead of
+  // stealing the description's space via flex shrink. Short labels are
+  // padded up to the column width; the box width matches the pad target,
+  // so the padding never wraps into phantom blank rows on selection.
+  const columnMargin = 1;
+  const maxLabelColWidth = Math.max(
+    1,
     terminalWidth -
-    indicatorWidth -
-    maxLabelLength -
-    spacerWidth -
-    groupWidth -
-    5; // -5 for margin
+      indicatorWidth -
+      spacerWidth -
+      groupWidth -
+      descReserve -
+      columnMargin
+  );
+  const maxLabelLength = Math.min(rawMaxLabelLength, maxLabelColWidth);
+
+  // Calculate available width for description
+  const availableDescWidth = Math.max(
+    0,
+    terminalWidth -
+      indicatorWidth -
+      maxLabelLength -
+      spacerWidth -
+      groupWidth -
+      columnMargin
+  );
 
   // Call onHighlight when selectedIndex changes
   useEffect(() => {
@@ -227,7 +262,7 @@ export const Menu = React.memo(function Menu({
         return (
           <Box key={item.label} flexDirection="row">
             {showSelectedIndicator && (
-              <>
+              <Box flexDirection="row" flexShrink={0}>
                 {isSelected ? (
                   <Icon
                     type={IconType.CHEVRON_RIGHT}
@@ -237,18 +272,20 @@ export const Menu = React.memo(function Menu({
                   <Text> </Text>
                 )}
                 <Text> </Text>
-              </>
+              </Box>
             )}
-            <Text>
-              {isSelected ? CURSOR_MARKER : ''}
-              {isSelected
-                ? preserveLabelColors
-                  ? chalk.bold(paddedItem)
-                  : selectedLabel(paddedItem)
-                : preserveLabelColors
-                  ? paddedItem
-                  : label(paddedItem)}
-            </Text>
+            <Box width={maxLabelLength} flexShrink={0}>
+              <Text>
+                {isSelected ? CURSOR_MARKER : ''}
+                {isSelected
+                  ? preserveLabelColors
+                    ? chalk.bold(paddedItem)
+                    : selectedLabel(paddedItem)
+                  : preserveLabelColors
+                    ? paddedItem
+                    : label(paddedItem)}
+              </Text>
+            </Box>
             <Box width={4} />
             {hasGroups && (
               <>
