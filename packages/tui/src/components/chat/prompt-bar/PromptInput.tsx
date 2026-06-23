@@ -990,13 +990,10 @@ export const PromptInput = React.memo(function PromptInput({
             return;
           }
           // When processing, submit directly for queuing / slash-command
-          // rejection. But the slash/file dropdown stays mounted during
-          // streaming, and twinki's broadcasting useInput fires the Menu's
-          // onSelect for this SAME Enter — and the Menu already queues the
-          // highlighted, *completed* command (e.g. /settings). Bail here when a
-          // menu is up so PromptInput doesn't ALSO queue the raw typed prefix
-          // (e.g. /set, which isn't even a known command and would queue as a
-          // chat message / steer). Without this, a single Enter double-queues.
+          // rejection. Footgun: the dropdown stays mounted during streaming and
+          // twinki's broadcasting useInput fires the Menu's onSelect for this
+          // SAME Enter, which already queues the completed command — so bail
+          // when a menu is up or PromptInput double-queues the raw typed prefix.
           if (isProcessing) {
             if (slashMenuVisible || filePickerVisible) return;
             const content = buildContent(segments);
@@ -1172,9 +1169,8 @@ export const PromptInput = React.memo(function PromptInput({
             queuedMessagesRef.current
           );
           if (result.kind === 'queue') {
-            // state === null means we just walked past the oldest entry —
-            // install state but skip the load so this single keypress falls
-            // through to CommandHistory below for a useful navigation.
+            // state === null: walked past the oldest entry — skip the load so
+            // this keypress falls through to CommandHistory below.
             applyQueueNav(result, result.state != null);
             if (result.state != null) return;
           }
