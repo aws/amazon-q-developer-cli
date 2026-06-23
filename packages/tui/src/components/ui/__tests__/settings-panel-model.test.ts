@@ -20,6 +20,7 @@ import {
   screenDescription,
   verbosityBreadcrumb,
   type Screen,
+  type ScreenType,
   type SettingsSnapshot,
 } from '../settings-panel-model.js';
 
@@ -103,90 +104,62 @@ describe('settings-panel-model', () => {
     // Every menu leaf maps to the correct screen-navigation or named action.
     // Regression guard: Terminal must NAVIGATE (not run newlines setup), and
     // Interrupt behaviour must be reachable as its own sub-screen.
-    it.each([
-      [{ type: 'top' }, 'display', { type: 'open-panel', panel: 'display' }],
-      [{ type: 'top' }, 'theme', { type: 'open-panel', panel: 'theme' }],
+    type T = ScreenType;
+    it.each<[T, string, object]>([
+      ['top', 'display', { type: 'open-panel', panel: 'display' }],
+      ['top', 'theme', { type: 'open-panel', panel: 'theme' }],
+      ['top', 'keybindings', { type: 'open-panel', panel: 'keybindings' }],
+      ['top', 'verbosity', { type: 'open-verbosity' }],
+      ['terminal', 'newlines', { type: 'run-terminal-setup' }],
       [
-        { type: 'top' },
-        'keybindings',
-        { type: 'open-panel', panel: 'keybindings' },
-      ],
-      [{ type: 'top' }, 'verbosity', { type: 'open-verbosity' }],
-      [{ type: 'terminal' }, 'newlines', { type: 'run-terminal-setup' }],
-      [
-        { type: 'terminal:interrupt' },
+        'terminal:interrupt',
         'steer',
         { type: 'apply-interrupt', mode: 'steer' },
       ],
       [
-        { type: 'terminal:interrupt' },
+        'terminal:interrupt',
         'queue',
         { type: 'apply-interrupt', mode: 'queue' },
       ],
-      [
-        { type: 'history' },
-        'session',
-        { type: 'apply-history', mode: 'session' },
-      ],
-      [
-        { type: 'history' },
-        'global',
-        { type: 'apply-history', mode: 'global' },
-      ],
-    ] as const)('%o + %s → action', (screen, id, action) => {
-      expect(resolveSelect(screen, id)).toEqual({ kind: 'action', action });
+      ['history', 'session', { type: 'apply-history', mode: 'session' }],
+      ['history', 'global', { type: 'apply-history', mode: 'global' }],
+    ])('%s + %s → action', (type, id, action) => {
+      expect(resolveSelect({ type }, id)).toEqual({
+        kind: 'action',
+        action,
+      } as ReturnType<typeof resolveSelect>);
     });
 
-    it.each([
-      [{ type: 'top' }, 'terminal', { type: 'terminal' }],
-      [{ type: 'top' }, 'history', { type: 'history' }],
-      [{ type: 'terminal' }, 'interrupt', { type: 'terminal:interrupt' }],
-    ] as const)('%o + %s → navigate', (screen, id, target) => {
-      expect(resolveSelect(screen, id)).toEqual({
+    it.each<[T, string, T]>([
+      ['top', 'terminal', 'terminal'],
+      ['top', 'history', 'history'],
+      ['terminal', 'interrupt', 'terminal:interrupt'],
+    ])('%s + %s → navigate', (type, id, target) => {
+      expect(resolveSelect({ type }, id)).toEqual({
         kind: 'navigate',
-        screen: target,
+        screen: { type: target },
       });
     });
 
-    it.each([
-      [{ type: 'top' } as const],
-      [{ type: 'terminal' } as const],
-      [{ type: 'terminal:interrupt' } as const],
-      [{ type: 'history' } as const],
-    ])('returns null for an unknown row id on %o', (screen) => {
-      expect(resolveSelect(screen, 'bogus')).toBeNull();
-    });
+    it.each<[T]>([['top'], ['terminal'], ['terminal:interrupt'], ['history']])(
+      'returns null for an unknown row id on %s',
+      (type) => {
+        expect(resolveSelect({ type }, 'bogus')).toBeNull();
+      }
+    );
   });
 
   describe('active-marker rendering', () => {
     // The ● dot tags the persisted choice on each apply-on-select sub-screen.
-    it.each([
-      [
-        { type: 'terminal:interrupt' } as const,
-        'interruptMode' as const,
-        'steer',
-        ['Steer ●', 'Queue'],
-      ],
-      [
-        { type: 'terminal:interrupt' } as const,
-        'interruptMode' as const,
-        'queue',
-        ['Steer', 'Queue ●'],
-      ],
-      [
-        { type: 'history' } as const,
-        'historyMode' as const,
-        'session',
-        ['Session ●', 'Global'],
-      ],
-      [
-        { type: 'history' } as const,
-        'historyMode' as const,
-        'global',
-        ['Session', 'Global ●'],
-      ],
-    ])('%o marks active when %s=%s', (screen, key, value, labels) => {
-      const rows = buildRows(screen, { ...defaultSnapshot, [key]: value });
+    type T = ScreenType;
+    type K = keyof SettingsSnapshot;
+    it.each<[T, K, string, string[]]>([
+      ['terminal:interrupt', 'interruptMode', 'steer', ['Steer ●', 'Queue']],
+      ['terminal:interrupt', 'interruptMode', 'queue', ['Steer', 'Queue ●']],
+      ['history', 'historyMode', 'session', ['Session ●', 'Global']],
+      ['history', 'historyMode', 'global', ['Session', 'Global ●']],
+    ])('%s marks active when %s=%s', (type, key, value, labels) => {
+      const rows = buildRows({ type }, { ...defaultSnapshot, [key]: value });
       expect(rows.map((r) => r.values.label)).toEqual(labels);
     });
   });
