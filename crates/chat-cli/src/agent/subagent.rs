@@ -281,7 +281,9 @@ impl<'a> Subagent<'a> {
                 snapshot.agent_config = build_default_agent(&RealProvider);
             },
             Some(name) => {
-                let (configs, _) = load_agents(&RealProvider).await?;
+                // V1 subagents always inherit default resources (the `chat.disableInheritingDefaultResources`
+                // setting is a V2 feature). Pass `true` to preserve existing behavior.
+                let (configs, _) = load_agents(&RealProvider, true).await?;
                 if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
                     snapshot.agent_config = cfg;
                 } else {

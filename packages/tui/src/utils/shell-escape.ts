@@ -5,6 +5,7 @@ import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
 } from './terminal-sequences';
+import { system32Path } from './windows-paths.js';
 
 /**
  * Re-enable terminal modes that a child process (vim, less, etc.) may have
@@ -34,7 +35,9 @@ export function restoreTerminalModes(): void {
 function detectWindowsShell(): { shell: string; flag: string } {
   if (process.env.PSModulePath) {
     try {
-      execFileSync('where.exe', ['pwsh'], { stdio: 'ignore' });
+      // Use an absolute path so a planted `.\where.exe` can't hijack detection.
+      const whereExe = system32Path('where.exe');
+      execFileSync(whereExe, ['pwsh'], { stdio: 'ignore' });
       return { shell: 'pwsh', flag: '-Command' };
     } catch {
       // pwsh not found, fall back to powershell 5.1

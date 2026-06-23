@@ -30,8 +30,15 @@ use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::providers::SystemProvider;
 
 /// Load all agent configs from workspace and global directories.
+///
+/// `inherit_default_resources` controls whether **custom** (user-defined) agents inherit the
+/// default "built-in" resources (global/workspace steering, skills, and project marker files
+/// like AGENTS.md). Built-in agents always inherit regardless of this flag. This is the inverse
+/// of the `chat.disableInheritingDefaultResources` setting (which defaults to `false`, i.e.
+/// inheritance enabled).
 pub async fn load_agents<P: SystemProvider>(
     system: &P,
+    inherit_default_resources: bool,
 ) -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>), AgentConfigError> {
     let mut agent_configs = Vec::new();
     let mut errors = Vec::new();
@@ -48,8 +55,10 @@ pub async fn load_agents<P: SystemProvider>(
         .await
         {
             Ok((mut valid, mut invalid)) => {
-                for loaded in &mut valid {
-                    append_default_agent_resources(loaded.config_mut(), system);
+                if inherit_default_resources {
+                    for loaded in &mut valid {
+                        append_default_agent_resources(loaded.config_mut(), system);
+                    }
                 }
                 agent_configs.append(&mut valid);
                 errors.append(&mut invalid);
@@ -72,8 +81,10 @@ pub async fn load_agents<P: SystemProvider>(
         .await
         {
             Ok((mut valid, mut invalid)) => {
-                for loaded in &mut valid {
-                    append_default_agent_resources(loaded.config_mut(), system);
+                if inherit_default_resources {
+                    for loaded in &mut valid {
+                        append_default_agent_resources(loaded.config_mut(), system);
+                    }
                 }
                 agent_configs.append(&mut valid);
                 errors.append(&mut invalid);
@@ -600,7 +611,7 @@ mod tests {
             .with_file(("~/.kiro/agents/backup.json.bak", backup_agent))
             .await;
 
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
 
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
         assert_eq!(
@@ -649,7 +660,7 @@ mod tests {
             ))
             .await;
 
-        let (agents, _) = load_agents(base.provider()).await.unwrap();
+        let (agents, _) = load_agents(base.provider(), true).await.unwrap();
 
         let cases = [
             ("inline", Some("inline text")),
@@ -805,7 +816,7 @@ mod tests {
         let link_path = agents_dir.join("linked.json");
         std::os::unix::fs::symlink(&real_path, &link_path).unwrap();
 
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
 
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
 
@@ -835,7 +846,7 @@ mod tests {
         let link_path = agents_dir.join("broken.json");
         std::os::unix::fs::symlink("/nonexistent/target.json", &link_path).unwrap();
 
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
 
         assert!(errors.is_empty(), "broken symlink should not produce a parse error");
 
@@ -859,7 +870,7 @@ mod tests {
             .with_file((".kiro/agents/zzz.json", agent_b))
             .await;
 
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
 
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
 
@@ -1114,7 +1125,7 @@ mod tests {
             .with_file((".kiro/steering/workspace-rule.md", "# Workspace rule"))
             .await;
 
-        let (agents, errors) = load_agents(base.provider()).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
         assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
 
         for name in ["workspace-agent", "global-agent"] {
@@ -1145,5 +1156,71 @@ mod tests {
                 "{name} should inherit both global and workspace steering, got: {steering:?}"
             );
         }
+    }
+
+    /// When `inherit_default_resources` is `false` (the `chat.disableInheritingDefaultResources`
+    /// setting enabled), user-loaded agents must NOT receive the default resources — only the
+    /// resources they explicitly declare. Built-in agents are unaffected (covered separately).
+    #[tokio::test]
+    async fn test_user_agents_skip_default_resources_when_disabled() {
+        let workspace_agent = r#"{"name": "workspace-agent", "tools": ["fs_read"], "resources": ["file://custom.md"]}"#;
+        let global_agent = r#"{"name": "global-agent", "tools": ["*"]}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/workspace.json", workspace_agent))
+            .await
+            .with_file(("~/.kiro/agents/global.json", global_agent))
+            .await
+            .with_file(("~/.kiro/steering/global-rule.md", "# Global rule"))
+            .await
+            .with_file((".kiro/steering/workspace-rule.md", "# Workspace rule"))
+            .await;
+
+        let (agents, errors) = load_agents(base.provider(), false).await.unwrap();
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+
+        for name in ["workspace-agent", "global-agent"] {
+            let agent = agents
+                .iter()
+                .find(|a| a.name() == name)
+                .unwrap_or_else(|| panic!("expected to load {name}"));
+            let resources: Vec<&str> = agent.resources().into_iter().map(|r| r.as_ref()).collect();
+
+            assert!(
+                !resources.iter().any(|r| r == &"file://AGENTS.md"),
+                "{name} should NOT inherit AGENTS.md when disabled, got: {resources:?}"
+            );
+            assert!(
+                !resources.iter().any(|r| r == &"file://README.md"),
+                "{name} should NOT inherit README.md when disabled, got: {resources:?}"
+            );
+            assert!(
+                !resources
+                    .iter()
+                    .any(|r| r.starts_with("skill://") && r.ends_with("/skills/*/SKILL.md")),
+                "{name} should NOT inherit skills glob when disabled, got: {resources:?}"
+            );
+            assert!(
+                !resources.iter().any(|r| r.contains("steering")),
+                "{name} should NOT inherit steering when disabled, got: {resources:?}"
+            );
+        }
+
+        // The explicitly-declared resource must still be present.
+        let workspace = agents.iter().find(|a| a.name() == "workspace-agent").unwrap();
+        let ws_resources: Vec<&str> = workspace.resources().into_iter().map(|r| r.as_ref()).collect();
+        assert!(
+            ws_resources.iter().any(|r| r == &"file://custom.md"),
+            "explicitly declared resource should be preserved, got: {ws_resources:?}"
+        );
+
+        // Built-in default agent must still inherit regardless of the flag.
+        let default_agent = build_default_agent(base.provider());
+        let default_resources: Vec<&str> = default_agent.resources().into_iter().map(|r| r.as_ref()).collect();
+        assert!(
+            default_resources.iter().any(|r| r == &"file://AGENTS.md"),
+            "built-in default agent should always inherit AGENTS.md, got: {default_resources:?}"
+        );
     }
 }
