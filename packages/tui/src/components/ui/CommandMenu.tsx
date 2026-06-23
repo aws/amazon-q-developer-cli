@@ -21,10 +21,7 @@ import {
   isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
-import {
-  VerbosityPreview,
-  VerbosityPreviewPane,
-} from './menu/VerbosityPreview.js';
+import { VerbosityPreview } from './menu/VerbosityPreview.js';
 import { VerbosityTruncationEditor } from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
@@ -643,7 +640,8 @@ export const CommandMenu: React.FC = () => {
       return (
         <Box flexDirection="column">
           {verbosityHeader}
-          <VerbosityPreviewPane
+          <VerbosityPreview
+            mode="expanded"
             which={verbosityPreviewKey}
             displayOverride={draftDisplay}
             filtersOverride={draftFilters}
