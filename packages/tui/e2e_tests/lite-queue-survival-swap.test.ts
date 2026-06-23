@@ -21,137 +21,92 @@ describe('queued message survives mode swap', () => {
   let testCase: E2ETestCase | null = null;
   trackCleanup(() => testCase);
 
-  it('lite -> tui: queued /tui + message drains in tui mode', async () => {
-    testCase = await launchLiteE2E('queue-survival-lite-to-tui', {
-      terminal: { width: 120, height: 50 },
-    });
+  // trailingSpace on every queued slash command so the slash menu doesn't
+  // intercept Enter (it would handle Enter and never clear PromptInput's
+  // segments buffer). All cases: warm a turn, open a keepOpen stream, queue the
+  // commands + a follow-up message behind it (FIFO), then drain into the final
+  // mode where the message fires.
+  it.each([
+    {
+      name: 'lite -> tui: queued /tui + message drains in tui mode',
+      testName: 'queue-survival-lite-to-tui',
+      queuedCommands: [CMD_TUI],
+      queuedMessage: 'QUEUED_FOLLOWUP',
+      finalReply: 'RESPONSE_IN_TUI_MODE',
+      expectedMode: 'tui' as const,
+    },
+    {
+      name: 'tui -> lite: queued /tui + /lite + message drains in lite mode',
+      testName: 'queue-survival-tui-to-lite',
+      queuedCommands: [CMD_TUI, CMD_LITE],
+      queuedMessage: 'QUEUED_MSG_LITE',
+      finalReply: 'RESPONSE_BACK_IN_LITE',
+      expectedMode: 'lite' as const,
+    },
+  ])(
+    '$name',
+    async ({
+      testName,
+      queuedCommands,
+      queuedMessage,
+      finalReply,
+      expectedMode,
+    }) => {
+      const tc = await launchLiteE2E(testName, {
+        terminal: { width: 120, height: 50 },
+      });
+      testCase = tc;
 
-    // Turn 1 warms the session.
-    await streamReply(testCase, 'Turn one done.');
+      // Turn 1 warms the session.
+      await streamReply(tc, 'Warm up done.');
+      await sendUserMessage(tc, 'warm up');
+      await tc.waitForText('Warm up done', 15000);
+      await tc.waitForIdle(10000);
 
-    await sendUserMessage(testCase, 'warm up');
-    await testCase.waitForText('Turn one done', 15000);
-    await testCase.waitForIdle(10000);
+      // Turn 2 keepOpen so the stream stays open while we queue behind it.
+      await streamReply(tc, 'Still thinking.', { keepOpen: true });
+      await sendUserMessage(tc, 'turn two');
+      await tc.sleepMs(500);
+      expect((await tc.getStore()).isProcessing).toBe(true);
 
-    // Turn 2 keepOpen so the stream stays open while we queue behind it.
-    await streamReply(testCase, 'Still thinking.', { keepOpen: true });
+      for (let i = 0; i < queuedCommands.length; i++) {
+        await typeSlashCommand(tc, queuedCommands[i]!, { trailingSpace: true });
+        if (i === 0) await tc.waitForText('queued', 5000);
+        else
+          await tc.waitForStoreCondition(
+            (s) => s.queuedMessages.length >= i + 1,
+            5000
+          );
+        await tc.sleepMs(300);
+      }
 
-    await sendUserMessage(testCase, 'turn two');
-    await testCase.sleepMs(500);
+      await sendUserMessage(tc, queuedMessage);
+      const expectedQueue = [...queuedCommands, queuedMessage];
+      await tc.waitForStoreCondition(
+        (s) => s.queuedMessages.length >= expectedQueue.length,
+        5000
+      );
 
-    let store = await testCase.getStore();
-    expect(store.isProcessing).toBe(true);
+      const store = await tc.getStore();
+      expect(store.queuedMessages).toEqual(expectedQueue);
+      expect(store.uiMode).toBe('lite');
 
-    // trailingSpace so the slash menu doesn't intercept Enter; without it the
-    // menu handles Enter and never clears PromptInput's segments buffer.
-    await typeSlashCommand(testCase, CMD_TUI, { trailingSpace: true });
+      // Completing turn 2 drains FIFO: the swap command(s) change mode, then the
+      // queued message fires in the final mode.
+      await tc.pushSendMessageResponse(null); // end turn 2
+      await streamReply(tc, finalReply); // end queued message turn
+      await tc.waitForText(finalReply, 20000);
+      await tc.waitForIdle(15000);
 
-    await testCase.waitForText('queued', 5000);
-
-    store = await testCase.getStore();
-    expect(store.queuedMessages).toContain(CMD_TUI);
-    await testCase.sleepMs(300);
-
-    await sendUserMessage(testCase, 'QUEUED_FOLLOWUP');
-    await testCase.sleepMs(500);
-
-    await testCase.waitForStoreCondition(
-      (s) => s.queuedMessages.length >= 2,
-      5000
-    );
-
-    store = await testCase.getStore();
-    expect(store.queuedMessages[0]).toBe(CMD_TUI);
-    expect(store.queuedMessages[1]).toBe('QUEUED_FOLLOWUP');
-    expect(store.uiMode).toBe('lite');
-
-    // Completing turn 2 drains FIFO: /tui swaps to TUI, then QUEUED_FOLLOWUP
-    // fires as sendMessage in the new (TUI) mode.
-    await testCase.pushSendMessageResponse(null); // end turn 2
-    await streamReply(testCase, 'RESPONSE_IN_TUI_MODE'); // end queued message turn
-
-    await testCase.waitForText('RESPONSE_IN_TUI_MODE', 20000);
-    await testCase.waitForIdle(15000);
-
-    const finalStore = await testCase.getStore();
-    expect(finalStore.uiMode).toBe('tui');
-    expect(finalStore.queuedMessages).toEqual([]);
-    expect(finalStore.isProcessing).toBe(false);
-
-    const hasResponse = finalStore.messages.some((m) =>
-      JSON.stringify(m).includes('RESPONSE_IN_TUI_MODE')
-    );
-    expect(hasResponse).toBe(true);
-  }, 60000);
-
-  it('tui -> lite: queued /tui + /lite + message drains in lite mode', async () => {
-    // Start in lite, then queue: /tui (swap to tui), /lite (swap back), message.
-    // The message should fire in lite mode after both swaps execute.
-    testCase = await launchLiteE2E('queue-survival-tui-to-lite', {
-      terminal: { width: 120, height: 50 },
-    });
-
-    await streamReply(testCase, 'Warm up done.');
-
-    await sendUserMessage(testCase, 'warm up');
-    await testCase.waitForText('Warm up done', 15000);
-    await testCase.waitForIdle(10000);
-
-    await streamReply(testCase, 'Processing.', { keepOpen: true });
-
-    await sendUserMessage(testCase, 'turn two');
-    await testCase.sleepMs(500);
-
-    let store = await testCase.getStore();
-    expect(store.isProcessing).toBe(true);
-
-    // trailingSpace prevents the slash menu from intercepting Enter.
-    await typeSlashCommand(testCase, CMD_TUI, { trailingSpace: true });
-
-    await testCase.waitForText('queued', 5000);
-    await testCase.sleepMs(300);
-
-    await typeSlashCommand(testCase, CMD_LITE, { trailingSpace: true });
-
-    await testCase.waitForStoreCondition(
-      (s) => s.queuedMessages.length >= 2 && s.queuedMessages[1] === CMD_LITE,
-      5000
-    );
-    await testCase.sleepMs(300);
-
-    await sendUserMessage(testCase, 'QUEUED_MSG_LITE');
-    await testCase.sleepMs(500);
-
-    await testCase.waitForStoreCondition(
-      (s) => s.queuedMessages.length >= 3,
-      5000
-    );
-
-    store = await testCase.getStore();
-    expect(store.queuedMessages[0]).toBe(CMD_TUI);
-    expect(store.queuedMessages[1]).toBe(CMD_LITE);
-    expect(store.queuedMessages[2]).toBe('QUEUED_MSG_LITE');
-    expect(store.uiMode).toBe('lite');
-
-    // Drain order: /tui (mode→tui), /lite (mode→lite), then QUEUED_MSG_LITE
-    // fires in lite mode.
-    await testCase.pushSendMessageResponse(null); // end turn 2
-    await streamReply(testCase, 'RESPONSE_BACK_IN_LITE'); // end queued message turn
-
-    await testCase.waitForText('RESPONSE_BACK_IN_LITE', 20000);
-    await testCase.waitForIdle(15000);
-
-    const finalStore = await testCase.getStore();
-    expect(finalStore.uiMode).toBe('lite');
-    expect(finalStore.queuedMessages).toEqual([]);
-    expect(finalStore.isProcessing).toBe(false);
-
-    const hasResponse = finalStore.messages.some((m) =>
-      JSON.stringify(m).includes('RESPONSE_BACK_IN_LITE')
-    );
-    expect(hasResponse).toBe(true);
-
-    const snap = testCase.getSnapshot();
-    expect(snap.join('\n')).toContain('RESPONSE_BACK_IN_LITE');
-  }, 60000);
+      const finalStore = await tc.getStore();
+      expect(finalStore.uiMode).toBe(expectedMode);
+      expect(finalStore.queuedMessages).toEqual([]);
+      expect(finalStore.isProcessing).toBe(false);
+      expect(
+        finalStore.messages.some((m) => JSON.stringify(m).includes(finalReply))
+      ).toBe(true);
+      expect(tc.getSnapshot().join('\n')).toContain(finalReply);
+    },
+    60000
+  );
 });
