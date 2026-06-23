@@ -21,6 +21,7 @@ import {
   CMD_LITE,
   CMD_TUI,
   launchLiteE2E,
+  launchTuiE2E,
   sendUserMessage,
 } from './lite/helpers/commands';
 import { pushWriteApprovalEvent } from './lite/helpers/approvals';
@@ -89,13 +90,9 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     // (same as lite — bug-mine 3.5). Then swapping to /lite must not carry
     // stale pendingApproval or isProcessing state, and the user's original
     // message must render in lite scrollback (bug-mine 2.1 cursor realignment).
-    testCase = await E2ETestCase.builder()
-      .withTestName('swap-approval-tui-esc-then-lite')
-      .withTerminal({ width: 120, height: 40 })
-      .launch();
-
-    await testCase.waitForText('ask a question', 15000);
-    await testCase.getSessionId();
+    testCase = await launchTuiE2E('swap-approval-tui-esc-then-lite', {
+      waitForCommands: false,
+    });
 
     await pushWriteApprovalEvent(testCase, {
       toolUseId: 'write-needs-approval-tui',

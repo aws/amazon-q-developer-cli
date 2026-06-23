@@ -19,6 +19,7 @@ import {
   CMD_LITE,
   CMD_TUI,
   launchLiteE2E,
+  launchTuiE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -109,13 +110,9 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   }, 60000);
 
   it('tui->lite: Enter resolves approval via Menu then /lite works after idle', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('approval-pressure-tui-to-lite')
-      .withTerminal({ width: 120, height: 40 })
-      .launch();
-
-    await testCase.waitForText('ask a question', 15000);
-    await testCase.getSessionId();
+    testCase = await launchTuiE2E('approval-pressure-tui-to-lite', {
+      waitForCommands: false,
+    });
 
     // Stream 1: a write ToolUseEvent that requires approval.
     await pushWriteApprovalEvent(testCase, {

@@ -19,6 +19,7 @@ import {
   CMD_LITE,
   CMD_TUI,
   launchLiteE2E,
+  launchTuiE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -117,14 +118,9 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     // This test swaps immediately after the stream completes, exercising the
     // same cursor-realignment code path: the TUI's static cursor has advanced
     // during streaming, and lite must pick up without losing content.
-    testCase = await E2ETestCase.builder()
-      .withTestName('mid-stream-tui-to-lite')
-      .withTerminal({ width: 120, height: 50 })
-      .launch();
-
-    await testCase.waitForText('ask a question', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchTuiE2E('mid-stream-tui-to-lite', {
+      terminal: { width: 120, height: 50 },
+    });
 
     const chunk1Content = 'STREAM_PART_ALPHA_BEGIN';
     const chunk2Content = 'STREAM_PART_BETA_MIDDLE';

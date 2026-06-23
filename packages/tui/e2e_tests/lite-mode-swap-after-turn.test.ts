@@ -11,6 +11,7 @@ import {
   CMD_LITE,
   CMD_TUI,
   launchLiteE2E,
+  launchTuiE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -60,14 +61,9 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   }, 60000);
 
   it('tui→lite swap: first lite message appears (cursor realignment, bug 2.1/2.2)', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('swap-tui-to-lite-cursor')
-      .withTerminal({ width: 120, height: 50 })
-      .launch();
-
-    await testCase.waitForText('ask a question', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchTuiE2E('swap-tui-to-lite-cursor', {
+      terminal: { width: 120, height: 50 },
+    });
 
     // Complete a turn in TUI mode (advances the static cursor)
     await streamReply(testCase, 'TUI_CONTENT_BEFORE_SWAP');
@@ -100,14 +96,9 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   }, 60000);
 
   it('tui→lite cold swap: liteScrollbackClearToken bumped, new messages render (bug 2.6)', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('swap-tui-to-lite-cold')
-      .withTerminal({ width: 120, height: 50 })
-      .launch();
-
-    await testCase.waitForText('ask a question', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchTuiE2E('swap-tui-to-lite-cold', {
+      terminal: { width: 120, height: 50 },
+    });
 
     await streamReply(testCase, 'TUI_TURN_ONE_REPLY');
 
