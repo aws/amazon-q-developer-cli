@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
+import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
-import { PreviewFrame } from './PreviewFrame.js';
-import { useRenderTheme } from './useRenderTheme.js';
+import { Divider } from '../divider/Divider.js';
+import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   renderVerbosityPreview,
+  buildRenderTheme,
   type VerbosityPreviewKey,
 } from '../../../lite/render.js';
 import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
@@ -11,18 +13,24 @@ import { getVerboseConfig, getVerboseDisplay } from '../../../lite/verbose.js';
 /**
  * Inline synthetic-scrollback preview beneath the /verbosity menu. Reads live
  * config every render so toggling a knob reflects on the next frame.
+ *
+ * `displayOverride`/`filtersOverride` are draft overrides for an in-progress
+ * truncation cap or highlighted density preset; both default to saved config.
  */
 export const VerbosityPreview: React.FC<{
   which: VerbosityPreviewKey;
-  /** Draft overrides for an in-progress truncation cap / highlighted density
-   *  preset; default to saved config read from disk. */
   displayOverride?: ReturnType<typeof getVerboseDisplay>;
   filtersOverride?: readonly string[];
 }> = ({ which, displayOverride, filtersOverride }) => {
-  const { theme } = useRenderTheme();
+  const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
+  const secondary = useMemo(() => getColor('secondary'), [getColor]);
+  // Per-render theme so the preview matches scrollback under the user's theme
+  // (not hardcoded purple/cyan).
+  const theme = useMemo(
+    () => buildRenderTheme(getColor, getUserPromptColor, getUserPromptBgHex),
+    [getColor, getUserPromptColor, getUserPromptBgHex]
+  );
 
-  // Read live config on every render — toggling a knob re-opens the menu,
-  // which rerenders this component, which reads the freshly-saved config.
   const display = displayOverride ?? getVerboseDisplay();
   const filters = filtersOverride ?? getVerboseConfig().filters;
 
@@ -34,8 +42,12 @@ export const VerbosityPreview: React.FC<{
   if (!preview) return null;
 
   return (
-    <PreviewFrame>
-      <Text>{preview}</Text>
-    </PreviewFrame>
+    <Box flexDirection="column" marginTop={1}>
+      <Divider />
+      <Box paddingX={1} flexDirection="column">
+        <Text>{secondary('Preview')}</Text>
+        <Text>{preview}</Text>
+      </Box>
+    </Box>
   );
 };
