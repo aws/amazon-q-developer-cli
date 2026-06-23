@@ -25,6 +25,10 @@ export interface MenuItem {
   label: string;
   description: string;
   group?: string;
+  /** Carried through for command options so onSelect/onHighlight can read the
+   *  selected item directly instead of re-looking-up by label. */
+  value?: string;
+  hint?: string;
 }
 
 export interface MenuProps {

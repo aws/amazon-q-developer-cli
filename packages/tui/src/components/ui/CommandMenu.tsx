@@ -133,11 +133,10 @@ export const CommandMenu: React.FC = () => {
   // /verbosity density rows: track the highlighted preset so the inline
   // preview can draft-render it; non-preset rows (Custom / back / Cancel)
   // clear the draft so the preview reverts to the saved config.
-  const handleHighlight = (item: { label: string }) => {
+  const handleHighlight = (item: { value?: string }) => {
     if (!activeCommand || activeCommand.command.name !== '/verbosity') return;
-    const opt = activeCommand.options.find((o) => o.label === item.label);
-    if (!opt) return;
-    const m = opt.value.match(
+    if (item.value == null) return;
+    const m = item.value.match(
       /^(?:menu:density:confirm|density:apply):([a-z]+)$/
     );
     setDraftPreset(
@@ -662,28 +661,25 @@ export const CommandMenu: React.FC = () => {
             label: opt.label,
             description: opt.description ?? '',
             group: opt.group,
+            value: opt.value,
+            hint: opt.hint,
           }))}
           prefix=""
           onSelect={(item) => {
-            const opt = activeCommand.options.find(
-              (o) => o.label === item.label
-            );
-            if (opt) {
-              if (isSubcommandMenu) {
-                // Prefill the full path; trailing space only when the
-                // sub-command takes args (has a hint).
-                const prefix = `${activeCommand.command.name} ${opt.label}`;
-                setCommandInput(opt.hint ? `${prefix} ` : prefix);
-                setPromptHint(opt.hint ?? null);
-                setActiveCommand(null);
-              } else if (opt.hint) {
-                setCommandInput(`${opt.label} `);
-                setPromptHint(opt.hint);
-                setActiveCommand(null);
-              } else {
-                clearCommandInput();
-                executeCommandWithArg(opt.value);
-              }
+            if (isSubcommandMenu) {
+              // Prefill the full path; trailing space only when the
+              // sub-command takes args (has a hint).
+              const prefix = `${activeCommand.command.name} ${item.label}`;
+              setCommandInput(item.hint ? `${prefix} ` : prefix);
+              setPromptHint(item.hint ?? null);
+              setActiveCommand(null);
+            } else if (item.hint) {
+              setCommandInput(`${item.label} `);
+              setPromptHint(item.hint);
+              setActiveCommand(null);
+            } else if (item.value != null) {
+              clearCommandInput();
+              executeCommandWithArg(item.value);
             }
           }}
           onHighlight={handleHighlight}
