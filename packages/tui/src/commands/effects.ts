@@ -1319,7 +1319,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       }
       const updatedPrefs = { ...prefs };
       c.setPref(updatedPrefs, preset.id === 'default' ? undefined : preset.id);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       c.apply(preset as any);
       const saved = saveUserThemePrefs(updatedPrefs);
       ctx.showAlert(
