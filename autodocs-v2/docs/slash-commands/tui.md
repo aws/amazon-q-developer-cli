@@ -28,7 +28,7 @@ The `/tui` command has context-dependent behavior:
 /tui
 ```
 
-No arguments. From lite mode it switches to the full panel-based TUI (`System: Switched to TUI mode`); from TUI mode it opens the TUI info panel instead. Either way the switch re-renders the full conversation, preserves queued messages and session state, and destroys no scrollback.
+No arguments (`System: Switched to TUI mode`). The switch re-renders the full conversation, preserves queued messages and session state, and destroys no scrollback.
 
 ## Related
 

@@ -37,9 +37,6 @@ The `/switch` command lets you navigate between your main conversation and any s
 ## Examples
 
 ```
-/switch                 # open the session picker (↑↓ navigate, Enter to select)
-/switch test-analysis   # switch by exact name -> "Switched to test-analysis"
-/switch main            # return to main chat   -> "Switched to main chat"
 /switch a1b2            # switch by ID prefix (first session whose ID starts with a1b2)
 ```
 

@@ -7,7 +7,20 @@ doc_meta:
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
+  keywords:
+    [
+      classic,
+      tui,
+      v1,
+      v2,
+      migration,
+      legacy,
+      differences,
+      new,
+      paste,
+      chip,
+      lite,
+    ]
   related: [help, theme, spawn, feedback, lite-mode]
 ---
 
@@ -43,7 +56,7 @@ Track task list progress and queued messages. Type your next message while the a
 
 - Ctrl+R for reverse incremental history search
 - Full kill ring with accumulation and rotation
-- Undo with Ctrl+_ (100-entry stack)
+- Undo with Ctrl+\_ (100-entry stack)
 - Shift+Enter for multi-line input (terminal-dependent)
 - Segment-based input with file and paste chips
 - Async @ file search with debounce
@@ -54,7 +67,7 @@ When you paste text longer than 10 lines, the TUI collapses it into a compact ch
 
 **Expanding chips**: Press Tab when your cursor is on a paste chip to expand it back into inline editable text. A hint ("Press Tab to expand") appears after pasting.
 
-**Undo**: Press Ctrl+_ after expanding to restore the collapsed chip.
+**Undo**: Press Ctrl+\_ after expanding to restore the collapsed chip.
 
 **Multiple chips**: You can paste multiple times — each creates a separate chip. Typing between pastes inserts text between chips.
 
@@ -90,23 +103,23 @@ This is the biggest behavioral change:
 
 ### Commands Not Available in TUI
 
-| Command | Notes |
-|---------|-------|
-| `/changelog` | Not ported |
-| `/logdump` | Not ported |
+| Command       | Notes                                  |
+| ------------- | -------------------------------------- |
+| `/changelog`  | Not ported                             |
+| `/logdump`    | Not ported                             |
 | `/experiment` | No runtime experiment framework in TUI |
-| `/issue` | Replaced by `/feedback` |
-| `/tangent` | Was experiment-gated in classic |
-| `/checkpoint` | Was experiment-gated in classic |
+| `/issue`      | Replaced by `/feedback`                |
+| `/tangent`    | Was experiment-gated in classic        |
+| `/checkpoint` | Was experiment-gated in classic        |
 
 ### Subcommands with Reduced Coverage
 
-| Command | Missing in TUI |
-|---------|---------------|
-| `/agent` | generate, schema, set-default, delete |
-| `/tools` | schema |
-| `/prompts` | create, edit, remove, details (selection only) |
-| `/knowledge` | fix |
+| Command      | Missing in TUI                                 |
+| ------------ | ---------------------------------------------- |
+| `/agent`     | generate, schema, set-default, delete          |
+| `/tools`     | schema                                         |
+| `/prompts`   | create, edit, remove, details (selection only) |
+| `/knowledge` | fix                                            |
 
 ### Settings
 
@@ -137,13 +150,8 @@ kiro-cli chat --legacy-mode
 
 ### Use Lite Mode
 
-Switch mid-session:
-```
-/lite        Switch TUI → lite
-/tui         Switch lite → TUI
-```
-
-Lite mode can also be set as the default via `/settings → display → Default UI` or by setting `chat.ui.mode` to `"lite"` in `~/.kiro/settings/cli.json`.
+Switch mid-session with `/lite` and `/tui`. See [Lite Mode](lite-mode.md) for
+enabling it, setting it as the default, and full behavior.
 
 ### Session Compatibility
 

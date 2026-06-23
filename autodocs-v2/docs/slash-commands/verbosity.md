@@ -87,10 +87,8 @@ You can also use exact tool names as filter tokens.
 
 ## Interactive Menu
 
-With no arguments the menu exposes the same knobs as the tables above —
-density presets, tool-call toggles (reasoning, args mode, elapsed),
-per-category output filters, and truncation caps — with live preview. Press
-Esc to back out of submenus.
+With no arguments the menu exposes the same knobs as the tables above with live
+preview; Esc backs out of submenus.
 
 ## Persistence
 
