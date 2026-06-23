@@ -14,7 +14,7 @@ import {
 } from '../../../types/agent-events.js';
 import { ApprovalRequest } from '../ApprovalRequest.js';
 
-const CTRL_N = '\x0e';
+const DOWN = '\x1b[B';
 const ENTER = '\r';
 
 class MockTerminal implements Terminal {
@@ -143,14 +143,14 @@ describe('ApprovalRequest KAS shell trust', () => {
     const h = mountApprovalRequest(approval);
     await flush();
 
-    h.terminal.sendInput(CTRL_N);
+    h.terminal.sendInput(DOWN);
     await flush();
     h.terminal.sendInput(ENTER);
     await flush();
 
     expect(h.terminal.output).toContain('trust options');
 
-    h.terminal.sendInput(CTRL_N);
+    h.terminal.sendInput(DOWN);
     await flush();
     h.terminal.sendInput(ENTER);
     await flush();
