@@ -2796,7 +2796,6 @@ export interface RenderContext {
   glyphs?: Glyphs;
 }
 
-/** Render any message type to a plain text string for Static output. */
 /** True when this exact tool call is the one blocking on a user approval. */
 function isAwaitingApproval(msg: MessageLike, ctx: RenderContext): boolean {
   return (
@@ -2821,6 +2820,7 @@ function verboseOutputSuffix(
   );
 }
 
+/** Render any message type to a plain text string for Static output. */
 export function renderMessageToText(
   msg: MessageLike,
   mainAgentName?: string,
