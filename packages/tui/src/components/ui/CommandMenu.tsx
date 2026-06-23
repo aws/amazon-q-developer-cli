@@ -26,6 +26,7 @@ import { VerbosityPreviewPane } from './menu/VerbosityPreviewPane.js';
 import {
   VerbosityTruncationEditor,
   truncationConfigKey,
+  type TruncationEditorField,
 } from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
@@ -614,11 +615,7 @@ export const CommandMenu: React.FC = () => {
     ) : null;
 
     if (truncEditMatch) {
-      const which = truncEditMatch[1] as
-        | 'argsLines'
-        | 'argsChars'
-        | 'outputLines'
-        | 'outputChars';
+      const which = truncEditMatch[1] as TruncationEditorField;
       const settingKey = truncationConfigKey(which);
       return (
         <Box flexDirection="column">
@@ -690,9 +687,8 @@ export const CommandMenu: React.FC = () => {
             );
             if (opt) {
               if (isSubcommandMenu) {
-                // Sub-command selected: always prefill with the full command path.
-                // If the sub-command needs args (has hint), show the hint.
-                // If it doesn't need args, prefill and let the user press Enter to submit.
+                // Prefill the full path; trailing space only when the
+                // sub-command takes args (has a hint).
                 const prefix = `${activeCommand.command.name} ${opt.label}`;
                 setCommandInput(opt.hint ? `${prefix} ` : prefix);
                 setPromptHint(opt.hint ?? null);
