@@ -99,54 +99,44 @@ export const DEFAULT_DISPLAY: VerboseDisplayConfig = {
 export const DENSITY_PRESETS = ['minimal', 'lean', 'default', 'full'] as const;
 export type DensityPreset = (typeof DENSITY_PRESETS)[number];
 
+// Presets are overrides from DEFAULT_DISPLAY (subagent merged separately so a
+// partial subagent patch keeps the unspecified sections at their default).
+const display = (
+  o: Partial<Omit<VerboseDisplayConfig, 'subagent'>> & {
+    subagent?: Partial<SubagentDisplayConfig>;
+  }
+): VerboseDisplayConfig => ({
+  ...DEFAULT_DISPLAY,
+  ...o,
+  subagent: { ...DEFAULT_DISPLAY.subagent, ...o.subagent },
+});
+
 export const DENSITY_DISPLAY: Record<DensityPreset, VerboseDisplayConfig> = {
-  minimal: {
+  minimal: display({
     showToolReasoning: false,
     toolArgsMode: 'off',
     showElapsed: false,
-    subagent: {
-      pipeline: true,
-      prompts: false,
-      roles: false,
-      deps: false,
-      responses: false,
-    },
+    subagent: { prompts: false, roles: false, deps: false, responses: false },
     showThinkingContent: false,
     showWriteDiffs: false,
     showTasks: false,
-    argsMaxLines: null,
     outputMaxLines: 5,
     argsMaxChars: 60,
-    outputMaxChars: null,
-  },
-  lean: {
+  }),
+  lean: display({
     showToolReasoning: false,
     toolArgsMode: 'inline',
-    showElapsed: true,
-    subagent: {
-      pipeline: true,
-      prompts: false,
-      roles: false,
-      deps: true,
-      responses: true,
-    },
+    subagent: { prompts: false, roles: false },
     showThinkingContent: false,
     showWriteDiffs: false,
-    showTasks: true,
-    argsMaxLines: null,
     outputMaxLines: 10,
     argsMaxChars: 80,
-    outputMaxChars: null,
-  },
+  }),
   default: { ...DEFAULT_DISPLAY },
   // "show me everything" — caps off; pairs with DENSITY_FILTERS.full = ['all'].
-  full: {
-    ...DEFAULT_DISPLAY,
-    argsMaxLines: null,
+  full: display({
     outputMaxLines: null,
-    argsMaxChars: null,
-    outputMaxChars: null,
-  },
+  }),
 };
 
 /** Filter list per preset; picking a preset resets filters too. */
