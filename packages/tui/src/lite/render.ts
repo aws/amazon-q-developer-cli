@@ -2136,6 +2136,12 @@ export function formatTaskToolBody(
       ? val.filter((x): x is string => typeof x === 'string')
       : [];
 
+  // Dim `label:` + cyan `#id` chips joined by a dim comma (complete/remove).
+  const idChipLine = (label: string, ids: string[]): string =>
+    `${indent}${chalk.dim(`${label}:`)} ${ids
+      .map((id) => chalk.cyan(`#${id}`))
+      .join(chalk.dim(', '))}`;
+
   const lines: string[] = [];
 
   if (command === 'create' || command === 'add') {
@@ -2162,12 +2168,7 @@ export function formatTaskToolBody(
 
   if (command === 'complete') {
     const ids = stringList(args.completed_task_ids);
-    if (ids.length > 0) {
-      const idChips = ids
-        .map((id) => chalk.cyan(`#${id}`))
-        .join(chalk.dim(', '));
-      lines.push(`${indent}${chalk.dim('completed:')} ${idChips}`);
-    }
+    if (ids.length > 0) lines.push(idChipLine('completed', ids));
     const ctxUpdate =
       typeof args.context_update === 'string' ? args.context_update.trim() : '';
     if (ctxUpdate) {
@@ -2186,12 +2187,7 @@ export function formatTaskToolBody(
 
   if (command === 'remove') {
     const ids = stringList(args.remove_task_ids);
-    if (ids.length > 0) {
-      const idChips = ids
-        .map((id) => chalk.cyan(`#${id}`))
-        .join(chalk.dim(', '));
-      lines.push(`${indent}${chalk.dim('removed:')} ${idChips}`);
-    }
+    if (ids.length > 0) lines.push(idChipLine('removed', ids));
     const newDesc =
       typeof args.new_description === 'string'
         ? args.new_description.trim()
