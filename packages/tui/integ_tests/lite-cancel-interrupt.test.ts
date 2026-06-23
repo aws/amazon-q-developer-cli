@@ -3,7 +3,9 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
+  startBusyTurn,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -24,16 +26,7 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   it('cancel mid-stream shows "Cancelled streaming" once, no duplicated partial content [bug-mine 5.1]', async () => {
     testCase = await launchLiteInteg('lite-cancel-no-duplicate');
 
-    // Inject before submit so the mock session has content to stream.
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-1',
-      content: { type: ContentType.Text, text: 'PARTIAL_RESPONSE_ABC' },
-    });
-
-    await testCase.typeAndSubmit('test prompt');
-    await testCase.sleepMs(300);
-
+    await startBusyTurn(testCase, { marker: 'PARTIAL_RESPONSE_ABC' });
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
@@ -56,15 +49,10 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   it('rapid double Ctrl+C is idempotent via cancelInProgress guard [bug-mine 5.2]', async () => {
     testCase = await launchLiteInteg('lite-cancel-idempotent');
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-1',
-      content: { type: ContentType.Text, text: 'some content' },
+    await startBusyTurn(testCase, {
+      marker: 'some content',
+      prompt: 'test double cancel',
     });
-
-    await testCase.typeAndSubmit('test double cancel');
-    await testCase.sleepMs(300);
-
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
@@ -86,14 +74,11 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   it('cancel disposes stream handler before async cancel — no ghost content from old turn [bug-mine 5.3]', async () => {
     testCase = await launchLiteInteg('lite-cancel-no-ghost');
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
+    await startBusyTurn(testCase, {
+      marker: 'TURN1_UNIQUE_MARKER',
       id: 'content-turn1',
-      content: { type: ContentType.Text, text: 'TURN1_UNIQUE_MARKER' },
+      prompt: 'turn one',
     });
-
-    await testCase.typeAndSubmit('turn one');
-    await testCase.sleepMs(300);
 
     await testCase.pressCtrlC();
     await testCase.sleepMs(500);
@@ -189,22 +174,17 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
     expect(store.subagentPanelOpen).toBe(false);
     expect(store.isProcessing).toBe(true);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 
   it('Esc cancels turn cleanly and app recovers for new input [bug-mine 5.6]', async () => {
     testCase = await launchLiteInteg('lite-cancel-esc-recovers');
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
+    await startBusyTurn(testCase, {
+      marker: 'background work',
       id: 'content-bg',
-      content: { type: ContentType.Text, text: 'background work' },
+      prompt: 'first message',
     });
-    await testCase.typeAndSubmit('first message');
-    await testCase.sleepMs(300);
-
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
@@ -242,14 +222,11 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   it('cancel drains queued message immediately after clearing isProcessing [bug-mine 5.7]', async () => {
     testCase = await launchLiteInteg('lite-cancel-drain-queue');
 
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
+    await startBusyTurn(testCase, {
+      marker: 'turn 1 content',
       id: 'content-t1',
-      content: { type: ContentType.Text, text: 'turn 1 content' },
+      prompt: 'first message',
     });
-    await testCase.typeAndSubmit('first message');
-    await testCase.sleepMs(300);
-
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
