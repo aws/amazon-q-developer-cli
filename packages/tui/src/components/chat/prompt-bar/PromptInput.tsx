@@ -224,11 +224,9 @@ export const PromptInput = React.memo(function PromptInput({
     return () => setStoreReverseSearchActive(false);
   }, [setStoreReverseSearchActive]);
 
-  // Queue-aware ↑/↓ navigation (lite mode only). Pressing ↑ in an empty
-  // input pulls the most recent queued message back into the buffer for
-  // editing; ↑↑ pages older. The slot stays in the queue at its original
-  // index, so Kiro processes the edited message in its original order.
-  // See utils/queue-navigation.ts for the state machine.
+  // Queue-aware ↑/↓ navigation (lite mode only): ↑ pulls a queued message back
+  // into the buffer for editing while leaving its slot in place, so Kiro still
+  // processes it in order. State machine: utils/queue-navigation.ts.
   const queueRestoreRef = useRef<QueueRestoreState | null>(null);
   const isLiteMode = useAppStore((state) => state.uiMode === 'lite');
   const queuedMessagesRef = useRef<readonly string[]>([]);
@@ -795,10 +793,9 @@ export const PromptInput = React.memo(function PromptInput({
       let segments = segmentsRef.current;
       let cursor = cursorRef.current;
 
-      // Shared ↑/↓ queue-restore application: commit the dirty slot, install
-      // the new restore state, and (when loadSegments) replace the input with
-      // the queued text. `up` skips the load when it walked past the oldest
-      // entry so the same keypress can fall through to CommandHistory.
+      // Shared ↑/↓ queue-restore application. `up` passes loadSegments=false
+      // once it walks past the oldest entry so the same keypress falls through
+      // to CommandHistory below.
       const applyQueueNav = (
         result: Extract<ReturnType<typeof navigateQueueUp>, { kind: 'queue' }>,
         loadSegments: boolean
@@ -971,21 +968,16 @@ export const PromptInput = React.memo(function PromptInput({
               content,
               queuedMessagesRef.current
             );
+            clearAll();
             if (result.kind === 'replace') {
               if (result.text.trim()) {
                 replaceQueuedMessage(result.index, result.text);
               } else {
                 removeQueuedMessage(result.index);
               }
-              clearAll();
-              return;
-            }
-            // Fallback: slot drained or shifted — send as fresh message.
-            if (result.text.trim()) {
-              clearAll();
+            } else if (result.text.trim()) {
+              // Fallback: slot drained or shifted — send as fresh message.
               onSubmit(result.text);
-            } else {
-              clearAll();
             }
             return;
           }
@@ -1157,11 +1149,10 @@ export const PromptInput = React.memo(function PromptInput({
             return;
           }
         }
-        // Lite mode: ↑ first walks back through queued messages (Claude
-        // Code parity). When the user steps past the oldest queued entry
-        // we exit restore mode AND continue into CommandHistory on the
-        // same keypress — that way ↑↑↑↑ pages cleanly from queue tail
-        // through to history without a phantom no-op press in between.
+        // Lite mode: ↑ walks back through queued messages first. Stepping past
+        // the oldest entry (state === null) skips the load and falls through to
+        // CommandHistory on the SAME keypress, so ↑↑↑ pages from queue tail into
+        // history without a phantom no-op press in between.
         if (isLiteMode) {
           const result = navigateQueueUp(
             queueRestoreRef.current,
@@ -1169,12 +1160,9 @@ export const PromptInput = React.memo(function PromptInput({
             queuedMessagesRef.current
           );
           if (result.kind === 'queue') {
-            // state === null: walked past the oldest entry — skip the load so
-            // this keypress falls through to CommandHistory below.
             applyQueueNav(result, result.state != null);
             if (result.state != null) return;
           }
-          // 'history' / 'noop' / queue-exit — fall through to CommandHistory
         }
         // Single-line or already on first line: navigate history
         const currentText = buildContent(segments);
@@ -1205,8 +1193,8 @@ export const PromptInput = React.memo(function PromptInput({
             return;
           }
         }
-        // Lite mode: ↓ walks forward through queue restore mode, mirroring
-        // ↑. When not in restore mode, falls through to history.
+        // Lite mode: ↓ walks forward through queue restore (mirror of ↑);
+        // outside restore it falls through to history.
         if (isLiteMode && queueRestoreRef.current != null) {
           const result = navigateQueueDown(
             queueRestoreRef.current,
