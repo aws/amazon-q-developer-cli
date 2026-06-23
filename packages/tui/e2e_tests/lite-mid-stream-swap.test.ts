@@ -1,7 +1,7 @@
 /**
- * Real mid-stream mode swap [bug-mine 2.1, 2.2]. Asserts the observable outcome
- * (content survives + renders), not the hook timing — bug 2.2's useEffect→
- * useLayoutEffect fix is what stops the first post-swap lite batch being lost.
+ * Real mid-stream mode swap: a /tui command typed while a lite turn is streaming
+ * is QUEUED and fires at turn-end (the tui<->lite content-preservation half of
+ * bug-mine 2.1/2.2 is covered by lite-mode-swap-after-turn.test.ts).
  *
  * WHY N+1 events: the RTS ResponseParser uses 1-lookahead (after an
  * AssistantResponseEvent it peeks the NEXT event for a CodeReferenceEvent), so
@@ -12,16 +12,14 @@ import { describe, expect, it } from 'bun:test';
 import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
-  CMD_LITE,
   CMD_TUI,
   launchLiteE2E,
-  launchTuiE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
 import { assistantEvent, messageText } from './lite/helpers/responses';
 
-describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
+describe('lite mid-stream slash-command queueing', () => {
   let testCase: E2ETestCase | null = null;
   trackCleanup(() => testCase);
 
@@ -78,66 +76,5 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
     }
 
     expect(testCase.getSnapshot().join('\n')).toContain(finalContent);
-  }, 60000);
-
-  it('tui->lite: swap immediately after streaming, content preserved (bug 2.1/2.2)', async () => {
-    // TUI mode rejects slash commands during processing (shows a warning).
-    // This test swaps immediately after the stream completes, exercising the
-    // same cursor-realignment code path: the TUI's static cursor has advanced
-    // during streaming, and lite must pick up without losing content.
-    testCase = await launchTuiE2E('mid-stream-tui-to-lite', {
-      terminal: { width: 120, height: 50 },
-    });
-
-    // 6 events (first 5 render, 6th held in peek) + null to complete.
-    const chunks = [
-      'ALPHA_BEGIN',
-      'BETA_MIDDLE',
-      'GAMMA_PROGRESS',
-      'DELTA_BUFFER',
-      'EPSILON_TAIL',
-      'ZETA_END',
-    ];
-    const finalContent = chunks[chunks.length - 1]!;
-    await testCase.pushSendMessageResponse(
-      chunks.map((c, i) => assistantEvent((i ? ' ' : '') + c))
-    );
-    await testCase.pushSendMessageResponse(null);
-
-    await sendUserMessage(testCase, 'begin stream');
-
-    await testCase.waitForText(finalContent, 15000);
-    await testCase.waitForIdle(15000);
-
-    const storeBeforeSwap = await testCase.getStore();
-    expect(storeBeforeSwap.uiMode).toBe('tui');
-    expect(storeBeforeSwap.isProcessing).toBe(false);
-
-    await typeSlashCommand(testCase, CMD_LITE);
-    await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
-    await testCase.sleepMs(500);
-
-    // Bug 2.1: TUI-era messages must survive the swap into the store.
-    const storeAfterSwap = await testCase.getStore();
-    expect(storeAfterSwap.uiMode).toBe('lite');
-    let allMessageText = await messageText(testCase);
-    for (const c of chunks) expect(allMessageText).toContain(c);
-
-    // Bug 2.2: a new lite message must render (no missing first batch from a
-    // stale cursor).
-    const liteNewContent = 'LITE_NEW_AFTER_SWAP_MARKER';
-    await testCase.pushSendMessageResponse([assistantEvent(liteNewContent)]);
-    await testCase.pushSendMessageResponse(null);
-
-    await sendUserMessage(testCase, 'new lite msg');
-    await testCase.waitForText(liteNewContent, 15000);
-    await testCase.waitForIdle(10000);
-
-    expect(testCase.getSnapshot().join('\n')).toContain(liteNewContent);
-
-    allMessageText = await messageText(testCase);
-    for (const c of [...chunks, liteNewContent]) {
-      expect(allMessageText).toContain(c);
-    }
   }, 60000);
 });

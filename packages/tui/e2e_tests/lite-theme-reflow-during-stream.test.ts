@@ -23,33 +23,7 @@ describe('lite /theme reflow during stream', () => {
   let testCase: E2ETestCase | null = null;
   trackCleanup(() => testCase);
 
-  it('live region picks up the new brand color after /theme bundled:light', async () => {
-    testCase = await launchLiteE2E('lite-theme-reflow-live');
-
-    await applyTheme(testCase, 'dark');
-    await testCase.sleepMs(800);
-    await applyTheme(testCase, 'light');
-    // The "Theme set to ..." alert auto-hides in ~3s; don't pin assertions on it.
-    await testCase.sleepMs(800);
-
-    const liveContent = 'THEME_LIVE_AFTER_SWAP_MARKER';
-    await streamReply(testCase, liveContent);
-
-    await sendUserMessage(testCase, 'reflow probe');
-
-    await testCase.waitForText(liveContent, 15000);
-    await testCase.waitForIdle(15000);
-
-    // Lite renders the default agent tag as `kiro_default:` (raw name verbatim).
-    const allTagCells = testCase.findAllTextCells('kiro_default:');
-    expect(allTagCells.length).toBeGreaterThan(0);
-    const lastTag = allTagCells[allTagCells.length - 1]!;
-    const fg = dominantRgb(lastTag);
-    expect(fg).toBe(BRAND_LIGHT_RGB);
-    expect(fg).not.toBe(BRAND_DARK_RGB);
-  }, 60000);
-
-  it('already-flushed scrollback rows stay frozen at the old brand color', async () => {
+  it('live reflow repaints the newest row while flushed scrollback stays frozen', async () => {
     testCase = await launchLiteE2E('lite-theme-reflow-frozen');
 
     // Force a dark baseline: the default theme varies by user settings, but the
