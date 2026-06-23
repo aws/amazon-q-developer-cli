@@ -8,7 +8,7 @@ const READABLE_MIN_COL_WIDTH = 8;
 
 export type Alignment = 'left' | 'right' | 'center';
 
-// eslint-disable-next-line no-control-regex
+ 
 const ANSI_ESC_RE =
   /^(?:\x1b\][0-9]*;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;]*m)/;
 

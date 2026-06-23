@@ -775,7 +775,7 @@ export function renderMarkdownToLines(
     ) {
       flushTextGroup();
       const lines = renderBlockSegment(seg, restWidth, glyphs, theme);
-      const skipBlank = !!prev
+      const skipBlank = prev
         ? prev.listItem && seg.listItem
           ? prev.listItem.indent === seg.listItem.indent
           : !!prev.blockquote && !!seg.blockquote
