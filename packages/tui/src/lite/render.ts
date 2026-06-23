@@ -1808,15 +1808,17 @@ export function extractInlineArg(
       return `[${clipChars(v, maxChars)}]`;
   }
 
-  // Last resort: the purpose extractor, bracketed so it reads as a chip.
-  const fallback = extractToolPurpose(content);
-  return fallback ? `[${clipChars(fallback, maxChars)}]` : undefined;
+  // Last resort: the model's stated purpose (the only field the ladder above
+  // doesn't already cover), bracketed so it reads as a chip.
+  const purpose = args.__tool_use_purpose;
+  return typeof purpose === 'string' && purpose.length > 0
+    ? `[${clipChars(purpose, maxChars)}]`
+    : undefined;
 }
 
 /**
  * Extract only the real LLM reasoning (`__tool_use_purpose`); undefined when
- * absent. Unlike {@link extractToolPurpose} it never falls back to an args
- * summary — used in inline-args mode so args aren't shown twice (once as a
+ * absent — used in inline-args mode so args aren't shown twice (once as a
  * chip, once masquerading as purple reasoning).
  */
 export function extractToolReasoning(
@@ -1838,62 +1840,6 @@ export function extractToolReasoning(
     }
   } catch {
     // Non-JSON content — treat as no reasoning.
-  }
-  return undefined;
-}
-
-function extractToolPurpose(content: string): string | undefined {
-  if (!content) return undefined;
-  try {
-    const args = JSON.parse(content);
-    if (
-      args.__tool_use_purpose &&
-      typeof args.__tool_use_purpose === 'string'
-    ) {
-      return args.__tool_use_purpose;
-    }
-    // No reasoning — derive a single-line summary from args.
-    const oldStr = args.old_str ?? args.oldStr;
-    if (
-      args.command === 'str_replace' ||
-      args.command === 'strReplace' ||
-      (oldStr && args.path)
-    ) {
-      return `edit ${args.path}`;
-    }
-    if (args.command === 'create' && args.path) {
-      return `create ${args.path}`;
-    }
-    if (args.command === 'insert' && args.path) {
-      return `insert ${args.path}`;
-    }
-    if (args.command === 'append' && args.path) {
-      return `append ${args.path}`;
-    }
-    if (args.command === 'delete' || args.command === 'remove') {
-      return `delete ${args.path || ''}`;
-    }
-    if (args.command && typeof args.command === 'string') return args.command;
-    if (args.pattern) return args.pattern;
-    if (args.query) return args.query;
-    if (args.symbol_name) return args.symbol_name;
-    if (args.search_query) return args.search_query;
-    if (args.key) return args.key;
-    if (args.name && typeof args.name === 'string') return args.name;
-    if (args.operation)
-      return `${args.operation}${args.symbol_name ? ` ${args.symbol_name}` : ''}${args.file_path ? ` ${args.file_path}` : ''}`;
-    if (args.operations?.[0]?.path) return args.operations[0].path;
-    if (args.file_path) return args.file_path;
-    if (args.filePath) return args.filePath;
-    if (args.path && args.path !== '.') return args.path;
-    for (const [key, val] of Object.entries(args)) {
-      if (key.startsWith('_')) continue;
-      if (typeof val === 'string' && val.length > 0 && val.length < 200) {
-        return val;
-      }
-    }
-  } catch {
-    // not JSON
   }
   return undefined;
 }
