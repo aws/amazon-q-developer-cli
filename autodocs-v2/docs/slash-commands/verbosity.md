@@ -1,7 +1,7 @@
 ---
 doc_meta:
   title: /verbosity
-  description: Configure lite-mode tool output rendering - density presets, filters, and display knobs
+  description: Configure lite-mode tool output rendering - density presets, filters, truncation, and display knobs
   category: slash_command
   keywords:
     [
@@ -16,10 +16,11 @@ doc_meta:
       full,
       lite,
       rendering,
+      truncation,
     ]
   related: [lite, settings, lite-mode]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: afdaae652
   status: validated
   testable_headless: false
 ---
@@ -78,6 +79,19 @@ Without arguments, opens the interactive configuration menu. With arguments, app
 | `mcp`        | All MCP tools (prefix `mcp__`)           |
 
 You can also use exact tool names as filter tokens.
+
+### Truncation
+
+The interactive menu includes a **Truncation** section that controls line and character caps for tool output rendering:
+
+| Knob                       | Effect                                              | Default       |
+| -------------------------- | --------------------------------------------------- | ------------- |
+| Tool args · lines          | Max visual rows in the block-args section           | preset-dependent |
+| Tool args · chars per value | Max characters per argument value before `…`       | 120           |
+| Tool output · lines        | Max visual rows in the output bar                  | preset-dependent |
+| Tool output · chars per line | Max characters per output row before `…`          | unlimited     |
+
+Use ↑↓ to select a field, Enter to edit the numeric value (↑↓ to nudge, Enter to confirm). Set to 0 for unlimited. The `full` preset disables all caps; `minimal` and `lean` apply tighter limits. Caps only apply at first render — already-flushed scrollback is never reflowed.
 
 With no arguments the menu exposes the same knobs as the tables above with live preview (Esc backs out). Settings persist in `~/.kiro/settings/cli.json` under the `chat.tools.*` keys, take effect immediately, and survive across sessions.
 
