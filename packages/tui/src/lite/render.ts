@@ -276,6 +276,27 @@ export function clipChars(s: string, max: number | null): string {
 }
 
 /**
+ * Soft-wrap `value` with a literal `firstPrefix` on row 0 and `restIndentCols`
+ * spaces on continuation rows. Row 0's word-budget is termCols minus the
+ * prefix's visible width; continuation rows' budget is termCols minus the
+ * indent — so a wide first prefix doesn't push text past the edge.
+ */
+function wrapWithIndent(
+  value: string,
+  firstPrefix: string,
+  firstPrefixCols: number,
+  restIndentCols: number,
+  termCols: number
+): string[] {
+  const firstAvail = Math.max(8, termCols - firstPrefixCols);
+  const restAvail = Math.max(8, termCols - restIndentCols);
+  const indent = ' '.repeat(restIndentCols);
+  return wrapAtWords(value, firstAvail, restAvail).map((chunk, i) =>
+    i === 0 ? `${firstPrefix}${chunk}` : `${indent}${chunk}`
+  );
+}
+
+/**
  * Soft-wrap `value` after a leading dim `keyPrefix`; continuation lines are
  * padded to `continuationCols` columns.
  */
@@ -285,14 +306,12 @@ export function wrapKeyedLine(
   continuationCols: number,
   termCols: number
 ): string[] {
-  const dimPrefix = chalk.dim(keyPrefix);
-  const prefixCols = visibleWidth(keyPrefix);
-  const firstAvail = Math.max(8, termCols - prefixCols);
-  const restAvail = Math.max(8, termCols - continuationCols);
-  const chunks = wrapAtWords(value, firstAvail, restAvail);
-  const indent = ' '.repeat(continuationCols);
-  return chunks.map((chunk, i) =>
-    i === 0 ? `${dimPrefix}${chunk}` : `${indent}${chunk}`
+  return wrapWithIndent(
+    value,
+    chalk.dim(keyPrefix),
+    visibleWidth(keyPrefix),
+    continuationCols,
+    termCols
   );
 }
 
@@ -301,10 +320,13 @@ export function wrapPlainLine(
   indentCols: number,
   termCols: number
 ): string[] {
-  const avail = Math.max(8, termCols - indentCols);
-  const indent = ' '.repeat(indentCols);
-  const chunks = wrapAtWords(value, avail, avail);
-  return chunks.map((c) => `${indent}${c}`);
+  return wrapWithIndent(
+    value,
+    ' '.repeat(indentCols),
+    indentCols,
+    indentCols,
+    termCols
+  );
 }
 
 /**
