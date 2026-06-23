@@ -778,8 +778,10 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
     stages: [{ name: 'scan', prompt_template: 'Read the static-flush module' }],
   });
 
-  test('Bug 3: renders a terminal "✗ cancelled" suffix, not the running "..."', () => {
-    const out = stripAnsi(
+  // Bug 3: a terminal 'cancelled' status renders the '✗ cancelled' header
+  // suffix, never the running '...'.
+  test('Bug 3: cancelled status renders ✗ cancelled, not running ...', () => {
+    const header = stripAnsi(
       renderSubagentFinalBlock(
         withTaskPlaceholder,
         { status: 'cancelled' },
@@ -788,8 +790,7 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
         undefined,
         { display: DEFAULT_DISPLAY }
       )
-    );
-    const header = out.split('\n')[0]!;
+    ).split('\n')[0]!;
     expect(header).toContain('✗ cancelled');
     expect(header).not.toMatch(/subagent\s*\.\.\.$/);
   });
