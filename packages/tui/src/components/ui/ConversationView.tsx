@@ -33,6 +33,9 @@ import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
 import { groupMessagesIntoTurns } from '../../utils/group-turns.js';
 import { leadingGap } from '../../utils/message-spacing.js';
+import { CLEAR_SCREEN } from '../../utils/terminal-sequences.js';
+
+const CLEAR_SCREEN_AND_HOME = `${CLEAR_SCREEN}\x1b[H`;
 
 /**
  * Resolve prevRole for a message at `index` in a list.
@@ -84,6 +87,13 @@ const StaticMessage = React.memo(function StaticMessage({
   mainAgentName?: string;
 }) {
   const { thinkingMode } = useThinkingMode();
+  if (message.role === MessageRole.System) {
+    return (
+      <SystemMessage
+        message={message as StoreMessageType & { role: MessageRole.System }}
+      />
+    );
+  }
   if (message.role === MessageRole.User) {
     // Steered (mid-turn injected) messages get a blank line above so it's
     // clear where the steer landed within the agent's ongoing output. Regular
@@ -235,6 +245,16 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             </Box>
           );
         }
+        if (message.role === MessageRole.System) {
+          return (
+            <SystemMessage
+              key={message.id}
+              message={
+                message as StoreMessageType & { role: MessageRole.System }
+              }
+            />
+          );
+        }
         if (message.role === MessageRole.ToolUse) {
           // Skip subagent tool calls — rendered via SubagentToolPanel
           if (isSubagentToolCall(message)) return null;
@@ -371,11 +391,10 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
     turn.aiMessages.some(
       (msg) =>
         msg.role === MessageRole.ToolUse ||
-        // Only assistant output counts as "content". Steered user bubbles can
-        // live in the body (mid-turn injections) but must not mask a turn that
-        // produced no actual response — otherwise a cancelled turn that had a
-        // steer would hide its "Cancelled" status.
-        (msg.role !== MessageRole.User && !!msg.content && msg.content !== '')
+        // Only assistant output counts as "content". Steered user bubbles and
+        // system/status rows can live in the body, but must not mask a turn
+        // that produced no actual response.
+        (msg.role === MessageRole.Model && !!msg.content && msg.content !== '')
     );
 
   return (
@@ -426,15 +445,6 @@ let _hadMessages = false;
 let _hadUserMessage = false;
 let _welcomeInStatic = false;
 let _hasAnimated = false;
-// The last `liteScrollbackClearToken` value this module observed. The store
-// bumps the token on session reset (resetMessages) and on lite→tui mode
-// swap (setUiMode). When the next render of ConversationView sees a higher
-// token than this, it knows the singletons below are stale and must be
-// wiped before any append work runs. Module-level (not React state) so the
-// check + wipe land BEFORE the staticItemsRef wiring on the same render —
-// React effects fire too late, twinki would already have appended duplicate
-// rows by then.
-let _lastObservedClearToken = 0;
 
 type StaticItem =
   | { type: 'welcome'; id: string }
@@ -464,6 +474,7 @@ type StaticItem =
 const _staticItems: StaticItem[] = [];
 const _emittedIds = new Set<string>();
 const _flushedMap = new Map<string, Set<string>>();
+let _lastObservedClearToken = -1;
 
 /**
  * # ConversationView — Incremental Static Rendering
@@ -631,6 +642,35 @@ export const ConversationView = React.memo(function ConversationView() {
   // <Static> uses array length as its index, so items must stay at stable positions.
   const staticItemsRef = React.useRef(_staticItems);
   const emittedIdsRef = React.useRef(_emittedIds);
+  const prevStaticLenRef = React.useRef(0);
+  const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
+
+  const liteScrollbackClearToken = useAppStore(
+    (s) => s.liteScrollbackClearToken
+  );
+  let resetStaticThisRender = false;
+  if (liteScrollbackClearToken !== _lastObservedClearToken) {
+    const isInitialColdTuiObservation =
+      _lastObservedClearToken === -1 && liteScrollbackClearToken === 0;
+    _lastObservedClearToken = liteScrollbackClearToken;
+    if (!isInitialColdTuiObservation) {
+      resetStaticThisRender = true;
+      adjustStaticCursor?.(Number.MAX_SAFE_INTEGER);
+      // Twinki observes CSI 2J and drops its accumulated static prefix without
+      // erasing terminal scrollback, so destination-mode history is not duplicated.
+      process.stdout.write(CLEAR_SCREEN_AND_HOME);
+      staticItemsRef.current.length = 0;
+      emittedIdsRef.current.clear();
+      flushedRef.current.clear();
+      staticItemsSnapshotRef.current = [];
+      prevStaticLenRef.current = -1;
+      hadMessagesRef.current = false;
+      welcomeInStaticRef.current = false;
+      _welcomeInStatic = false;
+      _hadMessages = false;
+      _hadUserMessage = false;
+    }
+  }
 
   if (messages.length > 0) {
     hadMessagesRef.current = true;
@@ -647,17 +687,14 @@ export const ConversationView = React.memo(function ConversationView() {
   const hasMessages = messages.length > 0;
   const isInitialLoad = !hasMessages && !hadMessagesRef.current;
 
-  const { systemMessages, conversationMessages } = useMemo(() => {
-    const sys: Array<StoreMessageType & { role: MessageRole.System }> = [];
+  const conversationMessages = useMemo(() => {
     const conv: StoreMessageType[] = [];
     messages.forEach((msg) => {
-      if (msg.role === MessageRole.System) {
-        sys.push(msg as StoreMessageType & { role: MessageRole.System });
-      } else {
+      if (msg.role !== MessageRole.System) {
         conv.push(msg);
       }
     });
-    return { systemMessages: sys, conversationMessages: conv };
+    return conv;
   }, [messages]);
 
   // Incremental turn reconstruction: during streaming, only the active
@@ -680,7 +717,10 @@ export const ConversationView = React.memo(function ConversationView() {
     lastFullRebuildLength: 0,
   });
 
-  const { completedTurns, activeTurn } = useMemo(() => {
+  const {
+    completedTurns: groupedCompletedTurns,
+    activeTurn: groupedActiveTurn,
+  } = useMemo(() => {
     const cache = turnCacheRef.current;
     const msgs = conversationMessages;
 
@@ -739,6 +779,92 @@ export const ConversationView = React.memo(function ConversationView() {
 
     return { completedTurns: completed, activeTurn: active };
   }, [conversationMessages]);
+
+  const messageIndexById = new Map(
+    messages.map((message, index) => [message.id, index])
+  );
+  const nextPromptIndexAfter = (startIndex: number): number | undefined => {
+    for (let index = startIndex + 1; index < messages.length; index++) {
+      const message = messages[index];
+      if (
+        message?.role === MessageRole.User &&
+        (message as { steered?: boolean }).steered !== true
+      ) {
+        return index;
+      }
+    }
+    return undefined;
+  };
+  const includeInterleavedSystemRows = (
+    turn: ConversationTurn
+  ): ConversationTurn => {
+    const startIndex = messageIndexById.get(turn.userMessage.id);
+    if (startIndex === undefined) return turn;
+
+    const turnBodyIds = new Set(turn.aiMessages.map((message) => message.id));
+    const nextPromptIndex = nextPromptIndexAfter(startIndex);
+    const endIndex = turn.isActive
+      ? messages.length - 1
+      : nextPromptIndex === undefined
+        ? messages.length - 1
+        : nextPromptIndex - 1;
+    const hasLaterTurnBody = (index: number): boolean => {
+      for (let laterIndex = index + 1; laterIndex <= endIndex; laterIndex++) {
+        const laterMessage = messages[laterIndex];
+        if (laterMessage && turnBodyIds.has(laterMessage.id)) return true;
+      }
+      return false;
+    };
+
+    let sawSystemRow = false;
+    const orderedBody: StoreMessageType[] = [];
+    for (let index = startIndex + 1; index <= endIndex; index++) {
+      const message = messages[index];
+      if (!message) continue;
+      if (
+        message.role === MessageRole.System &&
+        ((message as { turnOwned?: boolean }).turnOwned === true ||
+          hasLaterTurnBody(index))
+      ) {
+        sawSystemRow = true;
+        orderedBody.push(message);
+      } else if (turnBodyIds.has(message.id)) {
+        orderedBody.push(message);
+      }
+    }
+
+    return sawSystemRow ? { ...turn, aiMessages: orderedBody } : turn;
+  };
+  const completedTurnsWithSystems = groupedCompletedTurns.map(
+    includeInterleavedSystemRows
+  );
+  const groupedActiveTurnWithSystems = groupedActiveTurn
+    ? includeInterleavedSystemRows(groupedActiveTurn)
+    : undefined;
+
+  const replayIdleActiveTurn =
+    resetStaticThisRender &&
+    !isProcessing &&
+    groupedActiveTurnWithSystems !== undefined;
+  const completedTurns =
+    replayIdleActiveTurn && groupedActiveTurnWithSystems
+      ? [
+          ...completedTurnsWithSystems,
+          { ...groupedActiveTurnWithSystems, isActive: false },
+        ]
+      : completedTurnsWithSystems;
+  const activeTurnCommittedAsTurn =
+    !isProcessing &&
+    groupedActiveTurnWithSystems !== undefined &&
+    staticItemsRef.current.some(
+      (item) =>
+        item.type === 'turn' &&
+        item.id === groupedActiveTurnWithSystems.userMessage.id
+    );
+  const activeTurn =
+    replayIdleActiveTurn || activeTurnCommittedAsTurn
+      ? undefined
+      : groupedActiveTurnWithSystems;
 
   // Reset tailOverride when active turn changes (new user message)
   const activeTurnId = activeTurn?.userMessage.id;
@@ -799,17 +925,28 @@ export const ConversationView = React.memo(function ConversationView() {
     appendStatic({ type: 'welcome', id: '__welcome__' });
   }
 
-  // System messages
-  systemMessages.forEach((msg) =>
-    appendStatic({ type: 'system', id: msg.id, message: msg })
-  );
-
   // Completed turns that were never incrementally flushed → StaticTurnCard.
   // Turns that WERE incrementally flushed → append only the unflushed tail messages.
-  completedTurns.forEach((turn) => {
+  const turnOwnedSystemIds = new Set<string>();
+  const trackTurnOwnedSystemRows = (turn: ConversationTurn | undefined) => {
+    turn?.aiMessages.forEach((message) => {
+      if (message.role === MessageRole.System) {
+        turnOwnedSystemIds.add(message.id);
+      }
+    });
+  };
+  completedTurns.forEach(trackTurnOwnedSystemRows);
+  trackTurnOwnedSystemRows(activeTurn);
+  const completedTurnByAnchorId = new Map(
+    completedTurns.map((turn) => [turn.userMessage.id, turn])
+  );
+  const appendCompletedTurn = (turn: ConversationTurn) => {
     const flushedIds = flushedRef.current.get(turn.userMessage.id);
     if (!flushedIds || flushedIds.size === 0) {
       appendStatic({ type: 'turn', id: turn.userMessage.id, turn });
+      turn.aiMessages.forEach((message) => {
+        if (message.role === MessageRole.System) emittedIds.add(message.id);
+      });
     } else {
       const agentName =
         'agentName' in turn.userMessage
@@ -841,6 +978,18 @@ export const ConversationView = React.memo(function ConversationView() {
         });
       }
     }
+  };
+
+  messages.forEach((msg) => {
+    if (msg.role === MessageRole.System) {
+      if (!turnOwnedSystemIds.has(msg.id)) {
+        appendStatic({ type: 'system', id: msg.id, message: msg });
+      }
+      return;
+    }
+
+    const completedTurn = completedTurnByAnchorId.get(msg.id);
+    if (completedTurn) appendCompletedTurn(completedTurn);
   });
 
   // Active turn: append divider + newly-flushed messages
@@ -877,8 +1026,6 @@ export const ConversationView = React.memo(function ConversationView() {
 
   // Only create a new array ref when items were actually added, so <Static>'s
   // useMemo([items]) fires only when needed — not on every render.
-  const prevStaticLenRef = React.useRef(0);
-  const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
   if (staticItemsRef.current.length !== prevStaticLenRef.current) {
     prevStaticLenRef.current = staticItemsRef.current.length;
     staticItemsSnapshotRef.current = [...staticItemsRef.current];

@@ -459,6 +459,8 @@ export type MessageType =
       role: MessageRole.System;
       content: string;
       success: boolean;
+      /** True for status rows emitted while a user turn is in flight. */
+      turnOwned?: boolean;
     };
 
 /**
@@ -4012,6 +4014,7 @@ export const createAppStore = (props: AppStoreProps) => {
               role: MessageRole.System,
               content: `⟳ Goal: "${desc}" · ${maxIter} iteration${maxIter === 1 ? '' : 's'} max`,
               success: true,
+              ...(s.isProcessing ? { turnOwned: true } : {}),
             },
           ],
         }));

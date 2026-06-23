@@ -366,6 +366,43 @@ describe('Simple state setters', () => {
     expect(store.getState().isProcessing).toBe(false);
   });
 
+  it('setGoalStatus only turn-owns rows emitted during processing', () => {
+    const store = makeStore();
+    store.setState({
+      messages: [
+        { id: 'u1', role: MessageRole.User, content: 'completed prompt' },
+        { id: 'm1', role: MessageRole.Model, content: 'completed response' },
+      ],
+    });
+
+    store.getState().setGoalStatus({
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'IDLE_GOAL_STATUS_AFTER_TURN',
+    });
+
+    let statusRow = store.getState().messages.at(-1) as
+      | { role: MessageRole.System; turnOwned?: boolean }
+      | undefined;
+    expect(statusRow?.role).toBe(MessageRole.System);
+    expect(statusRow?.turnOwned).not.toBe(true);
+
+    store.setState({ goalStatus: null, isProcessing: true });
+    store.getState().setGoalStatus({
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'IN_FLIGHT_GOAL_STATUS',
+    });
+
+    statusRow = store.getState().messages.at(-1) as
+      | { role: MessageRole.System; turnOwned?: boolean }
+      | undefined;
+    expect(statusRow?.role).toBe(MessageRole.System);
+    expect(statusRow?.turnOwned).toBe(true);
+  });
+
   it('setAgentError sets error and guidance', () => {
     const store = makeStore();
     store.getState().setAgentError('something broke', 'try again');
