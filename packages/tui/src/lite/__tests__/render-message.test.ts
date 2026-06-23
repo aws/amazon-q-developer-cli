@@ -22,62 +22,32 @@ useTempKiroHome();
 chalk.level = 3;
 
 describe('renderMessageToText with shellOutput', () => {
-  test('routes Model messages with shellOutput=true to the gutter formatter', () => {
-    // Same body the /tmp tail of a `!read -p` would produce: bash's
-    // line-by-line output, no agent prose. The dispatch in
-    // renderMessageToText should bypass the `Kiro:` tag entirely.
+  // shellOutput=true Model rows bypass the `Kiro:` tag AND the markdown
+  // pipeline (which would mangle `*` globs, `_` filenames, `#` comments,
+  // backticks) — each body line gets a `! ` gutter prefix and round-trips
+  // verbatim. Empty content (the store's spawn-time placeholder row) must
+  // render nothing, not an empty `Kiro:` line.
+  const tricky = '*.ts files: src/_main.ts (# 1)';
+  test.each<{ name: string; content: string; expected: string }>([
+    {
+      name: 'gutter-prefixes each line, no Kiro: tag',
+      content: 'Enter PIN:\nGot: 1234',
+      expected: '! Enter PIN:\n! Got: 1234',
+    },
+    {
+      name: 'does not run markdown rendering (markers round-trip)',
+      content: tricky,
+      expected: '! ' + tricky,
+    },
+    { name: 'empty content renders nothing', content: '', expected: '' },
+  ])('$name', ({ content, expected }) => {
     const out = stripAnsi(
       renderMessageToText(
-        {
-          id: 'm1',
-          role: 'model',
-          content: 'Enter PIN:\nGot: 1234',
-          shellOutput: true,
-        },
+        { id: 'm1', role: 'model', content, shellOutput: true },
         'Kiro'
       )
     );
-    expect(out).not.toContain('Kiro:');
-    expect(out.split('\n')).toEqual(['! Enter PIN:', '! Got: 1234']);
-  });
-
-  test('does not run markdown rendering on shell output', () => {
-    // Without the shellOutput branch, the Model case calls
-    // renderAgentMessage which forces the body through the markdown
-    // pipeline. That mangles output containing `*` (glob expansions,
-    // ascii box drawings), `_` (filenames), `#` (heading-like comments),
-    // backticks (shell quoting). The branch is what keeps shell output
-    // round-trip-safe.
-    const tricky = '*.ts files: src/_main.ts (# 1)';
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 'm1',
-          role: 'model',
-          content: tricky,
-          shellOutput: true,
-        },
-        'Kiro'
-      )
-    );
-    expect(out).toBe('! ' + tricky);
-  });
-
-  test('shellOutput Model with empty content renders nothing', () => {
-    // The store seeds an empty Model row at command-spawn time so the
-    // PTY's onData chunk handler has a stable id to update. We need to
-    // tolerate that empty row without falling back to the agent path
-    // (which would render an empty `Kiro:` line).
-    const out = renderMessageToText(
-      {
-        id: 'm1',
-        role: 'model',
-        content: '',
-        shellOutput: true,
-      },
-      'Kiro'
-    );
-    expect(out).toBe('');
+    expect(out).toBe(expected);
   });
 });
 
