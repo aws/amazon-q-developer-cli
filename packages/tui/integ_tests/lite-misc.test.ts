@@ -69,74 +69,99 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await exitLiteInteg(testCase);
   }, 30000);
 
-  it('finished tool has no duplicate bar in snapshot [bug-mine 10.2]', async () => {
-    testCase = await launchLiteInteg('lite-misc-10-2-no-dup');
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-dup-001',
-      name: 'Shell',
-      kind: 'shell',
-      args: { command: 'echo duplicate-guard' },
-    });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCallFinished,
-      id: 'tool-dup-001',
-      result: { status: 'success', output: 'duplicate-guard output' },
-    });
-
-    await testCase.typeAndSubmit('t0');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    const snapshot = testCase.getSnapshot();
-    const shellLines = snapshot.filter((line) => line.includes('Shell'));
-
-    // Exactly once — a cleanup race would emit a duplicate bar.
-    expect(shellLines.length).toBe(1);
-
-    await exitLiteInteg(testCase);
-  }, 30000);
-
-  it('tool line and output bar appear without extra gap [bug-mine 10.3]', async () => {
-    testCase = await launchLiteInteg('lite-misc-10-3-concat');
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-concat-001',
-      name: 'Shell',
-      kind: 'shell',
-      args: { command: 'echo concat-test' },
-    });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCallUpdate,
-      id: 'tool-concat-001',
-      content: { type: ContentType.Text, text: 'concat-output-line' },
-    });
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCallFinished,
-      id: 'tool-concat-001',
-      result: { status: 'success', output: 'concat-output-line' },
-    });
-
-    await testCase.typeAndSubmit('t0');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    const snapshot = testCase.getSnapshot();
-    const toolLine = snapshot.findIndex((line) => line.includes('Shell'));
-    expect(toolLine).not.toBe(-1);
-
-    // Content must appear within 5 lines of the tool name (no excessive gap).
-    const nearbyLines = snapshot.slice(toolLine, toolLine + 5).join('\n');
-    const hasContentNearby =
-      nearbyLines.includes('output') ||
-      nearbyLines.includes('concat') ||
-      nearbyLines.includes('echo');
-    expect(hasContentNearby).toBe(true);
-
-    await exitLiteInteg(testCase);
-  }, 30000);
+  // Single-turn rendering cases: seed events, complete the turn, scan the
+  // committed (static) snapshot. They differ only in events + the assertion.
+  it.each([
+    {
+      bug: '10.2',
+      testName: 'lite-misc-10-2-no-dup',
+      setup: async (tc: TestCase) => {
+        await tc.mockSessionUpdate({
+          type: AgentEventType.ToolCall,
+          id: 'tool-dup-001',
+          name: 'Shell',
+          kind: 'shell',
+          args: { command: 'echo duplicate-guard' },
+        });
+        await tc.mockSessionUpdate({
+          type: AgentEventType.ToolCallFinished,
+          id: 'tool-dup-001',
+          result: { status: 'success', output: 'duplicate-guard output' },
+        });
+      },
+      assert: (snapshot: string[]) => {
+        // Exactly once — a cleanup race would emit a duplicate bar.
+        expect(snapshot.filter((l) => l.includes('Shell')).length).toBe(1);
+      },
+    },
+    {
+      bug: '10.3',
+      testName: 'lite-misc-10-3-concat',
+      setup: async (tc: TestCase) => {
+        await tc.mockSessionUpdate({
+          type: AgentEventType.ToolCall,
+          id: 'tool-concat-001',
+          name: 'Shell',
+          kind: 'shell',
+          args: { command: 'echo concat-test' },
+        });
+        await tc.mockSessionUpdate({
+          type: AgentEventType.ToolCallUpdate,
+          id: 'tool-concat-001',
+          content: { type: ContentType.Text, text: 'concat-output-line' },
+        });
+        await tc.mockSessionUpdate({
+          type: AgentEventType.ToolCallFinished,
+          id: 'tool-concat-001',
+          result: { status: 'success', output: 'concat-output-line' },
+        });
+      },
+      assert: (snapshot: string[]) => {
+        const toolLine = snapshot.findIndex((l) => l.includes('Shell'));
+        expect(toolLine).not.toBe(-1);
+        // Content must appear within 5 lines of the tool name (no excessive gap).
+        const nearby = snapshot.slice(toolLine, toolLine + 5).join('\n');
+        expect(
+          nearby.includes('output') ||
+            nearby.includes('concat') ||
+            nearby.includes('echo')
+        ).toBe(true);
+      },
+    },
+    {
+      bug: '10.10',
+      testName: 'lite-misc-10-10-emoji',
+      setup: async (tc: TestCase) => {
+        await tc.mockSessionUpdate({
+          type: AgentEventType.Content,
+          id: 'msg-emoji-001',
+          content: {
+            type: ContentType.Text,
+            text: 'Party time! \u{1F389}\u{1F680}\u{2728} Great success!',
+          },
+        });
+      },
+      assert: (snapshot: string[]) => {
+        const partyLine = snapshot.find((l) => l.includes('Party time'));
+        expect(partyLine).toBeDefined();
+        // No lone surrogates / replacement chars (U+FFFD) across chunk boundaries.
+        expect(partyLine).not.toContain('�');
+        expect(snapshot.join('\n')).toContain('Great success!');
+      },
+    },
+  ])(
+    'single-turn render committed cleanly [bug-mine $bug]',
+    async ({ testName, setup, assert }) => {
+      testCase = await launchLiteInteg(testName);
+      await setup(testCase);
+      await testCase.typeAndSubmit('t0');
+      await testCase.completeTurn();
+      await testCase.sleepMs(400);
+      assert(testCase.getSnapshot());
+      await exitLiteInteg(testCase);
+    },
+    30000
+  );
 
   it('inner subagent tools carry agentName for batch isolation [bug-mine 10.4]', async () => {
     testCase = await launchLiteInteg('lite-misc-10-4-subagent-isolation');
@@ -292,34 +317,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     const hasWipeSequence =
       rawOutput.includes('\x1b[2J') || rawOutput.includes('\x1b[3J');
     expect(hasWipeSequence).toBe(true);
-
-    await exitLiteInteg(testCase);
-  }, 30000);
-
-  it('astral chars (emoji) kept intact across chunk boundaries [bug-mine 10.10]', async () => {
-    testCase = await launchLiteInteg('lite-misc-10-10-emoji');
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'msg-emoji-001',
-      content: {
-        type: ContentType.Text,
-        text: 'Party time! \u{1F389}\u{1F680}\u{2728} Great success!',
-      },
-    });
-    await testCase.typeAndSubmit('emoji test');
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    const snapshot = testCase.getSnapshot();
-    const partyLine = snapshot.find((line) => line.includes('Party time'));
-    expect(partyLine).toBeDefined();
-
-    // No lone surrogates / replacement chars (U+FFFD) across chunk boundaries.
-    expect(partyLine).not.toContain('�');
-
-    const fullOutput = snapshot.join('\n');
-    expect(fullOutput).toContain('Great success!');
 
     await exitLiteInteg(testCase);
   }, 30000);

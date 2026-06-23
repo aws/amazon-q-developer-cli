@@ -23,53 +23,62 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
     }
   });
 
-  it('cancel mid-stream shows "Cancelled streaming" once, no duplicated partial content [bug-mine 5.1]', async () => {
-    testCase = await launchLiteInteg('lite-cancel-no-duplicate');
+  // Shared shape: start a busy turn, fire the cancel key(s), assert the turn
+  // cleared, then run the case-specific post-cancel assertions. They differ
+  // only in the cancel key and the invariant checked afterward.
+  it.each([
+    {
+      bug: '5.1',
+      testName: 'lite-cancel-no-duplicate',
+      busy: { marker: 'PARTIAL_RESPONSE_ABC' },
+      cancel: async (tc: TestCase) => {
+        await tc.pressCtrlC();
+        await tc.sleepMs(500);
+      },
+      afterCancel: (store: Awaited<ReturnType<TestCase['getStore']>>) => {
+        // Partial content must not be duplicated by a stale flush after cancel.
+        const dup = store.messages.filter(
+          (m) =>
+            m.role === 'model' && m.content?.includes('PARTIAL_RESPONSE_ABC')
+        );
+        expect(dup.length).toBeLessThanOrEqual(1);
+      },
+    },
+    {
+      bug: '5.2',
+      testName: 'lite-cancel-idempotent',
+      busy: { marker: 'some content', prompt: 'test double cancel' },
+      cancel: async (tc: TestCase) => {
+        // The second Ctrl+C must be a no-op due to the cancelInProgress guard.
+        await tc.pressCtrlC();
+        await tc.sleepMs(50);
+        await tc.pressCtrlC();
+        await tc.sleepMs(500);
+      },
+      afterCancel: (store: Awaited<ReturnType<TestCase['getStore']>>) => {
+        expect(store.cancelInProgress).toBeNull();
+        expect(store.agentError).toBeNull();
+      },
+    },
+  ])(
+    'busy turn cancels cleanly [bug-mine $bug]',
+    async ({ testName, busy, cancel, afterCancel }) => {
+      testCase = await launchLiteInteg(testName);
+      await startBusyTurn(testCase, busy);
+      let store = await testCase.getStore();
+      expect(store.isProcessing).toBe(true);
 
-    await startBusyTurn(testCase, { marker: 'PARTIAL_RESPONSE_ABC' });
-    let store = await testCase.getStore();
-    expect(store.isProcessing).toBe(true);
+      await cancel(testCase);
 
-    await testCase.pressCtrlC();
-    await testCase.sleepMs(500);
+      store = await testCase.getStore();
+      expect(store.isProcessing).toBe(false);
+      afterCancel(store);
 
-    store = await testCase.getStore();
-    expect(store.isProcessing).toBe(false);
-
-    // Partial content must not be duplicated by a stale flush after cancel.
-    const contentMessages = store.messages.filter(
-      (m) => m.role === 'model' && m.content?.includes('PARTIAL_RESPONSE_ABC')
-    );
-    expect(contentMessages.length).toBeLessThanOrEqual(1);
-
-    await testCase.sendKeys([0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
-
-  it('rapid double Ctrl+C is idempotent via cancelInProgress guard [bug-mine 5.2]', async () => {
-    testCase = await launchLiteInteg('lite-cancel-idempotent');
-
-    await startBusyTurn(testCase, {
-      marker: 'some content',
-      prompt: 'test double cancel',
-    });
-    let store = await testCase.getStore();
-    expect(store.isProcessing).toBe(true);
-
-    // The second Ctrl+C must be a no-op due to the cancelInProgress guard.
-    await testCase.pressCtrlC();
-    await testCase.sleepMs(50);
-    await testCase.pressCtrlC();
-    await testCase.sleepMs(500);
-
-    store = await testCase.getStore();
-    expect(store.isProcessing).toBe(false);
-    expect(store.cancelInProgress).toBeNull();
-    expect(store.agentError).toBeNull();
-
-    await testCase.sendKeys([0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
+      await testCase.sendKeys([0x03, 0x03]);
+      await testCase.expectExit();
+    },
+    30000
+  );
 
   it('cancel disposes stream handler before async cancel — no ghost content from old turn [bug-mine 5.3]', async () => {
     testCase = await launchLiteInteg('lite-cancel-no-ghost');
