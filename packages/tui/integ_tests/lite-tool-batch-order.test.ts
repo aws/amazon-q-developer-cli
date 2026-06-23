@@ -30,8 +30,7 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
 
     // Two tools created A-then-B; B completes before A (out-of-order). The
     // contiguous done-prefix hold (static-flush.ts:64-78) must still flush
-    // them in creation order. The synchronous drain in MockSessionClient
-    // delivers these to the per-prompt handler once typeAndSubmit runs.
+    // them in creation order.
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'tool-alpha',
@@ -58,22 +57,17 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
     });
 
     await testCase.typeAndSubmit('t0');
-    // End the turn so tools are rendered in scrollback
     await testCase.completeTurn();
     await testCase.sleepMs(300);
 
     const store = await testCase.getStore();
     const toolMessages = store.messages.filter((m) => m.role === 'tool_use');
 
-    // === Core assertions: creation order preserved ===
-
-    // Store order: tool-alpha must appear before tool-beta in messages array
     const alphaIdx = toolMessages.findIndex((m) => m.id === 'tool-alpha');
     const betaIdx = toolMessages.findIndex((m) => m.id === 'tool-beta');
     expect(alphaIdx).toBe(0);
     expect(betaIdx).toBe(1);
 
-    // Terminal order: "Read" must appear above "Shell" in scrollback
     const snapshot = testCase.getSnapshot();
     const alphaLine = snapshot.findIndex((line) => line.includes('Read'));
     const betaLine = snapshot.findIndex((line) => line.includes('Shell'));

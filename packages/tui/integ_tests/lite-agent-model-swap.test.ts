@@ -27,16 +27,9 @@ describe('lite agent/model swap [bug-mine 6.4]', () => {
     }
   });
 
-  // bug-mine 6.1 / 6.2 / 6.3 (pendingSwap latch, 30s safety timeout,
-  // live-region "queued" state) are covered by the unit test in
-  // src/components/layout/lite/__tests__/usePendingSwap.test.tsx — the
-  // hook owns its state in React-local useState, so a Zustand-store-level
-  // integ test cannot observe it.
-
   it('subagent footer row shows permission-blocked state when approval pending [bug-mine 6.4]', async () => {
-    // The LiteLayout memo sets the subagent footer row.phase to
-    // 'requesting-permission' when a pendingApproval's toolCallId matches the
-    // subagent tool, so the row shows "needs approval" rather than running.
+    // Invariant: when a pendingApproval's toolCallId matches a subagent tool,
+    // LiteLayout sets that footer row.phase = 'requesting-permission'.
     testCase = await launchLiteInteg('lite-agent-swap-approval-6.4', {
       env: { KIRO_MOCK_AGENT_NAME: 'main-agent' },
       timeout: 20000,
@@ -72,28 +65,22 @@ describe('lite agent/model swap [bug-mine 6.4]', () => {
       withPrecedingToolCall: false,
     });
 
-    // Submit to trigger event drain.
     await testCase.typeAndSubmit('a1');
     await testCase.sleepMs(400);
 
-    // Verify approval is pending in the store.
     const store = await testCase.getStore();
     expect(store.pendingApproval).not.toBeNull();
     expect(store.pendingApproval!.toolCall.toolCallId).toBe(SUBAGENT_TOOL_ID);
     expect(store.pendingApproval!.sessionId).toBe(SUBAGENT_SESSION);
 
-    // Verify the subagent tool message exists with proper agentName.
     const subagentTool = store.messages.find(
       (m) => m.role === MessageRole.ToolUse && m.id === SUBAGENT_TOOL_ID
     );
     expect(subagentTool).toBeDefined();
     expect((subagentTool as any).agentName).toBe(SUBAGENT_SESSION);
 
-    // The LiteLayout memo uses approvalToolCallId === m.id to set
-    // row.phase = 'requesting-permission'. Since pendingApproval.toolCallId
-    // matches the subagent tool's id, the row is correctly marked as blocked.
-    // Verify this indirectly: the approval toolCallId must match a subagent
-    // tool (not the parent subagent tool or the main agent's tools).
+    // The blocked row is verified indirectly: the approval toolCallId matches a
+    // subagent tool, not the parent subagent tool.
     const parentTool = store.messages.find(
       (m) => m.role === MessageRole.ToolUse && m.name === 'subagent'
     );

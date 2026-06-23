@@ -117,7 +117,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       assert: (snapshot: string[]) => {
         const toolLine = snapshot.findIndex((l) => l.includes('Shell'));
         expect(toolLine).not.toBe(-1);
-        // Content must appear within 5 lines of the tool name (no excessive gap).
         const nearby = snapshot.slice(toolLine, toolLine + 5).join('\n');
         expect(
           nearby.includes('output') ||
@@ -171,7 +170,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       args: { task: 'run pipeline' },
     });
 
-    // Inner tool carries a sessionId so it should be isolated from the batch.
+    // sessionId marks this as an inner subagent tool (isolated from the batch).
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'inner-tool-001',
@@ -207,7 +206,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       (m) => m.role === MessageRole.ToolUse && m.id === 'parent-tool-001'
     );
     expect(parentTool).toBeDefined();
-    // Parent tool either has no agentName or has the main agent's name.
     if (parentTool!.role === MessageRole.ToolUse) {
       const parentIsMain =
         !parentTool!.agentName ||

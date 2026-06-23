@@ -15,6 +15,13 @@ import {
  *   7.2: after init, the boot indicator auto-hides (nothing 'loading').
  *   7.3: MCP failure shows a transient alert, not a duplicate scrollback line.
  */
+function expectNoBootIndicator(snapshot: string): void {
+  expect(snapshot).not.toContain('Connecting to agent');
+  expect(snapshot).not.toContain('Initializing workspace');
+  expect(snapshot).not.toMatch(/Loading \d+\/\d+ MCP server/);
+  expect(snapshot.toLowerCase()).toContain('ask a question');
+}
+
 describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
   let testCase: TestCase | null = null;
 
@@ -26,7 +33,6 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
   });
 
   it('no boot indicator on remount after /tui -> /lite swap [bug-mine 7.1]', async () => {
-    // Start in TUI mode (already initialized by the time LiteLayout mounts)
     testCase = await TestCase.builder()
       .withTestName('lite-boot-no-panel-remount')
       .withGlobalSettings({ 'chat.ui.mode': 'tui' })
@@ -39,19 +45,13 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     expect(storeBefore.uiMode).toBe('tui');
     expect(storeBefore.isInitialized).toBe(true);
 
-    // LiteLayout mounts with isInitialized already true and bootProgress
-    // entries already 'ready', so showBootIndicator is false from first paint.
     await switchToLite(testCase);
 
     const storeAfter = await testCase.getStore();
     expect(storeAfter.uiMode).toBe('lite');
     expect(storeAfter.isInitialized).toBe(true);
 
-    const snapshot = testCase.getSnapshot().join('\n');
-    expect(snapshot).not.toContain('Connecting to agent');
-    expect(snapshot).not.toContain('Initializing workspace');
-    expect(snapshot).not.toMatch(/Loading \d+\/\d+ MCP server/);
-    expect(snapshot.toLowerCase()).toContain('ask a question');
+    expectNoBootIndicator(testCase.getSnapshot().join('\n'));
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
     await testCase.expectExit();
@@ -69,11 +69,7 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     expect(store.uiMode).toBe('lite');
     expect(store.isInitialized).toBe(true);
 
-    const snapshot = testCase.getSnapshot().join('\n');
-    expect(snapshot).not.toContain('Connecting to agent');
-    expect(snapshot).not.toContain('Initializing workspace');
-    expect(snapshot).not.toMatch(/Loading \d+\/\d+ MCP server/);
-    expect(snapshot.toLowerCase()).toContain('ask a question');
+    expectNoBootIndicator(testCase.getSnapshot().join('\n'));
     expect(store.initErrors).toEqual([]);
 
     await exitLiteInteg(testCase);
