@@ -35,6 +35,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     sessionId: mainSessionId,
     sessions,
   } = useApprovalState();
+  const cancelMessage = useAppStore((state) => state.cancelMessage);
   const { messages } = useConversationState();
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -228,7 +229,10 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       setPage('default');
       setFocusedIndex(0);
     } else {
-      cancelApproval();
+      // Top-level Esc/leftArrow: cancelMessage() calls cancelApproval()
+      // internally (clearing this + queued approvals) AND aborts the turn, so
+      // the user gets the prompt back to type a new instruction.
+      cancelMessage();
     }
   };
 

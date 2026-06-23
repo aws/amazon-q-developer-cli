@@ -47,6 +47,9 @@ export interface CommandMeta {
   preserveLabelColors?: boolean;
   /** When true, command is executable but hidden from autocomplete dropdown. */
   hidden?: boolean;
+  /** When true, command is only visible/executable in the lite UI (filtered
+   *  out of the slash menu in TUI mode and rejected by the dispatcher). */
+  liteOnly?: boolean;
 }
 
 /**

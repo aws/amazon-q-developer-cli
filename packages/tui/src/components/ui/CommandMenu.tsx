@@ -7,6 +7,10 @@ import React, {
 } from 'react';
 import { Box } from './../../renderer.js';
 import { Menu } from '../ui/menu/Menu';
+import { Text } from '../ui/text/Text.js';
+import { Divider } from '../ui/divider/Divider.js';
+import { useTheme } from '../../hooks/useThemeContext.js';
+import { useKeypress } from '../../hooks/useKeypress.js';
 import { useAppStore } from '../../stores/app-store';
 import { useCommandState } from '../../stores/selectors';
 import type { AvailableCommand } from '../../types/commands';
@@ -14,8 +18,39 @@ import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   filterPromptsByQuery,
   buildAtMenuItems,
+  isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
+import { VerbosityPreview } from './menu/VerbosityPreview.js';
+import {
+  VerbosityTruncationEditor,
+  truncationConfigKey,
+  type TruncationEditorField,
+} from './menu/VerbosityTruncationEditor.js';
+import { verbosityBreadcrumb } from './settings-panel-model.js';
+import type { VerbosityPreviewKey } from '../../lite/render.js';
+import {
+  DENSITY_DISPLAY,
+  DENSITY_FILTERS,
+  DENSITY_PRESETS,
+  type DensityPreset,
+} from '../../lite/verbose.js';
+
+// Ctrl+P is the master switch (hidden ↔ mini); `p` refines (mini → expanded).
+// Two keys so a stray `p` while typing can't pop a preview.
+type PreviewMode = 'mini' | 'expanded' | 'hidden';
+
+// Runtime guard for the `store.previewKey: string` → VerbosityPreviewKey cast.
+// Keep in sync if that union grows a fixture.
+const VERBOSITY_PREVIEW_KEYS: readonly VerbosityPreviewKey[] = [
+  'top',
+  'density',
+  'tool',
+  'subagent',
+  'output',
+  'truncation:args',
+  'truncation:output',
+];
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -25,7 +60,12 @@ export const CommandMenu: React.FC = () => {
   const executeCommandWithArg = useAppStore(
     (state) => state.executeCommandWithArg
   );
-  const { slashCommands } = useCommandState();
+  const { slashCommands: rawSlashCommands } = useCommandState();
+  const uiMode = useAppStore((state) => state.uiMode);
+  const slashCommands = useMemo(
+    () => rawSlashCommands.filter((c) => isCommandVisibleInUiMode(c, uiMode)),
+    [rawSlashCommands, uiMode]
+  );
   const handleUserInput = useAppStore((state) => state.handleUserInput);
   const clearCommandInput = useAppStore((state) => state.clearCommandInput);
   const setCommandInput = useAppStore((state) => state.setCommandInput);
@@ -44,15 +84,80 @@ export const CommandMenu: React.FC = () => {
     (state) => state.setSettingsReturnOnEscape
   );
   const reopenSettingsMenu = useAppStore((state) => state.reopenSettingsMenu);
+  const verboseReturnOnEscape = useAppStore(
+    (state) => state.verboseReturnOnEscape
+  );
+  const setVerboseReturnOnEscape = useAppStore(
+    (state) => state.setVerboseReturnOnEscape
+  );
   const setCommandShadowText = useAppStore(
     (state) => state.setCommandShadowText
   );
   const kiro = useAppStore((state) => state.kiro);
+  const { getColor } = useTheme();
+  const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
 
-  // File search state
   const [fileResults, setFileResults] = useState<string[]>([]);
 
-  // Track the currently highlighted item in the slash command dropdown
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('hidden');
+  const [draftPreset, setDraftPreset] = useState<DensityPreset | null>(null);
+
+  // Reset preview state ONLY when leaving /verbosity entirely — within it,
+  // state must persist across submenu switches (density → tool → output) so
+  // an armed preview doesn't disappear.
+  const activeCommandName = activeCommand?.command.name ?? null;
+  useEffect(() => {
+    if (activeCommandName !== '/verbosity') {
+      setPreviewMode('hidden');
+      setDraftPreset(null);
+    }
+  }, [activeCommandName]);
+
+  // Arming keymap. Gated to liteOnly commands with a preview fixture; Menu.tsx
+  // yields Ctrl+P on liteOnly menus so this can claim it. (Ctrl+C-as-Esc and
+  // the expanded-collapse live in the shared handler below.)
+  useKeypress((input, key) => {
+    const isLiteMenu =
+      activeCommand?.command.meta?.liteOnly === true &&
+      activeCommand.previewKey;
+    if (!isLiteMenu) return;
+    if (key.ctrl && (input === 'p' || input === 'P')) {
+      setPreviewMode((m) => (m === 'hidden' ? 'mini' : 'hidden'));
+      return;
+    }
+    if (
+      previewMode !== 'expanded' &&
+      previewMode !== 'hidden' &&
+      (input === 'p' || input === 'P')
+    ) {
+      setPreviewMode('expanded');
+    }
+  });
+
+  // /verbosity density rows: track the highlighted preset so the inline
+  // preview can draft-render it; non-preset rows (Custom / back / Cancel)
+  // clear the draft so the preview reverts to the saved config.
+  const handleHighlight = (item: { label: string }) => {
+    if (!activeCommand || activeCommand.command.name !== '/verbosity') return;
+    const opt = activeCommand.options.find((o) => o.label === item.label);
+    if (!opt) return;
+    const m = opt.value.match(
+      /^(?:menu:density:confirm|density:apply):([a-z]+)$/
+    );
+    setDraftPreset(
+      m && DENSITY_PRESETS.includes(m[1] as DensityPreset)
+        ? (m[1] as DensityPreset)
+        : null
+    );
+  };
+
+  // Remount the menu when its shape (command, option values, initialIndex)
+  // changes so the cursor re-clamps; description-only changes (toggle re-opens
+  // of the same submenu) keep the cursor on the toggled row.
+  const activeCommandKey = activeCommand
+    ? `${activeCommand.command.name}|${activeCommand.initialIndex ?? 0}|${activeCommand.options.map((o) => o.value).join('\0')}`
+    : '';
+
   const highlightedRef = useRef<{ label: string; description: string } | null>(
     null
   );
@@ -64,7 +169,6 @@ export const CommandMenu: React.FC = () => {
     []
   );
 
-  // Show the sub-command dropdown for a command that has sub-commands
   const showSubcommandMenu = useCallback(
     (cmd: AvailableCommand) => {
       const subs = cmd.meta?.subcommands;
@@ -91,15 +195,12 @@ export const CommandMenu: React.FC = () => {
       const cmd = slashCommands.find((c) => c.name === fullCommand);
       const isPrompt = cmd?.meta?.type === 'prompt';
 
-      // If the command has sub-commands, show them in a dropdown
       if (cmd && showSubcommandMenu(cmd)) {
         return;
       }
 
-      // Fill the command into input with trailing space
       setCommandInput(`${fullCommand} `);
 
-      // Show arg hints for prompts
       if (isPrompt && cmd?.meta?.arguments?.length) {
         setPromptHint(
           cmd.meta.arguments
@@ -112,7 +213,6 @@ export const CommandMenu: React.FC = () => {
     }
   }, [slashCommands, setCommandInput, setPromptHint, showSubcommandMenu]);
 
-  // Extract @query from input
   const atQuery = useMemo(() => {
     if (activeTrigger?.key !== '@') return '';
     const afterAt = commandInputValue.slice(activeTrigger.position + 1);
@@ -164,9 +264,6 @@ export const CommandMenu: React.FC = () => {
     cmds.sort((a, b) => a.name.localeCompare(b.name));
     return [...cmds, ...promptCmds];
   }, [commandInputValue, slashCommands, activeTrigger]);
-
-  // No shadow text for top-level command menu — the dropdown handles that.
-  // Shadow text is only for argument completion (e.g. /model clau → de-opus-4.6).
 
   // Cache options per command to avoid re-fetching on every keystroke.
   const optionsCacheRef = useRef<{
@@ -280,7 +377,6 @@ export const CommandMenu: React.FC = () => {
     [filteredCommands]
   );
 
-  // Filter prompts matching @query
   const filteredPrompts = useMemo(
     () =>
       activeTrigger?.key === '@'
@@ -289,7 +385,6 @@ export const CommandMenu: React.FC = () => {
     [activeTrigger, atQuery, slashCommands]
   );
 
-  // Unified @ menu: prompts first, then files
   const atMenuItems = useMemo(
     () => buildAtMenuItems(filteredPrompts, fileResults),
     [filteredPrompts, fileResults]
@@ -357,6 +452,86 @@ export const CommandMenu: React.FC = () => {
     setPromptHint(null);
   }, [setActiveTrigger, setPromptHint]);
 
+  // Close the activeCommand overlay one level. Esc consumes the nested
+  // return-on-escape stashes in priority order: verbose > settings, so
+  // drilling in via /settings → Verbosity escapes one level at a time before
+  // settings takes back over. Each stash is cleared on consume.
+  const handleActiveCommandClose = useCallback(() => {
+    const returnToSettings = settingsReturnOnEscape;
+    const verboseReturn = verboseReturnOnEscape;
+
+    // Only clear input if the command menu system owns it (slash trigger
+    // active). When the subcommand dropdown was opened by Tab from
+    // PromptInput, the user's text is in segments — not commandInputValue —
+    // so clearing would wipe their prompt.
+    setActiveCommand(null);
+    if (activeTrigger) {
+      clearCommandInput();
+    }
+    setPromptHint(null);
+
+    // Verbose before settings (priority note above): step up ONE verbosity
+    // level by re-dispatching the saved parent route; only once verboseReturn
+    // is null does returnToSettings re-open /settings.
+    if (verboseReturn) {
+      setVerboseReturnOnEscape(null);
+      handleUserInput(`/verbosity ${verboseReturn}`);
+      return;
+    }
+    if (returnToSettings) {
+      setSettingsReturnOnEscape(false);
+      // Re-open directly: routing through handleUserInput here exited the
+      // process (footgun — likely a race with the in-flight overlay close).
+      reopenSettingsMenu();
+      return;
+    }
+  }, [
+    activeTrigger,
+    settingsReturnOnEscape,
+    verboseReturnOnEscape,
+    setActiveCommand,
+    clearCommandInput,
+    setPromptHint,
+    setSettingsReturnOnEscape,
+    setVerboseReturnOnEscape,
+    reopenSettingsMenu,
+    handleUserInput,
+  ]);
+
+  // Stashed = drilled in from a parent menu, so Esc steps back, not closes.
+  const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
+
+  useKeypress((input, key) => {
+    // Ctrl+C inside any menu surface = Esc (one level). Without this it falls
+    // through to AppContainer's double-Ctrl+C quit flow — a startling
+    // overreaction to backing out of a menu.
+    if (!(key.ctrl && input === 'c')) return;
+    if (previewMode === 'expanded') {
+      // Collapse to the menu, matching the pane's own Esc; closing here would
+      // dump the whole /verbosity menu.
+      setPreviewMode('mini');
+      return;
+    }
+    if (activeCommand) {
+      if (activeCommand.command.name === '/prompts') {
+        setActiveCommand(null);
+        clearCommandInput();
+        setPromptHint(null);
+        return;
+      }
+      handleActiveCommandClose();
+      return;
+    }
+    if (showCommandMenu) {
+      clearCommandInput();
+      setPromptHint(null);
+      return;
+    }
+    if (showAtMenu) {
+      handleAtMenuEscape();
+    }
+  });
+
   if (showAtMenu && !activeCommand) {
     return (
       <Menu
@@ -412,9 +587,84 @@ export const CommandMenu: React.FC = () => {
       isSelection &&
       activeCommand.command.meta?.searchable !== false;
 
+    // Truncation editor mode: previewKey ends in `:edit`. Swap the menu for the
+    // numeric editor, which routes back via executeCommandWithArg on commit.
+    const previewKey = activeCommand.previewKey;
+    const truncEditMatch =
+      previewKey &&
+      previewKey.match(
+        /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
+      );
+
+    // Lite /verbosity gets the settings panel chrome: a breadcrumb header +
+    // divider where the input row sat (LiteLayout hides it; see
+    // isLiteVerbosityMenu there). Gated to lite — TUI filters /verbosity out.
+    const isLiteVerbosityMenu =
+      uiMode === 'lite' && activeCommand.command.name === '/verbosity';
+    const verbosityHeader = isLiteVerbosityMenu ? (
+      <Box flexDirection="column">
+        <Box paddingX={1}>
+          <Text>{getColor('primary')(verbosityBreadcrumb(previewKey))}</Text>
+        </Box>
+        <Divider />
+      </Box>
+    ) : null;
+
+    if (truncEditMatch) {
+      const which = truncEditMatch[1] as TruncationEditorField;
+      const settingKey = truncationConfigKey(which);
+      return (
+        <Box flexDirection="column">
+          {verbosityHeader}
+          <VerbosityTruncationEditor
+            which={which}
+            onCommit={(value) => {
+              clearCommandInput();
+              executeCommandWithArg(
+                `set:${settingKey}:${value === null ? 'null' : value}`
+              );
+            }}
+            onCancel={handleActiveCommandClose}
+          />
+        </Box>
+      );
+    }
+
+    // 'truncation' is a submenu, not a fixture key; map it to 'top' so a
+    // generic mix shows next to the cap rows.
+    const verbosityPreviewKey: VerbosityPreviewKey | null =
+      previewKey === 'truncation'
+        ? 'top'
+        : (VERBOSITY_PREVIEW_KEYS.find((k) => k === previewKey) ?? null);
+
+    // A highlighted density preset draft-renders that preset's display/filters
+    // in the preview without persisting; no draft = saved config.
+    const draftDisplay = draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined;
+    const draftFilters = draftPreset ? DENSITY_FILTERS[draftPreset] : undefined;
+
+    // Expanded preview: swap the menu for the scrollable pane (owns its keys).
+    if (previewMode === 'expanded' && verbosityPreviewKey) {
+      return (
+        <Box flexDirection="column">
+          {verbosityHeader}
+          <VerbosityPreview
+            mode="expanded"
+            which={verbosityPreviewKey}
+            displayOverride={draftDisplay}
+            filtersOverride={draftFilters}
+            onCollapse={() => setPreviewMode('mini')}
+            onHide={() => setPreviewMode('hidden')}
+          />
+        </Box>
+      );
+    }
+
     return (
       <Box flexDirection="column">
+        {verbosityHeader}
         <Menu
+          key={activeCommandKey}
+          initialIndex={activeCommand.initialIndex}
           items={activeCommand.options.map((opt) => ({
             label: opt.label,
             description: opt.description ?? '',
@@ -427,9 +677,8 @@ export const CommandMenu: React.FC = () => {
             );
             if (opt) {
               if (isSubcommandMenu) {
-                // Sub-command selected: always prefill with the full command path.
-                // If the sub-command needs args (has hint), show the hint.
-                // If it doesn't need args, prefill and let the user press Enter to submit.
+                // Prefill the full path; trailing space only when the
+                // sub-command takes args (has a hint).
                 const prefix = `${activeCommand.command.name} ${opt.label}`;
                 setCommandInput(opt.hint ? `${prefix} ` : prefix);
                 setPromptHint(opt.hint ?? null);
@@ -444,32 +693,8 @@ export const CommandMenu: React.FC = () => {
               }
             }
           }}
-          onEscape={() => {
-            // If this overlay was opened from /settings (e.g. the user is
-            // now in the /theme menu reached via /settings → Theme), ESC
-            // should return to the /settings top-level menu rather than
-            // dismiss the whole overlay. The flag is set by the /settings
-            // subcommand handlers and consumed (and cleared) here.
-            const returnToSettings = settingsReturnOnEscape;
-
-            // Only clear input if the command menu system owns it (slash
-            // trigger active). When the subcommand dropdown was opened by
-            // Tab from PromptInput, the user's text is in segments — not
-            // commandInputValue — so clearing would wipe their prompt.
-            setActiveCommand(null);
-            if (activeTrigger) {
-              clearCommandInput();
-            }
-            setPromptHint(null);
-
-            if (returnToSettings) {
-              setSettingsReturnOnEscape(false);
-              // Re-open /settings directly. Going through handleUserInput
-              // here caused the process to exit for reasons not fully
-              // understood — likely races with the in-flight overlay close.
-              reopenSettingsMenu();
-            }
-          }}
+          onHighlight={handleHighlight}
+          onEscape={handleActiveCommandClose}
           showSelectedIndicator={true}
           searchable={isSearchable}
           searchLabel={
@@ -484,7 +709,27 @@ export const CommandMenu: React.FC = () => {
           preserveLabelColors={
             activeCommand.command.meta?.preserveLabelColors === true
           }
+          liteOnly={activeCommand.command.meta?.liteOnly === true}
+          closeMenuActionLabel={hasReturnStash ? '← back' : 'to close'}
         />
+        {verbosityPreviewKey && previewMode === 'mini' && (
+          <VerbosityPreview
+            which={verbosityPreviewKey}
+            displayOverride={draftDisplay}
+            filtersOverride={draftFilters}
+          />
+        )}
+        {verbosityPreviewKey && (
+          <Box paddingX={1}>
+            <Text>
+              {secondaryColor(
+                previewMode === 'hidden'
+                  ? '  ctrl+p to show preview'
+                  : '  p to expand · ctrl+p to hide preview'
+              )}
+            </Text>
+          </Box>
+        )}
       </Box>
     );
   }

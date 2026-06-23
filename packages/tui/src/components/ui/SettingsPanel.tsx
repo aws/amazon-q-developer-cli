@@ -67,6 +67,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const setLoadingMessage = useAppStore((state) => state.setLoadingMessage);
   const showAlert = useAppStore((state) => state.showTransientAlert);
   const kiro = useAppStore((state) => state.kiro);
+  const uiMode = useAppStore((state) => state.uiMode);
+  const handleUserInput = useAppStore((state) => state.handleUserInput);
 
   const [screen, setScreen] = useState<Screen>({ type: 'top' });
   const screenKey = screen.type;
@@ -160,6 +162,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
             openSubPanel(() => setShowKeybindingsPanel(true));
           }
           return;
+        case 'open-verbosity':
+          // Lite-only: close this panel, prime the back-flag so ESC out of the
+          // verbosity command-menu returns here (CommandMenu reads
+          // settingsReturnOnEscape → reopenSettingsMenu), then dispatch
+          // /verbosity through the normal command pipeline.
+          setSettingsReturnOnEscape(true);
+          setShowSettingsPanel(false);
+          void handleUserInput('/verbosity');
+          return;
         case 'run-terminal-setup':
           // Terminal setup is a self-contained async flow — close the
           // overlay first so the user sees the resulting alert, then run.
@@ -179,6 +190,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
       setShowDisplaySettingsPanel,
       setShowThemePanel,
       setShowKeybindingsPanel,
+      setShowSettingsPanel,
+      setSettingsReturnOnEscape,
+      handleUserInput,
       onClose,
       runTerminalSetup,
       applyHistoryMode,
@@ -191,14 +205,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   // itself is pure and takes the resolved snapshot.
   const rows: ExplorerRow[] = useMemo(
     () =>
-      buildRows(screen, {
-        historyMode: readStringSetting(Settings.CHAT_HISTORY_MODE, 'session'),
-        interruptMode: readStringSetting(
-          Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-          DEFAULT_INTERRUPT_MODE
-        ),
-      }),
-    [screen]
+      buildRows(
+        screen,
+        {
+          historyMode: readStringSetting(Settings.CHAT_HISTORY_MODE, 'session'),
+          interruptMode: readStringSetting(
+            Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+            DEFAULT_INTERRUPT_MODE
+          ),
+        },
+        uiMode
+      ),
+    [screen, uiMode]
   );
 
   // ─── Selection ──────────────────────────────────────────────────

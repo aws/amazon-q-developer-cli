@@ -7,8 +7,8 @@ import { E2ETestCase } from './E2ETestCase';
 
 function expectedWelcomeText(agentEngine: string): string {
   return agentEngine === 'kas'
-    ? 'Welcome to the new Kiro CLI'
-    : 'An early release of Kiro CLI V3';
+    ? 'Kiro CLI V3'
+    : 'Welcome to the new Kiro CLI UX!';
 }
 
 describe('greeting setting', () => {

@@ -20,6 +20,8 @@ import {
   unescapeShellPath,
   stripNonPrintable,
 } from '../../../utils/index.js';
+import { computeInputSpans } from '../../../utils/input-syntax.js';
+import { isCommandVisibleInUiMode } from '../../ui/command-menu-utils.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
@@ -72,6 +74,12 @@ import {
   exitSearch,
   abortSearch,
 } from '../../../utils/reverse-search.js';
+import {
+  navigateQueueUp,
+  navigateQueueDown,
+  commitQueueRestore,
+  type QueueRestoreState,
+} from '../../../utils/queue-navigation.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
 // editing logic. For now we import just the KillRing utility.
@@ -216,6 +224,23 @@ export const PromptInput = React.memo(function PromptInput({
     return () => setStoreReverseSearchActive(false);
   }, [setStoreReverseSearchActive]);
 
+  // Queue-aware ↑/↓ navigation (lite mode only): ↑ pulls a queued message back
+  // into the buffer for editing while leaving its slot in place, so Kiro still
+  // processes it in order. State machine: utils/queue-navigation.ts.
+  const queueRestoreRef = useRef<QueueRestoreState | null>(null);
+  const isLiteMode = useAppStore((state) => state.uiMode === 'lite');
+  const queuedMessagesRef = useRef<readonly string[]>([]);
+  queuedMessagesRef.current = useAppStore((state) => state.queuedMessages);
+  const replaceQueuedMessage = useAppStore(
+    (state) => state.replaceQueuedMessage
+  );
+  // Mirror queue-restore state into the store (the source of truth for the
+  // "editing queued #N" header) so external index flips stay in sync.
+  const setEditingQueueIndex = useAppStore(
+    (state) => state.setEditingQueueIndex
+  );
+  const removeQueuedMessage = useAppStore((state) => state.removeQueuedMessage);
+
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
   // read the old segments/cursor and overwrite each other's edits.
@@ -282,20 +307,55 @@ export const PromptInput = React.memo(function PromptInput({
     [getUserPromptColor]
   );
   const brandColor = useMemo(() => getColor('brand'), [getColor]);
+  const linkColor = useMemo(() => getColor('link'), [getColor]);
   const isShellEscape = useMemo(
     () => getVisibleText(segments).startsWith('!'),
     [segments]
+  );
+  // Only colorize recognized commands so a leading path (`/tmp/foo`) doesn't
+  // get the command color and read as two-toned.
+  const knownSlashNames = useMemo(
+    () => new Set(slashCommands.map((c) => c.name)),
+    [slashCommands]
+  );
+  // Path tokens stay primary on purpose — cyan was hard to read on light
+  // themes and the attachment chip already disambiguates real attachments.
+  const stylePromptText = useCallback(
+    (text: string): string => {
+      if (!text) return '';
+      const spans = computeInputSpans(text, knownSlashNames).filter(
+        (s) => s.kind !== 'path'
+      );
+      if (spans.length === 0) return primaryColor(text);
+      const out: string[] = [];
+      let i = 0;
+      for (const span of spans) {
+        if (span.start > i) out.push(primaryColor(text.slice(i, span.start)));
+        const tokenText = text.slice(span.start, span.end);
+        if (span.kind === 'slash') {
+          out.push(brandColor(tokenText));
+        } else if (span.kind === 'url') {
+          // Underline so URLs read as links even when the theme link
+          // color matches surrounding text.
+          out.push(chalk.underline(linkColor(tokenText)));
+        }
+        i = span.end;
+      }
+      if (i < text.length) out.push(primaryColor(text.slice(i)));
+      return out.join('');
+    },
+    [primaryColor, brandColor, linkColor, knownSlashNames]
   );
   const styleInputText = useCallback(
     (text: string, isFirstSegment: boolean) => {
       if (isShellEscape && isFirstSegment && text.length > 0) {
         if (text.startsWith('!')) {
-          return brandColor('!') + primaryColor(text.slice(1));
+          return brandColor('!') + stylePromptText(text.slice(1));
         }
       }
-      return primaryColor(text);
+      return stylePromptText(text);
     },
-    [isShellEscape, brandColor, primaryColor]
+    [isShellEscape, brandColor, stylePromptText]
   );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
@@ -733,6 +793,28 @@ export const PromptInput = React.memo(function PromptInput({
       let segments = segmentsRef.current;
       let cursor = cursorRef.current;
 
+      // Shared ↑/↓ queue-restore application. `up` passes loadSegments=false
+      // once it walks past the oldest entry so the same keypress falls through
+      // to CommandHistory below.
+      const applyQueueNav = (
+        result: Extract<ReturnType<typeof navigateQueueUp>, { kind: 'queue' }>,
+        loadSegments: boolean
+      ) => {
+        if (result.replace) {
+          replaceQueuedMessage(result.replace.index, result.replace.text);
+        }
+        queueRestoreRef.current = result.state;
+        setEditingQueueIndex(result.state ? result.state.index : null);
+        if (!loadSegments) return;
+        suppressNextTriggerRef.current = true;
+        setPromptHint(null);
+        const newSegs: Segment[] = [{ type: 'text', value: result.loadText }];
+        setSegments(newSegs);
+        setCursor(result.loadText.length);
+        syncToStore(newSegs);
+        inputMetrics.markStateUpdate();
+      };
+
       // Don't process input during shell escape — AppContainer forwards it to the PTY
       if (shellEscapeActive) return;
 
@@ -800,6 +882,38 @@ export const PromptInput = React.memo(function PromptInput({
         return;
       }
 
+      // Exit queue-restore mode and reset to an empty compose buffer.
+      const clearQueueRestoreInput = () => {
+        queueRestoreRef.current = null;
+        setEditingQueueIndex(null);
+        const newSegs: Segment[] = [{ type: 'text', value: '' }];
+        setSegments(newSegs);
+        setCursor(0);
+        syncToStore(newSegs);
+      };
+
+      // Esc in queue restore mode: abandon the edit, exit restore. The slot
+      // is untouched so the original message stays in line. Not in restore?
+      // fall through to the LiteLayout handler (cancel/etc).
+      if (key.escape && queueRestoreRef.current) {
+        clearQueueRestoreInput();
+        return;
+      }
+
+      // Ctrl+X while editing a queued slot: drop the queued message entirely.
+      // Gated to restore mode so it doesn't shadow Ctrl+X in the compose
+      // buffer (reserved, no behavior today).
+      if (key.ctrl && userInput === 'x' && queueRestoreRef.current) {
+        const restore = queueRestoreRef.current;
+        // Translate the restore index against the current queue snapshot —
+        // processQueue may have shifted slots while the user was editing.
+        if (restore.index < queuedMessagesRef.current.length) {
+          removeQueuedMessage(restore.index);
+        }
+        clearQueueRestoreInput();
+        return;
+      }
+
       // Clear path completion candidates on any key except Tab
       if (!key.tab) {
         setPathCandidates([]);
@@ -809,12 +923,18 @@ export const PromptInput = React.memo(function PromptInput({
       const prevYank = lastYankRef.current;
       lastYankRef.current = null;
 
-      // Check if slash command menu is visible (has matching commands)
+      // Mirror CommandMenu's visibility check so PromptInput defers nav keys
+      // (Tab/Up/Down/Enter) to the menu while it's mounted — including during
+      // streaming (NOT gated on !isProcessing), where the menu stays up so the
+      // user can autocomplete a slash command into the queue. The shared
+      // isCommandVisibleInUiMode keeps the liteOnly filter in sync: without it,
+      // typing a liteOnly name in TUI swallows Enter into an empty menu.
       const hasMatchingSlashCommands =
         activeTrigger?.key === '/' && !commandInputValue.includes(' ')
           ? slashCommands.some(
               (cmd) =>
                 !cmd.meta?.hidden &&
+                isCommandVisibleInUiMode(cmd, isLiteMode ? 'lite' : 'tui') &&
                 cmd.name
                   .slice(1)
                   .toLowerCase()
@@ -834,9 +954,40 @@ export const PromptInput = React.memo(function PromptInput({
           // Stop active /voice recording
           voiceStop();
         } else {
-          // When processing, dismiss menus and submit directly (for queuing
-          // or slash command rejection — the menus aren't useful here).
+          // Queue restore mode: Enter commits the edit back into its original
+          // slot (preserving order), falling back to a fresh submit if the
+          // slot drained. Empty edit deletes the slot ("discard this queued
+          // message").
+          const restore = queueRestoreRef.current;
+          if (restore) {
+            const content = buildContent(segments);
+            queueRestoreRef.current = null;
+            setEditingQueueIndex(null);
+            const result = commitQueueRestore(
+              restore,
+              content,
+              queuedMessagesRef.current
+            );
+            clearAll();
+            if (result.kind === 'replace') {
+              if (result.text.trim()) {
+                replaceQueuedMessage(result.index, result.text);
+              } else {
+                removeQueuedMessage(result.index);
+              }
+            } else if (result.text.trim()) {
+              // Fallback: slot drained or shifted — send as fresh message.
+              onSubmit(result.text);
+            }
+            return;
+          }
+          // When processing, submit directly for queuing / slash-command
+          // rejection. Footgun: the dropdown stays mounted during streaming and
+          // twinki's broadcasting useInput fires the Menu's onSelect for this
+          // SAME Enter, which already queues the completed command — so bail
+          // when a menu is up or PromptInput double-queues the raw typed prefix.
           if (isProcessing) {
+            if (slashMenuVisible || filePickerVisible) return;
             const content = buildContent(segments);
             // Don't submit whitespace-only prompts, but preserve indentation
             // (e.g. pasted code) in the submitted content.
@@ -998,6 +1149,21 @@ export const PromptInput = React.memo(function PromptInput({
             return;
           }
         }
+        // Lite mode: ↑ walks back through queued messages first. Stepping past
+        // the oldest entry (state === null) skips the load and falls through to
+        // CommandHistory on the SAME keypress, so ↑↑↑ pages from queue tail into
+        // history without a phantom no-op press in between.
+        if (isLiteMode) {
+          const result = navigateQueueUp(
+            queueRestoreRef.current,
+            getVisibleText(segments),
+            queuedMessagesRef.current
+          );
+          if (result.kind === 'queue') {
+            applyQueueNav(result, result.state != null);
+            if (result.state != null) return;
+          }
+        }
         // Single-line or already on first line: navigate history
         const currentText = buildContent(segments);
         const command = CommandHistory.getInstance().navigate(
@@ -1024,6 +1190,19 @@ export const PromptInput = React.memo(function PromptInput({
           if (newPos !== null) {
             inputMetrics.markStateUpdate();
             setCursor(newPos);
+            return;
+          }
+        }
+        // Lite mode: ↓ walks forward through queue restore (mirror of ↑);
+        // outside restore it falls through to history.
+        if (isLiteMode && queueRestoreRef.current != null) {
+          const result = navigateQueueDown(
+            queueRestoreRef.current,
+            getVisibleText(segments),
+            queuedMessagesRef.current
+          );
+          if (result.kind === 'queue') {
+            applyQueueNav(result, true);
             return;
           }
         }

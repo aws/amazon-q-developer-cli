@@ -6,6 +6,18 @@ export interface AtMenuItem {
   group?: string;
 }
 
+/**
+ * Whether a slash command should surface for the current UI mode. Shared by
+ * CommandMenu (filters its list) and PromptInput (backs off Enter/Tab in sync);
+ * liteOnly commands bind lite-only rendering hooks, so they're hidden in TUI.
+ */
+export function isCommandVisibleInUiMode(
+  cmd: AvailableCommand,
+  uiMode: 'lite' | 'tui' | undefined
+): boolean {
+  return uiMode === 'lite' || cmd.meta?.liteOnly !== true;
+}
+
 export function filterPromptsByQuery(
   slashCommands: readonly AvailableCommand[],
   atQuery: string

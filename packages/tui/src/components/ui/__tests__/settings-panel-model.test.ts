@@ -11,14 +11,15 @@
 import { describe, it, expect } from 'bun:test';
 import {
   TOP_ITEMS,
-  TERMINAL_ITEMS,
   buildRows,
   resolveSelect,
   resolveBack,
   appliesOnSelect,
   screenTitle,
   screenDescription,
+  verbosityBreadcrumb,
   type Screen,
+  type ScreenType,
   type SettingsSnapshot,
 } from '../settings-panel-model.js';
 
@@ -28,15 +29,35 @@ const defaultSnapshot: SettingsSnapshot = {
 };
 
 /** Pull the id list off a screen's rows for terse reachability assertions. */
-function rowIds(screen: Screen, snap: SettingsSnapshot = defaultSnapshot) {
-  return buildRows(screen, snap).map((r) => r.id);
+function rowIds(
+  screen: Screen,
+  snap: SettingsSnapshot = defaultSnapshot,
+  uiMode?: 'tui' | 'lite'
+) {
+  return buildRows(screen, snap, uiMode).map((r) => r.id);
 }
 
 describe('settings-panel-model', () => {
   describe('top-level menu', () => {
-    it('exposes the five top items in order', () => {
-      expect(rowIds({ type: 'top' })).toEqual([
+    // verbosity is lite-only and must NOT appear in tui (or when uiMode is
+    // omitted) — its handler errors with "lite mode only".
+    it.each([[undefined], ['tui' as const]])(
+      'exposes the five shared top items in order (uiMode=%s)',
+      (uiMode) => {
+        expect(rowIds({ type: 'top' }, defaultSnapshot, uiMode)).toEqual([
+          'display',
+          'theme',
+          'terminal',
+          'keybindings',
+          'history',
+        ]);
+      }
+    );
+
+    it('splices the lite-only verbosity row in after display (lite)', () => {
+      expect(rowIds({ type: 'top' }, defaultSnapshot, 'lite')).toEqual([
         'display',
+        'verbosity',
         'theme',
         'terminal',
         'keybindings',
@@ -53,133 +74,79 @@ describe('settings-panel-model', () => {
     });
   });
 
-  describe('Terminal sub-screen reachability', () => {
-    it('selecting Terminal navigates into the terminal sub-screen (not straight to newlines setup)', () => {
-      const result = resolveSelect({ type: 'top' }, 'terminal');
-      expect(result).toEqual({
-        kind: 'navigate',
-        screen: { type: 'terminal' },
-      });
-    });
-
-    it('terminal sub-screen offers both newlines and interrupt behaviour', () => {
-      expect(rowIds({ type: 'terminal' })).toEqual(['newlines', 'interrupt']);
-      expect(TERMINAL_ITEMS.map((i) => i.id)).toEqual([
-        'newlines',
-        'interrupt',
-      ]);
-    });
-
-    it('selecting Newlines runs the terminal setup flow', () => {
-      const result = resolveSelect({ type: 'terminal' }, 'newlines');
-      expect(result).toEqual({
-        kind: 'action',
-        action: { type: 'run-terminal-setup' },
-      });
-    });
-
-    it('selecting Interrupt behaviour navigates into the interrupt sub-screen', () => {
-      const result = resolveSelect({ type: 'terminal' }, 'interrupt');
-      expect(result).toEqual({
-        kind: 'navigate',
-        screen: { type: 'terminal:interrupt' },
-      });
+  describe('sub-screen rows', () => {
+    // Every sub-screen exposes its leaf rows in order (reachability guard);
+    // terminal=[newlines,interrupt] pins the interrupt-dropped-out regression.
+    it.each<[Screen, string[]]>([
+      [{ type: 'terminal' }, ['newlines', 'interrupt']],
+      [{ type: 'terminal:interrupt' }, ['steer', 'queue']],
+      [{ type: 'history' }, ['session', 'global']],
+    ])('%o rows', (screen, expected) => {
+      expect(rowIds(screen)).toEqual(expected);
     });
   });
 
-  describe('interrupt behaviour sub-screen', () => {
-    it('offers steer and queue', () => {
-      expect(rowIds({ type: 'terminal:interrupt' })).toEqual([
+  describe('resolveSelect routing', () => {
+    // Every menu leaf maps to the correct screen-navigation or named action.
+    // Regression guard: Terminal must NAVIGATE (not run newlines setup), and
+    // Interrupt behaviour must be reachable as its own sub-screen.
+    type T = ScreenType;
+    it.each<[T, string, object]>([
+      ['top', 'display', { type: 'open-panel', panel: 'display' }],
+      ['top', 'theme', { type: 'open-panel', panel: 'theme' }],
+      ['top', 'keybindings', { type: 'open-panel', panel: 'keybindings' }],
+      ['top', 'verbosity', { type: 'open-verbosity' }],
+      ['terminal', 'newlines', { type: 'run-terminal-setup' }],
+      [
+        'terminal:interrupt',
         'steer',
+        { type: 'apply-interrupt', mode: 'steer' },
+      ],
+      [
+        'terminal:interrupt',
         'queue',
-      ]);
-    });
-
-    it('selecting steer applies the steer interrupt mode', () => {
-      const result = resolveSelect({ type: 'terminal:interrupt' }, 'steer');
-      expect(result).toEqual({
+        { type: 'apply-interrupt', mode: 'queue' },
+      ],
+      ['history', 'session', { type: 'apply-history', mode: 'session' }],
+      ['history', 'global', { type: 'apply-history', mode: 'global' }],
+    ])('%s + %s → action', (type, id, action) => {
+      expect(resolveSelect({ type }, id)).toEqual({
         kind: 'action',
-        action: { type: 'apply-interrupt', mode: 'steer' },
-      });
+        action,
+      } as ReturnType<typeof resolveSelect>);
     });
 
-    it('selecting queue applies the queue interrupt mode', () => {
-      const result = resolveSelect({ type: 'terminal:interrupt' }, 'queue');
-      expect(result).toEqual({
-        kind: 'action',
-        action: { type: 'apply-interrupt', mode: 'queue' },
-      });
-    });
-
-    it('marks the active mode with a dot suffix (steer)', () => {
-      const rows = buildRows(
-        { type: 'terminal:interrupt' },
-        { historyMode: 'session', interruptMode: 'steer' }
-      );
-      expect(rows[0]!.values.label).toBe('Steer ●');
-      expect(rows[1]!.values.label).toBe('Queue');
-    });
-
-    it('marks the active mode with a dot suffix (queue)', () => {
-      const rows = buildRows(
-        { type: 'terminal:interrupt' },
-        { historyMode: 'session', interruptMode: 'queue' }
-      );
-      expect(rows[0]!.values.label).toBe('Steer');
-      expect(rows[1]!.values.label).toBe('Queue ●');
-    });
-  });
-
-  describe('history sub-screen', () => {
-    it('selecting Terminal-adjacent History navigates from top', () => {
-      expect(resolveSelect({ type: 'top' }, 'history')).toEqual({
+    it.each<[T, string, T]>([
+      ['top', 'terminal', 'terminal'],
+      ['top', 'history', 'history'],
+      ['terminal', 'interrupt', 'terminal:interrupt'],
+    ])('%s + %s → navigate', (type, id, target) => {
+      expect(resolveSelect({ type }, id)).toEqual({
         kind: 'navigate',
-        screen: { type: 'history' },
+        screen: { type: target },
       });
     });
 
-    it('applies session / global on select', () => {
-      expect(resolveSelect({ type: 'history' }, 'session')).toEqual({
-        kind: 'action',
-        action: { type: 'apply-history', mode: 'session' },
-      });
-      expect(resolveSelect({ type: 'history' }, 'global')).toEqual({
-        kind: 'action',
-        action: { type: 'apply-history', mode: 'global' },
-      });
-    });
-
-    it('marks the active history mode', () => {
-      const rows = buildRows(
-        { type: 'history' },
-        { historyMode: 'global', interruptMode: 'steer' }
-      );
-      expect(rows[0]!.values.label).toBe('Session');
-      expect(rows[1]!.values.label).toBe('Global ●');
-    });
+    it.each<[T]>([['top'], ['terminal'], ['terminal:interrupt'], ['history']])(
+      'returns null for an unknown row id on %s',
+      (type) => {
+        expect(resolveSelect({ type }, 'bogus')).toBeNull();
+      }
+    );
   });
 
-  describe('top-level panel routing', () => {
-    it('routes display/theme/keybindings to their own panels', () => {
-      expect(resolveSelect({ type: 'top' }, 'display')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'display' },
-      });
-      expect(resolveSelect({ type: 'top' }, 'theme')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'theme' },
-      });
-      expect(resolveSelect({ type: 'top' }, 'keybindings')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'keybindings' },
-      });
-    });
-
-    it('returns null for an unknown row id', () => {
-      expect(resolveSelect({ type: 'top' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'terminal' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'terminal:interrupt' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'history' }, 'bogus')).toBeNull();
+  describe('active-marker rendering', () => {
+    // The ● dot tags the persisted choice on each apply-on-select sub-screen.
+    type T = ScreenType;
+    type K = keyof SettingsSnapshot;
+    it.each<[T, K, string, string[]]>([
+      ['terminal:interrupt', 'interruptMode', 'steer', ['Steer ●', 'Queue']],
+      ['terminal:interrupt', 'interruptMode', 'queue', ['Steer', 'Queue ●']],
+      ['history', 'historyMode', 'session', ['Session ●', 'Global']],
+      ['history', 'historyMode', 'global', ['Session', 'Global ●']],
+    ])('%s marks active when %s=%s', (type, key, value, labels) => {
+      const rows = buildRows({ type }, { ...defaultSnapshot, [key]: value });
+      expect(rows.map((r) => r.values.label)).toEqual(labels);
     });
   });
 
@@ -225,6 +192,28 @@ describe('settings-panel-model', () => {
       expect(screenDescription({ type: 'terminal' })).toBeTruthy();
       expect(screenDescription({ type: 'terminal:interrupt' })).toBeTruthy();
       expect(screenDescription({ type: 'history' })).toBeTruthy();
+    });
+  });
+
+  describe('verbosityBreadcrumb', () => {
+    // Roots (top / unknown / undefined), one sub-screen per row, and every
+    // truncation flavor (submenu, args/output fixtures, numeric editor) all
+    // collapsing to the single truncation breadcrumb.
+    it.each([
+      ['top', '/settings – verbosity'],
+      [undefined, '/settings – verbosity'],
+      ['bogus', '/settings – verbosity'],
+      ['density', '/settings – verbosity – density'],
+      ['tool', '/settings – verbosity – tool calls'],
+      ['subagent', '/settings – verbosity – subagent'],
+      ['output', '/settings – verbosity – output'],
+      ['truncation', '/settings – verbosity – truncation'],
+      ['truncation:args', '/settings – verbosity – truncation'],
+      ['truncation:output', '/settings – verbosity – truncation'],
+      ['truncation:argsLines:edit', '/settings – verbosity – truncation'],
+      ['truncation:outputChars:edit', '/settings – verbosity – truncation'],
+    ] as const)('maps %s → %s', (previewKey, expected) => {
+      expect(verbosityBreadcrumb(previewKey)).toBe(expected);
     });
   });
 });

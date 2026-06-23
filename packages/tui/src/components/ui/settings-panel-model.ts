@@ -14,7 +14,7 @@
  */
 
 import type { ExplorerRow } from './Explorer.js';
-import { Settings } from '../../constants/settings.js';
+import { DISPLAY_SETTINGS_DESCRIPTION } from '../../constants/settings.js';
 import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
@@ -31,10 +31,14 @@ export type ScreenType = Screen['type'];
 
 export type TopChoice =
   | 'display'
+  | 'verbosity'
   | 'theme'
   | 'terminal'
   | 'keybindings'
   | 'history';
+
+/** UI mode — gates lite-only rows (e.g. verbosity) in {@link buildRows}. */
+export type UiMode = 'tui' | 'lite';
 export type HistoryChoice = 'session' | 'global';
 export type TerminalChoice = 'newlines' | 'interrupt';
 export type InterruptChoice = 'steer' | 'queue';
@@ -63,6 +67,9 @@ export type SelectResult =
 export type PanelAction =
   // Open a different overlay (theme/keybindings/display) — ESC returns here.
   | { type: 'open-panel'; panel: 'display' | 'theme' | 'keybindings' }
+  // Open the lite-only /verbosity command-menu (dispatched via handleUserInput);
+  // ESC out of that menu returns here. Lite-only row.
+  | { type: 'open-verbosity' }
   // Run the async terminal newline setup flow, then close.
   | { type: 'run-terminal-setup' }
   // Persist the history scope, then close.
@@ -76,9 +83,8 @@ export type PanelAction =
  * and the helpers pick it up automatically.
  */
 export interface ScreenConfig {
-  /** Breadcrumb title shown in the panel header. */
   title: string;
-  /** Sub-screen prompt under the title; `undefined` for the top screen. */
+  /** `undefined` for the top screen (no subtitle). */
   description?: string;
   /**
    * Whether selecting a row on this screen applies a setting and immediately
@@ -127,12 +133,13 @@ export interface TopItem {
   description: string;
 }
 
-/** Top-level menu rows. */
+/** Top-level rows shown in BOTH modes. Lite-only `verbosity` is spliced in by
+ *  {@link buildRows} (see {@link VERBOSITY_ITEM}) so TUI never shows it. */
 export const TOP_ITEMS: readonly TopItem[] = [
   {
     id: 'display',
     label: 'Display',
-    description: 'Control animations, ASCII art, and icons',
+    description: DISPLAY_SETTINGS_DESCRIPTION,
   },
   {
     id: 'theme',
@@ -155,6 +162,14 @@ export const TOP_ITEMS: readonly TopItem[] = [
     description: 'Prompt history scope (session or global)',
   },
 ];
+
+/** Lite-only verbosity row, inserted after Display in lite mode. Must not
+ *  surface in TUI: its renderer controls only run inside <LiteLayout>. */
+export const VERBOSITY_ITEM: TopItem = {
+  id: 'verbosity',
+  label: 'Verbosity',
+  description: 'Tool args, reasoning, output filters, density (lite mode only)',
+};
 
 /** Terminal sub-screen rows. */
 export const TERMINAL_ITEMS: readonly {
@@ -186,14 +201,21 @@ function withActiveMarker(label: string, isActive: boolean): string {
  */
 export function buildRows(
   screen: Screen,
-  settings: SettingsSnapshot
+  settings: SettingsSnapshot,
+  uiMode?: UiMode
 ): ExplorerRow[] {
   switch (screen.type) {
-    case 'top':
-      return TOP_ITEMS.map((item) => ({
+    case 'top': {
+      // Splice the lite-only verbosity row in after Display; TUI never sees it.
+      const topItems =
+        uiMode === 'lite'
+          ? [TOP_ITEMS[0]!, VERBOSITY_ITEM, ...TOP_ITEMS.slice(1)]
+          : TOP_ITEMS;
+      return topItems.map((item) => ({
         id: item.id,
         values: { label: item.label, description: item.description },
       }));
+    }
     case 'terminal':
       return TERMINAL_ITEMS.map((item) => ({
         id: item.id,
@@ -258,6 +280,8 @@ export function resolveSelect(screen: Screen, id: string): SelectResult | null {
             kind: 'action',
             action: { type: 'open-panel', panel: 'display' },
           };
+        case 'verbosity':
+          return { kind: 'action', action: { type: 'open-verbosity' } };
         case 'theme':
           return {
             kind: 'action',
@@ -309,29 +333,37 @@ export function resolveBack(screen: Screen): Screen | 'close' {
   return back === 'close' ? 'close' : { type: back };
 }
 
-/**
- * Whether selecting a row on this screen applies a setting and immediately
- * dismisses the overlay (drives the "apply and close" footer hint).
- */
 export function appliesOnSelect(screen: Screen): boolean {
   return SCREEN_CONFIG[screen.type].appliesOnSelect;
 }
 
-/** Breadcrumb title for the given screen. */
 export function screenTitle(screen: Screen): string {
   return SCREEN_CONFIG[screen.type].title;
 }
 
-/** Sub-screen prompt shown under the title (top screen has none). */
+/** `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu
+ *  (CommandMenu renders it, not SettingsPanel). Unknown keys fall back to root. */
+export function verbosityBreadcrumb(previewKey?: string): string {
+  const ROOT = '/settings – verbosity';
+  if (!previewKey || previewKey === 'top') return ROOT;
+  // All truncation flavors collapse to the single truncation screen.
+  if (previewKey === 'truncation' || previewKey.startsWith('truncation:')) {
+    return `${ROOT} – truncation`;
+  }
+  const sub = VERBOSITY_BREADCRUMB_LABELS[previewKey];
+  return sub ? `${ROOT} – ${sub}` : ROOT;
+}
+
+const VERBOSITY_BREADCRUMB_LABELS: Record<string, string> = {
+  density: 'density',
+  tool: 'tool calls',
+  subagent: 'subagent',
+  output: 'output',
+};
+
 export function screenDescription(screen: Screen): string | undefined {
   return SCREEN_CONFIG[screen.type].description;
 }
-
-/** Setting keys the panel reads, re-exported for the component + tests. */
-export const PANEL_SETTING_KEYS = {
-  historyMode: Settings.CHAT_HISTORY_MODE,
-  interruptMode: Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-} as const;
 
 /** The default interrupt mode token, re-exported for convenience. */
 export { DEFAULT_INTERRUPT_MODE };

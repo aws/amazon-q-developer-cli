@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { Box, useMouse, CURSOR_MARKER } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../../hooks/useTextStyle.js';
@@ -42,8 +48,16 @@ export interface MenuProps {
   showFooterHints?: boolean;
   /** When true, selected item uses bold instead of accent color, preserving embedded ANSI colors in labels. */
   preserveLabelColors?: boolean;
+  /** Wording after the close-menu key in the footer; the prop owns its leading
+   *  separator (`← back` none, `to close` a space). Default `to cancel`. */
+  closeMenuActionLabel?: string;
+  /** Initial cursor row; clamped to range, applied on mount only (re-key to
+   *  re-apply). Defaults to 0. */
+  initialIndex?: number;
   /** Static title shown above the menu items (rendered regardless of searchable). */
   title?: string;
+  /** Lite-only: symmetric arrow shortcuts (right→Enter, left→Esc). */
+  liteOnly?: boolean;
 }
 
 import { fuzzyScore } from '../../../utils/fuzzyScore.js';
@@ -63,9 +77,16 @@ export const Menu = React.memo(function Menu({
   searchPlaceholder = 'type to search',
   showFooterHints,
   preserveLabelColors = false,
+  closeMenuActionLabel = 'to cancel',
+  initialIndex,
   title,
+  liteOnly = false,
 }: MenuProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    if (initialIndex == null) return 0;
+    const max = Math.max(0, items.length - 1);
+    return Math.min(Math.max(0, initialIndex), max);
+  });
   const [searchText, setSearchText] = useState('');
   const { getColor } = useTheme();
   const { width: terminalWidth } = useTerminalSize();
@@ -93,8 +114,16 @@ export const Menu = React.memo(function Menu({
     return scored.map((s) => s.item);
   }, [items, searchText, searchable]);
 
-  // Reset selection when filter changes
+  // Reset selection when filter changes. Skip the first run so initialIndex
+  // (applied by useState above) survives mount — otherwise the cursor always
+  // snaps to row 0 on mount, defeating ESC-back navigation that wants to
+  // restore the parent's row.
+  const didMountSearchResetRef = useRef(false);
   useEffect(() => {
+    if (!didMountSearchResetRef.current) {
+      didMountSearchResetRef.current = true;
+      return;
+    }
     setSelectedIndex(0);
   }, [searchText]);
 
@@ -165,8 +194,10 @@ export const Menu = React.memo(function Menu({
   }, [selectedIndex, onHighlight, displayItems]);
 
   useKeypress((input, key) => {
-    // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation)
-    if (key.upArrow || (key.ctrl && input === 'p')) {
+    // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation).
+    // Yield Ctrl+P to lite preview controls (CommandMenu claims it); plain ↑
+    // still navigates.
+    if (key.upArrow || (!liteOnly && key.ctrl && input === 'p')) {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
     } else if (key.downArrow || (key.ctrl && input === 'n')) {
       setSelectedIndex((prev) => Math.min(displayItems.length - 1, prev + 1));
@@ -182,11 +213,23 @@ export const Menu = React.memo(function Menu({
     } else if (key.rightArrow && onRightArrow) {
       const selectedItem = displayItems[selectedIndex];
       if (selectedItem) onRightArrow(selectedItem);
+    } else if (
+      liteOnly &&
+      key.rightArrow &&
+      !onRightArrow &&
+      selectedIndex >= 0
+    ) {
+      // Right=Enter for lite arrow-cluster select. Lite-only: ungating it in
+      // TUI would auto-respond to ApprovalRequest dropdowns (no liteOnly).
+      const selectedItem = displayItems[selectedIndex];
+      if (selectedItem) onSelect(selectedItem);
+    } else if (liteOnly && key.leftArrow && onEscape && !searchable) {
+      // Left=Esc, symmetric with right. Suppressed in searchable menus where
+      // left/right drive the search-input cursor.
+      onEscape();
     } else if (!searchable) {
-      // Reserved for future use
+      // Non-searchable: swallow remaining keys.
     } else if (searchable && key.ctrl && input) {
-      // TODO: Extract a shared useLineEditor hook backed by Segment[] + input-editing.ts
-      // to reuse emacs bindings from PromptInput instead of duplicating here.
       if (input === 'u') {
         // Ctrl+U - clear line
         setSearchText('');
@@ -310,7 +353,7 @@ export const Menu = React.memo(function Menu({
           <Box paddingX={1}>
             <Text>
               {brandText(keybindings.label('closeMenu').toUpperCase())}{' '}
-              {dimText('to cancel')}
+              {dimText(closeMenuActionLabel)}
               {dimText(' · ')}
               {brandText('↑↓')} {dimText('to navigate')}
               {onRightArrow ? (

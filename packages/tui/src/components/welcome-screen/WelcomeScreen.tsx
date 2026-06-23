@@ -21,30 +21,6 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   const brand = getColor('brand');
   const agentEngine = useAppStore((s) => s.agentEngine);
 
-  // Shared "what's new" body rendered under both the V2 and V3 headings.
-  const whatsNewBody = (
-    <>
-      <Text>{primary(' ')}</Text>
-      <Text>
-        {primary(
-          "What's new: Specs, expanded hooks, and an improved trust model."
-        )}
-      </Text>
-      <Text>
-        {primary(
-          'Migration tooling to bring your V2 configurations to V3 is coming soon.'
-        )}
-      </Text>
-      <Text>{brand('https://kiro.dev/docs/cli/v3/')}</Text>
-      <Text>{primary(' ')}</Text>
-      <Text>
-        {primary('Share feedback anytime with ')}
-        {brand('/feedback')}
-        {primary('.')}
-      </Text>
-    </>
-  );
-
   return (
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
@@ -59,15 +35,11 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         paddingX={2}
       >
         {agentEngine !== 'kas' ? (
-          <>
-            <Text>
-              {primary('An early release of ')}
-              {brand('Kiro CLI V3')}
-              {primary(' is now available! Try it out: ')}
-              {brand('kiro-cli --v3')}
-            </Text>
-            {whatsNewBody}
-          </>
+          <Text>
+            {primary('Welcome to the new Kiro CLI UX! ')}
+            {brand('/feedback')}
+            {primary(' for thoughts.')}
+          </Text>
         ) : (
           <>
             <Text>
@@ -75,7 +47,24 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
               {brand('Kiro CLI V3')}
               {primary('!')}
             </Text>
-            {whatsNewBody}
+            <Text>{primary(' ')}</Text>
+            <Text>
+              {primary(
+                "What's new: Specs, expanded hooks, and an improved trust model."
+              )}
+            </Text>
+            <Text>
+              {primary(
+                'Migration tooling to bring your V2 configurations to V3 is coming soon.'
+              )}
+            </Text>
+            <Text>{brand('https://kiro.dev/docs/cli/v3/')}</Text>
+            <Text>{primary(' ')}</Text>
+            <Text>
+              {primary('Share feedback anytime with ')}
+              {brand('/feedback')}
+              {primary('.')}
+            </Text>
           </>
         )}
       </Box>

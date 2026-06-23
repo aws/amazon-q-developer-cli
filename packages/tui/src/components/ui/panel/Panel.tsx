@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Box, useInput } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -55,10 +55,20 @@ export const Panel: React.FC<PanelProps> = ({
   const dim = getColor('secondary');
 
   const [search, setSearch] = useState('');
+  // Mirror search into a ref so the useInput closure always sees the latest
+  // value. Twinki's useInput handler holds a ref to the latest handler, but
+  // the handler itself still closes over the render-time `search` value —
+  // when the user mashes Esc fast, the second keystroke can fire before the
+  // re-render that cleared the search has committed, and the stale closure
+  // takes the clear branch a second time. Reading from a ref bypasses that
+  // (the ref is mutated synchronously below).
+  const searchRef = useRef(search);
+  searchRef.current = search;
 
   useInput((_input, key) => {
     if (keybindings.matches('closeMenu', _input, key)) {
-      if (searchable && search) {
+      if (searchable && searchRef.current.length > 0) {
+        searchRef.current = '';
         setSearch('');
         onSearchChange?.('');
       } else {
