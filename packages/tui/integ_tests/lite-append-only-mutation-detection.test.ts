@@ -35,8 +35,17 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     await tc.sleepMs(400);
   }
 
-  it('committed content survives later turns: markers grow monotonically, exactly once each', async () => {
+  it('append-only: monotonic exactly-once markers, then /chat new clears scrollback (positive control, bug-mine 1.1)', async () => {
     testCase = await launchLiteInteg('lite-append-only-monotonic');
+
+    // /chat new is exercised later in this same session; register the command
+    // up front since the mock session doesn't send CommandsUpdate on boot.
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.CommandsUpdate,
+      commands: [
+        { name: '/chat', description: 'Start or switch conversations' },
+      ],
+    });
 
     await pushTurn(testCase, 'content-a', 'MONOTONIC_A_MARKER', 'turn1');
 
@@ -75,38 +84,9 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     );
     expect(contentMessages.length).toBeGreaterThanOrEqual(2);
 
-    await exitLiteInteg(testCase);
-  }, 30000);
-
-  it('/chat new clears scrollback — positive control for detection (bug-mine 1.1)', async () => {
-    testCase = await launchLiteInteg('lite-append-only-clear-positive-ctrl');
-
-    // Mock session doesn't send CommandsUpdate on boot; without this /chat new
-    // is treated as a regular chat message rather than a command.
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.CommandsUpdate,
-      commands: [
-        { name: '/chat', description: 'Start or switch conversations' },
-      ],
-    });
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.Content,
-      id: 'content-preclear',
-      content: { type: ContentType.Text, text: 'BEFORE_CLEAR_XYZ789' },
-    });
-    await testCase.typeAndSubmit('pre-clear');
-    await testCase.completeTurn();
-    await testCase.sleepMs(500);
-
-    const snapBefore = testCase.getSnapshot();
-    const beforeIdx = snapBefore.findIndex((l) =>
-      l.includes('BEFORE_CLEAR_XYZ789')
-    );
-    expect(beforeIdx).not.toBe(-1);
-
-    const storeBefore = await testCase.getStore();
-    const tokenBefore = storeBefore.liteScrollbackClearToken;
+    // Positive control for the detection harness: /chat new must wipe the
+    // committed A/B/C scrollback so we know removal IS observable here.
+    const tokenBefore = store.liteScrollbackClearToken;
 
     // Type char-by-char so CommandMenu intercepts Enter as the /chat command.
     for (const ch of '/chat new') {
@@ -127,8 +107,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
       storeAfter = await testCase.getStore();
     }
 
-    // Positive control: the clear-token bump + empty messages prove the clear
-    // mechanism fired and state was wiped (so this harness CAN detect removal).
+    // The clear-token bump + empty messages prove the clear mechanism fired.
     expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
     expect(storeAfter.messages.length).toBe(0);
 
@@ -140,10 +119,9 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     );
 
     const snapAfter = testCase.getSnapshot();
-    const postClearIdx = snapAfter.findIndex((l) =>
-      l.includes('AFTER_CLEAR_MARKER_QRS')
-    );
-    expect(postClearIdx).not.toBe(-1);
+    expect(
+      snapAfter.findIndex((l) => l.includes('AFTER_CLEAR_MARKER_QRS'))
+    ).not.toBe(-1);
 
     // Only the new content survives — old content is gone from state.
     const storePostClear = await testCase.getStore();
@@ -152,7 +130,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     );
     expect(modelMessages.length).toBe(1);
     const hasOldContent = storePostClear.messages.some(
-      (m) => m.role === 'model' && JSON.stringify(m).includes('BEFORE_CLEAR')
+      (m) => m.role === 'model' && JSON.stringify(m).includes('MONOTONIC_')
     );
     expect(hasOldContent).toBe(false);
 
