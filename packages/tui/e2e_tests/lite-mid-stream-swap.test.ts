@@ -18,6 +18,7 @@ import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
   CMD_TUI,
+  launchLiteE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -34,15 +35,9 @@ describe('lite mid-stream mode swap [bug-mine 2.1, 2.2]', () => {
   });
 
   it('lite->tui: command queued during streaming, fires at turn-end', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('mid-stream-lite-to-tui')
-      .withTerminal({ width: 120, height: 50 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('mid-stream-lite-to-tui', {
+      terminal: { width: 120, height: 50 },
+    });
 
     const chunk1Content = 'CHUNK_ONE_ALPHA_CONTENT';
     const chunk2Content = 'CHUNK_TWO_BETA_CONTENT';

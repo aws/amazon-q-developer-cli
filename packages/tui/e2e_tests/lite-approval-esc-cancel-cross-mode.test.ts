@@ -17,7 +17,12 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { CMD_LITE, CMD_TUI, sendUserMessage } from './lite/helpers/commands';
+import {
+  CMD_LITE,
+  CMD_TUI,
+  launchLiteE2E,
+  sendUserMessage,
+} from './lite/helpers/commands';
 import { pushWriteApprovalEvent } from './lite/helpers/approvals';
 
 describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', () => {
@@ -34,14 +39,10 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     // In lite mode, the approval prompt captures all keystrokes. The only
     // way out is Esc, which cancels the ENTIRE turn (not just the approval).
     // After cancellation, /tui should find a clean state.
-    testCase = await E2ETestCase.builder()
-      .withTestName('swap-approval-lite-esc-then-tui')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('swap-approval-lite-esc-then-tui', {
+      terminal: { width: 120, height: 40 },
+      waitForCommands: false,
+    });
 
     await pushWriteApprovalEvent(testCase, {
       toolUseId: 'write-needs-approval-lite',

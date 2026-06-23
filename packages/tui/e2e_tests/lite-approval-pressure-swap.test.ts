@@ -18,6 +18,7 @@ import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
   CMD_TUI,
+  launchLiteE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -35,14 +36,10 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   });
 
   it('lite->tui: approval captures keystrokes, "t" enters trust submenu, mode swap blocked', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('approval-pressure-lite-to-tui')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('approval-pressure-lite-to-tui', {
+      terminal: { width: 120, height: 40 },
+      waitForCommands: false,
+    });
 
     // Stream 1: a write ToolUseEvent that requires approval.
     await pushWriteApprovalEvent(testCase, {

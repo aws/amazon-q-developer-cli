@@ -10,6 +10,7 @@ import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
   CMD_TUI,
+  launchLiteE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -26,15 +27,9 @@ describe('queued message survives mode swap', () => {
   });
 
   it('lite -> tui: queued /tui + message drains in tui mode', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('queue-survival-lite-to-tui')
-      .withTerminal({ width: 120, height: 50 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('queue-survival-lite-to-tui', {
+      terminal: { width: 120, height: 50 },
+    });
 
     // Turn 1 warms the session.
     await streamReply(testCase, 'Turn one done.');
@@ -97,15 +92,9 @@ describe('queued message survives mode swap', () => {
   it('tui -> lite: queued /tui + /lite + message drains in lite mode', async () => {
     // Start in lite, then queue: /tui (swap to tui), /lite (swap back), message.
     // The message should fire in lite mode after both swaps execute.
-    testCase = await E2ETestCase.builder()
-      .withTestName('queue-survival-tui-to-lite')
-      .withTerminal({ width: 120, height: 50 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('queue-survival-tui-to-lite', {
+      terminal: { width: 120, height: 50 },
+    });
 
     await streamReply(testCase, 'Warm up done.');
 

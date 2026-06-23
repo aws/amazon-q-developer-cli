@@ -10,6 +10,7 @@ import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
   CMD_TUI,
+  launchLiteE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -26,15 +27,9 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   });
 
   it('lite→tui swap: content rendered in lite is preserved in store after swap', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('swap-lite-to-tui')
-      .withTerminal({ width: 120, height: 50 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('swap-lite-to-tui', {
+      terminal: { width: 120, height: 50 },
+    });
 
     await streamReply(testCase, 'LITE_RESPONSE_MARKER');
 
