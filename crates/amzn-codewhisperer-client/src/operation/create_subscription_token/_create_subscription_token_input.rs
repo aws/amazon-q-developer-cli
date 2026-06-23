@@ -17,6 +17,8 @@ pub struct CreateSubscriptionTokenInput {
     pub success_url: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub cancel_url: ::std::option::Option<::std::string::String>,
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub credit_quantity: ::std::option::Option<i64>,
 }
 impl CreateSubscriptionTokenInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -53,6 +55,11 @@ impl CreateSubscriptionTokenInput {
     pub fn cancel_url(&self) -> ::std::option::Option<&str> {
         self.cancel_url.as_deref()
     }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn credit_quantity(&self) -> ::std::option::Option<i64> {
+        self.credit_quantity
+    }
 }
 impl CreateSubscriptionTokenInput {
     /// Creates a new builder-style object to manufacture
@@ -74,6 +81,7 @@ pub struct CreateSubscriptionTokenInputBuilder {
     pub(crate) subscription_type: ::std::option::Option<crate::types::SubscriptionType>,
     pub(crate) success_url: ::std::option::Option<::std::string::String>,
     pub(crate) cancel_url: ::std::option::Option<::std::string::String>,
+    pub(crate) credit_quantity: ::std::option::Option<i64>,
 }
 impl CreateSubscriptionTokenInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -195,6 +203,23 @@ impl CreateSubscriptionTokenInputBuilder {
         &self.cancel_url
     }
 
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn credit_quantity(mut self, input: i64) -> Self {
+        self.credit_quantity = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn set_credit_quantity(mut self, input: ::std::option::Option<i64>) -> Self {
+        self.credit_quantity = input;
+        self
+    }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn get_credit_quantity(&self) -> &::std::option::Option<i64> {
+        &self.credit_quantity
+    }
+
     /// Consumes the builder and constructs a
     /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
     pub fn build(
@@ -212,6 +237,7 @@ impl CreateSubscriptionTokenInputBuilder {
                 subscription_type: self.subscription_type,
                 success_url: self.success_url,
                 cancel_url: self.cancel_url,
+                credit_quantity: self.credit_quantity,
             },
         )
     }

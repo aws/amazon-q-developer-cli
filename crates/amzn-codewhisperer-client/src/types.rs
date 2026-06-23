@@ -51,6 +51,7 @@ pub use crate::types::_console_state::ConsoleState;
 pub use crate::types::_content_checksum_type::ContentChecksumType;
 pub use crate::types::_content_type::ContentType;
 pub use crate::types::_context_truncation_scheme::ContextTruncationScheme;
+pub use crate::types::_continuous_learning::ContinuousLearning;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_currency::Currency;
 pub use crate::types::_cursor_state::CursorState;
@@ -126,8 +127,10 @@ pub use crate::types::_opt_out_preference::OptOutPreference;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_overage_capability::OverageCapability;
 pub use crate::types::_overage_configuration::OverageConfiguration;
+pub use crate::types::_overage_credit::OverageCredit;
 pub use crate::types::_overage_status::OverageStatus;
 pub use crate::types::_package_info::PackageInfo;
+pub use crate::types::_pooling_dimension::PoolingDimension;
 pub use crate::types::_position::Position;
 pub use crate::types::_prediction::Prediction;
 pub use crate::types::_prediction_type::PredictionType;
@@ -350,6 +353,8 @@ mod _content_type;
 
 mod _context_truncation_scheme;
 
+mod _continuous_learning;
+
 mod _conversation_state;
 
 mod _currency;
@@ -500,9 +505,13 @@ mod _overage_capability;
 
 mod _overage_configuration;
 
+mod _overage_credit;
+
 mod _overage_status;
 
 mod _package_info;
+
+mod _pooling_dimension;
 
 mod _position;
 
