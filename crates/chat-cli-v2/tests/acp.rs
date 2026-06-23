@@ -1159,6 +1159,235 @@ async fn http_mcp_server_oauth_request_triggers_ext_notification() {
     );
 }
 
+/// Minimal HTTP endpoint that returns a fixed JSON body for any GET. Stands in
+/// for the MCP registry the agent fetches via `KIRO_MCP_REGISTRY_URL_OVERRIDE`.
+/// Returns the URL and a task handle (aborted on drop by the caller).
+async fn spawn_mock_registry(body: String) -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::{
+        AsyncReadExt,
+        AsyncWriteExt,
+    };
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind registry listener");
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{addr}/registry");
+
+    let task = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let body = body.clone();
+            tokio::spawn(async move {
+                // Drain the request (a single GET fits in one read); we serve the
+                // same body regardless of path.
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf).await;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes()).await;
+                let _ = stream.flush().await;
+            });
+        }
+    });
+
+    (url, task)
+}
+
+/// End-to-end: initial OAuth flow against a **registry-sourced** MCP server.
+///
+/// This drives the full stack — the real `chat_cli acp` subprocess, the ACP
+/// protocol, and `chat_cli_v2`'s real `RegistryAdapter` — rather than the agent
+/// crate in isolation. A registry is served over HTTP and pointed at via
+/// `KIRO_MCP_REGISTRY_URL_OVERRIDE`; it resolves a `"type": "registry"` entry in
+/// the session's agent config into the OAuth-protected mock server. The test
+/// plays the user's browser to complete the handshake (fetching the
+/// authorization URL, which 302-redirects to the CLI's loopback listener with
+/// the auth code), then asserts via `/mcp` that the resolved server comes up
+/// running with its tool — proving the handshake completed end-to-end.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn e2e_oauth_registry_resolved_server_completes_handshake() {
+    use agent::agent_config::definitions::{
+        AgentConfigV2025_08_22,
+        McpServerConfig,
+        RegistryMcpServerConfig,
+    };
+    use mock_mcp_server::{
+        MockMcpServerBuilder,
+        MockResponse,
+        ToolDef,
+        prebuild_bin,
+    };
+
+    prebuild_bin().expect("mock mcp server build failed");
+
+    // 1. OAuth-protected MCP server exposing a single `echo` tool.
+    let mcp = MockMcpServerBuilder::new()
+        .add_tool(ToolDef {
+            name: "echo".to_string(),
+            description: "Echoes back the input".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        })
+        .add_response(MockResponse {
+            tool: "echo".to_string(),
+            input_match: None,
+            response: serde_json::json!({"echoed": true}),
+        })
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    mcp.wait_ready(Duration::from_secs(10)).expect("mock server not ready");
+
+    // 2. Registry that resolves the server name to the OAuth mock's URL.
+    let registry_body = serde_json::json!({
+        "servers": [{
+            "server": {
+                "name": "oauth-registry-mcp",
+                "description": "OAuth-protected registry server",
+                "version": "1.0.0",
+                "remotes": [{ "type": "streamable-http", "url": mcp.url() }]
+            }
+        }]
+    })
+    .to_string();
+    let (registry_url, registry_task) = spawn_mock_registry(registry_body).await;
+
+    // 3. Agent whose only MCP server is a registry placeholder; the real RegistryAdapter resolves it
+    //    against the registry above.
+    let agent_config = AgentConfigV2025_08_22 {
+        name: "oauth_registry_agent".to_string(),
+        mcp_servers: [(
+            "oauth-registry-mcp".to_string(),
+            McpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: vec![],
+                oauth: None,
+            }),
+        )]
+        .into_iter()
+        .collect(),
+        tools: vec!["*".to_string()],
+        ..Default::default()
+    };
+
+    let (mut harness, client) = AcpTestHarnessBuilder::new("e2e_oauth_registry")
+        .with_agent_config("oauth_registry_agent", &agent_config)
+        .with_setting("chat.defaultAgent", "oauth_registry_agent")
+        .with_env("KIRO_MCP_REGISTRY_URL_OVERRIDE", &registry_url)
+        .with_trust_all(true)
+        .build()
+        .await;
+
+    let oauth_method = methods::MCP_OAUTH_REQUEST
+        .strip_prefix('_')
+        .expect("oauth method should have a leading underscore")
+        .to_string();
+
+    // 4. Browser driver: complete every OAuth request by fetching its authorization URL. Runs
+    //    concurrently so it can satisfy a handshake that `new_session` may block on while the server
+    //    initializes.
+    let driver_client = client.clone();
+    let driver_method = oauth_method.clone();
+    let browser = tokio::spawn(async move {
+        let http = reqwest::Client::new();
+        let mut driven = std::collections::HashSet::new();
+        loop {
+            let captured = driver_client.captured().await;
+            for n in &captured.ext_notifications {
+                if n.method.as_ref() != driver_method {
+                    continue;
+                }
+                let Ok(params) = serde_json::from_str::<serde_json::Value>(n.params.get()) else {
+                    continue;
+                };
+                if let Some(oauth_url) = params.get("oauthUrl").and_then(|v| v.as_str())
+                    && driven.insert(oauth_url.to_string())
+                {
+                    let _ = http.get(oauth_url).send().await;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+
+    // 5. Create the session (launches the registry-resolved OAuth server).
+    let session_id = client
+        .new_session(harness.paths.cwd.clone())
+        .await
+        .expect("new_session failed")
+        .session_id;
+
+    // 6. Confirm an OAuth request was actually issued for the registry server.
+    let saw_oauth_request = client
+        .wait_for_timeout(
+            |c| {
+                c.ext_notifications.iter().any(|n| {
+                    n.method.as_ref() == oauth_method
+                        && serde_json::from_str::<serde_json::Value>(n.params.get())
+                            .ok()
+                            .and_then(|p| p.get("serverName").and_then(|v| v.as_str().map(String::from)))
+                            == Some("oauth-registry-mcp".to_string())
+                })
+            },
+            Duration::from_secs(30),
+        )
+        .await;
+    assert!(
+        saw_oauth_request,
+        "expected an OAuth request for the registry-resolved server"
+    );
+
+    // 7. After the browser completes the handshake, the server must come up running and expose its
+    //    tool. Poll `/mcp` until it does.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let mut last_data = serde_json::Value::Null;
+    let running = loop {
+        let result = client
+            .execute_command(session_id.clone(), serde_json::json!({"command": "mcp", "args": {}}))
+            .await
+            .expect("/mcp command failed");
+
+        if let Some(data) = result.data.clone() {
+            let is_running = data.get("servers").and_then(|s| s.as_array()).is_some_and(|servers| {
+                servers.iter().any(|srv| {
+                    srv.get("name").and_then(|v| v.as_str()) == Some("oauth-registry-mcp")
+                        && srv.get("status").and_then(|v| v.as_str()) == Some("running")
+                        && srv.get("toolCount").and_then(|v| v.as_u64()).unwrap_or(0) >= 1
+                })
+            });
+            last_data = data;
+            if is_running {
+                break true;
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            break false;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
+
+    browser.abort();
+    registry_task.abort();
+
+    assert!(
+        running,
+        "registry-resolved OAuth server never reached 'running' with its tool; last /mcp data: {last_data}"
+    );
+
+    let _ = &mut harness;
+}
+
 /// Test that agent swap properly unloads old MCP servers and loads new ones.
 ///
 /// This test uses unique tool/server names (swap_test_*) to avoid conflicts with

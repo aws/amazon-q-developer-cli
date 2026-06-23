@@ -144,7 +144,9 @@ pub(crate) async fn handle_internal_prompt(
                     if !turn_text.is_empty() {
                         last_message = Some(turn_text);
                     }
-                    if let Some(s) = summary {
+                    // Prefer the lossless channel (buffered by turn end), falling
+                    // back to the broadcast-captured value.
+                    if let Some(s) = agent.take_summary().await.or(summary.take()) {
                         return Ok(s);
                     } else if !has_sent_failsafe {
                         has_sent_failsafe = true;
@@ -171,13 +173,9 @@ pub(crate) async fn handle_internal_prompt(
                     }
                 },
                 AgentEvent::Stop(AgentStopReason::Cancelled) => {
-                    // If the subagent's summary tool already ran and emitted
-                    // SubagentSummary before cancellation landed (model produced
-                    // summary, execute() broadcast it, then the user pressed Esc
-                    // / a sibling kill cascaded a parent cancel), honor that
-                    // result instead of dropping it. If no summary was emitted,
-                    // the cancelled subagent simply has no result to report.
-                    if let Some(s) = summary {
+                    // Honor a summary delivered before the cancel landed (lossless
+                    // channel first); otherwise the cancelled subagent has no result.
+                    if let Some(s) = agent.take_summary().await.or(summary.take()) {
                         return Ok(s);
                     }
                     return Err(InternalPromptError::Cancelled);
@@ -200,10 +198,12 @@ pub(crate) async fn handle_internal_prompt(
                 _ => {},
             },
             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                // Harmless now: the summary rides the lossless channel; only
+                // UI/telemetry updates are lost on a broadcast lag.
                 tracing::warn!(%skipped, "Subagent broadcast receiver lagged; skipped events");
             },
             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                if let Some(s) = summary {
+                if let Some(s) = agent.take_summary().await.or(summary.take()) {
                     return Ok(s);
                 }
                 return Err(InternalPromptError::Cancelled);

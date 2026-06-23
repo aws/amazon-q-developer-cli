@@ -197,11 +197,38 @@ pub(crate) fn alert_correct_errors(
     builder
 }
 
+pub(crate) fn inline_artifact_correct_errors(
+    mut builder: crate::types::builders::InlineArtifactBuilder,
+) -> crate::types::builders::InlineArtifactBuilder {
+    if builder.dsl.is_none() {
+        builder.dsl = Some(Default::default())
+    }
+    if builder.summary.is_none() {
+        builder.summary = Some(Default::default())
+    }
+    if builder.title.is_none() {
+        builder.title = Some(Default::default())
+    }
+    if builder.artifact_label.is_none() {
+        builder.artifact_label = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn progress_correct_errors(
     mut builder: crate::types::builders::ProgressBuilder,
 ) -> crate::types::builders::ProgressBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn q_clarification_correct_errors(
+    mut builder: crate::types::builders::QClarificationBuilder,
+) -> crate::types::builders::QClarificationBuilder {
+    if builder.questions.is_none() {
+        builder.questions = Some(Default::default())
     }
     builder
 }
@@ -344,6 +371,18 @@ pub(crate) fn web_link_correct_errors(
     builder
 }
 
+pub(crate) fn clarification_question_correct_errors(
+    mut builder: crate::types::builders::ClarificationQuestionBuilder,
+) -> crate::types::builders::ClarificationQuestionBuilder {
+    if builder.question.is_none() {
+        builder.question = Some(Default::default())
+    }
+    if builder.options.is_none() {
+        builder.options = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn cloud_watch_troubleshooting_link_correct_errors(
     mut builder: crate::types::builders::CloudWatchTroubleshootingLinkBuilder,
 ) -> crate::types::builders::CloudWatchTroubleshootingLinkBuilder {
@@ -382,6 +421,18 @@ pub(crate) fn task_action_note_correct_errors(
 ) -> crate::types::builders::TaskActionNoteBuilder {
     if builder.content.is_none() {
         builder.content = Some(Default::default())
+    }
+    builder
+}
+
+pub(crate) fn clarification_answer_option_correct_errors(
+    mut builder: crate::types::builders::ClarificationAnswerOptionBuilder,
+) -> crate::types::builders::ClarificationAnswerOptionBuilder {
+    if builder.label.is_none() {
+        builder.label = Some(Default::default())
+    }
+    if builder.value.is_none() {
+        builder.value = Some(Default::default())
     }
     builder
 }

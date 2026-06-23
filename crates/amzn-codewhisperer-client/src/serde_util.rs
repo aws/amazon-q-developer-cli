@@ -716,6 +716,15 @@ pub(crate) fn by_user_analytics_correct_errors(
     builder
 }
 
+pub(crate) fn continuous_learning_correct_errors(
+    mut builder: crate::types::builders::ContinuousLearningBuilder,
+) -> crate::types::builders::ContinuousLearningBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
 pub(crate) fn dashboard_analytics_correct_errors(
     mut builder: crate::types::builders::DashboardAnalyticsBuilder,
 ) -> crate::types::builders::DashboardAnalyticsBuilder {
@@ -748,6 +757,18 @@ pub(crate) fn model_configuration_correct_errors(
 ) -> crate::types::builders::ModelConfigurationBuilder {
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn overage_credit_correct_errors(
+    mut builder: crate::types::builders::OverageCreditBuilder,
+) -> crate::types::builders::OverageCreditBuilder {
+    if builder.current_usage.is_none() {
+        builder.current_usage = Some(Default::default())
+    }
+    if builder.usage_limit.is_none() {
+        builder.usage_limit = Some(Default::default())
     }
     builder
 }

@@ -3,10 +3,10 @@ doc_meta:
   title: /settings
   description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, verbosity, display, lite]
-  related: [theme, title, verbosity, lite]
-  validated: 2026-06-23
-  commit: f6731f45a
+  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title]
+  related: [theme, title]
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: false
 ---
@@ -14,8 +14,6 @@ doc_meta:
 ## Overview
 
 The `/settings` command opens a menu for configuring Kiro's user-facing preferences. It is the single entry point for preference-style configuration inside the TUI.
-
-In lite mode, `/settings` opens an inline command menu (since lite has no overlay panels). The same subcommands are available; navigation works the same way.
 
 Preference changes are persisted to disk and apply across all sessions.
 
@@ -35,28 +33,23 @@ You can also jump directly to a subcommand:
 
 ## Subcommands
 
-| Subcommand | Description | Details |
-|--------|--------|--------|
-| `display` | Default UI at startup, animations, ASCII art, icons, and thinking | Toggle display preferences |
-| `verbosity` | Tool args, reasoning, output filters, density (lite mode only) | See [/verbosity](verbosity.md) |
-| `theme` | Colors, prompt style, diff styling | See [/theme](theme.md) |
-| `keybindings` | View configurable keyboard shortcuts | Read-only; edit in `~/.kiro/settings.json` |
-| `terminal` | Shift+Enter / Option+Enter for newlines | Configures your terminal app |
-| `history` | Prompt history scope (session or global) | Choose between per-session or shared history |
-
-The `verbosity` subcommand only appears in the menu in lite mode. In TUI mode, typing `/settings verbosity` directly still routes to the handler, which responds with a lite-mode-only error.
+| Subcommand    | Description                                          | Details |
+|---------------|------------------------------------------------------|---------|
+| `display`     | Control animations, ASCII art, and icons             | Toggle display preferences |
+| `theme`       | Colors, prompt style, diff styling                   | See [/theme](theme.md) |
+| `keybindings` | View configurable keyboard shortcuts                 | Read-only; edit in `~/.kiro/settings.json` |
+| `terminal`    | Shift+Enter / Option+Enter for newlines              | Configures your terminal app |
+| `history`     | Prompt history scope (session or global)             | Choose between per-session or shared history |
 
 ### display
 
 Opens a toggle panel for display settings. Use ↑↓ to navigate, ←→ to toggle, Enter to apply and close, Esc to go back.
 
 | Setting | Key | Default | Effect |
-|--------|--------|--------|--------|
-| Default UI | `chat.ui.mode` | tui | Choose startup UI mode: `tui` (full TUI) or `lite` (lightweight scrollback). Requires lite rollout. |
+|---------|-----|---------|--------|
 | Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
 | ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
 | Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
-| Show thinking | `chat.showThinking` | on | When off, collapses model thinking to a plain indicator |
 | Terminal title | `chat.terminalTitle` | off | When on, updates the terminal window title with session info via OSC 0 sequences |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
@@ -99,7 +92,7 @@ The result is shown as a transient notification; the settings overlay closes aut
 Before modifying anything, the command writes a `.bak` of the file it's about to edit (for Apple Terminal, it exports the full `com.apple.Terminal` plist). Restoring is just a file copy.
 
 | Terminal | What's written | Where |
-|--------|--------|--------|
+|----------|----------------|-------|
 | VS Code / Cursor / Windsurf | Appends a keybinding: `shift+enter` → `workbench.action.terminal.sendSequence` with `\u001b\r` (Esc + CR) | `~/Library/Application Support/<app>/User/keybindings.json` (Linux / Windows paths differ) |
 | Alacritty | Appends `[[keyboard.bindings]]` entry mapping Shift+Return to `\u001B\r` | `~/.config/alacritty/alacritty.toml` (or `$XDG_CONFIG_HOME`) |
 | Zed | Appends a `Terminal`-scoped `shift-enter` binding sending `\u001b\r` | `~/.config/zed/keymap.json` |

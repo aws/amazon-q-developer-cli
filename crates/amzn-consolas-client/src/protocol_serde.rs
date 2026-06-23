@@ -182,6 +182,8 @@ pub(crate) mod shape_by_user_analytics;
 
 pub(crate) mod shape_code_star_reference;
 
+pub(crate) mod shape_continuous_learning;
+
 pub(crate) mod shape_customization_summary;
 
 pub(crate) mod shape_customization_version_summary;

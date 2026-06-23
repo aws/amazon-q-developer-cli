@@ -18,6 +18,32 @@ pub struct ConsoleState {
     pub task_name: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub ux_error_message: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub ux_success_message: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub browser_language: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub is_global_console: ::std::option::Option<bool>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub timezone_offset_minutes: ::std::option::Option<i32>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub components_tree: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub user_selection: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub resource_tables: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub resource_identifier: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub resource_property: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_ux_error_message: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_ux_success_message: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_tasks_completed: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_tasks_cancelled: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleState {
     #[allow(missing_docs)] // documentation missing in model
@@ -54,6 +80,71 @@ impl ConsoleState {
     pub fn ux_error_message(&self) -> ::std::option::Option<&str> {
         self.ux_error_message.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn ux_success_message(&self) -> ::std::option::Option<&str> {
+        self.ux_success_message.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn browser_language(&self) -> ::std::option::Option<&str> {
+        self.browser_language.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_global_console(&self) -> ::std::option::Option<bool> {
+        self.is_global_console
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn timezone_offset_minutes(&self) -> ::std::option::Option<i32> {
+        self.timezone_offset_minutes
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn components_tree(&self) -> ::std::option::Option<&str> {
+        self.components_tree.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn user_selection(&self) -> ::std::option::Option<&str> {
+        self.user_selection.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_tables(&self) -> ::std::option::Option<&str> {
+        self.resource_tables.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_identifier(&self) -> ::std::option::Option<&str> {
+        self.resource_identifier.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_property(&self) -> ::std::option::Option<&str> {
+        self.resource_property.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_ux_error_message(&self) -> ::std::option::Option<&str> {
+        self.last_ux_error_message.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_ux_success_message(&self) -> ::std::option::Option<&str> {
+        self.last_ux_success_message.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_tasks_completed(&self) -> ::std::option::Option<&str> {
+        self.last_tasks_completed.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_tasks_cancelled(&self) -> ::std::option::Option<&str> {
+        self.last_tasks_cancelled.as_deref()
+    }
 }
 impl ::std::fmt::Debug for ConsoleState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -65,6 +156,19 @@ impl ::std::fmt::Debug for ConsoleState {
         formatter.field("service_subconsole_page", &self.service_subconsole_page);
         formatter.field("task_name", &"*** Sensitive Data Redacted ***");
         formatter.field("ux_error_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("ux_success_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("browser_language", &self.browser_language);
+        formatter.field("is_global_console", &self.is_global_console);
+        formatter.field("timezone_offset_minutes", &self.timezone_offset_minutes);
+        formatter.field("components_tree", &"*** Sensitive Data Redacted ***");
+        formatter.field("user_selection", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_tables", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_identifier", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_property", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_ux_error_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_ux_success_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_tasks_completed", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_tasks_cancelled", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
@@ -87,6 +191,19 @@ pub struct ConsoleStateBuilder {
     pub(crate) service_subconsole_page: ::std::option::Option<::std::string::String>,
     pub(crate) task_name: ::std::option::Option<::std::string::String>,
     pub(crate) ux_error_message: ::std::option::Option<::std::string::String>,
+    pub(crate) ux_success_message: ::std::option::Option<::std::string::String>,
+    pub(crate) browser_language: ::std::option::Option<::std::string::String>,
+    pub(crate) is_global_console: ::std::option::Option<bool>,
+    pub(crate) timezone_offset_minutes: ::std::option::Option<i32>,
+    pub(crate) components_tree: ::std::option::Option<::std::string::String>,
+    pub(crate) user_selection: ::std::option::Option<::std::string::String>,
+    pub(crate) resource_tables: ::std::option::Option<::std::string::String>,
+    pub(crate) resource_identifier: ::std::option::Option<::std::string::String>,
+    pub(crate) resource_property: ::std::option::Option<::std::string::String>,
+    pub(crate) last_ux_error_message: ::std::option::Option<::std::string::String>,
+    pub(crate) last_ux_success_message: ::std::option::Option<::std::string::String>,
+    pub(crate) last_tasks_completed: ::std::option::Option<::std::string::String>,
+    pub(crate) last_tasks_cancelled: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleStateBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -208,6 +325,227 @@ impl ConsoleStateBuilder {
         &self.ux_error_message
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn ux_success_message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.ux_success_message = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_ux_success_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.ux_success_message = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_ux_success_message(&self) -> &::std::option::Option<::std::string::String> {
+        &self.ux_success_message
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn browser_language(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.browser_language = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_browser_language(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.browser_language = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_browser_language(&self) -> &::std::option::Option<::std::string::String> {
+        &self.browser_language
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_global_console(mut self, input: bool) -> Self {
+        self.is_global_console = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_is_global_console(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.is_global_console = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_is_global_console(&self) -> &::std::option::Option<bool> {
+        &self.is_global_console
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn timezone_offset_minutes(mut self, input: i32) -> Self {
+        self.timezone_offset_minutes = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_timezone_offset_minutes(mut self, input: ::std::option::Option<i32>) -> Self {
+        self.timezone_offset_minutes = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_timezone_offset_minutes(&self) -> &::std::option::Option<i32> {
+        &self.timezone_offset_minutes
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn components_tree(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.components_tree = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_components_tree(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.components_tree = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_components_tree(&self) -> &::std::option::Option<::std::string::String> {
+        &self.components_tree
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn user_selection(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.user_selection = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_user_selection(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.user_selection = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_user_selection(&self) -> &::std::option::Option<::std::string::String> {
+        &self.user_selection
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_tables(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.resource_tables = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_resource_tables(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.resource_tables = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_resource_tables(&self) -> &::std::option::Option<::std::string::String> {
+        &self.resource_tables
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_identifier(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.resource_identifier = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_resource_identifier(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.resource_identifier = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_resource_identifier(&self) -> &::std::option::Option<::std::string::String> {
+        &self.resource_identifier
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn resource_property(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.resource_property = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_resource_property(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.resource_property = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_resource_property(&self) -> &::std::option::Option<::std::string::String> {
+        &self.resource_property
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_ux_error_message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_ux_error_message = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_ux_error_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_ux_error_message = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_ux_error_message(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_ux_error_message
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_ux_success_message(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_ux_success_message = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_ux_success_message(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_ux_success_message = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_ux_success_message(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_ux_success_message
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_tasks_completed(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_tasks_completed = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_tasks_completed(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_tasks_completed = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_tasks_completed(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_tasks_completed
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_tasks_cancelled(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_tasks_cancelled = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_tasks_cancelled(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_tasks_cancelled = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_tasks_cancelled(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_tasks_cancelled
+    }
+
     /// Consumes the builder and constructs a [`ConsoleState`](crate::types::ConsoleState).
     pub fn build(self) -> crate::types::ConsoleState {
         crate::types::ConsoleState {
@@ -218,6 +556,19 @@ impl ConsoleStateBuilder {
             service_subconsole_page: self.service_subconsole_page,
             task_name: self.task_name,
             ux_error_message: self.ux_error_message,
+            ux_success_message: self.ux_success_message,
+            browser_language: self.browser_language,
+            is_global_console: self.is_global_console,
+            timezone_offset_minutes: self.timezone_offset_minutes,
+            components_tree: self.components_tree,
+            user_selection: self.user_selection,
+            resource_tables: self.resource_tables,
+            resource_identifier: self.resource_identifier,
+            resource_property: self.resource_property,
+            last_ux_error_message: self.last_ux_error_message,
+            last_ux_success_message: self.last_ux_success_message,
+            last_tasks_completed: self.last_tasks_completed,
+            last_tasks_cancelled: self.last_tasks_cancelled,
         }
     }
 }
@@ -231,6 +582,19 @@ impl ::std::fmt::Debug for ConsoleStateBuilder {
         formatter.field("service_subconsole_page", &self.service_subconsole_page);
         formatter.field("task_name", &"*** Sensitive Data Redacted ***");
         formatter.field("ux_error_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("ux_success_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("browser_language", &self.browser_language);
+        formatter.field("is_global_console", &self.is_global_console);
+        formatter.field("timezone_offset_minutes", &self.timezone_offset_minutes);
+        formatter.field("components_tree", &"*** Sensitive Data Redacted ***");
+        formatter.field("user_selection", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_tables", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_identifier", &"*** Sensitive Data Redacted ***");
+        formatter.field("resource_property", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_ux_error_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_ux_success_message", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_tasks_completed", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_tasks_cancelled", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }

@@ -4,7 +4,11 @@ use std::path::{
     PathBuf,
 };
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{
+    Duration,
+    SystemTime,
+    UNIX_EPOCH,
+};
 
 pub use chat_cli_v2::launch_options::{
     AgentEngine,
@@ -50,6 +54,9 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
 
     emit_cli_session_started(os, agent_engine).await;
 
+    let non_interactive = matches!(&interactivity, Interactivity::NonInteractive { .. });
+    run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
+
     let mut cli_session_completion_emitted = false;
     let result = if let Interactivity::NonInteractive { input } = interactivity {
         launch_acp_non_interactive(
@@ -73,6 +80,54 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
     }
 
     result
+}
+
+/// Garbage-collect stale extracted KAS bundles at launch. Only relevant to the
+/// KAS engine. Runs synchronously for non-interactive sessions (no UI to block,
+/// and it makes the cleanup observable); for interactive sessions it is
+/// dispatched to a detached task so TUI startup is never blocked by directory
+/// deletion. Best-effort: failures are swallowed.
+async fn run_kas_gc_on_startup(os: &Os, agent_engine: AgentEngine, background: bool) {
+    if !matches!(agent_engine, AgentEngine::Kas) {
+        return;
+    }
+    let Ok(kas_root) = crate::util::paths::kas_bundle_dir() else {
+        return;
+    };
+    let current = crate::embedded_tui::kas_version();
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    if background {
+        tokio::spawn(async move {
+            // A fresh handle so the task owns its state; both crates' databases
+            // resolve to the same file.
+            let Ok(database) = crate::database::Database::new_default().await else {
+                return;
+            };
+            crate::embedded_tui::run_gc(
+                &database,
+                &kas_root,
+                current.as_deref(),
+                now_ms,
+                crate::embedded_tui::KAS_VERSION_MAX_AGE,
+                crate::embedded_tui::is_pid_alive,
+            )
+            .await;
+        });
+    } else {
+        crate::embedded_tui::run_gc(
+            &os.database,
+            &kas_root,
+            current.as_deref(),
+            now_ms,
+            crate::embedded_tui::KAS_VERSION_MAX_AGE,
+            crate::embedded_tui::is_pid_alive,
+        )
+        .await;
+    }
 }
 
 async fn emit_cli_session_started(os: &Os, agent_engine: AgentEngine) {
@@ -355,7 +410,7 @@ async fn launch_acp_interactive(
 
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 
-            let (node, server) = crate::embedded_tui::ensure_kas_assets(os).await?;
+            let (node, server) = crate::embedded_tui::ensure_kas_assets(os, true).await?;
             let node = node.unwrap_or_else(|| PathBuf::from("node"));
             cmd.env(KIRO_KAS_NODE_PATH, &node);
             if let Some(server) = server.as_ref() {

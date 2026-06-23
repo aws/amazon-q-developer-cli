@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Improve subagent resilience: summary results are reliably delivered under load, and empty responses degrade gracefully"
+}

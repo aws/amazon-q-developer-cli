@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-23
-  commit: f6731f45a
+  validated: 2026-06-03
+  commit: 28e17b5ed
   status: validated
   testable_headless: true
   category: slash_command
@@ -81,16 +81,6 @@ The effort level is automatically persisted as a per-model default in your setti
 ```
 Effort configuration is currently not available on claude-sonnet-4.5. Select a /model that supports effort (like claude-opus-4.7) to configure.
 ```
-
-### Example 4: Auto Model Chaining
-
-When the active model is `auto` (dynamically selected by the server), running `/effort` without arguments automatically opens the `/model` picker first. Once you select a model, `/effort` re-runs so you can choose a level:
-
-```
-/effort
-```
-
-**Output**: Opens the model picker → after selection, opens the effort level menu.
 
 ## Persistent Defaults via Settings
 
