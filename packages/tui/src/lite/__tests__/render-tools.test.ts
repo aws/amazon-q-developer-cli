@@ -139,60 +139,68 @@ describe('renderToolCall', () => {
     for (const r of rawContains) expect(result).toContain(r);
   });
 
-  test('inline arg chip renders next to tool name', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      status: 'done',
+  // Inline-arg / reasoning LAYOUT: the inline arg chip stays on the tool-name
+  // row; reasoning goes inline on row 0 ONLY when there's no inline arg, else
+  // each reasoning line indents on its own row below. `lineCount` pins the
+  // exact row shape; `rows` lists per-row contains([0]) / absent([1]) facts.
+  test.each<{
+    name: string;
+    input: Parameters<typeof renderToolCall>[0];
+    lineCount: number;
+    rows: Array<[string[], string[]?]>;
+  }>([
+    {
+      name: 'inline arg chip renders next to tool name (single row)',
+      input: { name: 'shell', inlineArg: '[git status]', status: 'done' },
+      lineCount: 1,
+      rows: [[['shell [git status]']]],
+    },
+    {
+      name: 'inline arg + reasoning: arg inline, reasoning on its own row below',
+      input: {
+        name: 'shell',
+        inlineArg: '[git status]',
+        description: 'Check the working tree state',
+        status: 'done',
+      },
+      lineCount: 2,
+      rows: [
+        [['shell [git status]'], ['Check the working tree state']],
+        [['Check the working tree state']],
+      ],
+    },
+    {
+      name: 'reasoning without inline arg stays inline on the first row',
+      input: {
+        name: 'shell',
+        description: 'Check the working tree state',
+        status: 'done',
+      },
+      lineCount: 1,
+      rows: [[['shell', 'Check the working tree state']]],
+    },
+    {
+      name: 'multi-line reasoning + inline arg: every reasoning line indents below',
+      input: {
+        name: 'shell',
+        inlineArg: '[git status]',
+        description: 'First reason\nsecond reason',
+        status: 'done',
+      },
+      lineCount: 3,
+      rows: [
+        [['shell [git status]'], ['First reason']],
+        [['First reason']],
+        [['second reason']],
+      ],
+    },
+  ])('$name', ({ input, lineCount, rows }) => {
+    const lines = stripAnsi(renderToolCall(input)).split('\n');
+    expect(lines.length).toBe(lineCount);
+    rows.forEach(([contains, absent], i) => {
+      for (const c of contains) expect(lines[i]).toContain(c);
+      for (const a of absent ?? []) expect(lines[i]).not.toContain(a);
     });
-    // Strip ANSI to assert structural shape on a single line.
-    const plain = stripAnsi(result);
-    expect(plain).toContain('shell [git status]');
-    // No newline → reasoning isn't taking up a line below.
-    expect(plain.split('\n').length).toBe(1);
-  });
-
-  test('inline arg + reasoning: args inline, reasoning on its own line below', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      description: 'Check the working tree state',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(2);
-    expect(lines[0]).toContain('shell [git status]');
-    // Reasoning on its own indented line below — never inline next to the
-    // tool name when an inline arg is present.
-    expect(lines[0]).not.toContain('Check the working tree state');
-    expect(lines[1]).toContain('Check the working tree state');
-  });
-
-  test('reasoning without inline arg keeps legacy inline-on-first-line shape', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      description: 'Check the working tree state',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(1);
-    expect(lines[0]).toContain('shell');
-    expect(lines[0]).toContain('Check the working tree state');
-  });
-
-  test('multi-line reasoning + inline arg: every reasoning line indents below', () => {
-    const result = renderToolCall({
-      name: 'shell',
-      inlineArg: '[git status]',
-      description: 'First reason\nsecond reason',
-      status: 'done',
-    });
-    const lines = stripAnsi(result).split('\n');
-    expect(lines.length).toBe(3);
-    expect(lines[0]).toContain('shell [git status]');
-    expect(lines[0]).not.toContain('First reason');
-    expect(lines[1]).toContain('First reason');
-    expect(lines[2]).toContain('second reason');
   });
 });
 
