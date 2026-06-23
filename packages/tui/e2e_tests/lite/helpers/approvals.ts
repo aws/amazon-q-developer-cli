@@ -38,37 +38,33 @@ export async function pushWriteApprovalEvent(
   await tc.pushSendMessageResponse(null);
 }
 
+const ALLOW_ONCE: PermissionOption = {
+  kind: ApprovalOptionId.AllowOnce,
+  name: 'Allow Once',
+  optionId: 'allow_once',
+};
+const ALLOW_ALWAYS: PermissionOption = {
+  kind: ApprovalOptionId.AllowAlways,
+  name: 'Allow Always',
+  optionId: 'allow_always',
+};
+const REJECT_ONCE: PermissionOption = {
+  kind: ApprovalOptionId.RejectOnce,
+  name: 'Reject Once',
+  optionId: 'reject_once',
+};
+
 /** Allow Once / Allow Always / Reject Once — the common 3-button option set. */
 export const ALLOW_ALWAYS_REJECT_OPTIONS: PermissionOption[] = [
-  {
-    kind: ApprovalOptionId.AllowOnce,
-    name: 'Allow Once',
-    optionId: 'allow_once',
-  },
-  {
-    kind: ApprovalOptionId.AllowAlways,
-    name: 'Allow Always',
-    optionId: 'allow_always',
-  },
-  {
-    kind: ApprovalOptionId.RejectOnce,
-    name: 'Reject Once',
-    optionId: 'reject_once',
-  },
+  ALLOW_ONCE,
+  ALLOW_ALWAYS,
+  REJECT_ONCE,
 ];
 
-/** Allow Once / Reject Once — the 2-button option set (subagent/inner approvals). */
+/** Allow Once / Reject Once — the 2-button set (subagent/inner approvals). */
 export const ALLOW_REJECT_OPTIONS: PermissionOption[] = [
-  {
-    kind: ApprovalOptionId.AllowOnce,
-    name: 'Allow Once',
-    optionId: 'allow_once',
-  },
-  {
-    kind: ApprovalOptionId.RejectOnce,
-    name: 'Reject Once',
-    optionId: 'reject_once',
-  },
+  ALLOW_ONCE,
+  REJECT_ONCE,
 ];
 
 export interface InjectApprovalOpts {

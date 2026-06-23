@@ -15,39 +15,35 @@ type LaunchE2EOpts = {
 };
 
 /**
- * Launch the e2e E2ETestCase in lite mode and run the readiness ceremony
- * (wait for prompt, slash-command registry, session id) repeated across every
- * lite e2e test. Mirrors launchLiteInteg on the integ side.
+ * Launch an e2e E2ETestCase and run the readiness ceremony (wait for prompt,
+ * slash-command registry, session id) repeated across every lite e2e test.
+ * Mirrors launchLiteInteg on the integ side. lite mode waits for the '>'
+ * prompt; tui mode waits for 'ask a question'.
  */
-export async function launchLiteE2E(
+async function launchModeE2E(
   testName: string,
-  opts: LaunchE2EOpts = {}
+  lite: boolean,
+  opts: LaunchE2EOpts
 ): Promise<E2ETestCase> {
-  const tc = await E2ETestCase.builder()
+  let builder = E2ETestCase.builder()
     .withTestName(testName)
-    .withTerminal(opts.terminal ?? { width: 120, height: 40 })
-    .withLite()
-    .launch();
-  await tc.waitForText('>', opts.waitTimeout ?? 15000);
+    .withTerminal(opts.terminal ?? { width: 120, height: 40 });
+  if (lite) builder = builder.withLite();
+  const tc = await builder.launch();
+  await tc.waitForText(
+    lite ? '>' : 'ask a question',
+    opts.waitTimeout ?? 15000
+  );
   if (opts.waitForCommands !== false) await tc.waitForSlashCommands();
   if (opts.getSession !== false) await tc.getSessionId();
   return tc;
 }
 
-/** launchLiteE2E sibling for the swap tests' TUI-mode boot (no .withLite()). */
-export async function launchTuiE2E(
-  testName: string,
-  opts: LaunchE2EOpts = {}
-): Promise<E2ETestCase> {
-  const tc = await E2ETestCase.builder()
-    .withTestName(testName)
-    .withTerminal(opts.terminal ?? { width: 120, height: 40 })
-    .launch();
-  await tc.waitForText('ask a question', opts.waitTimeout ?? 15000);
-  if (opts.waitForCommands !== false) await tc.waitForSlashCommands();
-  if (opts.getSession !== false) await tc.getSessionId();
-  return tc;
-}
+export const launchLiteE2E = (testName: string, opts: LaunchE2EOpts = {}) =>
+  launchModeE2E(testName, true, opts);
+
+export const launchTuiE2E = (testName: string, opts: LaunchE2EOpts = {}) =>
+  launchModeE2E(testName, false, opts);
 
 /**
  * Type a slash command char-by-char (the per-char delay avoids the
