@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_CHAT_NEW,
+  launchLiteE2E,
   typeSlashCommand,
   sendUserMessage,
 } from './lite/helpers/commands';
@@ -43,13 +44,11 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
   it.skipIf(process.platform === 'win32')(
     'signal-exit: SIGHUP exits cleanly in lite mode',
     async () => {
-      testCase = await E2ETestCase.builder()
-        .withTestName('lite-smoke-signal-exit')
-        .withTerminal({ width: 120, height: 40 })
-        .withLite()
-        .launch();
-
-      await testCase.waitForText('>', 15000);
+      testCase = await launchLiteE2E('lite-smoke-signal-exit', {
+        terminal: { width: 120, height: 40 },
+        waitForCommands: false,
+        getSession: false,
+      });
 
       const launcherPid = testCase.getPid()!;
       expect(launcherPid).toBeGreaterThan(0);
@@ -64,14 +63,10 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
   );
 
   it('cancel-state-recovery: Ctrl+C clears isProcessing in lite mode', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-smoke-cancel-recovery')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-smoke-cancel-recovery', {
+      terminal: { width: 120, height: 40 },
+      waitForCommands: false,
+    });
 
     // keepOpen so the turn stays open until we cancel it.
     await streamReply(testCase, 'Thinking...', { keepOpen: true });
@@ -103,14 +98,9 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
   }, 60000);
 
   it('chat-command: /chat new resets messages in lite mode', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-smoke-chat-new')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
+    testCase = await launchLiteE2E('lite-smoke-chat-new', {
+      terminal: { width: 120, height: 40 },
+    });
 
     const initialSessionId = await testCase.getSessionId();
 
@@ -137,14 +127,10 @@ describe('lite smoke: BOTH-classified e2e tests', () => {
   }, 60000);
 
   it('paste: multi-line indented text lands correctly in lite mode', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-smoke-paste-indent')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-smoke-paste-indent', {
+      terminal: { width: 120, height: 40 },
+      waitForCommands: false,
+    });
 
     await streamReply(testCase, 'Got paste.');
 

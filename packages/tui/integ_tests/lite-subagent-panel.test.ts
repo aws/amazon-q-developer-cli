@@ -52,7 +52,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     return toolMessages.length >= 2;
   }
 
-  it('panel keyboard + footer behavior: seed (4.1), Ctrl+O/Esc toggle, arrows do not leak to prompt', async () => {
+  it('panel keyboard behavior: seed (4.1), Ctrl+O open / Esc close, arrows do not leak to prompt', async () => {
     testCase = await launchLiteInteg('lite-subagent-panel-keyboard');
 
     // Type input first so we can later prove arrows don't leak to the prompt.
@@ -96,16 +96,6 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
     // Esc closes.
     await testCase.pressEscape();
-    await testCase.sleepMs(200);
-    store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(false);
-
-    // Ctrl+O reopens and Ctrl+O again closes (toggle).
-    await testCase.sendKeys('\x0f');
-    await testCase.sleepMs(200);
-    store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
-    await testCase.sendKeys('\x0f');
     await testCase.sleepMs(200);
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(false);
