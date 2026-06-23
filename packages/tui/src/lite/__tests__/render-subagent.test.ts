@@ -682,48 +682,32 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
   ): string =>
     renderWithSummaries([{ stageName: 'a', contextSummary, taskResult }]);
 
-  // Stage body text (contextSummary, or taskResult when contextSummary is
-  // empty) renders through the same markdown pipeline as agent prose: markers
-  // stripped, body preserved.
+  // Stage body text routes through the SAME markdown pipeline as agent prose;
+  // the pipeline's per-syntax mechanics (heading/bold/italic/code/list) are
+  // exhaustively covered in render-markdown.test.ts. Here we pin two
+  // subagent-distinct facts: (1) contextSummary is rendered through it, and
+  // (2) taskResult is the fallback when contextSummary is empty. One compound
+  // fixture per slot proves markers strip, bodies survive, and list items pack
+  // onto consecutive rows.
+  const COMPOUND_MD =
+    '# Findings\n\n**bold** and *italic* and `code`.\n\n- alpha\n- beta\n- gamma';
+  const COMPOUND_PRESENT = ['Findings', 'bold', 'italic', 'code', '- alpha'];
+  const COMPOUND_ABSENT = ['# Findings', '**bold**', '*italic*', '`code`'];
   test.each([
-    [
-      'contextSummary heading (`#` stripped)',
-      '# Findings\n\nFirst line.',
-      '',
-      ['Findings', 'First line.'],
-      ['# Findings'],
-    ],
-    [
-      'contextSummary bold/italic/code markers stripped',
-      '**bold** and *italic* and `code`.',
-      '',
-      ['bold', 'italic', 'code'],
-      ['**bold**', '*italic*', '`code`'],
-    ],
-    [
-      'taskResult fallback when contextSummary empty',
-      '',
-      '## Result\n\n- one\n- two',
-      ['Result', '- one', '- two'],
-      ['## Result'],
-    ],
-  ] as const)('%s', (_name, contextSummary, taskResult, contains, absent) => {
-    const stripped = renderStageBody(contextSummary, taskResult);
-    for (const c of contains) expect(stripped).toContain(c);
-    for (const a of absent) expect(stripped).not.toContain(a);
-  });
-
-  test('contextSummary: list markers rendered through markdown list pipeline', () => {
-    const stripped = renderStageBody('- alpha\n- beta\n- gamma', '');
-    // The markdown list pipeline packs items with no blank-line separators
-    // (vs. plain split which emits each line independently), so adjacent items
-    // land on consecutive output lines.
-    expect(stripped).toContain('- alpha');
-    expect(stripped).toContain('- beta');
-    expect(stripped).toContain('- gamma');
-    const stageBody = stripped.slice(stripped.indexOf('▸ a'));
-    expect(stageBody).toMatch(/- alpha\s*\n\s*- beta/);
-  });
+    ['contextSummary', COMPOUND_MD, ''],
+    ['taskResult fallback when contextSummary empty', '', COMPOUND_MD],
+  ] as const)(
+    'stage body markdown via %s',
+    (_name, contextSummary, taskResult) => {
+      const stripped = renderStageBody(contextSummary, taskResult);
+      for (const c of COMPOUND_PRESENT) expect(stripped).toContain(c);
+      for (const a of COMPOUND_ABSENT) expect(stripped).not.toContain(a);
+      // List items pack onto consecutive rows (markdown list pipeline, not a
+      // blank-separated plain split).
+      const stageBody = stripped.slice(stripped.indexOf('▸ a'));
+      expect(stageBody).toMatch(/- alpha\s*\n\s*- beta/);
+    }
+  );
 
   test('verbose full output: markdown rendered for taskResult', () => {
     setVerboseConfig({ filters: ['subagent'] });
