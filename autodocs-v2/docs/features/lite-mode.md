@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
   related: [classic-vs-tui, settings]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: bfba631a4
   status: validated
   testable_headless: true
 ---
@@ -33,9 +33,29 @@ Lite mode is currently available on internal nightly builds. First-time eligible
 
 Three ways to enter lite mode:
 
-- `/lite` (and `/tui` to switch back) mid-session — re-renders the full history in the target mode's format.
-- `KIRO_UI_MODE=lite` environment variable.
-- `chat.ui.mode: "lite"` in `~/.kiro/settings/cli.json` (or `/settings → display → Default UI`).
+### Slash command (mid-session)
+
+```
+/lite
+```
+
+Switches immediately. Use `/tui` to switch back. Both commands re-render the full history in the target mode's format.
+
+### Environment variable
+
+```bash
+KIRO_UI_MODE=lite kiro-cli chat
+```
+
+### Settings file
+
+```json
+{
+  "chat.ui.mode": "lite"
+}
+```
+
+Set via `/settings → display → Default UI`, or edit `~/.kiro/settings/cli.json` directly.
 
 The mode is resolved highest-priority first:
 
@@ -43,15 +63,36 @@ The mode is resolved highest-priority first:
 2. `chat.ui.mode` setting in `cli.json`
 3. Default (`tui`)
 
-Density presets (`minimal`, `lean`, `default`, `full`) and the individual tool-output knobs are documented in [/verbosity](../slash-commands/verbosity.md).
+## Configuring Density
+
+Density presets (`minimal`, `lean`, `default`, `full`) control how much tool detail appears in scrollback. Configure with `/verbosity`:
+
+```
+/verbosity minimal    # tool names only, no args or output
+/verbosity lean       # inline args, no reasoning
+/verbosity default    # block args, shell output, reasoning
+/verbosity full       # everything, no caps
+```
+
+Individual knobs (tool args mode, reasoning, elapsed time, output filters, truncation) are adjustable via the `/verbosity` interactive menu or CLI subcommands. See [/verbosity](../slash-commands/verbosity.md) for full details.
 
 ## Troubleshooting
 
-- **"Lite mode is not available in this build"** — the feature is gated to internal nightly builds.
-- **Tool output not showing** — check `/verbosity status`; empty filters render no output bars (`/verbosity on` enables all).
+### "Lite mode is not available in this build"
+
+The feature is gated to internal nightly builds. Stable releases do not include lite mode yet.
+
+### Tool output not showing
+
+Check `/verbosity status`. If output filters are empty, no tool output bars render. Use `/verbosity on` to enable all, or `/verbosity +shell` to add specific categories.
+
+### `/clear` behavior
+
+In lite mode, `/clear` clears the conversation context without wiping your terminal scrollback. This is intentional — lite mode never emits terminal clear sequences so your pre-session shell history remains intact.
 
 ## Related
 
 - [Classic vs TUI](classic-vs-tui.md) — UI mode comparison
+- [/verbosity](../slash-commands/verbosity.md) — Density and filter configuration
 - [/settings](../slash-commands/settings.md) — Settings management
 - [/theme](../slash-commands/theme.md) — Theme customization

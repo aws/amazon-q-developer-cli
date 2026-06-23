@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [switch, session, spawn, agent, parallel, monitor, sessions]
   related: [spawn, agent-swap]
-  validated: 2026-06-05
-  commit: 7047ab303
+  validated: 2026-06-23
+  commit: bfba631a4
   status: validated
   testable_headless: false
 ---
