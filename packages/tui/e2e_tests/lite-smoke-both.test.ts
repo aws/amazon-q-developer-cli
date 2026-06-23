@@ -1,20 +1,9 @@
 /**
- * Lite smoke tests for BOTH-classified e2e scenarios.
- *
- * Verifies that selected BOTH-classified e2e tests work in lite mode with
- * an observable behavioral assertion (not just "no crash"). Each surviving
- * test pins a real user-observable invariant: signal-exit (process really
- * exits), cancel-state-recovery (turn really stops + a follow-up turn
- * actually goes through), chat-command (sessionId really changes + old
- * content is purged), paste-preserves-indentation (the multi-line body
- * survives bracketed paste without escape leakage).
- *
- * Earlier "no-crash" smokes for /compact, /clear, and !shell-escape lived
- * here. /clear and !shell-escape are covered with stronger behavioral
- * assertions in integ_tests/lite-misc.test.ts (10.8 / 10.5). /compact
- * needed a real backend round-trip the mock can't provide; the surviving
- * mock-only assertion passed even when /compact did nothing, so it was
- * removed.
+ * Lite smoke tests for BOTH-classified e2e scenarios — each pins a real
+ * user-observable invariant in lite mode (not just "no crash"): signal-exit
+ * (process exits), cancel-state-recovery (turn stops + a follow-up goes
+ * through), chat-command (sessionId changes + old content purged), and paste
+ * (multi-line body survives bracketed paste without escape leakage).
  */
 
 import { describe, expect, it } from 'bun:test';

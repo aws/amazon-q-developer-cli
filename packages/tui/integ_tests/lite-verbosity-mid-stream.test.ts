@@ -38,9 +38,8 @@ describe('lite /verbosity mid-stream cycling', () => {
     let store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
 
-    // Type three /verbosity preset commands during the in-flight turn.
-    // Each must be queued (lite slash-queue branch in handleUserInput),
-    // not dispatched immediately.
+    // Three /verbosity presets mid-turn must hit the lite slash-queue branch in
+    // handleUserInput (queued, not dispatched immediately).
     await testCase.typeAndSubmit('/verbosity minimal');
     await testCase.sleepMs(150);
     await testCase.typeAndSubmit('/verbosity full');
@@ -48,7 +47,6 @@ describe('lite /verbosity mid-stream cycling', () => {
     await testCase.typeAndSubmit('/verbosity lean');
     await testCase.sleepMs(200);
 
-    // (a) All three should be in the queue right now (proof they queued).
     store = await testCase.getStore();
     expect(store.isProcessing).toBe(true);
     const queuedSlashCount = store.queuedMessages.filter((m) =>
@@ -56,8 +54,7 @@ describe('lite /verbosity mid-stream cycling', () => {
     ).length;
     expect(queuedSlashCount).toBe(3);
 
-    // End the streaming turn. The queue drains FIFO: minimal → full → lean.
-    // Drain is async (throws on timeout, the desired failure mode).
+    // End the streaming turn; the queue drains FIFO (minimal → full → lean).
     await testCase.waitForStore(
       (s) =>
         s.queuedMessages.filter((m) => m.startsWith('/verbosity')).length ===
@@ -65,16 +62,14 @@ describe('lite /verbosity mid-stream cycling', () => {
       5000
     );
 
-    // (b) Queue is empty post-drain.
     store = await testCase.getStore();
     expect(
       store.queuedMessages.filter((m: string) => m.startsWith('/verbosity'))
         .length
     ).toBe(0);
 
-    // (c) The streamed agent content is preserved verbatim in committed
-    //     messages — re-rendering under a new preset must not mutate
-    //     <Static>-committed scrollback (append-only contract).
+    // Streamed content must survive verbatim — re-rendering under a new preset
+    // must not mutate <Static>-committed scrollback (append-only contract).
     const allMsgText = store.messages.map((m) => JSON.stringify(m)).join(' ');
     expect(allMsgText).toContain(streamedContent);
 
