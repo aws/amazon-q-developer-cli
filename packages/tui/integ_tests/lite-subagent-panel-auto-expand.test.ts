@@ -1,13 +1,8 @@
 /**
  * Subagent panel auto-expand on inner approval (PR #2643;
- * LiteLayout.tsx:1557-1588 snapshot/restore effect).
- *
- * When a pending approval belongs to a subagent stage (agentName !==
- * mainAgent.name) the panel auto-opens; on clear it restores its prior state.
- * Two cases, asserted via store `subagentPanelOpen`:
- *   (a) was-closed: false→true on approval, back to false on clear.
- *   (b) was-open: stays true on approval AND after clear (proves the
- *       snapshot-restore didn't close a panel that was open beforehand).
+ * LiteLayout.tsx:1557-1588 snapshot/restore effect). When a pending approval
+ * belongs to a subagent stage (agentName !== mainAgent.name) the panel
+ * auto-opens; on clear it restores its prior state.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -68,16 +63,11 @@ describe('lite subagent panel auto-expand on inner approval', () => {
       settleMs: 250,
     });
 
-  // Both cases inject an inner-subagent approval (auto-opens / re-points the
-  // panel) then clear it via 'n' (RejectOnce — Esc would cancel the whole turn
-  // and auto-clamp the panel, masking the snapshot-restore behavior under
-  // test). They differ only by the panel's PRIOR state and what restore yields:
-  //  - was-closed (1 stage): false→true on approval, restores to false.
-  //  - was-open  (2 stages, opened via Ctrl+O; approval on stage B): stays true
-  //    through approval AND after clear (proves restore didn't close a panel
-  //    that was open beforehand).
-  // KIRO_TEST_MOCK_TURN_TIMEOUT_MS keeps isProcessing alive past the 2s
-  // APPROVAL_IDLE_MS gate so ApprovalPrompt's 'n' handler is mounted.
+  // Both cases inject an inner-subagent approval then clear it via 'n'
+  // (RejectOnce — Esc would cancel the whole turn and auto-clamp the panel,
+  // masking the snapshot-restore behavior under test); they differ only by the
+  // panel's PRIOR state. KIRO_TEST_MOCK_TURN_TIMEOUT_MS keeps isProcessing alive
+  // past the 2s APPROVAL_IDLE_MS gate so ApprovalPrompt's 'n' handler is mounted.
   it.each([
     {
       label: 'auto-opens from CLOSED; closes on clear',
