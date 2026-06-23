@@ -15,9 +15,33 @@
 import { describe, expect, it } from 'bun:test';
 import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
+import { launchLiteE2E, sendUserMessage } from './lite/helpers/commands';
 import { assistantEvent, streamReply } from './lite/helpers/responses';
 
 const KR_ENABLED = process.env.KIRO_RUN_KNIGHT_RIDER_TESTS === '1';
+
+/** Push a real shell ToolUseEvent (+ terminating null) over the e2e agent IPC. */
+async function pushShellTool(
+  tc: E2ETestCase,
+  toolUseId: string,
+  command: string
+): Promise<void> {
+  await tc.pushSendMessageResponse([
+    {
+      kind: 'event',
+      data: {
+        kind: 'ToolUseEvent',
+        data: {
+          tool_use_id: toolUseId,
+          name: 'shell',
+          input: JSON.stringify({ command }),
+          stop: true,
+        },
+      },
+    },
+  ]);
+  await tc.pushSendMessageResponse(null);
+}
 
 describe.skipIf(!KR_ENABLED)(
   'knight rider — lite shell + cancel + recover',
@@ -26,96 +50,59 @@ describe.skipIf(!KR_ENABLED)(
     trackCleanup(() => testCase);
 
     it('survives shell streaming, mid-stream cancel, and a follow-up turn with append-only intact', async () => {
-      testCase = await E2ETestCase.builder()
-        .withTestName('knight-rider-lite-shell-cancel')
-        .withTerminal({ width: 120, height: 40 })
-        .withLite()
-        .withCliArgs('--trust-tools=shell')
-        .launch();
+      testCase = await launchLiteE2E('knight-rider-lite-shell-cancel', {
+        cliArgs: '--trust-tools=shell',
+      });
 
-      await testCase.waitForText('>', 15000);
-      await testCase.waitForSlashCommands();
-      await testCase.getSessionId();
-
-      // Turn 1 — short greeting prompt.
       const turn1Marker = 'KR_S1_TURN_ONE_HELLO';
       await streamReply(testCase, turn1Marker);
-      await testCase.sendKeys('hello');
-      await testCase.sleepMs(100);
-      await testCase.pressEnter();
+      await sendUserMessage(testCase, 'hello');
       await testCase.waitForText(turn1Marker, 15000);
       await testCase.waitForIdle(15000);
 
-      // Turn 2 — real shell tool with live streaming output. Three lines with
-      // 0.4s delays = ~1.2s of streaming, deterministic enough to assert "live
-      // output was populated" without blowing the 30s budget.
+      // Turn 2 — real shell tool streaming ~1.2s of output (3 lines, 0.4s gaps).
       const shellToolId = 'kr-s1-shell-tool';
       const turn2Marker = 'KR_S1_TURN_TWO_DONE';
       const cmd =
         process.platform === 'win32'
           ? '1..3 | ForEach-Object { Write-Output "kr-stream-line-$_"; Start-Sleep -Milliseconds 400 }'
           : 'for i in 1 2 3; do echo "kr-stream-line-$i"; sleep 0.4; done';
-      await testCase.pushSendMessageResponse([
-        {
-          kind: 'event',
-          data: {
-            kind: 'ToolUseEvent',
-            data: {
-              tool_use_id: shellToolId,
-              name: 'shell',
-              input: JSON.stringify({ command: cmd }),
-              stop: true,
-            },
-          },
-        },
-      ]);
-      await testCase.pushSendMessageResponse(null);
+      await pushShellTool(testCase, shellToolId, cmd);
       await streamReply(testCase, turn2Marker);
-      await testCase.sendKeys('run a shell');
-      await testCase.sleepMs(100);
-      await testCase.pressEnter();
+      await sendUserMessage(testCase, 'run a shell');
       await testCase.waitForText(turn2Marker, 30000);
       await testCase.waitForIdle(20000);
 
-      // After turn 2: liveOutputs cleared for the shell tool.
       let s = await testCase.getStore();
       expect((s.liveOutputs as any)?.[shellToolId]).toBeUndefined();
 
-      // Append-only monotonicity: turn 1+2 markers must stay visible after
-      // turns 3 and 4 commit.
       const beforeTurn3Snapshot = testCase.getSnapshot().join('\n');
       expect(beforeTurn3Snapshot).toContain(turn1Marker);
       expect(beforeTurn3Snapshot).toContain(turn2Marker);
 
-      // Turn 3 — long-running streaming response cancelled mid-stream: push 6
-      // chunks, leave the stream OPEN (so the user cancels a real in-flight
-      // response), then Ctrl+C while isProcessing is still true.
+      // Turn 3 — cancel a real in-flight response: push 6 chunks but leave the
+      // stream OPEN, then Ctrl+C while isProcessing is still true. Regression:
+      // cancel must not leave stale liveOutputs, stuck isProcessing, or an
+      // orphan ToolUse row from the prior turn.
       for (let i = 0; i < 6; i++) {
         await testCase.pushSendMessageResponse([assistantEvent(`chunk-${i} `)]);
       }
-      await testCase.sendKeys('long answer please');
-      await testCase.sleepMs(100);
-      await testCase.pressEnter();
-      // Wait for at least one chunk to land so cancel happens mid-stream.
+      await sendUserMessage(testCase, 'long answer please');
       await testCase.waitForText('chunk-2', 15000);
       await testCase.pressCtrlC();
       await testCase.waitForStoreCondition((s) => !s.isProcessing, 15000);
 
-      // After Ctrl+C: isProcessing false and only the turn-2 shell tool remains
-      // in messages (turn 3 had no tool), so liveOutputs is empty too.
+      // Only the turn-2 shell tool remains (turn 3 had no tool) → no stale state.
       s = await testCase.getStore();
       expect(s.isProcessing).toBe(false);
       expect(s.messages.filter((m) => m.role === 'tool_use').length).toBe(1);
       expect(Object.keys((s.liveOutputs as any) ?? {}).length).toBe(0);
 
-      // Turn 4 — clean follow-up. Drain remaining turn-3 chunks by closing that
-      // stream first so a fresh turn is allowed, then stream the turn-4 reply.
+      // Turn 4 — drain the open turn-3 stream first, then a clean follow-up.
       const turn4Marker = 'KR_S1_TURN_FOUR_FINAL';
       await testCase.pushSendMessageResponse(null);
       await streamReply(testCase, turn4Marker);
-      await testCase.sendKeys('final prompt');
-      await testCase.sleepMs(100);
-      await testCase.pressEnter();
+      await sendUserMessage(testCase, 'final prompt');
       await testCase.waitForText(turn4Marker, 15000);
       await testCase.waitForIdle(15000);
 
@@ -123,11 +110,9 @@ describe.skipIf(!KR_ENABLED)(
       expect(s.isProcessing).toBe(false);
       expect(s.queuedMessages.length).toBe(0);
 
+      // Append-only: turns 1, 2, 4 markers all visible. Turn 3's partial chunks
+      // may or may not have flushed before the cancel, so we don't pin them.
       const afterTurn4Snapshot = testCase!.getSnapshot().join('\n');
-      // Append-only: turns 1, 2, 4 markers all visible. (Turn 3 had partial
-      // chunks committed via the cancel path — chunk-0 may or may not be
-      // visible depending on how much of the stream flushed before the
-      // cancel; we don't pin that.)
       expect(afterTurn4Snapshot).toContain(turn1Marker);
       expect(afterTurn4Snapshot).toContain(turn2Marker);
       expect(afterTurn4Snapshot).toContain(turn4Marker);

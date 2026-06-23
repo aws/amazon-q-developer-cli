@@ -12,6 +12,7 @@ type LaunchE2EOpts = {
   waitTimeout?: number;
   waitForCommands?: boolean;
   getSession?: boolean;
+  cliArgs?: string;
 };
 
 /**
@@ -27,6 +28,7 @@ async function launchModeE2E(
     .withTestName(testName)
     .withTerminal(opts.terminal ?? { width: 120, height: 40 });
   if (lite) builder = builder.withLite();
+  if (opts.cliArgs) builder = builder.withCliArgs(opts.cliArgs);
   const tc = await builder.launch();
   await tc.waitForText(
     lite ? '>' : 'ask a question',
