@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Harden Windows system-tool resolution against untrusted-search-path RCE (CWE-426)."
+}

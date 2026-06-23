@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
         None => suite.scenarios,
     };
 
-    let (configs, _) = load_agents(&RealProvider).await?;
+    let (configs, _) = load_agents(&RealProvider, true).await?;
     let agent_config = configs
         .into_iter()
         .find(|c| c.name() == args.agent.as_str())

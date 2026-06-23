@@ -263,9 +263,15 @@ impl SessionManagerBuilder {
         let session_manager_handle_clone = session_manager_handle.clone();
 
         tokio::spawn(async move {
-            // Load agent configs once at startup
+            // Load agent configs once at startup. Custom agents inherit default resources unless
+            // `chat.disableInheritingDefaultResources` is set (defaults to false → inherit).
+            let inherit_default_resources = !os
+                .database
+                .settings
+                .get_bool(Setting::ChatDisableInheritingDefaultResources)
+                .unwrap_or(false);
             let (agent_configs, agent_config_errors): (Vec<LoadedAgentConfig>, Vec<AgentConfigLoadError>) =
-                match load_agents(&RealProvider).await {
+                match load_agents(&RealProvider, inherit_default_resources).await {
                     Ok((configs, errors)) => {
                         let structured: Vec<AgentConfigLoadError> = errors
                             .iter()
@@ -851,7 +857,15 @@ impl SessionManager {
 
     async fn handle_reload_agent_configs(&mut self) {
         info!("Reloading agent configs from disk");
-        match load_agents(&RealProvider).await {
+        // Custom agents inherit default resources unless
+        // `chat.disableInheritingDefaultResources` is set (defaults to false → inherit).
+        let inherit_default_resources = !self
+            .os
+            .database
+            .settings
+            .get_bool(Setting::ChatDisableInheritingDefaultResources)
+            .unwrap_or(false);
+        match load_agents(&RealProvider, inherit_default_resources).await {
             Ok((mut configs, errors)) => {
                 // Re-apply MCP governance if MCP is disabled
                 if !self.mcp_enabled {
