@@ -286,18 +286,13 @@ describe('formatToolArgLines wrap behavior', () => {
     expect(decompLines!.length).toBe(precompLines!.length);
   });
 
-  // Multi-line string args used to collapse to 1 line + "(50 lines)" total-
-  // count marker when argsMaxChars was set (default 120). That conflated
-  // "value char cap" with "line collapse" — argsMaxChars should ONLY clip
-  // per-line; line count is a separate concern. After the fix, multi-line
-  // values always render up to 5 lines with a delta-count marker mirroring
-  // the output bar's "+N more lines above" idiom.
-  // Multi-line `command` value rendering: argsMaxChars clips per-line only
-  // (decoupled from line count); perValueLineCap bounds visible source lines
-  // with a "+N more lines" DELTA marker (not a total count). null lifts the
-  // line cap entirely (P438130055: "unlimited" toggle propagates here so a
-  // 50-line heredoc renders fully). undefined keeps the historical 5-line
-  // default for callers (ApprovalPrompt, output bar) that don't pass it.
+  // Multi-line `command` value rendering: argsMaxChars clips per-line ONLY
+  // (decoupled from line count — the pre-fix "(50 lines)" total-count collapse
+  // conflated the two). perValueLineCap bounds visible source lines with a
+  // "+N more lines" DELTA marker (not a total). null lifts the line cap entirely
+  // (P438130055: "unlimited" toggle propagates here so a 50-line heredoc renders
+  // fully); undefined keeps the historical 5-line default for callers
+  // (ApprovalPrompt, output bar) that don't pass it.
   // `lineN` helper: a multi-line string of `line0..line{N-1}`.
   const lineN = (n: number) =>
     JSON.stringify({
