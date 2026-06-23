@@ -1,4 +1,18 @@
-import { execSync } from 'child_process';
+import {
+  execSync as realExecSync,
+  execFileSync as realExecFileSync,
+} from 'child_process';
+import { system32Path } from './windows-paths.js';
+
+/**
+ * Injectable exec dependencies for {@link getOSAppearance}. Both default to the
+ * real `child_process` implementation; tests inject fakes directly so no
+ * process-global module mocking (which leaks across bun test files) is needed.
+ */
+export interface OSAppearanceDeps {
+  execSync?: typeof realExecSync;
+  execFileSync?: typeof realExecFileSync;
+}
 
 /**
  * Detects the OS appearance mode (dark or light).
@@ -6,7 +20,9 @@ import { execSync } from 'child_process';
  *
  * @returns 'dark' or 'light'
  */
-export function getOSAppearance(): 'dark' | 'light' {
+export function getOSAppearance(deps: OSAppearanceDeps = {}): 'dark' | 'light' {
+  const execSync = deps.execSync ?? realExecSync;
+  const execFileSync = deps.execFileSync ?? realExecFileSync;
   try {
     if (process.platform === 'darwin') {
       // macOS: Check AppleInterfaceStyle preference
@@ -18,10 +34,20 @@ export function getOSAppearance(): 'dark' | 'light' {
       });
       return result.trim() === 'Dark' ? 'dark' : 'light';
     } else if (process.platform === 'win32') {
-      // Windows: Check registry for AppsUseLightTheme
-      const result = execSync(
-        'reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme',
+      // Windows: Check registry for AppsUseLightTheme.
+      // Invoke reg.exe by its absolute System32 path with shell:false and an
+      // args array so it is never resolved via cmd.exe (CWE-426); see
+      // system32Path for the full rationale.
+      const result = execFileSync(
+        system32Path('reg.exe'),
+        [
+          'query',
+          'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize',
+          '/v',
+          'AppsUseLightTheme',
+        ],
         {
+          shell: false,
           encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'ignore'], // Suppress stderr
         }

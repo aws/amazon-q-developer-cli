@@ -1077,7 +1077,16 @@ impl AcpSession {
         // Use a provider that matches the session's cwd
         let provider = super::acp_provider::AcpProvider::new(self.cwd.clone());
 
-        match load_agents(&provider).await {
+        // Custom agents inherit default resources unless
+        // `chat.disableInheritingDefaultResources` is set (defaults to false → inherit).
+        let inherit_default_resources = !self
+            .os
+            .database
+            .settings
+            .get_bool(Setting::ChatDisableInheritingDefaultResources)
+            .unwrap_or(false);
+
+        match load_agents(&provider, inherit_default_resources).await {
             Ok((configs, _errors)) => {
                 let mut new_agents: Vec<super::session_manager::AgentInfo> = configs
                     .iter()

@@ -1,32 +1,46 @@
 import {
   describe,
   it,
+  test,
   expect,
   beforeEach,
   afterEach,
   mock,
-  afterAll,
 } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import {
+  detectWindowsTerminalTheme,
+  detectWindowsConsoleBackground,
+  type WindowsConsoleDeps,
+} from '../windows-theme.js';
 
-// Only mock child_process (safe -- Node built-in). Do NOT mock 'fs' as it
-// persists across test files and breaks file-search.test.ts, sessions.test.ts, etc.
-const mockExecSync = mock((): string => '');
-mock.module('child_process', () => ({
-  execSync: mockExecSync,
-}));
+/**
+ * Single source of truth for windows-theme. Covers Windows Terminal
+ * settings.json parsing (file-based, real fs) AND the console-background
+ * detection logic + its security hardening (CWE-426 untrusted search path):
+ * PowerShell is invoked via its ABSOLUTE System32 path with `shell:false` and
+ * an args array, never a bare `powershell` through cmd.exe.
+ *
+ * The exec dependency is injected directly. We deliberately do NOT use
+ * `mock.module('child_process', ...)`: bun's module mocks are process-global
+ * and leak into every other test file in the run. detectWindowsTerminalTheme
+ * uses the real `fs` against a per-test tmpdir, so it needs no mocking.
+ */
 
-afterAll(() => {
-  mock.restore();
-});
+const execFileSyncMock = mock(
+  (_file: string, _args?: readonly string[], _opts?: unknown): string => ''
+);
 
-const { detectWindowsTerminalTheme, detectWindowsConsoleBackground } =
-  await import('../windows-theme');
+const consoleDeps: WindowsConsoleDeps = {
+  execFileSync:
+    execFileSyncMock as unknown as WindowsConsoleDeps['execFileSync'],
+};
 
 const originalPlatform = process.platform;
 const originalLocalAppData = process.env.LOCALAPPDATA;
+const originalSystemRoot = process.env.SystemRoot;
 let testDir: string;
 
 beforeEach(() => {
@@ -35,7 +49,8 @@ beforeEach(() => {
     `wt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
   mkdirSync(testDir, { recursive: true });
-  mockExecSync.mockReset();
+  execFileSyncMock.mockClear();
+  execFileSyncMock.mockImplementation(() => '');
 });
 
 afterEach(() => {
@@ -47,6 +62,11 @@ afterEach(() => {
     delete process.env.LOCALAPPDATA;
   } else {
     process.env.LOCALAPPDATA = originalLocalAppData;
+  }
+  if (originalSystemRoot === undefined) {
+    delete process.env.SystemRoot;
+  } else {
+    process.env.SystemRoot = originalSystemRoot;
   }
   try {
     rmSync(testDir, { recursive: true, force: true });
@@ -290,46 +310,85 @@ describe('detectWindowsTerminalTheme', () => {
 describe('detectWindowsConsoleBackground', () => {
   beforeEach(() => {
     setWin32();
+    process.env.SystemRoot = 'C:\\Windows';
   });
 
+  // --- detection logic (driven through the injected execFileSync) ---
+
   it('returns dark for Black output', () => {
-    mockExecSync.mockImplementation(() => 'Black\n');
-    const result = detectWindowsConsoleBackground();
+    execFileSyncMock.mockImplementation(() => 'Black\n');
+    const result = detectWindowsConsoleBackground(consoleDeps);
     expect(result).not.toBeNull();
     expect(result!.theme).toBe('dark');
     expect(result!.method).toBe('Win-ConsoleBackground');
   });
 
   it('returns dark for DarkBlue output', () => {
-    mockExecSync.mockImplementation(() => 'DarkBlue\n');
-    const result = detectWindowsConsoleBackground();
+    execFileSyncMock.mockImplementation(() => 'DarkBlue\n');
+    const result = detectWindowsConsoleBackground(consoleDeps);
     expect(result).not.toBeNull();
     expect(result!.theme).toBe('dark');
   });
 
   it('returns light for White output', () => {
-    mockExecSync.mockImplementation(() => 'White\n');
-    const result = detectWindowsConsoleBackground();
+    execFileSyncMock.mockImplementation(() => 'White\n');
+    const result = detectWindowsConsoleBackground(consoleDeps);
     expect(result).not.toBeNull();
     expect(result!.theme).toBe('light');
   });
 
   it('returns light for Gray output', () => {
-    mockExecSync.mockImplementation(() => 'Gray\n');
-    const result = detectWindowsConsoleBackground();
+    execFileSyncMock.mockImplementation(() => 'Gray\n');
+    const result = detectWindowsConsoleBackground(consoleDeps);
     expect(result).not.toBeNull();
     expect(result!.theme).toBe('light');
   });
 
-  it('returns null when PowerShell command fails', () => {
-    mockExecSync.mockImplementation(() => {
+  it('returns null when the PowerShell command fails', () => {
+    execFileSyncMock.mockImplementation(() => {
       throw new Error('powershell not found');
     });
-    expect(detectWindowsConsoleBackground()).toBeNull();
+    expect(detectWindowsConsoleBackground(consoleDeps)).toBeNull();
   });
 
   it('returns null for unrecognized color output', () => {
-    mockExecSync.mockImplementation(() => 'SomeUnknownColor\n');
-    expect(detectWindowsConsoleBackground()).toBeNull();
+    execFileSyncMock.mockImplementation(() => 'SomeUnknownColor\n');
+    expect(detectWindowsConsoleBackground(consoleDeps)).toBeNull();
+  });
+
+  // --- security hardening (CWE-426) ---
+
+  test('invokes powershell.exe by absolute System32 path with shell:false', () => {
+    execFileSyncMock.mockImplementation(() => 'Black\n');
+
+    const result = detectWindowsConsoleBackground(consoleDeps);
+    expect(result?.theme).toBe('dark');
+
+    expect(execFileSyncMock).toHaveBeenCalledTimes(1);
+    const [file, args, opts] = execFileSyncMock.mock.calls[0] as [
+      string,
+      string[],
+      { shell?: boolean },
+    ];
+    expect(file).toBe(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    );
+    expect(file).not.toBe('powershell');
+    expect(args).toEqual([
+      '-NoProfile',
+      '-Command',
+      '$Host.UI.RawUI.BackgroundColor',
+    ]);
+    expect(opts.shell).toBe(false);
+  });
+
+  test('falls back to the C:\\Windows System32 path when SystemRoot is unset', () => {
+    delete process.env.SystemRoot;
+    execFileSyncMock.mockImplementation(() => 'Black');
+    detectWindowsConsoleBackground(consoleDeps);
+    const [file] = execFileSyncMock.mock.calls[0] as [string];
+    expect(file).toBe(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    );
   });
 });

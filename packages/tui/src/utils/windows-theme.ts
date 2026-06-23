@@ -1,7 +1,19 @@
-import { execSync } from 'child_process';
+import { execFileSync as realExecFileSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { DetectionResult } from './terminal-theme.js';
+import { system32Path } from './windows-paths.js';
+
+/**
+ * Injectable exec dependency for {@link detectWindowsConsoleBackground}.
+ * Defaults to the real `child_process.execFileSync`; tests inject a fake
+ * directly so no process-global module mocking (which leaks across bun test
+ * files) is needed. There is intentionally no `execSync`/shell dependency — a
+ * shell-based (hijackable) resolution is structurally impossible.
+ */
+export interface WindowsConsoleDeps {
+  execFileSync?: typeof realExecFileSync;
+}
 
 interface WTColorScheme {
   name: string;
@@ -180,11 +192,19 @@ function detectFromBuiltinScheme(schemeName: string): DetectionResult | null {
  * $Host.UI.RawUI.BackgroundColor. This works for PowerShell and cmd.exe
  * consoles that aren't running inside Windows Terminal.
  */
-export function detectWindowsConsoleBackground(): DetectionResult | null {
+export function detectWindowsConsoleBackground(
+  deps: WindowsConsoleDeps = {}
+): DetectionResult | null {
+  const execFileSync = deps.execFileSync ?? realExecFileSync;
   try {
-    const output = execSync(
-      'powershell -NoProfile -Command "$Host.UI.RawUI.BackgroundColor"',
+    // Invoke PowerShell by its absolute System32 path with shell:false and an
+    // args array (the script becomes a single -Command argument), avoiding
+    // cmd.exe CWD-before-PATH resolution (CWE-426); see system32Path.
+    const output = execFileSync(
+      system32Path('WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      ['-NoProfile', '-Command', '$Host.UI.RawUI.BackgroundColor'],
       {
+        shell: false,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'ignore'],
         timeout: 2000,
