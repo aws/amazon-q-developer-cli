@@ -123,6 +123,11 @@ describe('renderAgentMessage', () => {
       input: '> a quote',
       contains: ['│', 'a quote'],
     },
+    {
+      name: 'multi-line blockquotes stay contiguous',
+      input: '> first\n> second\n> third',
+      contains: ['│ first\n│ second\n│ third'],
+    },
   ])('$name', ({ input, termCols, contains, rawContains }) => {
     expectRender(renderAgentMessage(input, 'Kiro', undefined, termCols), {
       contains,

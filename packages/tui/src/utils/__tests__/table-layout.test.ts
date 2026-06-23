@@ -3,9 +3,14 @@ import {
   constrainColumnWidths,
   wrapCellText,
   padCell,
+  shouldStackTable,
+  formatStackedTable,
 } from '../table-layout.js';
+import { visibleWidth } from '../text-width.js';
 
 const len = (s: string) => s.length;
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('constrainColumnWidths', () => {
   it('does nothing when columns fit within terminal width', () => {
@@ -98,6 +103,62 @@ describe('wrapCellText', () => {
     const result = wrapCellText('ab cd', 6, doubleMeasure);
     // "ab cd" = 10 cols, "ab" = 4 cols, "cd" = 4 cols
     expect(result).toEqual(['ab', 'cd']);
+  });
+
+  it('keeps ANSI escapes intact when hard-breaking styled cells', () => {
+    const styled = `\x1b[36m${'p'.repeat(24)}\x1b[39m`;
+    const chunks = wrapCellText(styled, 14, visibleWidth);
+    expect(chunks.map((c) => visibleWidth(c))).toEqual([14, 10]);
+    expect(chunks.map(stripAnsi).join('')).toBe('p'.repeat(24));
+    for (const chunk of chunks) {
+      let idx = chunk.indexOf('\x1b');
+      while (idx !== -1) {
+        expect(/^\x1b\[[0-9;]*m/.test(chunk.slice(idx))).toBe(true);
+        idx = chunk.indexOf('\x1b', idx + 1);
+      }
+    }
+  });
+
+  it('does not split OSC 8 hyperlinks in styled cells', () => {
+    const link = `\x1b]8;;https://example.com/very/long/path\x07texttexttext\x1b]8;;\x07`;
+    expect(visibleWidth(link)).toBe(12);
+    const chunks = wrapCellText(link, 10, visibleWidth);
+    const stripOsc = (s: string) =>
+      // eslint-disable-next-line no-control-regex
+      s.replace(/\x1b\][0-9]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+    expect(chunks.map((c) => stripAnsi(stripOsc(c))).join('')).toBe(
+      'texttexttext'
+    );
+    for (const chunk of chunks) {
+      expect(/example\.com|https/.test(stripOsc(stripAnsi(chunk)))).toBe(false);
+    }
+  });
+});
+
+describe('table stacking', () => {
+  it('detects when columns are too narrow for readable table layout', () => {
+    expect(shouldStackTable([20, 20, 20], 28)).toBe(true);
+    expect(shouldStackTable([5, 5], 80)).toBe(false);
+  });
+
+  it('formats stacked rows and skips all-empty rows without double blanks', () => {
+    const lines = formatStackedTable(
+      ['Command', 'Description'],
+      [
+        ['ls', 'list files'],
+        ['', ''],
+        ['pwd', 'print dir'],
+      ],
+      (s) => s,
+      (s) => `**${s}**`
+    );
+    expect(lines).toEqual([
+      '**Command**: ls',
+      '**Description**: list files',
+      '',
+      '**Command**: pwd',
+      '**Description**: print dir',
+    ]);
   });
 });
 

@@ -7,6 +7,9 @@ import {
   renderMessageToText,
   formatToolArgLines,
   formatTaskToolBody,
+  renderReadToolCall,
+  wrapAnsiLine,
+  wrapAtWords,
 } from '../render.js';
 import {
   setVerboseConfig,
@@ -1594,5 +1597,74 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       expect(chipMatch).not.toBeNull();
       expect(chipMatch![1]).not.toContain(cwd);
     }
+  });
+});
+
+describe('render correctness regressions', () => {
+  test('task list connector and numbering track rendered rows', () => {
+    const trailingEmpty = JSON.stringify({
+      command: 'create',
+      tasks: [
+        { task_description: 'First task' },
+        { task_description: 'Second task' },
+        { task_description: '' },
+      ],
+    });
+    const trailing = formatTaskToolBody(trailingEmpty, 100);
+    expect(trailing).not.toBeNull();
+    const trailingText = trailing!.bodyLines.map(stripAnsi).join('\n');
+    expect(trailingText).toContain('1. First task');
+    expect(trailingText).toContain('2. Second task');
+    expect(trailingText).not.toContain('3.');
+    const taskRows = trailing!.bodyLines
+      .map(stripAnsi)
+      .filter((line) => line.includes('─'));
+    expect(taskRows[taskRows.length - 1]).toContain('└─');
+    expect(taskRows[taskRows.length - 1]).not.toContain('├─');
+
+    const middleEmpty = JSON.stringify({
+      command: 'create',
+      tasks: [
+        { task_description: 'A' },
+        { task_description: '' },
+        { task_description: 'C' },
+      ],
+    });
+    const middle = formatTaskToolBody(middleEmpty, 100);
+    const middleText = middle!.bodyLines.map(stripAnsi).join('\n');
+    expect(middleText).toContain('1. A');
+    expect(middleText).toContain('2. C');
+    expect(middleText).not.toContain('3. C');
+  });
+
+  test('read tool wraps highlighted source with the ANSI-aware wrapper', () => {
+    const word = (w: string) => `\x1b[36m${w}\x1b[39m`;
+    const styled = [
+      word('alpha'),
+      word('beta'),
+      word('gamma'),
+      word('delta'),
+      word('eps'),
+    ].join(' ');
+    const visibleCols = stripAnsi(styled).length;
+    const budget = visibleCols + 5;
+    expect(wrapAnsiLine(styled, budget, budget).length).toBe(1);
+    expect(wrapAtWords(styled, budget, budget).length).toBeGreaterThan(1);
+
+    const line =
+      'if (a === 1 && b !== 2) { x = "hi"; y = [1,2,3]; } else { z = 0; }';
+    const rendered = renderReadToolCall(
+      { name: 'fs_read', status: 'done' },
+      JSON.stringify({ path: 'sample.ts', offset: 0 }),
+      { status: 'success', output: line },
+      { termCols: 80 }
+    );
+    const sourceRows = rendered
+      .split('\n')
+      .map(stripAnsi)
+      .filter((row) => /^\s+\d+\s/.test(row) && !/\blines?\s*$/.test(row));
+    expect(sourceRows.length).toBe(1);
+    expect(sourceRows[0]).toContain('if (a === 1 && b !== 2)');
+    expect(sourceRows[0]).toContain('z = 0; }');
   });
 });

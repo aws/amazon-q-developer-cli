@@ -4,8 +4,48 @@ const BORDER_OVERHEAD_FIXED = 1;
 /** Safety margin so the table doesn't touch the terminal edge. */
 const TABLE_MARGIN = 4;
 const MIN_COL_WIDTH = 3;
+const READABLE_MIN_COL_WIDTH = 8;
 
 export type Alignment = 'left' | 'right' | 'center';
+
+// eslint-disable-next-line no-control-regex
+const ANSI_ESC_RE =
+  /^(?:\x1b\][0-9]*;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;]*m)/;
+
+export function shouldStackTable(
+  colWidths: number[],
+  termWidth: number
+): boolean {
+  if (termWidth <= 0 || colWidths.length === 0) return false;
+  const overhead =
+    BORDER_OVERHEAD_PER_COL * colWidths.length + BORDER_OVERHEAD_FIXED;
+  const wanted =
+    colWidths.reduce((a, w) => a + Math.min(w, READABLE_MIN_COL_WIDTH), 0) +
+    overhead +
+    TABLE_MARGIN;
+  return wanted > termWidth;
+}
+
+export function formatStackedTable(
+  headers: string[],
+  rows: string[][],
+  renderInline: (s: string) => string,
+  styleLabel: (s: string) => string
+): string[] {
+  const out: string[] = [];
+  for (const row of rows) {
+    const rowLines: string[] = [];
+    for (let ci = 0; ci < headers.length; ci++) {
+      const cell = row[ci];
+      if (cell == null || cell === '') continue;
+      rowLines.push(`${styleLabel(headers[ci] ?? '')}: ${renderInline(cell)}`);
+    }
+    if (rowLines.length === 0) continue;
+    if (out.length > 0) out.push('');
+    out.push(...rowLines);
+  }
+  return out;
+}
 
 /**
  * Shrink column widths so the table fits within `termWidth`.
@@ -102,19 +142,35 @@ export function wrapCellText(
 
   for (const word of words) {
     if (measureWidth(word) > maxWidth) {
-      // Hard-break words that exceed column width
       if (line) {
         lines.push(line);
       }
-      let rest = word;
-      while (measureWidth(rest) > maxWidth) {
-        let cut = maxWidth;
-        while (cut > 0 && measureWidth(rest.slice(0, cut)) > maxWidth) cut--;
-        if (cut === 0) cut = 1;
-        lines.push(rest.slice(0, cut));
-        rest = rest.slice(cut);
+      let chunk = '';
+      let chunkWidth = 0;
+      let j = 0;
+      while (j < word.length) {
+        if (word.charCodeAt(j) === 0x1b) {
+          const esc = ANSI_ESC_RE.exec(word.slice(j));
+          if (esc && esc.index === 0) {
+            chunk += esc[0];
+            j += esc[0].length;
+            continue;
+          }
+        }
+        const cp = word.codePointAt(j)!;
+        const charLen = cp > 0xffff ? 2 : 1;
+        const ch = word.slice(j, j + charLen);
+        const cw = measureWidth(ch);
+        if (chunk !== '' && chunkWidth + cw > maxWidth) {
+          lines.push(chunk);
+          chunk = '';
+          chunkWidth = 0;
+        }
+        chunk += ch;
+        chunkWidth += cw;
+        j += charLen;
       }
-      line = rest;
+      line = chunk;
       continue;
     }
 

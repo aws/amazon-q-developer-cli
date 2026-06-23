@@ -21,6 +21,8 @@ import {
   constrainColumnWidths,
   wrapCellText,
   padCell,
+  shouldStackTable,
+  formatStackedTable,
   type Alignment,
 } from '../../utils/table-layout.js';
 
@@ -276,6 +278,24 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
             const dataWidths = rows.map((r) => measureRendered(r[ci] || ''));
             return Math.max(headerWidth, ...dataWidths, 3);
           });
+
+          if (shouldStackTable(colWidths, termWidth)) {
+            const lines = formatStackedTable(
+              headers,
+              rows,
+              renderInlineText,
+              chalk.bold
+            );
+            return (
+              <Box key={i} flexDirection="column" marginTop={mt}>
+                {lines.map((line, li) => (
+                  <Text key={li} wrap={wrapMode}>
+                    {line}
+                  </Text>
+                ))}
+              </Box>
+            );
+          }
 
           constrainColumnWidths(colWidths, termWidth);
 
