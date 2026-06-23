@@ -81,12 +81,10 @@ export const VerbosityTruncationEditor: React.FC<{
 }> = ({ which, onCommit, onCancel }) => {
   const { getColor } = useTheme();
   const dim = useMemo(() => getColor('secondary'), [getColor]);
+  const meta = FIELD_META[which];
 
   // Seed from saved config so the editor opens on the current value.
-  const initial = useMemo(
-    () => getVerboseDisplay()[FIELD_META[which].configKey],
-    [which]
-  );
+  const initial = useMemo(() => getVerboseDisplay()[meta.configKey], [meta]);
 
   const [value, setValue] = useState<number | null>(initial);
 
@@ -171,15 +169,15 @@ export const VerbosityTruncationEditor: React.FC<{
   const display = useMemo(
     (): VerboseDisplayConfig => ({
       ...getVerboseDisplay(),
-      [FIELD_META[which].configKey]: value,
+      [meta.configKey]: value,
     }),
-    [which, value]
+    [meta, value]
   );
 
   return (
     <Box flexDirection="column">
       <Box paddingX={1} flexDirection="column">
-        <Text>{FIELD_META[which].heading}</Text>
+        <Text>{meta.heading}</Text>
         <Box height={1} />
         <Box>
           <Text>{dim('  ')}</Text>
@@ -192,10 +190,7 @@ export const VerbosityTruncationEditor: React.FC<{
           )}
         </Text>
       </Box>
-      <VerbosityPreview
-        which={FIELD_META[which].previewKey}
-        displayOverride={display}
-      />
+      <VerbosityPreview which={meta.previewKey} displayOverride={display} />
     </Box>
   );
 };
