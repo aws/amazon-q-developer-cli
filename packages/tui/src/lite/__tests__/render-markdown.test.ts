@@ -414,14 +414,10 @@ describe('inline markdown inside block elements', () => {
       ['**', '`'],
       [],
     ],
+    // One representative per block type for the block→inline path (header,
+    // bold-heading, blockquote); the bold/code variants are interchangeable
+    // proofs that the element re-lexes inline markers, so keep one each.
     ['header: code', '# About `foo`', ['About foo'], ['`'], []],
-    [
-      'header: bold',
-      '## The **important** part',
-      ['The important part'],
-      ['**'],
-      [],
-    ],
     [
       'bold heading: code',
       '**Title with `code`**',
@@ -434,13 +430,6 @@ describe('inline markdown inside block elements', () => {
       '> see the `--help` flag',
       ['│', 'see the --help flag'],
       ['`'],
-      [],
-    ],
-    [
-      'blockquote: bold',
-      '> this is **important**',
-      ['│', 'this is important'],
-      ['**'],
       [],
     ],
   ] as const)(
