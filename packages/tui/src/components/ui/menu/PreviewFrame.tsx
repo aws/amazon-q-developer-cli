@@ -4,11 +4,8 @@ import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 
-/**
- * Shared inline "Preview" chrome: a divider with a dim `Preview` label above
- * the body. Used by the mini preview and the truncation editor; the scrollable
- * pane has its own variant (counter + fixed-height body).
- */
+// Inline "Preview" chrome for the mini preview + truncation editor; the
+// scrollable pane has its own variant (counter + fixed-height body).
 export const PreviewFrame: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {

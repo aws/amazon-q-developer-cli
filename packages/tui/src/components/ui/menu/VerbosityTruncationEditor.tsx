@@ -1,41 +1,41 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
-import { PreviewFrame } from './PreviewFrame.js';
+import { VerbosityPreview } from './VerbosityPreview.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
-import { renderVerbosityPreview } from '../../../lite/render.js';
 import {
-  getVerboseConfig,
   getVerboseDisplay,
   type VerboseDisplayConfig,
 } from '../../../lite/verbose.js';
 
 const MAX_CAP = 99999;
 
-/**
- * Asymmetric step function for arrow-key adjustment. Bigger steps when the
- * value is bigger so holding the arrow feels exponential without explicit
- * velocity tracking — terminal autorepeat fires repeated keypresses, each
- * one consults the current value to pick its own step size.
- */
+// Step ladder: below each threshold, adjust by that step. Bigger steps at
+// bigger values so terminal autorepeat (each keypress re-reads the value)
+// feels exponential without velocity tracking. Tail step applies above 1000.
+const STEPS: ReadonlyArray<readonly [threshold: number, step: number]> = [
+  [5, 1],
+  [50, 5],
+  [200, 25],
+  [1000, 100],
+];
+const TAIL_STEP = 500;
+
+function stepFor(v: number): number {
+  return STEPS.find(([t]) => v < t)?.[1] ?? TAIL_STEP;
+}
+
 function nextUp(v: number): number {
-  let n: number;
-  if (v < 5) n = v + 1;
-  else if (v < 50) n = v + 5;
-  else if (v < 200) n = v + 25;
-  else if (v < 1000) n = v + 100;
-  else n = v + 500;
-  return Math.min(MAX_CAP, n);
+  return Math.min(MAX_CAP, v + stepFor(v));
 }
 
 function nextDown(v: number): number {
-  if (v <= 5) return Math.max(0, v - 1);
-  if (v <= 50) return v - 5;
-  if (v <= 200) return v - 25;
-  if (v <= 1000) return v - 100;
-  return v - 500;
+  // Match the previous boundaries (`<=` so 5/50/200/1000 step down by the
+  // smaller band) and floor at 0.
+  const step = STEPS.find(([t]) => v <= t)?.[1] ?? TAIL_STEP;
+  return Math.max(0, v - step);
 }
 
 /**
@@ -89,13 +89,8 @@ export const VerbosityTruncationEditor: React.FC<{
   );
 
   const [value, setValue] = useState<number | null>(initial);
-  // True once the user has typed a digit since open/last-arrow. Controls
-  // append-vs-replace on the next digit so typing "123" produces 123, not 3.
-  const [digitMode, setDigitMode] = useState(false);
 
-  // Blink for the value chevron — drives a 500ms toggle. Same trick as the
-  // Menu search input cursor. Honor /settings allowAnimations: when paused,
-  // hold the chevron steady-on rather than running the interval.
+  // Honor /settings allowAnimations: when paused, hold the chevron steady-on.
   const animationPaused = useAnimationPaused();
   const [blink, setBlink] = useState(true);
   useEffect(() => {
@@ -107,19 +102,18 @@ export const VerbosityTruncationEditor: React.FC<{
     return () => clearInterval(id);
   }, [animationPaused]);
 
-  // Stash latest committed-on-Enter so the closure passed to useKeypress
-  // (which captures state by ref) sees the current value without resubscribing
-  // every render.
+  // The useKeypress closure captures state by ref; mirror so it reads current
+  // values without resubscribing every render.
   const valueRef = useRef(value);
   valueRef.current = value;
-  const digitModeRef = useRef(digitMode);
-  digitModeRef.current = digitMode;
+  // digitMode is non-render state (only the next keypress reads it): true once
+  // the user typed a digit since open/last-arrow, controlling append-vs-replace
+  // so typing "123" produces 123, not 3. Arrow/backspace/u clear it.
+  const digitModeRef = useRef(false);
 
-  // Set value + digitMode together; arrow/backspace/u clear digitMode, digit
-  // input sets it (controls append-vs-replace on the next digit).
   const setDraft = (next: number | null, digit = false) => {
     setValue(next);
-    setDigitMode(digit);
+    digitModeRef.current = digit;
   };
 
   useKeypress((input, key) => {
@@ -158,8 +152,7 @@ export const VerbosityTruncationEditor: React.FC<{
       return;
     }
     // Digit input — append in digitMode, replace otherwise. `0` alone
-    // collapses to `null` so the user can type a full unlimited from any
-    // state without arrowing down through every step.
+    // collapses to `null` (unlimited) without arrowing down through every step.
     if (/^[0-9]$/.test(input)) {
       const d = parseInt(input, 10);
       if (digitModeRef.current && valueRef.current != null) {
@@ -174,7 +167,7 @@ export const VerbosityTruncationEditor: React.FC<{
   const valueText = value == null ? 'unlimited' : String(value);
 
   // Override the cap being edited so the preview reflects the in-progress
-  // draft, not the saved value.
+  // draft, not the saved value; VerbosityPreview reads saved filters itself.
   const display = useMemo(
     (): VerboseDisplayConfig => ({
       ...getVerboseDisplay(),
@@ -183,20 +176,10 @@ export const VerbosityTruncationEditor: React.FC<{
     [which, value]
   );
 
-  const filters = useMemo(() => getVerboseConfig().filters, []);
-
-  const previewKey = FIELD_META[which].previewKey;
-  const previewText = useMemo(
-    () => renderVerbosityPreview(previewKey, display, filters),
-    [previewKey, display, filters]
-  );
-
-  const heading = FIELD_META[which].heading;
-
   return (
     <Box flexDirection="column">
       <Box paddingX={1} flexDirection="column">
-        <Text>{heading}</Text>
+        <Text>{FIELD_META[which].heading}</Text>
         <Box height={1} />
         <Box>
           <Text>{dim('  ')}</Text>
@@ -209,9 +192,10 @@ export const VerbosityTruncationEditor: React.FC<{
           )}
         </Text>
       </Box>
-      <PreviewFrame>
-        <Text>{previewText}</Text>
-      </PreviewFrame>
+      <VerbosityPreview
+        which={FIELD_META[which].previewKey}
+        displayOverride={display}
+      />
     </Box>
   );
 };

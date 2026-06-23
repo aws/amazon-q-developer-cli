@@ -209,9 +209,6 @@ export const CommandMenu: React.FC = () => {
     return [...cmds, ...promptCmds];
   }, [commandInputValue, slashCommands, activeTrigger]);
 
-  // No shadow text for top-level command menu — the dropdown handles that.
-  // Shadow text is only for argument completion (e.g. /model clau → de-opus-4.6).
-
   // Cache options per command to avoid re-fetching on every keystroke.
   const optionsCacheRef = useRef<{
     cmdName: string;
@@ -429,7 +426,7 @@ export const CommandMenu: React.FC = () => {
     if (returnToSettings) {
       setSettingsReturnOnEscape(false);
       // Re-open directly: routing through handleUserInput here exited the
-      // process — likely a race with the in-flight overlay close.
+      // process (footgun — likely a race with the in-flight overlay close).
       reopenSettingsMenu();
       return;
     }

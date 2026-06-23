@@ -51,9 +51,6 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
     [filtersOverride]
   );
 
-  // Build full (un-clipped) preview as a line array. Memoized on the
-  // (key, display, filters) tuple so toggling preview state mid-edit
-  // doesn't recompute on every render.
   const lines = useMemo(() => {
     const text = renderVerbosityPreview(which, display, filters, {
       expanded: true,
@@ -95,10 +92,8 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
       setOffset((o) => Math.min(maxOffset, o + 1));
       return;
     }
-    // Ctrl+B / Ctrl+F: page back / forward (same vocab as `less`). The
-    // subagent panel uses ↑↓ + ctrl+a/z for top/bottom; we add page
-    // jumps because the verbosity preview can be much longer than a
-    // typical subagent trace.
+    // Ctrl+B / Ctrl+F page back/forward (`less` vocab) — the preview can
+    // exceed a screen.
     if (key.ctrl && (input === 'b' || input === 'B')) {
       setOffset((o) => Math.max(0, o - PAGE_STEP));
       return;
@@ -118,8 +113,7 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
   });
 
   const visible = lines.slice(offset, offset + PANE_VISIBLE_LINES);
-  // Pad to fixed height so the surrounding layout doesn't jump as the
-  // user scrolls past short fixtures.
+  // Pad to fixed height so layout doesn't jump past short fixtures.
   const padding = Math.max(0, PANE_VISIBLE_LINES - visible.length);
 
   const counter =
