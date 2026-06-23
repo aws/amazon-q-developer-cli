@@ -170,14 +170,10 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
   }, 40000);
 
   it('[bug-mine 3.6] subagent attribution only when agentName differs from main', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-approval-subagent-attr')
-      .withLite()
-      .withEnv({ KIRO_MOCK_AGENT_NAME: 'main-agent' })
-      .withTimeout(20000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
+    testCase = await launchLiteInteg('lite-approval-subagent-attr', {
+      env: { KIRO_MOCK_AGENT_NAME: 'main-agent' },
+      timeout: 20000,
+    });
 
     const SUBAGENT_SESSION = 'sub-session-1';
 

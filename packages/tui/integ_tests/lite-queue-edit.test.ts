@@ -9,7 +9,10 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { trackCleanup } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import {
+  launchLiteInteg,
+  trackCleanup,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { TestCase } from '../src/test-utils/TestCase';
 
 describe('lite queued message editing', () => {
@@ -24,12 +27,10 @@ describe('lite queued message editing', () => {
    * rather than closing).
    */
   function launchQueueEditCase(name: string): Promise<TestCase> {
-    return TestCase.builder()
-      .withTestName(name)
-      .withLite()
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
+    return launchLiteInteg(name, {
+      env: { KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' },
+      timeout: 20000,
+    });
   }
 
   /**
@@ -39,7 +40,6 @@ describe('lite queued message editing', () => {
   async function setupQueueWithTwoEntries(
     tc: TestCase
   ): Promise<{ first: string; second: string }> {
-    await tc.waitForVisibleText('ask a question', 10000);
     // Trigger an in-flight turn so subsequent submits queue.
     await tc.typeAndSubmit('start the turn');
     await tc.sleepMs(200);

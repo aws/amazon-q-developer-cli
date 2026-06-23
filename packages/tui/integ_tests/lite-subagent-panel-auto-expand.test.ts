@@ -18,6 +18,7 @@ import {
 } from '../e2e_tests/lite/helpers/approvals';
 import {
   finishAndExitLite,
+  launchLiteInteg,
   trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
@@ -128,14 +129,10 @@ describe('lite subagent panel auto-expand on inner approval', () => {
       postClearMs,
       expectAfterClear,
     }) => {
-      testCase = await TestCase.builder()
-        .withTestName(testName)
-        .withLite()
-        .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-        .withTimeout(20000)
-        .launch();
-
-      await testCase.waitForVisibleText('ask a question', 10000);
+      testCase = await launchLiteInteg(testName, {
+        env: { KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' },
+        timeout: 20000,
+      });
 
       await seedPipeline(testCase, stages);
 
