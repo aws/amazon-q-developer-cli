@@ -3179,16 +3179,19 @@ export class KasAcpClient extends BaseAcpClient {
     return true;
   }
 
-  private handlePipelineStateUpdate(pipeline: {
-    groupId: string;
-    stages: Array<{
-      name: string;
-      role: string;
-      status: string;
-      dependsOn: string[];
-      agentSubtaskId: string | null;
-    }>;
-  }, parentToolCallId?: string): void {
+  private handlePipelineStateUpdate(
+    pipeline: {
+      groupId: string;
+      stages: Array<{
+        name: string;
+        role: string;
+        status: string;
+        dependsOn: string[];
+        agentSubtaskId: string | null;
+      }>;
+    },
+    parentToolCallId?: string
+  ): void {
     const statusMap: Record<string, { type: string }> = {
       running: { type: 'working' },
       completed: { type: 'terminated' },
@@ -3254,10 +3257,10 @@ export class KasAcpClient extends BaseAcpClient {
     const cachedToolCall = this.kasToolCallSnapshots.get(toolCallId);
     // Sub-agent spawn approvals are parent-session decisions — surface them
     // in main view (V1 `use_subagent` UX), not the crew prompt.
-    const consent = (kiroMeta as { consent?: { capability?: string } } | undefined)
-      ?.consent;
-    const isSubagentSpawn =
-      consent?.capability === KAS_CAPABILITIES.SUBAGENT;
+    const consent = (
+      kiroMeta as { consent?: { capability?: string } } | undefined
+    )?.consent;
+    const isSubagentSpawn = consent?.capability === KAS_CAPABILITIES.SUBAGENT;
     // Route a child tool approval to a subagent context only when the subtask
     // has a visible UI surface: either a crew pipeline stage or an explicit
     // independent KAS subagent session. Hidden/one-off spec subagents never
