@@ -19,10 +19,7 @@ export function trackCleanup(getter: () => Cleanable | null): void {
   });
 }
 
-/**
- * Launch the integ TestCase in lite mode and wait for the input prompt.
- * Captures the launch/wait ceremony repeated across every lite integ test.
- */
+/** Launch the integ TestCase in lite mode and wait for the input prompt. */
 export async function launchLiteInteg(
   testName: string,
   opts: {
@@ -57,11 +54,7 @@ export async function finishAndExitLite(tc: TestCase): Promise<void> {
   await exitLiteInteg(tc);
 }
 
-/**
- * Inject a Content event, submit a prompt, settle, and assert the turn is
- * processing. Captures the busy-turn preamble shared by the cancel/interrupt
- * cases. Returns once isProcessing===true.
- */
+/** Inject a Content event, submit a prompt, and settle — the busy-turn preamble shared by the cancel/interrupt cases. */
 export async function startBusyTurn(
   tc: TestCase,
   opts: { marker: string; id?: string; prompt?: string; settleMs?: number }

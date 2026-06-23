@@ -28,11 +28,7 @@ export async function streamReply(
     await tc.pushSendMessageResponse(null, { silent: opts.silent });
 }
 
-/**
- * Drive one full e2e turn: queue `reply`, submit `prompt`, wait for the reply
- * to paint, then settle. This streamReply→sendUserMessage→waitForText→waitForIdle
- * quad is the standard "drive one turn" shape repeated across the lite e2e suite.
- */
+/** Drive one full e2e turn: queue `reply`, submit `prompt`, wait for the reply to paint, then settle. */
 export async function driveTurn(
   tc: E2ETestCase,
   reply: string,

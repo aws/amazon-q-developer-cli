@@ -4,15 +4,10 @@ import type { CellAttributes } from '../../../src/test-utils/shared/pty-manager'
 import { CMD_THEME_DARK, CMD_THEME_LIGHT } from './commands';
 
 /**
- * RGB packed values that match the brand-color hex codes in
- * src/theme/kiroDark.ts and src/theme/kiroLight.ts.
- *
- *   kiroDark.brand  = #C19AFF  → 0xC19AFF (193,154,255)
- *   kiroLight.brand = #8700FF  → 0x8700FF (135,  0,255)
- *
- * Tests compare cell.fgColor against these to assert the live region
- * picked up the new theme after a /theme bundled:* swap, and that already-
- * flushed scrollback rows kept the old theme color (frozen at flush time).
+ * Packed brand-color RGB matching src/theme/kiroDark.ts (#C19AFF) and
+ * kiroLight.ts (#8700FF). Tests compare cell.fgColor against these to prove the
+ * live region picked up a /theme swap while flushed scrollback kept the old
+ * color (frozen at flush time).
  */
 export const BRAND_DARK_RGB = 0xc19aff;
 export const BRAND_LIGHT_RGB = 0x8700ff;
@@ -28,18 +23,12 @@ export async function applyTheme(
   }
   await tc.sleepMs(150);
   await tc.sendKeys('\r');
-  // Showalert "Theme set to ..." is the visible side-effect; tests waitForText
-  // on it to know the swap completed. Themes don't take effect on the next
-  // render frame in lite — they take effect on the next React render that
-  // reads getColor('brand'). The waiting test should also push fresh content
-  // (or rerender via streaming) before reading cell colors.
+  // The swap only takes effect on the next React render that reads
+  // getColor('brand') — the waiting test must push fresh content (or stream a
+  // rerender) before reading cell colors.
 }
 
-/**
- * Returns the dominant RGB foreground for a given cell run. Picks the most
- * common non-zero RGB value across the run so a stray reset cell doesn't
- * dominate the assertion. Falls back to the first cell's fgColor.
- */
+/** Most common non-zero RGB foreground across a cell run (so a stray reset cell doesn't skew the assertion). */
 export function dominantRgb(cells: CellAttributes[]): number | null {
   const counts = new Map<number, number>();
   for (const c of cells) {

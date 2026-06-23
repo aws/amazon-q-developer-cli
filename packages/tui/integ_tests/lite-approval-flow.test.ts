@@ -3,8 +3,7 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import {
   injectApproval,
-  expectApprovalVisible,
-  expectApprovalDeferred,
+  expectApprovalPainted,
   ALLOW_REJECT_OPTIONS,
 } from '../e2e_tests/lite/helpers/approvals';
 import {
@@ -35,10 +34,10 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
         const store = await tc.getStore();
         expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-guard-1');
         // Deferred: event delivered to store but prompt not yet painted.
-        expectApprovalDeferred(tc);
+        expectApprovalPainted(tc, false);
         // Past the 2000ms idle threshold the prompt appears.
         await tc.sleepMs(2200);
-        expectApprovalVisible(tc);
+        expectApprovalPainted(tc, true);
       },
     },
     {
@@ -53,12 +52,12 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
       },
       body: async (tc: TestCase) => {
         await tc.sleepMs(2500);
-        expectApprovalVisible(tc);
+        expectApprovalPainted(tc, true);
         // A non-y/n/t key must NOT hide the prompt: the keypress handler skips
         // the lastKeypressRef update while an approval is shown.
         await tc.sendKeys('x');
         await tc.sleepMs(300);
-        expectApprovalVisible(tc);
+        expectApprovalPainted(tc, true);
         const store = await tc.getStore();
         expect(store.pendingApproval!.toolCall.toolCallId).toBe(
           'tool-visible-1'
@@ -84,7 +83,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
         expect(store1.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-1');
         expect(store1.approvalQueue.length).toBeGreaterThanOrEqual(2);
         await tc.sleepMs(2200);
-        expectApprovalVisible(tc);
+        expectApprovalPainted(tc, true);
         // 'y' must NOT count as "user typing" (the useKeypress guard skips the
         // lastKeypressRef update while an approval is shown), so the promoted
         // second approval shows with no fresh 2s idle delay.
@@ -92,7 +91,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
         await tc.sleepMs(500);
         const store2 = await tc.getStore();
         expect(store2.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-2');
-        expectApprovalVisible(tc);
+        expectApprovalPainted(tc, true);
       },
     },
   ])(
@@ -132,7 +131,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.typeAndSubmit('go');
     await testCase.sleepMs(2500);
 
-    expectApprovalVisible(testCase);
+    expectApprovalPainted(testCase, true);
 
     await testCase.sendKeys('t');
     await testCase.sleepMs(300);
@@ -214,7 +213,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.sleepMs(2200);
 
     // Main-agent approval: no "subagent request" chip, agentName = main.
-    expectApprovalVisible(testCase);
+    expectApprovalPainted(testCase, true);
     const snapshot1 = testCase.getSnapshot().join('\n');
     expect(snapshot1).not.toContain('subagent request');
     const mainToolMsg = store1.messages.find(

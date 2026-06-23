@@ -16,9 +16,7 @@ type LaunchE2EOpts = {
 
 /**
  * Launch an e2e E2ETestCase and run the readiness ceremony (wait for prompt,
- * slash-command registry, session id) repeated across every lite e2e test.
- * Mirrors launchLiteInteg on the integ side. lite mode waits for the '>'
- * prompt; tui mode waits for 'ask a question'.
+ * slash-command registry, session id). lite waits for '>', tui for 'ask a question'.
  */
 async function launchModeE2E(
   testName: string,
@@ -68,11 +66,7 @@ export async function typeSlashCommand(
   if (opts.postEnterMs) await tc.sleepMs(opts.postEnterMs);
 }
 
-/**
- * Type a user prompt and submit it. E2ETestCase has no typeAndSubmit
- * convenience (unlike integ TestCase), so the type/settle/enter triplet is
- * otherwise hand-rolled at every e2e call site.
- */
+/** Type a user prompt and submit it (E2ETestCase has no typeAndSubmit convenience). */
 export async function sendUserMessage(
   tc: E2ETestCase,
   text: string,

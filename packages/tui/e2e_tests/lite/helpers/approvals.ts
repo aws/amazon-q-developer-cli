@@ -8,11 +8,7 @@ import {
   type TrustOption,
 } from '../../../src/types/agent-events';
 
-/**
- * Push a `write` ToolUseEvent (which triggers a create-file approval) plus the
- * terminating null, over the e2e agent IPC. Mirrors the inline blocks the
- * approval-swap e2e suites use to drive a pending approval to the prompt.
- */
+/** Push a `write` ToolUseEvent (triggers a create-file approval) + terminating null over the e2e agent IPC. */
 export async function pushWriteApprovalEvent(
   tc: E2ETestCase,
   opts: { toolUseId: string; path: string; content: string }
@@ -43,11 +39,6 @@ const ALLOW_ONCE: PermissionOption = {
   name: 'Allow Once',
   optionId: 'allow_once',
 };
-const ALLOW_ALWAYS: PermissionOption = {
-  kind: ApprovalOptionId.AllowAlways,
-  name: 'Allow Always',
-  optionId: 'allow_always',
-};
 const REJECT_ONCE: PermissionOption = {
   kind: ApprovalOptionId.RejectOnce,
   name: 'Reject Once',
@@ -57,7 +48,11 @@ const REJECT_ONCE: PermissionOption = {
 /** Allow Once / Allow Always / Reject Once — the common 3-button option set. */
 export const ALLOW_ALWAYS_REJECT_OPTIONS: PermissionOption[] = [
   ALLOW_ONCE,
-  ALLOW_ALWAYS,
+  {
+    kind: ApprovalOptionId.AllowAlways,
+    name: 'Allow Always',
+    optionId: 'allow_always',
+  },
   REJECT_ONCE,
 ];
 
@@ -88,10 +83,8 @@ export interface InjectApprovalOpts {
 }
 
 /**
- * Inject (optionally) a ToolCall followed by an ApprovalRequest. Mirrors the
- * shape both the approval-flow and auto-expand integ suites depend on; the
- * rawInput/option-set are regression-sensitive so callers pass them explicitly
- * where they diverge.
+ * Inject (optionally) a ToolCall followed by an ApprovalRequest. rawInput and
+ * the option-set are regression-sensitive, so callers pass them explicitly.
  */
 export async function injectApproval(
   tc: TestCase,
@@ -131,12 +124,9 @@ export async function injectApproval(
   if (opts.settleMs) await tc.sleepMs(opts.settleMs);
 }
 
-/** Assert the approval prompt is painted ("needs approval" visible). */
-export function expectApprovalVisible(tc: TestCase): void {
-  expect(tc.getSnapshot().join('\n')).toContain('needs approval');
-}
-
-/** Assert the approval is deferred: in store but not yet painted. */
-export function expectApprovalDeferred(tc: TestCase): void {
-  expect(tc.getSnapshot().join('\n')).not.toContain('needs approval');
+/** Assert the approval prompt is painted (`painted`) or deferred (`!painted`) via the "needs approval" marker. */
+export function expectApprovalPainted(tc: TestCase, painted: boolean): void {
+  const snap = tc.getSnapshot().join('\n');
+  if (painted) expect(snap).toContain('needs approval');
+  else expect(snap).not.toContain('needs approval');
 }
