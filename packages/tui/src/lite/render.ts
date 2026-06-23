@@ -557,19 +557,10 @@ export function renderAgentMessage(
   // bold the colored tag manually. chalk.bold uses \x1b[1m…\x1b[22m (not a full
   // reset) so the foreground color survives.
   const tagBold = chalk.bold(tagColorFn(`${tag}:`));
-  const tagPrefix = `${tag}: `;
-  // Reserve the role-tag width on the first line so wrapping accounts for it.
   const cols = termCols && termCols > 0 ? termCols : 0;
-  const firstWidth = cols ? Math.max(20, cols - tagPrefix.length) : 0;
   const restWidth = cols ? Math.max(20, cols) : 0;
 
-  const body = renderMarkdownToLines(
-    content,
-    restWidth,
-    firstWidth,
-    glyphs,
-    theme
-  );
+  const body = renderMarkdownToLines(content, restWidth, glyphs, theme);
   if (body.length === 0) return tagBold;
   const [first, ...rest] = body;
   // When the body opens with a structural block whose first row is chrome
@@ -672,13 +663,12 @@ export function renderShellOutputBlock(
 /**
  * Turn markdown into ANSI-styled rows ready to `\n`-join into <Static>.
  * Blocks are blank-line separated except adjacent same-indent list items
- * (mirrors TUI MarkdownRenderer's marginTop). `restWidth`/`firstLineWidth` of
- * 0 skips width-aware wrapping (tests use 0; see COPY-PASTE INVARIANT).
+ * (mirrors TUI MarkdownRenderer's marginTop). `restWidth` of 0 skips
+ * width-aware wrapping (tests use 0; see COPY-PASTE INVARIANT).
  */
 export function renderMarkdownToLines(
   text: string,
   restWidth: number,
-  firstLineWidth: number,
   glyphs?: Glyphs,
   theme?: RenderTheme
 ): string[] {
@@ -701,9 +691,8 @@ export function renderMarkdownToLines(
       return;
     }
     // One logical line per source paragraph; wrapStyled(s, 0, 0) is the
-    // explicit no-wrap path (see COPY-PASTE INVARIANT). firstLineWidth/
-    // restWidth are still consumed by the structural blocks below.
-    void firstLineWidth;
+    // explicit no-wrap path (see COPY-PASTE INVARIANT). restWidth is still
+    // consumed by the structural blocks below.
     void restWidth;
     appendBlock(out, isFirstBlock, () => wrapStyled(styled, 0, 0));
     isFirstBlock = false;
@@ -2330,7 +2319,7 @@ export function renderStagePromptLines(
 ): string[] {
   if (!prompt) return [];
   const out: string[] = [];
-  for (const md of renderMarkdownToLines(prompt, avail, avail, glyphs)) {
+  for (const md of renderMarkdownToLines(prompt, avail, glyphs)) {
     if (md.length === 0) {
       out.push(''); // preserve paragraph separators
       continue;
@@ -2424,12 +2413,7 @@ function renderDigestSection(
   for (let i = 0; i < entries.length; i++) {
     const stage = entries[i]!;
     out.push(`${chipIndent}${opts.chipFn(stage.stageName)}`);
-    for (const ml of renderMarkdownToLines(
-      stage.body,
-      avail,
-      avail,
-      opts.glyphs
-    )) {
+    for (const ml of renderMarkdownToLines(stage.body, avail, opts.glyphs)) {
       if (ml.length === 0) {
         out.push('');
         continue;
@@ -3297,6 +3281,17 @@ const PREVIEW_FIXTURE_USER: MessageLike = {
   content: 'find the legacy auth middleware',
 };
 
+const GENERIC_PREVIEW_MIX: MessageLike[] = [
+  PREVIEW_FIXTURE_USER,
+  PREVIEW_FIXTURE_READ,
+  PREVIEW_FIXTURE_WRITE,
+  PREVIEW_FIXTURE_GREP,
+  PREVIEW_FIXTURE_MCP,
+  PREVIEW_FIXTURE_LONG_OUTPUT,
+  PREVIEW_FIXTURE_AGENT,
+  PREVIEW_FIXTURE_SUBAGENT,
+];
+
 /** 50-key args fixture for truncation:args (one row per key → tight cap clips). */
 function buildTruncationArgsFixture(): MessageLike {
   const args: Record<string, unknown> = {
@@ -3333,25 +3328,31 @@ function buildTruncationOutputFixture(
     command: 'cat fixture.txt',
     purpose: 'demo a tool with long output',
   };
-  const choose = (): { name: string; command: string; purpose: string } => {
-    if (filters.includes('all') || filters.includes('shell')) return SHELL;
-    if (filters.includes('read'))
-      return { name: 'fs_read', command: '', purpose: 'demo a long file read' };
-    if (filters.includes('grep'))
-      return {
-        name: 'grep',
-        command: '',
-        purpose: 'demo a grep with many matches',
-      };
-    if (filters.includes('mcp'))
-      return {
+  const CANDIDATES: [
+    string,
+    { name: string; command: string; purpose: string },
+  ][] = [
+    ['shell', SHELL],
+    [
+      'read',
+      { name: 'fs_read', command: '', purpose: 'demo a long file read' },
+    ],
+    [
+      'grep',
+      { name: 'grep', command: '', purpose: 'demo a grep with many matches' },
+    ],
+    [
+      'mcp',
+      {
         name: 'mcp__demo__long-output',
         command: '',
         purpose: 'demo an MCP tool with long output',
-      };
-    return SHELL;
-  };
-  const pick = choose();
+      },
+    ],
+  ];
+  const pick = filters.includes('all')
+    ? SHELL
+    : (CANDIDATES.find(([cat]) => filters.includes(cat))?.[1] ?? SHELL);
   // fs_read uses operations:[{path}]; others take a generic command/query.
   const content: Record<string, unknown> =
     pick.name === 'fs_read'
@@ -3413,53 +3414,33 @@ export function renderVerbosityPreview(
     theme: options.theme,
   };
 
-  const messages: MessageLike[] = [];
-  switch (key) {
-    case 'top':
-    case 'density':
-    case 'tool': {
-      // Generic mix — one of each kind the user will encounter.
-      messages.push(
-        PREVIEW_FIXTURE_USER,
-        PREVIEW_FIXTURE_READ,
-        PREVIEW_FIXTURE_WRITE,
-        PREVIEW_FIXTURE_GREP,
-        PREVIEW_FIXTURE_MCP,
-        PREVIEW_FIXTURE_LONG_OUTPUT,
-        PREVIEW_FIXTURE_AGENT,
-        PREVIEW_FIXTURE_SUBAGENT
-      );
-      break;
-    }
-    case 'output':
-      // One tool per category so filter toggles produce visible changes.
-      messages.push(
-        PREVIEW_FIXTURE_USER,
-        PREVIEW_FIXTURE_SHELL,
-        PREVIEW_FIXTURE_READ,
-        PREVIEW_FIXTURE_GREP,
-        PREVIEW_FIXTURE_MCP,
-        PREVIEW_FIXTURE_AGENT,
-        PREVIEW_FIXTURE_SUBAGENT
-      );
-      break;
-    case 'subagent':
-      messages.push(PREVIEW_FIXTURE_USER, PREVIEW_FIXTURE_SUBAGENT);
-      break;
-    case 'truncation:args':
-      // Real tools first, then the synthetic 50-key fixture, so the cap
-      // impact is what the eye lands on.
-      messages.push(
-        PREVIEW_FIXTURE_GREP,
-        PREVIEW_FIXTURE_SHELL,
-        buildTruncationArgsFixture()
-      );
-      break;
-    case 'truncation:output':
-      // Reuse the fixture from above so previewFilters stays aligned.
-      if (outputFixture) messages.push(outputFixture);
-      break;
-  }
+  // truncation:output reuses outputFixture (built above) so previewFilters
+  // stays aligned; truncation:args puts the 50-key fixture last so the cap
+  // impact is what the eye lands on.
+  const PREVIEW_SETS: Record<VerbosityPreviewKey, () => MessageLike[]> = {
+    // Generic mix — one of each kind the user will encounter.
+    top: () => GENERIC_PREVIEW_MIX,
+    density: () => GENERIC_PREVIEW_MIX,
+    tool: () => GENERIC_PREVIEW_MIX,
+    // One tool per category so filter toggles produce visible changes.
+    output: () => [
+      PREVIEW_FIXTURE_USER,
+      PREVIEW_FIXTURE_SHELL,
+      PREVIEW_FIXTURE_READ,
+      PREVIEW_FIXTURE_GREP,
+      PREVIEW_FIXTURE_MCP,
+      PREVIEW_FIXTURE_AGENT,
+      PREVIEW_FIXTURE_SUBAGENT,
+    ],
+    subagent: () => [PREVIEW_FIXTURE_USER, PREVIEW_FIXTURE_SUBAGENT],
+    'truncation:args': () => [
+      PREVIEW_FIXTURE_GREP,
+      PREVIEW_FIXTURE_SHELL,
+      buildTruncationArgsFixture(),
+    ],
+    'truncation:output': () => (outputFixture ? [outputFixture] : []),
+  };
+  const messages = PREVIEW_SETS[key]();
 
   const blocks: string[] = [];
 
