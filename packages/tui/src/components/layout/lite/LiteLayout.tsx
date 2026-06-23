@@ -117,6 +117,8 @@ export const LiteLayout: React.FC = () => {
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
+  const pendingSteerContent = useAppStore((s) => s.pendingSteerContent);
+  const editingSteerLineIndex = useAppStore((s) => s.editingSteerLineIndex);
   const tasks = useAppStore((s) => s.tasks);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
@@ -204,6 +206,14 @@ export const LiteLayout: React.FC = () => {
 
   const pendingSwap = usePendingSwap();
   const pendingAgentName = pendingSwap?.name ?? null;
+  const unifiedQueueEntries = useMemo(
+    () => buildUnifiedQueueEntries(pendingSteerContent, queuedMessages),
+    [pendingSteerContent, queuedMessages]
+  );
+  const isEditingEntry = useCallback(
+    () => editingQueueIndex != null || editingSteerLineIndex != null,
+    [editingQueueIndex, editingSteerLineIndex]
+  );
 
   // Subagent inline-trace panel (Ctrl+O). subagentOpenIndex = inspected stage
   // (null = closed); mirrored into app-store so dispatch stops Esc from also
@@ -1486,7 +1496,7 @@ export const LiteLayout: React.FC = () => {
       {/* Queued messages — preview rows only (full text lives in the store).
           previewLine cap + truncate-end bound each row by width; rendering full
           text here hung the UI on multi-KB paste. Hidden during shell escape. */}
-      {queuedMessages.length > 0 && !isShellEscape && (
+      {unifiedQueueEntries.length > 0 && !isShellEscape && (
         <Box flexDirection="column">
           {unifiedQueueEntries.map((entry, displayIndex) => {
             const editing =
@@ -1607,7 +1617,7 @@ export const LiteLayout: React.FC = () => {
 
       {!showApproval && !anyPanelOpen && (
         <Box flexDirection="column">
-          {editingQueueIndex != null && (
+          {isEditingEntry() && (
             <Text>
               {chalk.cyan(
                 editingSteerLineIndex != null
