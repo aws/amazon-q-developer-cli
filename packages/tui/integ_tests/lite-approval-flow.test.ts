@@ -12,20 +12,7 @@ import {
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
-/**
- * Bug-mine 3.1, 3.2, 3.3, 3.4, 3.6: Lite approval flow behavior.
- *
- * 3.1 — Approval typing guard (APPROVAL_IDLE_MS debounce): a keystroke typed
- *        before an approval arrives defers the prompt.
- * 3.2 — Approval prompt stays visible once shown: further keystrokes do NOT
- *        hide it.
- * 3.3 — Approval keypress skip while prompt visible: 'y' keystroke is not
- *        counted as "user is typing", so sequential approvals arrive without
- *        2s delay.
- * 3.4 — Trust submenu resets on approval change: switching approvals closes
- *        the trust submenu.
- * 3.6 — Subagent attribution only when agentName differs from main.
- */
+/** Bug-mine 3.1-3.6: lite approval flow behavior (per-case rationale inline). */
 describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
   let testCase: TestCase | null = null;
 
@@ -36,106 +23,98 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     }
   });
 
-  it('[bug-mine 3.1] typing guard defers approval prompt via APPROVAL_IDLE_MS debounce', async () => {
-    testCase = await launchLiteInteg('lite-approval-typing-guard', {
-      timeout: 20000,
-    });
-
-    // Set lastKeypressRef to "now", then inject an approval — the guard must
-    // defer the prompt while the keypress is within APPROVAL_IDLE_MS (2000ms).
-    await testCase.sendKeys('hello');
-    await testCase.sleepMs(50);
-    await injectApproval(testCase, {
-      toolCallId: 'tool-guard-1',
-      toolName: 'Shell',
-    });
-    await testCase.typeAndSubmit('x');
-    await testCase.sleepMs(300);
-
-    const store = await testCase.getStore();
-    expect(store.pendingApproval).not.toBeNull();
-    expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-guard-1');
-
-    // Deferred: event delivered to store but prompt not yet painted.
-    expectApprovalDeferred(testCase);
-
-    // Past the 2000ms idle threshold the prompt appears.
-    await testCase.sleepMs(2200);
-    expectApprovalVisible(testCase);
-
-    await finishAndExitLite(testCase);
-  }, 40000);
-
-  it('[bug-mine 3.2] approval prompt stays visible once shown despite further keystrokes', async () => {
-    testCase = await launchLiteInteg('lite-approval-stays-visible', {
-      timeout: 20000,
-    });
-
-    // No recent typing -> approval shows immediately.
-    await injectApproval(testCase, {
-      toolCallId: 'tool-visible-1',
-      toolName: 'Shell',
-    });
-    await testCase.typeAndSubmit('go');
-    await testCase.sleepMs(2500);
-
-    expectApprovalVisible(testCase);
-
-    // A non-y/n/t key must NOT hide the prompt: the keypress handler skips
-    // the lastKeypressRef update while an approval is shown.
-    await testCase.sendKeys('x');
-    await testCase.sleepMs(300);
-
-    expectApprovalVisible(testCase);
-
-    const store = await testCase.getStore();
-    expect(store.pendingApproval).not.toBeNull();
-    expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-visible-1');
-
-    await finishAndExitLite(testCase);
-  }, 40000);
-
-  it('[bug-mine 3.3] sequential approvals: y keystroke is not counted as typing so next approval shows without delay', async () => {
-    testCase = await launchLiteInteg('lite-approval-sequential', {
-      timeout: 25000,
-    });
-
-    // Queue BOTH approvals before submitting so both drain when prompt() fires:
-    // first -> pendingApproval, second -> approvalQueue.
-    await injectApproval(testCase, {
-      toolCallId: 'tool-seq-1',
-      toolName: 'Shell',
-    });
-    await injectApproval(testCase, {
-      toolCallId: 'tool-seq-2',
-      toolName: 'Write',
-    });
-
-    await testCase.typeAndSubmit('start');
-    await testCase.sleepMs(300);
-
-    const store1 = await testCase.getStore();
-    expect(store1.pendingApproval).not.toBeNull();
-    expect(store1.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-1');
-    expect(store1.approvalQueue.length).toBeGreaterThanOrEqual(2);
-
-    await testCase.sleepMs(2200);
-    expectApprovalVisible(testCase);
-
-    // 'y' must NOT count as "user typing" (the useKeypress guard skips the
-    // lastKeypressRef update while an approval is shown), so the promoted
-    // second approval shows with no fresh 2s idle delay.
-    await testCase.sendKeys('y');
-    await testCase.sleepMs(500);
-
-    const store2 = await testCase.getStore();
-    expect(store2.pendingApproval).not.toBeNull();
-    expect(store2.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-2');
-
-    expectApprovalVisible(testCase);
-
-    await finishAndExitLite(testCase);
-  }, 45000);
+  // Shared shape: launch, queue approval(s), submit, then run the case-specific
+  // idle/keypress/visibility assertions. Differ only in queued approvals + body.
+  it.each([
+    {
+      name: '[bug-mine 3.1] typing guard defers approval prompt via APPROVAL_IDLE_MS debounce',
+      testName: 'lite-approval-typing-guard',
+      // A keypress within APPROVAL_IDLE_MS (2000ms) defers the prompt.
+      preSubmit: async (tc: TestCase) => {
+        await tc.sendKeys('hello');
+        await tc.sleepMs(50);
+        await injectApproval(tc, {
+          toolCallId: 'tool-guard-1',
+          toolName: 'Shell',
+        });
+      },
+      body: async (tc: TestCase) => {
+        const store = await tc.getStore();
+        expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-guard-1');
+        // Deferred: event delivered to store but prompt not yet painted.
+        expectApprovalDeferred(tc);
+        // Past the 2000ms idle threshold the prompt appears.
+        await tc.sleepMs(2200);
+        expectApprovalVisible(tc);
+      },
+    },
+    {
+      name: '[bug-mine 3.2] approval prompt stays visible once shown despite further keystrokes',
+      testName: 'lite-approval-stays-visible',
+      preSubmit: async (tc: TestCase) => {
+        // No recent typing -> approval shows immediately.
+        await injectApproval(tc, {
+          toolCallId: 'tool-visible-1',
+          toolName: 'Shell',
+        });
+      },
+      body: async (tc: TestCase) => {
+        await tc.sleepMs(2500);
+        expectApprovalVisible(tc);
+        // A non-y/n/t key must NOT hide the prompt: the keypress handler skips
+        // the lastKeypressRef update while an approval is shown.
+        await tc.sendKeys('x');
+        await tc.sleepMs(300);
+        expectApprovalVisible(tc);
+        const store = await tc.getStore();
+        expect(store.pendingApproval!.toolCall.toolCallId).toBe(
+          'tool-visible-1'
+        );
+      },
+    },
+    {
+      name: '[bug-mine 3.3] sequential approvals: y keystroke is not counted as typing so next approval shows without delay',
+      testName: 'lite-approval-sequential',
+      // Queue BOTH before submitting: first -> pendingApproval, second -> queue.
+      preSubmit: async (tc: TestCase) => {
+        await injectApproval(tc, {
+          toolCallId: 'tool-seq-1',
+          toolName: 'Shell',
+        });
+        await injectApproval(tc, {
+          toolCallId: 'tool-seq-2',
+          toolName: 'Write',
+        });
+      },
+      body: async (tc: TestCase) => {
+        const store1 = await tc.getStore();
+        expect(store1.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-1');
+        expect(store1.approvalQueue.length).toBeGreaterThanOrEqual(2);
+        await tc.sleepMs(2200);
+        expectApprovalVisible(tc);
+        // 'y' must NOT count as "user typing" (the useKeypress guard skips the
+        // lastKeypressRef update while an approval is shown), so the promoted
+        // second approval shows with no fresh 2s idle delay.
+        await tc.sendKeys('y');
+        await tc.sleepMs(500);
+        const store2 = await tc.getStore();
+        expect(store2.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-2');
+        expectApprovalVisible(tc);
+      },
+    },
+  ])(
+    '$name',
+    async ({ testName, preSubmit, body }) => {
+      testCase = await launchLiteInteg(testName, { timeout: 25000 });
+      await preSubmit(testCase);
+      await testCase.typeAndSubmit('go');
+      await testCase.sleepMs(300);
+      expect((await testCase.getStore()).pendingApproval).not.toBeNull();
+      await body(testCase);
+      await finishAndExitLite(testCase);
+    },
+    45000
+  );
 
   it('[bug-mine 3.4] trust submenu resets when approval changes', async () => {
     testCase = await launchLiteInteg('lite-approval-trust-reset', {
