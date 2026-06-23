@@ -87,14 +87,18 @@ describe('formatSubagentApprovalLines', () => {
     }
   });
 
-  test('markdown rendering: bold/code in prompt_template produces styled output, not literal markers', () => {
+  // prompt_template routes through the markdown pipeline (markers stripped,
+  // ANSI styling emitted) AND preserves the semantic paragraph break — the
+  // pipeline mechanics themselves are exhaustively covered in
+  // render-markdown.test.ts; here we just pin that subagent prompts use it.
+  test('markdown rendering: prompt_template is styled and preserves paragraph breaks', () => {
     const content = JSON.stringify({
       task: 't',
       stages: [
         {
           name: 's1',
           prompt_template:
-            'Use **bold** and `code` and *italic* in your response.',
+            'Use **bold** and `code` and *italic*.\n\nSecond paragraph.',
         },
       ],
     });
@@ -102,45 +106,22 @@ describe('formatSubagentApprovalLines', () => {
     expect(lines).not.toBeNull();
     const joined = (lines ?? []).join('\n');
     const stripped = stripAnsi(joined);
-    // Markers stripped.
-    expect(stripped).not.toContain('**bold**');
-    expect(stripped).not.toContain('`code`');
-    expect(stripped).not.toContain('*italic*');
-    // Text content survives, indented under the tree stem.
-    expect(stripped).toContain('bold');
-    expect(stripped).toContain('code');
-    expect(stripped).toContain('italic');
-    // ANSI bold escape (\x1b[1m) is in the rendered output, confirming
-    // the markdown pipeline produced styled text rather than dumping
-    // the prompt as-is. We don't pin the exact glyph because chalk's
-    // bold open is environment-dependent (color-level config), but
-    // the SGR `\x1b[1m` open is the load-bearing signal.
+    // Markers stripped, body survives.
+    for (const m of ['**bold**', '`code`', '*italic*'])
+      expect(stripped).not.toContain(m);
+    for (const t of ['bold', 'code', 'italic']) expect(stripped).toContain(t);
+    // SGR bold open confirms styled (not raw passthrough). Glyph is
+    // environment-dependent; the `\x1b[1m` open is the load-bearing signal.
     // eslint-disable-next-line no-control-regex
     expect(joined).toMatch(/\x1b\[1m/);
-  });
-
-  test('markdown rendering: multi-paragraph prompt preserves a blank-row separator', () => {
-    const content = JSON.stringify({
-      task: 't',
-      stages: [
-        {
-          name: 's1',
-          prompt_template: 'First paragraph.\n\nSecond paragraph.',
-        },
-      ],
-    });
-    const lines = formatSubagentApprovalLines(content, 100);
-    expect(lines).not.toBeNull();
-    const stripped = (lines ?? []).map(stripAnsi);
-    const firstIdx = stripped.findIndex((l) => l.includes('First paragraph'));
-    const secondIdx = stripped.findIndex((l) => l.includes('Second paragraph'));
-    expect(firstIdx).toBeGreaterThanOrEqual(0);
+    // Markdown semantic paragraph break preserved (>=1 blank row between).
+    const rows = (lines ?? []).map(stripAnsi);
+    const firstIdx = rows.findIndex((l) => l.includes('bold'));
+    const secondIdx = rows.findIndex((l) => l.includes('Second paragraph'));
     expect(secondIdx).toBeGreaterThan(firstIdx);
-    // At least one blank row between them — markdown semantic
-    // paragraph break preserved (matches the responses-section
-    // convention in renderSubagentFinalBlock).
-    const between = stripped.slice(firstIdx + 1, secondIdx);
-    expect(between.some((l) => l.trim().length === 0)).toBe(true);
+    expect(
+      rows.slice(firstIdx + 1, secondIdx).some((l) => l.trim().length === 0)
+    ).toBe(true);
   });
 
   test('markdown rendering: bold spanning a wrap boundary does not bleed into the next stage tag', () => {
