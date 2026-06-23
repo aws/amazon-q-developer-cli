@@ -49,7 +49,6 @@ describe('lite resize stability [bug-mine 1.7]', () => {
   });
 
   it('old static rows stay byte-for-byte intact after terminal resize', async () => {
-    // Start at 80 columns
     testCase = await launchLiteE2E('lite-resize-stability', {
       terminal: { width: 80, height: 40 },
     });
