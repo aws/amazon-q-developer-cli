@@ -42,43 +42,19 @@ Lite mode is currently available on internal nightly builds. First-time eligible
 
 ## Enabling Lite Mode
 
-### Mid-Session Switch
+Three ways to enter lite mode:
 
-```
-/lite       Switch to lite mode
-/tui        Switch back to TUI mode
-```
+- `/lite` (and `/tui` to switch back) mid-session — re-renders the full history in the target mode's format.
+- `KIRO_UI_MODE=lite` environment variable.
+- `chat.ui.mode: "lite"` in `~/.kiro/settings/cli.json` (or `/settings → display → Default UI`).
 
-Either command re-renders the full conversation history in the target mode's format.
-
-### Environment Variable
-
-```bash
-export KIRO_UI_MODE=lite
-kiro-cli chat
-```
-
-### Persistent Default
-
-Set your default via `/settings → display → Default UI` or write directly to `~/.kiro/settings/cli.json`:
-
-```json
-{
-  "chat.ui.mode": "lite"
-}
-```
-
-### Resolution Order
-
-The UI mode is resolved with this priority (highest first):
+The mode is resolved highest-priority first:
 
 1. `KIRO_UI_MODE` environment variable
 2. `chat.ui.mode` setting in `cli.json`
 3. Default (`tui`)
 
-## Density Presets
-
-Lite mode ships four density presets (`minimal`, `lean`, `default`, `full`) that control how much tool detail renders in scrollback. Set one with `/verbosity density <preset>`. See [/verbosity](../slash-commands/verbosity.md) for the per-preset table and the individual knobs (args mode, output filters, truncation caps, interactive menu).
+Density presets (`minimal`, `lean`, `default`, `full`) and the individual tool-output knobs are documented in [/verbosity](../slash-commands/verbosity.md).
 
 ## Settings
 

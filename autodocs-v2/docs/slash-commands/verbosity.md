@@ -85,42 +85,18 @@ Without arguments, opens the interactive configuration menu. With arguments, app
 
 You can also use exact tool names as filter tokens.
 
-## Examples
-
-The Subcommands table above documents each form; these show the status strings:
-
-```
-/verbosity minimal     # → "verbosity: density set to minimal"
-/verbosity status      # → "verbosity · filters: shell · density: default"
-```
-
 ## Interactive Menu
 
-The menu has these sections:
-
-- **Density** — Quick preset selection (minimal, lean, default, full)
-- **Tool calls** — Toggle reasoning, args mode (off/inline/block), elapsed time
-- **Subagent** — Toggle pipeline tree, prompts, roles, dependencies, responses
-- **Output bar** — Per-category filter toggles
-- **Truncation** — Set character and line caps for args and output
-- **Reset** — Return to default configuration
-
-Press Esc to back out of submenus. The menu supports live preview showing how the current settings would render.
+With no arguments the menu exposes the same knobs as the tables above —
+density presets, tool-call toggles (reasoning, args mode, elapsed),
+per-category output filters, and truncation caps — with live preview. Press
+Esc to back out of submenus.
 
 ## Persistence
 
-Settings are persisted in `~/.kiro/settings/cli.json` under keys like:
-
-- `chat.tools.filters` — filter token list
-- `chat.tools.showReasoning` — boolean
-- `chat.tools.argsMode` — `"off"` | `"inline"` | `"block"`
-- `chat.tools.showElapsed` — boolean
-- `chat.tools.argsMaxLines` — number or null
-- `chat.tools.outputMaxLines` — number or null
-- `chat.tools.argsMaxChars` — number or null
-- `chat.tools.outputMaxChars` — number or null
-
-Changes take effect immediately and persist across sessions.
+Settings persist in `~/.kiro/settings/cli.json` under the `chat.tools.*` keys
+(`filters`, `showReasoning`, `argsMode`, `showElapsed`, and the `argsMax*` /
+`outputMax*` caps). Changes take effect immediately and survive across sessions.
 
 ## Troubleshooting
 

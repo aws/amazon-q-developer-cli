@@ -28,21 +28,7 @@ The `/tui` command has context-dependent behavior:
 /tui
 ```
 
-No arguments.
-
-## Examples
-
-From lite mode, `/tui` switches to the full panel-based TUI (overlay panels, rich tool rendering, activity tray):
-
-```
-/tui
-```
-
-```
-System: Switched to TUI mode
-```
-
-From TUI mode, `/tui` instead opens the TUI information panel. Mode switches re-render the full conversation, preserve queued messages and session state, and destroy no scrollback.
+No arguments. From lite mode it switches to the full panel-based TUI (`System: Switched to TUI mode`); from TUI mode it opens the TUI info panel instead. Either way the switch re-renders the full conversation, preserves queued messages and session state, and destroys no scrollback.
 
 ## Related
 

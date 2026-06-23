@@ -27,19 +27,7 @@ Lite mode requires the lite rollout to be enabled in your build (currently inter
 /lite
 ```
 
-No arguments. Switches immediately.
-
-## Examples
-
-```
-/lite
-```
-
-```
-System: Switched to lite mode
-```
-
-On stable builds where the rollout is off, `/lite` instead reports `System: Lite mode is not available in this build`.
+No arguments. Switches immediately (`System: Switched to lite mode`). On builds where the rollout is off, it reports `System: Lite mode is not available in this build`.
 
 ## Behavior
 
