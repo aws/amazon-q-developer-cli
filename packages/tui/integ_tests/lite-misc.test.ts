@@ -69,8 +69,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     await exitLiteInteg(testCase);
   }, 30000);
 
-  // Single-turn rendering cases: seed events, complete the turn, scan the
-  // committed (static) snapshot. They differ only in events + the assertion.
   it.each([
     {
       bug: '10.2',

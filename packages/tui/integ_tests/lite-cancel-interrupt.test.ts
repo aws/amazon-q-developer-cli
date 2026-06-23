@@ -23,9 +23,6 @@ describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
     }
   });
 
-  // Shared shape: start a busy turn, fire the cancel key(s), assert the turn
-  // cleared, then run the case-specific post-cancel assertions. They differ
-  // only in the cancel key and the invariant checked afterward.
   it.each([
     {
       bug: '5.1',

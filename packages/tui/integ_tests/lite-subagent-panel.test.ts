@@ -77,8 +77,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     );
     expect(stageTools.length).toBeGreaterThanOrEqual(2);
 
-    // Ctrl+O opens.
-    await testCase.sendKeys('\x0f');
+    await testCase.sendKeys('\x0f'); // Ctrl+O opens
     await testCase.sleepMs(200);
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(true);
@@ -94,8 +93,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     expect(store.input.cursorCol).toBe(inputBefore.cursorCol);
     expect(store.input.cursorRow).toBe(inputBefore.cursorRow);
 
-    // Esc closes.
-    await testCase.pressEscape();
+    await testCase.pressEscape(); // Esc closes
     await testCase.sleepMs(200);
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(false);
@@ -109,8 +107,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     const delivered = await injectAndWaitForMessages(testCase);
     expect(delivered).toBe(true);
 
-    // Open the panel
-    await testCase.sendKeys('\x0f'); // Ctrl+O
+    await testCase.sendKeys('\x0f'); // Ctrl+O opens panel
     await testCase.sleepMs(200);
 
     let store = await testCase.getStore();

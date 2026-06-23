@@ -23,8 +23,6 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     }
   });
 
-  // Shared shape: launch, queue approval(s), submit, then run the case-specific
-  // idle/keypress/visibility assertions. Differ only in queued approvals + body.
   it.each([
     {
       name: '[bug-mine 3.1] typing guard defers approval prompt via APPROVAL_IDLE_MS debounce',
