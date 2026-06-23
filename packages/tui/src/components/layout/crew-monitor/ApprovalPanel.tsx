@@ -11,8 +11,10 @@ import { useSessionConversation } from '../../../stores/session-conversations.js
 import type {
   ApprovalRequestInfo,
   ConsentContext,
+  PermissionOption,
   TrustOption,
 } from '../../../types/agent-events.js';
+import { deriveShellTrustOptions } from '../../../utils/shell-trust-options.js';
 
 const TRUST_ENTRY_ID = 'allow_always';
 
@@ -22,14 +24,20 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
   approval: ApprovalRequestInfo;
 }) {
   const respondToApproval = useAppStore((state) => state.respondToApproval);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const conversationMessages = useSessionConversation(approval.sessionId ?? '');
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const secondary = getColor('secondary');
   const primary = getColor('primary');
 
-  const [page, setPage] = useState<'default' | 'trust'>('default');
+  const [page, setPage] = useState<'default' | 'trust' | 'kas-scope'>(
+    'default'
+  );
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const [trustScope, setTrustScope] = useState<
+    'session' | 'workspace' | 'global'
+  >('session');
 
   const toolName = useMemo(() => {
     const toolMsg = conversationMessages.find(
@@ -45,6 +53,58 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
   const trustOptions: TrustOption[] = approval.trustOptions ?? [];
   const consentContext: ConsentContext | undefined = approval.consentContext;
   const hasTrustPage = trustOptions.length > 0;
+  const alwaysOpt = options.find(
+    (o) => o.kind === TRUST_ENTRY_ID || o.optionId === TRUST_ENTRY_ID
+  );
+  const hasAllowAlways = !!alwaysOpt;
+
+  const { gatedResource, exactResource, patternResource } =
+    deriveShellTrustOptions({
+      capability: consentContext?.capability,
+      resource: consentContext?.resource,
+      triggeringResource: consentContext?.triggeringResource,
+    });
+  const scopeLabels = {
+    session: 'session',
+    workspace: 'workspace',
+    global: 'always',
+  };
+  const resourceLabel = gatedResource
+    ? gatedResource.length > 50
+      ? `"${gatedResource.slice(0, 47)}..."`
+      : `"${gatedResource}"`
+    : undefined;
+  const kasScopeItems = [
+    ...(resourceLabel && exactResource
+      ? [
+          {
+            label: `Trust ${resourceLabel}`,
+            description: `exact match · ${scopeLabels[trustScope]}`,
+            resource: exactResource,
+          },
+        ]
+      : []),
+    ...(patternResource && patternResource !== gatedResource
+      ? [
+          {
+            label: `Trust "${patternResource}"`,
+            description: `pattern · ${scopeLabels[trustScope]}`,
+            resource: patternResource,
+          },
+        ]
+      : []),
+    {
+      label: `Trust entire tool${toolName ? ` (${toolName})` : ''}`,
+      description: scopeLabels[trustScope],
+      wholeCapability: true,
+    },
+  ];
+  const hasKasScopePage =
+    hasAllowAlways &&
+    !hasTrustPage &&
+    agentEngine === 'kas' &&
+    !!consentContext &&
+    kasScopeItems.length > 0;
 
   const sortedOptions = useMemo(() => {
     const order: Record<string, number> = {
@@ -55,7 +115,9 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
       reject_once: 4,
     };
     return [...options].sort(
-      (a, b) => (order[a.optionId] ?? 3) - (order[b.optionId] ?? 3)
+      (a, b) =>
+        (order[a.kind] ?? order[a.optionId] ?? 3) -
+        (order[b.kind] ?? order[b.optionId] ?? 3)
     );
   }, [options]);
 
@@ -67,8 +129,11 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
     reject_always: 'Never',
   };
 
+  const optionLabel = (opt: PermissionOption) =>
+    optionLabels[opt.kind] ?? optionLabels[opt.optionId] ?? opt.name;
+
   const defaultMenuItems = sortedOptions.map((opt) => ({
-    label: optionLabels[opt.optionId] ?? opt.name,
+    label: optionLabel(opt),
     description: '',
   }));
 
@@ -81,45 +146,91 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
     { label: ENTIRE_TOOL_LABEL, description: '' },
   ];
 
-  const menuItems = page === 'trust' ? trustMenuItems : defaultMenuItems;
+  const menuItems =
+    page === 'trust'
+      ? trustMenuItems
+      : page === 'kas-scope'
+        ? kasScopeItems
+        : defaultMenuItems;
   const focusedOnTrust =
     page === 'default' &&
-    sortedOptions[focusedIndex]?.optionId === TRUST_ENTRY_ID &&
-    hasTrustPage;
+    sortedOptions[focusedIndex]?.kind === TRUST_ENTRY_ID &&
+    (hasTrustPage || hasKasScopePage);
 
-  const keyMap: Record<string, string> = { y: 'allow_once', n: 'reject_once' };
-  const alwaysOpt = sortedOptions.find(
-    (o) => o.optionId === 'allow_all_session' || o.optionId === 'allow_always'
-  );
-  if (alwaysOpt && !hasTrustPage) keyMap['t'] = alwaysOpt.optionId;
+  const findByKindOrId = (id: string) =>
+    sortedOptions.find((o) => o.kind === id || o.optionId === id);
 
   useKeypress((input, key) => {
     if (key.ctrl || key.meta) return;
-    const optionId = keyMap[input.toLowerCase()];
-    if (!optionId) return;
-    const opt = sortedOptions.find((o) => o.optionId === optionId);
+    const lower = input.toLowerCase();
+    if (page === 'kas-scope' && lower === 's') {
+      setTrustScope((prev) =>
+        prev === 'session'
+          ? 'workspace'
+          : prev === 'workspace'
+            ? 'global'
+            : 'session'
+      );
+      return;
+    }
+    if (page !== 'default') return;
+    if (lower === 't' && alwaysOpt) {
+      if (hasTrustPage) {
+        setPage('trust');
+        setFocusedIndex(0);
+      } else if (hasKasScopePage) {
+        setPage('kas-scope');
+        setFocusedIndex(0);
+      } else {
+        respondToApproval(alwaysOpt.optionId, approval);
+      }
+      return;
+    }
+    const kind =
+      lower === 'y' ? 'allow_once' : lower === 'n' ? 'reject_once' : '';
+    if (!kind) return;
+    const opt = findByKindOrId(kind);
     if (opt) respondToApproval(opt.optionId, approval);
   });
 
   const handleSelect = (item: { label: string }) => {
     if (page === 'default') {
-      const opt = sortedOptions.find(
-        (o) => (optionLabels[o.optionId] ?? o.name) === item.label
-      );
-      if (opt?.optionId === TRUST_ENTRY_ID && hasTrustPage) {
+      const opt = sortedOptions.find((o) => optionLabel(o) === item.label);
+      if (opt?.kind === TRUST_ENTRY_ID && hasTrustPage) {
         setPage('trust');
         setFocusedIndex(0);
         return;
       }
+      if (opt?.kind === TRUST_ENTRY_ID && hasKasScopePage) {
+        setPage('kas-scope');
+        setFocusedIndex(0);
+        return;
+      }
       if (opt) respondToApproval(opt.optionId, approval);
+    } else if (page === 'kas-scope') {
+      if (!alwaysOpt) return;
+      const selected = kasScopeItems.find((i) => i.label === item.label);
+      const scopeValue = trustScope === 'global' ? 'user' : trustScope;
+      respondToApproval(alwaysOpt.optionId, approval, {
+        kasScope: scopeValue,
+        ...(selected?.resource ? { kasResource: selected.resource } : {}),
+        ...(selected?.wholeCapability ? { kasWholeCapability: true } : {}),
+      });
     } else {
+      if (!alwaysOpt) return;
       if (item.label === ENTIRE_TOOL_LABEL) {
-        respondToApproval('allow_always', approval);
+        respondToApproval(
+          alwaysOpt.optionId,
+          approval,
+          agentEngine === 'kas' ? { kasWholeCapability: true } : undefined
+        );
         return;
       }
       const selected = trustOptions.find((t) => t.label === item.label);
       if (selected) {
-        respondToApproval('allow_always', approval, { trustOption: selected });
+        respondToApproval(alwaysOpt.optionId, approval, {
+          trustOption: selected,
+        });
       }
     }
   };
@@ -127,13 +238,15 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
   const title =
     page === 'trust'
       ? `${toolName} requires approval · trust options`
-      : `${toolName} requires approval`;
+      : page === 'kas-scope'
+        ? `${toolName} requires approval · trust [${scopeLabels[trustScope]}] (s to cycle)`
+        : `${toolName} requires approval`;
 
   return (
     <Panel
       title={title}
       onClose={() => {
-        if (page === 'trust') {
+        if (page === 'trust' || page === 'kas-scope') {
           setPage('default');
           setFocusedIndex(0);
         } else {

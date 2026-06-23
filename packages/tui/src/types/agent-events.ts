@@ -340,6 +340,11 @@ export interface ConsentContext {
 }
 
 export interface ApprovalRequestInfo {
+  /**
+   * Session that owns the backend permission request. This is separate from
+   * `sessionId`, which routes visible subagent approvals in the UI.
+   */
+  originSessionId?: string;
   sessionId?: string;
   toolCall: { toolCallId: string; title?: string; rawInput?: unknown };
   /**
@@ -529,6 +534,7 @@ export interface MetadataEvent {
 export interface CompactionStatusEvent {
   type: AgentEventType.CompactionStatus;
   status: 'started' | 'completed' | 'failed';
+  attemptId?: number;
   error?: string;
   summary?: string;
 }

@@ -77,6 +77,7 @@ import { readClipboardImage } from './utils/clipboard-image';
 import { formatEffort } from './utils/string';
 import { getAgentDisplayName } from './utils/agentColors';
 import { emitKasTelemetry } from './utils/kas-telemetry-cli';
+import { isKasShellCapability } from './utils/shell-trust-options.js';
 
 // User-agent tokens attached to the KAS ACP clientInfo._meta. KAS appends these
 // to the user agent it sends to the backend. `app/AmazonQ-For-CLI` is required
@@ -167,6 +168,36 @@ const KAS_CAPABILITIES = {
   /** Sub-agent spawn (e.g. `invoke_sub_agent`) — parent-session decision. */
   SUBAGENT: 'subagent',
 } as const;
+
+function kasConsentRecordFromRequest(
+  request: any
+): Record<string, unknown> | undefined {
+  const consent =
+    request?._meta?.kiro?.consent ?? request?.toolCall?._meta?.kiro?.consent;
+  return consent && typeof consent === 'object' && !Array.isArray(consent)
+    ? (consent as Record<string, unknown>)
+    : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function inferKasShellPermissionToolCall(request: any): {
+  title?: string;
+  rawInput?: Record<string, unknown>;
+} {
+  const consent = kasConsentRecordFromRequest(request);
+  if (!isKasShellCapability(stringValue(consent?.capability))) {
+    return {};
+  }
+  const command =
+    stringValue(consent?.resource) ?? stringValue(consent?.triggeringResource);
+  return {
+    title: 'run_command',
+    ...(command ? { rawInput: { command } } : {}),
+  };
+}
 
 const EXT_METHODS = {
   COMMANDS_AVAILABLE: 'kiro.dev/commands/available',
@@ -324,7 +355,7 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   conversationSummary?: string;
   summarization?: {
     status: string;
-    summary?: { conversationSummary?: string };
+    summary?: string | { conversationSummary?: string; content?: string };
   };
   contextUsage?: { usagePercentage?: number };
   usagePercentage?: number;
@@ -334,6 +365,7 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   // pendingDisplayError so tool_call_update Failed can use it as a fallback
   // when its own error fields are empty.
   displayError?: { message?: string };
+  error?: unknown;
   promptTurnSummaries?: KasPromptTurnSummary[];
   tokenUsage?: unknown;
   usage?: unknown;
@@ -348,6 +380,8 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   // KiroSessionInfoUpdate for the full shape.
   content?: string;
 };
+
+const COMPACT_COMPLETION_FALLBACK_MS = 500;
 
 type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
@@ -368,6 +402,30 @@ function extractKasSessionInfoMeta(
   update: AcpSessionUpdate
 ): KasSessionInfoMeta | undefined {
   return (update as { _meta?: { kiro?: KasSessionInfoMeta } })._meta?.kiro;
+}
+
+function extractKasSummarizationSummary(
+  meta: KasSessionInfoMeta
+): string | undefined {
+  if (typeof meta.conversationSummary === 'string') {
+    return meta.conversationSummary;
+  }
+  const summary = meta.summarization?.summary;
+  if (typeof summary === 'string') return summary;
+  return summary?.conversationSummary ?? summary?.content;
+}
+
+function extractKasError(meta: KasSessionInfoMeta): string | undefined {
+  if (typeof meta.error === 'string') return meta.error;
+  if (
+    typeof meta.error === 'object' &&
+    meta.error !== null &&
+    'message' in meta.error &&
+    typeof meta.error.message === 'string'
+  ) {
+    return meta.error.message;
+  }
+  return meta.displayError?.message;
 }
 
 function normalizeKasTurnCompletionStatus(status: unknown): string | undefined {
@@ -909,6 +967,11 @@ abstract class BaseAcpClient implements SessionClient {
   > = new Set();
   /** Captured from session_info_update displayError — consumed as fallback by tool_call_update Failed */
   private pendingDisplayError: string | null = null;
+  private compactCompletionFallbackTimer: ReturnType<typeof setTimeout> | null =
+    null;
+  private compactCompletionAttemptId = 0;
+  private observedCompactCompletionAttemptId = 0;
+  private externalCompactInProgress = false;
   protected promptsCache: PromptEntry[] = [];
   protected cachedBreakdown: unknown = null;
 
@@ -1047,6 +1110,7 @@ abstract class BaseAcpClient implements SessionClient {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.resetCompactCompletionFallback();
     this.agentProcess.kill('SIGTERM');
     // Best-effort SIGKILL escalation. Wrapped in setTimeout (not unrefed —
     // we want it to fire before the loop drains). If the process is already
@@ -1061,6 +1125,62 @@ abstract class BaseAcpClient implements SessionClient {
   }
 
   private closed = false;
+
+  private resetCompactCompletionFallback(): void {
+    if (!this.compactCompletionFallbackTimer) return;
+    clearTimeout(this.compactCompletionFallbackTimer);
+    this.compactCompletionFallbackTimer = null;
+  }
+
+  protected markCompactCompletionObserved(attemptId: number): void {
+    if (attemptId !== this.compactCompletionAttemptId) return;
+    this.observedCompactCompletionAttemptId = attemptId;
+    this.resetCompactCompletionFallback();
+  }
+
+  protected startCompactCompletionAttempt(): number {
+    this.resetCompactCompletionFallback();
+    this.compactCompletionAttemptId += 1;
+    return this.compactCompletionAttemptId;
+  }
+
+  protected isCompactCompletionAttemptPending(attemptId: number): boolean {
+    return (
+      attemptId === this.compactCompletionAttemptId &&
+      this.observedCompactCompletionAttemptId < attemptId
+    );
+  }
+
+  protected scheduleCompactCompletionFallback(attemptId: number): void {
+    if (!this.isCompactCompletionAttemptPending(attemptId)) return;
+    this.resetCompactCompletionFallback();
+    this.compactCompletionFallbackTimer = setTimeout(() => {
+      if (!this.isCompactCompletionAttemptPending(attemptId)) return;
+      this.compactCompletionFallbackTimer = null;
+      this.broadcastStreamEvent({
+        type: AgentEventType.CompactionStatus,
+        status: 'completed',
+        attemptId,
+      });
+    }, COMPACT_COMPLETION_FALLBACK_MS);
+  }
+
+  protected consumeCompactSummaryAttemptId(): number | undefined | null {
+    const attemptId = this.compactCompletionAttemptId;
+    if (this.isCompactCompletionAttemptPending(attemptId)) {
+      // KAS summary notifications do not carry a compact correlation id. The
+      // best available source of truth is the currently pending local compact;
+      // stale summaries after a newer compact starts are indistinguishable from
+      // that newer compact's report until KAS provides a backend id.
+      this.markCompactCompletionObserved(attemptId);
+      return attemptId;
+    }
+    if (this.externalCompactInProgress) {
+      this.externalCompactInProgress = false;
+      return undefined;
+    }
+    return null;
+  }
 
   protected broadcastStreamEvent(event: AgentStreamEvent): void {
     this.updateHandlers.forEach((handler) => handler(event));
@@ -1754,24 +1874,37 @@ abstract class BaseAcpClient implements SessionClient {
           };
         }
         if (meta?.kind === 'summarization_completed') {
+          const attemptId = this.consumeCompactSummaryAttemptId();
+          if (attemptId === null) return null;
           return {
             type: AgentEventType.CompactionStatus,
             status: 'completed' as const,
-            summary:
-              meta.conversationSummary ??
-              meta.summarization?.summary?.conversationSummary,
+            attemptId,
+            summary: extractKasSummarizationSummary(meta),
           };
         }
         if (meta?.kind === 'summarization_started') {
+          if (
+            this.isCompactCompletionAttemptPending(
+              this.compactCompletionAttemptId
+            )
+          ) {
+            return null;
+          }
+          this.externalCompactInProgress = true;
           return {
             type: AgentEventType.CompactionStatus,
             status: 'started' as const,
           };
         }
         if (meta?.kind === 'summarization_failed') {
+          const attemptId = this.consumeCompactSummaryAttemptId();
+          if (attemptId === null) return null;
           return {
             type: AgentEventType.CompactionStatus,
             status: 'failed' as const,
+            attemptId,
+            error: extractKasError(meta),
           };
         }
         if (meta?.kind === 'context_usage' || meta?.contextUsage) {
@@ -2764,7 +2897,7 @@ export class KasAcpClient extends BaseAcpClient {
         this.broadcastStreamEvent(event);
       }),
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
-        return this.handleKasPermissionRequest(request);
+        return this.handleKasPermissionRequest(request, sessionId);
       }),
     ];
   }
@@ -2864,7 +2997,8 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   private handleKasPermissionRequest(
-    request: any
+    request: any,
+    originSessionId?: string
   ): Promise<acp.RequestPermissionResponse> {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
@@ -2885,9 +3019,16 @@ export class KasAcpClient extends BaseAcpClient {
     // than crew — acceptable, since main is always resolvable and never hangs.
     const isVisibleCrewStage =
       !!subtaskId && this.pipelineStageSubtasks.has(subtaskId);
+    const shellPermission = inferKasShellPermissionToolCall(request);
+    const existingToolCall = request.toolCall ?? {};
     const enriched = {
       ...request,
-      toolCall: request.toolCall || { toolCallId },
+      toolCall: {
+        ...existingToolCall,
+        toolCallId,
+        title: existingToolCall.title ?? shellPermission.title,
+        rawInput: existingToolCall.rawInput ?? shellPermission.rawInput,
+      },
       ...(subtaskId &&
         !isSubagentSpawn &&
         isVisibleCrewStage && { sessionId: subtaskId }),
@@ -3368,9 +3509,11 @@ export class KasAcpClient extends BaseAcpClient {
         const args = (command as Record<string, unknown>).args as
           | Record<string, string>
           | undefined;
+        const compactAttemptId = this.startCompactCompletionAttempt();
         this.broadcastStreamEvent({
           type: AgentEventType.CompactionStatus,
           status: 'started',
+          attemptId: compactAttemptId,
         });
         // KAS reports the compact outcome only as `{ success: boolean }` (see
         // the `_kiro/session/compact` covenant type) and resolves the RPC after
@@ -3378,10 +3521,12 @@ export class KasAcpClient extends BaseAcpClient {
         // the eager 'started' above is what shows the spinner; we terminate it
         // from the RPC result, deriving purely from `success` — we never infer
         // a reason the agent didn't give us:
-        //   • success → 'completed'. A real compaction also emits a
-        //     `summarization_completed` session update carrying the summary;
-        //     this terminator is an idempotent duplicate (no summary, so it
-        //     won't double-append and processQueue() no-ops when idle).
+        //   • success → delayed fallback 'completed'. A real compaction also
+        //     emits a `summarization_completed` session update carrying the
+        //     summary; that update cancels the fallback so queued input cannot
+        //     overtake the report in lite scrollback. If KAS has no report
+        //     (for example a no-op compact), the fallback still clears the
+        //     spinner.
         //   • failure → 'failed', surfacing a reason only when KAS actually
         //     provided one (e.g. a thrown error message); otherwise the UI just
         //     shows that compaction failed.
@@ -3394,24 +3539,31 @@ export class KasAcpClient extends BaseAcpClient {
             // result.data.success.
             const body = result.data as { success?: boolean } | undefined;
             if (!result.success || body?.success === false) {
+              if (!this.isCompactCompletionAttemptPending(compactAttemptId)) {
+                return;
+              }
+              this.markCompactCompletionObserved(compactAttemptId);
               this.broadcastStreamEvent({
                 type: AgentEventType.CompactionStatus,
                 status: 'failed',
+                attemptId: compactAttemptId,
                 error: result.message || undefined,
               });
             } else {
-              this.broadcastStreamEvent({
-                type: AgentEventType.CompactionStatus,
-                status: 'completed',
-              });
+              this.scheduleCompactCompletionFallback(compactAttemptId);
             }
           })
           // Defensive: callExtMethod swallows errors today, but guard against a
           // future change so a rejected promise can never strand the spinner.
           .catch((e) => {
+            if (!this.isCompactCompletionAttemptPending(compactAttemptId)) {
+              return;
+            }
+            this.markCompactCompletionObserved(compactAttemptId);
             this.broadcastStreamEvent({
               type: AgentEventType.CompactionStatus,
               status: 'failed',
+              attemptId: compactAttemptId,
               error: e instanceof Error ? e.message : undefined,
             });
           });

@@ -10,7 +10,11 @@ export interface ShellTrustOptions {
    * single / non-compound requests (no `triggeringResource`).
    */
   gatedResource?: string;
-  /** Exact-match trust value to persist — the gated resource, verbatim. */
+  /**
+   * Exact-match trust value to persist. Undefined when the gated resource is
+   * the KAS whole-capability wildcard, because that cannot be represented as a
+   * literal exact resource in the permission response.
+   */
   exactResource?: string;
   /**
    * Pattern trust value (`<first token> *`, e.g. `echo *`) for shell-like
@@ -22,8 +26,14 @@ export interface ShellTrustOptions {
 }
 
 /** Capabilities whose `resource` is a shell command string we can pattern on. */
-function isShellCapability(capability?: string): boolean {
-  return capability === 'shell' || capability === 'exec';
+export const KAS_WHOLE_CAPABILITY_RESOURCE = '*';
+
+export function isKasShellCapability(capability?: string): boolean {
+  return (
+    capability === 'shell' ||
+    capability === 'exec' ||
+    capability === 'shell:exec'
+  );
 }
 
 /**
@@ -51,7 +61,7 @@ export function deriveShellTrustOptions(
 ): ShellTrustOptions {
   const gatedResource = input.triggeringResource ?? input.resource;
   let patternResource: string | undefined;
-  if (gatedResource && isShellCapability(input.capability)) {
+  if (gatedResource && isKasShellCapability(input.capability)) {
     // Tokenize once with a single consistent rule (trim first so leading
     // whitespace can't produce an empty first token / a `" *"` pattern).
     const tokens = gatedResource.trim().split(/\s+/);
@@ -79,7 +89,10 @@ export function deriveShellTrustOptions(
   }
   return {
     gatedResource,
-    exactResource: gatedResource,
+    exactResource:
+      gatedResource === KAS_WHOLE_CAPABILITY_RESOURCE
+        ? undefined
+        : gatedResource,
     patternResource,
   };
 }

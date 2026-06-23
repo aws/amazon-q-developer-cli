@@ -447,8 +447,8 @@ describe('handleCompactionEvent (live /compact path)', () => {
     });
     const s = store.getState();
     expect(s.isCompacting).toBe(true);
-    // isProcessing stays true so the send-gate keeps queuing input.
-    expect(s.isProcessing).toBe(true);
+    // Compaction is its own busy state; lite must not show generic Thinking.
+    expect(s.isProcessing).toBe(false);
     expect(s.loadingMessage).toBe('Compacting conversation...');
     // No empty user row appended.
     expect(s.messages.length).toBe(before);
@@ -472,6 +472,7 @@ describe('handleCompactionEvent (live /compact path)', () => {
     const last = s.messages[s.messages.length - 1];
     expect(last?.role).toBe(MessageRole.Model);
     expect(last?.content).toBe('short recap');
+    expect((last as any)?.standalone).toBe(true);
   });
 
   it('failed: clears the label and surfaces a transient error', async () => {
@@ -910,12 +911,12 @@ describe('handleCompactionEvent', () => {
       status: 'started',
     });
     expect(store.getState().isCompacting).toBe(true);
-    expect(store.getState().isProcessing).toBe(true);
+    expect(store.getState().isProcessing).toBe(false);
   });
 
   it('handles completed with summary', async () => {
     const store = makeStore();
-    store.setState({ isCompacting: true, isProcessing: true });
+    store.setState({ isCompacting: true, isProcessing: false });
     await store.getState().handleCompactionEvent({
       type: AgentEventType.CompactionStatus,
       status: 'completed',
@@ -927,6 +928,227 @@ describe('handleCompactionEvent', () => {
     expect(
       msgs.some((m: any) => m.content === 'Context compacted successfully')
     ).toBe(true);
+    expect(
+      msgs.some(
+        (m: any) =>
+          m.content === 'Context compacted successfully' &&
+          m.standalone === true
+      )
+    ).toBe(true);
+  });
+
+  it('treats duplicate started events as idempotent for one compact', async () => {
+    const store = makeStore();
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+      attemptId: 1,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+      summary: 'Compaction report',
+    });
+
+    expect(store.getState().isCompacting).toBe(false);
+    expect(store.getState().loadingMessage).toBeNull();
+    expect(store.getState().activeCompactionAttemptKey).toBeNull();
+    expect(
+      store
+        .getState()
+        .messages.some((m: any) => m.content === 'Compaction report')
+    ).toBe(true);
+  });
+
+  it('ignores stale terminal events from an older compaction attempt', async () => {
+    const store = makeStore();
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+      attemptId: 1,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+      attemptId: 2,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+      summary: 'stale report',
+    });
+
+    expect(store.getState().isCompacting).toBe(true);
+    expect(store.getState().loadingMessage).toBe('Compacting conversation...');
+    expect(store.getState().activeCompactionAttemptKey).toBe(2);
+    expect(
+      store.getState().messages.some((m: any) => m.content === 'stale report')
+    ).toBe(false);
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 2,
+      summary: 'current report',
+    });
+
+    expect(store.getState().isCompacting).toBe(false);
+    expect(
+      store.getState().messages.some((m: any) => m.content === 'current report')
+    ).toBe(true);
+  });
+
+  it('ignores orphan terminal events when no compaction is active', async () => {
+    const store = makeStore();
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+      summary: 'orphan report',
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'failed',
+      attemptId: 1,
+      error: 'orphan failure',
+    });
+
+    expect(store.getState().isCompacting).toBe(false);
+    expect(store.getState().transientAlert).toBeNull();
+    expect(
+      store.getState().messages.some((m: any) => m.content === 'orphan report')
+    ).toBe(false);
+  });
+
+  it('handles completed summaries without clearing an active KAS turn', async () => {
+    const store = makeStore();
+    store.setState({
+      isCompacting: true,
+      isProcessing: true,
+      loadingMessage: 'Compacting conversation...',
+      messages: [
+        { id: 'active-user', role: MessageRole.User, content: 'next prompt' },
+      ],
+    });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      summary: 'Compaction report',
+    });
+
+    expect(store.getState().isCompacting).toBe(false);
+    expect(store.getState().isProcessing).toBe(true);
+    const report = store
+      .getState()
+      .messages.find((m: any) => m.content === 'Compaction report');
+    expect(report).toBeDefined();
+    expect((report as any).standalone).toBe(true);
+  });
+
+  it('appends the report before draining queued input', async () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      sessionId: 'session-abc',
+      queuedMessages: ['next prompt'],
+      messages: [
+        { id: 'before', role: MessageRole.Model, content: 'Before compact' },
+      ],
+    });
+    const sendMessage = mock(async (content: string) => {
+      store.setState((state) => ({
+        isProcessing: true,
+        messages: [
+          ...state.messages,
+          { id: 'queued-user', role: MessageRole.User, content },
+          {
+            id: 'streaming-model',
+            role: MessageRole.Model,
+            content: 'partial answer',
+          },
+        ],
+      }));
+    });
+    store.setState({ sendMessage: sendMessage as any });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+      attemptId: 1,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+      summary: 'Compact report',
+    });
+
+    expect(store.getState().messages.map((m: any) => m.content)).toEqual([
+      'Before compact',
+      'Compact report',
+      'next prompt',
+      'partial answer',
+    ]);
+    expect(sendMessage).toHaveBeenCalledWith('next prompt');
+  });
+
+  it('inserts a late report at the compact boundary after fallback drains queued input', async () => {
+    const store = makeStore();
+    store.setState({
+      activeInterruptMode: 'queue',
+      sessionId: 'session-abc',
+      queuedMessages: ['next prompt'],
+      messages: [
+        { id: 'before', role: MessageRole.Model, content: 'Before compact' },
+      ],
+    });
+    const sendMessage = mock(async (content: string) => {
+      store.setState((state) => ({
+        isProcessing: true,
+        messages: [
+          ...state.messages,
+          { id: 'queued-user', role: MessageRole.User, content },
+          {
+            id: 'streaming-model',
+            role: MessageRole.Model,
+            content: 'partial answer',
+          },
+        ],
+      }));
+    });
+    store.setState({ sendMessage: sendMessage as any });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+      attemptId: 1,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      attemptId: 1,
+      summary: 'Compact report',
+    });
+
+    expect(store.getState().messages.map((m: any) => m.content)).toEqual([
+      'Before compact',
+      'Compact report',
+      'next prompt',
+      'partial answer',
+    ]);
+    expect(sendMessage).toHaveBeenCalledWith('next prompt');
   });
 
   it('handles failed status', async () => {
@@ -939,7 +1161,7 @@ describe('handleCompactionEvent', () => {
     });
     expect(store.getState().isCompacting).toBe(false);
     expect(store.getState().transientAlert?.message).toContain(
-      'Compaction failed'
+      'Compaction failed: timeout'
     );
   });
 

@@ -38,6 +38,15 @@ describe('deriveShellTrustOptions', () => {
     expect(result.patternResource).toBeUndefined();
   });
 
+  it('also gates on the shell:exec capability spelling', () => {
+    const result = deriveShellTrustOptions({
+      capability: 'shell:exec',
+      resource: 'npm test',
+    });
+    expect(result.exactResource).toBe('npm test');
+    expect(result.patternResource).toBe('npm *');
+  });
+
   it('derives no shell pattern for a non-shell capability', () => {
     const result = deriveShellTrustOptions({
       capability: 'fs_write',
@@ -60,6 +69,26 @@ describe('deriveShellTrustOptions', () => {
   it('returns undefined values when there is no resource at all', () => {
     const result = deriveShellTrustOptions({ capability: 'shell' });
     expect(result.gatedResource).toBeUndefined();
+    expect(result.exactResource).toBeUndefined();
+    expect(result.patternResource).toBeUndefined();
+  });
+
+  it('does not expose a literal wildcard as an exact trust resource', () => {
+    const result = deriveShellTrustOptions({
+      capability: 'shell',
+      resource: '*',
+    });
+    expect(result.gatedResource).toBe('*');
+    expect(result.exactResource).toBeUndefined();
+    expect(result.patternResource).toBeUndefined();
+  });
+
+  it('does not expose a non-shell literal wildcard as an exact trust resource', () => {
+    const result = deriveShellTrustOptions({
+      capability: 'fs_write',
+      resource: '*',
+    });
+    expect(result.gatedResource).toBe('*');
     expect(result.exactResource).toBeUndefined();
     expect(result.patternResource).toBeUndefined();
   });

@@ -18,6 +18,8 @@ import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 const DOWN_ARROW = '\x1b[B';
+const COMPOUND_SHELL_COMMAND = 'git status && echo "done"';
+const GATED_SHELL_SEGMENT = 'echo "done"';
 
 function setupHandshake(
   tc: AcpTestCase,
@@ -91,6 +93,65 @@ function makeV2PermissionRequest(toolCallId: string) {
   };
 }
 
+async function openCompoundShellTrustScope(
+  tc: AcpTestCase,
+  toolCallId: string
+): Promise<{ responsePromise: Promise<any> }> {
+  setupHandshake(tc);
+  tc.mock.on('session/prompt', () => ({ stopReason: 'end_turn' }));
+
+  await tc.launch();
+  await tc.mock.awaitConnection();
+  await tc.waitForVisibleText('ask a question', 10000);
+  await tc.sleepMs(300);
+
+  tc.mock.notify('session/update', {
+    sessionId: 'test-session-1',
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId,
+      title: 'shell',
+      kind: 'execute',
+      rawInput: { command: COMPOUND_SHELL_COMMAND },
+    },
+  });
+  await tc.sleepMs(200);
+
+  const responsePromise = tc.mock.request('session/request_permission', {
+    sessionId: 'test-session-1',
+    toolCall: { toolCallId },
+    options: [
+      { kind: 'allow_once', name: 'Allow Once', optionId: 'accept' },
+      {
+        kind: 'allow_always',
+        name: 'Always Allow',
+        optionId: 'always-accept',
+      },
+    ],
+    _meta: {
+      kiro: {
+        toolId: 'shell-tool',
+        consent: {
+          capability: 'shell',
+          resource: COMPOUND_SHELL_COMMAND,
+          triggeringResource: GATED_SHELL_SEGMENT,
+        },
+      },
+    },
+  });
+
+  await tc.waitForStore((s) => s.pendingApproval !== null, 5000);
+  await tc.sleepMs(200);
+
+  await tc.sendKeys(DOWN_ARROW);
+  await tc.sleepMs(100);
+  await tc.pressEnter();
+  await tc.waitForVisibleText('trust [session]', 3000);
+  await tc.sleepMs(200);
+
+  return { responsePromise: responsePromise as Promise<any> };
+}
+
 describe('KAS permission consent flow', () => {
   let tc: AcpTestCase | null = null;
 
@@ -137,6 +198,7 @@ describe('KAS permission consent flow', () => {
 
     expect(response.outcome.outcome).toBe('selected');
     expect(response.outcome.optionId).toBe('accept');
+    expect(response._meta?.kiro?.consent?.capability).toBe('fs_write');
     expect(response._meta?.kiro?.consent?.scope).toBe('invocation');
   }, 30000);
 
@@ -178,9 +240,34 @@ describe('KAS permission consent flow', () => {
 
     expect(response.outcome.outcome).toBe('selected');
     expect(response.outcome.optionId).toBe('always-accept');
+    expect(response._meta?.kiro?.consent?.capability).toBe('fs_write');
     expect(response._meta?.kiro?.consent?.scope).toBe('session');
     expect(response._meta?.kiro?.consent?.resource).toBe('/workspace/src');
     expect(response._meta?.kiro?.consent?.workspaceRoot).toBe('/workspace');
+  }, 30000);
+
+  it('compound shell: entire-tool trust uses KAS wildcard resource', async () => {
+    tc = new AcpTestCase({ testName: 'consent-compound-shell-entire' });
+    const { responsePromise } = await openCompoundShellTrustScope(
+      tc,
+      'tc-compound-shell-entire'
+    );
+
+    await tc.sendKeys(DOWN_ARROW);
+    await tc.sleepMs(100);
+    await tc.sendKeys(DOWN_ARROW);
+    await tc.sleepMs(100);
+    await tc.pressEnter();
+
+    const response = (await responsePromise) as any;
+
+    expect(response.outcome.outcome).toBe('selected');
+    expect(response.outcome.optionId).toBe('always-accept');
+    expect(response._meta?.kiro?.consent).toEqual({
+      capability: 'shell',
+      scope: 'session',
+      resource: '*',
+    });
   }, 30000);
 
   it('consent context populates the approval store correctly', async () => {
@@ -349,70 +436,11 @@ describe('KAS permission consent flow', () => {
     // first/exact item) and asserts the reply that crosses the wire carries the
     // gated segment in _meta.kiro.consent.resource. Pre-fix it carried the whole
     // command (kasResource: resource instead of exactResource).
-    const COMPOUND = 'git status && echo "done"';
-    const GATED = 'echo "done"';
-
     tc = new AcpTestCase({ testName: 'consent-compound-shell-exact' });
-    setupHandshake(tc);
-    tc.mock.on('session/prompt', () => ({ stopReason: 'end_turn' }));
-
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.waitForVisibleText('ask a question', 10000);
-    await tc.sleepMs(300);
-
-    // Inject a shell tool_call so the approval has a matching tool message.
-    tc.mock.notify('session/update', {
-      sessionId: 'test-session-1',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId: 'tc-compound-shell',
-        title: 'shell',
-        kind: 'execute',
-        rawInput: { command: COMPOUND },
-      },
-    });
-    await tc.sleepMs(200);
-
-    // Permission request carries the compound command as `resource` and the
-    // gated sub-command as `triggeringResource`. `toolId` marks it a real tool
-    // approval (not a user_input question), matching the KAS shell-approval
-    // wire shape.
-    const responsePromise = tc.mock.request('session/request_permission', {
-      sessionId: 'test-session-1',
-      toolCall: { toolCallId: 'tc-compound-shell' },
-      options: [
-        { kind: 'allow_once', name: 'Allow Once', optionId: 'accept' },
-        {
-          kind: 'allow_always',
-          name: 'Always Allow',
-          optionId: 'always-accept',
-        },
-      ],
-      _meta: {
-        kiro: {
-          toolId: 'shell-tool',
-          consent: {
-            capability: 'shell',
-            resource: COMPOUND,
-            triggeringResource: GATED,
-          },
-        },
-      },
-    });
-
-    await tc.waitForStore((s) => s.pendingApproval !== null, 5000);
-    await tc.sleepMs(200);
-
-    // Navigate down to "Trust, always allow in this session" (allow_always).
-    await tc.sendKeys(DOWN_ARROW);
-    await tc.sleepMs(100);
-    // Enter opens the kas-scope sub-page (consent context present, KAS engine).
-    await tc.pressEnter();
-    // Wait for the kas-scope page (its title reads "trust [session]") rather
-    // than a bare sleep, to ride out the `Menu key={page}` remount.
-    await tc.waitForVisibleText('trust [session]', 3000);
-    await tc.sleepMs(200);
+    const { responsePromise } = await openCompoundShellTrustScope(
+      tc,
+      'tc-compound-shell'
+    );
     // First item on the kas-scope page is the exact-match trust for the gated
     // segment (resourceLabel is truthy). Enter selects it.
     await tc.pressEnter();
@@ -421,9 +449,12 @@ describe('KAS permission consent flow', () => {
 
     expect(response.outcome.outcome).toBe('selected');
     expect(response.outcome.optionId).toBe('always-accept');
+    expect(response._meta?.kiro?.consent?.capability).toBe('shell');
     // The trusted resource must be the GATED segment...
-    expect(response._meta?.kiro?.consent?.resource).toBe(GATED);
+    expect(response._meta?.kiro?.consent?.resource).toBe(GATED_SHELL_SEGMENT);
     // ...never the whole compound command (the pre-fix regression value).
-    expect(response._meta?.kiro?.consent?.resource).not.toBe(COMPOUND);
+    expect(response._meta?.kiro?.consent?.resource).not.toBe(
+      COMPOUND_SHELL_COMMAND
+    );
   }, 30000);
 });

@@ -129,7 +129,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   };
 
   const kasScopeItems = [
-    ...(resourceLabel
+    ...(resourceLabel && exactResource
       ? [
           {
             label: `Trust ${resourceLabel}`,
@@ -262,7 +262,11 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       if (opt) respondToApproval(opt.optionId);
     } else if (page === 'kas-scope') {
       const scopeValue = trustScope === 'global' ? 'user' : trustScope;
-      if (resourceLabel && item.label === `Trust ${resourceLabel}`) {
+      if (
+        exactResource &&
+        resourceLabel &&
+        item.label === `Trust ${resourceLabel}`
+      ) {
         respondToApproval(TRUST_OPTION_ID, undefined, {
           kasScope: scopeValue,
           kasResource: exactResource,
@@ -274,16 +278,25 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
         });
       } else {
         // Entire tool — no resource filter
-        respondToApproval(TRUST_OPTION_ID, undefined, { kasScope: scopeValue });
+        respondToApproval(TRUST_OPTION_ID, undefined, {
+          kasScope: scopeValue,
+          kasWholeCapability: true,
+        });
       }
     } else {
       if (item.label === ENTIRE_TOOL_LABEL) {
-        respondToApproval('allow_always');
+        respondToApproval(
+          TRUST_OPTION_ID,
+          undefined,
+          agentEngine === 'kas' ? { kasWholeCapability: true } : undefined
+        );
         return;
       }
       const selected = trustOptions.find((t) => t.label === item.label);
       if (selected) {
-        respondToApproval('allow_always', undefined, { trustOption: selected });
+        respondToApproval(TRUST_OPTION_ID, undefined, {
+          trustOption: selected,
+        });
       }
     }
   };

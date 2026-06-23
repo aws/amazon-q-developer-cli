@@ -162,6 +162,13 @@ const READ_TRUST_OPTION = {
   patterns: ['subdir/file.txt'],
 };
 
+const SHELL_TRUST_OPTION = {
+  label: 'Exact command',
+  display: 'echo done',
+  setting_key: 'allowedCommands',
+  patterns: ['echo done'],
+};
+
 function makeKasReadTrustApproval() {
   return {
     toolId: 'fs_read',

@@ -11,6 +11,10 @@ import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import { selectVisibleSlashCommands } from './visible-slash-commands';
 import { synthesizeToolUseContent } from './tool-use-synthesis';
 import {
+  isKasShellCapability,
+  KAS_WHOLE_CAPABILITY_RESOURCE,
+} from '../utils/shell-trust-options.js';
+import {
   AgentEventType,
   ApprovalOptionId,
   TASK_TOOL_NAMES,
@@ -464,6 +468,145 @@ export interface ConversationTurn {
   userMessage: MessageType;
   aiMessages: MessageType[];
   isActive: boolean;
+}
+
+function isApprovalOptionKind(optionId: string): optionId is ApprovalOptionId {
+  return Object.values(ApprovalOptionId).includes(optionId as ApprovalOptionId);
+}
+
+function resolveApprovalOptionKind(
+  approval: ApprovalRequestInfo,
+  optionId: string
+): ApprovalOptionId | undefined {
+  const resolvedKind = approval.permissionOptions.find(
+    (o) => o.optionId === optionId
+  )?.kind;
+  return (
+    resolvedKind ?? (isApprovalOptionKind(optionId) ? optionId : undefined)
+  );
+}
+
+function resolveApprovalOptionIdByKind(
+  approval: ApprovalRequestInfo,
+  kind: ApprovalOptionId
+): string {
+  return (
+    approval.permissionOptions.find((o) => o.kind === kind)?.optionId ?? kind
+  );
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function hasKasResourceTrustMeta(
+  meta: Record<string, unknown> | undefined
+): boolean {
+  return typeof meta?.kasResource === 'string' && meta.kasResource.length > 0;
+}
+
+function hasKasToolConsentTarget(approval: ApprovalRequestInfo): boolean {
+  return (
+    !!approval.toolId ||
+    !!approval.consentContext ||
+    (approval.trustOptions?.length ?? 0) > 0
+  );
+}
+
+function usesKasWholeCapabilityResource(
+  capability: string | undefined,
+  resolvedKind: ApprovalOptionId | undefined,
+  meta: Record<string, unknown> | undefined
+): boolean {
+  return (
+    resolvedKind === ApprovalOptionId.AllowAlways &&
+    isKasShellCapability(capability) &&
+    meta?.kasWholeCapability === true
+  );
+}
+
+function buildKasConsentMeta(
+  approval: ApprovalRequestInfo,
+  resolvedKind: ApprovalOptionId | undefined,
+  meta: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (meta?.trustOption) return meta;
+  if (!hasKasToolConsentTarget(approval)) return meta;
+
+  const kasScope =
+    (meta?.kasScope as string) ??
+    (resolvedKind === ApprovalOptionId.AllowAlways ? 'session' : 'invocation');
+  const explicitKasResource =
+    typeof meta?.kasResource === 'string' && meta.kasResource.length > 0
+      ? meta.kasResource
+      : undefined;
+  const capability = nonEmptyString(approval.consentContext?.capability);
+  const kasResource =
+    explicitKasResource !== undefined
+      ? explicitKasResource
+      : usesKasWholeCapabilityResource(capability, resolvedKind, meta)
+        ? KAS_WHOLE_CAPABILITY_RESOURCE
+        : undefined;
+
+  return {
+    kiro: {
+      consent: {
+        ...(capability ? { capability } : {}),
+        scope: kasScope,
+        ...(kasResource ? { resource: kasResource } : {}),
+        ...(approval.consentContext?.workspaceRoot
+          ? { workspaceRoot: approval.consentContext.workspaceRoot }
+          : {}),
+      },
+    },
+  };
+}
+
+function toolUseMessageName(
+  messages: readonly MessageType[],
+  toolCallId: string
+): string | undefined {
+  const toolMsg = messages.find(
+    (m) => m.role === MessageRole.ToolUse && m.id === toolCallId
+  );
+  return toolMsg?.role === MessageRole.ToolUse ? toolMsg.name : undefined;
+}
+
+function approvalToolIdentity(
+  approval: ApprovalRequestInfo,
+  messages: readonly MessageType[]
+): string | undefined {
+  const capability = nonEmptyString(approval.consentContext?.capability);
+  if (capability) return capability;
+  return (
+    nonEmptyString(approval.toolId) ??
+    nonEmptyString(
+      toolUseMessageName(messages, approval.toolCall.toolCallId)
+    ) ??
+    nonEmptyString(approval.toolCall.title)
+  );
+}
+
+function approvalTrustIdentity(
+  approval: ApprovalRequestInfo,
+  messages: readonly MessageType[],
+  agentEngine: AgentEngine
+): string | undefined {
+  const identity = approvalToolIdentity(approval, messages);
+  if (!identity || agentEngine !== 'kas') return identity;
+
+  const capability = nonEmptyString(approval.consentContext?.capability);
+  if (!capability) return identity;
+
+  return [
+    isKasShellCapability(capability) ? 'shell' : capability,
+    nonEmptyString(approval.consentContext?.workspaceRoot) ?? '',
+    nonEmptyString(approval.originSessionId) ??
+      nonEmptyString(approval.sessionId) ??
+      '',
+  ].join('\0');
 }
 
 export interface SlashCommand extends AvailableCommand {
@@ -1166,6 +1309,8 @@ export interface AppState {
   sessionId: string | null;
   isProcessing: boolean;
   isCompacting: boolean;
+  activeCompactionAttemptKey: number | null;
+  compactionReportAnchor: { attemptKey: number; index: number } | null;
   wasCancelled: boolean;
   agentError: string | null;
   agentErrorGuidance: string | null;
@@ -1728,6 +1873,55 @@ function applyLiteAlertRouting(
   };
 }
 
+function insertCompactionReport(
+  messages: MessageType[],
+  summary: string,
+  index = messages.length
+): MessageType[] {
+  const report: MessageType = {
+    id: crypto.randomUUID(),
+    role: MessageRole.Model,
+    content: summary,
+    standalone: true,
+  };
+  const boundedIndex = Math.max(0, Math.min(index, messages.length));
+  return [
+    ...messages.slice(0, boundedIndex),
+    report,
+    ...messages.slice(boundedIndex),
+  ];
+}
+
+const LEGACY_COMPACTION_ATTEMPT_KEY = 0;
+
+function getNextCompactionAttemptKey(
+  state: AppState,
+  attemptId?: number
+): number {
+  if (attemptId != null) return attemptId;
+  if (state.isCompacting && state.activeCompactionAttemptKey != null) {
+    return state.activeCompactionAttemptKey;
+  }
+  return LEGACY_COMPACTION_ATTEMPT_KEY;
+}
+
+function isActiveCompactionTerminalEvent(
+  state: AppState,
+  attemptId?: number
+): boolean {
+  if (!state.isCompacting) return false;
+  if (attemptId != null) {
+    return (
+      state.activeCompactionAttemptKey == null ||
+      state.activeCompactionAttemptKey === attemptId
+    );
+  }
+  return (
+    state.activeCompactionAttemptKey == null ||
+    state.activeCompactionAttemptKey === LEGACY_COMPACTION_ATTEMPT_KEY
+  );
+}
+
 /**
  * Command set the lite "dispatch locally vs. send to agent" gate
  * (`isKnownSlashCommandToken`) should match against.
@@ -2056,6 +2250,8 @@ export const createAppStore = (props: AppStoreProps) => {
     sessionId: null,
     isProcessing: false,
     isCompacting: false,
+    activeCompactionAttemptKey: null,
+    compactionReportAnchor: null,
     wasCancelled: false,
     agentError: null,
     agentErrorGuidance: null,
@@ -2255,11 +2451,13 @@ export const createAppStore = (props: AppStoreProps) => {
       const {
         kiro,
         isProcessing,
+        isCompacting,
+        loadingMessage,
         isInitialized,
         attachedFiles,
         pendingImages,
       } = get();
-      if (!isInitialized || isProcessing) {
+      if (!isInitialized || isProcessing || isCompacting || loadingMessage) {
         get().queueMessage(displayContent ?? content);
         return;
       }
@@ -3070,6 +3268,7 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ApprovalRequest: {
             const {
               autoApproveCrewTools,
+              agentEngine,
               sessionId: mainSessionId,
               trustAllToolsConfirmed,
             } = get();
@@ -3077,7 +3276,10 @@ export const createAppStore = (props: AppStoreProps) => {
             // --trust-all-tools: auto-approve all permission requests
             // Prefer allow_always (V2 parity: server learns tool is trusted),
             // fall back to allow_once if always isn't offered.
-            if (trustAllToolsConfirmed) {
+            if (
+              trustAllToolsConfirmed &&
+              (agentEngine !== 'kas' || hasKasToolConsentTarget(event.value))
+            ) {
               const opt =
                 event.value.permissionOptions.find(
                   (o: { kind: string }) => o.kind === 'allow_always'
@@ -3086,22 +3288,16 @@ export const createAppStore = (props: AppStoreProps) => {
                   (o: { kind: string }) => o.kind === 'allow_once'
                 );
               if (opt) {
+                const resolvedMeta =
+                  agentEngine === 'kas'
+                    ? buildKasConsentMeta(event.value, opt.kind, {
+                        kasWholeCapability: true,
+                      })
+                    : undefined;
                 event.value.resolve({
                   outcome: 'selected',
                   optionId: opt.optionId,
-                  _meta:
-                    get().agentEngine === 'kas'
-                      ? {
-                          kiro: {
-                            consent: {
-                              scope:
-                                opt.kind === 'allow_always'
-                                  ? 'session'
-                                  : 'invocation',
-                            },
-                          },
-                        }
-                      : undefined,
+                  ...(resolvedMeta ? { _meta: resolvedMeta } : {}),
                 });
                 break;
               }
@@ -3217,28 +3413,7 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             break;
           case AgentEventType.CompactionStatus:
-            if (event.status === 'started') {
-              // 'Compacting conversation...' surfaces in lite as a dim
-              // spinner line above the divider via LiteLayout's
-              // loadingMessage block, matching the visual language used by
-              // /chat new ('Starting new conversation...') and /chat <id>
-              // ('Loading session ...'). Modern TUI consumes the same slot,
-              // so the label appears in both modes; isCompacting separately
-              // gates input in InlineLayout.
-              set({
-                isCompacting: true,
-                loadingMessage: 'Compacting conversation...',
-              });
-            } else if (event.status === 'completed') {
-              set({ isCompacting: false, loadingMessage: null });
-            } else if (event.status === 'failed') {
-              set({ isCompacting: false, loadingMessage: null });
-              get().showTransientAlert({
-                message: `Compaction failed: ${event.error ?? 'unknown error'}`,
-                status: 'error',
-                autoHideMs: 5000,
-              });
-            }
+            void get().handleCompactionEvent(event);
             break;
           case AgentEventType.AuthError:
             {
@@ -3902,43 +4077,93 @@ export const createAppStore = (props: AppStoreProps) => {
         // scrollback every /compact. `loadingMessage` drives a proper
         // "Compacting conversation..." spinner in both UIs (lite spinner row /
         // TUI NotificationBar) instead of the generic isProcessing "thinking"
-        // indicator. isProcessing stays true — the sendMessage send-gate keys
-        // on it, so input is still queued (not sent) during compaction.
+        // indicator. Keep isProcessing untouched; isCompacting/loadingMessage
+        // are the busy gates for compaction.
         set({
           isCompacting: true,
-          isProcessing: true,
+          activeCompactionAttemptKey: getNextCompactionAttemptKey(
+            get(),
+            event.attemptId
+          ),
           loadingMessage: 'Compacting conversation...',
         });
       } else if (event.status === 'completed') {
         const summary = event.summary;
+        let shouldDrainQueue = false;
         set((state) => {
-          const messages = [...state.messages];
-          if (summary) {
-            messages.push({
-              id: crypto.randomUUID(),
-              role: MessageRole.Model,
-              content: summary,
-            });
+          const isActiveEvent = isActiveCompactionTerminalEvent(
+            state,
+            event.attemptId
+          );
+          shouldDrainQueue = isActiveEvent;
+          if (!isActiveEvent) {
+            const anchor = state.compactionReportAnchor;
+            if (
+              summary &&
+              event.attemptId != null &&
+              anchor?.attemptKey === event.attemptId
+            ) {
+              return {
+                compactionReportAnchor: null,
+                messages: insertCompactionReport(
+                  state.messages,
+                  summary,
+                  anchor.index
+                ),
+              };
+            }
+            return {};
           }
           return {
             isCompacting: false,
-            isProcessing: false,
+            activeCompactionAttemptKey: null,
+            compactionReportAnchor:
+              summary || event.attemptId == null
+                ? null
+                : {
+                    attemptKey: event.attemptId,
+                    index: state.messages.length,
+                  },
             loadingMessage: null,
             transientAlert: null,
-            messages,
+            messages: summary
+              ? insertCompactionReport(state.messages, summary)
+              : state.messages,
           };
         });
-        await get().processQueue();
+        if (shouldDrainQueue) await get().processQueue();
       } else if (event.status === 'failed') {
-        set({ isCompacting: false, isProcessing: false, loadingMessage: null });
-        get().showTransientAlert({
-          message: event.error
-            ? `Compaction failed: ${event.error}`
-            : 'Compaction failed',
-          status: 'error',
-          autoHideMs: 5000,
+        let shouldDrainQueue = false;
+        let showAlert = false;
+        set((state) => {
+          const isActiveEvent = isActiveCompactionTerminalEvent(
+            state,
+            event.attemptId
+          );
+          shouldDrainQueue = isActiveEvent;
+          showAlert = isActiveEvent;
+          if (!isActiveEvent) return {};
+          return {
+            isCompacting: false,
+            activeCompactionAttemptKey: null,
+            compactionReportAnchor:
+              event.attemptId != null &&
+              state.compactionReportAnchor?.attemptKey === event.attemptId
+                ? null
+                : state.compactionReportAnchor,
+            loadingMessage: null,
+          };
         });
-        await get().processQueue();
+        if (showAlert) {
+          get().showTransientAlert({
+            message: event.error
+              ? `Compaction failed: ${event.error}`
+              : 'Compaction failed',
+            status: 'error',
+            autoHideMs: 5000,
+          });
+        }
+        if (shouldDrainQueue) await get().processQueue();
       }
     },
 
@@ -3996,34 +4221,36 @@ export const createAppStore = (props: AppStoreProps) => {
       const approval = target ?? pendingApproval;
       if (approval) {
         const toolCallId = approval.toolCall.toolCallId;
+        const resolvedKind = resolveApprovalOptionKind(approval, optionId);
         const isRejected =
-          optionId === ApprovalOptionId.RejectOnce ||
-          optionId === ApprovalOptionId.RejectAlways;
-        const resolvedKind = approval.permissionOptions.find(
-          (o) => o.optionId === optionId
-        )?.kind;
+          resolvedKind === ApprovalOptionId.RejectOnce ||
+          resolvedKind === ApprovalOptionId.RejectAlways;
+        const isKasApproval = get().agentEngine === 'kas';
         const isTrust =
-          resolvedKind === ApprovalOptionId.AllowAlways && !_meta?.trustOption;
+          resolvedKind === ApprovalOptionId.AllowAlways &&
+          !_meta?.trustOption &&
+          !hasKasResourceTrustMeta(_meta) &&
+          (!isKasApproval ||
+            usesKasWholeCapabilityResource(
+              nonEmptyString(approval.consentContext?.capability),
+              resolvedKind,
+              _meta
+            ));
 
         // When trusting a tool, cascade to all pending approvals of the same tool
         let cascadeApprovals: ApprovalRequestInfo[] = [];
         if (isTrust) {
-          const toolMsg = messages.find(
-            (m) => m.role === MessageRole.ToolUse && m.id === toolCallId
+          const trustedIdentity = approvalTrustIdentity(
+            approval,
+            messages,
+            get().agentEngine
           );
-          if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
-            const trustedName = toolMsg.name;
+          if (trustedIdentity) {
             cascadeApprovals = approvalQueue.filter((a) => {
               if (a === approval) return false;
-              const msg = messages.find(
-                (m) =>
-                  m.role === MessageRole.ToolUse &&
-                  m.id === a.toolCall.toolCallId
-              );
               return (
-                msg &&
-                msg.role === MessageRole.ToolUse &&
-                msg.name === trustedName
+                approvalTrustIdentity(a, messages, get().agentEngine) ===
+                trustedIdentity
               );
             });
           }
@@ -4098,44 +4325,35 @@ export const createAppStore = (props: AppStoreProps) => {
           };
         });
 
-        // Build _meta for the response, including KAS consent if applicable
-        let resolvedMeta = _meta;
-        if (get().agentEngine === 'kas' && !_meta?.trustOption) {
-          const optionKind = approval.permissionOptions.find(
-            (o) => o.optionId === optionId
-          )?.kind;
-          const kasScope =
-            (_meta?.kasScope as string) ??
-            (optionKind === ApprovalOptionId.AllowAlways
-              ? 'session'
-              : 'invocation');
-          // kasResource: explicitly provided = trust specific resource;
-          // undefined = trust entire capability (no resource filter)
-          const kasResource = _meta?.kasResource as string | undefined;
-          resolvedMeta = {
-            kiro: {
-              consent: {
-                scope: kasScope,
-                ...(kasResource ? { resource: kasResource } : {}),
-                ...(approval.consentContext?.workspaceRoot
-                  ? { workspaceRoot: approval.consentContext.workspaceRoot }
-                  : {}),
-              },
-            },
-          };
-        }
+        const resolvedMeta =
+          get().agentEngine === 'kas'
+            ? buildKasConsentMeta(approval, resolvedKind, _meta)
+            : _meta;
 
         approval.resolve({
           outcome: 'selected',
           optionId,
-          _meta: resolvedMeta,
+          ...(resolvedMeta ? { _meta: resolvedMeta } : {}),
         });
 
         // Auto-resolve cascaded approvals with allow_once (trust is already applied)
         for (const cascaded of cascadeApprovals) {
+          const allowOnceOptionId = resolveApprovalOptionIdByKind(
+            cascaded,
+            ApprovalOptionId.AllowOnce
+          );
+          const cascadedKind = resolveApprovalOptionKind(
+            cascaded,
+            allowOnceOptionId
+          );
+          const cascadedMeta =
+            get().agentEngine === 'kas'
+              ? buildKasConsentMeta(cascaded, cascadedKind, undefined)
+              : undefined;
           cascaded.resolve({
             outcome: 'selected',
-            optionId: ApprovalOptionId.AllowOnce,
+            optionId: allowOnceOptionId,
+            ...(cascadedMeta ? { _meta: cascadedMeta } : {}),
           });
         }
       }
@@ -4208,7 +4426,13 @@ export const createAppStore = (props: AppStoreProps) => {
     // Keeps last turn visible for /clear
     clearMessages: () => {
       const msgs = get().messages;
-      if (msgs.length < 2) return;
+      if (msgs.length < 2) {
+        set({
+          activeCompactionAttemptKey: null,
+          compactionReportAnchor: null,
+        });
+        return;
+      }
 
       // Find the last user message to keep the entire last turn
       let lastUserIndex = -1;
@@ -4219,8 +4443,18 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       }
 
-      if (lastUserIndex === -1) return;
-      set({ messages: msgs.slice(lastUserIndex) });
+      if (lastUserIndex === -1) {
+        set({
+          activeCompactionAttemptKey: null,
+          compactionReportAnchor: null,
+        });
+        return;
+      }
+      set({
+        messages: msgs.slice(lastUserIndex),
+        activeCompactionAttemptKey: null,
+        compactionReportAnchor: null,
+      });
     },
 
     resetMessages: () => {
@@ -4252,6 +4486,8 @@ export const createAppStore = (props: AppStoreProps) => {
       //   into the new chat.
       set((s) => ({
         messages: [],
+        activeCompactionAttemptKey: null,
+        compactionReportAnchor: null,
         liteStaticSkipBefore: 0,
         // Gate the cross-mode token bump to lite mode only. Modern TUI's
         // ConversationView is a consumer of liteScrollbackClearToken (added
@@ -4466,19 +4702,22 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     processQueue: async () => {
-      const {
-        cancelInProgress,
-        isProcessing,
-        pendingSteerContent,
-        queuedMessages,
-      } = get();
+      const { cancelInProgress } = get();
 
       if (cancelInProgress) {
         await cancelInProgress;
       }
 
-      // Don't drain if already processing (prevents double-send races)
-      if (isProcessing) return;
+      const {
+        isProcessing,
+        isCompacting,
+        loadingMessage,
+        pendingSteerContent,
+        queuedMessages,
+      } = get();
+
+      // Don't drain while the session is busy (prevents double-send races).
+      if (isProcessing || isCompacting || loadingMessage) return;
 
       // Steer cuts the line: if a pending steer exists (wasn't consumed
       // mid-turn), replay it as a fresh prompt before draining the queue.
@@ -6093,7 +6332,12 @@ export const createAppStore = (props: AppStoreProps) => {
       // always allow /quit and /exit through. loadingMessage covers the
       // /chat <id> resume window in lite: the input row stays visible so the
       // user can keep typing, but the agent isn't ready to receive input yet.
-      if (state.isProcessing || !state.isInitialized || state.loadingMessage) {
+      if (
+        state.isProcessing ||
+        state.isCompacting ||
+        !state.isInitialized ||
+        state.loadingMessage
+      ) {
         const lower = trimmed.toLowerCase();
         // Collapse internal whitespace so e.g. "/goal  clear" matches "/goal clear".
         const normalized = lower.replace(/\s+/g, ' ');

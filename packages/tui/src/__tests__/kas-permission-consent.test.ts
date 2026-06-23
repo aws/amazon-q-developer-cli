@@ -207,7 +207,9 @@ describe('respondToApproval — KAS consent _meta', () => {
     const call = resolve.mock.calls[0]![0];
     expect(call.outcome).toBe('selected');
     expect(call.optionId).toBe('always-accept');
+    expect(call._meta?.kiro?.consent?.capability).toBe('fs:write');
     expect(call._meta?.kiro?.consent?.scope).toBe('session');
+    expect(call._meta?.kiro?.consent?.resource).toBeUndefined();
   });
 
   it('allow_once scope is "invocation"', () => {
@@ -219,6 +221,7 @@ describe('respondToApproval — KAS consent _meta', () => {
     store.getState().respondToApproval('accept');
 
     const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent?.capability).toBe('shell:exec');
     expect(call._meta?.kiro?.consent?.scope).toBe('invocation');
   });
 
@@ -233,25 +236,69 @@ describe('respondToApproval — KAS consent _meta', () => {
     });
 
     const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent?.capability).toBe('fs:write');
     expect(call._meta?.kiro?.consent?.scope).toBe('workspace');
+    expect(call._meta?.kiro?.consent?.resource).toBeUndefined();
   });
 
-  it('entire tool trust (no kasResource) omits resource, keeps workspaceRoot', () => {
+  it('entire tool trust sends the KAS wildcard resource for whole capability persistence', () => {
     const store = createTestStore();
     const { resolve } = setupPendingApproval(store, {
       consentContext: {
-        capability: 'fs:write',
-        resource: '/workspace/src/index.ts',
+        capability: 'shell',
+        resource: 'echo hello',
         workspaceRoot: '/workspace',
+      },
+    });
+
+    store.getState().respondToApproval('always-accept', undefined, {
+      kasWholeCapability: true,
+    });
+
+    const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent?.capability).toBe('shell');
+    expect(call._meta?.kiro?.consent?.resource).toBe('*');
+    expect(call._meta?.kiro?.consent?.workspaceRoot).toBe('/workspace');
+  });
+
+  it('shell:exec entire tool trust sends the KAS wildcard resource', () => {
+    const store = createTestStore();
+    const { resolve } = setupPendingApproval(store, {
+      consentContext: {
+        capability: 'shell:exec',
+        resource: 'echo hello',
+      },
+    });
+
+    store.getState().respondToApproval('always-accept', undefined, {
+      kasWholeCapability: true,
+    });
+
+    const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent).toEqual({
+      capability: 'shell:exec',
+      scope: 'session',
+      resource: '*',
+    });
+  });
+
+  it('bare shell allow_always does not imply whole-capability wildcard trust', () => {
+    const store = createTestStore();
+    const { resolve } = setupPendingApproval(store, {
+      consentContext: {
+        capability: 'shell',
+        resource: 'echo hello',
+        triggeringResource: 'hello',
       },
     });
 
     store.getState().respondToApproval('always-accept');
 
     const call = resolve.mock.calls[0]![0];
-    // No kasResource passed → entire tool, no resource filter
-    expect(call._meta?.kiro?.consent?.resource).toBeUndefined();
-    expect(call._meta?.kiro?.consent?.workspaceRoot).toBe('/workspace');
+    expect(call._meta?.kiro?.consent).toEqual({
+      capability: 'shell',
+      scope: 'session',
+    });
   });
 
   it('explicit kasResource is included in response', () => {
@@ -270,6 +317,7 @@ describe('respondToApproval — KAS consent _meta', () => {
     });
 
     const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent?.capability).toBe('shell');
     expect(call._meta?.kiro?.consent?.resource).toBe('git *');
     expect(call._meta?.kiro?.consent?.scope).toBe('workspace');
   });
