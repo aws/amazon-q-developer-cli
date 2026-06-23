@@ -28,69 +28,31 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
       terminal: { width: 120, height: 50 },
     });
 
-    // --- Turn 1 ---
-    await streamReply(testCase, 'FIRST_RESPONSE_MARKER_ABC');
+    const markers = [
+      'FIRST_RESPONSE_MARKER_ABC',
+      'SECOND_RESPONSE_MARKER_XYZ',
+      'THIRD_RESPONSE_MARKER_999',
+    ];
 
-    await sendUserMessage(testCase, 'hello');
-    await testCase.waitForText('FIRST_RESPONSE_MARKER_ABC', 15000);
-    await testCase.waitForIdle(10000);
+    // After each turn, every marker so far must be present, in strictly
+    // increasing order (no cursor violation / silent drop), and appear exactly
+    // once (no trailer re-emission). Asserting the growing invariant after each
+    // turn covers the same monotonic/exactly-once contract as the unrolled turns.
+    for (let turn = 0; turn < markers.length; turn++) {
+      await streamReply(testCase, markers[turn]!);
+      await sendUserMessage(testCase, `turn ${turn + 1}`);
+      await testCase.waitForText(markers[turn]!, 15000);
+      await testCase.waitForIdle(10000);
 
-    const snap1 = testCase.getSnapshot();
-    const firstIdx = snap1.findIndex((l) =>
-      l.includes('FIRST_RESPONSE_MARKER_ABC')
-    );
-    expect(firstIdx).toBeGreaterThan(-1);
-
-    // --- Turn 2 ---
-    await streamReply(testCase, 'SECOND_RESPONSE_MARKER_XYZ');
-
-    await sendUserMessage(testCase, 'again');
-    await testCase.waitForText('SECOND_RESPONSE_MARKER_XYZ', 15000);
-    await testCase.waitForIdle(10000);
-
-    const snap2 = testCase.getSnapshot();
-    const first2Idx = snap2.findIndex((l) =>
-      l.includes('FIRST_RESPONSE_MARKER_ABC')
-    );
-    const second2Idx = snap2.findIndex((l) =>
-      l.includes('SECOND_RESPONSE_MARKER_XYZ')
-    );
-    expect(first2Idx).toBeGreaterThan(-1);
-    expect(second2Idx).toBeGreaterThan(first2Idx);
-
-    // No duplicate of first response (trailer not re-emitted).
-    const firstOccurrences = snap2.filter((l) =>
-      l.includes('FIRST_RESPONSE_MARKER_ABC')
-    );
-    expect(firstOccurrences.length).toBe(1);
-
-    // --- Turn 3 ---
-    await streamReply(testCase, 'THIRD_RESPONSE_MARKER_999');
-
-    await sendUserMessage(testCase, 'third');
-    await testCase.waitForText('THIRD_RESPONSE_MARKER_999', 15000);
-    await testCase.waitForIdle(10000);
-
-    const snap3 = testCase.getSnapshot();
-
-    const f3 = snap3.findIndex((l) => l.includes('FIRST_RESPONSE_MARKER_ABC'));
-    const s3 = snap3.findIndex((l) => l.includes('SECOND_RESPONSE_MARKER_XYZ'));
-    const t3 = snap3.findIndex((l) => l.includes('THIRD_RESPONSE_MARKER_999'));
-
-    // Monotonic order, no silent drops from a cursor violation.
-    expect(f3).toBeGreaterThan(-1);
-    expect(s3).toBeGreaterThan(f3);
-    expect(t3).toBeGreaterThan(s3);
-
-    // No re-emission: each marker appears exactly once.
-    const secondOccurrences = snap3.filter((l) =>
-      l.includes('SECOND_RESPONSE_MARKER_XYZ')
-    );
-    const thirdOccurrences = snap3.filter((l) =>
-      l.includes('THIRD_RESPONSE_MARKER_999')
-    );
-    expect(firstOccurrences.length).toBe(1);
-    expect(secondOccurrences.length).toBe(1);
-    expect(thirdOccurrences.length).toBe(1);
+      const snap = testCase.getSnapshot();
+      let prevIdx = -1;
+      for (let i = 0; i <= turn; i++) {
+        const m = markers[i]!;
+        const idx = snap.findIndex((l) => l.includes(m));
+        expect(idx).toBeGreaterThan(prevIdx);
+        expect(snap.filter((l) => l.includes(m)).length).toBe(1);
+        prevIdx = idx;
+      }
+    }
   }, 60000);
 });

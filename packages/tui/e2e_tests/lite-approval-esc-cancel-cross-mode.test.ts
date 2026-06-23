@@ -36,102 +36,87 @@ describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', ()
     }
   });
 
-  it('Esc in lite approval cancels the entire turn, then /tui has no stale state [bug-mine 3.5]', async () => {
-    // In lite mode, the approval prompt captures all keystrokes. The only
-    // way out is Esc, which cancels the ENTIRE turn (not just the approval).
-    // After cancellation, /tui should find a clean state.
-    testCase = await launchLiteE2E('swap-approval-lite-esc-then-tui', {
-      terminal: { width: 120, height: 40 },
-      waitForCommands: false,
-    });
-
-    await pushWriteApprovalEvent(testCase, {
+  // Esc in an approval cancels the ENTIRE turn (bug-mine 3.5), not just the
+  // prompt; after that, swapping to the other mode must find a clean state
+  // (no stale pendingApproval / isProcessing). The TUI->lite direction also
+  // asserts the original user message lands in lite scrollback after the swap
+  // (bug-mine 2.1 cursor realignment via useLayoutEffect).
+  const cases = [
+    {
+      label: 'lite -> tui',
+      launch: launchLiteE2E,
+      testName: 'swap-approval-lite-esc-then-tui',
       toolUseId: 'write-needs-approval-lite',
       path: '/tmp/approval-swap-lite.txt',
-      content: 'test content',
-    });
-
-    // Send a message to trigger the response stream
-    await sendUserMessage(testCase, 'write a file');
-
-    // Wait for the approval prompt to appear
-    await testCase.waitForText('needs approval', 15000);
-
-    // Press Esc — should cancel the entire turn (bug-mine 3.5),
-    // not just dismiss this one approval
-    await testCase.pressEscape();
-
-    // Verify the turn is fully cancelled: isProcessing becomes false
-    // AND pendingApproval is cleared
-    const afterEsc = await testCase.waitForStoreCondition(
-      (s) => !s.isProcessing,
-      10000
-    );
-    expect(afterEsc.pendingApproval).toBeNull();
-    expect(afterEsc.isProcessing).toBe(false);
-
-    // Now swap to TUI mode — should work cleanly with no stale approval
-    await testCase.waitForSlashCommands();
-    await testCase.sendKeys(CMD_TUI);
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
-
-    await testCase.waitForStoreCondition((s) => s.uiMode === 'tui', 10000);
-
-    // Verify no stale approval state leaked into TUI mode
-    const afterSwap = await testCase.getStore();
-    expect(afterSwap.uiMode).toBe('tui');
-    expect(afterSwap.pendingApproval).toBeNull();
-    expect(afterSwap.isProcessing).toBe(false);
-  }, 45000);
-
-  it('Esc in TUI approval cancels turn, then /lite has no stale state [bug-mine 2.1, 3.5]', async () => {
-    // In TUI mode, Esc from the approval dropdown cancels the entire turn
-    // (same as lite — bug-mine 3.5). Then swapping to /lite must not carry
-    // stale pendingApproval or isProcessing state, and the user's original
-    // message must render in lite scrollback (bug-mine 2.1 cursor realignment).
-    testCase = await launchTuiE2E('swap-approval-tui-esc-then-lite', {
-      waitForCommands: false,
-    });
-
-    await pushWriteApprovalEvent(testCase, {
+      approvalText: 'needs approval',
+      swapCmd: CMD_TUI,
+      target: 'tui' as const,
+      postSwapVisible: undefined as string | undefined,
+    },
+    {
+      label: 'tui -> lite',
+      launch: launchTuiE2E,
+      testName: 'swap-approval-tui-esc-then-lite',
       toolUseId: 'write-needs-approval-tui',
       path: '/tmp/approval-swap-tui.txt',
-      content: 'approval test content',
-    });
+      approvalText: 'requires approval',
+      swapCmd: CMD_LITE,
+      target: 'lite' as const,
+      postSwapVisible: 'write a file',
+    },
+  ];
 
-    // Send a message to trigger the response stream
-    await sendUserMessage(testCase, 'write a file');
+  it.each(cases)(
+    'Esc in $label approval cancels the turn, then swap finds no stale state',
+    async ({
+      launch,
+      testName,
+      toolUseId,
+      path,
+      approvalText,
+      swapCmd,
+      target,
+      postSwapVisible,
+    }) => {
+      testCase = await launch(testName, {
+        terminal: { width: 120, height: 40 },
+        waitForCommands: false,
+      });
 
-    // Wait for the approval prompt to appear
-    await testCase.waitForText('requires approval', 15000);
+      await pushWriteApprovalEvent(testCase, {
+        toolUseId,
+        path,
+        content: 'test content',
+      });
 
-    // Press Esc — cancels the entire turn (not just the approval)
-    await testCase.pressEscape();
+      await sendUserMessage(testCase, 'write a file');
+      await testCase.waitForText(approvalText, 15000);
 
-    // Verify the turn is fully cancelled
-    const afterEsc = await testCase.waitForStoreCondition(
-      (s) => !s.isProcessing,
-      10000
-    );
-    expect(afterEsc.pendingApproval).toBeNull();
-    expect(afterEsc.isProcessing).toBe(false);
+      await testCase.pressEscape();
 
-    // Now swap to lite mode
-    await testCase.waitForSlashCommands();
-    await testCase.sendKeys(CMD_LITE);
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+      const afterEsc = await testCase.waitForStoreCondition(
+        (s) => !s.isProcessing,
+        10000
+      );
+      expect(afterEsc.pendingApproval).toBeNull();
+      expect(afterEsc.isProcessing).toBe(false);
 
-    await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
+      await testCase.waitForSlashCommands();
+      await testCase.sendKeys(swapCmd);
+      await testCase.sleepMs(100);
+      await testCase.pressEnter();
 
-    // Bug-mine 2.1: cursor realignment via useLayoutEffect must ensure
-    // the user's original message appears in lite scrollback after swap.
-    await testCase.waitForText('write a file', 10000);
+      await testCase.waitForStoreCondition((s) => s.uiMode === target, 10000);
 
-    const afterSwap = await testCase.getStore();
-    expect(afterSwap.uiMode).toBe('lite');
-    expect(afterSwap.pendingApproval).toBeNull();
-    expect(afterSwap.isProcessing).toBe(false);
-  }, 45000);
+      if (postSwapVisible) {
+        await testCase.waitForText(postSwapVisible, 10000);
+      }
+
+      const afterSwap = await testCase.getStore();
+      expect(afterSwap.uiMode).toBe(target);
+      expect(afterSwap.pendingApproval).toBeNull();
+      expect(afterSwap.isProcessing).toBe(false);
+    },
+    45000
+  );
 });
