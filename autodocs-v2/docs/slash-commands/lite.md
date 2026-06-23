@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [lite, mode, switch, ui, lightweight, scrollback, minimal]
   related: [tui, verbosity, settings, lite-mode]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: f6731f45a
   status: validated
   testable_headless: false
 ---
@@ -15,7 +15,11 @@ doc_meta:
 
 Switch to lite mode.
 
-Switches the session from the standard TUI to lite mode — a lightweight, scrollback-friendly chat interface. See [Lite Mode](../features/lite-mode.md) for behavior.
+## Overview
+
+Switches the session from the standard TUI to lite mode — a lightweight, scrollback-friendly chat interface. The conversation history is re-rendered in lite format immediately.
+
+See [Lite Mode](../features/lite-mode.md) for full behavior and configuration.
 
 ## Usage
 
@@ -23,13 +27,53 @@ Switches the session from the standard TUI to lite mode — a lightweight, scrol
 /lite
 ```
 
-No arguments. Switches immediately (`System: Switched to lite mode`). On builds where the lite rollout is off (currently internal nightly only), it reports `System: Lite mode is not available in this build`.
+No arguments. The command switches immediately.
 
-Use `/tui` to switch back. To make lite the default, see [Lite Mode → Enabling](../features/lite-mode.md#enabling-lite-mode).
+## Examples
+
+### Example 1: Switch to Lite Mode
+
+```
+/lite
+```
+
+**Output**:
+```
+System: Switched to lite mode
+```
+
+### Example 2: Feature Not Available
+
+On builds where the lite rollout is disabled (currently internal nightly only):
+
+```
+/lite
+```
+
+**Output**:
+```
+System: Lite mode is not available in this build
+```
+
+### Example 3: Switch Back to TUI
+
+After switching to lite, return to the full TUI:
+
+```
+/tui
+```
+
+## Behavior
+
+- Re-renders the full conversation history in lite format
+- Preserves queued messages and session state
+- Does not destroy terminal scrollback
+- The inverse command is `/tui`
+- To make lite the default, use `/settings → display → Default UI` or set `KIRO_UI_MODE=lite`
 
 ## Related
 
 - [/tui](tui.md) — Switch back to TUI mode
-- [/verbosity](verbosity.md) — Configure lite-mode rendering
+- [/verbosity](verbosity.md) — Configure lite-mode tool output rendering
 - [/settings](settings.md) — Settings management
 - [Lite Mode](../features/lite-mode.md) — Full feature documentation

@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
   related: [classic-vs-tui, settings]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: f6731f45a
   status: validated
   testable_headless: true
 ---
@@ -33,9 +33,31 @@ Lite mode is currently available on internal nightly builds. First-time eligible
 
 Three ways to enter lite mode:
 
-- `/lite` (and `/tui` to switch back) mid-session — re-renders the full history in the target mode's format.
-- `KIRO_UI_MODE=lite` environment variable.
-- `chat.ui.mode: "lite"` in `~/.kiro/settings/cli.json` (or `/settings → display → Default UI`).
+### Mid-Session Switch
+
+```
+/lite
+```
+
+Use `/tui` to switch back. Both commands re-render the full conversation in the target mode's format.
+
+### Environment Variable
+
+```bash
+KIRO_UI_MODE=lite kiro-cli chat
+```
+
+### Settings File
+
+Set in `~/.kiro/settings/cli.json` (or use `/settings → display → Default UI`):
+
+```json
+{
+  "chat.ui.mode": "lite"
+}
+```
+
+### Priority Order
 
 The mode is resolved highest-priority first:
 
@@ -43,15 +65,28 @@ The mode is resolved highest-priority first:
 2. `chat.ui.mode` setting in `cli.json`
 3. Default (`tui`)
 
+## Configuring Output
+
 Density presets (`minimal`, `lean`, `default`, `full`) and the individual tool-output knobs are documented in [/verbosity](../slash-commands/verbosity.md).
+
+Quick preset examples:
+
+```
+/verbosity minimal    # hide tool args, reasoning, elapsed, output
+/verbosity full       # show everything uncapped
+/verbosity +shell     # add shell output to filters
+/verbosity -read      # remove read output from filters
+```
 
 ## Troubleshooting
 
 - **"Lite mode is not available in this build"** — the feature is gated to internal nightly builds.
 - **Tool output not showing** — check `/verbosity status`; empty filters render no output bars (`/verbosity on` enables all).
+- **Switching modes loses nothing** — lite and TUI share the same session format. Switching mid-session preserves all history.
 
 ## Related
 
 - [Classic vs TUI](classic-vs-tui.md) — UI mode comparison
 - [/settings](../slash-commands/settings.md) — Settings management
+- [/verbosity](../slash-commands/verbosity.md) — Tool output configuration
 - [/theme](../slash-commands/theme.md) — Theme customization

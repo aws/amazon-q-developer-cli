@@ -18,8 +18,8 @@ doc_meta:
       rendering,
     ]
   related: [lite, settings, lite-mode]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: f6731f45a
   status: validated
   testable_headless: false
 ---

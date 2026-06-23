@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [tui, mode, switch, ui, panel, full]
   related: [lite, verbosity, settings, lite-mode]
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-23
+  commit: f6731f45a
   status: validated
   testable_headless: false
 ---
@@ -15,7 +15,12 @@ doc_meta:
 
 Switch to TUI mode or show TUI info.
 
-Context-dependent: **from lite mode** it switches to the full panel-based TUI (re-rendering the conversation); **from TUI mode** it opens the TUI info panel.
+## Overview
+
+Context-dependent behavior:
+
+- **From lite mode**: switches to the full panel-based TUI, re-rendering the conversation.
+- **From TUI mode**: opens the TUI info panel (version, build, and environment details).
 
 ## Usage
 
@@ -23,7 +28,52 @@ Context-dependent: **from lite mode** it switches to the full panel-based TUI (r
 /tui
 ```
 
-No arguments (`System: Switched to TUI mode`). The switch re-renders the full conversation, preserves queued messages and session state, and destroys no scrollback.
+No arguments.
+
+## Examples
+
+### Example 1: Switch from Lite to TUI
+
+When in lite mode:
+
+```
+/tui
+```
+
+**Output**:
+```
+System: Switched to TUI mode
+```
+
+The full TUI interface renders with panels, status bar, and prompt chrome.
+
+### Example 2: Show TUI Info Panel
+
+When already in TUI mode:
+
+```
+/tui
+```
+
+**Output**: Opens the TUI information panel showing version, build hash, and runtime details.
+
+### Example 3: Round-Trip Mode Switch
+
+Switch to lite then back to TUI without losing history:
+
+```
+/lite
+/tui
+```
+
+Both switches re-render the full conversation in the target mode's format.
+
+## Behavior
+
+- Preserves queued messages and session state across the switch
+- Does not destroy terminal scrollback
+- The inverse command (TUI → lite) is `/lite`
+- Sessions are mode-agnostic — switching modes does not affect saved session data
 
 ## Related
 
