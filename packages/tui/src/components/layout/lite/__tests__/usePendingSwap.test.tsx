@@ -207,6 +207,26 @@ describe('usePendingSwap', () => {
     }
   });
 
+  test('clears the latch when loadingMessage clears without an agent change (failed swap)', async () => {
+    // `/agent nonexistent`: the dispatcher writes "Agent changing to ..." then
+    // clears loadingMessage when the RPC resolves success:false. currentAgent
+    // never moves, so without this exit the spinner would hang for 30s.
+    const harness = mountHook({
+      loadingMessage: 'Agent changing to nonexistent',
+      currentAgent: { name: 'kiro_default' } as any,
+    });
+    await flush();
+    expect(harness.current()?.name).toBe('nonexistent');
+
+    // RPC resolved (failure): dispatcher clears loadingMessage, agent unchanged.
+    harness.store.setState({
+      loadingMessage: null,
+    } as any);
+    await flush();
+
+    expect(harness.current()).toBeNull();
+  });
+
   test('preserves the original baseAgent across mid-swap re-issues', async () => {
     const harness = mountHook({
       loadingMessage: null,

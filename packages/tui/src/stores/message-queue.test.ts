@@ -266,6 +266,11 @@ describe('Message queue (backend-driven)', () => {
           'session-abc',
           'steer this mid-turn'
         );
+        // CRITICAL no-double-send guard: the steer is sent via the backend
+        // transport ONLY. It must NOT also land in queuedMessages — if it did,
+        // processQueue would drain it as a second send on top of the backend's
+        // own injection. The unified preview list surfaces it from
+        // pendingSteerContent (set by the SteeringQueued echo), not from here.
         expect(store.getState().queuedMessages).toEqual([]);
       });
 
@@ -306,6 +311,99 @@ describe('Message queue (backend-driven)', () => {
 
         expect(mockSteerMessage).not.toHaveBeenCalled();
         expect(store.getState().queuedMessages).toEqual(['/verbosity']);
+      });
+    });
+
+    describe('replaceSteerMessage (clear-and-resteer)', () => {
+      it('clears then resteers the edited text on a session-live queue', async () => {
+        const store = createTestStore();
+        const calls: string[] = [];
+        const mockClear = mock(() => {
+          calls.push('clear');
+          return Promise.resolve();
+        });
+        const mockSteer = mock((_sid: string, content: string) => {
+          calls.push(`steer:${content}`);
+          return Promise.resolve();
+        });
+        (store.getState().kiro as any).clearSteering = mockClear;
+        (store.getState().kiro as any).steerMessage = mockSteer;
+        store.setState({
+          sessionId: 'session-abc',
+          isInitialized: true,
+          pendingSteerContent: 'original steer',
+        });
+
+        store.getState().replaceSteerMessage('edited steer');
+
+        // Optimistic local update lands immediately.
+        expect(store.getState().pendingSteerContent).toBe('edited steer');
+        // Edited steer is NEVER copied into queuedMessages (no double-send).
+        expect(store.getState().queuedMessages).toEqual([]);
+
+        // Let the chained promise (.then) resolve.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // clear must precede the resteer so the backend ends with ONLY the
+        // edited content rather than concatenating onto the old steer.
+        expect(mockClear).toHaveBeenCalledWith('session-abc');
+        expect(mockSteer).toHaveBeenCalledWith('session-abc', 'edited steer');
+        expect(calls).toEqual(['clear', 'steer:edited steer']);
+      });
+
+      it('replaces in place pre-init without touching the backend', () => {
+        const store = createTestStore();
+        const mockClear = mock(() => Promise.resolve());
+        const mockSteer = mock(() => Promise.resolve());
+        (store.getState().kiro as any).clearSteering = mockClear;
+        (store.getState().kiro as any).steerMessage = mockSteer;
+        store.setState({
+          sessionId: null,
+          isInitialized: false,
+          pendingSteerContent: 'pre-init original',
+        });
+
+        store.getState().replaceSteerMessage('pre-init edited');
+
+        expect(store.getState().pendingSteerContent).toBe('pre-init edited');
+        expect(store.getState().queuedMessages).toEqual([]);
+        expect(mockClear).not.toHaveBeenCalled();
+        expect(mockSteer).not.toHaveBeenCalled();
+      });
+
+      it('delegates an emptied edit to clearSteerMessage (discard)', () => {
+        const store = createTestStore();
+        const mockClear = mock(() => Promise.resolve());
+        (store.getState().kiro as any).clearSteering = mockClear;
+        store.setState({
+          sessionId: 'session-abc',
+          isInitialized: true,
+          pendingSteerContent: 'to discard',
+        });
+
+        store.getState().replaceSteerMessage('   ');
+
+        expect(store.getState().pendingSteerContent).toBeNull();
+        expect(mockClear).toHaveBeenCalledWith('session-abc');
+        expect(store.getState().queuedMessages).toEqual([]);
+      });
+
+      it('no-ops when nothing is staged', () => {
+        const store = createTestStore();
+        const mockSteer = mock(() => Promise.resolve());
+        (store.getState().kiro as any).steerMessage = mockSteer;
+        store.setState({
+          sessionId: 'session-abc',
+          isInitialized: true,
+          pendingSteerContent: null,
+        });
+
+        store.getState().replaceSteerMessage('orphan edit');
+
+        expect(store.getState().pendingSteerContent).toBeNull();
+        expect(mockSteer).not.toHaveBeenCalled();
+        expect(store.getState().queuedMessages).toEqual([]);
       });
     });
 
@@ -1328,5 +1426,60 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       expect(store.getState().agentEngine).toBe('v2');
       expect(mockSendMessage).toHaveBeenCalled();
     });
+  });
+});
+
+// Ralph hunt-3 — multi-steer line-aware edit/delete at the store boundary.
+// Pre-init (sessionId null) the steer buffer is a purely local first-prompt
+// staging slot; successive submissions concatenate with "\n\n". Editing or
+// deleting ONE staged steer row must preserve the others — the old
+// whole-buffer replace/clear silently dropped sibling lines (lost prompts).
+describe('multi-steer line-aware edit/delete (pre-init, local)', () => {
+  function stagedTwo() {
+    const store = createTestStore();
+    // Pre-init: not initialized + no sessionId → buffers locally, concatenating.
+    store.setState({ isInitialized: false, sessionId: null });
+    store.getState().queueMessage('first message');
+    store.getState().queueMessage('second message');
+    return store;
+  }
+
+  it('concatenates successive pre-init submissions with the \\n\\n separator', () => {
+    const store = stagedTwo();
+    expect(store.getState().pendingSteerContent).toBe(
+      'first message\n\nsecond message'
+    );
+  });
+
+  it('editing one steer row preserves the sibling line', () => {
+    const store = stagedTwo();
+    // Edit the FIRST row; the second must survive.
+    store.getState().replaceSteerMessage('first-edited', 'first message');
+    expect(store.getState().pendingSteerContent).toBe(
+      'first-edited\n\nsecond message'
+    );
+  });
+
+  it('deleting one steer row preserves the sibling line', () => {
+    const store = stagedTwo();
+    // Delete the first row (empty edit) targeting its original text.
+    store.getState().clearSteerMessage('first message');
+    expect(store.getState().pendingSteerContent).toBe('second message');
+  });
+
+  it('deleting the last remaining steer row clears the buffer', () => {
+    const store = createTestStore();
+    store.setState({ isInitialized: false, sessionId: null });
+    store.getState().queueMessage('only message');
+    store.getState().clearSteerMessage('only message');
+    expect(store.getState().pendingSteerContent).toBeNull();
+  });
+
+  it('whole-buffer replace (no target) still works for the single-steer case', () => {
+    const store = createTestStore();
+    store.setState({ isInitialized: false, sessionId: null });
+    store.getState().queueMessage('solo');
+    store.getState().replaceSteerMessage('solo-edited');
+    expect(store.getState().pendingSteerContent).toBe('solo-edited');
   });
 });

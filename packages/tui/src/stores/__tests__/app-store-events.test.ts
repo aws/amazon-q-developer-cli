@@ -432,6 +432,67 @@ describe('Stream event handler — CompactionStatus', () => {
   });
 });
 
+// handleCompactionEvent is the handler wired to the GLOBAL onUpdate subscriber
+// (index.tsx) and is the ONLY handler that fires for a user-typed /compact in
+// both V2 and KAS (the createStreamEventHandler path above only runs mid-turn).
+// Regression guards for the /compact UX bug: it used to push a phantom empty
+// User row and set isProcessing without a label (generic "thinking" spinner).
+describe('handleCompactionEvent (live /compact path)', () => {
+  it('started: sets the Compacting label, no phantom empty User message', async () => {
+    const store = makeStore();
+    const before = store.getState().messages.length;
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'started',
+    });
+    const s = store.getState();
+    expect(s.isCompacting).toBe(true);
+    // isProcessing stays true so the send-gate keeps queuing input.
+    expect(s.isProcessing).toBe(true);
+    expect(s.loadingMessage).toBe('Compacting conversation...');
+    // No empty user row appended.
+    expect(s.messages.length).toBe(before);
+  });
+
+  it('completed: clears the label and appends the summary', async () => {
+    const store = makeStore();
+    store.setState({
+      isCompacting: true,
+      isProcessing: true,
+      loadingMessage: 'Compacting conversation...',
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+      summary: 'short recap',
+    });
+    const s = store.getState();
+    expect(s.isCompacting).toBe(false);
+    expect(s.loadingMessage).toBeNull();
+    const last = s.messages[s.messages.length - 1];
+    expect(last?.role).toBe(MessageRole.Model);
+    expect(last?.content).toBe('short recap');
+  });
+
+  it('failed: clears the label and surfaces a transient error', async () => {
+    const store = makeStore();
+    store.setState({
+      isCompacting: true,
+      isProcessing: true,
+      loadingMessage: 'Compacting conversation...',
+    });
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'failed',
+      error: 'boom',
+    });
+    const s = store.getState();
+    expect(s.isCompacting).toBe(false);
+    expect(s.loadingMessage).toBeNull();
+    expect(s.transientAlert?.message).toContain('boom');
+  });
+});
+
 describe('Stream event handler — AuthError', () => {
   it('sets agentError and stops processing', () => {
     const store = makeStore();

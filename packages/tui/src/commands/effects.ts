@@ -747,6 +747,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         task,
         name
       );
+
+      // KAS has no manual ephemeral-spawn RPC: its spawnSession is a stub that
+      // returns an empty sessionId. Without this guard the effect would build
+      // a bogus `session-` display name, register a dead id:'' session (which
+      // then clutters /switch with a phantom row that opens a broken
+      // session-view), and announce a misleading "Spawned session-: …". Show a
+      // clean "not supported" message instead and bail before touching state.
+      if (!sessionId) {
+        ctx.showAlert('/spawn is not supported in KAS mode', 'error', 3000);
+        return;
+      }
+
       const displayName =
         assignedName || name || `session-${sessionId.slice(0, 8)}`;
 

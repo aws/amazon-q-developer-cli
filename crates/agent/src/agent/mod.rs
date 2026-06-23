@@ -1911,6 +1911,20 @@ impl Agent {
                     result: ToolCallResult::Error(ToolExecutionError::Custom(reason)),
                 });
             }
+            // The reject path sends tool_results directly, so mirror
+            // send_tool_results and drain queued steering into the same
+            // follow-up request.
+            if !self.queued_steers.is_empty() {
+                let steers = std::mem::take(&mut self.queued_steers);
+                let snapshot = steer_snapshot(&steers);
+                content.push(ContentBlock::Text(format_steering_message(&snapshot)));
+                for steer in steers {
+                    self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                        message_id: steer.id,
+                        content: steer.text,
+                    });
+                }
+            }
             let pending = PendingUserMessage::new_tool_results(content.clone(), results);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;

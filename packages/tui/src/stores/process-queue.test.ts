@@ -79,6 +79,47 @@ describe('processQueue', () => {
     expect(store.getState().pendingSteerContent).toBeNull();
   });
 
+  it('does not double-send a steered message (steer stays out of queuedMessages)', async () => {
+    // The unified preview list surfaces the steer from pendingSteerContent, NOT
+    // by copying it into queuedMessages. This pins the invariant the lite
+    // visibility fix relies on: a mid-turn steer is drained exactly ONCE here
+    // (the steer-first replay), and the local queue contains only genuine
+    // queue entries — so processQueue can't send the steer text a second time
+    // on top of the backend's own injection.
+    const store = createTestStore();
+    const sentMessages: string[] = [];
+    // Never-resolving stream: the steer replay starts an in-flight turn, so
+    // processQueue's `if (isProcessing) return` guard prevents the queue from
+    // also draining in the same pass — exactly like a real turn.
+    const mockStreamMessage = mock((content: string) => {
+      sentMessages.push(content);
+      store.setState({ isProcessing: true });
+      return new Promise(() => {});
+    });
+    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+
+    store.setState({
+      activeInterruptMode: 'steer',
+      isProcessing: false,
+      // Steer lives ONLY here (set by the SteeringQueued echo), never copied
+      // into queuedMessages.
+      pendingSteerContent: 'steered text',
+      queuedMessages: ['a genuine queue entry'],
+    });
+
+    // Don't await — the mock never resolves (in-flight turn). Give the event
+    // loop a tick for the synchronous steer replay to fire.
+    void store.getState().processQueue();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The steer was sent exactly once; the queue entry is still pending.
+    expect(sentMessages).toEqual(['steered text']);
+    expect(store.getState().pendingSteerContent).toBeNull();
+    expect(store.getState().queuedMessages).toEqual(['a genuine queue entry']);
+    // The steer text never leaked into the local queue.
+    expect(store.getState().queuedMessages).not.toContain('steered text');
+  });
+
   it('drains queue when no pending steer exists regardless of mode', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());

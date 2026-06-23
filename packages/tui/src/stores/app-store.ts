@@ -250,6 +250,7 @@ export type {
 } from '../utils/spec-artifact-loader.js';
 export type { SpecConfig } from '../utils/spec-config.js';
 import { formatImageLabel } from '../utils/image-label.js';
+import { spliceSteerLine, removeSteerLine } from '../utils/queue-navigation.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -741,7 +742,24 @@ interface BaseAppActions {
    * empty/whitespace-only input.
    */
   queueMessage: (content: string) => void;
-  clearSteerMessage: () => void;
+  /**
+   * Clear staged steer content. With no argument, clears the WHOLE buffer
+   * (legacy single-steer behavior). With `targetLine`, removes only that one
+   * line from a `\n\n`-joined multi-steer buffer, preserving its siblings —
+   * so deleting one staged steer row no longer discards the others.
+   */
+  clearSteerMessage: (targetLine?: string) => void;
+  /**
+   * Edit-in-place for the backend steer buffer ("clear-and-resteer"): re-stage
+   * the edited steer. Used when the user edits a steer-origin entry in the lite
+   * preview list. With `targetLine`, replaces only that one line of a
+   * `\n\n`-joined multi-steer buffer (preserving siblings); without it, replaces
+   * the whole buffer (single-steer case). Steer content stays the single source
+   * of truth in `pendingSteerContent` (never copied into `queuedMessages`) so
+   * processQueue can't double-send it. Empty `content` delegates to
+   * `clearSteerMessage` (discard that line). No-op when nothing is staged.
+   */
+  replaceSteerMessage: (content: string, targetLine?: string) => void;
   processQueue: () => Promise<void>;
   clearQueue: () => void;
   removeQueuedMessage: (index: number) => void;
@@ -751,9 +769,17 @@ interface BaseAppActions {
   /**
    * Lite mode uses its own input segments rather than commandInputValue, so
    * it tracks the editing index without piping the message text through the
-   * store. This is just a flag setter — no side effects.
+   * store. This is just a flag setter — no side effects. Setting a queue index
+   * clears any steer-line editing index (the two are mutually exclusive — the
+   * input edits one entry at a time).
    */
   setEditingQueueIndex: (index: number | null) => void;
+  /**
+   * Flag setter for which steer line the lite input is editing (parallel to
+   * `setEditingQueueIndex`). Setting a non-null steer index clears
+   * `editingQueueIndex`. No side effects.
+   */
+  setEditingSteerLineIndex: (index: number | null) => void;
   /**
    * Apply the pending `queuedInputRestore` snapshot back into
    * `commandInputValue` and `input`, then clear the snapshot. No-op when
@@ -1400,6 +1426,14 @@ export interface AppState {
   activeInterruptMode: InterruptMode;
   queuedMessages: string[];
   editingQueueIndex: number | null;
+  /**
+   * Which steer line (index into `pendingSteerContent.split('\n\n')`) the lite
+   * input is currently editing, or null. Parallel to `editingQueueIndex` but
+   * for steer-origin rows in the unified preview list — lets LiteLayout draw
+   * the edit chevron on the right steer row. Steer and queue editing are
+   * mutually exclusive (the input edits one entry at a time).
+   */
+  editingSteerLineIndex: number | null;
 
   // Task management state
   tasks: TaskItem[];
@@ -1898,6 +1932,7 @@ export const createAppStore = (props: AppStoreProps) => {
     liveOutputs: new Map(),
     queuedMessages: [],
     editingQueueIndex: null,
+    editingSteerLineIndex: null,
     queuedInputRestore: null,
     pendingSteerContent: null,
     slashCommands: [
@@ -3441,9 +3476,11 @@ export const createAppStore = (props: AppStoreProps) => {
             lastContentEventId = null;
 
             // Clear the queued message from the activity tray and render a user
-            // bubble in the conversation at the injection point.
+            // bubble in the conversation at the injection point. Also drop any
+            // steer-row edit chevron — the steer it pointed at is now consumed.
             set((state) => ({
               pendingSteerContent: null,
+              editingSteerLineIndex: null,
               messages: [
                 ...state.messages,
                 {
@@ -3459,8 +3496,11 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.SteeringCleared:
             // Backend cleared the queue without consuming it (cancel, or
             // explicit TUI clear request). Reset the activity-tray display
-            // without adding a user bubble.
-            set({ pendingSteerContent: null });
+            // without adding a user bubble. Drop any steer-row edit chevron.
+            // NOTE: replaceSteerMessage's clear→resteer also flows through
+            // here, but it sets pendingSteerContent optimistically AND re-fires
+            // SteeringQueued, so the display lands back on the edited text.
+            set({ pendingSteerContent: null, editingSteerLineIndex: null });
             break;
           case AgentEventType.HooksUpdate:
             // Update cached hooks list. If the panel is open, it will
@@ -3858,14 +3898,17 @@ export const createAppStore = (props: AppStoreProps) => {
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
       if (event.status === 'started') {
-        set((state) => ({
+        // No empty User message: the previous push left a phantom blank row in
+        // scrollback every /compact. `loadingMessage` drives a proper
+        // "Compacting conversation..." spinner in both UIs (lite spinner row /
+        // TUI NotificationBar) instead of the generic isProcessing "thinking"
+        // indicator. isProcessing stays true — the sendMessage send-gate keys
+        // on it, so input is still queued (not sent) during compaction.
+        set({
           isCompacting: true,
           isProcessing: true,
-          messages: [
-            ...state.messages,
-            { id: crypto.randomUUID(), role: MessageRole.User, content: '' },
-          ],
-        }));
+          loadingMessage: 'Compacting conversation...',
+        });
       } else if (event.status === 'completed') {
         const summary = event.summary;
         set((state) => {
@@ -3880,13 +3923,14 @@ export const createAppStore = (props: AppStoreProps) => {
           return {
             isCompacting: false,
             isProcessing: false,
+            loadingMessage: null,
             transientAlert: null,
             messages,
           };
         });
         await get().processQueue();
       } else if (event.status === 'failed') {
-        set({ isCompacting: false, isProcessing: false });
+        set({ isCompacting: false, isProcessing: false, loadingMessage: null });
         get().showTransientAlert({
           message: event.error
             ? `Compaction failed: ${event.error}`
@@ -4620,7 +4664,20 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setEditingQueueIndex: (index: number | null) => {
-      set({ editingQueueIndex: index });
+      // Mutually exclusive with steer-line editing: entering a queue edit
+      // clears any active steer-row chevron, and vice versa.
+      set({
+        editingQueueIndex: index,
+        editingSteerLineIndex:
+          index == null ? get().editingSteerLineIndex : null,
+      });
+    },
+
+    setEditingSteerLineIndex: (index: number | null) => {
+      set({
+        editingSteerLineIndex: index,
+        editingQueueIndex: index == null ? get().editingQueueIndex : null,
+      });
     },
 
     applyQueuedInputRestore: () => {
@@ -4642,15 +4699,46 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
-    clearSteerMessage: () => {
+    clearSteerMessage: (targetLine?: string) => {
       const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
       if (pendingSteerContent == null) return;
+
+      // Line-aware delete: when a specific steer row is targeted and the buffer
+      // holds more than that one line, remove ONLY that line and re-stage the
+      // remainder — deleting one staged steer must not discard its siblings.
+      // `removeSteerLine` returns null when the target was the only line (or
+      // wasn't found), which falls through to the whole-buffer clear below.
+      const remainder =
+        targetLine != null
+          ? removeSteerLine(pendingSteerContent, targetLine)
+          : null;
+
+      if (remainder != null) {
+        set({ pendingSteerContent: remainder, editingSteerLineIndex: null });
+        const hasBackendQueue = isInitialized && sessionId != null;
+        if (hasBackendQueue) {
+          // Resync the backend to the trimmed buffer: clear then resteer the
+          // remaining lines so the backend holds exactly what's displayed.
+          kiro
+            .clearSteering(sessionId)
+            .then(() => kiro.steerMessage(sessionId, remainder))
+            .catch((err) => {
+              logger.error('clearSteerMessage (line) failed', err);
+              get().showTransientAlert({
+                message: 'Failed to update queued message',
+                status: 'error',
+                autoHideMs: 3000,
+              });
+            });
+        }
+        return;
+      }
 
       // Optimistically clear locally. The backend `SteeringCleared`
       // notification (if we made a backend call) will reconfirm. If the
       // clear request fails we'll re-receive a `SteeringQueued` snapshot
-      // that restores the display.
-      set({ pendingSteerContent: null });
+      // that restores the display. Drop any steer-row edit chevron too.
+      set({ pendingSteerContent: null, editingSteerLineIndex: null });
 
       // Pre-init clear is local-only — there's no backend queue to sync
       // with until init dispatches the buffered content as a fresh prompt
@@ -4668,6 +4756,60 @@ export const createAppStore = (props: AppStoreProps) => {
           });
         });
       }
+    },
+
+    replaceSteerMessage: (content: string, targetLine?: string) => {
+      const trimmed = content.trim();
+      // Empty edit reads as "discard the steer" — defer to clearSteerMessage
+      // so the local-clear + backend round-trip stays in one place. Pass the
+      // target line through so only that row is removed from a multi-steer.
+      if (!trimmed) {
+        get().clearSteerMessage(targetLine);
+        return;
+      }
+
+      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
+      // Nothing staged to replace — no-op rather than steering out of band.
+      if (pendingSteerContent == null) return;
+
+      // Clear-and-resteer: the steer buffer is the single source of truth for
+      // steer content (NOT queuedMessages — appending there would double-send,
+      // once via processQueue and once via the backend's own injection). When a
+      // specific row is targeted, splice only that line of the `\n\n`-joined
+      // buffer so sibling steer lines survive the edit; otherwise replace the
+      // whole buffer (single-steer case). `spliceSteerLine` falls back to the
+      // edited text when the target isn't found, so an edit is never dropped.
+      const next =
+        targetLine != null
+          ? spliceSteerLine(pendingSteerContent, targetLine, trimmed)
+          : trimmed;
+
+      const hasBackendQueue = isInitialized && sessionId != null;
+      if (hasBackendQueue) {
+        // Optimistically reflect the edited buffer. The backend echoes
+        // SteeringCleared (→ null) then SteeringQueued (→ next); landing on
+        // the same value we set here, so there's no visible flicker. Sequence
+        // the clear before the resteer so the backend ends with ONLY the
+        // edited content rather than concatenating onto the old steer.
+        set({ pendingSteerContent: next });
+        kiro
+          .clearSteering(sessionId)
+          .then(() => kiro.steerMessage(sessionId, next))
+          .catch((err) => {
+            logger.error('replaceSteerMessage failed', err);
+            get().showTransientAlert({
+              message: 'Failed to update queued message — try again',
+              status: 'error',
+              autoHideMs: 3000,
+            });
+          });
+        return;
+      }
+
+      // Pre-init: the steer buffer is a local-only first-prompt staging slot
+      // (drained by the init path as a fresh sendMessage). Replace it in place
+      // — there's no backend to round-trip with yet.
+      set({ pendingSteerContent: next });
     },
 
     // Input actions
