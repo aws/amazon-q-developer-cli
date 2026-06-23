@@ -16,13 +16,11 @@ import {
 } from '../../../lite/verbose.js';
 
 /**
- * Resolve preview text + the dim chalk fn from live config every render, so
- * toggling a knob reflects on the next frame. `displayOverride`/`filtersOverride`
- * are draft overrides for an in-progress truncation cap or highlighted density
- * preset; both default to saved config. Shared by the inline preview and the
- * expanded pane.
+ * Reads live config every render so toggling a knob reflects on the next frame.
+ * `displayOverride`/`filtersOverride` are draft overrides for an in-progress
+ * truncation cap or highlighted density preset; both default to saved config.
  */
-export function useVerbosityPreviewText(
+function useVerbosityPreviewText(
   which: VerbosityPreviewKey,
   displayOverride: VerboseDisplayConfig | undefined,
   filtersOverride: readonly string[] | undefined,

@@ -25,11 +25,7 @@ import {
   VerbosityPreview,
   VerbosityPreviewPane,
 } from './menu/VerbosityPreview.js';
-import {
-  VerbosityTruncationEditor,
-  truncationConfigKey,
-  type TruncationEditorField,
-} from './menu/VerbosityTruncationEditor.js';
+import { VerbosityTruncationEditor } from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
 import {
@@ -43,9 +39,9 @@ import {
 // Two keys so a stray `p` while typing can't pop a preview.
 type PreviewMode = 'mini' | 'expanded' | 'hidden';
 
-// Members of VerbosityPreviewKey (lite/render); hand-listed only to runtime-
-// guard the cast below. Keep in sync if that union grows a fixture.
-const VERBOSITY_PREVIEW_KEYS: readonly VerbosityPreviewKey[] = [
+// Runtime guard for the `store.previewKey: string` → VerbosityPreviewKey cast.
+// Keep in sync if that union grows a fixture.
+const VERBOSITY_PREVIEW_KEYS: ReadonlySet<VerbosityPreviewKey> = new Set([
   'top',
   'density',
   'tool',
@@ -53,7 +49,7 @@ const VERBOSITY_PREVIEW_KEYS: readonly VerbosityPreviewKey[] = [
   'output',
   'truncation:args',
   'truncation:output',
-];
+]);
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -144,9 +140,9 @@ export const CommandMenu: React.FC = () => {
     if (!activeCommand || activeCommand.command.name !== '/verbosity') return;
     const opt = activeCommand.options.find((o) => o.label === item.label);
     if (!opt) return;
-    const m =
-      opt.value.match(/^menu:density:confirm:([a-z]+)$/) ??
-      opt.value.match(/^density:apply:([a-z]+)$/);
+    const m = opt.value.match(
+      /^(?:menu:density:confirm|density:apply):([a-z]+)$/
+    );
     setDraftPreset(
       m && DENSITY_PRESETS.includes(m[1] as DensityPreset)
         ? (m[1] as DensityPreset)
@@ -590,14 +586,10 @@ export const CommandMenu: React.FC = () => {
       isSelection &&
       activeCommand.command.meta?.searchable !== false;
 
-    // Truncation editor mode: previewKey ends in `:edit`. Swap the menu for the
-    // numeric editor, which routes back via executeCommandWithArg on commit.
+    // previewKeys ending in `:edit` swap the menu for the numeric cap editor,
+    // which owns field parsing and routes back via executeCommandWithArg.
     const previewKey = activeCommand.previewKey;
-    const truncEditMatch =
-      previewKey &&
-      previewKey.match(
-        /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
-      );
+    const isTruncEdit = previewKey?.endsWith(':edit') === true;
 
     // Lite /verbosity gets the settings panel chrome: a breadcrumb header +
     // divider where the input row sat (LiteLayout hides it; see
@@ -613,18 +605,16 @@ export const CommandMenu: React.FC = () => {
       </Box>
     ) : null;
 
-    if (truncEditMatch) {
-      const which = truncEditMatch[1] as TruncationEditorField;
-      const settingKey = truncationConfigKey(which);
+    if (isTruncEdit) {
       return (
         <Box flexDirection="column">
           {verbosityHeader}
           <VerbosityTruncationEditor
-            which={which}
-            onCommit={(value) => {
+            previewKey={previewKey}
+            onCommit={(configKey, value) => {
               clearCommandInput();
               executeCommandWithArg(
-                `set:${settingKey}:${value === null ? 'null' : value}`
+                `set:${configKey}:${value === null ? 'null' : value}`
               );
             }}
             onCancel={handleActiveCommandClose}
@@ -638,7 +628,10 @@ export const CommandMenu: React.FC = () => {
     const verbosityPreviewKey: VerbosityPreviewKey | null =
       previewKey === 'truncation'
         ? 'top'
-        : (VERBOSITY_PREVIEW_KEYS.find((k) => k === previewKey) ?? null);
+        : previewKey &&
+            VERBOSITY_PREVIEW_KEYS.has(previewKey as VerbosityPreviewKey)
+          ? (previewKey as VerbosityPreviewKey)
+          : null;
 
     // A highlighted density preset draft-renders that preset's display/filters
     // in the preview without persisting; no draft = saved config.

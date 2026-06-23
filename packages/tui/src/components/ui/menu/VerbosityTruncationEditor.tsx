@@ -54,25 +54,33 @@ const FIELD_META = {
   },
 } as const;
 
-export type TruncationEditorField = keyof typeof FIELD_META;
-type CapKey = (typeof FIELD_META)[TruncationEditorField]['configKey'];
+type TruncationEditorField = keyof typeof FIELD_META;
 
-/** Saved-config cap key for an editor field, for the `set:<key>:<value>` route. */
-export function truncationConfigKey(which: TruncationEditorField): CapKey {
-  return FIELD_META[which].configKey;
+/** Editor previewKeys look like `truncation:<field>:edit`; non-edit keys yield null. */
+function parseEditField(previewKey?: string): TruncationEditorField | null {
+  const m = previewKey?.match(
+    /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
+  );
+  return m ? (m[1] as TruncationEditorField) : null;
 }
 
+/**
+ * Numeric cap editor for the `truncation:<field>:edit` previewKeys. Returns null
+ * for any other key so CommandMenu can `?? <fallback>` without parsing itself;
+ * on commit it routes the saved-config cap key via {@link onCommit}.
+ */
 export const VerbosityTruncationEditor: React.FC<{
-  which: TruncationEditorField;
-  onCommit: (value: number | null) => void;
+  previewKey?: string;
+  onCommit: (configKey: string, value: number | null) => void;
   onCancel: () => void;
-}> = ({ which, onCommit, onCancel }) => {
+}> = ({ previewKey, onCommit, onCancel }) => {
   const { getColor } = useTheme();
   const dim = useMemo(() => getColor('secondary'), [getColor]);
-  const meta = FIELD_META[which];
+  const which = parseEditField(previewKey);
+  const meta = which ? FIELD_META[which] : null;
 
-  const [value, setValue] = useState<number | null>(
-    () => getVerboseDisplay()[meta.configKey]
+  const [value, setValue] = useState<number | null>(() =>
+    meta ? getVerboseDisplay()[meta.configKey] : null
   );
 
   // Honor /settings allowAnimations: when paused, hold the chevron steady-on.
@@ -104,7 +112,7 @@ export const VerbosityTruncationEditor: React.FC<{
       return;
     }
     if (key.return) {
-      onCommit(valueRef.current);
+      if (meta) onCommit(meta.configKey, valueRef.current);
       return;
     }
     if (key.leftArrow) {
@@ -150,12 +158,14 @@ export const VerbosityTruncationEditor: React.FC<{
 
   // Override the edited cap so the preview reflects the in-progress draft.
   const display = useMemo(
-    (): VerboseDisplayConfig => ({
-      ...getVerboseDisplay(),
-      [meta.configKey]: value,
-    }),
+    (): VerboseDisplayConfig =>
+      meta
+        ? { ...getVerboseDisplay(), [meta.configKey]: value }
+        : getVerboseDisplay(),
     [meta, value]
   );
+
+  if (!meta) return null;
 
   return (
     <Box flexDirection="column">
