@@ -5,7 +5,7 @@
 import chalk from 'chalk';
 import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
-import { visibleWidth, truncateToWidth } from '../utils/text-width.js';
+import { visibleWidth } from '../utils/text-width.js';
 import { resolveHighlightLanguage } from '../utils/highlight-languages.js';
 import {
   parseMarkdown,
@@ -59,6 +59,42 @@ export function highlightLineSafe(code: string, language?: string): string {
   } catch {
     return code;
   }
+}
+
+/**
+ * Tail-clip a string at `maxChars` of visible width (ignoring ANSI escapes
+ * and double-width chars), appending `…`. ANSI-aware: a naive char-count would
+ * cut mid-escape-sequence and corrupt downstream rendering.
+ */
+export function clipVisibleWidth(s: string, maxChars: number): string {
+  if (visibleWidth(s) <= maxChars) return s;
+  // Re-apply a single chalk.reset at the end so the next row starts clean
+  // even if we cut mid-styled-segment.
+  // eslint-disable-next-line no-control-regex
+  const ansiRe = /\x1b\[[0-9;]*m/g;
+  let out = '';
+  let visible = 0;
+  let i = 0;
+  // Iterate by code points (not UTF-16 units) and account for double-width
+  // chars so we never split a surrogate pair (emoji) or overshoot the cap.
+  while (i < s.length && visible < maxChars - 1) {
+    ansiRe.lastIndex = i;
+    const match = ansiRe.exec(s);
+    if (match && match.index === i) {
+      out += match[0];
+      i = match.index + match[0].length;
+      continue;
+    }
+    const cp = s.codePointAt(i)!;
+    const charLen = cp > 0xffff ? 2 : 1;
+    const ch = s.slice(i, i + charLen);
+    const w = visibleWidth(ch);
+    if (visible + w > maxChars - 1) break;
+    out += ch;
+    visible += w;
+    i += charLen;
+  }
+  return out + '…\x1b[0m';
 }
 
 export function stripAnsiQuick(s: string): string {
@@ -1189,7 +1225,7 @@ export function renderReadToolCall(
   // Per-row char clip honoring maxCharsPerLine (visible-width aware).
   const clipped =
     opts.maxCharsPerLine && opts.maxCharsPerLine > 0
-      ? visualRows.map((r) => truncateToWidth(r, opts.maxCharsPerLine!))
+      ? visualRows.map((r) => clipVisibleWidth(r, opts.maxCharsPerLine!))
       : visualRows;
 
   // Tail-window at maxLines (keep the LAST N, marker above) — matches the
@@ -1270,7 +1306,7 @@ export function renderVerboseOutput(
   // Per-row visible-width clip at maxCharsPerLine (both error + normal paths).
   const clipRow = (s: string): string => {
     if (maxCharsPerLine == null || maxCharsPerLine <= 0) return s;
-    return truncateToWidth(s, maxCharsPerLine);
+    return clipVisibleWidth(s, maxCharsPerLine);
   };
 
   // Shared finalize: tail-window the bar rows (marker tinted to match the
@@ -1383,7 +1419,7 @@ export function renderLiveStreamingOutputBar(
 
   const clipped =
     opts.outputMaxChars != null && opts.outputMaxChars > 0
-      ? lines.map((l) => truncateToWidth(l, opts.outputMaxChars!))
+      ? lines.map((l) => clipVisibleWidth(l, opts.outputMaxChars!))
       : lines;
 
   // Tail-window in visual rows; "streaming" distinguishes it from the
