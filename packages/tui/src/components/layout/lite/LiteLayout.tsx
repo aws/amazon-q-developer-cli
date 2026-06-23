@@ -19,6 +19,7 @@ import React, {
   useLayoutEffect,
   useRef,
 } from 'react';
+import { useStore } from 'zustand';
 import { Box, Text, Static } from '../../../renderer.js';
 import { useTwinkiContext } from 'twinki';
 import {
@@ -38,7 +39,11 @@ import {
 } from './static-flush.js';
 import { previewLine } from './queue-preview.js';
 import { buildUnifiedQueueEntries } from '../../../utils/queue-navigation.js';
-import { renderMessageToText, buildRenderTheme } from '../../../lite/render.js';
+import {
+  renderMessageToText,
+  buildRenderTheme,
+  type SubagentStageSummary,
+} from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../lite/tips.js';
 import { ApprovalPrompt } from './ApprovalPrompt.js';
@@ -72,6 +77,13 @@ import {
   getAgentDisplayName,
 } from '../../../utils/agentColors.js';
 import { isParentSubagentTool } from '../../../types/agent-events.js';
+import {
+  collectSubagentSummariesByParent,
+  markSubagentSummariesEmitted,
+  renderPendingSubagentSummaryAppendices,
+  selectPendingSubagentSummaryEntries,
+  shouldRenderSubagentResponseSummaries,
+} from './subagent-summaries.js';
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
 import chalk from 'chalk';
@@ -120,6 +132,8 @@ export const LiteLayout: React.FC = () => {
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
+  const pendingSteerContent = useAppStore((s) => s.pendingSteerContent);
+  const editingSteerLineIndex = useAppStore((s) => s.editingSteerLineIndex);
   const tasks = useAppStore((s) => s.tasks);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
@@ -207,11 +221,23 @@ export const LiteLayout: React.FC = () => {
 
   const pendingSwap = usePendingSwap();
   const pendingAgentName = pendingSwap?.name ?? null;
+  const unifiedQueueEntries = useMemo(
+    () => buildUnifiedQueueEntries(pendingSteerContent, queuedMessages),
+    [pendingSteerContent, queuedMessages]
+  );
+  const isEditingEntry = useCallback(
+    () => editingQueueIndex != null || editingSteerLineIndex != null,
+    [editingQueueIndex, editingSteerLineIndex]
+  );
 
   // Subagent inline-trace panel (Ctrl+O). subagentOpenIndex = inspected stage
   // (null = closed); mirrored into app-store so dispatch stops Esc from also
   // firing a stream cancel.
   const sessions = useAppStore((s) => s.sessions);
+  const subagentConversations = useStore(
+    sessionConversationsStore,
+    (s) => s.conversations
+  );
   const setSubagentPanelOpen = useAppStore((s) => s.setSubagentPanelOpen);
   const [subagentOpenIndex, setSubagentOpenIndex] = useState<number | null>(
     null
@@ -659,6 +685,9 @@ export const LiteLayout: React.FC = () => {
   // flushed (shell-escape cancel race), re-pointing the delta walk at an
   // already-pushed row that would otherwise duplicate forever.
   const pushedStaticIdsRef = useRef<Set<string>>(new Set());
+  const emittedSubagentSummaryKeysByParentRef = useRef<
+    Map<string, Set<string>>
+  >(new Map());
   // Turn-summary trailers already committed — never re-emit.
   const committedTurnSummariesRef = useRef<Set<string>>(new Set());
   // User id opening the in-flight (or last) turn; its trailer flushes here.
@@ -697,6 +726,7 @@ export const LiteLayout: React.FC = () => {
     staticItemsRef.current = [];
     lastFlushedEligibleCountRef.current = 0;
     pushedStaticIdsRef.current = new Set();
+    emittedSubagentSummaryKeysByParentRef.current = new Map();
     committedTurnSummariesRef.current = new Set();
     openTurnUserIdRef.current = null;
     lastAppendedEligibleMsgRef.current = null;
@@ -776,8 +806,8 @@ export const LiteLayout: React.FC = () => {
     // /verbosity showThinkingContent off → drop empty-content+thinking-only
     // Model rows at eligibility time, else their leading-blank prefix pins
     // phantom rows into <Static> on every Thought-only round (see static-flush).
-    const hideThinkingContent =
-      getVerboseDisplay().showThinkingContent === false;
+    const display = getVerboseDisplay();
+    const hideThinkingContent = display.showThinkingContent === false;
     const eligible = selectStaticEligible(
       visibleMessages,
       isProcessing,
@@ -785,6 +815,15 @@ export const LiteLayout: React.FC = () => {
       agentName,
       hideThinkingContent
     );
+    const subagentSummariesById: Map<string, SubagentStageSummary[]> =
+      hasAnySubagentTool
+        ? collectSubagentSummariesByParent(
+            messages,
+            sessions,
+            subagentConversations,
+            agentName
+          )
+        : new Map();
 
     // Guard against `eligible` shrinking below the high-water mark: the delta
     // walk assumes eligible only grows, but a message can flip OUT after being
@@ -804,13 +843,26 @@ export const LiteLayout: React.FC = () => {
     // renderCtx / subagent walk / theme build (most spinner re-renders land here).
     const haveNewEligible =
       eligible.length > lastFlushedEligibleCountRef.current;
+    const pendingSubagentSummaryEntries = selectPendingSubagentSummaryEntries(
+      messages,
+      subagentSummariesById,
+      pushedStaticIdsRef.current,
+      emittedSubagentSummaryKeysByParentRef.current,
+      display
+    );
+    const havePendingSubagentSummaryAppendix =
+      pendingSubagentSummaryEntries.length > 0;
     const openTurnId = openTurnUserIdRef.current;
     const havePendingTrailerForOpenTurn =
       !isProcessing &&
       openTurnId != null &&
       turnSummaries.has(openTurnId) &&
       !committedTurnSummariesRef.current.has(openTurnId);
-    if (!haveNewEligible && !havePendingTrailerForOpenTurn) {
+    if (
+      !haveNewEligible &&
+      !havePendingTrailerForOpenTurn &&
+      !havePendingSubagentSummaryAppendix
+    ) {
       return items;
     }
 
@@ -823,46 +875,6 @@ export const LiteLayout: React.FC = () => {
         id: '__lite_welcome__',
         text: welcomeBannerText,
       });
-    }
-
-    // Per-render theme + renderCtx. /theme re-runs this memo with new accessors
-    // so future rows pick up the swap; already-flushed rows keep their frozen
-    // text. Subagent walk gated on hasAnySubagentTool.
-    const subagentSummariesById = new Map<
-      string,
-      Array<{ stageName: string; contextSummary: string; taskResult: string }>
-    >();
-    if (hasAnySubagentTool) {
-      let activeParentId: string | null = null;
-      for (const m of messages) {
-        if (m.role !== MessageRole.ToolUse) continue;
-        const isParentSubagent =
-          isParentSubagentTool(m.name) &&
-          (!m.agentName || m.agentName === agentName);
-        if (isParentSubagent) {
-          activeParentId = m.id;
-          if (!subagentSummariesById.has(m.id))
-            subagentSummariesById.set(m.id, []);
-          continue;
-        }
-        if (!activeParentId) continue;
-        if (m.name !== 'summary') continue;
-        if (!m.agentName || m.agentName === agentName) continue;
-        try {
-          const args = JSON.parse(m.content);
-          const ctx =
-            typeof args.contextSummary === 'string' ? args.contextSummary : '';
-          const tr = typeof args.taskResult === 'string' ? args.taskResult : '';
-          if (!ctx && !tr) continue;
-          subagentSummariesById.get(activeParentId)!.push({
-            stageName: m.agentName,
-            contextSummary: ctx,
-            taskResult: tr,
-          });
-        } catch {
-          // ignore unparsable summary args
-        }
-      }
     }
 
     const stageColor = (stageName: string) =>
@@ -883,6 +895,7 @@ export const LiteLayout: React.FC = () => {
       getAgentTagColor: stageColor,
       theme,
       glyphs,
+      display,
     };
 
     /**
@@ -928,6 +941,21 @@ export const LiteLayout: React.FC = () => {
         prefix + renderMessageToText(msg, agentName ?? undefined, renderCtx);
       items.push({ id: msg.id, text });
       pushedStaticIdsRef.current.add(msg.id);
+      if (
+        msg.role === MessageRole.ToolUse &&
+        subagentSummariesById.get(msg.id)?.length &&
+        shouldRenderSubagentResponseSummaries(
+          msg,
+          display,
+          subagentSummariesById.get(msg.id) ?? []
+        )
+      ) {
+        markSubagentSummariesEmitted(
+          msg.id,
+          subagentSummariesById.get(msg.id) ?? [],
+          emittedSubagentSummaryKeysByParentRef.current
+        );
+      }
       prevMsg = msg;
       // A new User message opens a new turn; remember its id so we know
       // which trailer to flush at the next User/System or at turn end.
@@ -948,6 +976,19 @@ export const LiteLayout: React.FC = () => {
       commitTrailer(openTurnUserIdRef.current);
     }
 
+    for (const appendix of renderPendingSubagentSummaryAppendices(
+      pendingSubagentSummaryEntries,
+      agentName,
+      renderCtx
+    )) {
+      markSubagentSummariesEmitted(
+        appendix.parentId,
+        appendix.summaries,
+        emittedSubagentSummaryKeysByParentRef.current
+      );
+      items.push({ id: appendix.id, text: appendix.text });
+    }
+
     // Return a NEW array reference each render — twinki's <Static> compares
     // `items` by reference, so the same mutated array would be blind to the
     // newly appended entries. Shallow copy of pointers is cheap.
@@ -960,7 +1001,13 @@ export const LiteLayout: React.FC = () => {
     activeToolBatchIds,
     pendingApproval,
     liteStaticSkipBefore,
+    hasAnySubagentTool,
+    sessions,
+    subagentConversations,
     glyphs,
+    getColor,
+    getUserPromptColor,
+    getUserPromptBgHex,
     // For the first-content banner push + welcome-screen greeting filter; both
     // stable across renders, so a /settings allowAsciiArt toggle reflows the
     // about-to-commit banner row.
@@ -1489,7 +1536,7 @@ export const LiteLayout: React.FC = () => {
       {/* Queued messages — preview rows only (full text lives in the store).
           previewLine cap + truncate-end bound each row by width; rendering full
           text here hung the UI on multi-KB paste. Hidden during shell escape. */}
-      {queuedMessages.length > 0 && !isShellEscape && (
+      {unifiedQueueEntries.length > 0 && !isShellEscape && (
         <Box flexDirection="column">
           {unifiedQueueEntries.map((entry, displayIndex) => {
             const editing =
@@ -1610,7 +1657,7 @@ export const LiteLayout: React.FC = () => {
 
       {!showApproval && !anyPanelOpen && (
         <Box flexDirection="column">
-          {editingQueueIndex != null && (
+          {isEditingEntry() && (
             <Text>
               {chalk.cyan(
                 editingSteerLineIndex != null

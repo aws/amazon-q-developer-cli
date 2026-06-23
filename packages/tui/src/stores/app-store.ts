@@ -427,6 +427,8 @@ export type MessageType =
       id: string;
       role: MessageRole.ToolUse;
       name: string;
+      sessionId?: string;
+      pipelineGroupId?: string;
       kind?: ToolKind;
       content: string;
       /**
@@ -3073,6 +3075,10 @@ export const createAppStore = (props: AppStoreProps) => {
                     const messages = [...state.messages];
                     messages[existingIndex] = {
                       ...existingMsg,
+                      sessionId: event.sessionId ?? existingMsg.sessionId,
+                      pipelineGroupId:
+                        event.meta?.kiro?.pipeline?.groupId ??
+                        existingMsg.pipelineGroupId,
                       content,
                       purpose: purpose ?? existingMsg.purpose,
                       kind: event.kind || existingMsg.kind,
@@ -3146,6 +3152,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     id: event.id,
                     role: MessageRole.ToolUse,
                     name: event.name,
+                    sessionId: event.sessionId,
+                    pipelineGroupId: event.meta?.kiro?.pipeline?.groupId,
                     kind: event.kind,
                     content,
                     purpose,

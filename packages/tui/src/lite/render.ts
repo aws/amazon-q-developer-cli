@@ -2408,6 +2408,8 @@ function renderPipelineStages(
   return out;
 }
 
+const TASK_RESULT_MAX_LINES = 30;
+
 /**
  * "Chip at col 7 + markdown body at col 9" digest section (shared by `full
  * output:` and `response summary:`), pre-wrapped via wrapAnsiLine (SGR carryover)
@@ -2444,6 +2446,58 @@ function renderDigestSection(
     if (i < entries.length - 1) out.push('');
   }
   return out;
+}
+
+export function renderSubagentResponseSummaryLines(
+  stageSummaries: readonly SubagentStageSummary[],
+  cols: number,
+  colors?: {
+    getStageOutputColor?: (stageName: string) => (text: string) => string;
+    glyphs?: Glyphs;
+  }
+): string[] {
+  type RenderableStage = {
+    stageName: string;
+    body: string;
+    truncatedBy: number;
+  };
+  const outputColor = (name: string): ((text: string) => string) =>
+    colors?.getStageOutputColor?.(name) ?? responseChip;
+  const renderable: RenderableStage[] = [];
+  for (const s of stageSummaries) {
+    const ctx = (s.contextSummary ?? '').trim();
+    if (ctx.length > 0) {
+      renderable.push({
+        stageName: s.stageName,
+        body: s.contextSummary,
+        truncatedBy: 0,
+      });
+      continue;
+    }
+    const tr = (s.taskResult ?? '').trim();
+    if (tr.length === 0) continue;
+    const trLines = s.taskResult.split('\n');
+    if (trLines.length <= TASK_RESULT_MAX_LINES) {
+      renderable.push({
+        stageName: s.stageName,
+        body: s.taskResult,
+        truncatedBy: 0,
+      });
+    } else {
+      const truncated = trLines.slice(0, TASK_RESULT_MAX_LINES).join('\n');
+      renderable.push({
+        stageName: s.stageName,
+        body: truncated,
+        truncatedBy: trLines.length - TASK_RESULT_MAX_LINES,
+      });
+    }
+  }
+  if (renderable.length === 0) return [];
+  return renderDigestSection(chalk.dim('  response summary:'), renderable, {
+    chipFn: (name) => chalk.bold(outputColor(name)(`▸ ${name}`)),
+    cols,
+    glyphs: colors?.glyphs,
+  });
 }
 
 /**
@@ -2631,52 +2685,12 @@ export function renderSubagentFinalBlock(
     Array.isArray(stageSummaries) &&
     stageSummaries.length > 0
   ) {
-    type RenderableStage = {
-      stageName: string;
-      body: string;
-      truncatedBy: number;
-    };
-    // Cap fallback taskResult bodies (contextSummary is already a digest).
-    const TASK_RESULT_MAX_LINES = 30;
-    const renderable: RenderableStage[] = [];
-    for (const s of stageSummaries) {
-      const ctx = (s.contextSummary ?? '').trim();
-      if (ctx.length > 0) {
-        renderable.push({
-          stageName: s.stageName,
-          body: s.contextSummary,
-          truncatedBy: 0,
-        });
-        continue;
-      }
-      const tr = (s.taskResult ?? '').trim();
-      if (tr.length === 0) continue;
-      const trLines = s.taskResult.split('\n');
-      if (trLines.length <= TASK_RESULT_MAX_LINES) {
-        renderable.push({
-          stageName: s.stageName,
-          body: s.taskResult,
-          truncatedBy: 0,
-        });
-      } else {
-        const truncated = trLines.slice(0, TASK_RESULT_MAX_LINES).join('\n');
-        renderable.push({
-          stageName: s.stageName,
-          body: truncated,
-          truncatedBy: trLines.length - TASK_RESULT_MAX_LINES,
-        });
-      }
-    }
-    if (renderable.length > 0) {
-      // Always emit the chip (even single-stage) as the "returned" signal.
-      lines.push(
-        ...renderDigestSection(chalk.dim('  response summary:'), renderable, {
-          chipFn: (n) => chalk.bold(outputColor(n)(`▸ ${n}`)),
-          cols,
-          glyphs: colors?.glyphs,
-        })
-      );
-    }
+    lines.push(
+      ...renderSubagentResponseSummaryLines(stageSummaries, cols, {
+        getStageOutputColor: outputColor,
+        glyphs: colors?.glyphs,
+      })
+    );
   }
 
   // Errors still surface.

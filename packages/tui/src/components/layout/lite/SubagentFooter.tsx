@@ -17,6 +17,14 @@ export type SubagentRow = {
   activeToolFinished: boolean;
 };
 
+const SUMMARY_TOOL_NAMES = new Set(['summary']);
+
+export function isSubagentSummaryToolName(
+  name: string | undefined | null
+): boolean {
+  return !!name && SUMMARY_TOOL_NAMES.has(name);
+}
+
 /**
  * Format one row of the subagent activity strip:
  *   "[stage-name] tool-name detail..."         (running)
