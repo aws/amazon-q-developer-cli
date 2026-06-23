@@ -98,9 +98,9 @@ export class E2ETestCase {
     this.sandboxEnv = {
       CI: 'false',
       KIRO_CHAT_UI: 'tui',
-      // Rollout-gated debug/test builds can show the first-launch mode picker
-      // when no mode is specified. E2E tests default to the full TUI and opt
-      // into lite explicitly via withLite().
+      // E2E tests default to the full TUI and opt into lite explicitly via
+      // withLite(). This prevents the first-launch mode picker from intercepting
+      // tests that are not about mode selection.
       KIRO_UI_MODE: 'tui',
       KIRO_TEST_MODE: '1',
       KIRO_DISABLE_TELEMETRY: '1',
@@ -660,13 +660,16 @@ export class E2ETestCaseBuilder {
     return this;
   }
 
-  /**
-   * Lite mode. KIRO_LITE_ROLLOUT_ENABLED=1 is required: without it
-   * resolveUiMode() (index.tsx) silently falls back to 'tui' under the rollout
-   * gate added in commit e4077111c.
-   */
+  withUiMode(mode: 'tui' | 'lite'): E2ETestCaseBuilder {
+    this.withGlobalSettings({ 'chat.ui.mode': mode });
+    return this.withEnv({
+      KIRO_UI_MODE: mode,
+      ...(mode === 'lite' ? { KIRO_LITE_ROLLOUT_ENABLED: '1' } : {}),
+    });
+  }
+
   withLite(): E2ETestCaseBuilder {
-    return this.withEnv({ KIRO_UI_MODE: 'lite', KIRO_LITE_ROLLOUT_ENABLED: '1' });
+    return this.withUiMode('lite');
   }
 
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {
