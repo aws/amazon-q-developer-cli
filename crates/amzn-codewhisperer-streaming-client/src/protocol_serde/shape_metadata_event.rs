@@ -54,6 +54,18 @@ where
                                 crate::protocol_serde::shape_token_usage::de_token_usage(tokens, _value, depth + 1)?,
                             );
                         },
+                        "stopReason" => {
+                            builder = builder.set_stop_reason(
+                                ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                    .map(|s| s.to_unescaped().map(|u| crate::types::StopReason::from(u.as_ref())))
+                                    .transpose()?,
+                            );
+                        },
+                        "stopDetails" => {
+                            builder = builder.set_stop_details(
+                                crate::protocol_serde::shape_stop_details::de_stop_details(tokens, _value, depth + 1)?,
+                            );
+                        },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {

@@ -51,6 +51,5 @@ You must provide a task. `/spawn` with no arguments is not valid.
 
 ## Related
 
-- [/switch](switch.md) — Switch between spawned sessions
 - [subagent](../tools/subagent.md) — Agent-driven multi-agent orchestration
 - [/agent](agent-swap.md) — Switch between agents

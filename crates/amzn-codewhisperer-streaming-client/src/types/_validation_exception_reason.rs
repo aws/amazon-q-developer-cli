@@ -13,6 +13,7 @@
 /// # let validationexceptionreason = unimplemented!();
 /// match validationexceptionreason {
 ///     ValidationExceptionReason::ContentLengthExceedsThreshold => { /* ... */ },
+///     ValidationExceptionReason::DisallowedFileType => { /* ... */ },
 ///     ValidationExceptionReason::DocumentCountExceeded => { /* ... */ },
 ///     ValidationExceptionReason::DocumentDuplicateName => { /* ... */ },
 ///     ValidationExceptionReason::DocumentMaximumPagesExceeded => { /* ... */ },
@@ -25,10 +26,12 @@
 ///     ValidationExceptionReason::ImageMimeMismatch => { /* ... */ },
 ///     ValidationExceptionReason::ImageSizeExceeded => { /* ... */ },
 ///     ValidationExceptionReason::InvalidConversationId => { /* ... */ },
+///     ValidationExceptionReason::InvalidDocumentName => { /* ... */ },
 ///     ValidationExceptionReason::InvalidKmsGrant => { /* ... */ },
 ///     ValidationExceptionReason::InvalidModelId => { /* ... */ },
 ///     ValidationExceptionReason::PromptTooLong => { /* ... */ },
 ///     ValidationExceptionReason::RequestBodyInvalid => { /* ... */ },
+///     ValidationExceptionReason::RequestBodyInvalidJson => { /* ... */ },
 ///     ValidationExceptionReason::ThinkingSignatureInvalid => { /* ... */ },
 ///     ValidationExceptionReason::ToolConfigMissing => { /* ... */ },
 ///     ValidationExceptionReason::ToolDuplicate => { /* ... */ },
@@ -71,6 +74,8 @@ pub enum ValidationExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     ContentLengthExceedsThreshold,
     #[allow(missing_docs)] // documentation missing in model
+    DisallowedFileType,
+    #[allow(missing_docs)] // documentation missing in model
     DocumentCountExceeded,
     #[allow(missing_docs)] // documentation missing in model
     DocumentDuplicateName,
@@ -95,6 +100,8 @@ pub enum ValidationExceptionReason {
     #[allow(missing_docs)] // documentation missing in model
     InvalidConversationId,
     #[allow(missing_docs)] // documentation missing in model
+    InvalidDocumentName,
+    #[allow(missing_docs)] // documentation missing in model
     InvalidKmsGrant,
     #[allow(missing_docs)] // documentation missing in model
     InvalidModelId,
@@ -102,6 +109,8 @@ pub enum ValidationExceptionReason {
     PromptTooLong,
     #[allow(missing_docs)] // documentation missing in model
     RequestBodyInvalid,
+    #[allow(missing_docs)] // documentation missing in model
+    RequestBodyInvalidJson,
     #[allow(missing_docs)] // documentation missing in model
     ThinkingSignatureInvalid,
     #[allow(missing_docs)] // documentation missing in model
@@ -122,6 +131,7 @@ impl ::std::convert::From<&str> for ValidationExceptionReason {
     fn from(s: &str) -> Self {
         match s {
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD" => ValidationExceptionReason::ContentLengthExceedsThreshold,
+            "DISALLOWED_FILE_TYPE" => ValidationExceptionReason::DisallowedFileType,
             "DOCUMENT_COUNT_EXCEEDED" => ValidationExceptionReason::DocumentCountExceeded,
             "DOCUMENT_DUPLICATE_NAME" => ValidationExceptionReason::DocumentDuplicateName,
             "DOCUMENT_MAXIMUM_PAGES_EXCEEDED" => ValidationExceptionReason::DocumentMaximumPagesExceeded,
@@ -134,10 +144,12 @@ impl ::std::convert::From<&str> for ValidationExceptionReason {
             "IMAGE_MIME_MISMATCH" => ValidationExceptionReason::ImageMimeMismatch,
             "IMAGE_SIZE_EXCEEDED" => ValidationExceptionReason::ImageSizeExceeded,
             "INVALID_CONVERSATION_ID" => ValidationExceptionReason::InvalidConversationId,
+            "INVALID_DOCUMENT_NAME" => ValidationExceptionReason::InvalidDocumentName,
             "INVALID_KMS_GRANT" => ValidationExceptionReason::InvalidKmsGrant,
             "INVALID_MODEL_ID" => ValidationExceptionReason::InvalidModelId,
             "PROMPT_TOO_LONG" => ValidationExceptionReason::PromptTooLong,
             "REQUEST_BODY_INVALID" => ValidationExceptionReason::RequestBodyInvalid,
+            "REQUEST_BODY_INVALID_JSON" => ValidationExceptionReason::RequestBodyInvalidJson,
             "THINKING_SIGNATURE_INVALID" => ValidationExceptionReason::ThinkingSignatureInvalid,
             "TOOL_CONFIG_MISSING" => ValidationExceptionReason::ToolConfigMissing,
             "TOOL_DUPLICATE" => ValidationExceptionReason::ToolDuplicate,
@@ -161,6 +173,7 @@ impl ValidationExceptionReason {
     pub fn as_str(&self) -> &str {
         match self {
             ValidationExceptionReason::ContentLengthExceedsThreshold => "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+            ValidationExceptionReason::DisallowedFileType => "DISALLOWED_FILE_TYPE",
             ValidationExceptionReason::DocumentCountExceeded => "DOCUMENT_COUNT_EXCEEDED",
             ValidationExceptionReason::DocumentDuplicateName => "DOCUMENT_DUPLICATE_NAME",
             ValidationExceptionReason::DocumentMaximumPagesExceeded => "DOCUMENT_MAXIMUM_PAGES_EXCEEDED",
@@ -173,10 +186,12 @@ impl ValidationExceptionReason {
             ValidationExceptionReason::ImageMimeMismatch => "IMAGE_MIME_MISMATCH",
             ValidationExceptionReason::ImageSizeExceeded => "IMAGE_SIZE_EXCEEDED",
             ValidationExceptionReason::InvalidConversationId => "INVALID_CONVERSATION_ID",
+            ValidationExceptionReason::InvalidDocumentName => "INVALID_DOCUMENT_NAME",
             ValidationExceptionReason::InvalidKmsGrant => "INVALID_KMS_GRANT",
             ValidationExceptionReason::InvalidModelId => "INVALID_MODEL_ID",
             ValidationExceptionReason::PromptTooLong => "PROMPT_TOO_LONG",
             ValidationExceptionReason::RequestBodyInvalid => "REQUEST_BODY_INVALID",
+            ValidationExceptionReason::RequestBodyInvalidJson => "REQUEST_BODY_INVALID_JSON",
             ValidationExceptionReason::ThinkingSignatureInvalid => "THINKING_SIGNATURE_INVALID",
             ValidationExceptionReason::ToolConfigMissing => "TOOL_CONFIG_MISSING",
             ValidationExceptionReason::ToolDuplicate => "TOOL_DUPLICATE",
@@ -190,6 +205,7 @@ impl ValidationExceptionReason {
     pub const fn values() -> &'static [&'static str] {
         &[
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+            "DISALLOWED_FILE_TYPE",
             "DOCUMENT_COUNT_EXCEEDED",
             "DOCUMENT_DUPLICATE_NAME",
             "DOCUMENT_MAXIMUM_PAGES_EXCEEDED",
@@ -202,10 +218,12 @@ impl ValidationExceptionReason {
             "IMAGE_MIME_MISMATCH",
             "IMAGE_SIZE_EXCEEDED",
             "INVALID_CONVERSATION_ID",
+            "INVALID_DOCUMENT_NAME",
             "INVALID_KMS_GRANT",
             "INVALID_MODEL_ID",
             "PROMPT_TOO_LONG",
             "REQUEST_BODY_INVALID",
+            "REQUEST_BODY_INVALID_JSON",
             "THINKING_SIGNATURE_INVALID",
             "TOOL_CONFIG_MISSING",
             "TOOL_DUPLICATE",
@@ -235,6 +253,7 @@ impl ::std::fmt::Display for ValidationExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ValidationExceptionReason::ContentLengthExceedsThreshold => write!(f, "CONTENT_LENGTH_EXCEEDS_THRESHOLD"),
+            ValidationExceptionReason::DisallowedFileType => write!(f, "DISALLOWED_FILE_TYPE"),
             ValidationExceptionReason::DocumentCountExceeded => write!(f, "DOCUMENT_COUNT_EXCEEDED"),
             ValidationExceptionReason::DocumentDuplicateName => write!(f, "DOCUMENT_DUPLICATE_NAME"),
             ValidationExceptionReason::DocumentMaximumPagesExceeded => write!(f, "DOCUMENT_MAXIMUM_PAGES_EXCEEDED"),
@@ -247,10 +266,12 @@ impl ::std::fmt::Display for ValidationExceptionReason {
             ValidationExceptionReason::ImageMimeMismatch => write!(f, "IMAGE_MIME_MISMATCH"),
             ValidationExceptionReason::ImageSizeExceeded => write!(f, "IMAGE_SIZE_EXCEEDED"),
             ValidationExceptionReason::InvalidConversationId => write!(f, "INVALID_CONVERSATION_ID"),
+            ValidationExceptionReason::InvalidDocumentName => write!(f, "INVALID_DOCUMENT_NAME"),
             ValidationExceptionReason::InvalidKmsGrant => write!(f, "INVALID_KMS_GRANT"),
             ValidationExceptionReason::InvalidModelId => write!(f, "INVALID_MODEL_ID"),
             ValidationExceptionReason::PromptTooLong => write!(f, "PROMPT_TOO_LONG"),
             ValidationExceptionReason::RequestBodyInvalid => write!(f, "REQUEST_BODY_INVALID"),
+            ValidationExceptionReason::RequestBodyInvalidJson => write!(f, "REQUEST_BODY_INVALID_JSON"),
             ValidationExceptionReason::ThinkingSignatureInvalid => write!(f, "THINKING_SIGNATURE_INVALID"),
             ValidationExceptionReason::ToolConfigMissing => write!(f, "TOOL_CONFIG_MISSING"),
             ValidationExceptionReason::ToolDuplicate => write!(f, "TOOL_DUPLICATE"),

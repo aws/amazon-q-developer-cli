@@ -4,6 +4,7 @@ pub use crate::types::_application_properties::ApplicationPropertiesBuilder;
 pub use crate::types::_autonomous_agents::AutonomousAgentsBuilder;
 pub use crate::types::_by_user_analytics::ByUserAnalyticsBuilder;
 pub use crate::types::_code_star_reference::CodeStarReferenceBuilder;
+pub use crate::types::_continuous_learning::ContinuousLearningBuilder;
 pub use crate::types::_customization_summary::CustomizationSummaryBuilder;
 pub use crate::types::_customization_version_summary::CustomizationVersionSummaryBuilder;
 pub use crate::types::_dashboard_analytics::DashboardAnalyticsBuilder;

@@ -8,6 +8,7 @@ use agent::agent_config::{
 };
 use agent::agent_loop::protocol::{
     LoopEndReason,
+    LoopError,
     UserTurnMetadata,
 };
 use agent::mcp::{
@@ -15,6 +16,7 @@ use agent::mcp::{
     McpServerEvent,
 };
 use agent::protocol::{
+    AgentError,
     AgentEvent,
     AgentStopReason,
     ApprovalRequest,
@@ -103,6 +105,41 @@ const CONTEXT_START: &str = r#"
 const CONTEXT_END: &str = r#"
 === Subagent Task Context End ===
 "#;
+
+/// Wrap the subagent's last message when its turn ended in an empty response,
+/// which degrades to a result rather than failing the stage (mirrors v2 / #3075).
+fn empty_response_fallback(last_message: &str) -> String {
+    format!(
+        "The subagent returned an empty response without calling the summary tool. \
+         This is the content of its last available message:\n\n{last_message}"
+    )
+}
+
+/// Build the [`Summary`] for a terminal `Stop(Error)`: an empty response degrades
+/// to the last message; every other error reports a failure.
+fn disposition_for_stop_error(query: &str, error: &AgentError, last_message: Option<&str>) -> Summary {
+    if matches!(error, AgentError::AgentLoopError(LoopError::EmptyResponse)) {
+        Summary {
+            task_description: query.to_string(),
+            context_summary: None,
+            task_result: empty_response_fallback(last_message.unwrap_or_default()),
+            result_type: None,
+        }
+    } else {
+        Summary {
+            task_description: query.to_string(),
+            context_summary: None,
+            task_result: format!("subagent has failed due to the following error: {error:?}"),
+            result_type: None,
+        }
+    }
+}
+
+/// Whether a terminal `Stop(Error)` should be surfaced as a successful (degraded)
+/// result rather than an error. Only empty-response degrades.
+fn stop_error_is_degradable(error: &AgentError) -> bool {
+    matches!(error, AgentError::AgentLoopError(LoopError::EmptyResponse))
+}
 
 // TODO: Generalize this and reuse this elsewhere
 struct TelemetrySink<'a> {
@@ -454,6 +491,12 @@ impl<'a> Subagent<'a> {
         }
 
         let mut query_status = QueryStatus::Ongoing;
+        // Accumulates the subagent's streamed assistant text for the current turn,
+        // used as a graceful fallback if the turn ends in an empty response. Reset
+        // at the start of each turn so a later empty turn doesn't resurrect stale
+        // text — the most recent non-empty turn is what we degrade to.
+        let mut current_turn_text = String::new();
+        let mut last_message: Option<String> = None;
 
         loop {
             tokio::select! {
@@ -512,6 +555,12 @@ impl<'a> Subagent<'a> {
                             continue;
                         },
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            // Broadcast closed; recover a still-buffered summary before giving up.
+                            if !matches!(query_status, QueryStatus::Resolved(_))
+                                && let Some(s) = agent.take_summary().await
+                            {
+                                query_status = QueryStatus::Resolved(s);
+                            }
                             break;
                         },
                     };
@@ -552,6 +601,9 @@ impl<'a> Subagent<'a> {
                                 },
                                 UpdateEvent::AgentContent(content) => {
                                     if let ContentChunk::Text(text) = content {
+                                        // Track streamed assistant text so we can degrade
+                                        // gracefully if the turn ends in an empty response.
+                                        current_turn_text.push_str(&text);
                                         _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                             agent_id: self.id,
                                             kind: AgentEventKind::TextMessageContent(
@@ -577,6 +629,18 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::EndTurn(metadata) => {
+                            // Snapshot this turn's text for the empty-response fallback.
+                            let turn_text = std::mem::take(&mut current_turn_text);
+                            if !turn_text.trim().is_empty() {
+                                last_message = Some(turn_text);
+                            }
+                            // Recover the summary from the lossless channel in case the
+                            // broadcast dropped the SubagentSummary event under load.
+                            if !matches!(query_status, QueryStatus::Resolved(_))
+                                && let Some(s) = agent.take_summary().await
+                            {
+                                query_status = QueryStatus::Resolved(s);
+                            }
                             if matches!(query_status, QueryStatus::Resolved(_)) {
                                 user_turn_metadata.push(metadata.clone());
                                 break;
@@ -594,12 +658,24 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
                             telemetry_sink.update_stop_reason(agent_error.to_string());
-                            query_status = QueryStatus::Error(Summary {
-                                task_description: self.query.to_string(),
-                                context_summary: None,
-                                task_result: format!("subagent has failed due to the following error: {agent_error:?}"),
-                                result_type: None,
-                            });
+                            // Honor a summary delivered just before the error landed.
+                            if !matches!(query_status, QueryStatus::Resolved(_))
+                                && let Some(s) = agent.take_summary().await
+                            {
+                                query_status = QueryStatus::Resolved(s);
+                                break;
+                            }
+                            // Empty response degrades to the last message; other errors fail.
+                            let summary = disposition_for_stop_error(
+                                self.query,
+                                &agent_error,
+                                last_message.as_deref(),
+                            );
+                            query_status = if stop_error_is_degradable(&agent_error) {
+                                QueryStatus::Resolved(summary)
+                            } else {
+                                QueryStatus::Error(summary)
+                            };
                             break;
                         },
                         AgentEvent::ApprovalRequest(ApprovalRequest { id, tool_use, .. }) => {
@@ -870,6 +946,88 @@ mod tests {
         assert!(
             matches!(result, PermissionEvalResult::Ask { .. }),
             "fs_read outside CWD should require approval, got: {result:?}"
+        );
+    }
+
+    /// An empty-response error is degradable: it should be reported as a
+    /// successful (degraded) result, not a failure.
+    #[test]
+    fn empty_response_error_is_degradable() {
+        let err = AgentError::AgentLoopError(LoopError::EmptyResponse);
+        assert!(
+            stop_error_is_degradable(&err),
+            "EmptyResponse should degrade to a result instead of failing the stage"
+        );
+    }
+
+    /// Any non-empty-response error is a real failure and must not be degraded.
+    #[test]
+    fn other_errors_are_not_degradable() {
+        let err = AgentError::AgentLoopError(LoopError::InvalidJson {
+            assistant_text: "oops".to_string(),
+            invalid_tools: Vec::new(),
+            valid_tools: Vec::new(),
+        });
+        assert!(
+            !stop_error_is_degradable(&err),
+            "a genuine error must still fail the subagent stage"
+        );
+    }
+
+    /// On an empty response after the subagent produced text, the degraded
+    /// summary surfaces that last message wrapped in the fallback template.
+    #[test]
+    fn empty_response_degrades_to_last_message() {
+        let err = AgentError::AgentLoopError(LoopError::EmptyResponse);
+        let summary = disposition_for_stop_error("count LOC", &err, Some("partial findings"));
+
+        assert_eq!(summary.task_description, "count LOC");
+        assert!(
+            summary.task_result.contains("partial findings"),
+            "degraded result should include the last message, got: {}",
+            summary.task_result
+        );
+        assert!(
+            summary.task_result.contains("empty response"),
+            "degraded result should explain the empty response, got: {}",
+            summary.task_result
+        );
+    }
+
+    /// On an empty response with no prior message, the degraded summary is still
+    /// well-formed (template with an empty body) rather than a hard error.
+    #[test]
+    fn empty_response_with_no_prior_message_degrades_to_template() {
+        let err = AgentError::AgentLoopError(LoopError::EmptyResponse);
+        let summary = disposition_for_stop_error("count LOC", &err, None);
+
+        assert_eq!(summary.task_description, "count LOC");
+        assert!(
+            summary.task_result.contains("empty response"),
+            "should still produce the explanatory template, got: {}",
+            summary.task_result
+        );
+        assert!(
+            !summary.task_result.contains("failed due to the following error"),
+            "empty response must not be reported as a failure"
+        );
+    }
+
+    /// A genuine (non-empty) error produces a failure-shaped summary describing
+    /// the error, matching the prior behavior.
+    #[test]
+    fn genuine_error_reports_failure() {
+        let err = AgentError::AgentLoopError(LoopError::InvalidJson {
+            assistant_text: "bad".to_string(),
+            invalid_tools: Vec::new(),
+            valid_tools: Vec::new(),
+        });
+        let summary = disposition_for_stop_error("count LOC", &err, Some("ignored on failure"));
+
+        assert!(
+            summary.task_result.contains("failed due to the following error"),
+            "non-empty errors should report a failure, got: {}",
+            summary.task_result
         );
     }
 }
