@@ -60,6 +60,30 @@ struct Args {
     /// Keep the process alive after the MCP transport closes (simulates a misbehaving server)
     #[arg(long)]
     linger: bool,
+
+    /// Enable a fully working OAuth flow (discovery, dynamic client registration,
+    /// authorize, token, refresh) and require a valid bearer token on `/mcp`.
+    ///
+    /// This is independent of `--probe-status`: with `--oauth` the server can complete
+    /// the OAuth handshake end-to-end, not just trigger it.
+    #[arg(long)]
+    oauth: bool,
+
+    /// Lifetime (in seconds) of issued OAuth access tokens. Use a small value to
+    /// force mid-session token expiry / refresh in tests. Only used with `--oauth`.
+    #[arg(long, default_value = "3600")]
+    oauth_token_ttl_secs: u64,
+
+    /// Do not issue a refresh token alongside access tokens. This forces the client
+    /// down the re-authorization path when the access token expires. Only used with `--oauth`.
+    #[arg(long)]
+    oauth_no_refresh_token: bool,
+
+    /// Reject `grant_type=refresh_token` requests with HTTP 400. Combined with a short
+    /// token TTL this simulates a server that can no longer refresh a session, so the
+    /// client must surface a clear error. Only used with `--oauth`.
+    #[arg(long)]
+    oauth_refresh_fails: bool,
 }
 
 #[derive(Clone)]
@@ -260,6 +284,258 @@ async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -
     Ok(())
 }
 
+/// Configuration for the OAuth-enabled mock server.
+#[derive(Clone, Copy)]
+struct OAuthMockConfig {
+    /// Lifetime of issued access tokens, in seconds.
+    token_ttl_secs: u64,
+    /// Whether to include a `refresh_token` in token responses.
+    issue_refresh_token: bool,
+    /// Whether `grant_type=refresh_token` requests should fail with HTTP 400.
+    refresh_fails: bool,
+}
+
+/// Shared state for the OAuth mock: a registry of currently-valid access tokens
+/// mapped to their expiry instants, plus a monotonic counter for unique values.
+#[derive(Clone)]
+struct OAuthRuntime {
+    port: u16,
+    cfg: OAuthMockConfig,
+    /// access_token -> expiry instant
+    tokens: std::sync::Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl OAuthRuntime {
+    fn next_id(&self) -> u64 {
+        self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Mint a fresh access token (and optional refresh token), recording the
+    /// access token's expiry so `/mcp` can validate it.
+    fn issue_token(&self) -> serde_json::Value {
+        let id = self.next_id();
+        let access_token = format!("mock-access-token-{id}");
+        let expiry = std::time::Instant::now() + Duration::from_secs(self.cfg.token_ttl_secs);
+        self.tokens.lock().unwrap().insert(access_token.clone(), expiry);
+
+        let mut body = serde_json::json!({
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": self.cfg.token_ttl_secs,
+            "scope": "openid email profile"
+        });
+        if self.cfg.issue_refresh_token {
+            body["refresh_token"] = serde_json::Value::String(format!("mock-refresh-token-{id}"));
+        }
+        body
+    }
+
+    /// Returns true if the bearer token in the request is known and unexpired.
+    fn is_token_valid(&self, token: &str) -> bool {
+        self.tokens
+            .lock()
+            .unwrap()
+            .get(token)
+            .is_some_and(|expiry| *expiry > std::time::Instant::now())
+    }
+}
+
+/// Run the mock MCP server over HTTP with a fully working OAuth flow.
+///
+/// Unlike `run_http` with `--probe-status` (which only *triggers* OAuth by
+/// returning a 401), this variant implements every endpoint the rmcp client
+/// needs to complete the handshake and refresh tokens:
+///
+/// - `GET /.well-known/oauth-protected-resource` — points at this server as the auth server
+/// - `GET /.well-known/oauth-authorization-server` — advertises the endpoints below
+/// - `POST /oauth/register` — dynamic client registration (returns a client_id)
+/// - `GET  /oauth/authorize` — auto-approves and 302-redirects to the client's loopback with `code`
+///   + `state`
+/// - `POST /oauth/token` — exchanges auth codes and refresh tokens for access tokens
+///
+/// Requests to `/mcp` must carry a valid, unexpired bearer token; otherwise the
+/// server responds 401 with a `WWW-Authenticate` header so the client kicks off
+/// (or retries) the OAuth flow.
+async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) -> Result<()> {
+    use axum::extract::{
+        Form,
+        Query,
+    };
+    use axum::http::{
+        StatusCode,
+        header,
+    };
+    use axum::response::{
+        IntoResponse,
+        Json,
+    };
+    use axum::routing::{
+        get,
+        post,
+    };
+
+    let runtime = OAuthRuntime {
+        port,
+        cfg,
+        tokens: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+        counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    };
+
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(server.clone()),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
+
+    // --- OAuth metadata discovery (RFC 8414 / RFC 9728) ---
+    let authorization_metadata = move |port: u16| {
+        serde_json::json!({
+            "issuer": format!("http://127.0.0.1:{port}"),
+            "authorization_endpoint": format!("http://127.0.0.1:{port}/oauth/authorize"),
+            "token_endpoint": format!("http://127.0.0.1:{port}/oauth/token"),
+            "registration_endpoint": format!("http://127.0.0.1:{port}/oauth/register"),
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["S256"],
+            "scopes_supported": ["openid", "email", "profile", "offline_access"],
+            "token_endpoint_auth_methods_supported": ["none"]
+        })
+    };
+    let protected_resource_metadata = move |port: u16| {
+        serde_json::json!({
+            "resource": format!("http://127.0.0.1:{port}/mcp"),
+            "authorization_servers": [format!("http://127.0.0.1:{port}")]
+        })
+    };
+
+    let auth_meta_handler = {
+        move || {
+            let body = authorization_metadata(port);
+            async move { Json(body) }
+        }
+    };
+    let resource_meta_handler = {
+        move || {
+            let body = protected_resource_metadata(port);
+            async move { Json(body) }
+        }
+    };
+
+    // --- Dynamic client registration ---
+    let register_handler = move |_body: Option<Json<serde_json::Value>>| async move {
+        Json(serde_json::json!({
+            "client_id": "mock-oauth-client",
+            "client_name": "mock-oauth-client",
+            "redirect_uris": [],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "token_endpoint_auth_method": "none",
+            "response_types": ["code"]
+        }))
+    };
+
+    // --- Authorization endpoint: auto-approve, redirect back to the client loopback ---
+    let authorize_runtime = runtime.clone();
+    let authorize_handler = move |Query(params): Query<HashMap<String, String>>| {
+        let runtime = authorize_runtime.clone();
+        async move {
+            let Some(redirect_uri) = params.get("redirect_uri") else {
+                return (StatusCode::BAD_REQUEST, "missing redirect_uri").into_response();
+            };
+            // Echo the client's CSRF state back unchanged so the token exchange
+            // can correlate the PKCE verifier the client stored.
+            let state = params.get("state").cloned().unwrap_or_default();
+            let code = format!("mock-auth-code-{}", runtime.next_id());
+            let separator = if redirect_uri.contains('?') { '&' } else { '?' };
+            let location = format!("{redirect_uri}{separator}code={code}&state={state}");
+            (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
+        }
+    };
+
+    // --- Token endpoint: authorization_code + refresh_token grants ---
+    let token_runtime = runtime.clone();
+    let token_handler = move |Form(form): Form<HashMap<String, String>>| {
+        let runtime = token_runtime.clone();
+        async move {
+            let grant_type = form.get("grant_type").map(String::as_str).unwrap_or("");
+            if grant_type == "refresh_token" && runtime.cfg.refresh_fails {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "invalid_grant",
+                        "error_description": "mock server configured to reject token refresh"
+                    })),
+                )
+                    .into_response();
+            }
+            Json(runtime.issue_token()).into_response()
+        }
+    };
+
+    // --- Test control: invalidate all currently-issued access tokens. ---
+    // Lets a test simulate server-side token expiry mid-session without relying
+    // on wall-clock timing: after this, the client's bearer token is rejected
+    // (401) on the next `/mcp` request, forcing a refresh or re-authorization.
+    let expire_runtime = runtime.clone();
+    let expire_handler = move || {
+        let runtime = expire_runtime.clone();
+        async move {
+            runtime.tokens.lock().unwrap().clear();
+            StatusCode::NO_CONTENT
+        }
+    };
+
+    // --- Bearer-token validation for /mcp ---
+    let mcp_runtime = runtime.clone();
+    let mcp_auth_layer =
+        axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+            let runtime = mcp_runtime.clone();
+            async move {
+                let authorized = request
+                    .headers()
+                    .get(header::AUTHORIZATION)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.strip_prefix("Bearer "))
+                    .is_some_and(|token| runtime.is_token_valid(token));
+
+                if authorized {
+                    next.run(request).await
+                } else {
+                    let www_authenticate = format!(
+                        "Bearer resource_metadata=\"http://127.0.0.1:{}/.well-known/oauth-protected-resource\"",
+                        runtime.port
+                    );
+                    (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, www_authenticate)]).into_response()
+                }
+            }
+        });
+
+    let mcp_router = axum::Router::new().fallback_service(mcp_service).layer(mcp_auth_layer);
+
+    let router = axum::Router::new()
+        .route("/.well-known/oauth-authorization-server", get(auth_meta_handler))
+        .route("/mcp/.well-known/oauth-authorization-server", get(auth_meta_handler))
+        .route("/.well-known/oauth-protected-resource", get(resource_meta_handler))
+        .route("/mcp/.well-known/oauth-protected-resource", get(resource_meta_handler))
+        .route("/oauth/register", post(register_handler))
+        .route("/oauth/authorize", get(authorize_handler))
+        .route("/oauth/token", post(token_handler))
+        .route("/control/expire-tokens", post(expire_handler))
+        .nest("/mcp", mcp_router);
+
+    let addr = format!("0.0.0.0:{port}");
+    eprintln!("Starting OAuth-enabled HTTP MCP server on {addr}");
+
+    let tcp_listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(tcp_listener, router)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.ok();
+        })
+        .await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -272,6 +548,14 @@ async fn main() -> Result<()> {
 
     match args.transport {
         Transport::Stdio => run_stdio(server, args.linger).await,
+        Transport::Http if args.oauth => {
+            run_http_oauth(server, args.port, OAuthMockConfig {
+                token_ttl_secs: args.oauth_token_ttl_secs,
+                issue_refresh_token: !args.oauth_no_refresh_token,
+                refresh_fails: args.oauth_refresh_fails,
+            })
+            .await
+        },
         Transport::Http => run_http(server, args.port, args.probe_status).await,
     }
 }

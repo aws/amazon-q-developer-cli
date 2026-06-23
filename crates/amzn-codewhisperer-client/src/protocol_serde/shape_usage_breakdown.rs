@@ -150,6 +150,25 @@ where
                                     depth + 1,
                                 )?);
                             },
+                            "overageCredits" => {
+                                builder = builder.set_overage_credits(
+                                    crate::protocol_serde::shape_overage_credit_list::de_overage_credit_list(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
+                            "dimensionType" => {
+                                builder = builder.set_dimension_type(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| {
+                                            s.to_unescaped()
+                                                .map(|u| crate::types::PoolingDimension::from(u.as_ref()))
+                                        })
+                                        .transpose()?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

@@ -16,6 +16,8 @@ pub use crate::types::_chat_response_stream::ChatResponseStream;
 pub use crate::types::_chat_trigger_type::ChatTriggerType;
 pub use crate::types::_citation_event::CitationEvent;
 pub use crate::types::_citation_target::CitationTarget;
+pub use crate::types::_clarification_answer_option::ClarificationAnswerOption;
+pub use crate::types::_clarification_question::ClarificationQuestion;
 pub use crate::types::_client_cache_config::ClientCacheConfig;
 pub use crate::types::_cloud_watch_troubleshooting_link::CloudWatchTroubleshootingLink;
 pub use crate::types::_code_description::CodeDescription;
@@ -56,6 +58,7 @@ pub use crate::types::_image_format::ImageFormat;
 pub use crate::types::_image_source::ImageSource;
 pub use crate::types::_infrastructure_update::InfrastructureUpdate;
 pub use crate::types::_infrastructure_update_transition::InfrastructureUpdateTransition;
+pub use crate::types::_inline_artifact::InlineArtifact;
 pub use crate::types::_intent_data_type::IntentDataType;
 pub use crate::types::_intent_type::IntentType;
 pub use crate::types::_intents_event::IntentsEvent;
@@ -75,11 +78,14 @@ pub use crate::types::_position::Position;
 pub use crate::types::_programming_language::ProgrammingLanguage;
 pub use crate::types::_progress::Progress;
 pub use crate::types::_progress_component::ProgressComponent;
+pub use crate::types::_q_clarification::QClarification;
 pub use crate::types::_range::Range;
 pub use crate::types::_reasoning_content::ReasoningContent;
 pub use crate::types::_reasoning_content_event::ReasoningContentEvent;
 pub use crate::types::_reasoning_text::ReasoningText;
 pub use crate::types::_reference::Reference;
+pub use crate::types::_refusal_category::RefusalCategory;
+pub use crate::types::_refusal_details::RefusalDetails;
 pub use crate::types::_relevant_text_document::RelevantTextDocument;
 pub use crate::types::_resource::Resource;
 pub use crate::types::_resource_list::ResourceList;
@@ -93,6 +99,8 @@ pub use crate::types::_span::Span;
 pub use crate::types::_step::Step;
 pub use crate::types::_step_component::StepComponent;
 pub use crate::types::_step_state::StepState;
+pub use crate::types::_stop_details::StopDetails;
+pub use crate::types::_stop_reason::StopReason;
 pub use crate::types::_suggestion::Suggestion;
 pub use crate::types::_suggestions::Suggestions;
 pub use crate::types::_supplementary_web_link::SupplementaryWebLink;
@@ -160,6 +168,10 @@ mod _chat_trigger_type;
 mod _citation_event;
 
 mod _citation_target;
+
+mod _clarification_answer_option;
+
+mod _clarification_question;
 
 mod _client_cache_config;
 
@@ -241,6 +253,8 @@ mod _infrastructure_update;
 
 mod _infrastructure_update_transition;
 
+mod _inline_artifact;
+
 mod _intent_data_type;
 
 mod _intent_type;
@@ -279,6 +293,8 @@ mod _progress;
 
 mod _progress_component;
 
+mod _q_clarification;
+
 mod _range;
 
 mod _reasoning_content;
@@ -288,6 +304,10 @@ mod _reasoning_content_event;
 mod _reasoning_text;
 
 mod _reference;
+
+mod _refusal_category;
+
+mod _refusal_details;
 
 mod _relevant_text_document;
 
@@ -314,6 +334,10 @@ mod _step;
 mod _step_component;
 
 mod _step_state;
+
+mod _stop_details;
+
+mod _stop_reason;
 
 mod _suggestion;
 

@@ -707,7 +707,7 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         bail!("V3 is currently not supported on this system.");
     }
 
-    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
+    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os, false).await?;
     let node_bin = node_bin.ok_or_else(|| {
         eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
     })?;
@@ -773,7 +773,7 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
 
 /// Spawn KAS as a persistent WebSocket server on the given port.
 async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
-    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os).await?;
+    let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os, false).await?;
     let node_bin = node_bin.ok_or_else(|| {
         eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
     })?;

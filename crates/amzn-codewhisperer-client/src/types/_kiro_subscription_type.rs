@@ -12,8 +12,10 @@
 /// ```text
 /// # let kirosubscriptiontype = unimplemented!();
 /// match kirosubscriptiontype {
+///     KiroSubscriptionType::Pooling => { /* ... */ },
 ///     KiroSubscriptionType::Power => { /* ... */ },
 ///     KiroSubscriptionType::Pro => { /* ... */ },
+///     KiroSubscriptionType::ProMax => { /* ... */ },
 ///     KiroSubscriptionType::ProPlus => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
@@ -49,9 +51,13 @@
 )]
 pub enum KiroSubscriptionType {
     #[allow(missing_docs)] // documentation missing in model
+    Pooling,
+    #[allow(missing_docs)] // documentation missing in model
     Power,
     #[allow(missing_docs)] // documentation missing in model
     Pro,
+    #[allow(missing_docs)] // documentation missing in model
+    ProMax,
     #[allow(missing_docs)] // documentation missing in model
     ProPlus,
     /// `Unknown` contains new variants that have been added since this code was generated.
@@ -63,8 +69,10 @@ pub enum KiroSubscriptionType {
 impl ::std::convert::From<&str> for KiroSubscriptionType {
     fn from(s: &str) -> Self {
         match s {
+            "POOLING" => KiroSubscriptionType::Pooling,
             "POWER" => KiroSubscriptionType::Power,
             "PRO" => KiroSubscriptionType::Pro,
+            "PRO_MAX" => KiroSubscriptionType::ProMax,
             "PRO_PLUS" => KiroSubscriptionType::ProPlus,
             other => KiroSubscriptionType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
@@ -83,8 +91,10 @@ impl KiroSubscriptionType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            KiroSubscriptionType::Pooling => "POOLING",
             KiroSubscriptionType::Power => "POWER",
             KiroSubscriptionType::Pro => "PRO",
+            KiroSubscriptionType::ProMax => "PRO_MAX",
             KiroSubscriptionType::ProPlus => "PRO_PLUS",
             KiroSubscriptionType::Unknown(value) => value.as_str(),
         }
@@ -92,7 +102,7 @@ impl KiroSubscriptionType {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["POWER", "PRO", "PRO_PLUS"]
+        &["POOLING", "POWER", "PRO", "PRO_MAX", "PRO_PLUS"]
     }
 }
 impl ::std::convert::AsRef<str> for KiroSubscriptionType {
@@ -115,8 +125,10 @@ impl KiroSubscriptionType {
 impl ::std::fmt::Display for KiroSubscriptionType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            KiroSubscriptionType::Pooling => write!(f, "POOLING"),
             KiroSubscriptionType::Power => write!(f, "POWER"),
             KiroSubscriptionType::Pro => write!(f, "PRO"),
+            KiroSubscriptionType::ProMax => write!(f, "PRO_MAX"),
             KiroSubscriptionType::ProPlus => write!(f, "PRO_PLUS"),
             KiroSubscriptionType::Unknown(value) => write!(f, "{value}"),
         }

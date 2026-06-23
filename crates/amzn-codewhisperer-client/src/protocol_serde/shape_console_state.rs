@@ -24,5 +24,47 @@ pub fn ser_console_state(
     if let Some(var_7) = &input.ux_error_message {
         object.key("uxErrorMessage").string(var_7.as_str());
     }
+    if let Some(var_8) = &input.ux_success_message {
+        object.key("uxSuccessMessage").string(var_8.as_str());
+    }
+    if let Some(var_9) = &input.browser_language {
+        object.key("browserLanguage").string(var_9.as_str());
+    }
+    if let Some(var_10) = &input.is_global_console {
+        object.key("isGlobalConsole").boolean(*var_10);
+    }
+    if let Some(var_11) = &input.timezone_offset_minutes {
+        object.key("timezoneOffsetMinutes").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((*var_11).into()),
+        );
+    }
+    if let Some(var_12) = &input.components_tree {
+        object.key("componentsTree").string(var_12.as_str());
+    }
+    if let Some(var_13) = &input.user_selection {
+        object.key("userSelection").string(var_13.as_str());
+    }
+    if let Some(var_14) = &input.resource_tables {
+        object.key("resourceTables").string(var_14.as_str());
+    }
+    if let Some(var_15) = &input.resource_identifier {
+        object.key("resourceIdentifier").string(var_15.as_str());
+    }
+    if let Some(var_16) = &input.resource_property {
+        object.key("resourceProperty").string(var_16.as_str());
+    }
+    if let Some(var_17) = &input.last_ux_error_message {
+        object.key("lastUxErrorMessage").string(var_17.as_str());
+    }
+    if let Some(var_18) = &input.last_ux_success_message {
+        object.key("lastUxSuccessMessage").string(var_18.as_str());
+    }
+    if let Some(var_19) = &input.last_tasks_completed {
+        object.key("lastTasksCompleted").string(var_19.as_str());
+    }
+    if let Some(var_20) = &input.last_tasks_cancelled {
+        object.key("lastTasksCancelled").string(var_20.as_str());
+    }
     Ok(())
 }

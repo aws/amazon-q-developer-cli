@@ -75,6 +75,12 @@ pub fn ser_opt_in_features(
         crate::protocol_serde::shape_api_keys::ser_api_keys(&mut object_24, var_23)?;
         object_24.finish();
     }
+    if let Some(var_25) = &input.continuous_learning {
+        #[allow(unused_mut)]
+        let mut object_26 = object.key("continuousLearning").start_object();
+        crate::protocol_serde::shape_continuous_learning::ser_continuous_learning(&mut object_26, var_25)?;
+        object_26.finish();
+    }
     Ok(())
 }
 
@@ -200,6 +206,15 @@ where
                                     _value,
                                     depth + 1,
                                 )?);
+                            },
+                            "continuousLearning" => {
+                                builder = builder.set_continuous_learning(
+                                    crate::protocol_serde::shape_continuous_learning::de_continuous_learning(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }

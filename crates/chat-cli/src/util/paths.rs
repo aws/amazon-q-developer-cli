@@ -145,14 +145,10 @@ pub fn node_sha256_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("node.sha256"))
 }
 
-/// Path to extracted KAS bundle directory (acp-server.js + node_modules)
+/// Root directory under which per-version KAS bundles are extracted
+/// (`{data_dir}/kas/{cli-version}-{bundle-hash}/`).
 pub fn kas_bundle_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("kas"))
-}
-
-/// Path to sha256 of the extracted KAS bundle
-pub fn kas_bundle_sha256_path() -> Result<PathBuf> {
-    Ok(data_dir()?.join("kas.sha256"))
 }
 
 /// Root directory for user-level Kiro config data.
