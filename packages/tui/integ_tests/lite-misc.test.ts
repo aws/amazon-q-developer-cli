@@ -8,6 +8,7 @@ import {
 } from '../e2e_tests/lite/helpers/commands';
 import {
   exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
@@ -191,9 +192,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       expect(parentIsMain).toBe(true);
     }
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 
   it('transient alert appears then auto-dismisses [bug-mine 10.5]', async () => {
@@ -232,9 +231,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
     store = await testCase.getStore();
     expect(store.transientAlert).toBeNull();
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 
   it('/clear in lite writes CSI escape and wipes visible terminal [bug-mine 10.8]', async () => {

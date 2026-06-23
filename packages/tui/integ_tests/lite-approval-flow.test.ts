@@ -3,10 +3,12 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import {
   injectApproval,
+  expectApprovalVisible,
+  expectApprovalDeferred,
   ALLOW_REJECT_OPTIONS,
 } from '../e2e_tests/lite/helpers/approvals';
 import {
-  exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
@@ -55,17 +57,13 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-guard-1');
 
     // Deferred: event delivered to store but prompt not yet painted.
-    const snapshot = testCase.getSnapshot().join('\n');
-    expect(snapshot).not.toContain('needs approval');
+    expectApprovalDeferred(testCase);
 
     // Past the 2000ms idle threshold the prompt appears.
     await testCase.sleepMs(2200);
-    const snapshotAfter = testCase.getSnapshot().join('\n');
-    expect(snapshotAfter).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 40000);
 
   it('[bug-mine 3.2] approval prompt stays visible once shown despite further keystrokes', async () => {
@@ -81,24 +79,20 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.typeAndSubmit('go');
     await testCase.sleepMs(2500);
 
-    const snapshot1 = testCase.getSnapshot().join('\n');
-    expect(snapshot1).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
     // A non-y/n/t key must NOT hide the prompt: the keypress handler skips
     // the lastKeypressRef update while an approval is shown.
     await testCase.sendKeys('x');
     await testCase.sleepMs(300);
 
-    const snapshot2 = testCase.getSnapshot().join('\n');
-    expect(snapshot2).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
     const store = await testCase.getStore();
     expect(store.pendingApproval).not.toBeNull();
     expect(store.pendingApproval!.toolCall.toolCallId).toBe('tool-visible-1');
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 40000);
 
   it('[bug-mine 3.3] sequential approvals: y keystroke is not counted as typing so next approval shows without delay', async () => {
@@ -126,8 +120,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     expect(store1.approvalQueue.length).toBeGreaterThanOrEqual(2);
 
     await testCase.sleepMs(2200);
-    const snapshot1 = testCase.getSnapshot().join('\n');
-    expect(snapshot1).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
     // 'y' must NOT count as "user typing" (the useKeypress guard skips the
     // lastKeypressRef update while an approval is shown), so the promoted
@@ -139,12 +132,9 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     expect(store2.pendingApproval).not.toBeNull();
     expect(store2.pendingApproval!.toolCall.toolCallId).toBe('tool-seq-2');
 
-    const snapshot2 = testCase.getSnapshot().join('\n');
-    expect(snapshot2).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 45000);
 
   it('[bug-mine 3.4] trust submenu resets when approval changes', async () => {
@@ -170,8 +160,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.typeAndSubmit('go');
     await testCase.sleepMs(2500);
 
-    const snapshot1 = testCase.getSnapshot().join('\n');
-    expect(snapshot1).toContain('needs approval');
+    expectApprovalVisible(testCase);
 
     await testCase.sendKeys('t');
     await testCase.sleepMs(300);
@@ -205,9 +194,7 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
       expect(snapshot3).not.toContain('[enter] confirm');
     }
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 40000);
 
   it('[bug-mine 3.6] subagent attribution only when agentName differs from main', async () => {
@@ -259,8 +246,8 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     await testCase.sleepMs(2200);
 
     // Main-agent approval: no "subagent request" chip, agentName = main.
+    expectApprovalVisible(testCase);
     const snapshot1 = testCase.getSnapshot().join('\n');
-    expect(snapshot1).toContain('needs approval');
     expect(snapshot1).not.toContain('subagent request');
     const mainToolMsg = store1.messages.find(
       (m: any) => m.role === 'tool_use' && m.id === 'tool-main-1'
@@ -287,8 +274,6 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     const snapshot2 = testCase.getSnapshot().join('\n');
     expect(snapshot2).toContain('subagent request');
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 40000);
 });

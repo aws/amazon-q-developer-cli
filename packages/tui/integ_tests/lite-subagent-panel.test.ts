@@ -3,7 +3,7 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole, type MessageType } from '../src/stores/app-store';
 import {
-  exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
@@ -110,9 +110,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(false);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 
   it('panel auto-closes when all subagents complete (4.6)', async () => {
@@ -142,9 +140,7 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     store = await testCase.getStore();
     expect(store.subagentPanelOpen).toBe(false);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 
   /**
@@ -207,8 +203,6 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     expect(firstBeta).not.toBe(-1);
     expect(firstAlpha).toBeLessThan(firstBeta);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 });

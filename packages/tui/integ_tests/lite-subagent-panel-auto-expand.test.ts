@@ -16,6 +16,7 @@ import {
   injectApproval,
   ALLOW_REJECT_OPTIONS,
 } from '../e2e_tests/lite/helpers/approvals';
+import { finishAndExitLite } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 describe('lite subagent panel auto-expand on inner approval', () => {
@@ -30,7 +31,7 @@ describe('lite subagent panel auto-expand on inner approval', () => {
 
   async function seedPipeline(
     tc: TestCase,
-    stages: Array<{ sessionId: string; name: string; toolId: string }>
+    stages: ReadonlyArray<{ sessionId: string; name: string; toolId: string }>
   ): Promise<void> {
     await seedSubagentPipeline(tc, {
       parentId: 'subagent-parent-autoexpand',
@@ -69,127 +70,113 @@ describe('lite subagent panel auto-expand on inner approval', () => {
       settleMs: 250,
     });
 
-  it('auto-opens panel from CLOSED on inner approval; closes on clear', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-auto-expand-from-closed')
-      .withLite()
-      // Same as the case-(b) test: keep isProcessing alive past the
-      // APPROVAL_IDLE_MS gate so the user-response path is reachable.
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
+  // Both cases inject an inner-subagent approval (auto-opens / re-points the
+  // panel) then clear it via 'n' (RejectOnce — Esc would cancel the whole turn
+  // and auto-clamp the panel, masking the snapshot-restore behavior under
+  // test). They differ only by the panel's PRIOR state and what restore yields:
+  //  - was-closed (1 stage): false→true on approval, restores to false.
+  //  - was-open  (2 stages, opened via Ctrl+O; approval on stage B): stays true
+  //    through approval AND after clear (proves restore didn't close a panel
+  //    that was open beforehand).
+  // KIRO_TEST_MOCK_TURN_TIMEOUT_MS keeps isProcessing alive past the 2s
+  // APPROVAL_IDLE_MS gate so ApprovalPrompt's 'n' handler is mounted.
+  it.each([
+    {
+      label: 'auto-opens from CLOSED; closes on clear',
+      testName: 'lite-auto-expand-from-closed',
+      stages: [
+        {
+          sessionId: 'session-stageA',
+          name: 'stageA',
+          toolId: 'tool-stageA-1',
+        },
+      ],
+      openFirst: false,
+      approveToolId: 'tool-stageA-1',
+      approveSessionId: 'session-stageA',
+      postClearMs: 250,
+      expectAfterClear: false,
+    },
+    {
+      label: 'stays OPEN through B-approval; restores to open on clear',
+      testName: 'lite-auto-expand-switch-stages',
+      stages: [
+        {
+          sessionId: 'session-stageA',
+          name: 'stageA',
+          toolId: 'tool-stageA-1',
+        },
+        {
+          sessionId: 'session-stageB',
+          name: 'stageB',
+          toolId: 'tool-stageB-1',
+        },
+      ],
+      openFirst: true,
+      approveToolId: 'tool-stageB-1',
+      approveSessionId: 'session-stageB',
+      // 250ms wasn't always enough for the React batched updates + ref read +
+      // setSubagentOpenIndex round-trip when restoring to an open panel.
+      postClearMs: 500,
+      expectAfterClear: true,
+    },
+  ])(
+    'inner approval $label',
+    async ({
+      testName,
+      stages,
+      openFirst,
+      approveToolId,
+      approveSessionId,
+      postClearMs,
+      expectAfterClear,
+    }) => {
+      testCase = await TestCase.builder()
+        .withTestName(testName)
+        .withLite()
+        .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
+        .withTimeout(20000)
+        .launch();
 
-    await testCase.waitForVisibleText('ask a question', 10000);
+      await testCase.waitForVisibleText('ask a question', 10000);
 
-    await seedPipeline(testCase, [
-      {
-        sessionId: 'session-stageA',
-        name: 'stageA',
-        toolId: 'tool-stageA-1',
-      },
-    ]);
+      await seedPipeline(testCase, stages);
 
-    // Panel starts closed — typing-guard / autoclose tests confirm this is
-    // the default state in lite mode.
-    let store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(false);
+      let store = await testCase.getStore();
+      if (openFirst) {
+        // Open the panel manually (Ctrl+O) so its prior state is "open".
+        await testCase.sendKeys('\x0f');
+        await testCase.sleepMs(200);
+        store = await testCase.getStore();
+        expect(store.subagentPanelOpen).toBe(true);
+      } else {
+        // Panel starts closed (default state in lite mode).
+        expect(store.subagentPanelOpen).toBe(false);
+      }
 
-    // Inject an approval for stage A's tool.
-    await injectInnerApproval(
-      testCase,
-      'tool-stageA-1',
-      'session-stageA',
-      'Read'
-    );
+      await injectInnerApproval(
+        testCase,
+        approveToolId,
+        approveSessionId,
+        'Read'
+      );
 
-    store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
-    expect(store.pendingApproval).not.toBeNull();
+      store = await testCase.getStore();
+      expect(store.subagentPanelOpen).toBe(true);
+      expect(store.pendingApproval).not.toBeNull();
 
-    // Clear the approval by responding (NOT by Esc — Esc cancels the
-    // entire turn, which would auto-clamp the panel closed regardless
-    // of the snapshot-restore behavior we want to test). ApprovalPrompt
-    // is gated by APPROVAL_IDLE_MS so its keypress handler doesn't bind
-    // to 'n' until 2s after the last keystroke. Wait that out, then
-    // press 'n' (RejectOnce) to clear pendingApproval cleanly.
-    await testCase.sleepMs(2200);
-    await testCase.sendKeys('n');
-    await testCase.sleepMs(250);
+      // Clear by responding 'n'; ApprovalPrompt's keypress handler binds 'n'
+      // only 2s after the last keystroke (APPROVAL_IDLE_MS), so wait it out.
+      await testCase.sleepMs(2200);
+      await testCase.sendKeys('n');
+      await testCase.sleepMs(postClearMs);
 
-    store = await testCase.getStore();
-    expect(store.pendingApproval).toBeNull();
-    // Restored to prior (closed) state — the snapshot-restore path fired.
-    expect(store.subagentPanelOpen).toBe(false);
+      store = await testCase.getStore();
+      expect(store.pendingApproval).toBeNull();
+      expect(store.subagentPanelOpen).toBe(expectAfterClear);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
-
-  it('switches focus from stage A to stage B on B-approval; restores to A on clear', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('lite-auto-expand-switch-stages')
-      .withLite()
-      // The mock client auto-resolves the prompt after 2s by default. This
-      // test must keep isProcessing=true past the APPROVAL_IDLE_MS gate
-      // (also 2s) so ApprovalPrompt's 'n' handler is mounted. Bump the
-      // mock turn timeout for this single test.
-      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
-      .withTimeout(20000)
-      .launch();
-
-    await testCase.waitForVisibleText('ask a question', 10000);
-
-    await seedPipeline(testCase, [
-      {
-        sessionId: 'session-stageA',
-        name: 'stageA',
-        toolId: 'tool-stageA-1',
-      },
-      { sessionId: 'session-stageB', name: 'stageB', toolId: 'tool-stageB-1' },
-    ]);
-
-    // Open the panel manually (Ctrl+O).
-    await testCase.sendKeys('\x0f');
-    await testCase.sleepMs(200);
-
-    let store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
-
-    // Approval comes from stage B. Auto-expand snapshots the prior state
-    // (panel open) and points the panel at stage B. The panel remains
-    // visibly open during the approval — observable via subagentPanelOpen.
-    await injectInnerApproval(
-      testCase,
-      'tool-stageB-1',
-      'session-stageB',
-      'Read'
-    );
-
-    store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
-    expect(store.pendingApproval).not.toBeNull();
-
-    // Clear approval by responding (n = RejectOnce). The panel must
-    // remain open afterwards (it was open before the swap), which proves
-    // the snapshot-restore path didn't close a panel that was open prior
-    // to the auto-expand. Esc would cancel the whole turn and auto-clamp
-    // the panel — which would mask whether the restore actually fired.
-    await testCase.sleepMs(2200);
-    await testCase.sendKeys('n');
-    // Allow a couple of render passes for the restore effect to run after
-    // pendingApproval clears. 250ms wasn't always enough for the React
-    // batched updates + ref read + setSubagentOpenIndex round-trip.
-    await testCase.sleepMs(500);
-
-    store = await testCase.getStore();
-    expect(store.pendingApproval).toBeNull();
-    expect(store.subagentPanelOpen).toBe(true);
-
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
+      await finishAndExitLite(testCase);
+    },
+    30000
+  );
 });

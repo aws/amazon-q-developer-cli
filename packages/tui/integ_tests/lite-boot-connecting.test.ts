@@ -5,6 +5,7 @@ import { MessageRole } from '../src/stores/app-store';
 import { switchToLite } from '../e2e_tests/lite/helpers/mode-swap';
 import {
   exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
@@ -112,8 +113,6 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     );
     expect(mcpFailureInScrollback).toBe(false);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 30000);
 });

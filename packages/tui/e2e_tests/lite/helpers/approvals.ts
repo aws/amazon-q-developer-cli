@@ -1,3 +1,4 @@
+import { expect } from 'bun:test';
 import type { TestCase } from '../../../src/test-utils/TestCase';
 import type { E2ETestCase } from '../../E2ETestCase';
 import {
@@ -132,4 +133,14 @@ export async function injectApproval(
   } as any);
 
   if (opts.settleMs) await tc.sleepMs(opts.settleMs);
+}
+
+/** Assert the approval prompt is painted ("needs approval" visible). */
+export function expectApprovalVisible(tc: TestCase): void {
+  expect(tc.getSnapshot().join('\n')).toContain('needs approval');
+}
+
+/** Assert the approval is deferred: in store but not yet painted. */
+export function expectApprovalDeferred(tc: TestCase): void {
+  expect(tc.getSnapshot().join('\n')).not.toContain('needs approval');
 }

@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import {
-  exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
@@ -49,98 +49,77 @@ describe('lite subagent kill ladder Ctrl+X', () => {
     return { sessionId, name };
   }
 
-  it('first Ctrl+X arms (status stays busy); second within 2s terminates', async () => {
-    testCase = await launchLiteInteg('lite-kill-ladder-arm-then-kill', {
-      timeout: 20000,
-    });
+  // Both cases seed a stage, open the panel, and arm with one Ctrl+X (status
+  // stays 'busy'). They differ only in the gap before the SECOND Ctrl+X:
+  //  - within the 2s window: kill fires, status flips to 'terminated'
+  //    synchronously (LiteLayout updateSession() before the terminate RPC).
+  //  - after the window: the prior arm auto-disarmed (armedKillSessionId is
+  //    null), so the second press only re-arms — no terminate, stays 'busy'.
+  it.each([
+    {
+      label: 'within 2s window terminates',
+      testName: 'lite-kill-ladder-arm-then-kill',
+      sessionId: 'session-killtarget',
+      name: 'killtarget',
+      toolId: 'tool-killtarget-1',
+      waitBeforeSecond: 0,
+      expectedAfterSecond: 'terminated',
+    },
+    {
+      label: 'after 2s window only re-arms',
+      testName: 'lite-kill-ladder-window-expires',
+      sessionId: 'session-survivor',
+      name: 'survivor',
+      toolId: 'tool-survivor-1',
+      waitBeforeSecond: 2300,
+      expectedAfterSecond: 'busy',
+    },
+  ])(
+    'first Ctrl+X arms; second $label',
+    async ({
+      testName,
+      sessionId,
+      name,
+      toolId,
+      waitBeforeSecond,
+      expectedAfterSecond,
+    }) => {
+      testCase = await launchLiteInteg(testName, { timeout: 20000 });
 
-    const stage = await seedStage(
-      testCase,
-      'session-killtarget',
-      'killtarget',
-      'tool-killtarget-1'
-    );
+      const stage = await seedStage(testCase, sessionId, name, toolId);
 
-    // Sanity: the stage is in the store and still busy.
-    let store = await testCase.getStore();
-    const sessionsObj = store.sessions as unknown as Record<string, any>;
-    expect(Object.keys(sessionsObj ?? {}).length).toBeGreaterThan(0);
-    expect(sessionsObj[stage.sessionId]?.status).toBe('busy');
+      // Sanity: the stage is in the store and still busy.
+      let store = await testCase.getStore();
+      const sessionsObj = store.sessions as unknown as Record<string, any>;
+      expect(Object.keys(sessionsObj ?? {}).length).toBeGreaterThan(0);
+      expect(sessionsObj[stage.sessionId]?.status).toBe('busy');
 
-    // Open the subagent panel (Ctrl+O). The kill-ladder handler bails when
-    // subagentOpenIndex == null, so the panel must be open for Ctrl+X
-    // to even reach the kill branch.
-    await testCase.sendKeys('\x0f');
-    await testCase.sleepMs(200);
+      // Open the subagent panel (Ctrl+O). The kill-ladder handler bails when
+      // subagentOpenIndex == null, so the panel must be open for Ctrl+X to
+      // reach the kill branch.
+      await testCase.sendKeys('\x0f');
+      await testCase.sleepMs(200);
+      store = await testCase.getStore();
+      expect(store.subagentPanelOpen).toBe(true);
 
-    store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
+      // First Ctrl+X — arms only, status stays 'busy'.
+      await testCase.sendKeys('\x18');
+      await testCase.sleepMs(150);
+      store = await testCase.getStore();
+      expect((store.sessions as any)[stage.sessionId]?.status).toBe('busy');
 
-    // First Ctrl+X — must ARM only. Status stays 'busy'.
-    await testCase.sendKeys('\x18');
-    await testCase.sleepMs(150);
+      if (waitBeforeSecond) await testCase.sleepMs(waitBeforeSecond);
 
-    store = await testCase.getStore();
-    const afterFirst = (store.sessions as any)[stage.sessionId];
-    expect(afterFirst?.status).toBe('busy');
+      // Second Ctrl+X.
+      await testCase.sendKeys('\x18');
+      await testCase.sleepMs(200);
+      store = await testCase.getStore();
+      expect((store.sessions as any)[stage.sessionId]?.status).toBe(
+        expectedAfterSecond
+      );
 
-    // Second Ctrl+X within the 2s window — kill fires. Status flips to
-    // 'terminated' synchronously (LiteLayout calls updateSession() before
-    // awaiting the kiro.terminateSession RPC).
-    await testCase.sendKeys('\x18');
-    await testCase.sleepMs(150);
-
-    store = await testCase.getStore();
-    const afterSecond = (store.sessions as any)[stage.sessionId];
-    expect(afterSecond?.status).toBe('terminated');
-
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
-  }, 30000);
-
-  it('second Ctrl+X after the 2s window only re-arms (does not kill)', async () => {
-    testCase = await launchLiteInteg('lite-kill-ladder-window-expires', {
-      timeout: 20000,
-    });
-
-    const stage = await seedStage(
-      testCase,
-      'session-survivor',
-      'survivor',
-      'tool-survivor-1'
-    );
-
-    await testCase.sendKeys('\x0f');
-    await testCase.sleepMs(200);
-
-    let store = await testCase.getStore();
-    expect(store.subagentPanelOpen).toBe(true);
-
-    // First press arms.
-    await testCase.sendKeys('\x18');
-    await testCase.sleepMs(150);
-
-    store = await testCase.getStore();
-    const afterArm = (store.sessions as any)[stage.sessionId];
-    expect(afterArm?.status).toBe('busy');
-
-    // Wait past the 2s arm window. The prior arm should auto-disarm.
-    await testCase.sleepMs(2300);
-
-    // Second press AFTER the window. This must re-arm only — the prior
-    // arm timed out so the equality check (armedKillSessionId === sessionId)
-    // is false (armedKillSessionId is null), and we go into the arm branch
-    // again. No terminate fires.
-    await testCase.sendKeys('\x18');
-    await testCase.sleepMs(200);
-
-    store = await testCase.getStore();
-    const afterSecond = (store.sessions as any)[stage.sessionId];
-    expect(afterSecond?.status).toBe('busy');
-
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
-  }, 30000);
+      await finishAndExitLite(testCase);
+    },
+    30000
+  );
 });

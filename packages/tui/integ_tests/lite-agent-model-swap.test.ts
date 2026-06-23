@@ -3,7 +3,7 @@ import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
 import {
-  exitLiteInteg,
+  finishAndExitLite,
   launchLiteInteg,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import {
@@ -100,8 +100,6 @@ describe('lite agent/model swap [bug-mine 6.4]', () => {
     expect(parentTool).toBeDefined();
     expect(store.pendingApproval!.toolCall.toolCallId).not.toBe(parentTool!.id);
 
-    await testCase.completeTurn();
-    await testCase.sleepMs(100);
-    await exitLiteInteg(testCase);
+    await finishAndExitLite(testCase);
   }, 40000);
 });
