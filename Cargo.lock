@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-codewhisperer-client"
-version = "0.1.16551"
+version = "0.1.17593"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-codewhisperer-streaming-client"
-version = "0.1.16551"
+version = "0.1.17593"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-consolas-client"
-version = "0.1.16551"
+version = "0.1.17593"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -348,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-qdeveloper-streaming-client"
-version = "0.1.16551"
+version = "0.1.17593"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",

@@ -192,6 +192,7 @@ use crate::agent::protocol::{
     ClearEvent,
     CompactionEvent,
 };
+use crate::agent::tools::summary::Summary;
 use crate::agent::tools::{
     BuiltInTool,
     ToolKind,
@@ -209,6 +210,9 @@ use crate::agent::util::request_channel::{
 pub struct AgentHandle {
     sender: RequestSender<AgentRequest, AgentResponse, AgentError>,
     event_rx: broadcast::Receiver<AgentEvent>,
+    /// Receiver for the lossless summary channel. Shared across handle clones
+    /// (only the subagent driver drains it); see [`Agent::summary_tx`].
+    summary_rx: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Summary>>>,
 }
 
 impl Drop for AgentHandle {
@@ -224,6 +228,7 @@ impl Clone for AgentHandle {
         Self {
             sender: self.sender.clone(),
             event_rx: self.event_rx.resubscribe(),
+            summary_rx: Arc::clone(&self.summary_rx),
         }
     }
 }
@@ -231,6 +236,18 @@ impl Clone for AgentHandle {
 impl AgentHandle {
     pub async fn recv(&mut self) -> Result<AgentEvent, broadcast::error::RecvError> {
         self.event_rx.recv().await
+    }
+
+    /// Drain the lossless summary channel, returning the latest buffered
+    /// [`Summary`] (or `None`). Non-blocking; recovers a summary even when the
+    /// lossy event broadcast dropped the `SubagentSummary` event.
+    pub async fn take_summary(&self) -> Option<Summary> {
+        let mut rx = self.summary_rx.lock().await;
+        let mut latest = None;
+        while let Ok(s) = rx.try_recv() {
+            latest = Some(s);
+        }
+        latest
     }
 
     pub async fn send_prompt(&self, args: SendPromptArgs) -> Result<(), AgentError> {
@@ -626,6 +643,12 @@ pub struct Agent {
     agent_event_tx: broadcast::Sender<AgentEvent>,
     agent_event_rx: Option<broadcast::Receiver<AgentEvent>>,
 
+    /// Lossless channel for the subagent `summary` result. The shared event
+    /// broadcast is lossy (can evict `SubagentSummary` under load, surfacing as
+    /// "No result"); this carries the summary on its own so it can't be dropped.
+    summary_tx: mpsc::UnboundedSender<Summary>,
+    summary_rx: Option<mpsc::UnboundedReceiver<Summary>>,
+
     agent_event_buf: Vec<AgentEvent>,
 
     /// Contains an [AgentLoop] if the agent is in the middle of executing a user turn, otherwise
@@ -770,6 +793,8 @@ impl Agent {
         debug!(?snapshot, "initializing agent from snapshot");
 
         let (agent_event_tx, agent_event_rx) = broadcast::channel(8192);
+        // Lossless side-channel for the summary tool result (see field docs).
+        let (summary_tx, summary_rx) = mpsc::unbounded_channel();
 
         let mut agent_config = snapshot.agent_config;
         // Enforce MCP governance at construction — defense-in-depth in case the caller
@@ -799,6 +824,8 @@ impl Agent {
             permissions: snapshot.permissions,
             agent_event_tx,
             agent_event_rx: Some(agent_event_rx),
+            summary_tx,
+            summary_rx: Some(summary_rx),
             agent_event_buf: Vec::new(),
             agent_loop: None,
             compaction_loop: None,
@@ -837,11 +864,18 @@ impl Agent {
     pub fn spawn(mut self) -> AgentHandle {
         let (tx, rx) = new_request_channel();
         let event_rx = self.agent_event_rx.take().expect("should exist");
+        let summary_rx = self.summary_rx.take().expect("should exist");
         tokio::spawn(async move {
             self.initialize().await;
             self.main_loop(rx).await;
         });
-        AgentHandle { sender: tx, event_rx }
+        AgentHandle {
+            sender: tx,
+            event_rx,
+            // Wrapped so the handle stays `Clone` (clones share the single
+            // consumer); only `handle_internal_prompt` actually drains it.
+            summary_rx: Arc::new(tokio::sync::Mutex::new(summary_rx)),
+        }
     }
 
     /// TODO - do initialization logic depending on execution state
@@ -3518,8 +3552,9 @@ impl Agent {
                 BuiltInTool::Glob(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::Summary(t) => {
+                    let summary_tx = self.summary_tx.clone();
                     let result_tx = self.agent_event_tx.clone();
-                    Box::pin(async move { t.execute(result_tx).await })
+                    Box::pin(async move { t.execute(summary_tx, result_tx).await })
                 },
                 BuiltInTool::Goal(t) => {
                     let result_tx = self.agent_event_tx.clone();

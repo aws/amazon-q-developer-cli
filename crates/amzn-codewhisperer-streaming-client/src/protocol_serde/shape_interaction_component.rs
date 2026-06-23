@@ -118,6 +118,24 @@ where
                                 depth + 1,
                             )?);
                         },
+                        "clarification" => {
+                            builder = builder.set_clarification(
+                                crate::protocol_serde::shape_q_clarification::de_q_clarification(
+                                    tokens,
+                                    _value,
+                                    depth + 1,
+                                )?,
+                            );
+                        },
+                        "inlineArtifact" => {
+                            builder = builder.set_inline_artifact(
+                                crate::protocol_serde::shape_inline_artifact::de_inline_artifact(
+                                    tokens,
+                                    _value,
+                                    depth + 1,
+                                )?,
+                            );
+                        },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {

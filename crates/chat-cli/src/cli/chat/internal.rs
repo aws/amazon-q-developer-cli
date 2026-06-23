@@ -374,6 +374,7 @@ pub struct GetKasTokenArgs {
 impl GetKasTokenArgs {
     async fn execute(self) -> ExitCode {
         let _ = self;
+        record_extracted_kas_version_heartbeat().await;
         let database = match Database::new().await {
             Ok(db) => db,
             Err(err) => {
@@ -394,8 +395,27 @@ impl GetKasTokenArgs {
     }
 }
 
-// ─── ensure-session ──────────────────────────────────────────────────
+/// Record the running KAS version's heartbeat (best-effort, auth-independent).
+///
+/// Touches the `extracted_kas_versions` table via chat-cli's own database (the
+/// same `data.sqlite3` the binary owns) so a running KAS version's extracted
+/// bundle is protected from garbage collection. Failures are swallowed: a missed
+/// heartbeat must never break the auth callback.
+async fn record_extracted_kas_version_heartbeat() {
+    let Some(version) = crate::embedded_tui::kas_version() else {
+        return;
+    };
+    match crate::database::Database::new_default().await {
+        Ok(db) => {
+            if let Err(err) = db.touch_extracted_kas_version(&version) {
+                tracing::warn!(%err, "failed to record KAS version heartbeat");
+            }
+        },
+        Err(err) => tracing::warn!(%err, "failed to open database for KAS version heartbeat"),
+    }
+}
 
+// ─── ensure-session ──────────────────────────────────────────────────
 /// `auto` probes each non-target store for the id; explicit variants skip the lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SourceFormat {

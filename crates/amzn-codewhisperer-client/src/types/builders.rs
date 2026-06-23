@@ -27,6 +27,7 @@ pub use crate::types::_code_scan_remediations_event::CodeScanRemediationsEventBu
 pub use crate::types::_code_scan_succeeded_event::CodeScanSucceededEventBuilder;
 pub use crate::types::_completion::CompletionBuilder;
 pub use crate::types::_console_state::ConsoleStateBuilder;
+pub use crate::types::_continuous_learning::ContinuousLearningBuilder;
 pub use crate::types::_conversation_state::ConversationStateBuilder;
 pub use crate::types::_customization::CustomizationBuilder;
 pub use crate::types::_dashboard_analytics::DashboardAnalyticsBuilder;
@@ -69,6 +70,7 @@ pub use crate::types::_notifications_feature::NotificationsFeatureBuilder;
 pub use crate::types::_oidc_claim_keys::OidcClaimKeysBuilder;
 pub use crate::types::_opt_in_features::OptInFeaturesBuilder;
 pub use crate::types::_overage_configuration::OverageConfigurationBuilder;
+pub use crate::types::_overage_credit::OverageCreditBuilder;
 pub use crate::types::_package_info::PackageInfoBuilder;
 pub use crate::types::_position::PositionBuilder;
 pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadataBuilder;

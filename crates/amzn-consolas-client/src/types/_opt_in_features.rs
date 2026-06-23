@@ -25,6 +25,8 @@ pub struct OptInFeatures {
     pub model_configuration: ::std::option::Option<crate::types::ModelConfiguration>,
     #[allow(missing_docs)] // documentation missing in model
     pub api_keys: ::std::option::Option<crate::types::ApiKeys>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub continuous_learning: ::std::option::Option<crate::types::ContinuousLearning>,
 }
 impl OptInFeatures {
     #[allow(missing_docs)] // documentation missing in model
@@ -83,6 +85,11 @@ impl OptInFeatures {
     pub fn api_keys(&self) -> ::std::option::Option<&crate::types::ApiKeys> {
         self.api_keys.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn continuous_learning(&self) -> ::std::option::Option<&crate::types::ContinuousLearning> {
+        self.continuous_learning.as_ref()
+    }
 }
 impl OptInFeatures {
     /// Creates a new builder-style object to manufacture
@@ -107,6 +114,7 @@ pub struct OptInFeaturesBuilder {
     pub(crate) web_tools: ::std::option::Option<crate::types::WebTools>,
     pub(crate) model_configuration: ::std::option::Option<crate::types::ModelConfiguration>,
     pub(crate) api_keys: ::std::option::Option<crate::types::ApiKeys>,
+    pub(crate) continuous_learning: ::std::option::Option<crate::types::ContinuousLearning>,
 }
 impl OptInFeaturesBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -307,6 +315,23 @@ impl OptInFeaturesBuilder {
         &self.api_keys
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn continuous_learning(mut self, input: crate::types::ContinuousLearning) -> Self {
+        self.continuous_learning = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_continuous_learning(mut self, input: ::std::option::Option<crate::types::ContinuousLearning>) -> Self {
+        self.continuous_learning = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_continuous_learning(&self) -> &::std::option::Option<crate::types::ContinuousLearning> {
+        &self.continuous_learning
+    }
+
     /// Consumes the builder and constructs a [`OptInFeatures`](crate::types::OptInFeatures).
     pub fn build(self) -> crate::types::OptInFeatures {
         crate::types::OptInFeatures {
@@ -321,6 +346,7 @@ impl OptInFeaturesBuilder {
             web_tools: self.web_tools,
             model_configuration: self.model_configuration,
             api_keys: self.api_keys,
+            continuous_learning: self.continuous_learning,
         }
     }
 }

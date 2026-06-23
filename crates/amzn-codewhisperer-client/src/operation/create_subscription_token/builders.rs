@@ -237,4 +237,21 @@ impl CreateSubscriptionTokenFluentBuilder {
     pub fn get_cancel_url(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_cancel_url()
     }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn credit_quantity(mut self, input: i64) -> Self {
+        self.inner = self.inner.credit_quantity(input);
+        self
+    }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn set_credit_quantity(mut self, input: ::std::option::Option<i64>) -> Self {
+        self.inner = self.inner.set_credit_quantity(input);
+        self
+    }
+
+    /// Number of credits to purchase. Required when provider is STRIPE_CREDITS.
+    pub fn get_credit_quantity(&self) -> &::std::option::Option<i64> {
+        self.inner.get_credit_quantity()
+    }
 }

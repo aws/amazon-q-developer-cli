@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-23
-  commit: 619aa110b
+  validated: 2026-06-04
+  commit: fde97d540
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker, lite, debug-keys]
-  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes, lite-mode]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
+  related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
 # kiro-cli chat
@@ -110,7 +110,6 @@ kiro-cli chat --resume-picker
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
 | `--legacy-mode` | | flag | Use legacy terminal UI instead of embedded TUI |
-| `--debug-keys` | | flag | Print every keypress with raw bytes and parsed key info, then exit (Esc twice to quit) |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
 | `[INPUT]` | | string | Initial query to send |
@@ -226,12 +225,6 @@ Use `--no-interactive` for automation and scripts:
 **Symptom**: Error "not a terminal"  
 **Cause**: Interactive slash command used in headless mode  
 **Solution**: Use direct CLI commands instead (e.g., `kiro-cli settings`)
-
-### Issue: Keyboard Shortcut Not Working
-
-**Symptom**: A shortcut (Shift+Enter, Ctrl+R, etc.) doesn't trigger the expected action  
-**Cause**: Your terminal may not send the expected escape sequence  
-**Solution**: Run `kiro-cli chat --debug-keys` to see what bytes your terminal sends for each keypress. Press Esc twice to exit. Compare the output with expected sequences to identify mismatches.
 
 ### Issue: MCP Server Startup Failure
 

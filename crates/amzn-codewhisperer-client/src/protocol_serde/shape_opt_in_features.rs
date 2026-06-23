@@ -122,6 +122,15 @@ where
                                     depth + 1,
                                 )?);
                             },
+                            "continuousLearning" => {
+                                builder = builder.set_continuous_learning(
+                                    crate::protocol_serde::shape_continuous_learning::de_continuous_learning(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },
