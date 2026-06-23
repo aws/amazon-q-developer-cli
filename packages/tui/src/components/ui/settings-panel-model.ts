@@ -86,9 +86,8 @@ export type PanelAction =
  * and the helpers pick it up automatically.
  */
 export interface ScreenConfig {
-  /** Breadcrumb title shown in the panel header. */
   title: string;
-  /** Sub-screen prompt under the title; `undefined` for the top screen. */
+  /** `undefined` for the top screen (no subtitle). */
   description?: string;
   /**
    * Whether selecting a row on this screen applies a setting and immediately
@@ -346,15 +345,10 @@ export function resolveBack(screen: Screen): Screen | 'close' {
   return back === 'close' ? 'close' : { type: back };
 }
 
-/**
- * Whether selecting a row on this screen applies a setting and immediately
- * dismisses the overlay (drives the "apply and close" footer hint).
- */
 export function appliesOnSelect(screen: Screen): boolean {
   return SCREEN_CONFIG[screen.type].appliesOnSelect;
 }
 
-/** Breadcrumb title for the given screen. */
 export function screenTitle(screen: Screen): string {
   return SCREEN_CONFIG[screen.type].title;
 }
@@ -382,7 +376,6 @@ const VERBOSITY_BREADCRUMB_LABELS: Record<string, string> = {
   output: 'output',
 };
 
-/** Sub-screen prompt shown under the title (top screen has none). */
 export function screenDescription(screen: Screen): string | undefined {
   return SCREEN_CONFIG[screen.type].description;
 }
