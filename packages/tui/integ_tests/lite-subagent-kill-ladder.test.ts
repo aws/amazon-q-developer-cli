@@ -7,23 +7,18 @@
  *          src/components/layout/lite/LiteLayout.tsx:1611-1703.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import {
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 describe('lite subagent kill ladder Ctrl+X', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   async function seedStage(
     tc: TestCase,

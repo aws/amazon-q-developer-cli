@@ -8,18 +8,13 @@
  * Anchor: PR #2643 ("Editing-queue header") + PromptInput.tsx ↑/↓ queue-restore.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { TestCase } from '../src/test-utils/TestCase';
 
 describe('lite queued message editing', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   /**
    * KIRO_TEST_MOCK_TURN_TIMEOUT_MS=20000 keeps the turn alive past the 2s mock

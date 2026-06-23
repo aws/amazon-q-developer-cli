@@ -15,7 +15,8 @@
  *   - No stale pendingApproval/isProcessing leaks across mode boundaries.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
@@ -28,13 +29,7 @@ import { pushWriteApprovalEvent } from './lite/helpers/approvals';
 
 describe('lite approval Esc-cancel then cross-mode swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   // Esc in an approval cancels the ENTIRE turn (bug-mine 3.5), not just the
   // prompt; after that, swapping to the other mode must find a clean state

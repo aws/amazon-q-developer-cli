@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import {
@@ -6,6 +6,7 @@ import {
   finishAndExitLite,
   launchLiteInteg,
   startBusyTurn,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -15,13 +16,7 @@ import {
  */
 describe('lite cancel/interrupt invariants [bug-mine 5.1-5.7]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it.each([
     {

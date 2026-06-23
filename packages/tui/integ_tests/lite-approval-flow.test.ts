@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import {
@@ -10,18 +10,13 @@ import {
 import {
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /** Bug-mine 3.1-3.6: lite approval flow behavior (per-case rationale inline). */
 describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it.each([
     {

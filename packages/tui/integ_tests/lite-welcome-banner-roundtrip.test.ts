@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { switchToLite, switchToTui } from '../e2e_tests/lite/helpers/mode-swap';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -16,13 +17,7 @@ import {
 
 describe('lite welcome banner roundtrip', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it.each([
     { roundtrips: 1, expected: 2 },

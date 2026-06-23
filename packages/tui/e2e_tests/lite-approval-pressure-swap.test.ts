@@ -13,7 +13,8 @@
  *   rejected until the turn completes.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
@@ -28,13 +29,7 @@ import { pushWriteApprovalEvent } from './lite/helpers/approvals';
 
 describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('lite->tui: approval captures keystrokes, "t" enters trust submenu, mode swap blocked', async () => {
     testCase = await launchLiteE2E('approval-pressure-lite-to-tui', {

@@ -8,20 +8,15 @@
  *   1.5 — Turn summary trailer placement locked at first emission
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import { launchLiteE2E } from './lite/helpers/commands';
 import { driveTurn } from './lite/helpers/responses';
 
 describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('prior messages remain byte-for-byte after subsequent turns', async () => {
     testCase = await launchLiteE2E('lite-static-monotonicity', {

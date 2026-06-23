@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
 import {
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import {
   injectApproval,
@@ -19,13 +20,7 @@ import {
  */
 describe('lite agent/model swap [bug-mine 6.4]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('subagent footer row shows permission-blocked state when approval pending [bug-mine 6.4]', async () => {
     // Invariant: when a pendingApproval's toolCallId matches a subagent tool,

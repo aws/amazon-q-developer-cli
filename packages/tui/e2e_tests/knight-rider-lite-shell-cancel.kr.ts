@@ -12,7 +12,8 @@
  * `bun test` skips this file.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import { assistantEvent, streamReply } from './lite/helpers/responses';
 
@@ -33,13 +34,7 @@ describe.skipIf(!KR_ENABLED)(
   'knight rider — lite shell + cancel + recover',
   () => {
     let testCase: E2ETestCase | null = null;
-
-    afterEach(async () => {
-      if (testCase) {
-        await testCase.cleanup();
-        testCase = null;
-      }
-    });
+    trackCleanup(() => testCase);
 
     it('survives shell streaming, mid-stream cancel, and a follow-up turn with append-only intact', async () => {
       testCase = await E2ETestCase.builder()

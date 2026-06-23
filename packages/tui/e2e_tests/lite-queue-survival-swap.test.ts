@@ -5,7 +5,8 @@
  * command changes the mode mid-drain and later queued messages fire in the new mode.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
@@ -18,13 +19,7 @@ import { streamReply } from './lite/helpers/responses';
 
 describe('queued message survives mode swap', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('lite -> tui: queued /tui + message drains in tui mode', async () => {
     testCase = await launchLiteE2E('queue-survival-lite-to-tui', {

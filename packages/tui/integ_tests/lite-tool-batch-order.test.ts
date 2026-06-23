@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -17,13 +18,7 @@ import {
  */
 describe('lite tool batch order [bug-mine 1.2]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('tools appear in creation order regardless of completion order', async () => {
     testCase = await launchLiteInteg('lite-tool-batch-order');

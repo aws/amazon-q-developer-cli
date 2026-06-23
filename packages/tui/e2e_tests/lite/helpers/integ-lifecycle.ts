@@ -1,5 +1,23 @@
+import { afterEach } from 'bun:test';
 import { TestCase } from '../../../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../../../src/types/agent-events';
+
+interface Cleanable {
+  cleanup(): Promise<void>;
+}
+
+/**
+ * Register a per-test cleanup that reads the current testCase via `getter` and
+ * cleans it up after each test. Replaces the identical nullable-testCase
+ * afterEach block previously copied into every lite test file — the test keeps
+ * its plain `let testCase` and reassigns it normally.
+ */
+export function trackCleanup(getter: () => Cleanable | null): void {
+  afterEach(async () => {
+    const tc = getter();
+    if (tc) await tc.cleanup();
+  });
+}
 
 /**
  * Launch the integ TestCase in lite mode and wait for the input prompt.

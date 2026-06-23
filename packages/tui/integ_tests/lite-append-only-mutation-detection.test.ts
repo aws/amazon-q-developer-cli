@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -13,13 +14,7 @@ import {
  */
 describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   /** Inject a Content event with `marker`, submit `prompt`, complete + settle. */
   async function pushTurn(

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { switchToLite, switchToTui } from '../e2e_tests/lite/helpers/mode-swap';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -17,13 +18,7 @@ import {
 
 describe('lite mode swap commands [bug-mine 2.9]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   // Cross-mode swap, both directions: bumps liteScrollbackClearToken, resets
   // liteStaticSkipBefore to 0, and preserves messages[]. The two legs catch

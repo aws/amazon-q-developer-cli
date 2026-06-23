@@ -17,7 +17,8 @@
  * removed.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_CHAT_NEW,
@@ -33,13 +34,7 @@ const PASTE_END = '\x1b[201~';
 
 describe('lite smoke: BOTH-classified e2e tests', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it.skipIf(process.platform === 'win32')(
     'signal-exit: SIGHUP exits cleanly in lite mode',

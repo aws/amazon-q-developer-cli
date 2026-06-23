@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -17,13 +18,7 @@ import {
  */
 describe('lite long-session flush/newline repro', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   /** Index of the prompt divider row (the long ─ rule above the status bar). */
   function dividerIndex(lines: string[]): number {

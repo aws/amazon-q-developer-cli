@@ -4,23 +4,18 @@
  * Anchor: PR #2643; src/stores/app-store.ts:4910-4969 (lite slash queue).
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import {
   exitLiteInteg,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 describe('lite /verbosity mid-stream cycling', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('queues /verbosity commands FIFO mid-stream; static rows survive drain', async () => {
     testCase = await launchLiteInteg('lite-verbosity-mid-stream-cycle', {

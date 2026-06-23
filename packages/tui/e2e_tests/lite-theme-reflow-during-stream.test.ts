@@ -7,7 +7,8 @@
  * Anchor: docs/design/lite-tui-action-items.md → "Hardcoded brand color bypasses /theme".
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import { launchLiteE2E, sendUserMessage } from './lite/helpers/commands';
 import {
@@ -20,13 +21,7 @@ import { streamReply } from './lite/helpers/responses';
 
 describe('lite /theme reflow during stream', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('live region picks up the new brand color after /theme bundled:light', async () => {
     testCase = await launchLiteE2E('lite-theme-reflow-live');

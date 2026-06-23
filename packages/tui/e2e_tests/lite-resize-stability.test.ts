@@ -11,7 +11,8 @@
  *   - No re-emission of old rows (twinki would silently drop them)
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import type { PtyManager } from '../src/test-utils/shared/pty-manager';
 import { launchLiteE2E } from './lite/helpers/commands';
@@ -40,13 +41,7 @@ function extractMarkerLines(snapshot: string[], marker: string): string[] {
 
 describe('lite resize stability [bug-mine 1.7]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('old static rows stay byte-for-byte intact after terminal resize', async () => {
     testCase = await launchLiteE2E('lite-resize-stability', {

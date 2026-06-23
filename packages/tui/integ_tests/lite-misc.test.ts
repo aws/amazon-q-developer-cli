@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType, ContentType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
@@ -10,18 +10,13 @@ import {
   exitLiteInteg,
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /** Bug-mine category 10: miscellaneous lite-mode edge cases (per-it ids below). */
 describe('lite miscellaneous [bug-mine 10.x]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   // Integ TestCase path: trailing space + 800ms settle are load-bearing here.
   const typeCommand = (tc: TestCase, cmd: string) =>

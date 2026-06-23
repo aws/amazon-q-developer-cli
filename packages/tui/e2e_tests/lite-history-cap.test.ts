@@ -7,7 +7,8 @@
  * bounded.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import { LITE_HISTORY_RENDER_CAP } from '../src/components/layout/lite/static-flush';
 import { CMD_CHAT, sendUserMessage } from './lite/helpers/commands';
@@ -15,13 +16,7 @@ import { streamReply } from './lite/helpers/responses';
 
 describe('lite history cap [bug-mine 2.7]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('caps rendered history at LITE_HISTORY_RENDER_CAP on session resume', async () => {
     testCase = await E2ETestCase.builder()

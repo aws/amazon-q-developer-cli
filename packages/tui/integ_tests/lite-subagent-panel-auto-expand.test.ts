@@ -10,24 +10,21 @@
  *       snapshot-restore didn't close a panel that was open beforehand).
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import {
   injectApproval,
   ALLOW_REJECT_OPTIONS,
 } from '../e2e_tests/lite/helpers/approvals';
-import { finishAndExitLite } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import {
+  finishAndExitLite,
+  trackCleanup,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
 describe('lite subagent panel auto-expand on inner approval', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   async function seedPipeline(
     tc: TestCase,

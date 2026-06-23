@@ -10,7 +10,8 @@
  * so they share one drive: seed 3 turns, /chat new once, then assert each.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_CHAT_NEW,
@@ -38,13 +39,7 @@ function findSecondBannerRow(lines: string[]): number {
 
 describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('resets session, preserves scrollback, no bleed/duplicate below banner', async () => {
     testCase = await launchLiteE2E('lite-chat-new', {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
@@ -7,6 +7,7 @@ import {
   exitLiteInteg,
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
@@ -24,13 +25,7 @@ function expectNoBootIndicator(snapshot: string): void {
 
 describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('no boot indicator on remount after /tui -> /lite swap [bug-mine 7.1]', async () => {
     testCase = await TestCase.builder()

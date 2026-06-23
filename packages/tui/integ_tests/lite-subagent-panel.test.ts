@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole, type MessageType } from '../src/stores/app-store';
 import {
   finishAndExitLite,
   launchLiteInteg,
+  trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
 
@@ -18,13 +19,7 @@ type ToolUseMessage = Extract<MessageType, { role: MessageRole.ToolUse }>;
  */
 describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   async function injectAndWaitForMessages(tc: TestCase): Promise<boolean> {
     await seedSubagentPipeline(tc, {

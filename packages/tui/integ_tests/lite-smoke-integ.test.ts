@@ -5,9 +5,12 @@
  * mechanism functionality when running in lite mode.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { launchLiteInteg } from '../e2e_tests/lite/helpers/integ-lifecycle';
+import {
+  launchLiteInteg,
+  trackCleanup,
+} from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 // Control keys
 const CTRL_A = '\x01';
@@ -43,13 +46,7 @@ function flattenSnapshot(tc: TestCase): string {
 
 describe('Lite mode smoke tests (BOTH-classified integ)', () => {
   let testCase: TestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('launches in lite mode, shows prompt, exits cleanly', async () => {
     testCase = await launchLiteInteg('lite-smoke-lifecycle');

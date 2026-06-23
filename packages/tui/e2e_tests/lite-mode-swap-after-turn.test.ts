@@ -5,7 +5,8 @@
  * - 2.6: tui→lite sets liteStaticSkipBefore=messages.length (no duplicate scrollback).
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
+import { trackCleanup } from './lite/helpers/integ-lifecycle';
 import { E2ETestCase } from './E2ETestCase';
 import {
   CMD_LITE,
@@ -18,13 +19,7 @@ import { driveTurn } from './lite/helpers/responses';
 
 describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   let testCase: E2ETestCase | null = null;
-
-  afterEach(async () => {
-    if (testCase) {
-      await testCase.cleanup();
-      testCase = null;
-    }
-  });
+  trackCleanup(() => testCase);
 
   it('lite→tui swap: content rendered in lite is preserved in store after swap', async () => {
     testCase = await launchLiteE2E('swap-lite-to-tui', {
