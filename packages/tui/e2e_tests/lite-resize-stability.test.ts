@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import type { PtyManager } from '../src/test-utils/shared/pty-manager';
+import { launchLiteE2E } from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 /**
@@ -49,15 +50,9 @@ describe('lite resize stability [bug-mine 1.7]', () => {
 
   it('old static rows stay byte-for-byte intact after terminal resize', async () => {
     // Start at 80 columns
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-resize-stability')
-      .withTerminal({ width: 80, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-resize-stability', {
+      terminal: { width: 80, height: 40 },
+    });
 
     const sendTurn = async (prompt: string, marker: string) => {
       await streamReply(testCase!, marker);

@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { sendUserMessage } from './lite/helpers/commands';
+import { launchLiteE2E, sendUserMessage } from './lite/helpers/commands';
 import {
   applyTheme,
   BRAND_DARK_RGB,
@@ -29,15 +29,7 @@ describe('lite /theme reflow during stream', () => {
   });
 
   it('live region picks up the new brand color after /theme bundled:light', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-theme-reflow-live')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-theme-reflow-live');
 
     await applyTheme(testCase, 'dark');
     await testCase.sleepMs(800);
@@ -63,15 +55,7 @@ describe('lite /theme reflow during stream', () => {
   }, 60000);
 
   it('already-flushed scrollback rows stay frozen at the old brand color', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-theme-reflow-frozen')
-      .withTerminal({ width: 120, height: 40 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-theme-reflow-frozen');
 
     // Force a dark baseline: the default theme varies by user settings, but the
     // first committed row must be dark so the later light row proves freezing.

@@ -15,7 +15,7 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { sendUserMessage } from './lite/helpers/commands';
+import { launchLiteE2E, sendUserMessage } from './lite/helpers/commands';
 import { streamReply } from './lite/helpers/responses';
 
 describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
@@ -29,15 +29,9 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
   });
 
   it('prior messages remain byte-for-byte after subsequent turns', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('lite-static-monotonicity')
-      .withTerminal({ width: 120, height: 50 })
-      .withLite()
-      .launch();
-
-    await testCase.waitForText('>', 15000);
-    await testCase.waitForSlashCommands();
-    await testCase.getSessionId();
+    testCase = await launchLiteE2E('lite-static-monotonicity', {
+      terminal: { width: 120, height: 50 },
+    });
 
     // --- Turn 1 ---
     await streamReply(testCase, 'FIRST_RESPONSE_MARKER_ABC');

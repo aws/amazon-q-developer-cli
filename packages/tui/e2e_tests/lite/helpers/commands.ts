@@ -5,7 +5,32 @@
  */
 
 import type { TestCase } from '../../../src/test-utils/TestCase';
-import type { E2ETestCase } from '../../E2ETestCase';
+import { E2ETestCase } from '../../E2ETestCase';
+
+/**
+ * Launch the e2e E2ETestCase in lite mode and run the readiness ceremony
+ * (wait for prompt, slash-command registry, session id) repeated across every
+ * lite e2e test. Mirrors launchLiteInteg on the integ side.
+ */
+export async function launchLiteE2E(
+  testName: string,
+  opts: {
+    terminal?: { width: number; height: number };
+    waitTimeout?: number;
+    waitForCommands?: boolean;
+    getSession?: boolean;
+  } = {}
+): Promise<E2ETestCase> {
+  const tc = await E2ETestCase.builder()
+    .withTestName(testName)
+    .withTerminal(opts.terminal ?? { width: 120, height: 40 })
+    .withLite()
+    .launch();
+  await tc.waitForText('>', opts.waitTimeout ?? 15000);
+  if (opts.waitForCommands !== false) await tc.waitForSlashCommands();
+  if (opts.getSession !== false) await tc.getSessionId();
+  return tc;
+}
 
 /**
  * Type a slash command char-by-char (the per-char delay avoids the
