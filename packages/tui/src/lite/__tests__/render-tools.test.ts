@@ -205,21 +205,26 @@ describe('renderToolCall', () => {
 });
 
 describe('formatToolArgLines wrap behavior', () => {
-  // Long string values used to wrap back to column 0 because we emitted the
-  // value as a single chalk.dim'd line and let the terminal soft-wrap. Now
-  // wrapping happens at the renderer with the parent's indent applied to
-  // every continuation line, so the visual nesting is preserved.
-  test('long string value wraps with continuation indent matching the value column', () => {
-    const longUrl =
-      'https://very-long-domain-name.example.com/path/to/some/deeply/nested/resource?query=foo&other=bar&baz=quux';
-    const content = JSON.stringify({ url: longUrl });
-    const lines = formatToolArgLines('fetch', content, 40);
+  // WHY: long values used to wrap back to column 0 (single chalk.dim'd line,
+  // terminal soft-wrap). Now wrapping happens at the renderer with the parent's
+  // indent applied to every continuation line, so visual nesting survives.
+  const wrapArgs = (content: string, width: number) => {
+    const lines = formatToolArgLines('tool', content, width);
     expect(lines).not.toBeNull();
-    const stripped = (lines ?? []).map(stripAnsi);
+    return (lines ?? []).map(stripAnsi);
+  };
+
+  test('long string value wraps with continuation indent matching the value column', () => {
+    const stripped = wrapArgs(
+      JSON.stringify({
+        url: 'https://very-long-domain-name.example.com/path/to/some/deeply/nested/resource?query=foo&other=bar&baz=quux',
+      }),
+      40
+    );
     expect(stripped[0]).toMatch(/^ {2}url: /);
     expect(stripped.length).toBeGreaterThan(1);
     // Continuation lines indent to column 4 (one level deeper than the
-    // top-level "  url:" key, mirroring how an object's children would indent).
+    // top-level "  url:" key, mirroring an object's children).
     for (const line of stripped.slice(1)) {
       expect(line.startsWith('    ')).toBe(true);
       expect(line.length).toBeLessThanOrEqual(40);
@@ -227,33 +232,29 @@ describe('formatToolArgLines wrap behavior', () => {
   });
 
   test('nested object: long inner string wraps at deeper indent', () => {
-    const longText = 'a'.repeat(80) + ' ' + 'b'.repeat(40);
-    const content = JSON.stringify({
-      messages: [{ role: 'USER', content: longText }],
-    });
-    const lines = formatToolArgLines('remember', content, 40);
-    expect(lines).not.toBeNull();
-    const stripped = (lines ?? []).map(stripAnsi);
-    // The "content:" key sits at depth 3 (messages → - → content), so its
-    // continuation should indent 4 levels = 8 spaces.
+    const stripped = wrapArgs(
+      JSON.stringify({
+        messages: [
+          { role: 'USER', content: 'a'.repeat(80) + ' ' + 'b'.repeat(40) },
+        ],
+      }),
+      40
+    );
+    // "content:" sits at depth 3 (messages → - → content), so its
+    // continuation indents 4 levels = 8 spaces.
     const contentIdx = stripped.findIndex((l) => /content: a/.test(l));
     expect(contentIdx).toBeGreaterThanOrEqual(0);
-    // Continuation indent matches: every line after `content:` until next key
-    // starts with at least 8 spaces (level 4 indent).
     for (let i = contentIdx + 1; i < stripped.length; i++) {
       const line = stripped[i]!;
-      // Stop at the next sibling key (lines that aren't pure indented text)
-      if (!line.startsWith('    ')) break;
+      if (!line.startsWith('    ')) break; // next sibling key
       expect(line.startsWith('        ')).toBe(true);
     }
   });
 
   test('short value with no newline returns a single line', () => {
-    const content = JSON.stringify({ key: 'short' });
-    const lines = formatToolArgLines('whatever', content, 80);
-    expect(lines).not.toBeNull();
-    expect(lines).toHaveLength(1);
-    expect(stripAnsi(lines![0]!)).toBe('  key: short');
+    const stripped = wrapArgs(JSON.stringify({ key: 'short' }), 80);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]).toBe('  key: short');
   });
 
   // wrapAtWords used to be O(n²) in the line length: an outer
@@ -416,7 +417,6 @@ describe('formatTaskToolBody', () => {
     name: string;
     content: unknown;
     command?: string;
-    isNull?: boolean;
     contains?: string[];
     absent?: string[];
     absentMatch?: RegExp[];
@@ -1029,65 +1029,62 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     expect(out).not.toMatch(/truncated/);
   });
 
-  test('argsMaxLines=null + multi-line value: NO per-value truncation marker', () => {
-    // P438130055: "unlimited" (argsMaxLines=null) must also lift the per-value
-    // 5-line clamp inside formatArgLines, else multi-line args (heredocs,
-    // scripts, patches) still got clipped. argsMaxChars=null too so the
-    // per-line char cap can't masquerade as the bug.
-    setDisplay({ argsMaxLines: null, argsMaxChars: null });
-    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const out = renderShellArgs(fifty);
-    // None of the truncation markers — neither the per-value
-    // "(+N more lines)" nor the block-level "(truncated; +N more lines)".
-    expect(out).not.toMatch(/more lines/);
-    expect(out).not.toMatch(/truncated/);
-    // First, middle, and last source lines all visible in scrollback.
-    expect(out).toContain('line0');
-    expect(out).toContain('line25');
-    expect(out).toContain('line49');
-  });
-
-  test('argsMaxLines=N + multi-line value: block-level marker reports ALL hidden source lines, not just dropped visual rows', () => {
-    // Follow-up to P438130055: block mode must NOT keep a per-value cap when
-    // argsMaxLines is finite, else its inner "(+N more lines)" marker gets
-    // chopped by applyLineCap as one dropped row and the block marker reports
-    // "+1" while dozens hide. Block-level applyLineCap is the single source of
-    // truth. argsMaxLines=5 + 32-line value → 5 visible, 27 hidden, 32 total.
-    setDisplay({ argsMaxLines: 5, argsMaxChars: null });
-    const lines32 = [
-      'cat <<EOF >> /tmp/test-banner.txt',
-      ...Array.from({ length: 30 }, (_, i) => `line ${i + 1}`),
-      'EOF',
-    ].join('\n');
-    const out = renderShellArgs(lines32);
-    // Block-level marker reports 27 hidden — not the pre-fix misleading "+1".
-    expect(out).toMatch(/\.\.\. \(truncated; \+27 more lines\)/);
-    expect(out).not.toMatch(/\(truncated; \+1 more lines\)/);
-    // Guard the dropped per-value marker doesn't reappear in the visible portion.
-    expect(out).not.toMatch(/\.\.\. \(\+\d+ more lines\)/);
-    // First arg-block content rows still visible.
-    expect(out).toContain('cat <<EOF');
-    expect(out).toContain('line 1');
-    expect(out).toContain('line 4');
-    // Anything beyond the cap is hidden.
-    expect(out).not.toContain('line 5');
-    expect(out).not.toContain('EOF\n');
-  });
-
-  test('argsMaxLines=N + multi-line value: marker count matches (totalSourceLines - cap)', () => {
-    // Tighter formulation of the rule above. argsMaxLines=10, value with
-    // 50 source lines: 10 visible (head + 9 tail rows = 1 + 9 source
-    // lines), 40 hidden. Marker reports 40, not 1.
-    setDisplay({ argsMaxLines: 10, argsMaxChars: null });
-    const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const out = renderShellArgs(fifty);
-    expect(out).toMatch(/\.\.\. \(truncated; \+40 more lines\)/);
-    // argsMaxLines=10 keeps 10 visual rows: head (line0) + line1..line9.
-    // line10..line49 land in the dropped 40-row tail.
-    expect(out).toContain('line0');
-    expect(out).toContain('line9');
-    expect(out).not.toContain('line10');
-    expect(out).not.toContain('line49');
+  // P438130055 + follow-ups: block-mode args truncation. When argsMaxLines is
+  // null, "unlimited" must lift the per-value 5-line clamp too (heredocs/scripts
+  // render whole). When finite, block-level applyLineCap is the SINGLE source of
+  // truth — the block marker must report ALL hidden source lines (not just the
+  // dropped visual rows, which the pre-fix per-value "(+1 more)" marker did).
+  it.each<{
+    name: string;
+    display: Partial<VerboseDisplayConfig>;
+    value: string;
+    contains: string[];
+    absent?: string[];
+    matches?: RegExp[];
+    notMatches?: RegExp[];
+  }>([
+    {
+      name: 'argsMaxLines=null + multi-line value: NO per-value truncation marker',
+      display: { argsMaxLines: null, argsMaxChars: null },
+      value: Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n'),
+      contains: ['line0', 'line25', 'line49'],
+      notMatches: [/more lines/, /truncated/],
+    },
+    {
+      // argsMaxLines=5 + 32-line value → 5 visible, 27 hidden, 32 total. The
+      // block marker reports 27 (not the misleading "+1"), and the dropped
+      // per-value marker must not reappear in the visible portion.
+      name: 'argsMaxLines=5: block marker reports ALL hidden source lines',
+      display: { argsMaxLines: 5, argsMaxChars: null },
+      value: [
+        'cat <<EOF >> /tmp/test-banner.txt',
+        ...Array.from({ length: 30 }, (_, i) => `line ${i + 1}`),
+        'EOF',
+      ].join('\n'),
+      contains: ['cat <<EOF', 'line 1', 'line 4'],
+      absent: ['line 5', 'EOF\n'],
+      matches: [/\.\.\. \(truncated; \+27 more lines\)/],
+      notMatches: [
+        /\(truncated; \+1 more lines\)/,
+        /\.\.\. \(\+\d+ more lines\)/,
+      ],
+    },
+    {
+      // argsMaxLines=10, 50 source lines: 10 visible (head + 9 tail), 40 hidden.
+      name: 'argsMaxLines=10: marker count matches (totalSourceLines - cap)',
+      display: { argsMaxLines: 10, argsMaxChars: null },
+      value: Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n'),
+      contains: ['line0', 'line9'],
+      absent: ['line10', 'line49'],
+      matches: [/\.\.\. \(truncated; \+40 more lines\)/],
+    },
+  ])('$name', ({ display, value, contains, absent, matches, notMatches }) => {
+    setDisplay(display);
+    const out = renderShellArgs(value);
+    for (const s of contains) expect(out).toContain(s);
+    for (const s of absent ?? []) expect(out).not.toContain(s);
+    for (const re of matches ?? []) expect(out).toMatch(re);
+    for (const re of notMatches ?? []) expect(out).not.toMatch(re);
   });
 
   test('pathologically long single line is clipped before wrap (no OOM)', () => {
