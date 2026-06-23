@@ -139,6 +139,8 @@ pub(crate) mod shape_reference;
 
 pub(crate) mod shape_references;
 
+pub(crate) mod shape_stop_details;
+
 pub(crate) mod shape_supplementary_web_link;
 
 pub(crate) mod shape_supplementary_web_links;
@@ -182,6 +184,8 @@ pub(crate) mod shape_intent_data;
 pub(crate) mod shape_interaction_component_entry;
 
 pub(crate) mod shape_reasoning_text;
+
+pub(crate) mod shape_refusal_details;
 
 pub(crate) mod shape_shell_state;
 
@@ -227,11 +231,15 @@ pub(crate) mod shape_document_symbol;
 
 pub(crate) mod shape_infrastructure_update;
 
+pub(crate) mod shape_inline_artifact;
+
 pub(crate) mod shape_position;
 
 pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_progress;
+
+pub(crate) mod shape_q_clarification;
 
 pub(crate) mod shape_range;
 
@@ -254,6 +262,8 @@ pub(crate) mod shape_text;
 pub(crate) mod shape_tool_input_schema;
 
 pub(crate) mod shape_alert_component_list;
+
+pub(crate) mod shape_clarification_question_list;
 
 pub(crate) mod shape_diagnostic_location;
 
@@ -281,6 +291,8 @@ pub(crate) mod shape_web_link;
 
 pub(crate) mod shape_alert_component;
 
+pub(crate) mod shape_clarification_question;
+
 pub(crate) mod shape_cloud_watch_troubleshooting_link;
 
 pub(crate) mod shape_progress_component;
@@ -295,8 +307,12 @@ pub(crate) mod shape_task_action;
 
 pub(crate) mod shape_task_component;
 
+pub(crate) mod shape_clarification_answer_options_list;
+
 pub(crate) mod shape_task_action_confirmation;
 
 pub(crate) mod shape_task_action_note;
 
 pub(crate) mod shape_task_action_payload;
+
+pub(crate) mod shape_clarification_answer_option;

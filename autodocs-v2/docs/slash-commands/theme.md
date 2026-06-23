@@ -4,9 +4,9 @@ doc_meta:
   description: Select and customize the terminal color theme
   category: slash_command
   keywords: [theme, colors, dark, light, auto, custom, appearance, prompt, diff, NO_COLOR]
-  related: [settings, lite]
-  validated: 2026-06-23
-  commit: 954c60951
+  related: [settings]
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
 ---
@@ -17,7 +17,7 @@ The `/theme` command lets you select and customize the terminal color theme. The
 
 Theme preferences are saved to `~/.kiro/settings/kiro_cli_theme.json` and persist across sessions.
 
-`/theme` is a legacy alias — the canonical entry point is `/settings theme`. Running `/theme` shows a one-time deprecation warning ("has moved to /settings theme") and then opens the theme menu normally.
+`/theme` can also be reached as `/settings theme` — both entry points open the same menu.
 
 ## Usage
 

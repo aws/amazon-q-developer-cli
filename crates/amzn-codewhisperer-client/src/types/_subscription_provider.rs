@@ -14,6 +14,7 @@
 /// match subscriptionprovider {
 ///     SubscriptionProvider::AwsAccount => { /* ... */ },
 ///     SubscriptionProvider::Stripe => { /* ... */ },
+///     SubscriptionProvider::StripeCredits => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -51,6 +52,8 @@ pub enum SubscriptionProvider {
     AwsAccount,
     #[allow(missing_docs)] // documentation missing in model
     Stripe,
+    #[allow(missing_docs)] // documentation missing in model
+    StripeCredits,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -62,6 +65,7 @@ impl ::std::convert::From<&str> for SubscriptionProvider {
         match s {
             "AWS_ACCOUNT" => SubscriptionProvider::AwsAccount,
             "STRIPE" => SubscriptionProvider::Stripe,
+            "STRIPE_CREDITS" => SubscriptionProvider::StripeCredits,
             other => SubscriptionProvider::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
             )),
@@ -81,13 +85,14 @@ impl SubscriptionProvider {
         match self {
             SubscriptionProvider::AwsAccount => "AWS_ACCOUNT",
             SubscriptionProvider::Stripe => "STRIPE",
+            SubscriptionProvider::StripeCredits => "STRIPE_CREDITS",
             SubscriptionProvider::Unknown(value) => value.as_str(),
         }
     }
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["AWS_ACCOUNT", "STRIPE"]
+        &["AWS_ACCOUNT", "STRIPE", "STRIPE_CREDITS"]
     }
 }
 impl ::std::convert::AsRef<str> for SubscriptionProvider {
@@ -112,6 +117,7 @@ impl ::std::fmt::Display for SubscriptionProvider {
         match self {
             SubscriptionProvider::AwsAccount => write!(f, "AWS_ACCOUNT"),
             SubscriptionProvider::Stripe => write!(f, "STRIPE"),
+            SubscriptionProvider::StripeCredits => write!(f, "STRIPE_CREDITS"),
             SubscriptionProvider::Unknown(value) => write!(f, "{value}"),
         }
     }

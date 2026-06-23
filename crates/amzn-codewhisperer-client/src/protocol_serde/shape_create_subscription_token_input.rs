@@ -24,5 +24,11 @@ pub fn ser_create_subscription_token_input_input(
     if let Some(var_7) = &input.cancel_url {
         object.key("cancelUrl").string(var_7.as_str());
     }
+    if let Some(var_8) = &input.credit_quantity {
+        object.key("creditQuantity").number(
+            #[allow(clippy::useless_conversion)]
+            ::aws_smithy_types::Number::NegInt((*var_8).into()),
+        );
+    }
     Ok(())
 }

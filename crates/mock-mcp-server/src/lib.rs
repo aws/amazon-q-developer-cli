@@ -111,6 +111,10 @@ pub struct MockMcpServerBuilder {
     tools: Vec<ToolDef>,
     responses: Vec<MockResponse>,
     probe_status: Option<u16>,
+    oauth: bool,
+    oauth_token_ttl_secs: Option<u64>,
+    oauth_no_refresh_token: bool,
+    oauth_refresh_fails: bool,
 }
 
 impl MockMcpServerBuilder {
@@ -132,6 +136,38 @@ impl MockMcpServerBuilder {
     /// payload). Use 401 or 403 to trigger OAuth flow.
     pub fn probe_status(mut self, status: u16) -> Self {
         self.probe_status = Some(status);
+        self
+    }
+
+    /// Enable a fully working OAuth flow (discovery, registration, authorize, token,
+    /// refresh). With this set, `/mcp` requires a valid bearer token, so the client
+    /// must complete the OAuth handshake before it can call tools.
+    pub fn oauth(mut self) -> Self {
+        self.oauth = true;
+        self
+    }
+
+    /// Set the lifetime (in seconds) of issued OAuth access tokens. Use a small value
+    /// to force mid-session token expiry and exercise the refresh path. Implies `oauth()`.
+    pub fn oauth_token_ttl_secs(mut self, secs: u64) -> Self {
+        self.oauth = true;
+        self.oauth_token_ttl_secs = Some(secs);
+        self
+    }
+
+    /// Stop the server from issuing refresh tokens, forcing the client down the
+    /// re-authorization path when the access token expires. Implies `oauth()`.
+    pub fn oauth_no_refresh_token(mut self) -> Self {
+        self.oauth = true;
+        self.oauth_no_refresh_token = true;
+        self
+    }
+
+    /// Make `grant_type=refresh_token` requests fail with HTTP 400, simulating a
+    /// server that can no longer refresh the session. Implies `oauth()`.
+    pub fn oauth_refresh_fails(mut self) -> Self {
+        self.oauth = true;
+        self.oauth_refresh_fails = true;
         self
     }
 
@@ -197,6 +233,22 @@ impl MockMcpServerBuilder {
         if let Some(ref status) = probe_status_str {
             args.push("--probe-status");
             args.push(status);
+        }
+
+        // OAuth flags. `oauth_token_ttl_str` must outlive the args vec.
+        let oauth_token_ttl_str = self.oauth_token_ttl_secs.map(|s| s.to_string());
+        if self.oauth {
+            args.push("--oauth");
+        }
+        if let Some(ref ttl) = oauth_token_ttl_str {
+            args.push("--oauth-token-ttl-secs");
+            args.push(ttl);
+        }
+        if self.oauth_no_refresh_token {
+            args.push("--oauth-no-refresh-token");
+        }
+        if self.oauth_refresh_fails {
+            args.push("--oauth-refresh-fails");
         }
 
         let child = Command::new(program)

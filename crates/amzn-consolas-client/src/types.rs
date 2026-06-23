@@ -6,6 +6,7 @@ pub use crate::types::_autonomous_agents::AutonomousAgents;
 pub use crate::types::_by_user_analytics::ByUserAnalytics;
 pub use crate::types::_code_star_reference::CodeStarReference;
 pub use crate::types::_conflict_exception_reason::ConflictExceptionReason;
+pub use crate::types::_continuous_learning::ContinuousLearning;
 pub use crate::types::_customization_permission::CustomizationPermission;
 pub use crate::types::_customization_status::CustomizationStatus;
 pub use crate::types::_customization_summary::CustomizationSummary;
@@ -76,6 +77,8 @@ mod _by_user_analytics;
 mod _code_star_reference;
 
 mod _conflict_exception_reason;
+
+mod _continuous_learning;
 
 mod _customization_permission;
 

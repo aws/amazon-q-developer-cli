@@ -45,6 +45,7 @@ pub struct AcpTestHarnessBuilder {
     settings: serde_json::Map<String, serde_json::Value>,
     trust_all: bool,
     extra_acp_args: Vec<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl AcpTestHarnessBuilder {
@@ -55,6 +56,7 @@ impl AcpTestHarnessBuilder {
             settings: serde_json::Map::new(),
             trust_all: false,
             extra_acp_args: Vec::new(),
+            envs: Vec::new(),
         }
     }
 
@@ -95,6 +97,13 @@ impl AcpTestHarnessBuilder {
         self
     }
 
+    /// Set an environment variable on the spawned `kiro-cli acp` process
+    /// (e.g. `KIRO_MCP_REGISTRY_URL_OVERRIDE` to point the agent at a test registry).
+    pub fn with_env(mut self, key: &str, value: &str) -> Self {
+        self.envs.push((key.to_string(), value.to_string()));
+        self
+    }
+
     /// Build and spawn the harness, returning harness + initialized client.
     pub async fn build(self) -> (AcpTestHarness, super::AcpTestClient) {
         let paths = create_test_dir(&self.test_name);
@@ -116,7 +125,7 @@ impl AcpTestHarnessBuilder {
             std::fs::write(&paths.settings_path, json).expect("failed to write settings");
         }
 
-        let mut harness = AcpTestHarness::spawn_with_args(paths, &self.extra_acp_args).await;
+        let mut harness = AcpTestHarness::spawn_with_args(paths, &self.extra_acp_args, &self.envs).await;
         let (stdin, stdout) = harness.take_stdio();
         let client = super::AcpTestClient::spawn(stdin, stdout, self.trust_all);
         client.initialize().await.expect("initialize failed");
@@ -171,11 +180,11 @@ impl AcpTestHarness {
 
     /// Spawn the ACP agent subprocess with the given paths.
     async fn spawn(paths: TestPaths) -> Self {
-        Self::spawn_with_args(paths, &[]).await
+        Self::spawn_with_args(paths, &[], &[]).await
     }
 
-    /// Spawn the ACP agent subprocess with the given paths and extra ACP args.
-    async fn spawn_with_args(paths: TestPaths, extra_args: &[String]) -> Self {
+    /// Spawn the ACP agent subprocess with the given paths, extra ACP args, and extra env vars.
+    async fn spawn_with_args(paths: TestPaths, extra_args: &[String], envs: &[(String, String)]) -> Self {
         // Start IPC listener before spawning agent
         let ipc_listener = UnixListener::bind(&paths.ipc_socket).expect("failed to bind IPC socket");
 
@@ -186,8 +195,7 @@ impl AcpTestHarness {
         for a in extra_args {
             cmd.arg(a);
         }
-        let child = cmd
-            .stdin(std::process::Stdio::piped())
+        cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .env("KIRO_TEST_MODE", "1")
@@ -198,7 +206,11 @@ impl AcpTestHarness {
             .env("KIRO_TEST_CHAT_IPC_SOCKET_PATH", &paths.ipc_socket)
             .env("KIRO_CHAT_LOG_FILE", &paths.log_file)
             .env("KIRO_LOG_LEVEL", "chat_cli=debug,agent=debug")
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        let child = cmd
             .spawn()
             .unwrap_or_else(|e| panic!("failed to spawn {}: {}", binary, e));
 

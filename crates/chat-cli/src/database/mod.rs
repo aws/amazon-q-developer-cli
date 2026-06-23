@@ -77,7 +77,8 @@ const MIGRATIONS: &[Migration] = migrations![
     "005_auth_table",
     "006_make_state_blob",
     "007_conversations_table",
-    "008_multiple_conversations_per_path"
+    "008_multiple_conversations_per_path",
+    "009_extracted_kas_versions"
 ];
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -176,6 +177,9 @@ pub enum Table {
     ConversationsV2,
     /// The auth table contains SSO and Builder ID credentials.
     Auth,
+    /// The extracted_kas_versions table tracks extracted KAS bundle versions and
+    /// their last-used time for garbage collection.
+    ExtractedKasVersions,
 }
 
 impl std::fmt::Display for Table {
@@ -185,6 +189,7 @@ impl std::fmt::Display for Table {
             Table::Conversations => write!(f, "conversations"),
             Table::ConversationsV2 => write!(f, "conversations_v2"),
             Table::Auth => write!(f, "auth_kv"),
+            Table::ExtractedKasVersions => write!(f, "extracted_kas_versions"),
         }
     }
 }
@@ -444,6 +449,70 @@ impl Database {
             conn.execute_batch("ROLLBACK").ok();
         }
         ok
+    }
+
+    /// Record that the given KAS version is currently in use, refreshing its
+    /// last-used timestamp (epoch millis). Drives age-based garbage collection
+    /// of extracted KAS bundles: a touched version is protected from cleanup.
+    pub fn touch_extracted_kas_version(&self, version: &str) -> Result<(), DatabaseError> {
+        let conn = self.pool.get()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        conn.execute(
+            &format!(
+                "INSERT INTO {} (version, last_used_at) VALUES (?1, ?2)
+                 ON CONFLICT(version) DO UPDATE SET last_used_at = ?2",
+                Table::ExtractedKasVersions
+            ),
+            params![version, now],
+        )?;
+        Ok(())
+    }
+
+    /// List every recorded KAS version with its last-used timestamp (epoch
+    /// millis), for age-based garbage collection.
+    pub fn list_extracted_kas_versions(&self) -> Result<Vec<(String, i64)>, DatabaseError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT version, last_used_at FROM {}",
+            Table::ExtractedKasVersions
+        ))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Remove the heartbeat row for a KAS version once its extracted bundle has
+    /// been garbage collected.
+    pub fn delete_extracted_kas_version(&self, version: &str) -> Result<(), DatabaseError> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            &format!("DELETE FROM {} WHERE version = ?1", Table::ExtractedKasVersions),
+            params![version],
+        )?;
+        Ok(())
+    }
+
+    /// The last-used timestamp (epoch millis) for a single KAS version, or
+    /// `None` if it has no heartbeat row. Used to re-check freshness under the
+    /// extraction lock before deleting a bundle.
+    pub fn extracted_kas_version_last_used(&self, version: &str) -> Result<Option<i64>, DatabaseError> {
+        let conn = self.pool.get()?;
+        match conn.query_row(
+            &format!(
+                "SELECT last_used_at FROM {} WHERE version = ?1",
+                Table::ExtractedKasVersions
+            ),
+            params![version],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(ts) => Ok(Some(ts)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
     }
 
     // /// Get the model id used for last conversation state.

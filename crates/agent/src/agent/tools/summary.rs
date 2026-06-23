@@ -3,7 +3,10 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{
+    broadcast,
+    mpsc,
+};
 
 use super::{
     BuiltInToolName,
@@ -89,9 +92,18 @@ impl BuiltInToolTrait for Summary {
 }
 
 impl Summary {
-    pub async fn execute(&self, result_tx: broadcast::Sender<AgentEvent>) -> ToolExecutionResult {
-        result_tx
-            .send(self.into())
+    /// Deliver the summary to the parent. `summary_tx` is the lossless source of
+    /// truth; `result_tx` is a best-effort broadcast for UI and is safe to drop.
+    pub async fn execute(
+        &self,
+        summary_tx: mpsc::UnboundedSender<Summary>,
+        result_tx: broadcast::Sender<AgentEvent>,
+    ) -> ToolExecutionResult {
+        // Best-effort UI broadcast; safe to drop.
+        let _ = result_tx.send(self.into());
+        // Lossless delivery to the waiting parent. This is the one that matters.
+        summary_tx
+            .send(self.clone())
             .map(|_res| ToolExecutionOutput::default())
             .map_err(|e| ToolExecutionError::Custom(e.to_string()))
     }
@@ -113,6 +125,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_summary_tool_execute() {
+        let (summary_tx, mut summary_rx) = mpsc::unbounded_channel();
         let (tx, mut rx) = broadcast::channel(10);
         let summary = Summary {
             task_description: "test task".to_string(),
@@ -120,11 +133,17 @@ mod tests {
             task_result: "test result".to_string(),
             result_type: None,
         };
-        let result = summary.execute(tx).await;
+        let result = summary.execute(summary_tx, tx).await;
         assert!(result.is_ok());
 
-        let event = rx.recv().await.unwrap();
+        // Lossless channel carries the typed Summary directly.
+        let delivered = summary_rx.recv().await.unwrap();
+        assert_eq!(delivered.task_description, "test task");
+        assert_eq!(delivered.context_summary, Some("test context".to_string()));
+        assert_eq!(delivered.task_result, "test result");
 
+        // Broadcast still carries the SubagentSummary event for UI consumers.
+        let event = rx.recv().await.unwrap();
         if let AgentEvent::SubagentSummary(Summary {
             task_description,
             context_summary,
@@ -138,5 +157,67 @@ mod tests {
         } else {
             panic!("Expected AgentEvent::Summary");
         }
+    }
+
+    /// Pins the hazard: when the broadcast overflows, a `SubagentSummary` sent
+    /// first is evicted and lost — the reason delivery can't rely on it alone.
+    #[tokio::test]
+    async fn test_broadcast_drops_summary_event_when_lagged() {
+        let (tx, mut rx) = broadcast::channel::<AgentEvent>(4);
+
+        let summary = Summary {
+            task_description: "count LOC".to_string(),
+            context_summary: None,
+            task_result: "42 LOC".to_string(),
+            result_type: None,
+        };
+
+        // Summary is broadcast first, then a chatty turn overflows the buffer
+        // before the consumer reads, evicting the older summary event.
+        let _ = tx.send((&summary).into());
+        for _ in 0..16 {
+            let _ = tx.send(AgentEvent::Initialized);
+        }
+
+        let mut saw_summary = false;
+        let mut saw_lag = false;
+        loop {
+            match rx.try_recv() {
+                Ok(AgentEvent::SubagentSummary(_)) => saw_summary = true,
+                Ok(_) => {},
+                Err(broadcast::error::TryRecvError::Lagged(_)) => saw_lag = true,
+                Err(broadcast::error::TryRecvError::Empty) | Err(broadcast::error::TryRecvError::Closed) => break,
+            }
+        }
+
+        assert!(saw_lag, "expected the broadcast to report Lagged after overflow");
+        assert!(
+            !saw_summary,
+            "broadcast lag should have dropped the SubagentSummary event"
+        );
+    }
+
+    /// The fix: with the broadcast saturated and never read, `execute` still
+    /// delivers the summary over the lossless channel.
+    #[tokio::test]
+    async fn test_lossless_channel_survives_broadcast_overload() {
+        let (summary_tx, mut summary_rx) = mpsc::unbounded_channel();
+        // Tiny broadcast, deliberately never drained, to simulate a saturated
+        // UI event stream under a verbose turn.
+        let (tx, _rx) = broadcast::channel::<AgentEvent>(2);
+        for _ in 0..32 {
+            let _ = tx.send(AgentEvent::Initialized);
+        }
+
+        let summary = Summary {
+            task_description: "analyze".to_string(),
+            context_summary: None,
+            task_result: "the long result that must not be lost".to_string(),
+            result_type: None,
+        };
+        summary.execute(summary_tx, tx).await.unwrap();
+
+        let delivered = summary_rx.recv().await.expect("summary must arrive losslessly");
+        assert_eq!(delivered.task_result, "the long result that must not be lost");
     }
 }

@@ -6,11 +6,25 @@
 pub struct MetadataEvent {
     #[allow(missing_docs)] // documentation missing in model
     pub token_usage: ::std::option::Option<crate::types::TokenUsage>,
+    /// The reason the model stopped generating.
+    pub stop_reason: ::std::option::Option<crate::types::StopReason>,
+    /// Additional details about why the model stopped, populated when available from the provider.
+    pub stop_details: ::std::option::Option<crate::types::StopDetails>,
 }
 impl MetadataEvent {
     #[allow(missing_docs)] // documentation missing in model
     pub fn token_usage(&self) -> ::std::option::Option<&crate::types::TokenUsage> {
         self.token_usage.as_ref()
+    }
+
+    /// The reason the model stopped generating.
+    pub fn stop_reason(&self) -> ::std::option::Option<&crate::types::StopReason> {
+        self.stop_reason.as_ref()
+    }
+
+    /// Additional details about why the model stopped, populated when available from the provider.
+    pub fn stop_details(&self) -> ::std::option::Option<&crate::types::StopDetails> {
+        self.stop_details.as_ref()
     }
 }
 impl MetadataEvent {
@@ -26,6 +40,8 @@ impl MetadataEvent {
 #[non_exhaustive]
 pub struct MetadataEventBuilder {
     pub(crate) token_usage: ::std::option::Option<crate::types::TokenUsage>,
+    pub(crate) stop_reason: ::std::option::Option<crate::types::StopReason>,
+    pub(crate) stop_details: ::std::option::Option<crate::types::StopDetails>,
 }
 impl MetadataEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -45,10 +61,46 @@ impl MetadataEventBuilder {
         &self.token_usage
     }
 
+    /// The reason the model stopped generating.
+    pub fn stop_reason(mut self, input: crate::types::StopReason) -> Self {
+        self.stop_reason = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The reason the model stopped generating.
+    pub fn set_stop_reason(mut self, input: ::std::option::Option<crate::types::StopReason>) -> Self {
+        self.stop_reason = input;
+        self
+    }
+
+    /// The reason the model stopped generating.
+    pub fn get_stop_reason(&self) -> &::std::option::Option<crate::types::StopReason> {
+        &self.stop_reason
+    }
+
+    /// Additional details about why the model stopped, populated when available from the provider.
+    pub fn stop_details(mut self, input: crate::types::StopDetails) -> Self {
+        self.stop_details = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Additional details about why the model stopped, populated when available from the provider.
+    pub fn set_stop_details(mut self, input: ::std::option::Option<crate::types::StopDetails>) -> Self {
+        self.stop_details = input;
+        self
+    }
+
+    /// Additional details about why the model stopped, populated when available from the provider.
+    pub fn get_stop_details(&self) -> &::std::option::Option<crate::types::StopDetails> {
+        &self.stop_details
+    }
+
     /// Consumes the builder and constructs a [`MetadataEvent`](crate::types::MetadataEvent).
     pub fn build(self) -> crate::types::MetadataEvent {
         crate::types::MetadataEvent {
             token_usage: self.token_usage,
+            stop_reason: self.stop_reason,
+            stop_details: self.stop_details,
         }
     }
 }

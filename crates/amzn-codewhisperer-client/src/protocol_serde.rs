@@ -360,6 +360,8 @@ pub(crate) mod shape_metric_data;
 
 pub(crate) mod shape_opt_in_features;
 
+pub(crate) mod shape_overage_credit_list;
+
 pub(crate) mod shape_package_info_list;
 
 pub(crate) mod shape_position;
@@ -426,6 +428,8 @@ pub(crate) mod shape_by_user_analytics;
 
 pub(crate) mod shape_change_log_options;
 
+pub(crate) mod shape_continuous_learning;
+
 pub(crate) mod shape_dashboard_analytics;
 
 pub(crate) mod shape_dimension;
@@ -447,6 +451,8 @@ pub(crate) mod shape_mcp_configuration;
 pub(crate) mod shape_model_configuration;
 
 pub(crate) mod shape_notifications;
+
+pub(crate) mod shape_overage_credit;
 
 pub(crate) mod shape_package_info;
 
