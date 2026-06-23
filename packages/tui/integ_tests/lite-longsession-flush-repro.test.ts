@@ -28,10 +28,8 @@ describe('lite long-session flush/newline repro', () => {
   }
 
   /** Longest blank-row run INTERNAL to the content region (excludes trailing padding / below-prompt rows). */
-  function maxInternalBlankRun(lines: string[]): { run: number; at: number } {
-    const end = dividerIndex(lines);
-    const content = lines.slice(0, end);
-    // last non-blank index in content region
+  function maxInternalBlankRun(lines: string[]): number {
+    const content = lines.slice(0, dividerIndex(lines));
     let last = -1;
     for (let i = content.length - 1; i >= 0; i--) {
       if (content[i]!.trim() !== '') {
@@ -41,19 +39,15 @@ describe('lite long-session flush/newline repro', () => {
     }
     let run = 0;
     let best = 0;
-    let bestAt = -1;
     for (let i = 0; i <= last; i++) {
       if (content[i]!.trim() === '') {
         run++;
-        if (run > best) {
-          best = run;
-          bestAt = i - run + 1;
-        }
+        if (run > best) best = run;
       } else {
         run = 0;
       }
     }
-    return { run: best, at: bestAt };
+    return best;
   }
 
   // Chunk generators. mixed: 3 turn shapes (thought, thought+tool, markdown);
@@ -157,7 +151,7 @@ describe('lite long-session flush/newline repro', () => {
       await tc.completeTurn();
       await tc.sleepMs(opts.settleMs);
 
-      const { run } = maxInternalBlankRun(tc.getSnapshot());
+      const run = maxInternalBlankRun(tc.getSnapshot());
       if (run > worstRun) worstRun = run;
     }
 
@@ -173,33 +167,36 @@ describe('lite long-session flush/newline repro', () => {
     await exitLiteInteg(tc);
   }
 
-  it('streamed turns in a small viewport: no wave / dup / drop', async () => {
-    await runBlankWaveScenario({
-      testName: 'lite-longsession-flush-repro',
-      terminal: { width: 90, height: 24 },
-      launchTimeout: 90000,
-      turns: 12,
-      chunkDelayMs: 20,
-      settleMs: 160,
-      seedPreamble: seedMixedPreamble,
-      chunksFor: mixedChunks,
-      trackDup: true,
-    });
-  }, 120000);
-
-  // Tall response overflows the viewport while streaming, exercising
-  // writeStaticLines' overflow-erase branch (liveRows > terminal.rows → \x1b[3J
-  // + erase). Driven twice so turn 2 lands on a scrollback that already
-  // overflowed once.
-  it('tall streamed response (overflows viewport) flushes without a blank wave', async () => {
-    await runBlankWaveScenario({
-      testName: 'lite-longsession-tall-stream',
-      terminal: { width: 90, height: 20 },
-      launchTimeout: 60000,
-      turns: 2,
-      chunkDelayMs: 8,
-      settleMs: 250,
-      chunksFor: (i) => tallChunks(i),
-    });
-  }, 90000);
+  it.each([
+    {
+      name: 'streamed turns in a small viewport: no wave / dup / drop',
+      opts: {
+        testName: 'lite-longsession-flush-repro',
+        terminal: { width: 90, height: 24 },
+        launchTimeout: 90000,
+        turns: 12,
+        chunkDelayMs: 20,
+        settleMs: 160,
+        seedPreamble: seedMixedPreamble,
+        chunksFor: mixedChunks,
+        trackDup: true,
+      },
+    },
+    {
+      // Tall response overflows the viewport while streaming, exercising
+      // writeStaticLines' overflow-erase branch (liveRows > terminal.rows →
+      // \x1b[3J + erase). Driven twice so turn 2 lands on a scrollback that
+      // already overflowed once.
+      name: 'tall streamed response (overflows viewport) flushes without a blank wave',
+      opts: {
+        testName: 'lite-longsession-tall-stream',
+        terminal: { width: 90, height: 20 },
+        launchTimeout: 60000,
+        turns: 2,
+        chunkDelayMs: 8,
+        settleMs: 250,
+        chunksFor: (i: number) => tallChunks(i),
+      },
+    },
+  ])('$name', async ({ opts }) => runBlankWaveScenario(opts), 120000);
 });

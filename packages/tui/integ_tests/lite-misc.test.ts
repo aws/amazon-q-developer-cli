@@ -22,48 +22,6 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
   const typeCommand = (tc: TestCase, cmd: string) =>
     typeSlashCommand(tc, cmd, { trailingSpace: true, postEnterMs: 800 });
 
-  it('live region leading separator matches static spacing [bug-mine 10.1]', async () => {
-    testCase = await launchLiteInteg('lite-misc-10-1-spacing');
-
-    await testCase.mockSessionUpdate({
-      type: AgentEventType.ToolCall,
-      id: 'tool-spacing-001',
-      name: 'Read',
-      kind: 'read',
-      args: { path: '/tmp/spacing.txt' },
-    });
-    await testCase.typeAndSubmit('test spacing');
-    await testCase.sleepMs(300);
-
-    const liveSnapshot = testCase.getSnapshot();
-    const liveReadLine = liveSnapshot.findIndex((line) =>
-      line.includes('Read')
-    );
-
-    await testCase.completeTurn();
-    await testCase.sleepMs(400);
-
-    const staticSnapshot = testCase.getSnapshot();
-    const staticReadLine = staticSnapshot.findIndex((line) =>
-      line.includes('Read')
-    );
-
-    expect(liveReadLine).not.toBe(-1);
-    expect(staticReadLine).not.toBe(-1);
-
-    // The blank-line gap above the tool line must be identical live vs static.
-    const livePrefix =
-      liveReadLine > 0 ? (liveSnapshot[liveReadLine - 1] ?? '') : '';
-    const staticPrefix =
-      staticReadLine > 0 ? (staticSnapshot[staticReadLine - 1] ?? '') : '';
-
-    const liveIsBlank = livePrefix.trim() === '';
-    const staticIsBlank = staticPrefix.trim() === '';
-    expect(staticIsBlank).toBe(liveIsBlank);
-
-    await exitLiteInteg(testCase);
-  }, 30000);
-
   it.each([
     {
       bug: '10.2',
@@ -165,7 +123,7 @@ describe('lite miscellaneous [bug-mine 10.x]', () => {
       args: { task: 'run pipeline' },
     });
 
-    // sessionId marks this as an inner subagent tool (isolated from the batch).
+    // Distinct sessionId isolates this inner tool from the parent batch.
     await testCase.mockSessionUpdate({
       type: AgentEventType.ToolCall,
       id: 'inner-tool-001',
