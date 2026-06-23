@@ -211,6 +211,14 @@ pub mod env_var {
         /// `chat_cli`'s `resolve_kas_paths` for KAS-side subcommands.
         KIRO_KAS_SERVER_PATH = "KIRO_KAS_SERVER_PATH",
 
+        /// Path to the KAS bundle archive (`.tar.gz` of `node_modules`).
+        /// At build time this is consumed by `build.rs` to embed the bundle.
+        /// At runtime it is a fallback source for the KAS bundle bytes and
+        /// version hash when no bundle is embedded in the binary (dev/test
+        /// builds), letting KAS run and the version be computed without a
+        /// release build. The embedded bundle always takes precedence.
+        KAS_BUNDLE_PATH = "KAS_BUNDLE_PATH",
+
         /// Used for E2E tests
         KIRO_TEST_TUI_JS_PATH = "KIRO_TEST_TUI_JS_PATH",
 

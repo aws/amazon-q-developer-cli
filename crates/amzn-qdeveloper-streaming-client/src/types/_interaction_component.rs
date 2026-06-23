@@ -29,6 +29,11 @@ pub struct InteractionComponent {
     pub resource_list: ::std::option::Option<crate::types::ResourceList>,
     #[allow(missing_docs)] // documentation missing in model
     pub action: ::std::option::Option<crate::types::Action>,
+    /// Structure representing a clarification interaction that presents the user with one or more
+    /// steps of options to choose from.
+    pub clarification: ::std::option::Option<crate::types::QClarification>,
+    /// Structure representing an inline artifact component.
+    pub inline_artifact: ::std::option::Option<crate::types::InlineArtifact>,
 }
 impl InteractionComponent {
     /// Structure representing a simple text component with sensitive content, which can include
@@ -91,6 +96,17 @@ impl InteractionComponent {
     pub fn action(&self) -> ::std::option::Option<&crate::types::Action> {
         self.action.as_ref()
     }
+
+    /// Structure representing a clarification interaction that presents the user with one or more
+    /// steps of options to choose from.
+    pub fn clarification(&self) -> ::std::option::Option<&crate::types::QClarification> {
+        self.clarification.as_ref()
+    }
+
+    /// Structure representing an inline artifact component.
+    pub fn inline_artifact(&self) -> ::std::option::Option<&crate::types::InlineArtifact> {
+        self.inline_artifact.as_ref()
+    }
 }
 impl InteractionComponent {
     /// Creates a new builder-style object to manufacture
@@ -116,6 +132,8 @@ pub struct InteractionComponentBuilder {
     pub(crate) resource: ::std::option::Option<crate::types::Resource>,
     pub(crate) resource_list: ::std::option::Option<crate::types::ResourceList>,
     pub(crate) action: ::std::option::Option<crate::types::Action>,
+    pub(crate) clarification: ::std::option::Option<crate::types::QClarification>,
+    pub(crate) inline_artifact: ::std::option::Option<crate::types::InlineArtifact>,
 }
 impl InteractionComponentBuilder {
     /// Structure representing a simple text component with sensitive content, which can include
@@ -328,6 +346,43 @@ impl InteractionComponentBuilder {
         &self.action
     }
 
+    /// Structure representing a clarification interaction that presents the user with one or more
+    /// steps of options to choose from.
+    pub fn clarification(mut self, input: crate::types::QClarification) -> Self {
+        self.clarification = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Structure representing a clarification interaction that presents the user with one or more
+    /// steps of options to choose from.
+    pub fn set_clarification(mut self, input: ::std::option::Option<crate::types::QClarification>) -> Self {
+        self.clarification = input;
+        self
+    }
+
+    /// Structure representing a clarification interaction that presents the user with one or more
+    /// steps of options to choose from.
+    pub fn get_clarification(&self) -> &::std::option::Option<crate::types::QClarification> {
+        &self.clarification
+    }
+
+    /// Structure representing an inline artifact component.
+    pub fn inline_artifact(mut self, input: crate::types::InlineArtifact) -> Self {
+        self.inline_artifact = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Structure representing an inline artifact component.
+    pub fn set_inline_artifact(mut self, input: ::std::option::Option<crate::types::InlineArtifact>) -> Self {
+        self.inline_artifact = input;
+        self
+    }
+
+    /// Structure representing an inline artifact component.
+    pub fn get_inline_artifact(&self) -> &::std::option::Option<crate::types::InlineArtifact> {
+        &self.inline_artifact
+    }
+
     /// Consumes the builder and constructs a
     /// [`InteractionComponent`](crate::types::InteractionComponent).
     pub fn build(self) -> crate::types::InteractionComponent {
@@ -344,6 +399,8 @@ impl InteractionComponentBuilder {
             resource: self.resource,
             resource_list: self.resource_list,
             action: self.action,
+            clarification: self.clarification,
+            inline_artifact: self.inline_artifact,
         }
     }
 }

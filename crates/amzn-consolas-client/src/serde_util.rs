@@ -328,6 +328,15 @@ pub(crate) fn by_user_analytics_correct_errors(
     builder
 }
 
+pub(crate) fn continuous_learning_correct_errors(
+    mut builder: crate::types::builders::ContinuousLearningBuilder,
+) -> crate::types::builders::ContinuousLearningBuilder {
+    if builder.toggle.is_none() {
+        builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
 pub(crate) fn dashboard_analytics_correct_errors(
     mut builder: crate::types::builders::DashboardAnalyticsBuilder,
 ) -> crate::types::builders::DashboardAnalyticsBuilder {

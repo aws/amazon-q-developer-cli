@@ -40,6 +40,10 @@ pub struct UsageBreakdown {
     pub free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
     /// Redeemed bonuses
     pub bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
+    /// Purchased overage credit packs
+    pub overage_credits: ::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>>,
+    /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
+    pub dimension_type: ::std::option::Option<crate::types::PoolingDimension>,
 }
 impl UsageBreakdown {
     /// The resource or dimension being billed, e.g. VIBE or SPEC
@@ -135,6 +139,19 @@ impl UsageBreakdown {
     pub fn bonuses(&self) -> &[crate::types::Bonus] {
         self.bonuses.as_deref().unwrap_or_default()
     }
+
+    /// Purchased overage credit packs
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.overage_credits.is_none()`.
+    pub fn overage_credits(&self) -> &[crate::types::OverageCredit] {
+        self.overage_credits.as_deref().unwrap_or_default()
+    }
+
+    /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
+    pub fn dimension_type(&self) -> ::std::option::Option<&crate::types::PoolingDimension> {
+        self.dimension_type.as_ref()
+    }
 }
 impl UsageBreakdown {
     /// Creates a new builder-style object to manufacture
@@ -166,6 +183,8 @@ pub struct UsageBreakdownBuilder {
     pub(crate) overage_cap_with_precision: ::std::option::Option<f64>,
     pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
     pub(crate) bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
+    pub(crate) overage_credits: ::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>>,
+    pub(crate) dimension_type: ::std::option::Option<crate::types::PoolingDimension>,
 }
 impl UsageBreakdownBuilder {
     /// The resource or dimension being billed, e.g. VIBE or SPEC
@@ -488,6 +507,50 @@ impl UsageBreakdownBuilder {
         &self.bonuses
     }
 
+    /// Appends an item to `overage_credits`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_overage_credits`](Self::set_overage_credits).
+    ///
+    /// Purchased overage credit packs
+    pub fn overage_credits(mut self, input: crate::types::OverageCredit) -> Self {
+        let mut v = self.overage_credits.unwrap_or_default();
+        v.push(input);
+        self.overage_credits = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Purchased overage credit packs
+    pub fn set_overage_credits(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>>,
+    ) -> Self {
+        self.overage_credits = input;
+        self
+    }
+
+    /// Purchased overage credit packs
+    pub fn get_overage_credits(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>> {
+        &self.overage_credits
+    }
+
+    /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
+    pub fn dimension_type(mut self, input: crate::types::PoolingDimension) -> Self {
+        self.dimension_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
+    pub fn set_dimension_type(mut self, input: ::std::option::Option<crate::types::PoolingDimension>) -> Self {
+        self.dimension_type = input;
+        self
+    }
+
+    /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
+    pub fn get_dimension_type(&self) -> &::std::option::Option<crate::types::PoolingDimension> {
+        &self.dimension_type
+    }
+
     /// Consumes the builder and constructs a [`UsageBreakdown`](crate::types::UsageBreakdown).
     /// This method will fail if any of the following fields are not set:
     /// - [`current_usage`](crate::types::builders::UsageBreakdownBuilder::current_usage)
@@ -542,6 +605,8 @@ impl UsageBreakdownBuilder {
             overage_cap_with_precision: self.overage_cap_with_precision,
             free_trial_info: self.free_trial_info,
             bonuses: self.bonuses,
+            overage_credits: self.overage_credits,
+            dimension_type: self.dimension_type,
         })
     }
 }

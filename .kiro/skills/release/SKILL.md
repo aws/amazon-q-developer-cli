@@ -108,6 +108,12 @@ gh workflow run create-release-branch.yml \
   -f base_tag=<base_tag>
 ```
 
+**Verify both branches exist before proceeding:**
+```bash
+gh api repos/kiro-team/kiro-cli/branches/release/<version> --jq '.name'
+gh api repos/kiro-team/kiro-cli-autocomplete/branches/release/<version> --jq '.name'
+```
+
 ### Step 2: Cherry-pick & Changelog
 
 - Cherry-pick fixes from `main` to `release/<version>` via PRs (both repos)
@@ -134,6 +140,12 @@ Feed files: `crates/chat-cli/src/cli/feed.json` + `crates/chat-cli-v2/src/cli/fe
 4. Move the used fragments to `.changes/released/v<version>/`.
 5. Copy the updated feed.json to both chat-cli and chat-cli-v2 paths.
 6. Submit as a PR against `release/<version>` (branch protection requires PRs).
+7. **Sync feed.json to autocomplete repo**: The autocomplete repo has its own `feed.json` at the repo root. Copy the updated feed.json from `crates/chat-cli/src/cli/feed.json` to the autocomplete repo's `release/<version>` branch:
+   ```bash
+   cd <autocomplete-worktree>
+   cp <kiro-cli-worktree>/crates/chat-cli/src/cli/feed.json ./feed.json
+   git add feed.json && git commit -m "fix: sync feed.json with kiro-cli" && git push
+   ```
 
 **For a patch release** (stable base tag):
 
