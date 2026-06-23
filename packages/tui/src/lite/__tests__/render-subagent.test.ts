@@ -88,35 +88,24 @@ describe('formatSubagentApprovalLines', () => {
     }
   });
 
-  // prompt_template routes through the markdown pipeline (markers stripped,
-  // ANSI styling emitted) AND preserves the semantic paragraph break — the
-  // pipeline mechanics themselves are exhaustively covered in
-  // render-markdown.test.ts; here we just pin that subagent prompts use it.
-  test('markdown rendering: prompt_template is styled and preserves paragraph breaks', () => {
+  // prompt_template routes through the markdown pipeline AND preserves the
+  // semantic paragraph break. Markdown styling/marker-strip is covered by the
+  // bold-bleed test below (it walks SGR depth) and render-markdown.test.ts; the
+  // DISTINCT fact here is that the approval path keeps the \n\n paragraph break.
+  test('markdown rendering: prompt_template preserves paragraph breaks', () => {
     const content = JSON.stringify({
       task: 't',
       stages: [
         {
           name: 's1',
-          prompt_template:
-            'Use **bold** and `code` and *italic*.\n\nSecond paragraph.',
+          prompt_template: 'Use **bold** markdown.\n\nSecond paragraph.',
         },
       ],
     });
     const lines = formatSubagentApprovalLines(content, 100);
     expect(lines).not.toBeNull();
-    const joined = (lines ?? []).join('\n');
-    const stripped = stripAnsi(joined);
-    // Markers stripped, body survives.
-    for (const m of ['**bold**', '`code`', '*italic*'])
-      expect(stripped).not.toContain(m);
-    for (const t of ['bold', 'code', 'italic']) expect(stripped).toContain(t);
-    // SGR bold open confirms styled (not raw passthrough). Glyph is
-    // environment-dependent; the `\x1b[1m` open is the load-bearing signal.
-    // eslint-disable-next-line no-control-regex
-    expect(joined).toMatch(/\x1b\[1m/);
-    // Markdown semantic paragraph break preserved (>=1 blank row between).
     const rows = (lines ?? []).map(stripAnsi);
+    expect(rows.join('\n')).not.toContain('**bold**'); // markers stripped
     const firstIdx = rows.findIndex((l) => l.includes('bold'));
     const secondIdx = rows.findIndex((l) => l.includes('Second paragraph'));
     expect(secondIdx).toBeGreaterThan(firstIdx);
