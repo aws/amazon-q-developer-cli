@@ -1869,12 +1869,16 @@ export function extractInlineArg(
       return `[${clipChars(v, maxChars)}]`;
   }
 
-  // Last resort: the model's stated purpose (the only field the ladder above
-  // doesn't already cover), bracketed so it reads as a chip.
+  // Last resort: the model's stated purpose, else the raw `command` — covers
+  // command-bearing tools whose title isn't in SHELL_TOOL_NAMES (e.g. an
+  // agent-advertised "Shell" rather than the canonical lowercase alias), which
+  // would otherwise render no chip at all. Bracketed so it reads as a chip.
   const purpose = args.__tool_use_purpose;
-  return typeof purpose === 'string' && purpose.length > 0
-    ? `[${clipChars(purpose, maxChars)}]`
-    : undefined;
+  if (typeof purpose === 'string' && purpose.length > 0)
+    return `[${clipChars(purpose, maxChars)}]`;
+  if (typeof args.command === 'string' && args.command.length > 0)
+    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
+  return undefined;
 }
 
 /**

@@ -1566,6 +1566,15 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       contains: 'shell [git status]',
     },
     {
+      // Regression guard: an agent-advertised title (capital "Shell") isn't in
+      // SHELL_TOOL_NAMES, so it skips the shell branch and must still surface
+      // the command via the last-resort fallback rather than rendering no chip.
+      name: 'command-bearing tool not in SHELL_TOOL_NAMES still shows command',
+      tool: 'Shell',
+      args: { command: 'echo concat-test' },
+      contains: 'Shell [echo concat-test]',
+    },
+    {
       name: 'read bare path renders shortened',
       tool: 'fs_read',
       args: { operations: [{ path: 'CWD/src/lite/render.ts' }] },
