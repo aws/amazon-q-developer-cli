@@ -8,6 +8,10 @@ import {
   trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
+import {
+  injectApproval,
+  ALLOW_REJECT_OPTIONS,
+} from '../e2e_tests/lite/helpers/approvals';
 
 type ToolUseMessage = Extract<MessageType, { role: MessageRole.ToolUse }>;
 
@@ -182,4 +186,128 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
     await finishAndExitLite(testCase);
   }, 30000);
+
+  /**
+   * Panel auto-expand on inner approval (PR #2643; LiteLayout snapshot/restore
+   * effect): when a pending approval belongs to a subagent stage the panel
+   * auto-opens; on clear it restores its prior state. Both cases clear via 'n'
+   * (RejectOnce — Esc would cancel the turn and auto-clamp the panel, masking
+   * the restore); they differ only by the panel's PRIOR state.
+   * KIRO_TEST_MOCK_TURN_TIMEOUT_MS keeps isProcessing alive past the 2s
+   * APPROVAL_IDLE_MS gate so ApprovalPrompt's 'n' handler is mounted.
+   */
+  it.each([
+    {
+      label: 'auto-opens from CLOSED; closes on clear',
+      testName: 'lite-auto-expand-from-closed',
+      stages: [
+        {
+          sessionId: 'session-stageA',
+          name: 'stageA',
+          toolId: 'tool-stageA-1',
+        },
+      ],
+      openFirst: false,
+      approveToolId: 'tool-stageA-1',
+      approveSessionId: 'session-stageA',
+      postClearMs: 250,
+      expectAfterClear: false,
+    },
+    {
+      label: 'stays OPEN through B-approval; restores to open on clear',
+      testName: 'lite-auto-expand-switch-stages',
+      stages: [
+        {
+          sessionId: 'session-stageA',
+          name: 'stageA',
+          toolId: 'tool-stageA-1',
+        },
+        {
+          sessionId: 'session-stageB',
+          name: 'stageB',
+          toolId: 'tool-stageB-1',
+        },
+      ],
+      openFirst: true,
+      approveToolId: 'tool-stageB-1',
+      approveSessionId: 'session-stageB',
+      // 250ms wasn't always enough for the React batched updates + ref read +
+      // setSubagentOpenIndex round-trip when restoring to an open panel.
+      postClearMs: 500,
+      expectAfterClear: true,
+    },
+  ])(
+    'auto-expand: inner approval $label',
+    async ({
+      testName,
+      stages,
+      openFirst,
+      approveToolId,
+      approveSessionId,
+      postClearMs,
+      expectAfterClear,
+    }) => {
+      testCase = await launchLiteInteg(testName, {
+        env: { KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' },
+        timeout: 20000,
+      });
+
+      await seedSubagentPipeline(testCase, {
+        parentId: 'subagent-parent-autoexpand',
+        pipeline: 'auto-expand-test',
+        prompt: 'begin pipeline',
+        stages: stages.map((s) => ({
+          toolId: s.toolId,
+          name: 'Read',
+          kind: 'read',
+          args: { path: `/tmp/${s.name}.txt` },
+          sessionId: s.sessionId,
+        })),
+        addSessionsAfter: stages.map((s) => ({
+          id: s.sessionId,
+          name: s.name,
+          status: 'busy',
+        })),
+      });
+
+      let store = await testCase.getStore();
+      if (openFirst) {
+        await testCase.sendKeys('\x0f'); // Ctrl+O — prior state is "open".
+        await testCase.sleepMs(200);
+        store = await testCase.getStore();
+        expect(store.subagentPanelOpen).toBe(true);
+      } else {
+        expect(store.subagentPanelOpen).toBe(false);
+      }
+
+      // Inner approval ties to the stage ToolCall seeded above (sessionId set),
+      // so no preceding ToolCall is injected.
+      await injectApproval(testCase, {
+        toolCallId: approveToolId,
+        toolName: 'Read',
+        sessionId: approveSessionId,
+        rawInput: { path: '/tmp/Read.txt' },
+        options: ALLOW_REJECT_OPTIONS,
+        withPrecedingToolCall: false,
+        settleMs: 250,
+      });
+
+      store = await testCase.getStore();
+      expect(store.subagentPanelOpen).toBe(true);
+      expect(store.pendingApproval).not.toBeNull();
+
+      // ApprovalPrompt binds 'n' only 2s after the last keystroke
+      // (APPROVAL_IDLE_MS), so wait it out before responding.
+      await testCase.sleepMs(2200);
+      await testCase.sendKeys('n');
+      await testCase.sleepMs(postClearMs);
+
+      store = await testCase.getStore();
+      expect(store.pendingApproval).toBeNull();
+      expect(store.subagentPanelOpen).toBe(expectAfterClear);
+
+      await finishAndExitLite(testCase);
+    },
+    30000
+  );
 });

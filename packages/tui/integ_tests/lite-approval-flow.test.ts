@@ -12,8 +12,8 @@ import {
   trackCleanup,
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
-/** Bug-mine 3.1-3.6: lite approval flow behavior (per-case rationale inline). */
-describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
+/** Bug-mine 3.1-3.6 + 6.4: lite approval flow behavior (per-case rationale inline). */
+describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6, 6.4]', () => {
   let testCase: TestCase | null = null;
   trackCleanup(() => testCase);
 
@@ -176,6 +176,15 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
 
     const SUBAGENT_SESSION = 'sub-session-1';
 
+    // Unfinished parent `subagent` ToolCall: bug-mine 6.4 asserts the promoted
+    // approval points at the subagent's CHILD tool, not this parent tool.
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCall,
+      id: 'parent-subagent-1',
+      name: 'subagent',
+      args: { agent: SUBAGENT_SESSION },
+    });
+
     // Queue both before submitting (drained synchronously when prompt() fires).
     // Main-agent tool: no sessionId -> agentName = currentAgent.name.
     await injectApproval(testCase, {
@@ -238,6 +247,15 @@ describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6]', () => {
     if (subToolMsg && 'agentName' in subToolMsg) {
       expect((subToolMsg as any).agentName).not.toBe('main-agent');
     }
+    // Bug-mine 6.4: the promoted approval targets the subagent's child tool,
+    // not the parent `subagent` tool that spawned it.
+    const parentSubagentTool = store2.messages.find(
+      (m: any) => m.role === 'tool_use' && m.name === 'subagent'
+    );
+    expect(parentSubagentTool).toBeDefined();
+    expect(store2.pendingApproval!.toolCall.toolCallId).not.toBe(
+      parentSubagentTool!.id
+    );
     const snapshot2 = testCase.getSnapshot().join('\n');
     expect(snapshot2).toContain('subagent request');
 
