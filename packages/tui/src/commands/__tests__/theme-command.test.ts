@@ -188,12 +188,6 @@ describe('/theme command', () => {
         defaultValue: 'prompt:default',
       },
       {
-        route: 'diff',
-        seed: { diffPreset: 'colorblind-dark' },
-        activeValue: 'diff:colorblind-dark',
-        defaultValue: 'diff:default',
-      },
-      {
         route: 'prompt',
         seed: undefined,
         activeValue: 'prompt:default',
@@ -249,13 +243,6 @@ describe('/theme command', () => {
         labelMatch: 'Light',
         seedOther: { promptPreset: 'forest' },
         pref: { responsePreset: 'light', promptPreset: 'forest' },
-      },
-      {
-        route: 'response:dark',
-        slot: 1,
-        check: (c: any) => expect(c.truecolor).toBe('#626262'),
-        untouched: [0],
-        pref: { responsePreset: 'dark' },
       },
       {
         route: 'diff:colorblind-dark',

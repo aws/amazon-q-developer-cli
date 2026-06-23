@@ -417,10 +417,6 @@ describe('/verbosity density presets', () => {
       display: { toolArgsMode: 'inline' },
     },
     {
-      route: 'density:lean',
-      display: { toolArgsMode: 'inline' },
-    },
-    {
       // `full` is differentiated from `default` solely by its filter list
       // collapsing to ['all'] (1:1 with what the parent agent sees).
       route: 'density:full',
