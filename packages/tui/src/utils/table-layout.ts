@@ -8,9 +8,11 @@ const READABLE_MIN_COL_WIDTH = 8;
 
 export type Alignment = 'left' | 'right' | 'center';
 
- 
-const ANSI_ESC_RE =
-  /^(?:\x1b\][0-9]*;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;]*m)/;
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const ANSI_ESC_RE = new RegExp(
+  `^(?:${ESC}\\][0-9]*;[^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)|${ESC}\\[[0-9;]*m)`
+);
 
 export function shouldStackTable(
   colWidths: number[],
