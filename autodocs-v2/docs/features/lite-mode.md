@@ -82,13 +82,7 @@ Lite mode ships four density presets (`minimal`, `lean`, `default`, `full`) that
 
 ## Settings
 
-The default UI mode persists in `~/.kiro/settings/cli.json`:
-
-| Key            | Type                | Description     |
-| -------------- | ------------------- | --------------- |
-| `chat.ui.mode` | `"lite"` \| `"tui"` | Default UI mode |
-
-All lite-mode verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md#persistence).
+The default mode persists under `chat.ui.mode` (`"lite"` | `"tui"`) in `~/.kiro/settings/cli.json`; all verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md#persistence).
 
 ## Troubleshooting
 
