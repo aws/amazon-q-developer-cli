@@ -917,22 +917,27 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     result: { status: 'success', output },
   });
 
-  // Render a shell tool whose `command` arg is the value under test (output is
-  // a fixed 'ok' — these cases assert the ARGS block, not the output bar).
-  const renderShellArgs = (command: string) =>
+  // Render a finished shell tool with a fixed 'ok' output (so cases assert the
+  // ARGS block, not the output bar). `renderShellArgs` passes a bare `command`.
+  const renderShellContent = (
+    content: Record<string, unknown>,
+    opts?: Parameters<typeof renderMessageToText>[2]
+  ) =>
     stripAnsi(
       renderMessageToText(
         {
           id: 't-args-multiline',
           role: 'tool_use',
           name: 'shell',
-          content: JSON.stringify({ command }),
+          content: JSON.stringify(content),
           isFinished: true,
           result: { status: 'success', output: 'ok' },
         },
-        'kiro_default'
+        'kiro_default',
+        opts
       )
     );
+  const renderShellArgs = (command: string) => renderShellContent({ command });
 
   // Cap tests patch only the cap(s) under test on top of the shared
   // all-flags-on BASE_DISPLAY, so each row reads as "this cap, this expectation".
@@ -1018,26 +1023,13 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   test('argsMaxLines=2 caps the block-args tree with a marker', () => {
     setDisplay({ argsMaxLines: 2 });
     // Deliberately many top-level keys so block-args produces > 2 visual rows.
-    const content = JSON.stringify({
+    const out = renderShellContent({
       a: 'one',
       b: 'two',
       c: 'three',
       d: 'four',
       e: 'five',
     });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-args-cap-1',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
     // First two arg rows survive, later ones don't.
     expect(out).toContain('a: one');
     expect(out).toContain('b: two');
@@ -1050,25 +1042,12 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
   test('argsMaxChars=10 clips long string values inside block-mode args', () => {
     // Block-mode honors the per-value char cap (inline mode already did).
     setDisplay({ argsMaxChars: 10 });
-    const content = JSON.stringify({
+    const out = renderShellContent({
       command: 'this-is-a-pretty-long-shell-command --with --flags',
       path: 'a/very/long/path/to/some/deeply/nested/file.ts',
       // Explicit purpose so the tool-name line shows reasoning, not args.command.
       __tool_use_purpose: 'demo block-mode arg clipping',
     });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-args-chars-1',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
     // Both values clip at 10 chars (9 chars + ellipsis).
     expect(out).toMatch(/command:\s*this-is-a…/);
     expect(out).toMatch(/path:\s*a\/very\/lo…/);
@@ -1098,19 +1077,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     },
   ])('$name', ({ display, content, contains }) => {
     setDisplay(display);
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-args-nocap',
-          role: 'tool_use',
-          name: 'shell',
-          content: JSON.stringify(content),
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
+    const out = renderShellContent(content);
     for (const s of contains) expect(out).toContain(s);
     expect(out).not.toMatch(/truncated/);
   });
