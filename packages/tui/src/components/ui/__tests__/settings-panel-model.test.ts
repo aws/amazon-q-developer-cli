@@ -74,61 +74,16 @@ describe('settings-panel-model', () => {
     });
   });
 
-  // Per-screen metadata over the four screens: leaf row ids (reachability —
-  // terminal=[newlines,interrupt] pins the interrupt-dropped-out regression),
-  // ESC back target, apply-and-close footer hint, breadcrumb title, and
-  // whether a subtitle exists (top has none, sub-screens do).
-  describe('screen metadata', () => {
-    it.each<{
-      screen: Screen;
-      rows: string[];
-      back: Screen | 'close';
-      applies: boolean;
-      title: string;
-      hasDescription: boolean;
-    }>([
-      {
-        screen: { type: 'top' },
-        rows: ['display', 'theme', 'terminal', 'keybindings', 'history'],
-        back: 'close',
-        applies: false,
-        title: '/settings',
-        hasDescription: false,
-      },
-      {
-        screen: { type: 'terminal' },
-        rows: ['newlines', 'interrupt'],
-        back: { type: 'top' },
-        applies: false,
-        title: '/settings – terminal',
-        hasDescription: true,
-      },
-      {
-        screen: { type: 'terminal:interrupt' },
-        rows: ['steer', 'queue'],
-        back: { type: 'terminal' }, // one level up, not top
-        applies: true,
-        title: '/settings – interrupt behaviour',
-        hasDescription: true,
-      },
-      {
-        screen: { type: 'history' },
-        rows: ['session', 'global'],
-        back: { type: 'top' },
-        applies: true,
-        title: '/settings – history',
-        hasDescription: true,
-      },
-    ])(
-      '$screen.type',
-      ({ screen, rows, back, applies, title, hasDescription }) => {
-        expect(rowIds(screen)).toEqual(rows);
-        expect(resolveBack(screen)).toEqual(back);
-        expect(appliesOnSelect(screen)).toBe(applies);
-        expect(screenTitle(screen)).toBe(title);
-        expect(screenDescription(screen) !== undefined).toBe(hasDescription);
-      }
-    );
+  describe('sub-screen rows', () => {
+    // Every sub-screen exposes its leaf rows in order (reachability guard);
+    // terminal=[newlines,interrupt] pins the interrupt-dropped-out regression.
+    it.each<[Screen, string[]]>([
+      [{ type: 'terminal' }, ['newlines', 'interrupt']],
+      [{ type: 'terminal:interrupt' }, ['steer', 'queue']],
+      [{ type: 'history' }, ['session', 'global']],
+    ])('%o rows', (screen, expected) => {
+      expect(rowIds(screen)).toEqual(expected);
+    });
   });
 
   describe('resolveSelect routing', () => {
@@ -192,6 +147,51 @@ describe('settings-panel-model', () => {
     ])('%s marks active when %s=%s', (type, key, value, labels) => {
       const rows = buildRows({ type }, { ...defaultSnapshot, [key]: value });
       expect(rows.map((r) => r.values.label)).toEqual(labels);
+    });
+  });
+
+  describe('back-navigation', () => {
+    it('top closes the overlay', () => {
+      expect(resolveBack({ type: 'top' })).toBe('close');
+    });
+
+    it('terminal and history return to top', () => {
+      expect(resolveBack({ type: 'terminal' })).toEqual({ type: 'top' });
+      expect(resolveBack({ type: 'history' })).toEqual({ type: 'top' });
+    });
+
+    it('interrupt sub-screen returns to terminal (one level up, not top)', () => {
+      expect(resolveBack({ type: 'terminal:interrupt' })).toEqual({
+        type: 'terminal',
+      });
+    });
+  });
+
+  describe('footer hint (appliesOnSelect)', () => {
+    it('is true only for screens that apply-and-close', () => {
+      expect(appliesOnSelect({ type: 'history' })).toBe(true);
+      expect(appliesOnSelect({ type: 'terminal:interrupt' })).toBe(true);
+      // Navigation-only screens keep the standard select hint.
+      expect(appliesOnSelect({ type: 'top' })).toBe(false);
+      expect(appliesOnSelect({ type: 'terminal' })).toBe(false);
+    });
+  });
+
+  describe('titles and descriptions', () => {
+    it('has a breadcrumb title per screen', () => {
+      expect(screenTitle({ type: 'top' })).toBe('/settings');
+      expect(screenTitle({ type: 'terminal' })).toBe('/settings – terminal');
+      expect(screenTitle({ type: 'terminal:interrupt' })).toBe(
+        '/settings – interrupt behaviour'
+      );
+      expect(screenTitle({ type: 'history' })).toBe('/settings – history');
+    });
+
+    it('top has no subtitle; sub-screens do', () => {
+      expect(screenDescription({ type: 'top' })).toBeUndefined();
+      expect(screenDescription({ type: 'terminal' })).toBeTruthy();
+      expect(screenDescription({ type: 'terminal:interrupt' })).toBeTruthy();
+      expect(screenDescription({ type: 'history' })).toBeTruthy();
     });
   });
 

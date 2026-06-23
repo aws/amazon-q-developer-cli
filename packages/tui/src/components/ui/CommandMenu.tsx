@@ -22,7 +22,11 @@ import {
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
-import { VerbosityTruncationEditor } from './menu/VerbosityTruncationEditor.js';
+import {
+  VerbosityTruncationEditor,
+  truncationConfigKey,
+  type TruncationEditorField,
+} from './menu/VerbosityTruncationEditor.js';
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
 import {
@@ -38,7 +42,7 @@ type PreviewMode = 'mini' | 'expanded' | 'hidden';
 
 // Runtime guard for the `store.previewKey: string` → VerbosityPreviewKey cast.
 // Keep in sync if that union grows a fixture.
-const VERBOSITY_PREVIEW_KEYS: ReadonlySet<VerbosityPreviewKey> = new Set([
+const VERBOSITY_PREVIEW_KEYS: readonly VerbosityPreviewKey[] = [
   'top',
   'density',
   'tool',
@@ -46,7 +50,7 @@ const VERBOSITY_PREVIEW_KEYS: ReadonlySet<VerbosityPreviewKey> = new Set([
   'output',
   'truncation:args',
   'truncation:output',
-]);
+];
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -133,10 +137,11 @@ export const CommandMenu: React.FC = () => {
   // /verbosity density rows: track the highlighted preset so the inline
   // preview can draft-render it; non-preset rows (Custom / back / Cancel)
   // clear the draft so the preview reverts to the saved config.
-  const handleHighlight = (item: { value?: string }) => {
+  const handleHighlight = (item: { label: string }) => {
     if (!activeCommand || activeCommand.command.name !== '/verbosity') return;
-    if (item.value == null) return;
-    const m = item.value.match(
+    const opt = activeCommand.options.find((o) => o.label === item.label);
+    if (!opt) return;
+    const m = opt.value.match(
       /^(?:menu:density:confirm|density:apply):([a-z]+)$/
     );
     setDraftPreset(
@@ -582,10 +587,14 @@ export const CommandMenu: React.FC = () => {
       isSelection &&
       activeCommand.command.meta?.searchable !== false;
 
-    // previewKeys ending in `:edit` swap the menu for the numeric cap editor,
-    // which owns field parsing and routes back via executeCommandWithArg.
+    // Truncation editor mode: previewKey ends in `:edit`. Swap the menu for the
+    // numeric editor, which routes back via executeCommandWithArg on commit.
     const previewKey = activeCommand.previewKey;
-    const isTruncEdit = previewKey?.endsWith(':edit') === true;
+    const truncEditMatch =
+      previewKey &&
+      previewKey.match(
+        /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
+      );
 
     // Lite /verbosity gets the settings panel chrome: a breadcrumb header +
     // divider where the input row sat (LiteLayout hides it; see
@@ -601,16 +610,18 @@ export const CommandMenu: React.FC = () => {
       </Box>
     ) : null;
 
-    if (isTruncEdit) {
+    if (truncEditMatch) {
+      const which = truncEditMatch[1] as TruncationEditorField;
+      const settingKey = truncationConfigKey(which);
       return (
         <Box flexDirection="column">
           {verbosityHeader}
           <VerbosityTruncationEditor
-            previewKey={previewKey}
-            onCommit={(configKey, value) => {
+            which={which}
+            onCommit={(value) => {
               clearCommandInput();
               executeCommandWithArg(
-                `set:${configKey}:${value === null ? 'null' : value}`
+                `set:${settingKey}:${value === null ? 'null' : value}`
               );
             }}
             onCancel={handleActiveCommandClose}
@@ -624,10 +635,7 @@ export const CommandMenu: React.FC = () => {
     const verbosityPreviewKey: VerbosityPreviewKey | null =
       previewKey === 'truncation'
         ? 'top'
-        : previewKey &&
-            VERBOSITY_PREVIEW_KEYS.has(previewKey as VerbosityPreviewKey)
-          ? (previewKey as VerbosityPreviewKey)
-          : null;
+        : (VERBOSITY_PREVIEW_KEYS.find((k) => k === previewKey) ?? null);
 
     // A highlighted density preset draft-renders that preset's display/filters
     // in the preview without persisting; no draft = saved config.
@@ -661,25 +669,28 @@ export const CommandMenu: React.FC = () => {
             label: opt.label,
             description: opt.description ?? '',
             group: opt.group,
-            value: opt.value,
-            hint: opt.hint,
           }))}
           prefix=""
           onSelect={(item) => {
-            if (isSubcommandMenu) {
-              // Prefill the full path; trailing space only when the
-              // sub-command takes args (has a hint).
-              const prefix = `${activeCommand.command.name} ${item.label}`;
-              setCommandInput(item.hint ? `${prefix} ` : prefix);
-              setPromptHint(item.hint ?? null);
-              setActiveCommand(null);
-            } else if (item.hint) {
-              setCommandInput(`${item.label} `);
-              setPromptHint(item.hint);
-              setActiveCommand(null);
-            } else if (item.value != null) {
-              clearCommandInput();
-              executeCommandWithArg(item.value);
+            const opt = activeCommand.options.find(
+              (o) => o.label === item.label
+            );
+            if (opt) {
+              if (isSubcommandMenu) {
+                // Prefill the full path; trailing space only when the
+                // sub-command takes args (has a hint).
+                const prefix = `${activeCommand.command.name} ${opt.label}`;
+                setCommandInput(opt.hint ? `${prefix} ` : prefix);
+                setPromptHint(opt.hint ?? null);
+                setActiveCommand(null);
+              } else if (opt.hint) {
+                setCommandInput(`${opt.label} `);
+                setPromptHint(opt.hint);
+                setActiveCommand(null);
+              } else {
+                clearCommandInput();
+                executeCommandWithArg(opt.value);
+              }
             }
           }}
           onHighlight={handleHighlight}
