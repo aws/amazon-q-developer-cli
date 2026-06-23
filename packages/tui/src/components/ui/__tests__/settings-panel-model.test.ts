@@ -11,7 +11,6 @@
 import { describe, it, expect } from 'bun:test';
 import {
   TOP_ITEMS,
-  TERMINAL_ITEMS,
   buildRows,
   resolveSelect,
   resolveBack,
@@ -76,22 +75,14 @@ describe('settings-panel-model', () => {
   });
 
   describe('sub-screen rows', () => {
-    // Every sub-screen exposes its leaf rows in order (reachability guard).
+    // Every sub-screen exposes its leaf rows in order (reachability guard);
+    // terminal=[newlines,interrupt] pins the interrupt-dropped-out regression.
     it.each<[Screen, string[]]>([
       [{ type: 'terminal' }, ['newlines', 'interrupt']],
       [{ type: 'terminal:interrupt' }, ['steer', 'queue']],
       [{ type: 'history' }, ['session', 'global']],
     ])('%o rows', (screen, expected) => {
       expect(rowIds(screen)).toEqual(expected);
-    });
-
-    // TERMINAL_ITEMS source-of-truth: keeps the newlines/interrupt pair so the
-    // interrupt option can't silently drop out (the original regression).
-    it('TERMINAL_ITEMS lists newlines then interrupt', () => {
-      expect(TERMINAL_ITEMS.map((i) => i.id)).toEqual([
-        'newlines',
-        'interrupt',
-      ]);
     });
   });
 
