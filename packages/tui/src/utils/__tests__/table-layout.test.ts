@@ -9,8 +9,11 @@ import {
 import { visibleWidth } from '../text-width.js';
 
 const len = (s: string) => s.length;
-// eslint-disable-next-line no-control-regex
-const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const ansiSgrRe = new RegExp(`${ESC}\\[[0-9;]*m`, 'g');
+const ansiSgrPrefixRe = new RegExp(`^${ESC}\\[[0-9;]*m`);
+const stripAnsi = (s: string) => s.replace(ansiSgrRe, '');
 
 describe('constrainColumnWidths', () => {
   it('does nothing when columns fit within terminal width', () => {
@@ -113,7 +116,7 @@ describe('wrapCellText', () => {
     for (const chunk of chunks) {
       let idx = chunk.indexOf('\x1b');
       while (idx !== -1) {
-        expect(/^\x1b\[[0-9;]*m/.test(chunk.slice(idx))).toBe(true);
+        expect(ansiSgrPrefixRe.test(chunk.slice(idx))).toBe(true);
         idx = chunk.indexOf('\x1b', idx + 1);
       }
     }
@@ -124,8 +127,13 @@ describe('wrapCellText', () => {
     expect(visibleWidth(link)).toBe(12);
     const chunks = wrapCellText(link, 10, visibleWidth);
     const stripOsc = (s: string) =>
-      // eslint-disable-next-line no-control-regex
-      s.replace(/\x1b\][0-9]*;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+      s.replace(
+        new RegExp(
+          `${ESC}\\][0-9]*;[^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)`,
+          'g'
+        ),
+        ''
+      );
     expect(chunks.map((c) => stripAnsi(stripOsc(c))).join('')).toBe(
       'texttexttext'
     );
