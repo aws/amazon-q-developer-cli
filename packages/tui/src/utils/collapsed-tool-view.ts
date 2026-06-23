@@ -16,6 +16,46 @@ const PREVIEW_MAX = 120;
  *  the prompt/task given to the spawned agent. */
 const SUBAGENT_TOOL_NAMES = new Set(['subagent', 'agent_crew']);
 
+/** Title prefix KAS uses for per-stage subagent wrapper cards. */
+const SUBAGENT_TITLE_PREFIX = 'Sub-agent:';
+
+/** Title KAS uses for the orchestration card. */
+const ORCHESTRATE_SUBAGENT_TITLE = 'Orchestrate Sub-agent';
+
+/**
+ * Whether a tool call is a subagent SPAWN card that KAS surfaces only as a
+ * TITLE form — the "Sub-agent: <role>" per-stage wrappers and the "Orchestrate
+ * Sub-agent" card. Those arrive with kind 'other', bypass SessionTool, and
+ * otherwise fall through to a verbose name/prompt/explanation dump, so they
+ * must always collapse to a one-line prompt preview (in every mode, not just
+ * spec).
+ *
+ * Deliberately does NOT match the snake_case spawn wire names (`subagent`,
+ * `agent_crew`, `orchestrate_subagent`, `invoke_sub_agent`, `Invoke Agent`):
+ * those route to SessionTool, which renders clean live labels (agent counts,
+ * "Spawned agent", shimmer), and intercepting them here would regress that to
+ * a raw collapsed title. The `kind === 'other'` guard both reflects the wire
+ * kind of these KAS cards and avoids a false positive on a coincidental
+ * MCP/user tool that happens to share the title text.
+ */
+export function isSubagentCard(name: string, kind?: ToolKind): boolean {
+  if (kind !== undefined && kind !== 'other') return false;
+  if (name.startsWith(SUBAGENT_TITLE_PREFIX)) return true;
+  if (name === ORCHESTRATE_SUBAGENT_TITLE) return true;
+  return false;
+}
+
+/**
+ * The role substring of a KAS "Sub-agent: <role>" title-form name (trimmed,
+ * possibly empty), or null when `name` is not that form. The agent name lives
+ * in the title itself for these cards, so we surface it as the collapsed
+ * entry's target.
+ */
+function subagentRoleFromTitleName(name: string): string | null {
+  if (!name.startsWith(SUBAGENT_TITLE_PREFIX)) return null;
+  return name.slice(SUBAGENT_TITLE_PREFIX.length).trim();
+}
+
 /** Arg keys, in priority order, whose first line best summarizes a tool call
  *  when its full args are collapsed (spec mode). */
 const PRIMARY_ARG_KEYS = [
@@ -55,6 +95,22 @@ export function resolveToolDisplayName(name: string, kind?: ToolKind): string {
 export function isCollapsibleTool(content?: string): boolean {
   if (isUserInputQuestion(content)) return false;
   return hasArgs(content);
+}
+
+/**
+ * Whether `ToolUseContent` should render a tool call as a collapsed one-line
+ * preview instead of the full render. Collapses when either spec mode hides
+ * all tool args (`hideArgs`) or the call is a subagent spawn card, AND the
+ * call actually has args worth collapsing. Extracted as a pure function so the
+ * render-gate logic is unit-testable without an Ink render harness.
+ */
+export function shouldCollapseToolCard(
+  name: string,
+  kind: ToolKind | undefined,
+  content: string | undefined,
+  hideArgs: boolean
+): boolean {
+  return (hideArgs || isSubagentCard(name, kind)) && isCollapsibleTool(content);
 }
 
 /** True when the tool args parse to a non-empty object — i.e. there is
@@ -115,6 +171,33 @@ export function collapsedToolPreview(
   content: string
 ): CollapsedToolPreview {
   const title = resolveToolDisplayName(name, kind);
+
+  // KAS "Sub-agent: <role>" wrapper cards carry the agent name in the title
+  // itself; normalize to a clean "Subagent" title + role target so they read
+  // like the snake_case `subagent` form instead of dumping their raw args.
+  const role = subagentRoleFromTitleName(name);
+  if (role !== null) {
+    const raw =
+      parseToolArg(content, 'prompt') ?? parseToolArg(content, 'task');
+    return {
+      title: resolveToolDisplayName('subagent'),
+      target: role || undefined,
+      preview: raw ? firstLine(raw) : undefined,
+    };
+  }
+
+  // KAS "Orchestrate Sub-agent" card: keep its title, derive the target from
+  // the spawned agent arg when present.
+  if (name === ORCHESTRATE_SUBAGENT_TITLE) {
+    const target =
+      parseToolArg(content, 'agent') ??
+      parseToolArg(content, 'subagent_type') ??
+      parseToolArg(content, 'name') ??
+      undefined;
+    const raw =
+      parseToolArg(content, 'prompt') ?? parseToolArg(content, 'task');
+    return { title, target, preview: raw ? firstLine(raw) : undefined };
+  }
 
   if (SUBAGENT_TOOL_NAMES.has(name)) {
     const target =

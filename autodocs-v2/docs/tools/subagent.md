@@ -3,10 +3,10 @@ doc_meta:
   title: subagent
   description: Spawn and coordinate multiple AI agents in a pipeline (DAG) with dependency management
   category: tool
-  keywords: [subagent, agent_crew, crew, pipeline, DAG, stages, parallel, blocking, use_subagent, trust, turn-limit]
+  keywords: [subagent, agent_crew, crew, pipeline, DAG, stages, parallel, blocking, use_subagent, trust, turn-limit, fail-fast]
   related: [summary, session-management, agent-configuration]
-  validated: 2026-04-30
-  commit: be2c1347
+  validated: 2026-06-22
+  commit: eb5a9bbac
   status: validated
   testable_headless: true
 ---
@@ -44,6 +44,7 @@ Each stage becomes a session you can monitor via `ctrl+g` in the TUI.
 - Stages with no `depends_on` (or empty array) start immediately in parallel
 - Stages with `depends_on` wait until all named stages complete before starting
 - This forms a DAG (directed acyclic graph) — no circular dependencies allowed
+- **Fail-fast**: If any stage fails, all still-running sibling stages in the group are cancelled and the error is immediately returned to the parent agent. The pipeline does not wait for remaining stages to finish.
 
 ## Examples
 
@@ -132,6 +133,14 @@ No. Subagents cannot spawn additional subagents. The crew tool is only available
 
 No. Subagent sessions terminate when their task completes. The results are returned to the parent agent via the summary tool. You cannot resume a subagent session later.
 
+### What happens when a stage fails?
+
+The pipeline uses fail-fast semantics. If any stage encounters an error, all sibling stages still running in the same group are immediately cancelled, and the error is reported back to the parent agent. This prevents wasted work and ensures the parent can retry or adjust its approach without waiting for other stages to finish.
+
+### What happens if a subagent returns an empty response?
+
+Empty responses are handled gracefully. If a subagent produces an empty response (e.g., due to a model issue), the pipeline degrades to the subagent's last available message instead of treating it as a stage failure. This avoids failing the entire crew for transient issues.
+
 ### Why do I see MCP errors after a subagent completes?
 
 When a subagent session terminates, its MCP server connections close. If the parent agent tries to reference MCP state from the subagent, you may see connection errors. This is expected — each subagent has its own isolated MCP connections that don't outlive the session.
@@ -144,7 +153,7 @@ The stage's `role` doesn't match any entry in `availableAgents`. Add the agent n
 
 ### Pipeline seems stuck
 
-Press `ctrl+g` to monitor stage progress. A stage may be waiting for tool approval or processing a large task.
+Press `ctrl+g` to monitor stage progress. A stage may be waiting for tool approval or processing a large task. If a stage has failed, the pipeline will now fail fast and report the error immediately — you should not see indefinite hangs due to stage failures.
 
 ### Stage doesn't start
 

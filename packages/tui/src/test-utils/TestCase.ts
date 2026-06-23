@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AgentStreamEvent } from '../types/agent-events';
-import type { AppState } from '../stores/app-store';
+import type { SerializedAppState } from './shared/ipc-types';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
 import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
@@ -211,6 +211,19 @@ export class TestCase {
     this.ptyManager.kill();
     this.tuiConnection?.close();
 
+    // Close the IPC listener so its socket / named pipe is released. Without
+    // this the server leaks until the test process exits. On Unix that is
+    // harmless (the next test recreates a fresh socket path), but on Windows
+    // the leaked named pipe keeps its name reserved, so any later test that
+    // reuses the same testName fails to listen (EADDRINUSE).
+    await new Promise<void>((resolve) => {
+      if (!this.ipcServer.listening) {
+        resolve();
+        return;
+      }
+      this.ipcServer.close(() => resolve());
+    });
+
     // Clean up sandbox $KIRO_HOME directory if one was created.
     if (this.sandboxDir) {
       try {
@@ -268,7 +281,7 @@ export class TestCase {
    * Retrieves the current application state from the running TUI process via IPC.
    * This provides direct access to the Zustand store state for assertions.
    *
-   * @returns Promise resolving to the current AppState
+   * @returns Promise resolving to the current SerializedAppState
    * @throws Error if IPC communication fails
    * @example
    * ```typescript
@@ -277,7 +290,7 @@ export class TestCase {
    * expect(state.exitSequence).toBe(1);
    * ```
    */
-  async getStore(): Promise<AppState> {
+  async getStore(): Promise<SerializedAppState> {
     if (!this.tuiConnection) throw new Error('TUI not connected');
 
     const response = await this.tuiConnection.sendCommand({
@@ -351,10 +364,10 @@ export class TestCase {
    * without hand-rolling a polling loop.
    */
   async waitForStore(
-    predicate: (state: AppState) => boolean,
+    predicate: (state: SerializedAppState) => boolean,
     timeoutMs = 30_000,
     pollIntervalMs = 100
-  ): Promise<AppState> {
+  ): Promise<SerializedAppState> {
     const deadline = Date.now() + timeoutMs;
     let state = await this.getStore();
     while (!predicate(state)) {

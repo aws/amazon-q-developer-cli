@@ -31,11 +31,8 @@ import { useTwinkiContext } from 'twinki';
 import { useThinkingMode } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
-
-/** Whether a Model message needs top spacing (every Model except the first after User) */
-function needsModelSpacing(prevRole: MessageRole | undefined): boolean {
-  return prevRole !== undefined && prevRole !== MessageRole.User;
-}
+import { groupMessagesIntoTurns } from '../../utils/group-turns.js';
+import { leadingGap } from '../../utils/message-spacing.js';
 
 /**
  * Resolve prevRole for a message at `index` in a list.
@@ -82,12 +79,18 @@ const StaticMessage = React.memo(function StaticMessage({
 }) {
   const { thinkingMode } = useThinkingMode();
   if (message.role === MessageRole.User) {
+    // Steered (mid-turn injected) messages get a blank line above so it's
+    // clear where the steer landed within the agent's ongoing output. Regular
+    // prompts render via <Message> directly (not here), so this only affects
+    // injected steer bubbles in a turn body.
     return (
-      <Message
-        content={message.content}
-        type={MessageType.DEVELOPER}
-        barColor={agentBarColor}
-      />
+      <Box marginTop={leadingGap(message, prevRole)}>
+        <Message
+          content={message.content}
+          type={MessageType.DEVELOPER}
+          barColor={agentBarColor}
+        />
+      </Box>
     );
   }
   if (message.role === MessageRole.ToolUse) {
@@ -124,10 +127,7 @@ const StaticMessage = React.memo(function StaticMessage({
     if (!message.content && !thinkingText) return null;
     const isShell = 'shellOutput' in message && message.shellOutput;
     return (
-      <Box
-        flexDirection="column"
-        marginTop={needsModelSpacing(prevRole) ? 1 : 0}
-      >
+      <Box flexDirection="column" marginTop={leadingGap(message, prevRole)}>
         {thinkingText && (
           <ThinkingDisplay
             text={thinkingText}
@@ -208,12 +208,13 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
 
         if (message.role === MessageRole.User) {
           return (
-            <Message
-              key={message.id}
-              content={message.content}
-              type={MessageType.DEVELOPER}
-              barColor={agentBarColor}
-            />
+            <Box key={message.id} marginTop={leadingGap(message, prevRole)}>
+              <Message
+                content={message.content}
+                type={MessageType.DEVELOPER}
+                barColor={agentBarColor}
+              />
+            </Box>
           );
         }
         if (message.role === MessageRole.ToolUse) {
@@ -294,7 +295,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           <Box
             key={message.id}
             flexDirection="column"
-            marginTop={needsModelSpacing(prevRole) ? 1 : 0}
+            marginTop={leadingGap(message, prevRole)}
           >
             {thinkingText && (
               <ThinkingDisplay
@@ -345,7 +346,12 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
     isOrphanModel ||
     turn.aiMessages.some(
       (msg) =>
-        msg.role === MessageRole.ToolUse || (msg.content && msg.content !== '')
+        msg.role === MessageRole.ToolUse ||
+        // Only assistant output counts as "content". Steered user bubbles can
+        // live in the body (mid-turn injections) but must not mask a turn that
+        // produced no actual response — otherwise a cancelled turn that had a
+        // steer would hide its "Cancelled" status.
+        (msg.role !== MessageRole.User && !!msg.content && msg.content !== '')
     );
 
   return (
@@ -605,13 +611,21 @@ export const ConversationView = React.memo(function ConversationView() {
     const cache = turnCacheRef.current;
     const msgs = conversationMessages;
 
-    // Find the last User message to detect if a new turn started
+    // Find the last User *prompt* to detect if a new turn started. Steered
+    // (mid-turn injected) user messages don't anchor a turn — they belong to
+    // the prompt already in flight — so skip them. Keeping the anchor on the
+    // prompt also means consuming a steer stays on the fast path (the steer is
+    // picked up by the slice below) instead of forcing a full rebuild.
     let lastUserIdx = -1;
     let lastUserMsgId: string | undefined;
     for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i]?.role === MessageRole.User) {
+      const m = msgs[i];
+      if (
+        m?.role === MessageRole.User &&
+        (m as { steered?: boolean }).steered !== true
+      ) {
         lastUserIdx = i;
-        lastUserMsgId = msgs[i]?.id;
+        lastUserMsgId = m.id;
         break;
       }
     }
@@ -635,30 +649,10 @@ export const ConversationView = React.memo(function ConversationView() {
       return { completedTurns: cache.completedTurns, activeTurn };
     }
 
-    // Full rebuild: new turn started, messages were cleared, or first render
-    const t: ConversationTurn[] = [];
-    let currentTurn: ConversationTurn | null = null;
-    msgs.forEach((msg) => {
-      if (msg.role === MessageRole.User) {
-        if (currentTurn) {
-          currentTurn.isActive = false;
-          t.push(currentTurn);
-        }
-        currentTurn = { userMessage: msg, aiMessages: [], isActive: true };
-      } else if (msg.role === MessageRole.Model && (msg as any).standalone) {
-        if (currentTurn) {
-          currentTurn.isActive = false;
-          t.push(currentTurn);
-          currentTurn = null;
-        }
-        t.push({ userMessage: msg, aiMessages: [], isActive: false });
-      } else if (currentTurn) {
-        currentTurn.aiMessages.push(msg);
-      } else {
-        t.push({ userMessage: msg, aiMessages: [], isActive: false });
-      }
-    });
-    if (currentTurn) t.push(currentTurn);
+    // Full rebuild: new turn started, messages were cleared, or first render.
+    // Steered (mid-turn injected) user messages are folded into their turn's
+    // body rather than opening new turns — see groupMessagesIntoTurns.
+    const t = groupMessagesIntoTurns(msgs);
 
     const completed = t.filter((turn) => !turn.isActive);
     const active = t.find((turn) => turn.isActive);

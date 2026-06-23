@@ -22,7 +22,8 @@ describe('Context skill files', () => {
     await new Promise(resolve => setTimeout(resolve, 500));
   });
 
-  it('shows skill files in /context breakdown', async () => {
+  // Windows: skill:// URI resolution uses forward slashes that don't match Windows paths
+  it.skipIf(process.platform === 'win32')('shows skill files in /context breakdown', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
       .withTestName('context-skill-files')

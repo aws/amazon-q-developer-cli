@@ -1321,3 +1321,106 @@ describe('loadSession effect (legacy /chat dispatch - removed)', () => {
   // v2-handlers/chat.ts and kas-handlers/chat.ts test files.
   it.skip('removed - see v2-handlers/chat tests', () => {});
 });
+
+describe('/spec analyze_requirements effect', () => {
+  const specCmd: SlashCommand = {
+    name: '/spec',
+    description: 'Spec commands',
+    source: 'local' as const,
+    meta: {
+      local: true,
+      subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+    },
+  };
+
+  let workspaceRoot: string;
+  let originalCwd: typeof process.cwd;
+
+  beforeEach(() => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = require('fs');
+    const { tmpdir } = require('os');
+    const { join } = require('path');
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'spec-analyze-test-'));
+    originalCwd = process.cwd;
+    process.cwd = () => workspaceRoot;
+  });
+
+  afterEach(() => {
+    process.cwd = originalCwd;
+    const { rmSync } = require('fs');
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  function makeSpec(featureName: string, files: string[]) {
+    const { mkdirSync, writeFileSync } = require('fs');
+    const { join } = require('path');
+    const dir = join(workspaceRoot, '.kiro', 'specs', featureName);
+    mkdirSync(dir, { recursive: true });
+    for (const file of files) {
+      writeFileSync(join(dir, file), 'content');
+    }
+  }
+
+  it('shows warning when no specs with requirements.md exist', () => {
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    runEffect(specCmd, null, ctx, 'analyze_requirements');
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'No specs with requirements.md found'
+    );
+    expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('warning');
+  });
+
+  it('shows picker when no feature name provided and specs exist', () => {
+    makeSpec('my-feature', ['requirements.md', 'design.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    runEffect(specCmd, null, ctx, 'analyze_requirements');
+    expect(ctx._spies.setActiveCommand).toHaveBeenCalledTimes(1);
+    const call = (ctx._spies.setActiveCommand!.mock.calls as any)[0][0];
+    expect(call.options[0].label).toBe('my-feature');
+    expect(call.options[0].value).toBe('analyze_requirements my-feature');
+  });
+
+  it('shows picker when feature name is not an exact match', () => {
+    makeSpec('agent-skills', ['requirements.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    runEffect(specCmd, null, ctx, 'analyze_requirements agent');
+    expect(ctx._spies.setActiveCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows warning when typed name has no requirements.md and no other specs qualify', () => {
+    makeSpec('no-reqs', ['design.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    runEffect(specCmd, null, ctx, 'analyze_requirements no-reqs');
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'No specs with requirements.md found'
+    );
+    expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('warning');
+  });
+
+  it('switches to spec mode and sends analysis prompt on exact match', async () => {
+    makeSpec('my-feature', ['requirements.md']);
+    const setModeMock = mock(() => Promise.resolve());
+    const ctx = createMockCommandContext({
+      slashCommands: [specCmd],
+      kiro: { setMode: setModeMock },
+    });
+    await runEffect(specCmd, null, ctx, 'analyze_requirements my-feature');
+    expect(setModeMock).toHaveBeenCalledWith('spec');
+    expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
+    const sendCall = (
+      ctx._spies.sendMessage!.mock.calls as any
+    )[0][0] as string;
+    expect(sendCall).toContain('requirements.md');
+    expect(sendCall).toContain('analyze_requirements');
+  });
+
+  it('filters picker to only specs that have requirements.md', () => {
+    makeSpec('has-reqs', ['requirements.md', 'tasks.md']);
+    makeSpec('no-reqs', ['design.md', 'tasks.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    runEffect(specCmd, null, ctx, 'analyze_requirements');
+    const call = (ctx._spies.setActiveCommand!.mock.calls as any)[0][0];
+    expect(call.options).toHaveLength(1);
+    expect(call.options[0].label).toBe('has-reqs');
+  });
+});

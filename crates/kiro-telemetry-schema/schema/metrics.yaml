@@ -294,10 +294,10 @@ metrics:
     temporality: delta
     attributes: [model_class, chat_conversation_type, client_application]
   - name: kiro_cli_context_usage_percentage
-    kind: histogram
+    kind: observable_gauge
     unit: percent
     priority: P1
-    temporality: delta
+    temporality: cumulative
     attributes: [model_class, client_application, is_subagent]
   - name: kiro_cli_metering_event
     kind: log_event

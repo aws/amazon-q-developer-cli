@@ -19,7 +19,6 @@ import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
 } from '../../constants/interrupt-mode.js';
-import type { AgentEngine } from '../../agent-engine.js';
 
 /** Screens (top-level + sub-screens) the panel can display. */
 export type Screen =
@@ -187,8 +186,7 @@ function withActiveMarker(label: string, isActive: boolean): string {
  */
 export function buildRows(
   screen: Screen,
-  settings: SettingsSnapshot,
-  agentEngine: AgentEngine = 'v2'
+  settings: SettingsSnapshot
 ): ExplorerRow[] {
   switch (screen.type) {
     case 'top':
@@ -197,16 +195,10 @@ export function buildRows(
         values: { label: item.label, description: item.description },
       }));
     case 'terminal':
-      return (
-        TERMINAL_ITEMS
-          // KAS ("v3") has no mid-turn steering, so hide the interrupt-behaviour
-          // setting. Revert once KAS supports steering.
-          .filter((item) => agentEngine !== 'kas' || item.id !== 'interrupt')
-          .map((item) => ({
-            id: item.id,
-            values: { label: item.label, description: item.description },
-          }))
-      );
+      return TERMINAL_ITEMS.map((item) => ({
+        id: item.id,
+        values: { label: item.label, description: item.description },
+      }));
     case 'terminal:interrupt':
       return [
         {

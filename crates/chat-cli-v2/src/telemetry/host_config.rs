@@ -19,10 +19,6 @@ use kiro_telemetry_legacy::{
     event_to_otel_metric_records,
 };
 
-use crate::constants::{
-    BREW_CASK_NAME,
-    CLI_NAME,
-};
 use crate::database::Database;
 use crate::os::{
     Env,
@@ -122,7 +118,7 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: uuid::Uu
 /// and has no metadata enrichment path.
 pub fn send_daily_heartbeat(thread: &TelemetryThread) -> Result<(), TelemetryError> {
     let mut event = Event::new(EventType::DailyHeartbeat {
-        install_method: Some(get_install_method(BREW_CASK_NAME, CLI_NAME).to_string()),
+        install_method: Some(get_install_method().to_string()),
     });
     if let Some(client_app) = get_cli_client_application() {
         event.set_client_application(client_app);
@@ -320,7 +316,7 @@ mod test {
     #[test]
     fn daily_heartbeat_otel_record_uses_client_application_label() {
         let mut event = Event::new(EventType::DailyHeartbeat {
-            install_method: Some(get_install_method(BREW_CASK_NAME, CLI_NAME).to_string()),
+            install_method: Some(get_install_method().to_string()),
         });
         event.set_client_application_kind(metric::ClientApplication::ChatCliV2);
         let record = event_to_otel_metric_record(&event).expect("daily heartbeat metric");

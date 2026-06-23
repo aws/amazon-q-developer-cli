@@ -150,6 +150,24 @@ cargo test -p chat_cli_v2
 
 Refer to the [README](./README.md) for full build and run instructions.
 
+### KAS Agent Engine (local development)
+
+The KAS agent engine (`@kiro/agent`) is normally fetched from a private CodeArtifact registry. If you don't have CodeArtifact access, use the `--local-kas` flag which auto-clones and builds kiro-agent for you:
+
+```bash
+cd packages/tui
+bun run dev --local-kas --skip-rust-build
+```
+
+On first run this clones `kiro-team/kiro-agent` into `local/` (gitignored), installs dependencies, builds it, and launches the TUI. Subsequent runs skip the clone/build if the server binary already exists.
+
+To use a specific version:
+
+```bash
+cd local/kiro-agent && git checkout v1.2.3 && npm run build
+bun run dev --local-kas --skip-rust-build
+```
+
 ## Changelog Fragments
 
 Every PR with user-facing changes **must** include a changelog fragment. CI will block your PR if one is missing.

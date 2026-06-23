@@ -1,5 +1,7 @@
 use agent::AgentHandle;
+use agent::agent_loop::protocol::LoopError;
 use agent::protocol::{
+    AgentError,
     AgentEvent,
     AgentStopReason,
     ContentChunk,
@@ -85,6 +87,24 @@ impl BackgroundedResult {
 
 const SUMMARY_FAILSAFE_MSG: &str = "You have not called the summary tool yet. Please call the summary tool now to provide your findings to the main agent before ending your task.";
 
+/// Wrap the subagent's last message when it ended without ever calling the summary tool.
+fn no_summary_fallback(last_message: &str) -> String {
+    format!(
+        "The subagent ended without calling the summary tool. \
+         This is the content of its last message:\n\n{last_message}"
+    )
+}
+
+/// Wrap the subagent's last message when its turn ended in an empty response.
+/// An empty response is not treated as a stage failure: we degrade to the last
+/// available message (which may be empty if the subagent never produced one).
+fn empty_response_fallback(last_message: &str) -> String {
+    format!(
+        "The subagent returned an empty response without calling the summary tool. \
+         This is the content of its last available message:\n\n{last_message}"
+    )
+}
+
 /// Handle an internal prompt for subagent execution.
 ///
 /// Waits for the agent to call the summary tool. If the agent ends its turn without
@@ -103,6 +123,10 @@ pub(crate) async fn handle_internal_prompt(
 
     let mut summary: Option<Summary> = None;
     let mut has_sent_failsafe = false;
+    // The last non-empty assistant message we have seen, used as a graceful
+    // fallback when the subagent never calls the summary tool or ends on an
+    // empty response.
+    let mut last_message: Option<String> = None;
 
     loop {
         match agent.recv().await {
@@ -111,6 +135,15 @@ pub(crate) async fn handle_internal_prompt(
                     summary = Some(s);
                 },
                 AgentEvent::EndTurn(metadata) => {
+                    let turn_text = metadata
+                        .result
+                        .as_ref()
+                        .and_then(|r| r.as_ref().ok())
+                        .map(|msg| msg.text())
+                        .unwrap_or_default();
+                    if !turn_text.is_empty() {
+                        last_message = Some(turn_text);
+                    }
                     if let Some(s) = summary {
                         return Ok(s);
                     } else if !has_sent_failsafe {
@@ -127,16 +160,12 @@ pub(crate) async fn handle_internal_prompt(
                             )));
                         }
                     } else {
-                        // Last resort: extract from final message
-                        let text = metadata
-                            .result
-                            .and_then(|r| r.ok())
-                            .map(|msg| msg.text())
-                            .unwrap_or_default();
+                        // Last resort: the subagent refused to call summary; surface its
+                        // last message instead of erroring.
                         return Ok(Summary {
                             task_description: query,
                             context_summary: None,
-                            task_result: text,
+                            task_result: no_summary_fallback(&last_message.unwrap_or_default()),
                             result_type: None,
                         });
                     }
@@ -154,6 +183,18 @@ pub(crate) async fn handle_internal_prompt(
                     return Err(InternalPromptError::Cancelled);
                 },
                 AgentEvent::Stop(AgentStopReason::Error(e)) => {
+                    // An empty response is not a failure: before empty responses
+                    // started erroring, the subagent would fall back to its last
+                    // message. Preserve that behavior by degrading to the last
+                    // available message instead of failing the stage.
+                    if matches!(&e, AgentError::AgentLoopError(LoopError::EmptyResponse)) {
+                        return Ok(Summary {
+                            task_description: query,
+                            context_summary: None,
+                            task_result: empty_response_fallback(&last_message.unwrap_or_default()),
+                            result_type: None,
+                        });
+                    }
                     return Err(InternalPromptError::Failed(format!("Agent error: {e}")));
                 },
                 _ => {},
@@ -239,7 +280,128 @@ mod tests {
         .expect("Should succeed");
 
         assert_eq!(result.task_description, "test query");
-        assert_eq!(result.task_result, "Task completed successfully");
+        assert_eq!(
+            result.task_result,
+            "The subagent ended without calling the summary tool. \
+             This is the content of its last message:\n\nTask completed successfully"
+        );
         assert!(result.context_summary.is_none());
+    }
+
+    /// A response stream carrying only metering + metadata events and no content.
+    /// The agent layer treats this as an empty response (and retries once).
+    fn empty_response_stream() -> Vec<MockStreamItem> {
+        vec![
+            MockStreamItem::Event(ChatResponseStream::MeteringEvent {
+                usage: Some(0.1),
+                unit: Some("credit".to_string()),
+                unit_plural: Some("credits".to_string()),
+            }),
+            MockStreamItem::Event(ChatResponseStream::MetadataEvent {
+                total_tokens: Some(10),
+                uncached_input_tokens: Some(8),
+                output_tokens: Some(2),
+                cache_read_input_tokens: None,
+                cache_write_input_tokens: None,
+            }),
+        ]
+    }
+
+    async fn spawn_test_agent(registry: &MockResponseRegistryHandle, session_id: &str) -> agent::AgentHandle {
+        let snapshot = agent::types::AgentSnapshot::default();
+        let mock_api_client = ApiClient::new_ipc_mock(registry.clone());
+        let state = Arc::new(RtsState::new(session_id.to_string()));
+        let agent = agent::Agent::new(
+            snapshot,
+            None,
+            None,
+            Arc::new(RtsModel::new(mock_api_client, state)),
+            agent::mcp::McpManager::default().spawn(),
+            true,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        )
+        .await
+        .expect("Failed to create agent");
+        agent.spawn()
+    }
+
+    /// An empty response after the subagent has already produced a message must
+    /// degrade to that last message (wrapped in the fallback template) instead
+    /// of failing the stage.
+    #[tokio::test]
+    async fn empty_response_with_prior_message_degrades_to_last_message() {
+        let registry = MockResponseRegistryHandle::spawn();
+        let session_id = "empty-with-prior";
+        let agent = spawn_test_agent(&registry, session_id).await;
+
+        // Turn 1: real content, but no summary tool — triggers the failsafe re-prompt.
+        registry
+            .push_events(
+                session_id.to_string(),
+                Some(vec![MockStreamItem::Event(
+                    ChatResponseStream::AssistantResponseEvent {
+                        content: "partial findings".to_string(),
+                    },
+                )]),
+            )
+            .await;
+        registry.push_events(session_id.to_string(), None).await;
+
+        // Turn 2 (failsafe) returns empty, and the retry is empty too -> empty-response error.
+        for _ in 0..2 {
+            registry
+                .push_events(session_id.to_string(), Some(empty_response_stream()))
+                .await;
+            registry.push_events(session_id.to_string(), None).await;
+        }
+
+        let result = timeout(
+            Duration::from_secs(5),
+            handle_internal_prompt("test query".to_string(), agent),
+        )
+        .await
+        .expect("Should not timeout")
+        .expect("Empty response should degrade to Ok, not fail");
+
+        assert_eq!(
+            result.task_result,
+            "The subagent returned an empty response without calling the summary tool. \
+             This is the content of its last available message:\n\npartial findings"
+        );
+    }
+
+    /// An empty response with no prior message degrades to an empty body rather
+    /// than failing the stage.
+    #[tokio::test]
+    async fn empty_response_with_no_prior_message_degrades_to_empty() {
+        let registry = MockResponseRegistryHandle::spawn();
+        let session_id = "empty-no-prior";
+        let agent = spawn_test_agent(&registry, session_id).await;
+
+        // First (and only) turn returns empty, retry empty too -> empty-response error.
+        for _ in 0..2 {
+            registry
+                .push_events(session_id.to_string(), Some(empty_response_stream()))
+                .await;
+            registry.push_events(session_id.to_string(), None).await;
+        }
+
+        let result = timeout(
+            Duration::from_secs(5),
+            handle_internal_prompt("test query".to_string(), agent),
+        )
+        .await
+        .expect("Should not timeout")
+        .expect("Empty response should degrade to Ok, not fail");
+
+        assert_eq!(
+            result.task_result,
+            "The subagent returned an empty response without calling the summary tool. \
+             This is the content of its last available message:\n\n"
+        );
     }
 }

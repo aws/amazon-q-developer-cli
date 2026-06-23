@@ -111,24 +111,26 @@ pub async fn handle_session_tool_request(
                 .await;
             Ok("Pending stages registered".to_string())
         },
-        SessionTool::WaitForGroup { group } => {
-            let results = session_tx.wait_for_group_completion(group.clone()).await;
-            let formatted: Vec<serde_json::Value> = results
-                .iter()
-                .map(|r| {
-                    serde_json::json!({
-                        "name": r.name,
-                        "result": r.result.as_deref().unwrap_or("No result"),
-                        "loop_iterations_used": r.loop_iterations_used
+        SessionTool::WaitForGroup { group } => match session_tx.wait_for_group_completion(group.clone()).await {
+            Ok(results) => {
+                let formatted: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "name": r.name,
+                            "result": r.result.as_deref().unwrap_or("No result"),
+                            "loop_iterations_used": r.loop_iterations_used
+                        })
                     })
+                    .collect();
+                Ok(serde_json::json!({
+                    "status": "completed",
+                    "group": group,
+                    "results": formatted
                 })
-                .collect();
-            Ok(serde_json::json!({
-                "status": "completed",
-                "group": group,
-                "results": formatted
-            })
-            .to_string())
+                .to_string())
+            },
+            Err(e) => Err(e),
         },
     };
 

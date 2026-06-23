@@ -377,6 +377,25 @@ impl AgentHandle {
         }
     }
 
+    /// Swap in a freshly-loaded agent config and surgically reconcile its MCP
+    /// servers (start added, stop removed, restart changed, leave unchanged).
+    ///
+    /// Unlike [`swap_agent`](Self::swap_agent), this does not tear down and
+    /// relaunch every server — it only touches servers whose presence or config
+    /// changed. Used by the config file watcher for live, low-churn updates.
+    /// Returns [`AgentError::NotIdle`] if the agent is not idle.
+    pub async fn reconcile_mcp_servers(&self, config: Box<LoadedAgentConfig>) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ReconcileMcpServers(config))
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub fn terminate(&self) {
         _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
@@ -689,10 +708,29 @@ pub struct Agent {
     /// Whether tool search is effectively active (computed from settings + thresholds)
     tool_search_active: bool,
 
-    /// Queued user message for mid-turn steering.
+    /// Queued steering messages for mid-turn injection.
     /// Consumed at the next tool boundary (send_tool_results) or end-of-turn.
-    /// Multiple messages are concatenated with "\n\n".
-    queued_user_message: Option<String>,
+    /// Each steer carries a stable `steer-<uuid>` id so queued/consumed/cleared
+    /// notifications can be correlated by id (matching the KAS contract). When
+    /// drained, the steers' text is concatenated with "\n\n" into a single LLM
+    /// continuation request, while one consume notification is emitted per steer.
+    queued_steers: Vec<QueuedSteer>,
+}
+
+/// A single queued steering message awaiting injection.
+#[derive(Debug, Clone)]
+struct QueuedSteer {
+    /// Stable `steer-<uuid>` id, surfaced on the queued/consumed/cleared
+    /// notifications so clients can track each steer by id.
+    id: String,
+    /// The raw, user-typed steering text (trimmed).
+    text: String,
+}
+
+/// Join queued steers' text into the full queue snapshot (the value carried by
+/// the queued notification and injected into the LLM as a single block).
+fn steer_snapshot(steers: &[QueuedSteer]) -> String {
+    steers.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("\n\n")
 }
 
 impl Agent {
@@ -785,7 +823,7 @@ impl Agent {
             tool_search_config: ToolLoadConfig::from_env(),
             tool_search_activated: HashSet::new(),
             tool_search_active: false,
-            queued_user_message: None,
+            queued_steers: Vec::new(),
         })
     }
 
@@ -1283,6 +1321,7 @@ impl Agent {
             },
             AgentRequest::SwapAgent(args) => self.handle_swap_agent(*args).await,
             AgentRequest::RefreshMcpRegistry(registry) => self.handle_refresh_mcp_registry(registry).await,
+            AgentRequest::ReconcileMcpServers(config) => self.handle_reconcile_mcp_servers(*config).await,
             AgentRequest::CompactConversation => {
                 if !matches!(self.active_state(), ActiveState::Idle) {
                     return Err(AgentError::NotIdle);
@@ -1500,29 +1539,34 @@ impl Agent {
                 if trimmed.is_empty() {
                     return Err(AgentError::Custom("empty steering message".into()));
                 }
-                // Append onto the existing queue, or initialize it.
-                // Successive steers concatenate with "\n\n" and drain
+                // Append onto the existing queue. Successive steers drain
                 // together at the next tool boundary or end of turn.
+                //
+                // Each steer gets a stable `steer-<uuid>` id so the queued,
+                // consumed, and cleared notifications can be correlated by id
+                // (matching the KAS contract).
                 //
                 // No size cap is applied — the human typing rate is the
                 // natural bound. If a runaway front-end becomes a problem
                 // in practice, a cap can be added here.
-                let snapshot = if let Some(existing) = &mut self.queued_user_message {
-                    existing.push_str("\n\n");
-                    existing.push_str(trimmed);
-                    existing.clone()
-                } else {
-                    let s = trimmed.to_string();
-                    self.queued_user_message = Some(s.clone());
-                    s
-                };
-                self.agent_event_buf
-                    .push(AgentEvent::SteeringQueued { message: snapshot });
+                let id = format!("steer-{}", Uuid::new_v4().as_simple());
+                self.queued_steers.push(QueuedSteer {
+                    id: id.clone(),
+                    text: trimmed.to_string(),
+                });
+                // The queued notification carries the full queue snapshot so
+                // consumers overwrite their local copy rather than append.
+                let snapshot = steer_snapshot(&self.queued_steers);
+                self.agent_event_buf.push(AgentEvent::SteeringQueued {
+                    message_id: id,
+                    content: snapshot,
+                });
                 Ok(AgentResponse::Success)
             },
             AgentRequest::ClearSteering => {
-                if self.queued_user_message.take().is_some() {
-                    self.agent_event_buf.push(AgentEvent::SteeringCleared);
+                if !self.queued_steers.is_empty() {
+                    let message_ids = self.queued_steers.drain(..).map(|s| s.id).collect();
+                    self.agent_event_buf.push(AgentEvent::SteeringCleared { message_ids });
                 }
                 Ok(AgentResponse::Success)
             },
@@ -1667,6 +1711,93 @@ impl Agent {
         Ok(AgentResponse::Success)
     }
 
+    /// Swap in a freshly-loaded agent config and surgically reconcile MCP
+    /// servers. See [`AgentHandle::reconcile_mcp_servers`] for caller-side docs.
+    ///
+    /// This is the event-driven, low-churn counterpart to a full swap: it
+    /// computes the minimal launch/stop/restart plan against the currently
+    /// applied configs and leaves unchanged servers running.
+    async fn handle_reconcile_mcp_servers(
+        &mut self,
+        mut config: LoadedAgentConfig,
+    ) -> Result<AgentResponse, AgentError> {
+        // Idle-only: reconcile may stop/restart servers, which would corrupt an
+        // in-progress turn. Callers defer until the next idle window.
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+
+        // Honour MCP governance: a governance-disabled session runs no servers.
+        if !self.settings.mcp_enabled {
+            config.config_mut().clear_mcp_configs();
+        }
+
+        // Keep registry-driven resolution consistent across the swap, exactly
+        // as swap_agent / refresh_mcp_registry do.
+        if let Some(registry) = self.mcp_registry.as_ref() {
+            registry.apply(&mut config);
+        }
+
+        // Build the new desired MCP set from the fresh config (+ legacy mcp.json).
+        let new_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
+            &config,
+            self.local_mcp_path.as_ref(),
+            self.global_mcp_path.as_ref(),
+        )
+        .await;
+
+        // Diff enabled servers: current (applied) vs desired (new). Only enabled
+        // servers should be running, so disabled entries are filtered from both —
+        // a server toggled to disabled drops out of desired and gets stopped.
+        let to_map = |loaded: &LoadedMcpServerConfigs| {
+            loaded
+                .configs
+                .iter()
+                .filter(|c| c.is_enabled())
+                .map(|c| (c.server_name.clone(), c.config.clone()))
+                .collect::<HashMap<String, _>>()
+        };
+        let current = to_map(&self.cached_mcp_configs);
+        let desired = to_map(&new_mcp_configs);
+        let plan = mcp::reconcile::reconcile_mcp(&current, &desired);
+
+        // Apply surgically. Stops first, then restarts (stop + relaunch), then
+        // launches. Unchanged servers are never touched. Launch init proceeds in
+        // the background; the manager promotes servers on the Initialized event,
+        // so we drop the returned receivers here.
+        for name in &plan.stop {
+            if let Err(e) = self.mcp_manager_handle.stop_server(name.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to stop MCP server during reconcile");
+            }
+        }
+        for (name, cfg) in &plan.restart {
+            if let Err(e) = self.mcp_manager_handle.stop_server(name.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to stop MCP server during reconcile restart");
+            }
+            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to relaunch MCP server during reconcile");
+            }
+        }
+        for (name, cfg) in &plan.launch {
+            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+                warn!(server_name = %name, error = %e, "failed to launch MCP server during reconcile");
+            }
+        }
+
+        // Adopt the new config. Only invalidate the tool-spec and resource
+        // caches when the plan actually changed something — a no-op reconcile
+        // (e.g. an unrelated mcp.json touch) must not drop resource
+        // subscriptions or force a tool-spec rebuild.
+        self.agent_config = config;
+        self.cached_mcp_configs = new_mcp_configs;
+        if !plan.is_empty() {
+            self.cached_tool_specs = None;
+            self.session_resource_paths.clear();
+        }
+
+        Ok(AgentResponse::Success)
+    }
+
     /// Handlers for a [AgentRequest::Cancel] request.
     async fn handle_cancel_request(&mut self) -> Result<AgentResponse, AgentError> {
         match self.active_state() {
@@ -1711,8 +1842,9 @@ impl Agent {
         // and replays it as a fresh prompt after cancel resolves ("cancel =
         // redirect" UX). The backend clear ensures a subsequent turn doesn't
         // accidentally inherit stale steering content.
-        if let Some(_cleared) = self.queued_user_message.take() {
-            self.agent_event_buf.push(AgentEvent::SteeringCleared);
+        if !self.queued_steers.is_empty() {
+            let message_ids = self.queued_steers.drain(..).map(|s| s.id).collect();
+            self.agent_event_buf.push(AgentEvent::SteeringCleared { message_ids });
         }
 
         Ok(AgentResponse::Success)
@@ -3544,16 +3676,25 @@ impl Agent {
     /// really ending, so its metering rolls up into the extended turn's
     /// final `EndTurn` instead.
     async fn drain_steering_or_end_turn(&mut self, md: UserTurnMetadata) -> Result<(), AgentError> {
-        if let Some(steering) = self.queued_user_message.take() {
-            self.agent_event_buf.push(AgentEvent::SteeringConsumed {
-                content: steering.clone(),
-            });
+        if !self.queued_steers.is_empty() {
+            let steers = std::mem::take(&mut self.queued_steers);
+            // Emit one consume notification per steer (carrying its id + raw
+            // text) so clients can reconcile each queued steer by id, matching
+            // the KAS contract. The drained text is still concatenated into a
+            // single LLM continuation request below.
+            let snapshot = steer_snapshot(&steers);
+            for steer in steers {
+                self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                    message_id: steer.id,
+                    content: steer.text,
+                });
+            }
             // Extend the existing agent loop (still alive in UserTurnEnded
             // state) with the drained content. This mirrors the stop-hook
             // block path above: reuse the loop rather than spawning a new
             // one, so the drained content is "continuation of the same
             // user turn" semantically.
-            let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(steering)], None);
+            let pending = PendingUserMessage::new_prompt(vec![ContentBlock::Text(snapshot)], None);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -3621,11 +3762,20 @@ impl Agent {
             }
         }
 
-        // Drain queued steering message and append as user content
-        if let Some(steering) = self.queued_user_message.take() {
-            content.push(ContentBlock::Text(format_steering_message(&steering)));
-            self.agent_event_buf
-                .push(AgentEvent::SteeringConsumed { content: steering });
+        // Drain queued steering messages and append as user content.
+        // The combined snapshot becomes a single LLM content block, while one
+        // consume notification is emitted per steer (id + raw text) to match
+        // the KAS contract's per-message identity tracking.
+        if !self.queued_steers.is_empty() {
+            let steers = std::mem::take(&mut self.queued_steers);
+            let snapshot = steer_snapshot(&steers);
+            content.push(ContentBlock::Text(format_steering_message(&snapshot)));
+            for steer in steers {
+                self.agent_event_buf.push(AgentEvent::SteeringConsumed {
+                    message_id: steer.id,
+                    content: steer.text,
+                });
+            }
         }
 
         let pending = PendingUserMessage::new_tool_results(content.clone(), results);
@@ -4176,7 +4326,13 @@ where
                         continue;
                     };
                     if entry.is_file() {
-                        let entry_path_str = entry.to_string_lossy().to_string();
+                        // Canonicalize before deduping so a glob hit collapses with an
+                        // explicitly-listed file (which is canonicalized in the `File` arm).
+                        // Without this, the same file loads twice whenever the literal glob
+                        // path differs from the canonical path (e.g. a symlinked cwd such as
+                        // macOS `/tmp` -> `/private/tmp`).
+                        let entry_path_str = canonicalize_path_sys(entry.to_string_lossy(), provider)
+                            .unwrap_or_else(|_| entry.to_string_lossy().to_string());
                         if !seen_files.insert(entry_path_str.clone()) {
                             continue;
                         }
@@ -4221,7 +4377,11 @@ where
                     };
                     if entry.is_file() {
                         let file_path_str = entry.to_string_lossy().to_string();
-                        if !seen_skills.insert(file_path_str.clone()) {
+                        // Canonicalize the dedup key so a glob hit collapses with an
+                        // explicitly-listed skill (canonicalized in the `Skill` arm).
+                        let dedup_key =
+                            canonicalize_path_sys(&file_path_str, provider).unwrap_or_else(|_| file_path_str.clone());
+                        if !seen_skills.insert(dedup_key) {
                             continue;
                         }
                         let Ok((content, _)) =
@@ -4650,6 +4810,40 @@ mod tests {
                 .iter()
                 .map(|r| (&r.config_value, &r.file_path))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// Regression for the 2.7 double-load bug: a file listed explicitly and the
+    /// same file matched by an injected absolute-path glob must not load twice.
+    /// `append_default_agent_resources` injects steering as a `file://<cwd>/.kiro/steering/**/*.md`
+    /// glob; a user agent that also lists a specific steering file would get it twice
+    /// because glob entries were deduped by their raw (non-canonical) path while
+    /// explicit entries are canonicalized. When the glob reaches the file through a
+    /// symlinked path component the two keys differ and dedup fails. Canonicalizing
+    /// glob entries before the dedup check fixes it.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_collect_resources_dedupes_glob_through_symlink() {
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/steering/a.md", "# Steering A"))
+            .await;
+
+        let real_steering = base.join(".kiro/steering");
+        let link_steering = base.join("linksteer");
+        std::os::unix::fs::symlink(&real_steering, &link_steering).unwrap();
+
+        // Explicit canonical file + a glob reaching the same file via the symlink.
+        let explicit = format!("file://{}", real_steering.join("a.md").display());
+        let glob = format!("file://{}/*.md", link_steering.display());
+
+        let (resources, _skills) = collect_resources([explicit, glob], &base).await;
+
+        assert_eq!(
+            resources.len(),
+            1,
+            "explicit file and glob-through-symlink should dedup to one Resource, got: {:?}",
+            resources.iter().map(|r| &r.file_path).collect::<Vec<_>>()
         );
     }
 

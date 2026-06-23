@@ -108,6 +108,7 @@ export function createMockCommandContext(
     openArtifactView: spy('openArtifactView') as any,
     clearMessages: spy('clearMessages') as any,
     resetMessages: spy('resetMessages') as any,
+    markMessagesFromHistory: spy('markMessagesFromHistory') as any,
     bumpLiteScrollbackClear: spy('bumpLiteScrollbackClear') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,

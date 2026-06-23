@@ -6,7 +6,7 @@ import { E2ETestCase } from './E2ETestCase';
 const SRC = path.join(__dirname, '..', 'src');
 
 function handleSessionUpdateSource(): string {
-  const src = fs.readFileSync(path.join(SRC, 'acp-client.ts'), 'utf8');
+  const src = fs.readFileSync(path.join(SRC, 'acp-client.ts'), 'utf8').replace(/\r\n/g, '\n');
   const fnStart = src.indexOf('handleSessionUpdate');
   const fnEnd = src.indexOf('\n  }\n}', fnStart);
   expect(fnStart).toBeGreaterThanOrEqual(0);

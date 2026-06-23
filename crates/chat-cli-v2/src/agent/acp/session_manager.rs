@@ -120,6 +120,83 @@ pub struct StartSessionResult {
     pub web_tools_enabled: bool,
 }
 
+/// Whether a changed path is a config file we care about: an agent config
+/// (lives under an `agents`/`cli-agents` directory) or an `mcp.json`. Keeps
+/// the watched config directories from triggering reloads on unrelated files.
+fn is_relevant_config_path(path: &std::path::Path) -> bool {
+    if path.file_name().is_some_and(|n| n == "mcp.json") {
+        return true;
+    }
+    // Agent configs are JSON files under an `agents`/`cli-agents` directory.
+    // Require a `.json` extension so unrelated file types in those dirs (logs,
+    // editor temp files) don't trigger reloads. Extension-less paths (e.g.
+    // directory create/remove events) pass so a newly-created agents dir is
+    // still noticed.
+    path.extension().is_none_or(|e| e == "json")
+        && path
+            .components()
+            .any(|c| matches!(c.as_os_str().to_str(), Some("agents" | "cli-agents")))
+}
+
+/// Resolve the directories to watch for config hot-reload.
+///
+/// V2 agents live in `.kiro/agents` (workspace) and `~/.kiro/agents` (global);
+/// these paths come from `PathResolver` so they can't drift from the loader.
+/// The legacy `.amazonq` / `~/.aws/amazonq` "cli-agents" locations are read-only
+/// migration fallbacks (Q-CLI), not V2-native, so they are deliberately not
+/// watched.
+///
+/// Kiro owns `~/.kiro`, so the global agents dir is created here and watched
+/// live — a fresh install hot-reloads without a restart and without the noisy
+/// `$HOME` sentinel the previous design used. The workspace `.kiro/agents` dir
+/// is only materialized when its `.kiro` parent already exists, so we never
+/// create `.kiro` in an arbitrary working directory. `mcp.json` parents are
+/// watched only if they already exist. Returns existing, deduplicated dirs;
+/// each is watched non-recursively.
+fn resolve_watch_targets(
+    workspace_agents_dir: Option<&std::path::Path>,
+    global_agents_dir: Option<&std::path::Path>,
+    local_mcp_path: Option<&std::path::Path>,
+    global_mcp_path: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
+    let mut targets: Vec<PathBuf> = Vec::new();
+
+    // Global agents dir: kiro-owned, created so it's watched live from a fresh install.
+    if let Some(global) = global_agents_dir {
+        let _ = std::fs::create_dir_all(global);
+        targets.push(global.to_path_buf());
+    }
+
+    // Workspace `.kiro/agents`: only materialized when its `.kiro` parent already
+    // exists — never create `.kiro` in an arbitrary working directory.
+    if let Some(workspace) = workspace_agents_dir {
+        if workspace.parent().is_some_and(|kiro| kiro.exists()) {
+            let _ = std::fs::create_dir_all(workspace);
+        }
+        targets.push(workspace.to_path_buf());
+    }
+
+    // mcp.json parents — watched only if they already exist.
+    for parent in [local_mcp_path, global_mcp_path]
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.parent())
+    {
+        targets.push(parent.to_path_buf());
+    }
+
+    // Watch only dirs that exist (the kiro-owned ones we just created always
+    // will), deduplicated.
+    let mut resolved: Vec<PathBuf> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for t in targets {
+        if t.exists() && seen.insert(t.clone()) {
+            resolved.push(t);
+        }
+    }
+    resolved
+}
+
 /// Result returned when spawning an orchestrated session.
 #[derive(Debug, Clone)]
 pub struct SpawnOrchestratedResult {
@@ -279,9 +356,22 @@ impl SessionManagerBuilder {
                                     );
                                     Some(registry)
                                 },
-                                Err(e) => {
-                                    error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
-                                    Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
+                                Err(first_err) => {
+                                    tracing::warn!(%first_err, "Registry fetch failed, retrying in 1s");
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    match client.fetch_registry(&registry_url).await {
+                                        Ok(registry) => {
+                                            info!(
+                                                servers = registry.servers.len(),
+                                                "Fetched MCP registry from {} (retry)", registry_url
+                                            );
+                                            Some(registry)
+                                        },
+                                        Err(e) => {
+                                            error!(%e, "Failed to fetch MCP registry — registry servers disabled for this session");
+                                            Some(crate::mcp_registry::McpRegistryResponse { servers: vec![] })
+                                        },
+                                    }
                                 },
                             };
                             (true, registry_data, Some(registry_url), web_tools_enabled, false)
@@ -366,6 +456,95 @@ impl SessionManagerBuilder {
                 })
                 .unwrap_or_default();
 
+            // Spawn file watcher for agent config directories (debounced reload on change)
+            if std::env::var(KIRO_TEST_MODE).is_err() {
+                let sm_handle = session_manager_handle_clone.clone();
+                let watch_targets = {
+                    // Resolve agent dirs via the shared PathResolver (same source
+                    // the caller/loader use) so the watcher can't drift. We watch
+                    // the V2 kiro location only — `agents_dir_for_create()` returns
+                    // `.kiro/agents` without the legacy cli-agents migration fallback.
+                    let resolver = crate::util::paths::PathResolver::new(&os);
+                    resolve_watch_targets(
+                        resolver.workspace().agents_dir_for_create().ok().as_deref(),
+                        resolver.global().agents_dir_for_create().ok().as_deref(),
+                        local_mcp_path.as_deref(),
+                        global_mcp_path.as_deref(),
+                    )
+                };
+
+                if !watch_targets.is_empty() {
+                    // ponytail: the watcher task lives for the process lifetime — there is
+                    // no shutdown handle. Fine for today's single, long-lived session
+                    // manager; add a cancellation token if managers become reconstructable.
+                    tokio::spawn(async move {
+                        use notify::{
+                            RecursiveMode,
+                            Watcher,
+                        };
+
+                        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+                        let mut watcher = match notify::RecommendedWatcher::new(
+                            move |res: Result<notify::Event, notify::Error>| {
+                                if let Ok(event) = res {
+                                    // Only trigger on content changes, not metadata
+                                    if matches!(
+                                        event.kind,
+                                        notify::EventKind::Create(_)
+                                            | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+                                            | notify::EventKind::Remove(_)
+                                    ) && event.paths.iter().any(|p| is_relevant_config_path(p))
+                                    {
+                                        // Coalescing signal: the consumer only cares that
+                                        // *something* changed and debounces, so a full channel
+                                        // is benign. Trace-log the drop to aid debugging.
+                                        if let Err(e) = tx.try_send(()) {
+                                            tracing::trace!(
+                                                ?e,
+                                                "config watcher: change-signal channel full, coalescing"
+                                            );
+                                        }
+                                    }
+                                }
+                            },
+                            notify::Config::default(),
+                        ) {
+                            Ok(w) => w,
+                            Err(e) => {
+                                warn!(%e, "Failed to create agent config file watcher");
+                                return;
+                            },
+                        };
+
+                        for dir in &watch_targets {
+                            // Non-recursive: V2 agent dirs are flat and mcp.json is a
+                            // direct child of its watched parent.
+                            if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+                                warn!(?dir, %e, "Failed to watch config path");
+                            } else {
+                                info!(?dir, "Watching config path for changes");
+                            }
+                        }
+
+                        // Debounce: wait 500ms after last event before reloading
+                        loop {
+                            if rx.recv().await.is_none() {
+                                break;
+                            }
+                            // Drain rapid-fire events and wait for quiescence
+                            while let Ok(Some(())) =
+                                tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await
+                            {
+                            }
+                            info!("Agent config file change detected, reloading");
+                            if let Err(e) = sm_handle.reload_agent_configs().await {
+                                error!(%e, "Failed to send agent config reload request");
+                            }
+                        }
+                    });
+                }
+            }
+
             let mut session_manager = SessionManager::new(
                 agent_configs,
                 agent_config_errors,
@@ -413,8 +592,12 @@ pub struct GroupStageResult {
     pub loop_iterations_used: u32,
 }
 
+/// Result delivered to a blocking group waiter: stage results on success, or a
+/// human-readable error string when a stage fails (fail-fast).
+type GroupCompletionResult = Result<Vec<GroupStageResult>, String>;
+
 /// Sender for group completion notifications.
-type GroupCompletionSender = oneshot::Sender<Vec<GroupStageResult>>;
+type GroupCompletionSender = oneshot::Sender<GroupCompletionResult>;
 
 /// Manages session lifecycle (creation, retrieval, termination).
 #[derive(Debug)]
@@ -463,6 +646,10 @@ pub struct SessionManager {
     connection_cx: Option<ConnectionTo<sacp::Client>>,
     /// Pending group completion waiters: group_name -> sender
     group_completion_waiters: HashMap<String, GroupCompletionSender>,
+    /// Map of group_name -> error message. Records a stage failure that occurs
+    /// before the parent registers its blocking waiter; drained by the next
+    /// WaitForGroupCompletion so the parent's tool fails fast instead of hanging.
+    group_failures: HashMap<String, String>,
     /// V1 session exporter for lazy migration of V1 conversations.
     legacy_session_exporter: Arc<dyn LegacySessionExporter>,
     /// Agent config errors encountered during loading at startup.
@@ -537,6 +724,7 @@ impl SessionManager {
             groups: HashMap::new(),
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
+            group_failures: HashMap::new(),
             legacy_session_exporter,
             agent_config_errors,
             mcp_registry_data,
@@ -555,6 +743,24 @@ impl SessionManager {
     ///
     /// If a leaf node has failed, its result, along with its parents results are included in the
     /// group result to be returned by this function. This is to help the main agent retry.
+    /// Select the sessions in `group` that must be actively cancelled when a
+    /// stage fails fast: every session in the group that is still running and is
+    /// not the failed stage itself. Already-terminated stages have nothing to
+    /// cancel, and the failed stage is excluded so it is never targeted twice.
+    fn siblings_to_cancel(
+        orchestrated_sessions: &HashMap<String, OrchestratedSession>,
+        group: &str,
+        failed_stage: &str,
+    ) -> Vec<SessionId> {
+        orchestrated_sessions
+            .values()
+            .filter(|s| s.group.as_deref() == Some(group))
+            .filter(|s| s.name != failed_stage)
+            .filter(|s| s.status != SessionStatus::Terminated)
+            .map(|s| s.session_id.clone())
+            .collect()
+    }
+
     fn collect_group_results(&self, group_name: &str) -> Vec<GroupStageResult> {
         let group: Vec<_> = self
             .orchestrated_sessions
@@ -641,6 +847,74 @@ impl SessionManager {
             .map_err(|e| sacp::util::internal_error(format!("Failed to swap agent: {}", e)))?;
 
         Ok(())
+    }
+
+    async fn handle_reload_agent_configs(&mut self) {
+        info!("Reloading agent configs from disk");
+        match load_agents(&RealProvider).await {
+            Ok((mut configs, errors)) => {
+                // Re-apply MCP governance if MCP is disabled
+                if !self.mcp_enabled {
+                    for cfg in &mut configs {
+                        cfg.config_mut().clear_mcp_configs();
+                    }
+                }
+                let loaded_count = configs.len();
+                let error_count = errors.len();
+                for err in &errors {
+                    error!(%err, "Agent config error during reload");
+                }
+                self.agent_configs = configs;
+                self.agent_config_errors = errors
+                    .into_iter()
+                    .map(|e| match e {
+                        agent::agent_config::AgentConfigError::InvalidAgentConfig { path, message } => {
+                            AgentConfigLoadError {
+                                path: Some(path),
+                                message,
+                            }
+                        },
+                        other => AgentConfigLoadError {
+                            path: None,
+                            message: other.to_string(),
+                        },
+                    })
+                    .collect();
+
+                info!(loaded_count, error_count, "Agent configs reloaded");
+
+                // Push updated configs to active sessions
+                let mut available_agents: Vec<AgentInfo> = self
+                    .agent_configs
+                    .iter()
+                    .map(|c| AgentInfo {
+                        name: c.name().to_string(),
+                        description: c.config().description().map(|s| s.to_string()),
+                        source: match c.source() {
+                            agent::agent_config::ConfigSource::Workspace { .. } => "Workspace".to_string(),
+                            agent::agent_config::ConfigSource::Global { .. } => "Global".to_string(),
+                            agent::agent_config::ConfigSource::BuiltIn => "Built-in".to_string(),
+                            agent::agent_config::ConfigSource::Ephemeral => "".to_string(),
+                        },
+                        welcome_message: c.config().welcome_message().map(|s| s.to_string()),
+                    })
+                    .collect();
+                let mut seen = std::collections::HashSet::new();
+                available_agents.retain(|a| seen.insert(a.name.clone()));
+
+                for (session_id, session_handle) in &self.sessions {
+                    if let Err(e) = session_handle
+                        .refresh_agent_configs(self.agent_configs.clone(), available_agents.clone())
+                        .await
+                    {
+                        warn!(?session_id, %e, "Failed to push agent configs to session");
+                    }
+                }
+            },
+            Err(e) => {
+                error!(%e, "Failed to reload agent configs");
+            },
+        }
     }
 
     async fn handle_refresh_registry(&mut self, registry: crate::mcp_registry::McpRegistryResponse) {
@@ -1076,6 +1350,12 @@ impl SessionManager {
                 version,
                 resp_sender,
             } => {
+                // Stamp the driving ACP client name so child `aws` CLI invocations carry an
+                // `acp-client/<name>` userAgent token for CloudTrail attribution. This is
+                // intentionally separate from `KIRO_CLI_CLIENT_APPLICATION`, telemetry, and the
+                // SDK user-agent interceptor, none of which are touched here. The sanitize+stamp
+                // lives in `stamp_acp_client_name`; telemetry below still receives the RAW name.
+                stamp_acp_client_name(&self.os.env, &name);
                 self.acp_client_info = Some(crate::telemetry::AcpClientInfo::new(name, version));
                 _ = resp_sender.send(Ok(()));
             },
@@ -1319,8 +1599,9 @@ impl SessionManager {
                             self.send_subagent_list_update().await;
                             if let Some(waiter) = self.group_completion_waiters.remove(&group) {
                                 let results = self.collect_group_results(&group);
-                                let _ = waiter.send(results);
+                                let _ = waiter.send(Ok(results));
                             }
+                            self.group_failures.remove(&group);
                             self.orchestrated_sessions
                                 .retain(|_, s| s.group.as_deref() != Some(&group));
                             self.groups.remove(&group);
@@ -1346,23 +1627,74 @@ impl SessionManager {
                 group_name,
                 resp_sender,
             } => {
-                // Check if all sessions in group are already terminated
-                let all_done = self
-                    .orchestrated_sessions
-                    .values()
-                    .filter(|s| s.group.as_deref() == Some(&group_name))
-                    .all(|s| s.status == SessionStatus::Terminated);
-                if all_done {
-                    let results = self.collect_group_results(&group_name);
-                    let _ = resp_sender.send(results);
-                    // Clean up completed group
+                // A stage may have already failed before this waiter registered.
+                if let Some(error) = self.group_failures.remove(&group_name) {
+                    let _ = resp_sender.send(Err(error));
                     self.orchestrated_sessions
                         .retain(|_, s| s.group.as_deref() != Some(&group_name));
                     self.groups.remove(&group_name);
                 } else {
-                    // Store waiter — will be fired when last session terminates
-                    self.group_completion_waiters.insert(group_name, resp_sender);
+                    // Check if all sessions in group are already terminated
+                    let all_done = self
+                        .orchestrated_sessions
+                        .values()
+                        .filter(|s| s.group.as_deref() == Some(&group_name))
+                        .all(|s| s.status == SessionStatus::Terminated);
+                    if all_done {
+                        let results = self.collect_group_results(&group_name);
+                        let _ = resp_sender.send(Ok(results));
+                        // Clean up completed group
+                        self.orchestrated_sessions
+                            .retain(|_, s| s.group.as_deref() != Some(&group_name));
+                        self.groups.remove(&group_name);
+                    } else {
+                        // Store waiter — will be fired when last session terminates
+                        self.group_completion_waiters.insert(group_name, resp_sender);
+                    }
                 }
+            },
+            SessionManagerRequestData::FailGroup {
+                group_name,
+                stage_name,
+                error,
+                resp_sender,
+            } => {
+                let message = format!("stage '{}' failed: {}", stage_name, error);
+                // Surface final state to the TUI before tearing the group down.
+                self.send_subagent_list_update().await;
+                if let Some(waiter) = self.group_completion_waiters.remove(&group_name) {
+                    let _ = waiter.send(Err(message));
+                } else if self.groups.contains_key(&group_name) {
+                    // Waiter not registered yet, but the group is still live, so
+                    // a WaitForGroupCompletion is still expected — record the
+                    // failure so it fails fast. If the group is already gone
+                    // (e.g. another path already completed it, or this is a
+                    // late/duplicate failure), do NOT record: the group key is
+                    // reused across crews with the same task, and a stale entry
+                    // would poison the next same-task crew.
+                    self.group_failures.insert(group_name.clone(), message);
+                }
+                // Abandon the rest of the group: any sibling stages still
+                // running are actively cancelled, so they cannot keep consuming
+                // resources or deliver a late result to a parent whose crew tool
+                // has already returned.
+                let siblings = Self::siblings_to_cancel(&self.orchestrated_sessions, &group_name, &stage_name);
+                for sibling_id in siblings {
+                    if let Some(handle) = self.sessions.remove(&sibling_id)
+                        && tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
+                            .await
+                            .is_err()
+                    {
+                        warn!(
+                            ?sibling_id,
+                            "Sibling session did not shut down within timeout during group failure"
+                        );
+                    }
+                }
+                self.orchestrated_sessions
+                    .retain(|_, s| s.group.as_deref() != Some(&group_name));
+                self.groups.remove(&group_name);
+                _ = resp_sender.send(());
             },
             // --- Orchestration handlers ---
             SessionManagerRequestData::SpawnOrchestratedSession {
@@ -1513,6 +1845,10 @@ impl SessionManager {
             SessionManagerRequestData::GetRegistryData { resp_sender } => {
                 _ = resp_sender.send(self.mcp_registry_data.clone());
             },
+            SessionManagerRequestData::ReloadAgentConfigs { resp_sender } => {
+                self.handle_reload_agent_configs().await;
+                _ = resp_sender.send(());
+            },
         }
     }
 
@@ -1600,6 +1936,7 @@ impl SessionManager {
         });
 
         // Store orchestrated session metadata
+        let group_name_for_task = group_name.clone();
         let orch_session = OrchestratedSession {
             session_id: new_session_id.clone(),
             name: session_name.clone(),
@@ -1635,6 +1972,7 @@ impl SessionManager {
         let agent_str = agent_name.to_string();
         let task_str = task.to_string();
         let session_name_clone = session_name.clone();
+        let group_name_clone = group_name_for_task;
         let parent_sid = parent_session_id.clone();
         let embedded_msg = format!(
             "You are '{}' — an orchestrated session.\nYour task: {}\n{}\nWhen your task is complete, call the summary tool with your findings.",
@@ -1698,15 +2036,22 @@ impl SessionManager {
                             if persistent {
                                 session_tx.update_session_status(&new_sid, SessionStatus::Idle).await;
                             } else {
-                                session_tx
-                                    .update_session_status(&new_sid, SessionStatus::Terminated)
-                                    .await;
+                                // Mark terminated via terminate_session (which also prunes
+                                // dependents). We intentionally do NOT call
+                                // update_session_status(Terminated) here: its group-completion
+                                // check cannot tell a failed stage (no result) from a
+                                // successful one and would fire the waiter with a spurious
+                                // "Ok/empty" result before fail_group can report the error.
                                 session_tx.terminate_session(&new_sid).await;
                             }
-                            // Only trigger next DAG stages on real failures, not cancellation
+                            // Fail-fast: a stage failed, so the blocking pipeline cannot
+                            // complete. Abort the group's wait with an error instead of
+                            // leaving the parent's subagent tool hanging on pruned
+                            // dependents. Cancellation is driven by the parent itself, so
+                            // it does not fail the group.
                             if !cancelled {
                                 session_tx
-                                    .trigger_pending_stages(&session_name_clone, &parent_sid)
+                                    .fail_group(&group_name_clone, &session_name_clone, &e.to_string())
                                     .await;
                             }
                         },
@@ -1720,7 +2065,7 @@ impl SessionManager {
                         .update_session_status(&new_sid, SessionStatus::Terminated)
                         .await;
                     session_tx
-                        .trigger_pending_stages(&session_name_clone, &parent_sid)
+                        .fail_group(&group_name_clone, &session_name_clone, &e.to_string())
                         .await;
                 },
             }
@@ -2523,7 +2868,13 @@ pub(crate) enum SessionManagerRequestData {
     },
     WaitForGroupCompletion {
         group_name: String,
-        resp_sender: oneshot::Sender<Vec<GroupStageResult>>,
+        resp_sender: oneshot::Sender<GroupCompletionResult>,
+    },
+    FailGroup {
+        group_name: String,
+        stage_name: String,
+        error: String,
+        resp_sender: oneshot::Sender<()>,
     },
     // --- Orchestration requests ---
     SpawnOrchestratedSession {
@@ -2597,6 +2948,9 @@ pub(crate) enum SessionManagerRequestData {
     },
     GetRegistryData {
         resp_sender: oneshot::Sender<Option<crate::mcp_registry::McpRegistryResponse>>,
+    },
+    ReloadAgentConfigs {
+        resp_sender: oneshot::Sender<()>,
     },
 }
 
@@ -2891,7 +3245,7 @@ impl SessionManagerHandle {
     }
 
     /// Wait for all sessions in a group to complete. Blocks until all are Terminated.
-    pub async fn wait_for_group_completion(&self, group_name: String) -> Vec<GroupStageResult> {
+    pub async fn wait_for_group_completion(&self, group_name: String) -> GroupCompletionResult {
         let (resp_sender, rx) = oneshot::channel();
         let _ = self
             .tx
@@ -2903,7 +3257,28 @@ impl SessionManagerHandle {
                 },
             })
             .await;
-        rx.await.unwrap_or_default()
+        rx.await
+            .unwrap_or_else(|_| Err("Group wait channel dropped".to_string()))
+    }
+
+    /// Fail-fast: a stage in a blocking group failed. Abort the group's wait
+    /// with an error so the parent's `subagent` tool returns instead of hanging
+    /// on pruned dependents.
+    pub async fn fail_group(&self, group: &str, stage_name: &str, error: &str) {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::FailGroup {
+                    group_name: group.to_string(),
+                    stage_name: stage_name.to_string(),
+                    error: error.to_string(),
+                    resp_sender,
+                },
+            })
+            .await;
+        let _ = rx.await;
     }
 
     /// Store pending DAG stages for a crew group.
@@ -3229,11 +3604,99 @@ impl SessionManagerHandle {
             .ok()?;
         rx.await.ok()?
     }
+
+    pub async fn reload_agent_configs(&self) -> Result<(), sacp::Error> {
+        let (resp_sender, rx) = oneshot::channel();
+        self.tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::ReloadAgentConfigs { resp_sender },
+            })
+            .await
+            .map_err(|_e| sacp::util::internal_error("Failed to send reload request"))?;
+        rx.await
+            .map_err(|_e| sacp::util::internal_error("Failed to receive reload response"))
+    }
+}
+
+/// Stamps the sanitized driving ACP client name into the process environment so
+/// that child `aws` CLI invocations carry an `acp-client/<name>` userAgent token
+/// for CloudTrail attribution.
+///
+/// The `name` from `Initialize` is attacker-controlled, so it is sanitized first
+/// (length-capped, and stripped of NUL — which would panic `set_var` — plus
+/// spaces and `/`, which could otherwise forge extra userAgent tokens). A name
+/// with nothing usable left (e.g. `"///"`) clears any previously-set value so a
+/// stale name can't persist across a re-`Initialize`. Only
+/// `ACP_CLIENT_NAME_ENV_VAR` is touched; telemetry and
+/// `KIRO_CLI_CLIENT_APPLICATION` are unaffected.
+fn stamp_acp_client_name(env: &crate::os::Env, name: &str) {
+    // SAFETY (both arms): called early during session init — same risk profile
+    // as the other `set_var` calls in this codebase (e.g.
+    // `env_var::publish_session_id`).
+    match agent::util::sanitize_acp_client_name(name) {
+        Some(sanitized) => unsafe {
+            env.set_var(agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR, &sanitized);
+        },
+        // Nothing usable in `name`: clear any prior value rather than leaving a
+        // stale one behind. `Env` exposes no `remove_var`, so we set an empty
+        // string; the user-agent formatter omits empty values via its
+        // `!is_empty()` guard, making an empty value equivalent to unset.
+        None => unsafe {
+            env.set_var(agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR, "");
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use agent::util::truncate_safe;
+
+    #[test]
+    fn test_is_relevant_config_path() {
+        use std::path::Path;
+        let rel = super::is_relevant_config_path;
+        // mcp.json anywhere is relevant.
+        assert!(rel(Path::new("/home/u/.kiro/settings/mcp.json")));
+        assert!(rel(Path::new("/proj/.amazonq/mcp.json")));
+        // JSON agent configs under agents / cli-agents dirs.
+        assert!(rel(Path::new("/home/u/.kiro/agents/my.json")));
+        assert!(rel(Path::new("/proj/.amazonq/cli-agents/x.json")));
+        // Directory events (no extension) under an agents dir still pass.
+        assert!(rel(Path::new("/home/u/.kiro/agents")));
+        // Non-JSON files under those dirs are ignored.
+        assert!(!rel(Path::new("/home/u/.kiro/agents/notes.txt")));
+        assert!(!rel(Path::new("/home/u/.kiro/agents/server.log")));
+        // Unrelated paths are ignored.
+        assert!(!rel(Path::new("/home/u/.kiro/steering/foo.md")));
+        assert!(!rel(Path::new("/proj/src/main.rs")));
+    }
+
+    #[test]
+    fn test_resolve_watch_targets_create_policy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("workspace");
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+
+        let ws_agents = cwd.join(".kiro").join("agents");
+        let global_agents = home.join(".kiro").join("agents");
+
+        // Bare cwd (no `.kiro`): the workspace agents dir is NOT created (no
+        // `.kiro` litter) and is not watched; the kiro-owned global dir IS.
+        let targets = super::resolve_watch_targets(Some(&ws_agents), Some(&global_agents), None, None);
+        assert!(!cwd.join(".kiro").exists(), "must not create .kiro in a bare cwd");
+        assert!(!targets.contains(&ws_agents));
+        assert!(global_agents.exists(), "global agents dir should be created");
+        assert!(targets.contains(&global_agents));
+
+        // Once the user has opted into `.kiro`, its agents dir is materialized + watched.
+        std::fs::create_dir_all(cwd.join(".kiro")).unwrap();
+        let targets = super::resolve_watch_targets(Some(&ws_agents), Some(&global_agents), None, None);
+        assert!(ws_agents.exists(), "workspace agents dir created when .kiro exists");
+        assert!(targets.contains(&ws_agents));
+    }
 
     /// Verifies that truncating multi-byte UTF-8 text does not panic.
     /// Reproduces the byte-slicing bug in handle_get_live_activity where
@@ -3330,5 +3793,183 @@ mod tests {
         let session = make_session(None, Some("NEEDS_CHANGES".to_string()), 0, true);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_none(), "no loop_config means no trigger regardless of signals");
+    }
+
+    // ── siblings_to_cancel tests ────────────────────────────────────────
+
+    fn orch_in_group(
+        id: &str,
+        name: &str,
+        group: &str,
+        status: crate::agent::acp::orchestration::types::SessionStatus,
+    ) -> crate::agent::acp::orchestration::types::OrchestratedSession {
+        use std::time::SystemTime;
+
+        use crate::agent::acp::orchestration::types::*;
+        OrchestratedSession {
+            session_id: sacp::schema::SessionId::new(id.to_string()),
+            name: name.to_string(),
+            task: "t".to_string(),
+            agent_name: "a".to_string(),
+            role: None,
+            parent_session: None,
+            group: Some(group.to_string()),
+            status,
+            created_at: SystemTime::now(),
+            last_activity: SystemTime::now(),
+            human_attached: false,
+            persistent: false,
+            depends_on: vec![],
+            result: None,
+            loop_config: None,
+            loop_iteration: 0,
+            changes_needed: false,
+        }
+    }
+
+    #[test]
+    fn siblings_to_cancel_returns_running_in_group_siblings_only() {
+        use std::collections::HashMap;
+
+        use crate::agent::acp::orchestration::types::SessionStatus;
+        let mut sessions = HashMap::new();
+        // The failed stage (already terminated by the failure branch).
+        sessions.insert(
+            "a".to_string(),
+            orch_in_group("a", "stage-a", "crew-x", SessionStatus::Terminated),
+        );
+        // A still-running sibling — must be cancelled.
+        sessions.insert(
+            "b".to_string(),
+            orch_in_group("b", "stage-b", "crew-x", SessionStatus::Busy),
+        );
+        // A sibling that already finished — nothing to cancel.
+        sessions.insert(
+            "c".to_string(),
+            orch_in_group("c", "stage-c", "crew-x", SessionStatus::Terminated),
+        );
+        // An unrelated session in another group — must be untouched.
+        sessions.insert(
+            "d".to_string(),
+            orch_in_group("d", "stage-d", "other", SessionStatus::Busy),
+        );
+
+        let mut got: Vec<String> = super::SessionManager::siblings_to_cancel(&sessions, "crew-x", "stage-a")
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["b".to_string()],
+            "only the running, in-group, non-failed sibling should be cancelled"
+        );
+    }
+
+    #[test]
+    fn siblings_to_cancel_never_selects_the_failed_stage() {
+        use std::collections::HashMap;
+
+        use crate::agent::acp::orchestration::types::SessionStatus;
+        let mut sessions = HashMap::new();
+        // Failed stage whose status has not yet flipped to Terminated.
+        sessions.insert(
+            "a".to_string(),
+            orch_in_group("a", "stage-a", "crew-x", SessionStatus::Busy),
+        );
+        sessions.insert(
+            "b".to_string(),
+            orch_in_group("b", "stage-b", "crew-x", SessionStatus::Busy),
+        );
+
+        let got: Vec<String> = super::SessionManager::siblings_to_cancel(&sessions, "crew-x", "stage-a")
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            got,
+            vec!["b".to_string()],
+            "the failed stage itself must never be selected for cancellation"
+        );
+    }
+
+    // ── stamp_acp_client_name tests ─────────────────────────────────────
+    // The Initialize path stamps the SANITIZED ACP client name into the env so
+    // child `aws` CLI calls carry an `acp-client/<name>` userAgent token. The
+    // raw name is left to telemetry (AcpClientInfo); only the env var is
+    // sanitized here. A junk-only name clears any previously-set value.
+
+    #[test]
+    fn stamp_acp_client_name_sanitizes_multiword_name() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "Visual Studio Code");
+        assert_eq!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(),
+            "VisualStudioCode",
+            "spaces must be stripped so the name can't forge extra UA tokens"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_strips_nul_without_panic() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A NUL byte would panic the real `set_var`; it must be dropped, not stored.
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "a\u{0}b");
+        assert_eq!(env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(), "ab");
+    }
+
+    #[test]
+    fn stamp_acp_client_name_junk_only_clears_var() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // Nothing survives the allowlist, so the var is cleared. `Env` has no
+        // `remove_var`, so the cleared state is an empty string (or unset); the
+        // UA formatter omits both via its `!is_empty()` guard.
+        let env = Env::from_slice(&[]);
+        super::stamp_acp_client_name(&env, "///");
+        assert!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).map(|v| v.is_empty()).unwrap_or(true),
+            "junk-only name must clear (empty/unset) the env var"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_junk_clears_prior_value() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A previously-stamped value must not survive a re-`Initialize` whose
+        // name sanitizes to nothing — otherwise stale attribution would leak
+        // into later `aws` calls.
+        let env = Env::from_slice(&[(ACP_CLIENT_NAME_ENV_VAR, "MeshClaw")]);
+        super::stamp_acp_client_name(&env, "///");
+        assert!(
+            env.get(ACP_CLIENT_NAME_ENV_VAR).map(|v| v.is_empty()).unwrap_or(true),
+            "a junk name must clear the previously-stamped value"
+        );
+    }
+
+    #[test]
+    fn stamp_acp_client_name_valid_overwrites_prior_value() {
+        use agent::util::consts::env_var::ACP_CLIENT_NAME_ENV_VAR;
+
+        use crate::os::Env;
+
+        // A second `Initialize` with a valid name replaces the prior one
+        // (last-writer-wins: a single driving client per process).
+        let env = Env::from_slice(&[(ACP_CLIENT_NAME_ENV_VAR, "MeshClaw")]);
+        super::stamp_acp_client_name(&env, "kiro-tui");
+        assert_eq!(env.get(ACP_CLIENT_NAME_ENV_VAR).unwrap(), "kiro-tui");
     }
 }

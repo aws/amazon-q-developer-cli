@@ -10,6 +10,7 @@ pub const US_GOV_WEST: &str = "us-gov-west-1";
 pub const US_ISO_DCA: &str = "us-iso-east-1";
 pub const US_ISO_LCK: &str = "us-isob-east-1";
 pub const US_ISO_ALE: &str = "us-isof-south-1";
+pub const US_ISO_LTW: &str = "us-isof-east-1";
 
 /// Build time env vars
 pub mod build {

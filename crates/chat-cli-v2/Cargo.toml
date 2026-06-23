@@ -84,6 +84,7 @@ indoc.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
 libc.workspace = true
+notify.workspace = true
 nix.workspace = true
 owo-colors.workspace = true
 parking_lot.workspace = true

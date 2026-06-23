@@ -125,7 +125,13 @@ jobs:
           restore-keys: |
             fork-cargo-integ-${{ runner.os }}-
       - name: Build chat_cli
-        run: cargo build -p chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --no-default-features
+          else
+            cargo build -p chat_cli
+          fi
       - name: Read pinned Bun version
         id: bun-ver
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
@@ -191,7 +197,13 @@ jobs:
             target/
           key: fork-cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Build chat_cli
-        run: cargo build -p chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --no-default-features
+          else
+            cargo build -p chat_cli
+          fi
       - name: Read pinned Bun version
         id: bun-ver
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"

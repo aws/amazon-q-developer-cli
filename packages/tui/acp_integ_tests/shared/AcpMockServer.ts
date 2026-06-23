@@ -15,11 +15,10 @@
  * The server buffers outbound traffic until the TUI connects so tests don't
  * need to race on connection establishment.
  *
- * TODO(permission-requests): scenarios requiring the TUI to surface a
- * confirmation dialog in response to a server `request(...)` need the
- * existing TestCase harness to grow hooks for scripting user input. The
- * plumbing here resolves whatever reply the TUI sends; the TUI-side
- * machinery to script that reply lands in a follow-up.
+ * Driving a server `request('session/request_permission', ...)` all the way
+ * through a TUI confirmation dialog and back is supported today: tests script
+ * the approval menu via the `AcpTestCase` key/wait helpers and the returned
+ * promise resolves with the TUI's reply (see `permission-consent.test.ts`).
  */
 import { createServer, type Server, type Socket } from 'node:net';
 import {

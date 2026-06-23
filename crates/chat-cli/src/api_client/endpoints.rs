@@ -12,6 +12,7 @@ use crate::util::{
     US_ISO_ALE,
     US_ISO_DCA,
     US_ISO_LCK,
+    US_ISO_LTW,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,30 @@ impl Endpoint {
     pub const CPS_US_EAST_1: Self = Self {
         url: Cow::Borrowed("https://management.us-east-1.kiro.dev"),
         region: Region::from_static("us-east-1"),
+    };
+    pub const CPS_US_GOV_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://management.us-gov-east-1.kiro.dev"),
+        region: Region::from_static(US_GOV_EAST),
+    };
+    pub const CPS_US_GOV_WEST_1: Self = Self {
+        url: Cow::Borrowed("https://management.us-gov-west-1.kiro.dev"),
+        region: Region::from_static(US_GOV_WEST),
+    };
+    pub const CPS_US_ISOB_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-management.us-isob-east-1.sc2s.sgov.gov"),
+        region: Region::from_static(US_ISO_LCK),
+    };
+    pub const CPS_US_ISOF_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-management.us-isof-east-1.csp.hci.ic.gov"),
+        region: Region::from_static(US_ISO_LTW),
+    };
+    pub const CPS_US_ISOF_SOUTH_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-management.us-isof-south-1.csp.hci.ic.gov"),
+        region: Region::from_static(US_ISO_ALE),
+    };
+    pub const CPS_US_ISO_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-management.us-iso-east-1.c2s.ic.gov"),
+        region: Region::from_static(US_ISO_DCA),
     };
     pub const DCA_ENDPOINT: Self = Self {
         url: Cow::Borrowed("https://q.us-iso-east-1.c2s.ic.gov"),
@@ -60,6 +85,7 @@ impl Endpoint {
         Self::GOV_ENDPOINT_WEST,
         Self::ALE_ENDPOINT,
         Self::LCK_ENDPOINT,
+        Self::LTW_ENDPOINT,
         Self::DCA_ENDPOINT,
     ];
     pub const KRS_EU_CENTRAL_1: Self = Self {
@@ -70,9 +96,37 @@ impl Endpoint {
         url: Cow::Borrowed("https://runtime.us-east-1.kiro.dev"),
         region: Region::from_static("us-east-1"),
     };
+    pub const KRS_US_GOV_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://runtime.us-gov-east-1.kiro.dev"),
+        region: Region::from_static(US_GOV_EAST),
+    };
+    pub const KRS_US_GOV_WEST_1: Self = Self {
+        url: Cow::Borrowed("https://runtime.us-gov-west-1.kiro.dev"),
+        region: Region::from_static(US_GOV_WEST),
+    };
+    pub const KRS_US_ISOB_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-runtime.us-isob-east-1.sc2s.sgov.gov"),
+        region: Region::from_static(US_ISO_LCK),
+    };
+    pub const KRS_US_ISOF_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-runtime.us-isof-east-1.csp.hci.ic.gov"),
+        region: Region::from_static(US_ISO_LTW),
+    };
+    pub const KRS_US_ISOF_SOUTH_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-runtime.us-isof-south-1.csp.hci.ic.gov"),
+        region: Region::from_static(US_ISO_ALE),
+    };
+    pub const KRS_US_ISO_EAST_1: Self = Self {
+        url: Cow::Borrowed("https://kiro-runtime.us-iso-east-1.c2s.ic.gov"),
+        region: Region::from_static(US_ISO_DCA),
+    };
     pub const LCK_ENDPOINT: Self = Self {
         url: Cow::Borrowed("https://q.us-isob-east-1.sc2s.sgov.gov"),
         region: Region::from_static(US_ISO_LCK),
+    };
+    pub const LTW_ENDPOINT: Self = Self {
+        url: Cow::Borrowed("https://q.us-isof-east-1.csp.hci.ic.gov"),
+        region: Region::from_static(US_ISO_LTW),
     };
 
     pub fn all() -> Vec<Self> {
@@ -95,6 +149,9 @@ impl Endpoint {
         }
         if region == US_ISO_ALE {
             return vec![Self::ALE_ENDPOINT];
+        }
+        if region == US_ISO_LTW {
+            return vec![Self::LTW_ENDPOINT];
         }
         vec![Self::DEFAULT_ENDPOINT, Self::FRA_ENDPOINT]
     }
@@ -137,7 +194,12 @@ impl Endpoint {
         match region {
             "us-east-1" => Self::KRS_US_EAST_1,
             "eu-central-1" => Self::KRS_EU_CENTRAL_1,
-            // GovCloud falls back to legacy endpoint
+            US_GOV_EAST => Self::KRS_US_GOV_EAST_1,
+            US_GOV_WEST => Self::KRS_US_GOV_WEST_1,
+            US_ISO_DCA => Self::KRS_US_ISO_EAST_1,
+            US_ISO_LCK => Self::KRS_US_ISOB_EAST_1,
+            US_ISO_ALE => Self::KRS_US_ISOF_SOUTH_1,
+            US_ISO_LTW => Self::KRS_US_ISOF_EAST_1,
             _ => Self::get_endpoints_from_region(region)
                 .into_iter()
                 .find(|e| e.region().as_ref() == region)
@@ -149,7 +211,12 @@ impl Endpoint {
         match region {
             "us-east-1" => Self::CPS_US_EAST_1,
             "eu-central-1" => Self::CPS_EU_CENTRAL_1,
-            // GovCloud falls back to legacy endpoint
+            US_GOV_EAST => Self::CPS_US_GOV_EAST_1,
+            US_GOV_WEST => Self::CPS_US_GOV_WEST_1,
+            US_ISO_DCA => Self::CPS_US_ISO_EAST_1,
+            US_ISO_LCK => Self::CPS_US_ISOB_EAST_1,
+            US_ISO_ALE => Self::CPS_US_ISOF_SOUTH_1,
+            US_ISO_LTW => Self::CPS_US_ISOF_EAST_1,
             _ => Self::get_endpoints_from_region(region)
                 .into_iter()
                 .find(|e| e.region().as_ref() == region)
@@ -207,5 +274,36 @@ mod tests {
         assert_eq!(Endpoint::get_endpoints_from_region(US_ISO_ALE), vec![
             Endpoint::ALE_ENDPOINT
         ]);
+    }
+
+    #[test]
+    fn test_get_endpoints_from_region_iso_ltw() {
+        assert_eq!(Endpoint::get_endpoints_from_region(US_ISO_LTW), vec![
+            Endpoint::LTW_ENDPOINT
+        ]);
+    }
+
+    #[test]
+    fn test_krs_for_region() {
+        assert_eq!(Endpoint::krs_for_region("us-east-1"), Endpoint::KRS_US_EAST_1);
+        assert_eq!(Endpoint::krs_for_region("eu-central-1"), Endpoint::KRS_EU_CENTRAL_1);
+        assert_eq!(Endpoint::krs_for_region(US_GOV_EAST), Endpoint::KRS_US_GOV_EAST_1);
+        assert_eq!(Endpoint::krs_for_region(US_GOV_WEST), Endpoint::KRS_US_GOV_WEST_1);
+        assert_eq!(Endpoint::krs_for_region(US_ISO_DCA), Endpoint::KRS_US_ISO_EAST_1);
+        assert_eq!(Endpoint::krs_for_region(US_ISO_LCK), Endpoint::KRS_US_ISOB_EAST_1);
+        assert_eq!(Endpoint::krs_for_region(US_ISO_ALE), Endpoint::KRS_US_ISOF_SOUTH_1);
+        assert_eq!(Endpoint::krs_for_region(US_ISO_LTW), Endpoint::KRS_US_ISOF_EAST_1);
+    }
+
+    #[test]
+    fn test_cps_for_region() {
+        assert_eq!(Endpoint::cps_for_region("us-east-1"), Endpoint::CPS_US_EAST_1);
+        assert_eq!(Endpoint::cps_for_region("eu-central-1"), Endpoint::CPS_EU_CENTRAL_1);
+        assert_eq!(Endpoint::cps_for_region(US_GOV_EAST), Endpoint::CPS_US_GOV_EAST_1);
+        assert_eq!(Endpoint::cps_for_region(US_GOV_WEST), Endpoint::CPS_US_GOV_WEST_1);
+        assert_eq!(Endpoint::cps_for_region(US_ISO_DCA), Endpoint::CPS_US_ISO_EAST_1);
+        assert_eq!(Endpoint::cps_for_region(US_ISO_LCK), Endpoint::CPS_US_ISOB_EAST_1);
+        assert_eq!(Endpoint::cps_for_region(US_ISO_ALE), Endpoint::CPS_US_ISOF_SOUTH_1);
+        assert_eq!(Endpoint::cps_for_region(US_ISO_LTW), Endpoint::CPS_US_ISOF_EAST_1);
     }
 }

@@ -1,6 +1,13 @@
 #!/bin/sh
 # Pre-commit hook for kiro-cli
 
+# Block accidental commits of local dev checkouts
+if git diff --cached --name-only | grep -q '^local/'; then
+    echo "❌ Staged files under local/ — this directory is for local-only checkouts."
+    echo "   Run: git reset local/"
+    exit 1
+fi
+
 # Rust checks
 if git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
     echo "Running cargo fmt check..."

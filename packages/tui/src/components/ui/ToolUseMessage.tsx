@@ -50,7 +50,7 @@ import { useExpandableOutput } from '../../hooks/useExpandableOutput.js';
 import { useHideToolArgs } from './HideToolArgsContext.js';
 import {
   collapsedToolPreview,
-  isCollapsibleTool,
+  shouldCollapseToolCard,
 } from '../../utils/collapsed-tool-view.js';
 
 export interface ToolUseMessageProps {
@@ -172,7 +172,11 @@ const ToolUseContent = React.memo(function ToolUseContent(
   props: ToolContentProps
 ) {
   const hideArgs = useHideToolArgs();
-  if (hideArgs && isCollapsibleTool(props.content)) {
+  // Collapse to a one-line preview when either (a) spec mode hides all tool
+  // args, or (b) this is a subagent spawn card — those always collapse, in
+  // every mode, so KAS "Sub-agent: <role>"/"Orchestrate Sub-agent" wrappers
+  // show a prompt preview instead of a verbose name/prompt/explanation dump.
+  if (shouldCollapseToolCard(props.name, props.kind, props.content, hideArgs)) {
     return <CollapsedToolEntry {...props} />;
   }
   return <FullToolContent {...props} />;

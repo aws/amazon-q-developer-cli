@@ -38,6 +38,7 @@ pub use event::{
 };
 pub use install_method::{
     InstallMethod,
+    get_accurate_install_method,
     get_install_method,
 };
 pub use reason::{

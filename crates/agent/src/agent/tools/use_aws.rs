@@ -25,12 +25,7 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::util::consts::{
-    USER_AGENT_APP_NAME,
-    USER_AGENT_ENV_VAR,
-    USER_AGENT_VERSION_KEY,
-    USER_AGENT_VERSION_VALUE,
-};
+use crate::agent::util::insert_user_agent;
 use crate::util::truncate_safe;
 
 const MAX_OUTPUT_SIZE: usize = 100_000;
@@ -248,29 +243,20 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
     // Disable AWS CLI pager to prevent hanging when stdout is piped
     env_vars.insert("AWS_PAGER".to_string(), String::new());
-    let existing = std::env::var(USER_AGENT_ENV_VAR).ok();
-    let value = build_user_agent_value(existing.as_deref());
-    env_vars.insert(USER_AGENT_ENV_VAR.to_string(), value);
+    insert_user_agent(&mut env_vars);
     env_vars
-}
-
-/// Builds the value of the AWS_EXECUTION_ENV user-agent header, preserving any
-/// caller-set value as a prefix.
-///
-/// Extracted so tests can exercise both branches without mutating the process
-/// environment (which is `unsafe` and unsound under the multi-threaded test
-/// harness on Rust ≥1.83).
-fn build_user_agent_value(existing: Option<&str>) -> String {
-    let metadata = format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
-    match existing {
-        Some(v) if !v.is_empty() => format!("{v} {metadata}"),
-        _ => metadata,
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::util::build_user_agent_value;
+    use crate::agent::util::consts::{
+        USER_AGENT_APP_NAME,
+        USER_AGENT_ENV_VAR,
+        USER_AGENT_VERSION_KEY,
+        USER_AGENT_VERSION_VALUE,
+    };
 
     macro_rules! use_aws {
         ($value:tt) => {
@@ -613,15 +599,16 @@ mod tests {
 
     #[test]
     fn test_build_user_agent_value_no_existing() {
-        let v = build_user_agent_value(None);
+        let v = build_user_agent_value(None, None);
         assert!(v.contains(USER_AGENT_APP_NAME));
         assert!(v.contains(USER_AGENT_VERSION_KEY));
         assert!(v.contains(USER_AGENT_VERSION_VALUE));
+        assert!(!v.contains("acp-client"));
     }
 
     #[test]
     fn test_build_user_agent_value_empty_existing_treated_as_none() {
-        let v = build_user_agent_value(Some(""));
+        let v = build_user_agent_value(Some(""), None);
         assert!(v.contains(USER_AGENT_APP_NAME));
         assert!(
             !v.starts_with(' '),
@@ -631,9 +618,34 @@ mod tests {
 
     #[test]
     fn test_build_user_agent_value_appends_to_existing() {
-        let v = build_user_agent_value(Some("ExistingAgent/1.0"));
+        let v = build_user_agent_value(Some("ExistingAgent/1.0"), None);
         assert!(v.starts_with("ExistingAgent/1.0 "));
         assert!(v.contains(USER_AGENT_APP_NAME));
+    }
+
+    #[test]
+    fn test_build_user_agent_value_appends_acp_client_token() {
+        let v = build_user_agent_value(None, Some("meshclaw"));
+        assert!(v.contains(USER_AGENT_APP_NAME));
+        assert!(
+            v.ends_with(" acp-client/meshclaw"),
+            "expected acp-client token suffix, got: {v}"
+        );
+    }
+
+    #[test]
+    fn test_build_user_agent_value_empty_acp_client_omits_token() {
+        let v = build_user_agent_value(None, Some(""));
+        assert!(v.contains(USER_AGENT_APP_NAME));
+        assert!(!v.contains("acp-client"), "empty acp client must not emit a token");
+    }
+
+    #[test]
+    fn test_build_user_agent_value_existing_and_acp_client() {
+        let v = build_user_agent_value(Some("ExistingAgent/1.0"), Some("meshclaw"));
+        assert!(v.starts_with("ExistingAgent/1.0 "));
+        assert!(v.contains(USER_AGENT_APP_NAME));
+        assert!(v.ends_with(" acp-client/meshclaw"));
     }
 
     #[test]

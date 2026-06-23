@@ -109,21 +109,35 @@ pub enum AgentEvent {
 
     /// A steering message was queued (for TUI display).
     ///
-    /// `message` is the **full current queue snapshot** (multiple steers
+    /// `content` is the **full current queue snapshot** (multiple steers
     /// concatenated with `"\n\n"`). Consumers SHOULD overwrite their local
     /// copy rather than append, since each emission carries the complete
-    /// queue state.
-    SteeringQueued { message: String },
+    /// queue state. `message_id` is the stable `steer-<uuid>` id of the steer
+    /// that was just queued, so consumers can correlate it with the matching
+    /// consume/clear notification by id.
+    ///
+    /// Maps onto the KAS `AgentExecutionUserMessageQueued` ACP notification.
+    SteeringQueued { message_id: String, content: String },
 
-    /// The queued steering message was consumed and injected into the
+    /// A queued steering message was consumed and injected into the
     /// conversation (either at a tool boundary or at the start of an
     /// auto-started turn at end-of-turn drain).
-    SteeringConsumed { content: String },
+    ///
+    /// Emitted once **per** queued steer (not once per drain), carrying that
+    /// steer's stable `message_id` and its raw `content`. This mirrors the
+    /// KAS `AgentExecutionSteeringInjected` notification, which tracks each
+    /// steer by id. The drained steers are still concatenated into a single
+    /// LLM continuation request — only the notifications are per-steer.
+    SteeringConsumed { message_id: String, content: String },
 
-    /// The queued steering message was cleared without being consumed
+    /// The queued steering messages were cleared without being consumed
     /// (e.g. via cancel, or via explicit user clear from the TUI).
     /// Consumers SHOULD clear their local queue display on receipt.
-    SteeringCleared,
+    ///
+    /// `message_ids` lists the stable ids of every steer dropped from the
+    /// queue, so a client can reconcile out-of-order delivery. Maps onto the
+    /// KAS `AgentExecutionUserMessageCleared` notification.
+    SteeringCleared { message_ids: Vec<String> },
 }
 
 /// Events related to conversation compaction
@@ -270,6 +284,15 @@ pub enum AgentRequest {
     /// reuses the `local_mcp_path` / `global_mcp_path` it was constructed
     /// with, so they are not part of this request.
     RefreshMcpRegistry(Box<dyn super::mcp::McpRegistry>),
+    /// Reconcile the running MCP servers against a freshly-loaded agent config,
+    /// surgically (start added servers, stop removed ones, restart changed ones,
+    /// leave unchanged ones running) instead of tearing everything down.
+    ///
+    /// This is the event-driven path used when a watched config file changes:
+    /// it swaps in the new config and reconciles MCP without disturbing servers
+    /// whose config is unchanged. Returns [`AgentError::NotIdle`] if the agent
+    /// is not idle; callers defer until the next idle window.
+    ReconcileMcpServers(Box<LoadedAgentConfig>),
     /// Manually trigger conversation compaction
     CompactConversation,
     /// Clear conversation history

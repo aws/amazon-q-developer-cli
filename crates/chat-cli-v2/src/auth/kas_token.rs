@@ -300,6 +300,7 @@ mod tests {
             issuer_url: "https://idp.example.com".into(),
             token_endpoint: "https://idp.example.com/token".into(),
             client_id: "client-123".into(),
+            scopes: "openid offline_access api://client-123/res".into(),
         }
     }
 

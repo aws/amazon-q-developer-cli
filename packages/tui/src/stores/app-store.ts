@@ -396,6 +396,16 @@ export type MessageType =
       agentName?: string;
       contextPercent?: number;
       kasMessageId?: string;
+      /**
+       * True when this user bubble was injected mid-turn via steering
+       * (consumed from the steer queue) rather than sent as a standalone
+       * prompt. Multiple steers are concatenated into a single agent
+       * continuation, so an injected bubble legitimately has no AI response
+       * of its own — the shared response attaches to the final bubble in the
+       * group. Renderers use this to avoid mislabeling such turns as
+       * "Cancelled".
+       */
+      steered?: boolean;
     }
   | {
       id: string;
@@ -721,6 +731,8 @@ interface BaseAppActions {
   // Chat actions
   clearMessages: () => void;
   resetMessages: () => void;
+  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
+  markMessagesFromHistory: (fromIndex: number) => void;
   /**
    * Queue a message for later. In QUEUE interrupt mode (and pre-init) the
    * content is appended to the local queue / pending-steer buffer; in STEER
@@ -1785,6 +1797,7 @@ function buildCommandContext(
     openArtifactView: state.openArtifactView,
     clearMessages: state.clearMessages,
     resetMessages: state.resetMessages,
+    markMessagesFromHistory: state.markMessagesFromHistory,
     bumpLiteScrollbackClear: state.bumpLiteScrollbackClear,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
@@ -2146,17 +2159,13 @@ export const createAppStore = (props: AppStoreProps) => {
     _activeStreamHandler: null,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
-    // Dual-mode interrupt behavior. KAS ("v3") has no backend steering yet,
-    // so it is pinned to QUEUE; v2 honors the persisted setting.
-    activeInterruptMode:
-      agentEngine === 'kas'
-        ? InterruptMode.QUEUE
-        : parseInterruptMode(
-            readStringSetting(
-              Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-              DEFAULT_INTERRUPT_MODE
-            )
-          ),
+    // Dual-mode interrupt behavior
+    activeInterruptMode: parseInterruptMode(
+      readStringSetting(
+        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+        DEFAULT_INTERRUPT_MODE
+      )
+    ),
 
     // Task management
     tasks: [],
@@ -3442,6 +3451,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   role: MessageRole.User,
                   content: event.content,
                   agentName: state.currentAgent?.name,
+                  steered: true,
                 },
               ],
             }));
@@ -4215,6 +4225,18 @@ export const createAppStore = (props: AppStoreProps) => {
       }));
     },
 
+    /**
+     * Reserved no-op. Was meant to stamp `fromHistory: true` on replayed rows
+     * (>= fromIndex) after a /chat resume so the lite renderer could pick a
+     * cheaper preset, but the renderer-side consumer was removed and never
+     * re-added. The action + its sole caller (session-load.ts) are kept as a
+     * stable hook so the cheaper-render path can be wired back up without
+     * re-threading the call site; today it does nothing.
+     */
+    markMessagesFromHistory: (_fromIndex: number) => {
+      // intentional no-op — see doc comment above
+    },
+
     setSlashCommands: (commands: SlashCommand[]) => {
       set((state) => {
         const localCommands = state.slashCommands.filter(
@@ -4621,13 +4643,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     clearSteerMessage: () => {
-      const {
-        kiro,
-        sessionId,
-        pendingSteerContent,
-        isInitialized,
-        agentEngine,
-      } = get();
+      const { kiro, sessionId, pendingSteerContent, isInitialized } = get();
       if (pendingSteerContent == null) return;
 
       // Optimistically clear locally. The backend `SteeringCleared`
@@ -4641,8 +4657,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // (see index.tsx init path). A session-live queue still needs the
       // explicit `_session/steer/clear` round-trip to keep the backend in
       // sync.
-      const hasBackendQueue =
-        isInitialized && sessionId != null && agentEngine !== 'kas';
+      const hasBackendQueue = isInitialized && sessionId != null;
       if (hasBackendQueue) {
         kiro.clearSteering(sessionId).catch((err) => {
           logger.error('clearSteerMessage failed', err);
@@ -5666,14 +5681,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Dual-mode interrupt behavior toggle
     toggleInterruptMode: () => {
-      if (get().agentEngine === 'kas') {
-        get().showTransientAlert({
-          message: 'Steering is currently unsupported for v3',
-          status: 'info',
-          autoHideMs: 3000,
-        });
-        return;
-      }
       const switchingToQueue =
         get().activeInterruptMode === InterruptMode.STEER;
       const newMode = switchingToQueue
@@ -5690,7 +5697,6 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setActiveInterruptMode: (mode: InterruptMode) => {
-      if (get().agentEngine === 'kas') return;
       set({ activeInterruptMode: mode });
     },
 

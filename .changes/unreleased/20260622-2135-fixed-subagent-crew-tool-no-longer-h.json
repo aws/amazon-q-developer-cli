@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagent crew tool no longer hangs when a stage fails — fails fast with an error instead of blocking indefinitely"
+}

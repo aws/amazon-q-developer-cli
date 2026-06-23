@@ -7,14 +7,14 @@ scripting the agent side of the ACP protocol from the test code.
 
 ## When to use this vs `integ_tests/`
 
-| You want to verify...                                                       | Use                                       |
-| --------------------------------------------------------------------------- | ----------------------------------------- |
-| UI rendering / input handling / menus / keybindings                         | `integ_tests/`                            |
-| Dispatcher / effects / app-store flows                                      | `integ_tests/`                            |
-| `KasAcpClient.initialize()` filter, `executeCommand`, cached state          | `acp_integ_tests/` (here)                 |
-| Exact `session/list` / `session/new` / etc. ACP request shape the TUI sends | `acp_integ_tests/` (here)                 |
-| TUI response to agent notifications (`current_mode_update`, etc.)           | `acp_integ_tests/` (here)                 |
-| Agent -> client requests (`session/request_permission`)                     | `acp_integ_tests/` (here, see TODO below) |
+| You want to verify...                                                       | Use                       |
+| --------------------------------------------------------------------------- | ------------------------- |
+| UI rendering / input handling / menus / keybindings                         | `integ_tests/`            |
+| Dispatcher / effects / app-store flows                                      | `integ_tests/`            |
+| `KasAcpClient.initialize()` filter, `executeCommand`, cached state          | `acp_integ_tests/` (here) |
+| Exact `session/list` / `session/new` / etc. ACP request shape the TUI sends | `acp_integ_tests/` (here) |
+| TUI response to agent notifications (`current_mode_update`, etc.)           | `acp_integ_tests/` (here) |
+| Agent -> client requests (`session/request_permission`)                     | `acp_integ_tests/` (here) |
 
 `integ_tests/` mocks at the `SessionClient` interface - everything under it
 (including all of `KasAcpClient`) is stubbed. `acp_integ_tests/` mocks at the
@@ -116,16 +116,6 @@ server.receivedNotifications(method?: string): Array<{ method: string; params: u
 server.awaitConnection(): Promise<void>;  // resolves on first client connect
 server.close(): Promise<void>;
 ```
-
-## TODO(permission-requests)
-
-`server.request('session/request_permission', ...)` plumbing works and the
-promise resolves with whatever response the TUI sends. However, completing
-scenarios where the TUI must show a confirmation dialog and the user picks an
-option requires hooks in the underlying `TestCase` harness that don't exist
-yet - specifically, programmatic selection in the approval menu. Call sites
-in a future product test will be tagged `TODO(permission-requests)` until
-that harness work lands.
 
 ## How it works
 

@@ -78,6 +78,15 @@ pub struct ExternalIdpToken {
     pub issuer_url: String,
     pub token_endpoint: String,
     pub client_id: String,
+    /// Space-separated scopes requested at login, replayed on every refresh.
+    ///
+    /// Per RFC 6749 §6 the refresh request reuses the originally granted
+    /// scopes. Required by Entra ID with `api://<client-id>` Application ID
+    /// URIs to resolve the target resource (otherwise AADSTS90009), and keeps
+    /// `offline_access` present for IdPs with refresh-token rotation.
+    /// `#[serde(default)]` keeps pre-existing persisted tokens deserializable.
+    #[serde(default)]
+    pub scopes: String,
 }
 
 impl ExternalIdpToken {
@@ -144,11 +153,18 @@ impl ExternalIdpToken {
 
         debug!("Refreshing external IdP access token");
         let client = reqwest::Client::new();
-        let params = [
+        let mut params = vec![
             ("grant_type", "refresh_token"),
-            ("refresh_token", &refresh_token.0),
-            ("client_id", &self.client_id),
+            ("refresh_token", refresh_token.0.as_str()),
+            ("client_id", self.client_id.as_str()),
         ];
+        // Replay the scopes requested at login (RFC 6749 §6). Required by Entra
+        // ID with `api://<client-id>` URIs to resolve the resource; keeps
+        // `offline_access` for IdPs with refresh-token rotation. Omitted when
+        // unknown (legacy tokens) to preserve prior behavior.
+        if !self.scopes.is_empty() {
+            params.push(("scope", self.scopes.as_str()));
+        }
 
         match client
             .post(&self.token_endpoint)
@@ -173,6 +189,7 @@ impl ExternalIdpToken {
                     issuer_url: self.issuer_url.clone(),
                     token_endpoint: self.token_endpoint.clone(),
                     client_id: self.client_id.clone(),
+                    scopes: self.scopes.clone(),
                 };
                 let _ = new_token.save(database).await;
                 Ok(Some(new_token))
@@ -320,6 +337,7 @@ pub async fn start_external_idp_auth(
         &code_verifier,
         &auth_code,
         &discovery.issuer,
+        &metadata.scopes,
     )
     .await?;
 
@@ -368,6 +386,7 @@ async fn exchange_code_for_token(
     code_verifier: &str,
     code: &str,
     issuer_url: &str,
+    requested_scopes: &str,
 ) -> Result<ExternalIdpToken, AuthError> {
     info!("Exchanging authorization code for tokens");
 
@@ -415,6 +434,7 @@ async fn exchange_code_for_token(
         issuer_url: issuer_url.to_string(),
         token_endpoint: token_endpoint.to_string(),
         client_id: client_id.to_string(),
+        scopes: requested_scopes.to_string(),
     })
 }
 
@@ -445,6 +465,7 @@ mod tests {
             issuer_url: "https://idp.example.com".to_string(),
             token_endpoint: "https://idp.example.com/token".to_string(),
             client_id: "abc123".to_string(),
+            scopes: "openid offline_access api://abc123/res".to_string(),
         };
         let peer = ExternalIdpToken {
             access_token: Secret("new-access".to_string()),

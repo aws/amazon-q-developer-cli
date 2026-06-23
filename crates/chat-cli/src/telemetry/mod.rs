@@ -2,7 +2,6 @@ pub mod cognito;
 pub mod core;
 pub mod definitions;
 pub mod endpoint;
-mod install_method;
 
 use core::{
     AgentConfigInitArgs,
@@ -37,10 +36,6 @@ use amzn_toolkit_telemetry_client::{
 use aws_credential_types::provider::SharedCredentialsProvider;
 use cognito::CognitoProvider;
 use endpoint::StaticEndpoint;
-pub use install_method::{
-    InstallMethod,
-    get_install_method,
-};
 use kiro_telemetry::{
     MetricRecord,
     OtelLogsSink,
@@ -52,6 +47,11 @@ use kiro_telemetry::{
     consent_file_integrity_records,
     init_otel,
     metric,
+};
+pub use kiro_telemetry_host::{
+    InstallMethod,
+    get_accurate_install_method,
+    get_install_method,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;

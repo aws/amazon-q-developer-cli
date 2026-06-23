@@ -45,10 +45,11 @@ describe('chat.disableWrap setting', () => {
     const textStart = responseLine!.indexOf('Hello from the assistant');
     expect(textStart).toBeLessThanOrEqual(1);
 
-    // There should be at least one blank line between user prompt and response
+    // Response should appear after the user prompt (leadingGap is 0 for
+    // Model after User — flush layout per message-spacing.ts)
     const userLineIdx = snapshot.findIndex(line => line.includes('hello'));
     const responseLineIdx = snapshot.findIndex(line => line.includes('Hello from the assistant'));
-    expect(responseLineIdx - userLineIdx).toBeGreaterThanOrEqual(2);
+    expect(responseLineIdx).toBeGreaterThan(userLineIdx);
 
     await testCase.pressCtrlCTwice();
     const exitCode = await testCase.expectExit();

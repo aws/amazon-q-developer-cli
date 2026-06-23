@@ -89,7 +89,8 @@ async fn steer_while_agent_busy_injects_at_tool_boundary() {
             |n| {
                 n.ext_notifications.iter().any(|ext| {
                     let params_str = ext.params.get();
-                    params_str.contains("steering_queued") && params_str.contains("Actually just count the lines")
+                    params_str.contains("AgentExecutionUserMessageQueued")
+                        && params_str.contains("Actually just count the lines")
                 })
             },
             Duration::from_secs(5),
@@ -141,7 +142,7 @@ async fn steer_while_agent_busy_injects_at_tool_boundary() {
     let captured = client.captured().await;
     let has_consumed = captured.ext_notifications.iter().any(|ext| {
         let params_str = ext.params.get();
-        params_str.contains("steering_consumed") && params_str.contains("Actually just count the lines")
+        params_str.contains("AgentExecutionSteeringInjected") && params_str.contains("Actually just count the lines")
     });
     assert!(
         has_consumed,
@@ -154,8 +155,12 @@ async fn steer_while_agent_busy_injects_at_tool_boundary() {
         .iter()
         .map(|ext| ext.params.get().to_string())
         .collect();
-    let queued_idx = ext_params.iter().position(|p| p.contains("steering_queued"));
-    let consumed_idx = ext_params.iter().position(|p| p.contains("steering_consumed"));
+    let queued_idx = ext_params
+        .iter()
+        .position(|p| p.contains("AgentExecutionUserMessageQueued"));
+    let consumed_idx = ext_params
+        .iter()
+        .position(|p| p.contains("AgentExecutionSteeringInjected"));
     assert!(
         queued_idx.is_some() && consumed_idx.is_some(),
         "both steering_queued and steering_consumed notifications should be present"
@@ -278,7 +283,7 @@ async fn multiple_steers_concatenated_and_injected_together() {
             |n| {
                 n.ext_notifications.iter().any(|ext| {
                     let params_str = ext.params.get();
-                    params_str.contains("steering_queued") && params_str.contains("Third instruction")
+                    params_str.contains("AgentExecutionUserMessageQueued") && params_str.contains("Third instruction")
                 })
             },
             Duration::from_secs(5),
@@ -295,7 +300,7 @@ async fn multiple_steers_concatenated_and_injected_together() {
     let queued_notifications: Vec<_> = captured_before
         .ext_notifications
         .iter()
-        .filter(|ext| ext.params.get().contains("steering_queued"))
+        .filter(|ext| ext.params.get().contains("AgentExecutionUserMessageQueued"))
         .collect();
 
     // Should have 3 SteeringQueued notifications (one per steer)
@@ -364,35 +369,39 @@ async fn multiple_steers_concatenated_and_injected_together() {
     // Give a moment for all notifications to arrive
     sleep(Duration::from_millis(200)).await;
 
-    // Verify SteeringConsumed notification was emitted
+    // Verify SteeringConsumed (AgentExecutionSteeringInjected) notifications.
     let captured = client.captured().await;
     let consumed_notifications: Vec<_> = captured
         .ext_notifications
         .iter()
-        .filter(|ext| ext.params.get().contains("steering_consumed"))
+        .filter(|ext| ext.params.get().contains("AgentExecutionSteeringInjected"))
         .collect();
 
-    // Should have exactly ONE SteeringConsumed notification (all messages consumed together)
+    // To match the KAS contract's per-message identity model, one consume
+    // notification is emitted per queued steer (carrying that steer's id +
+    // raw content) — not a single batched notification. The drained text is
+    // still concatenated into a single LLM request (asserted below).
     assert_eq!(
         consumed_notifications.len(),
-        1,
-        "should have exactly 1 SteeringConsumed notification (not one per message), got {}",
+        3,
+        "should have exactly 3 AgentExecutionSteeringInjected notifications (one per steer), got {}",
         consumed_notifications.len()
     );
 
-    // The consumed notification should contain all messages concatenated
-    let consumed_params = consumed_notifications[0].params.get();
+    // Each consume notification carries one steer's raw content (not the
+    // concatenated snapshot) and its stable steer-<uuid> messageId.
+    let consumed_params: Vec<&str> = consumed_notifications.iter().map(|ext| ext.params.get()).collect();
+    for instruction in ["First instruction", "Second instruction", "Third instruction"] {
+        assert!(
+            consumed_params.iter().any(|p| p.contains(instruction)),
+            "exactly one AgentExecutionSteeringInjected should carry '{instruction}'"
+        );
+    }
     assert!(
-        consumed_params.contains("First instruction"),
-        "SteeringConsumed should contain 'First instruction'"
-    );
-    assert!(
-        consumed_params.contains("Second instruction"),
-        "SteeringConsumed should contain 'Second instruction'"
-    );
-    assert!(
-        consumed_params.contains("Third instruction"),
-        "SteeringConsumed should contain 'Third instruction'"
+        consumed_params
+            .iter()
+            .all(|p| p.contains("messageId") && p.contains("steer-")),
+        "every AgentExecutionSteeringInjected should carry a steer-<uuid> messageId"
     );
 
     // Verify the steering messages were injected into an LLM request
@@ -488,7 +497,8 @@ async fn end_of_turn_drain_extends_current_turn() {
             |n| {
                 n.ext_notifications.iter().any(|ext| {
                     let params_str = ext.params.get();
-                    params_str.contains("steering_queued") && params_str.contains("Actually, focus on performance tips")
+                    params_str.contains("AgentExecutionUserMessageQueued")
+                        && params_str.contains("Actually, focus on performance tips")
                 })
             },
             Duration::from_secs(5),
@@ -538,7 +548,8 @@ async fn end_of_turn_drain_extends_current_turn() {
     let captured = client.captured().await;
     let has_consumed = captured.ext_notifications.iter().any(|ext| {
         let params_str = ext.params.get();
-        params_str.contains("steering_consumed") && params_str.contains("Actually, focus on performance tips")
+        params_str.contains("AgentExecutionSteeringInjected")
+            && params_str.contains("Actually, focus on performance tips")
     });
     assert!(
         has_consumed,
@@ -569,7 +580,7 @@ async fn end_of_turn_drain_extends_current_turn() {
 
 /// Integration test: cancel during processing clears the queue and emits SteeringCleared.
 ///
-/// The backend clears `queued_user_message` on cancel and emits
+/// The backend clears `queued_steers` on cancel and emits
 /// `SteeringCleared`. The TUI captures the queued content locally before
 /// issuing cancel and replays it as a fresh prompt after cancel resolves
 /// ("cancel = redirect" UX). The backend clear ensures a subsequent turn
@@ -669,7 +680,8 @@ async fn cancel_during_processing_clears_queue() {
             |n| {
                 n.ext_notifications.iter().any(|ext| {
                     let params_str = ext.params.get();
-                    params_str.contains("steering_queued") && params_str.contains("Please cancel and do something else")
+                    params_str.contains("AgentExecutionUserMessageQueued")
+                        && params_str.contains("Please cancel and do something else")
                 })
             },
             Duration::from_secs(5),
@@ -704,7 +716,7 @@ async fn cancel_during_processing_clears_queue() {
     let has_queued_notification = captured
         .ext_notifications
         .iter()
-        .any(|ext| ext.params.get().contains("steering_queued"));
+        .any(|ext| ext.params.get().contains("AgentExecutionUserMessageQueued"));
     assert!(
         has_queued_notification,
         "SteeringQueued notification should have been emitted before cancellation"
@@ -714,7 +726,7 @@ async fn cancel_during_processing_clears_queue() {
     let has_consumed = captured
         .ext_notifications
         .iter()
-        .any(|ext| ext.params.get().contains("steering_consumed"));
+        .any(|ext| ext.params.get().contains("AgentExecutionSteeringInjected"));
     assert!(
         !has_consumed,
         "SteeringConsumed should NOT be emitted on cancel — the queue is cleared, not consumed"
@@ -727,7 +739,7 @@ async fn cancel_during_processing_clears_queue() {
     let has_cleared = captured
         .ext_notifications
         .iter()
-        .any(|ext| ext.params.get().contains("steering_cleared"));
+        .any(|ext| ext.params.get().contains("AgentExecutionUserMessageCleared"));
     assert!(
         has_cleared,
         "SteeringCleared should be emitted on cancel — the backend clears the queue"

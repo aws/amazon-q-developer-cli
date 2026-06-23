@@ -1048,10 +1048,18 @@ impl RealApiClient {
     /// Get MCP and web tools governance config in a single GetProfile call.
     /// Returns `(mcp_enabled, registry_url, web_tools_enabled)`.
     pub async fn get_governance_config(&self) -> Result<(bool, Option<String>, bool), ApiClientError> {
+        let governance_timeout = TimeoutConfig::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(15))
+            .operation_attempt_timeout(Duration::from_secs(15))
+            .operation_timeout(Duration::from_secs(30))
+            .build();
         let response = self
             .client
             .get_profile()
             .set_profile_arn(self.optional_profile_arn().await)
+            .customize()
+            .config_override(amzn_codewhisperer_client::config::Builder::new().timeout_config(governance_timeout))
             .send()
             .await?;
 

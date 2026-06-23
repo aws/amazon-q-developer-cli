@@ -6,9 +6,6 @@ pub const PRODUCT_NAME: &str = "Kiro";
 /// CLI binary name
 pub const CLI_NAME: &str = "kiro-cli";
 
-/// Homebrew cask name for install detection
-pub const BREW_CASK_NAME: &str = "kiro-cli";
-
 /// Client name for authentication purposes
 pub const CLIENT_NAME: &str = "Kiro CLI";
 

@@ -34,8 +34,51 @@ function getPinnedBun(): string {
 const PINNED_BUN = getPinnedBun();
 
 // Separate dev-script flags from flags to forward to the TUI
-const devFlags = new Set(["--skip-rust-build"]);
+const devFlags = new Set(["--skip-rust-build", "--local-kas"]);
 const skipRustBuild = process.argv.includes("--skip-rust-build");
+
+// Optional: --local-kas uses a local kiro-agent checkout at local/kiro-agent/
+// Skips CodeArtifact login and bun install, sets KIRO_KAS_SERVER_PATH.
+// Auto-clones and builds kiro-agent if not present.
+const localKas = process.argv.includes("--local-kas");
+if (localKas) {
+  const kasRoot = resolve(REPO_ROOT, "local/kiro-agent");
+  const serverPath = resolve(kasRoot, "packages/kiro-agent/dist/server/acp-server.js");
+
+  if (!existsSync(serverPath)) {
+    if (!existsSync(kasRoot)) {
+      console.log("Cloning kiro-agent into local/kiro-agent...");
+      const clone = spawnSync("git", ["clone", "https://github.com/kiro-team/kiro-agent.git", kasRoot], {
+        stdio: "inherit",
+      });
+      if (clone.status !== 0) {
+        console.error("❌ Failed to clone kiro-agent. Check your GitHub access.");
+        process.exit(1);
+      }
+    }
+
+    console.log("Building kiro-agent...");
+    const install = spawnSync("npm", ["install"], { cwd: kasRoot, stdio: "inherit" });
+    if (install.status !== 0) {
+      console.error("❌ npm install failed in local/kiro-agent");
+      process.exit(1);
+    }
+    const build = spawnSync("npm", ["run", "build"], { cwd: kasRoot, stdio: "inherit" });
+    if (build.status !== 0) {
+      console.error("❌ npm run build failed in local/kiro-agent");
+      process.exit(1);
+    }
+
+    if (!existsSync(serverPath)) {
+      console.error(`❌ Build completed but server not found at: ${serverPath}`);
+      process.exit(1);
+    }
+  }
+
+  process.env.KIRO_KAS_SERVER_PATH = serverPath;
+  process.env.KIRO_AGENT_ENGINE = "kas";
+  console.log(`Using local KAS: ${serverPath}`);
+}
 
 // Optional: --rust-bin-path <path> overrides the default chat_cli binary
 // and implicitly skips the Rust build (the path must already exist).
@@ -114,7 +157,9 @@ function startTUI() {
 }
 
 // Verify CodeArtifact auth is valid and refresh if expired
-{
+if (localKas) {
+  console.log("Skipping CodeArtifact login (--local-kas)...");
+} else {
   const npmrc = resolve(REPO_ROOT, ".npmrc");
   let needsLogin = !existsSync(npmrc) || !readFileSync(npmrc, "utf8").includes("@kiro:registry");
   if (!needsLogin) {
@@ -142,7 +187,9 @@ function startTUI() {
 }
 
 // Ensure dependencies are installed (<50ms when no deps changed)
-spawnSync("bun", ["install"], { cwd: REPO_ROOT, stdio: "inherit" });
+if (!localKas) {
+  spawnSync("bun", ["install"], { cwd: REPO_ROOT, stdio: "inherit" });
+}
 
 if (skipRustBuild || rustBinOverride) {
   console.log(rustBinOverride ? `Using Rust binary at ${RUST_BIN}` : "Skipping Rust build...");

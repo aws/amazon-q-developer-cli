@@ -1705,7 +1705,12 @@ describe('KasAcpClient', () => {
    */
   function seedSessionWithModels(opts: {
     currentValue: string;
-    models: Array<{ value: string; name: string; description?: string }>;
+    models: Array<{
+      value: string;
+      name: string;
+      description?: string;
+      _meta?: { kiro?: { rateMultiplier?: number; rateUnit?: string } };
+    }>;
   }): void {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-models',
@@ -1750,16 +1755,59 @@ describe('KasAcpClient', () => {
 
     const result = await client.getCommandOptions('/model', '');
     expect(result.options.length).toBe(2);
+    // No `_meta.kiro` rate info on these models → the credits column shows the
+    // "----- credits" placeholder (mirrors v2's `to_command_option`).
     expect(result.options[0]).toEqual({
       value: 'claude-4',
       label: 'Claude 4',
       description: '[active] Best overall',
+      group: '----- credits',
     });
     expect(result.options[1]).toEqual({
       value: 'gpt-5',
       label: 'GPT-5',
       description: '',
+      group: '----- credits',
     });
+  });
+
+  it('getCommandOptions("/model") surfaces the credits column from _meta.kiro.rateMultiplier', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        {
+          value: 'claude-4',
+          name: 'Claude 4',
+          _meta: { kiro: { rateMultiplier: 0.25 } },
+        },
+        {
+          value: 'gpt-5',
+          name: 'GPT-5',
+          // Integer-ish rate locks toFixed(2) formatting → "1.00x credits".
+          _meta: { kiro: { rateMultiplier: 1 } },
+        },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options[0].group).toBe('0.25x credits');
+    expect(result.options[1].group).toBe('1.00x credits');
+    // The credits column renders whenever at least one option sets `group`.
+    expect(result.options.every((o: any) => !!o.group)).toBe(true);
+  });
+
+  it('getCommandOptions("/model") uses the "----- credits" placeholder when rate meta is absent', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [{ value: 'claude-4', name: 'Claude 4' }],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const result = await client.getCommandOptions('/model', '');
+    expect(result.options[0].group).toBe('----- credits');
   });
 
   it('getCommandOptions("/model") returns empty when no models configured', async () => {
@@ -3216,6 +3264,115 @@ describe('KasAcpClient', () => {
       cacheReadInputTokens: 4,
       cacheWriteInputTokens: 3,
     });
+  });
+
+  // ── Mid-turn steering: KAS session_info_update kinds → internal events ──
+  //
+  // KAS emits the steering queue lifecycle on the standard session_info_update
+  // channel with snake_case `_meta.kiro.kind`. The Rust engine still uses the
+  // PascalCase `_kiro.dev/session/update` ext channel (see regression test
+  // below). Both map onto the same internal steering events.
+
+  it('session_info_update kind=steering_queued broadcasts SteeringQueued with content as message', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_queued',
+            messageId: 'steer-abc',
+            content: 'please focus on tests',
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringQueued);
+    expect(event).toBeDefined();
+    expect(event.message).toBe('please focus on tests');
+  });
+
+  it('session_info_update kind=steering_injected broadcasts SteeringConsumed with content', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_injected',
+            messageId: 'steer-abc',
+            content: 'the raw user message',
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringConsumed);
+    expect(event).toBeDefined();
+    expect(event.content).toBe('the raw user message');
+  });
+
+  it('session_info_update kind=steering_cleared broadcasts SteeringCleared', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'steering_cleared',
+            messageIds: ['steer-abc', 'steer-def'],
+          },
+        },
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringCleared);
+    expect(event).toBeDefined();
+  });
+
+  it('Rust engine PascalCase _kiro.dev/session/update steering still maps to internal events', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    // The Rust engine continues to emit the PascalCase discriminators through
+    // handleExtSessionUpdate; this path must keep working unchanged.
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'AgentExecutionUserMessageQueued',
+        content: 'rust queued steer',
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.SteeringQueued);
+    expect(event).toBeDefined();
+    expect(event.message).toBe('rust queued steer');
   });
 
   // ── effortLevel config option → EffortUpdate ──
@@ -5005,6 +5162,276 @@ describe('MCP OAuth flow', () => {
     });
   });
 
+  // ── Crew per-stage WRAPPER card duplicate suppression (active-pipeline gate) ──
+
+  describe('crew wrapper cards do not duplicate into main (active-pipeline gate)', () => {
+    // Helper: deliver the crew pipeline state update that KAS emits FIRST on the
+    // orchestrate_subagent card. Registers stage UUIDs and marks the group
+    // active. Mirrors the live ACP recording (groupId + stage agentSubtaskIds
+    // are real UUIDs; the per-stage wrapper card is tagged separately below).
+    const sendPipelineRunning = async () =>
+      capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tooluse_PARENT',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'review' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'pending',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+    it('REPRO: per-stage wrapper tool_call (derived subtaskId, NOT a stage UUID) stays out of main', async () => {
+      // Ground truth from the ACP recording: while the crew pipeline is active,
+      // KAS emits a per-stage WRAPPER tool_call titled "Sub-agent: <role>" whose
+      // agentSubtaskId is a DERIVED id ("invoke_subagent_tooluse_<parent>_stage_
+      // <name>"), NOT the stage UUID registered via the pipeline meta. Pre-fix
+      // the pipelineStageSubtasks check missed it and it leaked into main as a
+      // duplicate (it also correctly renders in the SUBAGENT OUTPUT panel). With
+      // the active-pipeline gate it must reach multi-session ONLY.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      const wrapperSubtaskId =
+        'invoke_subagent_tooluse_PARENT_stage_architecture_review';
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: wrapperSubtaskId,
+          title: 'Sub-agent: general-task-execution',
+          kind: 'other',
+          rawInput: { name: 'general-task-execution', prompt: 'work' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: wrapperSubtaskId } },
+        },
+      });
+
+      // Panel-only: multi-session received it, main did NOT (no duplicate).
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(multiHandler.mock.calls[0]![0]).toBe(wrapperSubtaskId);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+
+    it('LIFECYCLE: after an all-terminal snapshot clears the group, a later standalone subagent surfaces in main again', async () => {
+      // Proves the suppression is not sticky: once every stage is terminal the
+      // group is released, so a subsequent standalone (no-pipeline) subagent's
+      // tool card forwards to main as before.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+
+      // Pipeline completes — every stage terminal → group released.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tooluse_PARENT',
+          status: 'completed',
+          rawOutput: 'Pipeline completed: 2 stages finished.',
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'completed',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'completed',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // A brand-new standalone subagent (NO pipeline) emits a tool call.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-standalone',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-standalone' } },
+        },
+      });
+
+      // Forwarded to BOTH main (standalone surfacing) and multi-session.
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+      const mainEvent = mainHandler.mock.calls[0]![0] as any;
+      expect(mainEvent.type).toBe(AgentEventType.ToolCall);
+      // Main copy renders as a normal inline card (crew sessionId stripped).
+      expect(mainEvent.sessionId).toBeUndefined();
+    });
+
+    it('BACKSTOP: a failed pipeline that leaves a stage pending still clears the group on the orchestrate card finishing', async () => {
+      // KAS stops a pipeline on first stage failure, so the terminal snapshot
+      // can still carry an unexecuted 'pending' stage (never all-terminal). The
+      // all-terminal check alone would leave the group stuck active. The
+      // ToolCallFinished backstop on the orchestrate card releases it anyway.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+
+      // Pipeline fails at stage 1; stage 'synthesis' was never reached → pending.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tooluse_PARENT',
+          status: 'failed',
+          content: [
+            {
+              type: 'content',
+              content: { type: 'text', text: 'Stage failed' },
+            },
+          ],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-review',
+                stages: [
+                  {
+                    name: 'architecture_review',
+                    role: 'general-task-execution',
+                    status: 'failed',
+                    dependsOn: [],
+                    agentSubtaskId: '7ec56d71-89b5-48a2-a56e-eb76195d6ff2',
+                  },
+                  {
+                    name: 'synthesis',
+                    role: 'general-task-execution',
+                    status: 'pending',
+                    dependsOn: ['architecture_review'],
+                    agentSubtaskId: '1e80a5b2-e67e-401b-9bc7-5837e4729870',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // Group should be cleared despite the lingering 'pending' stage: a later
+      // standalone subagent surfaces in main.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-standalone',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-standalone' } },
+        },
+      });
+
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('CAVEAT: a standalone subagent running concurrently with an active crew is suppressed from main', async () => {
+      // Documented tradeoff: the active-pipeline gate keys on "any crew active",
+      // not on which group a subtask belongs to. So a hidden/standalone spec
+      // subagent that happens to run WHILE a crew pipeline is active is also
+      // kept out of main (it still renders via multi-session). This is rare and
+      // preferred over the duplicate-card regression. Pinned here so a future
+      // change to this behavior is a conscious decision, not an accident.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await sendPipelineRunning();
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      // Unrelated standalone subagent (its subtaskId is not a registered stage).
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-concurrent',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'sub-unrelated' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Task 5: Permission request stage correlation ──
 
   describe('permission request stage correlation', () => {
@@ -5900,5 +6327,95 @@ describe('KasAcpClient — _kiro/tools/didChange', () => {
     // Hooks + tools + other ext subscriptions all dispose; at least the
     // tools one must have fired.
     expect(mockExtNotificationDispose).toHaveBeenCalled();
+  });
+});
+
+// ── KAS shell consent: compound command at the ACP permission-request boundary ──
+//
+// The v3+KAS shell fix gates a compound command (`git status && echo "done"`)
+// per segment. KAS carries the decision on `_meta.kiro.consent`: `resource` is
+// the WHOLE command and `triggeringResource` is the GATED sub-command that
+// actually needs consent right now. This test pins the ACP **ingestion**
+// boundary — the seam where `handlePermissionRequest` lifts that consent off the
+// incoming `session/request_permission` into the `consentContext` the UI reads.
+//
+// SCOPE (be honest about what this exercises): ingestion only. A regression that
+// drops `triggeringResource` here would silently break the whole fix (the UI
+// would derive trust for the wrong segment). The OTHER half — deriving the gated
+// segment into the outgoing reply (`kasResource` → `_meta.kiro.consent.resource`,
+// in app-store `respondToApproval`) — is exercised end-to-end through the real
+// TUI + store in `acp_integ_tests/permission-consent.test.ts` ("compound shell:
+// exact-trust persists the GATED segment"). It is NOT reachable from this
+// harness, which never instantiates the store.
+describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', () => {
+  let origKasPath: string | undefined;
+
+  beforeEach(() => {
+    origKasPath = process.env.KIRO_KAS_SERVER_PATH;
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
+    freshMocks();
+  });
+
+  afterEach(() => {
+    if (origKasPath === undefined) delete process.env.KIRO_KAS_SERVER_PATH;
+    else process.env.KIRO_KAS_SERVER_PATH = origKasPath;
+  });
+
+  const COMPOUND = 'git status && echo "done"';
+  const GATED = 'echo "done"';
+
+  // Drive an incoming KAS permission request and return the captured
+  // ApprovalRequest value + the pending response promise.
+  async function driveCompoundPermission(client: any) {
+    let approvalInfo: any = null;
+    const handler = mock((event: any) => {
+      if (event.type === AgentEventType.ApprovalRequest) {
+        approvalInfo = event.value;
+      }
+    });
+    client.onUpdate(handler);
+    await client.newSession();
+    handler.mockClear();
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'shell-compound-001',
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+      ],
+      _meta: {
+        kiro: {
+          consent: {
+            capability: 'shell',
+            resource: COMPOUND,
+            triggeringResource: GATED,
+          },
+        },
+      },
+    });
+
+    // handlePermissionRequest resolves via broadcast; let the event settle.
+    await new Promise((r) => setTimeout(r, 50));
+    return { getApproval: () => approvalInfo, permissionPromise };
+  }
+
+  it('ingestion: incoming request_permission preserves BOTH resource (whole command) and triggeringResource (gated segment) into consentContext', async () => {
+    const client = new KasAcpClient();
+    const { getApproval, permissionPromise } =
+      await driveCompoundPermission(client);
+
+    const approval = getApproval();
+    expect(approval).not.toBeNull();
+    // The consent the UI reads must carry the full picture: the whole compound
+    // command for display, and the gated segment so trust applies to the right
+    // sub-command. Dropping `triggeringResource` here is the regression guarded.
+    expect(approval.consentContext).toBeDefined();
+    expect(approval.consentContext.capability).toBe('shell');
+    expect(approval.consentContext.resource).toBe(COMPOUND);
+    expect(approval.consentContext.triggeringResource).toBe(GATED);
+
+    // Resolve so the pending ACP promise never dangles.
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
   });
 });

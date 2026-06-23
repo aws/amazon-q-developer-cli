@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "preinstall": "bash ./scripts/ensure-codeartifact-auth.sh",
-    "build": "bun run --filter twinki-monorepo build && bun run --filter '@kiro/tui' build"
+    "build": "bun run --filter twinki-monorepo build && bun run --filter '@kiro/tui' build",
+    "build:tui": "bun run --filter '@kiro/tui' build"
   },
   "workspaces": [
     "packages/*",
@@ -21,7 +22,7 @@
     "esbuild": "0.28.1",
     "fast-xml-parser": "5.7.2",
     "form-data": "4.0.6",
-    "hono": "4.12.21",
+    "hono": "4.12.25",
     "ip-address": "10.1.1",
     "js-yaml": "4.2.0",
     "langsmith": "0.6.0",

@@ -2,7 +2,11 @@ import React, { useEffect, useContext } from 'react';
 import * as net from 'net';
 import * as fs from 'fs';
 import { AppStoreContext } from '../stores/app-store';
-import type { TestCommand, TestResponse } from './shared/ipc-types';
+import type {
+  SerializedAppState,
+  TestCommand,
+  TestResponse,
+} from './shared/ipc-types';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { getMockSessionClient } from './MockSessionClient';
 
@@ -59,11 +63,13 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
     const handleCommand = (command: TestCommand): TestResponse => {
       switch (command.kind) {
         case 'GET_STORE':
+          // Maps don't survive JSON serialization — convert each to a plain
+          // object. TS can't relate the resulting object literal to the
+          // SerializedAppState mapped type, so assert it at this one boundary.
           // eslint-disable-next-line no-case-declarations
           const state = appStore.getState();
           return {
             kind: 'GET_STORE',
-            // Map doesn't survive JSON serialization — convert to plain object
             data: {
               ...state,
               liveOutputs: Object.fromEntries(state.liveOutputs),
@@ -72,7 +78,7 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
               ),
               sessions: Object.fromEntries(state.sessions),
               sessionMessages: Object.fromEntries(state.sessionMessages),
-            } as any,
+            } as unknown as SerializedAppState,
           };
 
         case 'MOCK_ERROR':
