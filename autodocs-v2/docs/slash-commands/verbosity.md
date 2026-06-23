@@ -87,16 +87,12 @@ You can also use exact tool names as filter tokens.
 
 ## Examples
 
-```
-/verbosity minimal     # density preset → "verbosity: density set to minimal"
-/verbosity on          # show output for all tools
-/verbosity off         # hide all tool output
-/verbosity +shell      # add a category to the output filters
-/verbosity -shell      # remove a category from the output filters
-/verbosity status      # "verbosity · filters: shell · density: default"
-```
+The Subcommands table above documents each form; these show the status strings:
 
-Running `/verbosity` with no arguments opens the interactive menu (below). MCP-prefixed tools use the `mcp` category (`/verbosity +mcp`).
+```
+/verbosity minimal     # → "verbosity: density set to minimal"
+/verbosity status      # → "verbosity · filters: shell · density: default"
+```
 
 ## Interactive Menu
 

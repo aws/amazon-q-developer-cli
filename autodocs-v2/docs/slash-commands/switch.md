@@ -27,56 +27,21 @@ The `/switch` command lets you navigate between your main conversation and any s
 /switch main
 ```
 
-| Argument | Description |
-|----------|-------------|
-| (none) | Open interactive session picker |
-| `main` | Return to main conversation |
-| `<name>` | Switch to session by exact name |
+| Argument      | Description                          |
+| ------------- | ------------------------------------ |
+| (none)        | Open interactive session picker      |
+| `main`        | Return to main conversation          |
+| `<name>`      | Switch to session by exact name      |
 | `<id-prefix>` | Switch to session by ID prefix match |
 
 ## Examples
 
-### Example 1: Open Session Picker
-
 ```
-/switch
+/switch                 # open the session picker (↑↓ navigate, Enter to select)
+/switch test-analysis   # switch by exact name -> "Switched to test-analysis"
+/switch main            # return to main chat   -> "Switched to main chat"
+/switch a1b2            # switch by ID prefix (first session whose ID starts with a1b2)
 ```
-
-Opens a selection menu listing all active spawned sessions plus a "main chat" option. Use ↑↓ to navigate, Enter to select.
-
-### Example 2: Switch by Name
-
-```
-/switch test-analysis
-```
-
-**Output:**
-```
-Switched to test-analysis
-```
-
-Directly switches to the session named "test-analysis" (previously created with `/spawn --name test-analysis ...`).
-
-### Example 3: Return to Main Chat
-
-```
-/switch main
-```
-
-**Output:**
-```
-Switched to main chat
-```
-
-Returns to the primary conversation from a spawned session view.
-
-### Example 4: Switch by ID Prefix
-
-```
-/switch a1b2
-```
-
-Switches to the first session whose ID starts with `a1b2`.
 
 ## Behavior
 

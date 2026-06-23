@@ -45,10 +45,11 @@ Lite mode is currently available on internal nightly builds. First-time eligible
 ### Mid-Session Switch
 
 ```
-/lite
+/lite       Switch to lite mode
+/tui        Switch back to TUI mode
 ```
 
-Switches from TUI to lite mode. The conversation is re-rendered in lite format.
+Either command re-renders the full conversation history in the target mode's format.
 
 ### Environment Variable
 
@@ -74,17 +75,6 @@ The UI mode is resolved with this priority (highest first):
 1. `KIRO_UI_MODE` environment variable
 2. `chat.ui.mode` setting in `cli.json`
 3. Default (`tui`)
-
-## Switching Between Modes
-
-You can switch modes at any time during a session:
-
-```
-/lite       Switch to lite mode
-/tui        Switch back to TUI mode
-```
-
-Both commands re-render the full conversation history in the target mode's format.
 
 ## Density Presets
 
