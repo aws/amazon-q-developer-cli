@@ -17,6 +17,46 @@ import { useTempKiroHome } from './temp-kiro-home.js';
 
 useTempKiroHome();
 
+// Walk every SGR escape and report which attributes are still ON at the tail.
+// Note [22] resets BOTH bold and dim (it means "neither bold nor dim", not
+// "close bold") — relevant because a code fence's closing chalk.dim doesn't by
+// itself clear a leaked color, which is why the trailing-ansi fix was needed.
+// 256/truecolor (38;5/38;2) set color and we skip their args so they aren't
+// reread as standalone codes. Shared by the wrap-boundary and streaming suites.
+function ansiStateAtEnd(s: string): {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  color: boolean;
+} {
+  const state = { bold: false, italic: false, underline: false, color: false };
+  // eslint-disable-next-line no-control-regex
+  const re = /\x1b\[([0-9;]*)m/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const codes = m[1] === '' ? ['0'] : m[1]!.split(';');
+    for (let i = 0; i < codes.length; i++) {
+      const n = parseInt(codes[i]!, 10);
+      if (n === 0) {
+        state.bold = state.italic = state.underline = state.color = false;
+      } else if (n === 1) state.bold = true;
+      else if (n === 3) state.italic = true;
+      else if (n === 4) state.underline = true;
+      else if (n === 22) state.bold = false;
+      else if (n === 23) state.italic = false;
+      else if (n === 24) state.underline = false;
+      else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) state.color = true;
+      else if (n === 38) {
+        state.color = true;
+        const next = parseInt(codes[i + 1]!, 10);
+        if (next === 5) i += 2;
+        else if (next === 2) i += 4;
+      } else if (n === 39) state.color = false;
+    }
+  }
+  return state;
+}
+
 describe('renderUserMessage', () => {
   test('single line with You: tag', () => {
     const stripped = stripAnsi(renderUserMessage('hello'));
@@ -138,52 +178,6 @@ describe('renderAgentMessage', () => {
   // uses — and surfaces which attribute is leaking, which is the
   // information you need to diagnose a regression here.
   describe('wrap-boundary closer preservation', () => {
-    // Walk every SGR escape and report which of the asserted attributes are
-    // still ON at the tail. Note [22] resets BOTH bold and dim (it means
-    // "neither bold nor dim", not "close bold") — relevant because a code
-    // fence's closing chalk.dim doesn't by itself clear a leaked color, which
-    // is why the trailing-ansi fix was needed. 256/truecolor (38;5/38;2) set
-    // color and we skip their args so they aren't reread as standalone codes.
-    function ansiStateAtEnd(s: string): {
-      bold: boolean;
-      italic: boolean;
-      underline: boolean;
-      color: boolean;
-    } {
-      const state = {
-        bold: false,
-        italic: false,
-        underline: false,
-        color: false,
-      };
-      // eslint-disable-next-line no-control-regex
-      const re = /\x1b\[([0-9;]*)m/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(s)) !== null) {
-        const codes = m[1] === '' ? ['0'] : m[1]!.split(';');
-        for (let i = 0; i < codes.length; i++) {
-          const n = parseInt(codes[i]!, 10);
-          if (n === 0) {
-            state.bold = state.italic = state.underline = state.color = false;
-          } else if (n === 1) state.bold = true;
-          else if (n === 3) state.italic = true;
-          else if (n === 4) state.underline = true;
-          else if (n === 22) state.bold = false;
-          else if (n === 23) state.italic = false;
-          else if (n === 24) state.underline = false;
-          else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97))
-            state.color = true;
-          else if (n === 38) {
-            state.color = true;
-            const next = parseInt(codes[i + 1]!, 10);
-            if (next === 5) i += 2;
-            else if (next === 2) i += 4;
-          } else if (n === 39) state.color = false;
-        }
-      }
-      return state;
-    }
-
     // Each row picks a 30-col width that forces wrap exactly at the
     // closer-bearing space, then asserts the named attributes are OFF at the
     // tail. The list-item link case covers the renderListItem→inline path so
@@ -252,49 +246,58 @@ describe('renderAgentMessage', () => {
   // emitted as literal text — but we lock that contract in here so a
   // future swap of the inline parser can't quietly regress it.
   describe('streaming-shape input (unclosed/partial markdown)', () => {
-    function ansiHasBold(s: string): boolean {
-      // eslint-disable-next-line no-control-regex
-      return /\x1b\[1m/.test(s);
-    }
-    function ansiHasItalic(s: string): boolean {
-      // eslint-disable-next-line no-control-regex
-      return /\x1b\[3m/.test(s);
-    }
-
     // Mid-stream: the closing marker hasn't arrived. Each unclosed marker must
     // render verbatim (no style flipped on for the rest of the buffer) until
-    // the close streams in. `noStyle` is checked on the body slice only —
-    // bold/italic SGR may still come from the role tag's chalk.bold.
-    test.each([
-      ['bold', '**partial bold', '**partial bold', ansiHasBold],
-      [
-        'underscore italic',
-        '_partial italic',
-        '_partial italic',
-        ansiHasItalic,
-      ],
-      ['inline code', 'a `partial code', '`partial code', undefined],
-      [
-        'link (bracket only)',
-        'see [link without close',
-        '[link without close',
-        undefined,
-      ],
-      [
-        'link (bracket+paren)',
-        'see [partial](http',
-        '[partial](http',
-        undefined,
-      ],
-      ['strikethrough', '~~partial strike', '~~partial strike', undefined],
-    ] as const)(
-      'unclosed %s renders as literal text',
-      (_name, input, literal, hasStyle) => {
+    // the close streams in. `clearedAtEnd` asserts ansiStateAtEnd leaves that
+    // attribute OFF at the tail — so nothing appended after this row inherits
+    // the style (the user's mid-stream-bold-leak regression).
+    test.each<{
+      name: string;
+      input: string;
+      literal: string;
+      clearedAtEnd?: 'bold' | 'italic';
+    }>([
+      {
+        name: 'bold',
+        input: '**partial bold',
+        literal: '**partial bold',
+        clearedAtEnd: 'bold',
+      },
+      {
+        name: 'underscore italic',
+        input: '_partial italic',
+        literal: '_partial italic',
+        clearedAtEnd: 'italic',
+      },
+      {
+        name: 'inline code',
+        input: 'a `partial code',
+        literal: '`partial code',
+      },
+      {
+        name: 'link (bracket only)',
+        input: 'see [link without close',
+        literal: '[link without close',
+      },
+      {
+        name: 'link (bracket+paren)',
+        input: 'see [partial](http',
+        literal: '[partial](http',
+      },
+      {
+        name: 'strikethrough',
+        input: '~~partial strike',
+        literal: '~~partial strike',
+      },
+    ])(
+      'unclosed $name renders as literal text',
+      ({ input, literal, clearedAtEnd }) => {
         const out = renderAgentMessage(input);
         expect(stripAnsi(out)).toContain(literal);
-        if (hasStyle) {
-          const body = out.slice(out.indexOf(literal));
-          expect(hasStyle(body)).toBe(false);
+        if (clearedAtEnd) {
+          // The role tag's chalk.bold is fully closed before the body, so the
+          // tail state must show no leaked bold/italic from the open marker.
+          expect(ansiStateAtEnd(out)[clearedAtEnd]).toBe(false);
         }
       }
     );
@@ -305,40 +308,16 @@ describe('renderAgentMessage', () => {
       // must light up; the trailing `**partial` must stay plain.
       const out = renderAgentMessage('normal **bold** then **partial');
       // Bold SGR appears at least once (for `bold`).
-      expect(ansiHasBold(out)).toBe(true);
+      // eslint-disable-next-line no-control-regex
+      expect(/\x1b\[1m/.test(out)).toBe(true);
       const stripped = stripAnsi(out);
       expect(stripped).toContain('normal bold then **partial');
       // After the last `[22m` (bold-off / dim-off) closer that ends the
       // styled span, the rest of the line must NOT contain another `[1m`.
       const lastBoldOff = out.lastIndexOf('\x1b[22m');
       expect(lastBoldOff).toBeGreaterThan(-1);
-      const tail = out.slice(lastBoldOff);
-      expect(ansiHasBold(tail)).toBe(false);
-    });
-
-    test('mid-stream bold open does not leak bold past end of buffer', () => {
-      // Most important regression: the user's concern. Render content
-      // ending with an unclosed bold marker, then check that the very
-      // last ANSI state in the buffer leaves bold OFF — so anything
-      // appended after this row in twinki's rendering pipeline is not
-      // painted bold by inheritance.
-      const out = renderAgentMessage('Hello **mid-stream');
-      // Walk the whole string through a tiny SGR state machine and
-      // verify bold is OFF at the tail. We only need bold here — the
-      // wrap-boundary suite above already pins italic/underline/color.
-      let bold = false;
       // eslint-disable-next-line no-control-regex
-      const re = /\x1b\[([0-9;]*)m/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(out)) !== null) {
-        const codes = m[1] === '' ? ['0'] : m[1]!.split(';');
-        for (const c of codes) {
-          const n = parseInt(c, 10);
-          if (n === 0 || n === 22) bold = false;
-          else if (n === 1) bold = true;
-        }
-      }
-      expect(bold).toBe(false);
+      expect(/\x1b\[1m/.test(out.slice(lastBoldOff))).toBe(false);
     });
 
     test('partial code block (no closing fence) renders as code', () => {
@@ -360,7 +339,8 @@ describe('renderAgentMessage', () => {
       // and our renderer reflects it correctly.
       const out = renderAgentMessage('# Hea');
       // Bold SGR present somewhere — header text is bolded.
-      expect(ansiHasBold(out)).toBe(true);
+      // eslint-disable-next-line no-control-regex
+      expect(/\x1b\[1m/.test(out)).toBe(true);
       expect(stripAnsi(out)).toContain('Kiro: Hea');
     });
   });
