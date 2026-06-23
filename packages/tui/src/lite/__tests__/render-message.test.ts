@@ -250,7 +250,7 @@ describe('renderMessageToText (tool_use)', () => {
   ])(
     'streaming fs_write (%s): no undefined / line-count noise',
     (_name, args, extraAbsent) => {
-      const out = stripAnsi(
+      expectRender(
         renderMessageToText(
           {
             id: `t-stream-${_name}`,
@@ -260,11 +260,9 @@ describe('renderMessageToText (tool_use)', () => {
             isFinished: false,
           },
           'kiro_default'
-        )
+        ),
+        { contains: ['fs_write'], absent: ['undefined', ...extraAbsent] }
       );
-      expect(out).not.toContain('undefined');
-      for (const a of extraAbsent) expect(out).not.toContain(a);
-      expect(out).toContain('fs_write');
     }
   );
 
@@ -294,7 +292,7 @@ describe('renderMessageToText (tool_use)', () => {
   ])(
     'denied fs_write %s renders as a diff, not a raw args tree',
     (_name, args, present, absent) => {
-      const out = stripAnsi(
+      expectRender(
         renderMessageToText(
           {
             id: `t-denied-${_name}`,
@@ -305,11 +303,9 @@ describe('renderMessageToText (tool_use)', () => {
             status: 'rejected',
           } as any,
           'kiro_default'
-        )
+        ),
+        { contains: ['DENIED'], matches: present, notMatches: absent }
       );
-      expect(out).toContain('DENIED');
-      for (const p of present) expect(out).toMatch(p);
-      for (const a of absent) expect(out).not.toMatch(a);
     }
   );
 });
