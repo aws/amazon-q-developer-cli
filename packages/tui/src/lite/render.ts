@@ -3162,8 +3162,7 @@ const PREVIEW_FIXTURE_READ = toolFixture({
   finishTime: 18,
 });
 
-/** Grep fixture — long pattern argument so the preview demonstrates how
- *  argsMaxChars clips a single value without affecting other rows. */
+// Long pattern argument so the preview shows argsMaxChars clipping one value.
 const PREVIEW_FIXTURE_GREP = toolFixture({
   id: 'preview-grep',
   name: 'grep',
@@ -3201,8 +3200,7 @@ const PREVIEW_FIXTURE_LONG_OUTPUT = toolFixture({
   finishTime: 32,
 });
 
-/** MCP-routed fixture — name is `mcp__*` so the `mcp` filter category gates
- *  it. Useful for showing how filter choices reshape the preview. */
+// `mcp__*` name so the `mcp` filter category gates it.
 const PREVIEW_FIXTURE_MCP = toolFixture({
   id: 'preview-mcp',
   name: 'mcp__nova-memory-mcp__recall',
@@ -3217,8 +3215,7 @@ const PREVIEW_FIXTURE_MCP = toolFixture({
   finishTime: 240,
 });
 
-/** Write fixture — exercises the diff renderer so users can see what
- *  write-tool calls look like under different verbosity settings. */
+// Exercises the diff renderer (write-tool path) in the preview.
 const PREVIEW_FIXTURE_WRITE = toolFixture({
   id: 'preview-write',
   name: 'fs_write',
@@ -3232,7 +3229,7 @@ const PREVIEW_FIXTURE_WRITE = toolFixture({
   finishTime: 64,
 });
 
-/** Agent prose fixture so the preview isn't wall-to-wall tool blocks. */
+// Agent prose so the preview isn't wall-to-wall tool blocks.
 const PREVIEW_FIXTURE_AGENT: MessageLike = {
   id: 'preview-agent',
   role: 'model',
