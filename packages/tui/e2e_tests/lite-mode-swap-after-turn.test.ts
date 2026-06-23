@@ -13,9 +13,8 @@ import {
   launchLiteE2E,
   launchTuiE2E,
   typeSlashCommand,
-  sendUserMessage,
 } from './lite/helpers/commands';
-import { streamReply } from './lite/helpers/responses';
+import { driveTurn } from './lite/helpers/responses';
 
 describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
   let testCase: E2ETestCase | null = null;
@@ -32,11 +31,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
       terminal: { width: 120, height: 50 },
     });
 
-    await streamReply(testCase, 'LITE_RESPONSE_MARKER');
-
-    await sendUserMessage(testCase, 'hello');
-    await testCase.waitForText('LITE_RESPONSE_MARKER', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'LITE_RESPONSE_MARKER', 'hello');
 
     await typeSlashCommand(testCase, CMD_TUI);
     await testCase.waitForStoreCondition((s) => s.uiMode === 'tui', 10000);
@@ -50,11 +45,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     );
     expect(hasLiteContent).toBe(true);
 
-    await streamReply(testCase, 'TUI_AFTER_SWAP');
-
-    await sendUserMessage(testCase, 'tui msg');
-    await testCase.waitForText('TUI_AFTER_SWAP', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'TUI_AFTER_SWAP', 'tui msg');
 
     const snap = testCase.getSnapshot();
     expect(snap.join('\n')).toContain('TUI_AFTER_SWAP');
@@ -66,11 +57,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     });
 
     // Complete a turn in TUI mode (advances the static cursor)
-    await streamReply(testCase, 'TUI_CONTENT_BEFORE_SWAP');
-
-    await sendUserMessage(testCase, 'hello tui');
-    await testCase.waitForText('TUI_CONTENT_BEFORE_SWAP', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'TUI_CONTENT_BEFORE_SWAP', 'hello tui');
 
     await typeSlashCommand(testCase, CMD_LITE);
     await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
@@ -80,11 +67,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     // If the cursor wasn't realigned via useLayoutEffect, the first lite
     // batch would silently never paint because twinki's bridge still holds
     // the old totalStaticWritten from TUI's renders.
-    await streamReply(testCase, 'LITE_AFTER_SWAP_MARKER');
-
-    await sendUserMessage(testCase, 'first lite');
-    await testCase.waitForText('LITE_AFTER_SWAP_MARKER', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'LITE_AFTER_SWAP_MARKER', 'first lite');
 
     // The new lite message must be visible on screen (bug 2.1 fix).
     const snap = testCase.getSnapshot();
@@ -100,17 +83,8 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
       terminal: { width: 120, height: 50 },
     });
 
-    await streamReply(testCase, 'TUI_TURN_ONE_REPLY');
-
-    await sendUserMessage(testCase, 'turn one');
-    await testCase.waitForText('TUI_TURN_ONE_REPLY', 15000);
-    await testCase.waitForIdle(10000);
-
-    await streamReply(testCase, 'TUI_TURN_TWO_REPLY');
-
-    await sendUserMessage(testCase, 'turn two');
-    await testCase.waitForText('TUI_TURN_TWO_REPLY', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'TUI_TURN_ONE_REPLY', 'turn one');
+    await driveTurn(testCase, 'TUI_TURN_TWO_REPLY', 'turn two');
 
     await typeSlashCommand(testCase, CMD_LITE);
     await testCase.waitForStoreCondition((s) => s.uiMode === 'lite', 10000);
@@ -127,11 +101,7 @@ describe('lite mode swap after turn [bug-mine 2.1, 2.2, 2.6]', () => {
     const msgCount = storeAfterSwap.messages.length;
     expect(msgCount).toBeGreaterThanOrEqual(4); // 2 user + 2 assistant at minimum
 
-    await streamReply(testCase, 'LITE_NEW_REPLY');
-
-    await sendUserMessage(testCase, 'new lite msg');
-    await testCase.waitForText('LITE_NEW_REPLY', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'LITE_NEW_REPLY', 'new lite msg');
 
     const snap = testCase.getSnapshot();
     const allText = snap.join('\n');

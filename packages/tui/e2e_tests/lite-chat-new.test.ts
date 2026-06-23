@@ -16,9 +16,8 @@ import {
   CMD_CHAT_NEW,
   launchLiteE2E,
   typeSlashCommand,
-  sendUserMessage,
 } from './lite/helpers/commands';
-import { streamReply } from './lite/helpers/responses';
+import { driveTurn } from './lite/helpers/responses';
 
 /**
  * Find the row index of the SECOND KIRO banner (the new session's banner).
@@ -58,10 +57,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
       'SESSION1_TURN3_MARKER',
     ];
     for (let i = 0; i < markers.length; i++) {
-      await streamReply(testCase, markers[i]!);
-      await sendUserMessage(testCase, `turn ${i + 1}`);
-      await testCase.waitForText(markers[i]!, 15000);
-      await testCase.waitForIdle(10000);
+      await driveTurn(testCase, markers[i]!, `turn ${i + 1}`);
     }
 
     // Before /chat new each marker is on screen exactly once.
@@ -107,10 +103,7 @@ describe('lite /chat new session isolation [bug-mine 2.3, 2.4, 2.5]', () => {
     expect(snapAfter.some((l) => l.includes('>'))).toBe(true);
 
     // 2.5: a new turn works after /chat new, and old content stays preserved.
-    await streamReply(testCase, 'AFTER_CHAT_NEW_WORKS');
-    await sendUserMessage(testCase, 'new session msg');
-    await testCase.waitForText('AFTER_CHAT_NEW_WORKS', 15000);
-    await testCase.waitForIdle(10000);
+    await driveTurn(testCase, 'AFTER_CHAT_NEW_WORKS', 'new session msg');
 
     const snapFinal = testCase.getSnapshot().join('\n');
     expect(snapFinal).toContain('AFTER_CHAT_NEW_WORKS');

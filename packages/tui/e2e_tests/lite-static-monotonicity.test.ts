@@ -10,8 +10,8 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-import { launchLiteE2E, sendUserMessage } from './lite/helpers/commands';
-import { streamReply } from './lite/helpers/responses';
+import { launchLiteE2E } from './lite/helpers/commands';
+import { driveTurn } from './lite/helpers/responses';
 
 describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
   let testCase: E2ETestCase | null = null;
@@ -39,10 +39,7 @@ describe('lite static append-only [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
     // once (no trailer re-emission). Asserting the growing invariant after each
     // turn covers the same monotonic/exactly-once contract as the unrolled turns.
     for (let turn = 0; turn < markers.length; turn++) {
-      await streamReply(testCase, markers[turn]!);
-      await sendUserMessage(testCase, `turn ${turn + 1}`);
-      await testCase.waitForText(markers[turn]!, 15000);
-      await testCase.waitForIdle(10000);
+      await driveTurn(testCase, markers[turn]!, `turn ${turn + 1}`);
 
       const snap = testCase.getSnapshot();
       let prevIdx = -1;

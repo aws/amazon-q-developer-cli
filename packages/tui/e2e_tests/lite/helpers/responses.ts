@@ -1,5 +1,6 @@
 import type { E2ETestCase } from '../../E2ETestCase';
 import type { MockStreamItem } from '../../types/chat-cli';
+import { sendUserMessage } from './commands';
 
 /** Wrap content as a streaming AssistantResponseEvent mock item. */
 export function assistantEvent(content: string): MockStreamItem {
@@ -25,4 +26,21 @@ export async function streamReply(
   });
   if (!opts.keepOpen)
     await tc.pushSendMessageResponse(null, { silent: opts.silent });
+}
+
+/**
+ * Drive one full e2e turn: queue `reply`, submit `prompt`, wait for the reply
+ * to paint, then settle. This streamReply→sendUserMessage→waitForText→waitForIdle
+ * quad is the standard "drive one turn" shape repeated across the lite e2e suite.
+ */
+export async function driveTurn(
+  tc: E2ETestCase,
+  reply: string,
+  prompt: string,
+  opts: { waitIdle?: boolean } = {}
+): Promise<void> {
+  await streamReply(tc, reply);
+  await sendUserMessage(tc, prompt);
+  await tc.waitForText(reply, 15000);
+  if (opts.waitIdle !== false) await tc.waitForIdle(10000);
 }

@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 import type { PtyManager } from '../src/test-utils/shared/pty-manager';
 import { launchLiteE2E } from './lite/helpers/commands';
-import { streamReply } from './lite/helpers/responses';
+import { driveTurn } from './lite/helpers/responses';
 
 /**
  * Access the private ptyManager to call resize().
@@ -53,23 +53,14 @@ describe('lite resize stability [bug-mine 1.7]', () => {
       terminal: { width: 80, height: 40 },
     });
 
-    const sendTurn = async (prompt: string, marker: string) => {
-      await streamReply(testCase!, marker);
-      await testCase!.sendKeys(prompt);
-      await testCase!.sleepMs(100);
-      await testCase!.pressEnter();
-      await testCase!.waitForText(marker, 15000);
-      await testCase!.waitForIdle(10000);
-    };
-
     const markers = [
       'TURN_1_MARKER_ALPHA',
       'TURN_2_MARKER_BRAVO',
       'TURN_3_MARKER_CHARLIE',
     ];
-    await sendTurn('first', markers[0]!);
-    await sendTurn('second', markers[1]!);
-    await sendTurn('third', markers[2]!);
+    await driveTurn(testCase, markers[0]!, 'first');
+    await driveTurn(testCase, markers[1]!, 'second');
+    await driveTurn(testCase, markers[2]!, 'third');
 
     // Right-trimmed line content for each marker in a snapshot.
     const markerLine = (snap: string[], m: string) =>
@@ -95,7 +86,7 @@ describe('lite resize stability [bug-mine 1.7]', () => {
     }
 
     // --- Send a new message at 120 cols — must render correctly ---
-    await sendTurn('wide', 'POST_RESIZE_WIDE_DELTA');
+    await driveTurn(testCase, 'POST_RESIZE_WIDE_DELTA', 'wide');
 
     const snapAfterNewMsg = testCase.getSnapshot();
     expect(
@@ -118,7 +109,7 @@ describe('lite resize stability [bug-mine 1.7]', () => {
     }
 
     // --- Send another message at 60 cols — must render ---
-    await sendTurn('narrow', 'POST_RESIZE_NARROW_ECHO');
+    await driveTurn(testCase, 'POST_RESIZE_NARROW_ECHO', 'narrow');
 
     const snapFinal = testCase.getSnapshot();
     expect(snapFinal.some((l) => l.includes('POST_RESIZE_NARROW_ECHO'))).toBe(
