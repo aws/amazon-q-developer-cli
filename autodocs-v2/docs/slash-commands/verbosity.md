@@ -3,7 +3,20 @@ doc_meta:
   title: /verbosity
   description: Configure lite-mode tool output rendering - density presets, filters, and display knobs
   category: slash_command
-  keywords: [verbosity, verbose, density, filter, tools, output, minimal, lean, full, lite, rendering]
+  keywords:
+    [
+      verbosity,
+      verbose,
+      density,
+      filter,
+      tools,
+      output,
+      minimal,
+      lean,
+      full,
+      lite,
+      rendering,
+    ]
   related: [lite, settings, lite-mode]
   validated: 2026-06-05
   commit: 8a53bd9d9
@@ -33,113 +46,57 @@ Without arguments, opens the interactive configuration menu. With arguments, app
 
 ## Subcommands
 
-| Subcommand | Description |
-|------------|-------------|
-| (none) | Open interactive menu |
-| `on` | Show output for all tools |
-| `off` | Hide all tool output |
-| `all` | Reset filters to show all output |
-| `status` | Show current configuration |
-| `reset` | Reset to default configuration |
-| `<preset>` | Apply density preset directly |
+| Subcommand         | Description                             |
+| ------------------ | --------------------------------------- |
+| (none)             | Open interactive menu                   |
+| `on`               | Show output for all tools               |
+| `off`              | Hide all tool output                    |
+| `all`              | Reset filters to show all output        |
+| `status`           | Show current configuration              |
+| `reset`            | Reset to default configuration          |
+| `<preset>`         | Apply density preset directly           |
 | `density <preset>` | Apply density preset (alternative form) |
-| `+<category>` | Add a category to output filters |
-| `-<category>` | Remove a category from output filters |
+| `+<category>`      | Add a category to output filters        |
+| `-<category>`      | Remove a category from output filters   |
 
 ### Density Presets
 
-| Preset | Tool Args | Reasoning | Elapsed | Output Filters | Thinking |
-|--------|-----------|-----------|---------|----------------|----------|
-| `minimal` | hidden | hidden | hidden | none | hidden |
-| `lean` | inline | hidden | shown | none | hidden |
-| `default` | block | shown | shown | shell only | shown |
-| `full` | block (no caps) | shown | shown | all tools | shown |
+| Preset    | Tool Args       | Reasoning | Elapsed | Output Filters | Thinking |
+| --------- | --------------- | --------- | ------- | -------------- | -------- |
+| `minimal` | hidden          | hidden    | hidden  | none           | hidden   |
+| `lean`    | inline          | hidden    | shown   | none           | hidden   |
+| `default` | block           | shown     | shown   | shell only     | shown    |
+| `full`    | block (no caps) | shown     | shown   | all tools      | shown    |
 
 ### Filter Categories
 
-| Category | Tools covered |
-|----------|--------------|
-| `shell` | execute_bash and similar |
-| `read` | fs_read and similar |
-| `web` | web_search, web_fetch |
-| `grep` | grep tools |
-| `glob` | glob tools |
-| `code` | code intelligence tools |
-| `introspect` | introspection tools |
-| `task` | task tools |
-| `subagent` | session_management, subagent, agent_crew |
-| `mcp` | All MCP tools (prefix `mcp__`) |
+| Category     | Tools covered                            |
+| ------------ | ---------------------------------------- |
+| `shell`      | execute_bash and similar                 |
+| `read`       | fs_read and similar                      |
+| `web`        | web_search, web_fetch                    |
+| `grep`       | grep tools                               |
+| `glob`       | glob tools                               |
+| `code`       | code intelligence tools                  |
+| `introspect` | introspection tools                      |
+| `task`       | task tools                               |
+| `subagent`   | session_management, subagent, agent_crew |
+| `mcp`        | All MCP tools (prefix `mcp__`)           |
 
 You can also use exact tool names as filter tokens.
 
 ## Examples
 
-### Example 1: Open Interactive Menu
-
 ```
-/verbosity
-```
-
-Opens a sectioned menu with options for density presets, tool display, subagent display, output filters, and truncation caps.
-
-### Example 2: Set Minimal Density
-
-```
-/verbosity minimal
+/verbosity minimal     # density preset → "verbosity: density set to minimal"
+/verbosity on          # show output for all tools
+/verbosity off         # hide all tool output
+/verbosity +shell      # add a category to the output filters
+/verbosity -shell      # remove a category from the output filters
+/verbosity status      # "verbosity · filters: shell · density: default"
 ```
 
-**Output:**
-```
-System: verbosity: density set to minimal
-```
-
-Tool calls render as single-line summaries with no args, reasoning, or elapsed time.
-
-### Example 3: Enable All Output
-
-```
-/verbosity on
-```
-
-**Output:**
-```
-System: verbosity · filters: all · density: custom
-```
-
-### Example 4: Show Only Shell and Web Output
-
-```
-/verbosity off
-/verbosity +shell
-/verbosity +web
-```
-
-### Example 5: Check Current Configuration
-
-```
-/verbosity status
-```
-
-**Output:**
-```
-System: verbosity · filters: shell · density: default
-```
-
-### Example 6: Add MCP Tools to Filters
-
-```
-/verbosity +mcp
-```
-
-Adds all MCP-prefixed tools to the output filter list.
-
-### Example 7: Remove a Category
-
-```
-/verbosity -shell
-```
-
-Removes shell tools from the output filter, hiding their output bars.
+Running `/verbosity` with no arguments opens the interactive menu (below). MCP-prefixed tools use the `mcp` category (`/verbosity +mcp`).
 
 ## Interactive Menu
 
@@ -171,17 +128,8 @@ Changes take effect immediately and persist across sessions.
 
 ## Troubleshooting
 
-### "/verbosity is only available in lite mode"
-
-Switch to lite mode first with `/lite`, then use `/verbosity`.
-
-### Filters set but no output showing
-
-Ensure the tool category matches. MCP tools require the `mcp` category. Use `/verbosity status` to verify current filters.
-
-### "Unknown density preset"
-
-Valid presets are: `minimal`, `lean`, `default`, `full`.
+- **"/verbosity is only available in lite mode"** — switch with `/lite` first.
+- **Filters set but no output** — confirm the category matches (MCP tools need `mcp`); verify with `/verbosity status`.
 
 ## Related
 

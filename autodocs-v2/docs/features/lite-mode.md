@@ -3,7 +3,18 @@ doc_meta:
   title: lite-mode
   description: Lightweight scrollback-friendly TUI mode with configurable tool output verbosity
   category: feature
-  keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
+  keywords:
+    [
+      lite,
+      lightweight,
+      scrollback,
+      ui mode,
+      verbosity,
+      density,
+      minimal,
+      lean,
+      classic,
+    ]
   related: [classic-vs-tui, settings]
   validated: 2026-06-05
   commit: 8a53bd9d9
@@ -77,136 +88,22 @@ Both commands re-render the full conversation history in the target mode's forma
 
 ## Density Presets
 
-Lite mode includes four density presets that control how much tool information appears in scrollback:
+Lite mode ships four density presets (`minimal`, `lean`, `default`, `full`) that control how much tool detail renders in scrollback. Set one with `/verbosity density <preset>`. See [/verbosity](../slash-commands/verbosity.md) for the per-preset table and the individual knobs (args mode, output filters, truncation caps, interactive menu).
 
-| Preset | Tool Args | Reasoning | Elapsed | Output Bar | Thinking |
-|--------|-----------|-----------|---------|------------|----------|
-| minimal | hidden | hidden | hidden | none | hidden |
-| lean | inline | hidden | shown | none | hidden |
-| default | block | shown | shown | shell only | shown |
-| full | block (no caps) | shown | shown | all tools | shown |
+## Settings
 
-Set a preset with:
+The default UI mode persists in `~/.kiro/settings/cli.json`:
 
-```
-/verbosity density minimal
-/verbosity density lean
-/verbosity density default
-/verbosity density full
-```
-
-## Verbosity Configuration
-
-Beyond presets, individual knobs can be tuned:
-
-### Tool Call Display
-
-- **Args mode**: `off` (hidden), `inline` (one-line chip), `block` (full key:value tree)
-- **Reasoning**: Show/hide the model's per-tool-call explanation
-- **Elapsed time**: Show/hide execution duration
-
-### Output Filters
-
-Control which tools show an output bar below their call:
-
-```
-/verbosity on         Show output for all tools
-/verbosity off        Hide all tool output
-/verbosity shell      Show only shell tool output
-/verbosity +web       Add web tools to current filters
-/verbosity -shell     Remove shell from current filters
-```
-
-Available filter categories: `shell`, `read`, `web`, `grep`, `glob`, `code`, `introspect`, `task`, `subagent`, `mcp`
-
-### Truncation Caps
-
-Limit how much detail appears per tool:
-
-- **argsMaxLines** — max lines of args below tool name
-- **argsMaxChars** — max chars per individual arg value
-- **outputMaxLines** — max lines of tool output
-- **outputMaxChars** — max chars per output row
-
-### Interactive Menu
-
-Running `/verbosity` with no arguments opens an interactive menu where you can adjust all settings visually.
-
-## Settings Reference
-
-Lite mode verbosity settings are persisted in `~/.kiro/settings/cli.json`:
-
-| Key | Type | Description |
-|-----|------|-------------|
+| Key            | Type                | Description     |
+| -------------- | ------------------- | --------------- |
 | `chat.ui.mode` | `"lite"` \| `"tui"` | Default UI mode |
-| `chat.tools.filters` | string[] | Tool output filter tokens |
-| `chat.tools.showReasoning` | boolean | Show per-tool reasoning |
-| `chat.tools.argsMode` | `"off"` \| `"inline"` \| `"block"` | Tool args display mode |
-| `chat.tools.showElapsed` | boolean | Show tool execution time |
-| `chat.tools.argsMaxLines` | number \| null | Args line cap |
-| `chat.tools.argsMaxChars` | number \| null | Args char cap |
-| `chat.tools.outputMaxLines` | number \| null | Output line cap |
-| `chat.tools.outputMaxChars` | number \| null | Output char cap |
-| `chat.tools.showWriteDiffs` | boolean | Show write tool diff bodies |
-| `chat.showTasks` | boolean | Show task tray |
-| `chat.subagent.showPipeline` | boolean | Show subagent pipeline tree |
-| `chat.subagent.showPrompts` | boolean | Show subagent prompts |
-| `chat.subagent.showRoles` | boolean | Show subagent roles |
-| `chat.subagent.showDeps` | boolean | Show subagent dependencies |
-| `chat.subagent.showResponses` | boolean | Show subagent responses |
 
-## Examples
-
-### Example 1: Start in Lite Mode
-
-Set lite as your default (persists across sessions):
-
-```bash
-kiro-cli settings chat.ui.mode lite
-kiro-cli chat
-```
-
-### Example 2: Switch Mid-Session
-
-```
-/lite
-```
-
-Output:
-```
-System: Switched to lite mode
-```
-
-### Example 3: Set Minimal Density
-
-```
-/verbosity density minimal
-```
-
-Tool calls now render as a single line with just the tool name and status.
-
-### Example 4: Enable Shell Output Only
-
-```
-/verbosity off
-/verbosity +shell
-```
-
-Only shell tool calls (`execute_bash`, etc.) show their output.
+All lite-mode verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md#persistence).
 
 ## Troubleshooting
 
-### "Lite mode is not available in this build"
-
-Lite mode requires the feature to be enabled in your build. It is currently gated to internal nightly builds.
-
-### Tool output not showing
-
-Check your verbosity filters with `/verbosity status`. If filters are empty (`[]`), no output bars render. Use `/verbosity on` to enable all output.
-
-### Switching back to TUI
-
-Type `/tui` to return to the full panel-based TUI interface.
+- **"Lite mode is not available in this build"** — the feature is gated to internal nightly builds.
+- **Tool output not showing** — check `/verbosity status`; empty filters render no output bars (`/verbosity on` enables all).
 
 ## Related
 
