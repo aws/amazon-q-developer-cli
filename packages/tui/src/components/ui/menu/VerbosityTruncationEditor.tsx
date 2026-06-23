@@ -22,15 +22,12 @@ const STEPS: ReadonlyArray<readonly [threshold: number, step: number]> = [
 ];
 const TAIL_STEP = 500;
 
-function nextUp(v: number): number {
-  const step = STEPS.find(([t]) => v < t)?.[1] ?? TAIL_STEP;
-  return Math.min(MAX_CAP, v + step);
-}
-
-function nextDown(v: number): number {
-  // `<=` (vs nextUp's `<`) so 5/50/200/1000 step down by the smaller band.
-  const step = STEPS.find(([t]) => v <= t)?.[1] ?? TAIL_STEP;
-  return Math.max(0, v - step);
+// `<` going up, `<=` going down so the boundary values (5/50/200/1000) step
+// down by the smaller band.
+function nudge(v: number, dir: 1 | -1): number {
+  const step =
+    STEPS.find(([t]) => (dir > 0 ? v < t : v <= t))?.[1] ?? TAIL_STEP;
+  return dir > 0 ? Math.min(MAX_CAP, v + step) : Math.max(0, v - step);
 }
 
 /** Per-field topology: saved-config cap key, preview fixture, editor heading. */
@@ -74,8 +71,9 @@ export const VerbosityTruncationEditor: React.FC<{
   const dim = useMemo(() => getColor('secondary'), [getColor]);
   const meta = FIELD_META[which];
 
-  const initial = useMemo(() => getVerboseDisplay()[meta.configKey], [meta]);
-  const [value, setValue] = useState<number | null>(initial);
+  const [value, setValue] = useState<number | null>(
+    () => getVerboseDisplay()[meta.configKey]
+  );
 
   // Honor /settings allowAnimations: when paused, hold the chevron steady-on.
   const animationPaused = useAnimationPaused();
@@ -110,13 +108,13 @@ export const VerbosityTruncationEditor: React.FC<{
       return;
     }
     if (key.leftArrow) {
-      const next = nextDown(valueRef.current ?? 5);
+      const next = nudge(valueRef.current ?? 5, -1);
       setDraft(next === 0 ? null : next);
       return;
     }
     if (key.rightArrow) {
       // null starts at 5 (the original "5 lines" preset).
-      setDraft(valueRef.current == null ? 5 : nextUp(valueRef.current));
+      setDraft(valueRef.current == null ? 5 : nudge(valueRef.current, 1));
       return;
     }
     if (key.backspace || key.delete) {
