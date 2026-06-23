@@ -7,20 +7,7 @@ doc_meta:
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords:
-    [
-      classic,
-      tui,
-      v1,
-      v2,
-      migration,
-      legacy,
-      differences,
-      new,
-      paste,
-      chip,
-      lite,
-    ]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
   related: [help, theme, spawn, feedback, lite-mode]
 ---
 
@@ -150,8 +137,7 @@ kiro-cli chat --legacy-mode
 
 ### Use Lite Mode
 
-Switch mid-session with `/lite` and `/tui`. See [Lite Mode](lite-mode.md) for
-enabling it, setting it as the default, and full behavior.
+See [Lite Mode](lite-mode.md) for enabling, switching, and behavior.
 
 ### Session Compatibility
 

@@ -3,18 +3,7 @@ doc_meta:
   title: lite-mode
   description: Lightweight scrollback-friendly TUI mode with configurable tool output verbosity
   category: feature
-  keywords:
-    [
-      lite,
-      lightweight,
-      scrollback,
-      ui mode,
-      verbosity,
-      density,
-      minimal,
-      lean,
-      classic,
-    ]
+  keywords: [lite, lightweight, scrollback, ui mode, verbosity, density, minimal, lean, classic]
   related: [classic-vs-tui, settings]
   validated: 2026-06-05
   commit: 8a53bd9d9
@@ -55,10 +44,6 @@ The mode is resolved highest-priority first:
 3. Default (`tui`)
 
 Density presets (`minimal`, `lean`, `default`, `full`) and the individual tool-output knobs are documented in [/verbosity](../slash-commands/verbosity.md).
-
-## Settings
-
-The default mode persists under `chat.ui.mode` (`"lite"` | `"tui"`) in `~/.kiro/settings/cli.json`; all verbosity keys (`chat.tools.*`, `chat.subagent.*`) are documented in [/verbosity](../slash-commands/verbosity.md).
 
 ## Troubleshooting
 
