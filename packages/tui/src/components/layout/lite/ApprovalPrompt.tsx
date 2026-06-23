@@ -17,8 +17,8 @@ import {
   buildRenderTheme,
   formatToolArgLines,
   formatSubagentApprovalLines,
+  renderUnifiedDiff,
 } from '../../../lite/render.js';
-import { renderUnifiedDiff } from '../../../lite/diff.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import chalk from 'chalk';
 
