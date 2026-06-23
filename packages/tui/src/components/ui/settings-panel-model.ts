@@ -14,10 +14,7 @@
  */
 
 import type { ExplorerRow } from './Explorer.js';
-import {
-  Settings,
-  DISPLAY_SETTINGS_DESCRIPTION,
-} from '../../constants/settings.js';
+import { DISPLAY_SETTINGS_DESCRIPTION } from '../../constants/settings.js';
 import {
   InterruptMode,
   DEFAULT_INTERRUPT_MODE,
@@ -136,13 +133,8 @@ export interface TopItem {
   description: string;
 }
 
-/**
- * Top-level menu rows shown in BOTH modes.
- *
- * The lite-only `verbosity` row is NOT here — it's spliced in by
- * {@link buildRows} when `uiMode === 'lite'` (see {@link VERBOSITY_ITEM}), so
- * TUI users never see a row whose handler errors with "lite mode only".
- */
+/** Top-level rows shown in BOTH modes. Lite-only `verbosity` is spliced in by
+ *  {@link buildRows} (see {@link VERBOSITY_ITEM}) so TUI never shows it. */
 export const TOP_ITEMS: readonly TopItem[] = [
   {
     id: 'display',
@@ -171,12 +163,8 @@ export const TOP_ITEMS: readonly TopItem[] = [
   },
 ];
 
-/**
- * Lite-only verbosity row, inserted right after Display in lite mode. Its
- * renderer controls only run inside <LiteLayout>, so it must not surface in
- * TUI. Selecting it opens the rich /verbosity command-menu (see the
- * `open-verbosity` action in {@link resolveSelect}).
- */
+/** Lite-only verbosity row, inserted after Display in lite mode. Must not
+ *  surface in TUI: its renderer controls only run inside <LiteLayout>. */
 export const VERBOSITY_ITEM: TopItem = {
   id: 'verbosity',
   label: 'Verbosity',
@@ -353,11 +341,8 @@ export function screenTitle(screen: Screen): string {
   return SCREEN_CONFIG[screen.type].title;
 }
 
-/**
- * `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu.
- * CommandMenu renders verbosity (not the Explorer SettingsPanel) so it can't
- * use {@link screenTitle}; unknown keys fall back to the root.
- */
+/** `/settings – verbosity – <sub>` breadcrumb for the lite /verbosity menu
+ *  (CommandMenu renders it, not SettingsPanel). Unknown keys fall back to root. */
 export function verbosityBreadcrumb(previewKey?: string): string {
   const ROOT = '/settings – verbosity';
   if (!previewKey || previewKey === 'top') return ROOT;
@@ -379,12 +364,6 @@ const VERBOSITY_BREADCRUMB_LABELS: Record<string, string> = {
 export function screenDescription(screen: Screen): string | undefined {
   return SCREEN_CONFIG[screen.type].description;
 }
-
-/** Setting keys the panel reads, re-exported for the component + tests. */
-export const PANEL_SETTING_KEYS = {
-  historyMode: Settings.CHAT_HISTORY_MODE,
-  interruptMode: Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-} as const;
 
 /** The default interrupt mode token, re-exported for convenience. */
 export { DEFAULT_INTERRUPT_MODE };

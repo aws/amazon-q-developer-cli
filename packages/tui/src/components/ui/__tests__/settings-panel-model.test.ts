@@ -75,28 +75,23 @@ describe('settings-panel-model', () => {
     });
   });
 
-  describe('Terminal sub-screen reachability', () => {
-    it('terminal sub-screen offers both newlines and interrupt behaviour', () => {
-      expect(rowIds({ type: 'terminal' })).toEqual(['newlines', 'interrupt']);
+  describe('sub-screen rows', () => {
+    // Every sub-screen exposes its leaf rows in order (reachability guard).
+    it.each<[Screen, string[]]>([
+      [{ type: 'terminal' }, ['newlines', 'interrupt']],
+      [{ type: 'terminal:interrupt' }, ['steer', 'queue']],
+      [{ type: 'history' }, ['session', 'global']],
+    ])('%o rows', (screen, expected) => {
+      expect(rowIds(screen)).toEqual(expected);
+    });
+
+    // TERMINAL_ITEMS source-of-truth: keeps the newlines/interrupt pair so the
+    // interrupt option can't silently drop out (the original regression).
+    it('TERMINAL_ITEMS lists newlines then interrupt', () => {
       expect(TERMINAL_ITEMS.map((i) => i.id)).toEqual([
         'newlines',
         'interrupt',
       ]);
-    });
-  });
-
-  describe('interrupt behaviour sub-screen', () => {
-    it('offers steer and queue', () => {
-      expect(rowIds({ type: 'terminal:interrupt' })).toEqual([
-        'steer',
-        'queue',
-      ]);
-    });
-  });
-
-  describe('history sub-screen', () => {
-    it('offers session and global', () => {
-      expect(rowIds({ type: 'history' })).toEqual(['session', 'global']);
     });
   });
 
