@@ -781,6 +781,27 @@ describe('verbose output envelope unwrapping', () => {
 
   const READ_ARGS = JSON.stringify({ operations: [{ path: '/tmp/x' }] });
 
+  // Wire-shape factories so each case expresses only its distinct envelope.
+  const ok = (output: unknown) => ({ status: 'success', output });
+  const shellEnvelope = (j: {
+    stdout?: string;
+    stderr?: string;
+    exit?: number;
+  }) =>
+    ok({
+      items: [
+        {
+          Json: {
+            exit_status: `exit status: ${j.exit ?? 0}`,
+            stdout: j.stdout ?? '',
+            stderr: j.stderr ?? '',
+          },
+        },
+      ],
+    });
+  const readContent = (text: string) => ok({ content: [{ text }] });
+  const items = (...xs: unknown[]) => ok({ items: xs });
+
   it.each<{
     name: string;
     overrides: Record<string, unknown>;
@@ -791,22 +812,7 @@ describe('verbose output envelope unwrapping', () => {
   }>([
     {
       name: 'shell {items:[{Json:{stdout...}}]} surfaces stdout only on success',
-      overrides: {
-        result: {
-          status: 'success',
-          output: {
-            items: [
-              {
-                Json: {
-                  exit_status: 'exit status: 0',
-                  stdout: 'hello world\n',
-                  stderr: '',
-                },
-              },
-            ],
-          },
-        },
-      },
+      overrides: { result: shellEnvelope({ stdout: 'hello world\n' }) },
       contains: ['hello world'],
       // No envelope-key leakage, trailing \n trimmed, no implicit (exit 0).
       absent: ['exit_status', '"items"', '"Json"', '\\n', '(exit 0)'],
@@ -814,20 +820,7 @@ describe('verbose output envelope unwrapping', () => {
     {
       name: 'shell multi-line stdout → real newlines, one bar per line',
       overrides: {
-        result: {
-          status: 'success',
-          output: {
-            items: [
-              {
-                Json: {
-                  exit_status: 'exit status: 0',
-                  stdout: 'line one\nline two\nline three',
-                  stderr: '',
-                },
-              },
-            ],
-          },
-        },
+        result: shellEnvelope({ stdout: 'line one\nline two\nline three' }),
       },
       contains: ['line one', 'line two', 'line three'],
       absent: ['\\n'],
@@ -836,20 +829,7 @@ describe('verbose output envelope unwrapping', () => {
     {
       name: 'shell non-zero exit and stderr both surface',
       overrides: {
-        result: {
-          status: 'success',
-          output: {
-            items: [
-              {
-                Json: {
-                  exit_status: 'exit status: 1',
-                  stdout: '',
-                  stderr: 'something failed',
-                },
-              },
-            ],
-          },
-        },
+        result: shellEnvelope({ exit: 1, stderr: 'something failed' }),
       },
       contains: ['(exit 1)', '[stderr] something failed'],
     },
@@ -858,12 +838,7 @@ describe('verbose output envelope unwrapping', () => {
       overrides: {
         name: 'fs_read',
         content: READ_ARGS,
-        result: {
-          status: 'success',
-          output: {
-            content: [{ text: 'first line\nsecond line\nthird line' }],
-          },
-        },
+        result: readContent('first line\nsecond line\nthird line'),
       },
       contains: ['first line', 'second line', 'third line'],
       absent: ['"content"', '"text"', '\\n'],
@@ -873,10 +848,7 @@ describe('verbose output envelope unwrapping', () => {
       overrides: {
         name: 'fs_read',
         content: READ_ARGS,
-        result: {
-          status: 'success',
-          output: { items: [{ Text: 'plain inner text\nwith newline' }] },
-        },
+        result: items({ Text: 'plain inner text\nwith newline' }),
       },
       contains: ['plain inner text', 'with newline'],
       absent: ['"items"', '"Text"'],
@@ -887,16 +859,11 @@ describe('verbose output envelope unwrapping', () => {
       overrides: {
         name: 'fs_read',
         content: READ_ARGS,
-        result: {
-          status: 'success',
-          output: {
-            items: [
-              { Text: 'first block' },
-              { Text: 'second block' },
-              { Json: { text: 'third block' } },
-            ],
-          },
-        },
+        result: items(
+          { Text: 'first block' },
+          { Text: 'second block' },
+          { Json: { text: 'third block' } }
+        ),
       },
       contains: ['first block', 'second block', 'third block'],
     },
@@ -905,29 +872,21 @@ describe('verbose output envelope unwrapping', () => {
       overrides: {
         name: 'mcp__some__tool',
         content: JSON.stringify({ query: 'x' }),
-        result: {
-          status: 'success',
-          output: { weird_field: 'a\nb\nc', other: 42 },
-        },
+        result: ok({ weird_field: 'a\nb\nc', other: 42 }),
       },
       contains: ['weird_field', 'a', 'b', 'c'],
       absent: ['\\n'],
     },
     {
       name: 'plain string output (no envelope) renders verbatim',
-      overrides: {
-        result: { status: 'success', output: 'hi from stdout\nsecond line' },
-      },
+      overrides: { result: ok('hi from stdout\nsecond line') },
       contains: ['hi from stdout', 'second line'],
     },
     {
       // Empty stdout + zero exit + no stderr → bar renders nothing; no crash/leak.
       name: 'shell envelope with missing stdout/stderr does not crash',
       overrides: {
-        result: {
-          status: 'success',
-          output: { items: [{ Json: { exit_status: 'exit status: 0' } }] },
-        },
+        result: ok({ items: [{ Json: { exit_status: 'exit status: 0' } }] }),
       },
       contains: ['execute_bash'],
       absent: ['"items"'],
@@ -961,6 +920,23 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     isFinished: true,
     result: { status: 'success', output },
   });
+
+  // Render a shell tool whose `command` arg is the value under test (output is
+  // a fixed 'ok' — these cases assert the ARGS block, not the output bar).
+  const renderShellArgs = (command: string) =>
+    stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-args-multiline',
+          role: 'tool_use',
+          name: 'shell',
+          content: JSON.stringify({ command }),
+          isFinished: true,
+          result: { status: 'success', output: 'ok' },
+        },
+        'kiro_default'
+      )
+    );
 
   // Cap tests patch only the cap(s) under test on top of the shared
   // all-flags-on BASE_DISPLAY, so each row reads as "this cap, this expectation".
@@ -1150,20 +1126,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // per-line char cap can't masquerade as the bug.
     setDisplay({ argsMaxLines: null, argsMaxChars: null });
     const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: fifty });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-unlimited-multiline',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
+    const out = renderShellArgs(fifty);
     // None of the truncation markers — neither the per-value
     // "(+N more lines)" nor the block-level "(truncated; +N more lines)".
     expect(out).not.toMatch(/more lines/);
@@ -1186,20 +1149,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
       ...Array.from({ length: 30 }, (_, i) => `line ${i + 1}`),
       'EOF',
     ].join('\n');
-    const content = JSON.stringify({ command: lines32 });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-stacked-marker-bug',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
+    const out = renderShellArgs(lines32);
     // Block-level marker reports 27 hidden — not the pre-fix misleading "+1".
     expect(out).toMatch(/\.\.\. \(truncated; \+27 more lines\)/);
     expect(out).not.toMatch(/\(truncated; \+1 more lines\)/);
@@ -1220,20 +1170,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // lines), 40 hidden. Marker reports 40, not 1.
     setDisplay({ argsMaxLines: 10, argsMaxChars: null });
     const fifty = Array.from({ length: 50 }, (_, i) => `line${i}`).join('\n');
-    const content = JSON.stringify({ command: fifty });
-    const out = stripAnsi(
-      renderMessageToText(
-        {
-          id: 't-stacked-marker-precise',
-          role: 'tool_use',
-          name: 'shell',
-          content,
-          isFinished: true,
-          result: { status: 'success', output: 'ok' },
-        },
-        'kiro_default'
-      )
-    );
+    const out = renderShellArgs(fifty);
     expect(out).toMatch(/\.\.\. \(truncated; \+40 more lines\)/);
     // argsMaxLines=10 keeps 10 visual rows: head (line0) + line1..line9.
     // line10..line49 land in the dropped 40-row tail.
@@ -1508,15 +1445,9 @@ describe('pretty-printed tool output (json envelopes)', () => {
       notMatches,
       rawContains,
     }) => {
-      if (display) {
-        setVerboseConfig({
-          display: {
-            ...DEFAULT_DISPLAY,
-            subagent: { ...DEFAULT_DISPLAY.subagent },
-            ...display,
-          },
-        });
-      }
+      // Only row with `display` fully overrides the caps it asserts, so the
+      // shared all-flags-on baseline is safe here.
+      if (display) setDisplay(display);
       const msg = msgOverride
         ? { ...buildJsonOutputMsg(undefined), ...msgOverride }
         : buildJsonOutputMsg(output);
