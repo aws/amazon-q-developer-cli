@@ -21,8 +21,10 @@ import {
   isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
-import { VerbosityPreview } from './menu/VerbosityPreview.js';
-import { VerbosityPreviewPane } from './menu/VerbosityPreviewPane.js';
+import {
+  VerbosityPreview,
+  VerbosityPreviewPane,
+} from './menu/VerbosityPreview.js';
 import {
   VerbosityTruncationEditor,
   truncationConfigKey,
@@ -41,7 +43,9 @@ import {
 // Two keys so a stray `p` while typing can't pop a preview.
 type PreviewMode = 'mini' | 'expanded' | 'hidden';
 
-const VERBOSITY_PREVIEW_KEYS = new Set<string>([
+// Members of VerbosityPreviewKey (lite/render); hand-listed only to runtime-
+// guard the cast below. Keep in sync if that union grows a fixture.
+const VERBOSITY_PREVIEW_KEYS: readonly VerbosityPreviewKey[] = [
   'top',
   'density',
   'tool',
@@ -49,7 +53,7 @@ const VERBOSITY_PREVIEW_KEYS = new Set<string>([
   'output',
   'truncation:args',
   'truncation:output',
-]);
+];
 
 export const CommandMenu: React.FC = () => {
   const commandInputValue = useAppStore((state) => state.commandInputValue);
@@ -194,15 +198,12 @@ export const CommandMenu: React.FC = () => {
       const cmd = slashCommands.find((c) => c.name === fullCommand);
       const isPrompt = cmd?.meta?.type === 'prompt';
 
-      // If the command has sub-commands, show them in a dropdown
       if (cmd && showSubcommandMenu(cmd)) {
         return;
       }
 
-      // Fill the command into input with trailing space
       setCommandInput(`${fullCommand} `);
 
-      // Show arg hints for prompts
       if (isPrompt && cmd?.meta?.arguments?.length) {
         setPromptHint(
           cmd.meta.arguments
@@ -387,7 +388,6 @@ export const CommandMenu: React.FC = () => {
     [activeTrigger, atQuery, slashCommands]
   );
 
-  // Unified @ menu: prompts first, then files
   const atMenuItems = useMemo(
     () => buildAtMenuItems(filteredPrompts, fileResults),
     [filteredPrompts, fileResults]
@@ -638,9 +638,7 @@ export const CommandMenu: React.FC = () => {
     const verbosityPreviewKey: VerbosityPreviewKey | null =
       previewKey === 'truncation'
         ? 'top'
-        : previewKey && VERBOSITY_PREVIEW_KEYS.has(previewKey)
-          ? (previewKey as VerbosityPreviewKey)
-          : null;
+        : (VERBOSITY_PREVIEW_KEYS.find((k) => k === previewKey) ?? null);
 
     // A highlighted density preset draft-renders that preset's display/filters
     // in the preview without persisting; no draft = saved config.
