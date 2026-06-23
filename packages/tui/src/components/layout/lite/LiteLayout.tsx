@@ -60,7 +60,8 @@ import {
   formatBootIndicator,
 } from './boot-indicator.js';
 import { getCliVersion } from '../../../utils/version.js';
-import { getGitBranch, getGitBranchAsync } from '../../../utils/git.js';
+import { getGitBranch } from '../../../utils/git.js';
+import { getGitBranchAsync } from '../../../utils/git-async.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { CommandMenu } from '../../ui/CommandMenu.js';
 import { Divider } from '../../ui/divider/Divider.js';
