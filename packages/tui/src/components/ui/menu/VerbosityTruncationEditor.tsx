@@ -12,9 +12,8 @@ import {
 
 const MAX_CAP = 99999;
 
-// Step ladder: below each threshold, adjust by that step. Bigger steps at
-// bigger values so terminal autorepeat (each keypress re-reads the value)
-// feels exponential without velocity tracking. Tail step applies above 1000.
+// Bigger steps at bigger values so terminal autorepeat (each keypress re-reads
+// the value) feels exponential without velocity tracking. Tail step >1000.
 const STEPS: ReadonlyArray<readonly [threshold: number, step: number]> = [
   [5, 1],
   [50, 5],
@@ -23,26 +22,18 @@ const STEPS: ReadonlyArray<readonly [threshold: number, step: number]> = [
 ];
 const TAIL_STEP = 500;
 
-function stepFor(v: number): number {
-  return STEPS.find(([t]) => v < t)?.[1] ?? TAIL_STEP;
-}
-
 function nextUp(v: number): number {
-  return Math.min(MAX_CAP, v + stepFor(v));
+  const step = STEPS.find(([t]) => v < t)?.[1] ?? TAIL_STEP;
+  return Math.min(MAX_CAP, v + step);
 }
 
 function nextDown(v: number): number {
-  // Match the previous boundaries (`<=` so 5/50/200/1000 step down by the
-  // smaller band) and floor at 0.
+  // `<=` (vs nextUp's `<`) so 5/50/200/1000 step down by the smaller band.
   const step = STEPS.find(([t]) => v <= t)?.[1] ?? TAIL_STEP;
   return Math.max(0, v - step);
 }
 
-/**
- * Per-field topology: the saved-config cap key, the preview fixture, and the
- * editor heading. Single source so the value/display/heading derivations below
- * don't re-encode the field→key mapping by hand.
- */
+/** Per-field topology: saved-config cap key, preview fixture, editor heading. */
 const FIELD_META = {
   argsLines: {
     configKey: 'argsMaxLines',
@@ -83,9 +74,7 @@ export const VerbosityTruncationEditor: React.FC<{
   const dim = useMemo(() => getColor('secondary'), [getColor]);
   const meta = FIELD_META[which];
 
-  // Seed from saved config so the editor opens on the current value.
   const initial = useMemo(() => getVerboseDisplay()[meta.configKey], [meta]);
-
   const [value, setValue] = useState<number | null>(initial);
 
   // Honor /settings allowAnimations: when paused, hold the chevron steady-on.
@@ -100,13 +89,10 @@ export const VerbosityTruncationEditor: React.FC<{
     return () => clearInterval(id);
   }, [animationPaused]);
 
-  // The useKeypress closure captures state by ref; mirror so it reads current
-  // values without resubscribing every render.
   const valueRef = useRef(value);
   valueRef.current = value;
-  // digitMode is non-render state (only the next keypress reads it): true once
-  // the user typed a digit since open/last-arrow, controlling append-vs-replace
-  // so typing "123" produces 123, not 3. Arrow/backspace/u clear it.
+  // digitMode: true once a digit was typed since open/last-arrow, so "123"
+  // appends to 123 instead of replacing to 3. Arrow/backspace/u clear it.
   const digitModeRef = useRef(false);
 
   const setDraft = (next: number | null, digit = false) => {
@@ -129,7 +115,7 @@ export const VerbosityTruncationEditor: React.FC<{
       return;
     }
     if (key.rightArrow) {
-      // From null we start at 5 (matches the original "5 lines" preset).
+      // null starts at 5 (the original "5 lines" preset).
       setDraft(valueRef.current == null ? 5 : nextUp(valueRef.current));
       return;
     }
@@ -164,8 +150,7 @@ export const VerbosityTruncationEditor: React.FC<{
 
   const valueText = value == null ? 'unlimited' : String(value);
 
-  // Override the cap being edited so the preview reflects the in-progress
-  // draft, not the saved value; VerbosityPreview reads saved filters itself.
+  // Override the edited cap so the preview reflects the in-progress draft.
   const display = useMemo(
     (): VerboseDisplayConfig => ({
       ...getVerboseDisplay(),

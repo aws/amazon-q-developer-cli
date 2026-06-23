@@ -8,24 +8,13 @@ import { Box } from '../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
-import { useTheme } from '../../../hooks/useThemeContext.js';
-import {
-  renderVerbosityPreview,
-  buildRenderTheme,
-  type VerbosityPreviewKey,
-} from '../../../lite/render.js';
-import {
-  getVerboseConfig,
-  getVerboseDisplay,
-  type VerboseDisplayConfig,
-} from '../../../lite/verbose.js';
+import { useVerbosityPreviewText } from './VerbosityPreview.js';
+import { type VerbosityPreviewKey } from '../../../lite/render.js';
+import { type VerboseDisplayConfig } from '../../../lite/verbose.js';
 import chalk from 'chalk';
 
 interface VerbosityPreviewPaneProps {
-  /** Which fixture set to render. Picked from the active /verbosity submenu. */
   which: VerbosityPreviewKey;
-  /** Draft overrides for an in-progress truncation cap / highlighted density
-   *  preset; default to the saved config. */
   displayOverride?: VerboseDisplayConfig;
   filtersOverride?: readonly string[];
   /** `p` collapses the pane back to the inline (mini) preview. */
@@ -44,97 +33,49 @@ export const VerbosityPreviewPane: React.FC<VerbosityPreviewPaneProps> = ({
   onCollapse,
   onHide,
 }) => {
-  const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
-  const dim = useMemo(() => getColor('secondary'), [getColor]);
-  const theme = useMemo(
-    () => buildRenderTheme(getColor, getUserPromptColor, getUserPromptBgHex),
-    [getColor, getUserPromptColor, getUserPromptBgHex]
+  const { text, dim } = useVerbosityPreviewText(
+    which,
+    displayOverride,
+    filtersOverride,
+    true
   );
-
-  const display = displayOverride ?? getVerboseDisplay();
-  const filters = useMemo(
-    () => filtersOverride ?? getVerboseConfig().filters,
-    [filtersOverride]
-  );
-
-  const lines = useMemo(() => {
-    const text = renderVerbosityPreview(which, display, filters, {
-      expanded: true,
-      theme,
-    });
-    return text.split('\n');
-  }, [which, display, filters, theme]);
+  const lines = useMemo(() => text.split('\n'), [text]);
 
   const totalLines = lines.length;
   const maxOffset = Math.max(0, totalLines - PANE_VISIBLE_LINES);
   const [offset, setOffset] = useState(0);
 
-  // Re-clamp offset when the underlying line count shrinks (e.g. user
-  // collapsed a section toggle while in the pane).
+  // Re-clamp when the line count shrinks (e.g. a section toggle collapsed).
   useEffect(() => {
     if (offset > maxOffset) setOffset(maxOffset);
   }, [maxOffset, offset]);
 
   useKeypress((input, key) => {
-    if (key.ctrl && (input === 'p' || input === 'P')) {
-      onHide();
-      return;
-    }
-    if (input === 'p' || input === 'P') {
-      onCollapse();
-      return;
-    }
-    // Esc is the safe-back action: returns to the menu with the mini preview,
-    // NOT the hidden state.
-    if (key.escape) {
-      onCollapse();
-      return;
-    }
-    if (key.upArrow) {
-      setOffset((o) => Math.max(0, o - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setOffset((o) => Math.min(maxOffset, o + 1));
-      return;
-    }
-    // Ctrl+B / Ctrl+F page back/forward (`less` vocab) — the preview can
-    // exceed a screen.
-    if (key.ctrl && (input === 'b' || input === 'B')) {
-      setOffset((o) => Math.max(0, o - PAGE_STEP));
-      return;
-    }
-    if (key.ctrl && (input === 'f' || input === 'F')) {
-      setOffset((o) => Math.min(maxOffset, o + PAGE_STEP));
-      return;
-    }
-    if (key.ctrl && (input === 'a' || input === 'A')) {
-      setOffset(0);
-      return;
-    }
-    if (key.ctrl && (input === 'z' || input === 'Z')) {
-      setOffset(maxOffset);
-      return;
-    }
+    const ch = input.toLowerCase();
+    if (key.ctrl && ch === 'p') return onHide();
+    // Esc is the safe-back action: returns to the menu (mini), NOT to hidden.
+    if (ch === 'p' || key.escape) return onCollapse();
+    if (key.upArrow) return setOffset((o) => Math.max(0, o - 1));
+    if (key.downArrow) return setOffset((o) => Math.min(maxOffset, o + 1));
+    // Ctrl+B/F page, Ctrl+A/Z jump to top/bottom (`less` vocab).
+    if (key.ctrl && ch === 'b')
+      return setOffset((o) => Math.max(0, o - PAGE_STEP));
+    if (key.ctrl && ch === 'f')
+      return setOffset((o) => Math.min(maxOffset, o + PAGE_STEP));
+    if (key.ctrl && ch === 'a') return setOffset(0);
+    if (key.ctrl && ch === 'z') return setOffset(maxOffset);
   });
 
   const visible = lines.slice(offset, offset + PANE_VISIBLE_LINES);
-  // Pad to fixed height so layout doesn't jump past short fixtures.
   const padding = Math.max(0, PANE_VISIBLE_LINES - visible.length);
 
-  const counter =
-    totalLines > PANE_VISIBLE_LINES
-      ? chalk.dim(` · ${offset + 1}-${offset + visible.length}/${totalLines}`)
-      : '';
-
-  const hint = (() => {
-    const parts: string[] = [];
-    if (totalLines > PANE_VISIBLE_LINES) {
-      parts.push('↑↓ scroll', 'ctrl+b/f page', 'ctrl+a/z top/bot');
-    }
-    parts.push('p shrink', 'ctrl+p hide', 'esc back');
-    return chalk.dim(parts.join(' · '));
-  })();
+  const scrollable = totalLines > PANE_VISIBLE_LINES;
+  const counter = scrollable
+    ? chalk.dim(` · ${offset + 1}-${offset + visible.length}/${totalLines}`)
+    : '';
+  const hint = chalk.dim(
+    `${scrollable ? '↑↓ scroll · ctrl+b/f page · ctrl+a/z top/bot · ' : ''}p shrink · ctrl+p hide · esc back`
+  );
 
   return (
     <Box flexDirection="column">

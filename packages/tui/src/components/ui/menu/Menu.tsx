@@ -228,10 +228,8 @@ export const Menu = React.memo(function Menu({
       // left/right drive the search-input cursor.
       onEscape();
     } else if (!searchable) {
-      // Swallow other keys so they can't fall through to the search branches.
+      // Non-searchable: swallow remaining keys.
     } else if (searchable && key.ctrl && input) {
-      // TODO: Extract a shared useLineEditor hook backed by Segment[] + input-editing.ts
-      // to reuse emacs bindings from PromptInput instead of duplicating here.
       if (input === 'u') {
         // Ctrl+U - clear line
         setSearchText('');
