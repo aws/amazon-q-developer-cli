@@ -1,6 +1,6 @@
 /**
  * Lite-mode render core: markdown / diff / syntax-highlight rendering for the
- * lite TUI (unified diff renderer lives at the bottom of this file).
+ * lite TUI.
  */
 import chalk from 'chalk';
 import { highlight } from 'cli-highlight';
@@ -37,6 +37,10 @@ import {
   type VerboseDisplayConfig,
 } from './verbose.js';
 import { needsLeadingBlankByRole } from './blank-rules.js';
+
+// Number-column width shared by read/write + diff renderers so they line up.
+const LINE_NUM_WIDTH = 4;
+
 export function resolveLanguageFromPathLite(path?: string): string | undefined {
   if (!path) return undefined;
   const base = path.split('/').pop() ?? path;
@@ -1217,8 +1221,6 @@ export function renderReadToolCall(
 
   const language = resolveLanguageFromPathLite(path);
 
-  // Number column mirrors the diff renderer's so reads/writes line up.
-  const LINE_NUM_WIDTH = 4;
   const linePrefixCols = 2 + LINE_NUM_WIDTH + 1;
   const codeCols = Math.max(20, cols - linePrefixCols);
   const sourceLines = text.replace(/\n+$/, '').split('\n');
@@ -3022,8 +3024,6 @@ const ROW_RESET = '\x1b[0m';
 
 const ADDED_BAR = '#80ffb5';
 const REMOVED_BAR = '#ff8080';
-
-const LINE_NUM_WIDTH = 4;
 
 interface DiffLine {
   type: 'context' | 'added' | 'removed';
