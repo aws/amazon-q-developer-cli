@@ -65,13 +65,6 @@ describe('settings-panel-model', () => {
       ]);
     });
 
-    it('selecting verbosity opens the verbosity command-menu', () => {
-      expect(resolveSelect({ type: 'top' }, 'verbosity')).toEqual({
-        kind: 'action',
-        action: { type: 'open-verbosity' },
-      });
-    });
-
     it('Terminal item advertises interrupt behaviour in its description', () => {
       const terminal = TOP_ITEMS.find((i) => i.id === 'terminal');
       // Regression guard: the description must mention interrupt behaviour so
@@ -82,36 +75,12 @@ describe('settings-panel-model', () => {
   });
 
   describe('Terminal sub-screen reachability', () => {
-    it('selecting Terminal navigates into the terminal sub-screen (not straight to newlines setup)', () => {
-      const result = resolveSelect({ type: 'top' }, 'terminal');
-      expect(result).toEqual({
-        kind: 'navigate',
-        screen: { type: 'terminal' },
-      });
-    });
-
     it('terminal sub-screen offers both newlines and interrupt behaviour', () => {
       expect(rowIds({ type: 'terminal' })).toEqual(['newlines', 'interrupt']);
       expect(TERMINAL_ITEMS.map((i) => i.id)).toEqual([
         'newlines',
         'interrupt',
       ]);
-    });
-
-    it('selecting Newlines runs the terminal setup flow', () => {
-      const result = resolveSelect({ type: 'terminal' }, 'newlines');
-      expect(result).toEqual({
-        kind: 'action',
-        action: { type: 'run-terminal-setup' },
-      });
-    });
-
-    it('selecting Interrupt behaviour navigates into the interrupt sub-screen', () => {
-      const result = resolveSelect({ type: 'terminal' }, 'interrupt');
-      expect(result).toEqual({
-        kind: 'navigate',
-        screen: { type: 'terminal:interrupt' },
-      });
     });
   });
 
@@ -122,92 +91,103 @@ describe('settings-panel-model', () => {
         'queue',
       ]);
     });
-
-    it('selecting steer applies the steer interrupt mode', () => {
-      const result = resolveSelect({ type: 'terminal:interrupt' }, 'steer');
-      expect(result).toEqual({
-        kind: 'action',
-        action: { type: 'apply-interrupt', mode: 'steer' },
-      });
-    });
-
-    it('selecting queue applies the queue interrupt mode', () => {
-      const result = resolveSelect({ type: 'terminal:interrupt' }, 'queue');
-      expect(result).toEqual({
-        kind: 'action',
-        action: { type: 'apply-interrupt', mode: 'queue' },
-      });
-    });
-
-    it('marks the active mode with a dot suffix (steer)', () => {
-      const rows = buildRows(
-        { type: 'terminal:interrupt' },
-        { historyMode: 'session', interruptMode: 'steer' }
-      );
-      expect(rows[0]!.values.label).toBe('Steer ●');
-      expect(rows[1]!.values.label).toBe('Queue');
-    });
-
-    it('marks the active mode with a dot suffix (queue)', () => {
-      const rows = buildRows(
-        { type: 'terminal:interrupt' },
-        { historyMode: 'session', interruptMode: 'queue' }
-      );
-      expect(rows[0]!.values.label).toBe('Steer');
-      expect(rows[1]!.values.label).toBe('Queue ●');
-    });
   });
 
   describe('history sub-screen', () => {
-    it('selecting Terminal-adjacent History navigates from top', () => {
-      expect(resolveSelect({ type: 'top' }, 'history')).toEqual({
-        kind: 'navigate',
-        screen: { type: 'history' },
-      });
-    });
-
-    it('applies session / global on select', () => {
-      expect(resolveSelect({ type: 'history' }, 'session')).toEqual({
-        kind: 'action',
-        action: { type: 'apply-history', mode: 'session' },
-      });
-      expect(resolveSelect({ type: 'history' }, 'global')).toEqual({
-        kind: 'action',
-        action: { type: 'apply-history', mode: 'global' },
-      });
-    });
-
-    it('marks the active history mode', () => {
-      const rows = buildRows(
-        { type: 'history' },
-        { historyMode: 'global', interruptMode: 'steer' }
-      );
-      expect(rows[0]!.values.label).toBe('Session');
-      expect(rows[1]!.values.label).toBe('Global ●');
+    it('offers session and global', () => {
+      expect(rowIds({ type: 'history' })).toEqual(['session', 'global']);
     });
   });
 
-  describe('top-level panel routing', () => {
-    it('routes display/theme/keybindings to their own panels', () => {
-      expect(resolveSelect({ type: 'top' }, 'display')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'display' },
-      });
-      expect(resolveSelect({ type: 'top' }, 'theme')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'theme' },
-      });
-      expect(resolveSelect({ type: 'top' }, 'keybindings')).toEqual({
-        kind: 'action',
-        action: { type: 'open-panel', panel: 'keybindings' },
+  describe('resolveSelect routing', () => {
+    // Every menu leaf maps to the correct screen-navigation or named action.
+    // Regression guard: Terminal must NAVIGATE (not run newlines setup), and
+    // Interrupt behaviour must be reachable as its own sub-screen.
+    it.each([
+      [{ type: 'top' }, 'display', { type: 'open-panel', panel: 'display' }],
+      [{ type: 'top' }, 'theme', { type: 'open-panel', panel: 'theme' }],
+      [
+        { type: 'top' },
+        'keybindings',
+        { type: 'open-panel', panel: 'keybindings' },
+      ],
+      [{ type: 'top' }, 'verbosity', { type: 'open-verbosity' }],
+      [{ type: 'terminal' }, 'newlines', { type: 'run-terminal-setup' }],
+      [
+        { type: 'terminal:interrupt' },
+        'steer',
+        { type: 'apply-interrupt', mode: 'steer' },
+      ],
+      [
+        { type: 'terminal:interrupt' },
+        'queue',
+        { type: 'apply-interrupt', mode: 'queue' },
+      ],
+      [
+        { type: 'history' },
+        'session',
+        { type: 'apply-history', mode: 'session' },
+      ],
+      [
+        { type: 'history' },
+        'global',
+        { type: 'apply-history', mode: 'global' },
+      ],
+    ] as const)('%o + %s → action', (screen, id, action) => {
+      expect(resolveSelect(screen, id)).toEqual({ kind: 'action', action });
+    });
+
+    it.each([
+      [{ type: 'top' }, 'terminal', { type: 'terminal' }],
+      [{ type: 'top' }, 'history', { type: 'history' }],
+      [{ type: 'terminal' }, 'interrupt', { type: 'terminal:interrupt' }],
+    ] as const)('%o + %s → navigate', (screen, id, target) => {
+      expect(resolveSelect(screen, id)).toEqual({
+        kind: 'navigate',
+        screen: target,
       });
     });
 
-    it('returns null for an unknown row id', () => {
-      expect(resolveSelect({ type: 'top' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'terminal' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'terminal:interrupt' }, 'bogus')).toBeNull();
-      expect(resolveSelect({ type: 'history' }, 'bogus')).toBeNull();
+    it.each([
+      [{ type: 'top' } as const],
+      [{ type: 'terminal' } as const],
+      [{ type: 'terminal:interrupt' } as const],
+      [{ type: 'history' } as const],
+    ])('returns null for an unknown row id on %o', (screen) => {
+      expect(resolveSelect(screen, 'bogus')).toBeNull();
+    });
+  });
+
+  describe('active-marker rendering', () => {
+    // The ● dot tags the persisted choice on each apply-on-select sub-screen.
+    it.each([
+      [
+        { type: 'terminal:interrupt' } as const,
+        'interruptMode' as const,
+        'steer',
+        ['Steer ●', 'Queue'],
+      ],
+      [
+        { type: 'terminal:interrupt' } as const,
+        'interruptMode' as const,
+        'queue',
+        ['Steer', 'Queue ●'],
+      ],
+      [
+        { type: 'history' } as const,
+        'historyMode' as const,
+        'session',
+        ['Session ●', 'Global'],
+      ],
+      [
+        { type: 'history' } as const,
+        'historyMode' as const,
+        'global',
+        ['Session', 'Global ●'],
+      ],
+    ])('%o marks active when %s=%s', (screen, key, value, labels) => {
+      const rows = buildRows(screen, { ...defaultSnapshot, [key]: value });
+      expect(rows.map((r) => r.values.label)).toEqual(labels);
     });
   });
 
