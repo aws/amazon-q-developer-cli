@@ -11,19 +11,14 @@
  * Exit codes: 0 = pass, 1 = finding, 2 = probe crash
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { E2ETestCase } from '../../e2e_tests/E2ETestCase';
 import { streamReply } from '../../e2e_tests/lite/helpers/responses';
-import {
-  createProbeContext,
-  slugify,
-  writeDoneMarker,
-  writeFinding,
-  writeMetrics,
-  runProbe,
-} from './probe-utils';
 
-const ctx = createProbeContext('forced-trim-lite');
-const WORK_ITEM = '04-forced-trim-lite';
+const NAME = 'forced-trim-lite';
+const startedAt = Date.now();
+const outputDir = process.env.PROBE_OUTPUT_DIR ?? './probe-output';
 
 // Exceeds cap with tool calls (50 turns * ~2 msgs = 100+ messages)
 const INITIAL_TURNS = parseInt(process.env.INITIAL_TURNS ?? '50', 10);
@@ -31,6 +26,7 @@ const POST_TRIM_TURNS = 10;
 const LITE_HISTORY_RENDER_CAP = 70;
 
 async function main() {
+  mkdirSync(outputDir, { recursive: true });
   const tc = await E2ETestCase.builder()
     .withTestName('probe-forced-trim-lite')
     .withLite()
@@ -43,7 +39,7 @@ async function main() {
 
     // Phase 1: Drive INITIAL_TURNS to exceed the cap
     console.log(
-      `[${ctx.name}] Driving ${INITIAL_TURNS} turns to exceed history cap (${LITE_HISTORY_RENDER_CAP})...`
+      `[${NAME}] Driving ${INITIAL_TURNS} turns to exceed history cap (${LITE_HISTORY_RENDER_CAP})...`
     );
     for (let i = 0; i < INITIAL_TURNS; i++) {
       await tc.pushSendMessageResponse(
@@ -70,19 +66,17 @@ async function main() {
       await tc.waitForText(`PRE_TRIM_RESPONSE_${i}`, 15000);
 
       if ((i + 1) % 10 === 0) {
-        console.log(`[${ctx.name}]   Turn ${i + 1}/${INITIAL_TURNS} complete`);
+        console.log(`[${NAME}]   Turn ${i + 1}/${INITIAL_TURNS} complete`);
       }
     }
 
     const storeAfterFill = await tc.getStore();
     console.log(
-      `[${ctx.name}] After ${INITIAL_TURNS} turns: ${storeAfterFill.messages.length} messages in store`
+      `[${NAME}] After ${INITIAL_TURNS} turns: ${storeAfterFill.messages.length} messages in store`
     );
 
     // Phase 2: Drive POST_TRIM_TURNS more after the cap
-    console.log(
-      `[${ctx.name}] Driving ${POST_TRIM_TURNS} more turns post-cap...`
-    );
+    console.log(`[${NAME}] Driving ${POST_TRIM_TURNS} more turns post-cap...`);
     const postTrimMarkers: string[] = [];
     for (let i = 0; i < POST_TRIM_TURNS; i++) {
       const marker = `POST_TRIM_MARKER_${i}_XYZ`;
@@ -146,73 +140,54 @@ async function main() {
       );
     }
 
-    console.log(`\n[${ctx.name}] === RESULTS ===`);
+    const visible = postTrimMarkers.filter((m) => allText.includes(m)).length;
+    console.log(`\n[${NAME}] === RESULTS ===`);
+    console.log(`[${NAME}] Messages in store: ${storeAtEnd.messages.length}`);
     console.log(
-      `[${ctx.name}] Messages in store: ${storeAtEnd.messages.length}`
+      `[${NAME}] Post-trim markers visible: ${visible}/${postTrimMarkers.length}`
     );
-    console.log(
-      `[${ctx.name}] Post-trim markers visible: ${postTrimMarkers.filter((m) => allText.includes(m)).length}/${postTrimMarkers.length}`
-    );
-    console.log(`[${ctx.name}] Findings: ${findings.length}`);
+    console.log(`[${NAME}] Findings: ${findings.length}`);
 
-    writeMetrics(ctx, {
-      probe: ctx.name,
-      platform: ctx.platform,
-      initialTurns: INITIAL_TURNS,
-      postTrimTurns: POST_TRIM_TURNS,
-      messagesInStore: storeAtEnd.messages.length,
-      postTrimVisible: postTrimMarkers.filter((m) => allText.includes(m))
-        .length,
-      postTrimTotal: postTrimMarkers.length,
-      findings,
-      elapsedMs: Date.now() - ctx.startedAt,
-    });
+    writeFileSync(
+      join(outputDir, `${NAME}-metrics.json`),
+      JSON.stringify(
+        {
+          probe: NAME,
+          initialTurns: INITIAL_TURNS,
+          postTrimTurns: POST_TRIM_TURNS,
+          messagesInStore: storeAtEnd.messages.length,
+          postTrimVisible: visible,
+          postTrimTotal: postTrimMarkers.length,
+          findings,
+          elapsedMs: Date.now() - startedAt,
+        },
+        null,
+        2
+      )
+    );
 
     if (findings.length > 0) {
       for (const f of findings) {
-        console.error(`[${ctx.name}] FINDING: ${f}`);
-        writeFinding(ctx, {
-          slug: slugify(f.slice(0, 40)),
-          title: f,
-          severity: 'regression',
-          description: f,
-          evidence: [
-            `Initial turns: ${INITIAL_TURNS}`,
-            `Post-trim turns: ${POST_TRIM_TURNS}`,
-            `Messages in store: ${storeAtEnd.messages.length}`,
-            `Post-trim markers visible: ${postTrimMarkers.filter((m) => allText.includes(m)).length}/${postTrimMarkers.length}`,
-            `LITE_HISTORY_RENDER_CAP: ${LITE_HISTORY_RENDER_CAP}`,
-          ].join('\n'),
-          proposedFix:
-            'Check liteStaticSkipBefore / static cursor alignment in ' +
-            'packages/tui/src/components/layout/lite/static-flush.ts and ' +
-            'LiteLayout.tsx after exceeding the 70-message cap.',
-          workItem: WORK_ITEM,
-          review: '03-unbounded-growth',
-          technique: '10',
-          file: 'packages/tui/src/components/layout/lite/static-flush.ts',
-        });
+        console.error(`[${NAME}] FINDING: ${f}`);
       }
-
-      writeDoneMarker(ctx, {
-        workItem: WORK_ITEM,
-        findingsEmitted: findings.length,
-        summary: `Emitted ${findings.length} finding(s) after ${INITIAL_TURNS + POST_TRIM_TURNS} turns in ${Date.now() - ctx.startedAt} ms.`,
-      });
       process.exit(1);
     }
 
-    writeDoneMarker(ctx, {
-      workItem: WORK_ITEM,
-      findingsEmitted: 0,
-      summary: `PASS after ${INITIAL_TURNS + POST_TRIM_TURNS} turns in ${Date.now() - ctx.startedAt} ms.`,
-    });
-
-    console.log(`[${ctx.name}] PASS`);
+    console.log(`[${NAME}] PASS`);
     process.exit(0);
   } finally {
     await tc.cleanup();
   }
 }
 
-await runProbe(ctx, main);
+try {
+  await main();
+} catch (err) {
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(
+    join(outputDir, `${NAME}-error.log`),
+    String(err instanceof Error ? (err.stack ?? err.message) : err)
+  );
+  console.error(`[${NAME}] probe crashed:`, err);
+  process.exit(2);
+}
