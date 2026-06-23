@@ -8,11 +8,13 @@ import {
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
- * Bug-mine 1.1, 1.3: lite append-only contract. Once an item is flushed to
- * twinki's <Static> it NEVER re-renders; a mutation attempt silently drops the
- * row from scrollback.
+ * Bug-mine 1.1, 1.3, 1.4, 1.5: lite append-only contract — the single owner of
+ * the monotonic/exactly-once invariant. Once an item is flushed to twinki's
+ * <Static> it NEVER re-renders; a mutation attempt silently drops the row from
+ * scrollback. Markers stay in commit order, exactly once each (no trailer
+ * re-emission), across subsequent turns.
  */
-describe('lite append-only mutation detection [bug-mine 1.1, 1.3]', () => {
+describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', () => {
   let testCase: TestCase | null = null;
   trackCleanup(() => testCase);
 
