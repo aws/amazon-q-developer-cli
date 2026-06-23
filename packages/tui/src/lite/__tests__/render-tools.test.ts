@@ -208,15 +208,12 @@ describe('formatToolArgLines wrap behavior', () => {
     const lines = formatToolArgLines('fetch', content, 40);
     expect(lines).not.toBeNull();
     const stripped = (lines ?? []).map(stripAnsi);
-    // First line: "  url: <head>"
     expect(stripped[0]).toMatch(/^ {2}url: /);
-    // At least one continuation
     expect(stripped.length).toBeGreaterThan(1);
-    // All continuation lines start at column 4 (one level deeper than the
+    // Continuation lines indent to column 4 (one level deeper than the
     // top-level "  url:" key, mirroring how an object's children would indent).
     for (const line of stripped.slice(1)) {
       expect(line.startsWith('    ')).toBe(true);
-      // Line stays within the requested width
       expect(line.length).toBeLessThanOrEqual(40);
     }
   });
@@ -401,7 +398,6 @@ describe('formatToolArgLines wrap behavior', () => {
     const lines = formatToolArgLines('shell', content, 120, 8);
     expect(lines).not.toBeNull();
     const stripped = (lines ?? []).map(stripAnsi);
-    // First line attached to the key, clipped.
     expect(stripped[0]).toMatch(/command: aaaaaaa…/);
     // Continuation rows also clipped — same per-line cap applied.
     expect(stripped.some((l) => /^\s+bbbbbbb…/.test(l))).toBe(true);
