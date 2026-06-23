@@ -67,7 +67,10 @@ import {
   useAllowAsciiArt,
 } from '../../../hooks/useGlyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
-import { getAgentColor } from '../../../utils/agentColors.js';
+import {
+  getAgentColor,
+  getAgentDisplayName,
+} from '../../../utils/agentColors.js';
 import { isParentSubagentTool } from '../../../types/agent-events.js';
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
@@ -1779,14 +1782,15 @@ function formatGoalStatusSegment(
 }
 
 // Color the agent name with its stable agentColors.ts color (same as the V2
-// InlineLayout chip). Name shown verbatim; only the color is mapped.
+// InlineLayout chip). Built-in ids use canonical product labels; custom
+// agent names pass through.
 function colorAgentName(
   agentName: string | null,
   getColor: (path: string) => any
 ): string {
   const raw = agentName || 'kiro';
   const color = getAgentColor(raw, getColor);
-  return color(raw);
+  return color(getAgentDisplayName(raw));
 }
 
 // Smooth RGB gradient for the ctx-usage indicator (replaces step thresholds

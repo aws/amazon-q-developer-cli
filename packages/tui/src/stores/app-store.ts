@@ -2240,7 +2240,7 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
-    ].filter((cmd) => agentEngine !== 'kas' || cmd.name !== '/tui'), // Backend sends all commands via CommandsUpdate
+    ],
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],

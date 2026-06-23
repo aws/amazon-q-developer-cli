@@ -7,6 +7,7 @@ import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
 import { visibleWidth } from '../utils/text-width.js';
 import { resolveHighlightLanguage } from '../utils/highlight-languages.js';
+import { getAgentDisplayName } from '../utils/agentColors.js';
 import {
   parseMarkdown,
   parseInlineMarkdown,
@@ -608,9 +609,10 @@ export function renderAgentMessage(
   glyphs?: Glyphs
 ): string {
   if (!content.trim()) return '';
-  // Use the active agent's name verbatim (custom agents / swapped via /agent)
-  // so the user can tell which persona answered; default "Kiro".
-  const tag = agentName && agentName.trim() ? agentName : 'Kiro';
+  // Default to "Kiro" when no active agent is known. Built-in mode ids use
+  // canonical product labels; custom agent names pass through.
+  const rawAgentName = agentName?.trim();
+  const tag = rawAgentName ? getAgentDisplayName(rawAgentName) : 'Kiro';
   // Per-agent role-tag color so scrollback matches the footer (getAgentColor);
   // falls back to theme.brand for the default agent and pure contexts.
   const tagColorFn =

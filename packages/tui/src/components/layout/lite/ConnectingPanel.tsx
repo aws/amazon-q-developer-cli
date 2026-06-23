@@ -1,4 +1,7 @@
-import { getAgentColor } from '../../../utils/agentColors.js';
+import {
+  getAgentColor,
+  getAgentDisplayName,
+} from '../../../utils/agentColors.js';
 import chalk from 'chalk';
 
 // Footer indicator while an `/agent` RPC is in flight. Spinner + the target
@@ -25,5 +28,5 @@ export function renderPendingAgent(
 ): string {
   const color = getAgentColor(pendingName, getColor);
   const spin = spinnerFrames[frame % spinnerFrames.length];
-  return `${chalk.dim(spin)} ${color(pendingName)}`;
+  return `${chalk.dim(spin)} ${color(getAgentDisplayName(pendingName))}`;
 }

@@ -8,6 +8,10 @@ import {
   renderVerbosityPreview,
 } from '../render.js';
 import {
+  KAS_DEFAULT_AGENT_ID,
+  KAS_DEFAULT_AGENT_NAME,
+} from '../../constants/agents.js';
+import {
   setVerboseConfig,
   resetVerboseCache,
   DEFAULT_DISPLAY,
@@ -64,6 +68,22 @@ describe('renderSystemInfo', () => {
   test('shows message dimmed', () => {
     const result = renderSystemInfo('Loading...');
     expect(result).toContain('Loading...');
+  });
+});
+
+describe('renderMessageToText agent labels', () => {
+  test('renders the KAS default agent with its canonical display label', () => {
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 'm1',
+          role: 'model',
+          content: 'Ready',
+        },
+        KAS_DEFAULT_AGENT_ID
+      )
+    );
+    expect(out).toBe(`${KAS_DEFAULT_AGENT_NAME}: Ready`);
   });
 });
 
