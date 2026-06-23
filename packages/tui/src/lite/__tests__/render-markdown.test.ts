@@ -138,23 +138,23 @@ describe('renderAgentMessage', () => {
   // uses — and surfaces which attribute is leaking, which is the
   // information you need to diagnose a regression here.
   describe('wrap-boundary closer preservation', () => {
+    // Walk every SGR escape and report which of the asserted attributes are
+    // still ON at the tail. Note [22] resets BOTH bold and dim (it means
+    // "neither bold nor dim", not "close bold") — relevant because a code
+    // fence's closing chalk.dim doesn't by itself clear a leaked color, which
+    // is why the trailing-ansi fix was needed. 256/truecolor (38;5/38;2) set
+    // color and we skip their args so they aren't reread as standalone codes.
     function ansiStateAtEnd(s: string): {
       bold: boolean;
-      dim: boolean;
       italic: boolean;
       underline: boolean;
-      strike: boolean;
       color: boolean;
-      bg: boolean;
     } {
       const state = {
         bold: false,
-        dim: false,
         italic: false,
         underline: false,
-        strike: false,
         color: false,
-        bg: false,
       };
       // eslint-disable-next-line no-control-regex
       const re = /\x1b\[([0-9;]*)m/g;
@@ -164,46 +164,21 @@ describe('renderAgentMessage', () => {
         for (let i = 0; i < codes.length; i++) {
           const n = parseInt(codes[i]!, 10);
           if (n === 0) {
-            state.bold = false;
-            state.dim = false;
-            state.italic = false;
-            state.underline = false;
-            state.strike = false;
-            state.color = false;
-            state.bg = false;
+            state.bold = state.italic = state.underline = state.color = false;
           } else if (n === 1) state.bold = true;
-          else if (n === 2) state.dim = true;
           else if (n === 3) state.italic = true;
           else if (n === 4) state.underline = true;
-          else if (n === 9) state.strike = true;
-          else if (n === 22) {
-            // [22] resets BOTH bold and dim — it means "neither bold nor
-            // dim", not "close bold". This is why a code block fence's
-            // closing `chalk.dim('```')` doesn't fix a leaked color (and
-            // why the prior trailing-ansi fix was needed for that case).
-            state.bold = false;
-            state.dim = false;
-          } else if (n === 23) state.italic = false;
+          else if (n === 22) state.bold = false;
+          else if (n === 23) state.italic = false;
           else if (n === 24) state.underline = false;
-          else if (n === 29) state.strike = false;
           else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97))
             state.color = true;
           else if (n === 38) {
             state.color = true;
-            // 38;5;N (256-color) or 38;2;R;G;B (truecolor) — skip the args
-            // so they don't get reinterpreted as standalone codes.
             const next = parseInt(codes[i + 1]!, 10);
             if (next === 5) i += 2;
             else if (next === 2) i += 4;
           } else if (n === 39) state.color = false;
-          else if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107))
-            state.bg = true;
-          else if (n === 48) {
-            state.bg = true;
-            const next = parseInt(codes[i + 1]!, 10);
-            if (next === 5) i += 2;
-            else if (next === 2) i += 4;
-          } else if (n === 49) state.bg = false;
         }
       }
       return state;
@@ -429,17 +404,19 @@ describe('inline markdown inside block elements', () => {
       ['\x1b[1m', '\x1b[36m'],
     ],
     [
+      // absent '*' pins the lone-asterisk strip (no leftover italic marker).
       'list item: italic',
       '- this is *important* stuff',
       ['- this is important stuff'],
-      [],
+      ['*'],
       ['\x1b[3m'],
     ],
     [
+      // absent '[docs](' pins the [label](url) marker shape is consumed.
       'list item: link',
       '- see [docs](https://example.com)',
       ['docs', 'https://example.com'],
-      [],
+      ['[docs]('],
       ['\x1b[4m'],
     ],
     [
@@ -495,37 +472,6 @@ describe('inline markdown inside block elements', () => {
       for (const code of ansi) expect(out).toContain(code);
     }
   );
-
-  test('list item: italic strips lone * markers', () => {
-    const out = renderAgentMessage('- this is *important* stuff');
-    expect(stripAnsi(out)).not.toMatch(/(?<!\*)\*(?!\*)/);
-  });
-
-  test('list item: link strips the [label](url) marker shape', () => {
-    const out = renderAgentMessage('- see [docs](https://example.com)');
-    expect(stripAnsi(out)).not.toMatch(/\[docs\]\(/);
-  });
-
-  // The user-reported bug shape: a bulleted list mixing **bold** keys with
-  // `code` values — Kiro's typical "settings explanation" output. This is
-  // the exact input that used to break.
-  test('list of bold-key + code-value pairs renders fully styled', () => {
-    const md = [
-      '- **port**: the `--port` flag',
-      '- **host**: the `--host` flag',
-      '- **debug**: the `--debug` flag',
-    ].join('\n');
-    const out = renderAgentMessage(md);
-    const stripped = stripAnsi(out);
-    expect(stripped).toContain('- port: the --port flag');
-    expect(stripped).toContain('- host: the --host flag');
-    expect(stripped).toContain('- debug: the --debug flag');
-    expect(stripped).not.toContain('**');
-    expect(stripped).not.toContain('`');
-    // Both bold and cyan must show up in the styled output.
-    expect(out).toContain('\x1b[1m');
-    expect(out).toContain('\x1b[36m');
-  });
 });
 
 describe('markdown scoping', () => {

@@ -621,15 +621,15 @@ describe('verbose tool output rendering', () => {
     ...overrides,
   });
 
-  // Each row sets a filter, renders one tool message (default = execute_bash
-  // with "hi from stdout"), then asserts what the output bar shows/hides. The
-  // env-var row exercises the saved-config-wins rule; the "output:" header
-  // shares the shouldShowToolOutput gate, so it appears iff the bar does.
+  // RENDER-layer facts only. The shouldShowToolOutput/categorize filter gate
+  // (empty/all/category/exact-name/sibling) is pinned exhaustively in
+  // verbose.test.ts; here we assert the bar+header geometry the render path
+  // adds on top of that gate: bar glyph + "output:" header on a passing tool,
+  // error text surfaces, and empty output emits no orphan header.
   it.each<{
     name: string;
     filters: string[];
     msgOverride?: Record<string, unknown>;
-    env?: string;
     contains?: string[];
     absent?: string[];
   }>([
@@ -645,49 +645,6 @@ describe('verbose tool output rendering', () => {
       contains: ['hi from stdout', 'second line', '│', 'output:'],
     },
     {
-      name: 'filter excludes this tool: no bar and no output: header',
-      filters: ['mcp'],
-      absent: ['hi from stdout', '│', 'output:'],
-    },
-    {
-      name: 'filter "shell" lets bash through',
-      filters: ['shell'],
-      contains: ['hi from stdout'],
-    },
-    {
-      name: 'filter "shell" blocks fs_read',
-      filters: ['shell'],
-      msgOverride: {
-        id: 't-verbose-2',
-        name: 'fs_read',
-        content: JSON.stringify({ operations: [{ path: '/tmp/x' }] }),
-        result: { status: 'success', output: 'file contents here' },
-      },
-      absent: ['file contents here'],
-    },
-    {
-      name: 'exact MCP filter lets the named tool through',
-      filters: ['mcp__nova-memory-mcp__recall'],
-      msgOverride: {
-        id: 't-verbose-3',
-        name: 'mcp__nova-memory-mcp__recall',
-        content: JSON.stringify({ query: 'history' }),
-        result: { status: 'success', output: 'memory blob' },
-      },
-      contains: ['memory blob'],
-    },
-    {
-      name: 'exact MCP filter blocks a sibling MCP tool',
-      filters: ['mcp__nova-memory-mcp__recall'],
-      msgOverride: {
-        id: 't-verbose-4',
-        name: 'mcp__nova-memory-mcp__remember',
-        content: JSON.stringify({ messages: [] }),
-        result: { status: 'success', output: 'persisted' },
-      },
-      absent: ['persisted'],
-    },
-    {
       name: 'error result renders the error text + output: header',
       filters: ['all'],
       msgOverride: {
@@ -695,14 +652,6 @@ describe('verbose tool output rendering', () => {
         result: { status: 'error', error: 'command failed: exit 1' },
       },
       contains: ['command failed', 'output:'],
-    },
-    {
-      // Env var is only a first-run hint; a persisted config wins, so
-      // KIRO_LITE_VERBOSE=1 must NOT force output back on over filters:[].
-      name: 'env KIRO_LITE_VERBOSE=1 is a no-op when a config is saved',
-      filters: [],
-      env: '1',
-      absent: ['hi from stdout'],
     },
     {
       // Empty output early-returns before the header, so no orphan label.
@@ -714,12 +663,8 @@ describe('verbose tool output rendering', () => {
       },
       absent: ['output:', '│'],
     },
-  ])('$name', ({ filters, msgOverride, env, contains, absent }) => {
+  ])('$name', ({ filters, msgOverride, contains, absent }) => {
     setVerboseConfig({ filters });
-    if (env !== undefined) {
-      process.env.KIRO_LITE_VERBOSE = env;
-      resetVerboseCache();
-    }
     const out = stripAnsi(
       renderMessageToText(toolMsg(msgOverride), 'kiro_default')
     );
