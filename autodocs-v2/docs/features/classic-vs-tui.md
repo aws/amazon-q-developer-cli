@@ -1,21 +1,21 @@
 ---
 doc_meta:
-  validated: 2026-06-05
-  commit: 8a53bd9d9
+  validated: 2026-06-13
+  commit: ed1d467b6
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, lite]
-  related: [help, theme, spawn, feedback, lite-mode]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
+  related: [help, theme, spawn, feedback]
 ---
 
 ## Overview
 
-Kiro CLI has three interfaces: the new TUI (default), lite mode, and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI panels, lite mode is a lightweight scrollback-friendly alternative, and classic mode is the original Rust-based experience.
+Kiro CLI has two interfaces: the new TUI (default) and classic mode. The new TUI is a React/Ink-based terminal interface with richer UI, while classic mode is the original Rust-based experience.
 
-Switch to classic mode anytime with `kiro-cli --classic`. Switch to lite mode with `/lite` mid-session, or set it as your default via `/settings → display` (requires nightly build with lite rollout enabled).
+Switch to classic mode anytime with `kiro-cli --classic`.
 
 ## What's New in the TUI
 
@@ -43,7 +43,7 @@ Track task list progress and queued messages. Type your next message while the a
 
 - Ctrl+R for reverse incremental history search
 - Full kill ring with accumulation and rotation
-- Undo with Ctrl+\_ (100-entry stack)
+- Undo with Ctrl+_ (100-entry stack)
 - Shift+Enter for multi-line input (terminal-dependent)
 - Segment-based input with file and paste chips
 - Async @ file search with debounce
@@ -54,7 +54,7 @@ When you paste text longer than 10 lines, the TUI collapses it into a compact ch
 
 **Expanding chips**: Press Tab when your cursor is on a paste chip to expand it back into inline editable text. A hint ("Press Tab to expand") appears after pasting.
 
-**Undo**: Press Ctrl+\_ after expanding to restore the collapsed chip.
+**Undo**: Press Ctrl+_ after expanding to restore the collapsed chip.
 
 **Multiple chips**: You can paste multiple times — each creates a separate chip. Typing between pastes inserts text between chips.
 
@@ -90,23 +90,23 @@ This is the biggest behavioral change:
 
 ### Commands Not Available in TUI
 
-| Command       | Notes                                  |
-| ------------- | -------------------------------------- |
-| `/changelog`  | Not ported                             |
-| `/logdump`    | Not ported                             |
+| Command | Notes |
+|---------|-------|
+| `/changelog` | Not ported |
+| `/logdump` | Not ported |
 | `/experiment` | No runtime experiment framework in TUI |
-| `/issue`      | Replaced by `/feedback`                |
-| `/tangent`    | Was experiment-gated in classic        |
-| `/checkpoint` | Was experiment-gated in classic        |
+| `/issue` | Replaced by `/feedback` |
+| `/tangent` | Was experiment-gated in classic |
+| `/checkpoint` | Was experiment-gated in classic |
 
 ### Subcommands with Reduced Coverage
 
-| Command      | Missing in TUI                                 |
-| ------------ | ---------------------------------------------- |
-| `/agent`     | generate, schema, set-default, delete          |
-| `/tools`     | schema                                         |
-| `/prompts`   | create, edit, remove, details (selection only) |
-| `/knowledge` | fix                                            |
+| Command | Missing in TUI |
+|---------|---------------|
+| `/agent` | generate, schema, set-default, delete |
+| `/tools` | schema |
+| `/prompts` | create, edit, remove, details (selection only) |
+| `/knowledge` | fix |
 
 ### Settings
 
@@ -135,13 +135,9 @@ kiro-cli --classic
 kiro-cli chat --legacy-mode
 ```
 
-### Use Lite Mode
-
-See [Lite Mode](lite-mode.md) for enabling, switching, and behavior.
-
 ### Session Compatibility
 
-Sessions saved in the TUI can be loaded in classic mode and vice versa via `/chat save` and `/chat load`. However, TUI sessions created during a TUI session are not available in classic mode's session picker. Lite and TUI mode share the same session format — switching between them mid-session preserves all history.
+Sessions saved in the TUI can be loaded in classic mode and vice versa via `/chat save` and `/chat load`. However, TUI sessions created during a TUI session are not available in classic mode's session picker.
 
 ## Related
 
@@ -149,4 +145,3 @@ Sessions saved in the TUI can be loaded in classic mode and vice versa via `/cha
 - [/guide](../slash-commands/guide.md) — Conversational help
 - [/theme](../slash-commands/theme.md) — Theme customization
 - [/feedback](../slash-commands/feedback.md) — Submit feedback
-- [Lite Mode](lite-mode.md) — Lightweight scrollback-friendly mode
