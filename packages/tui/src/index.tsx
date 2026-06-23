@@ -787,18 +787,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
-  // --debug-keys: skip ACP entirely and just mount the diagnostic component
-  // that prints every keypress + parsed key id. Use this to verify which
-  // shortcuts actually reach the handler on the user's terminal.
-  if (cliArgs.debugKeys) {
-    process.stdout.write(ENABLE_BRACKETED_PASTE);
-    process.stdout.write(ENABLE_KITTY_KEYBOARD);
-    const { DebugKeys } = await import('./components/layout/DebugKeys.js');
-    process.stdout.write('\x1b[2J\x1b[H');
-    render(<DebugKeys />, { exitOnCtrlC: false, patchConsole: false });
-    return;
-  }
-
   // Handle --resume-picker before Twinki renders: the interactive picker needs
   // raw terminal access that can't coexist with Twinki's input handling.
   // If --resume-picker is passed, list all sessions, run the picker, then

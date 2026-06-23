@@ -23,7 +23,6 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
-      debugKeys: false,
     });
   });
 
@@ -34,7 +33,6 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
-      debugKeys: false,
     });
   });
 
@@ -92,7 +90,6 @@ describe('parseCliArgs', () => {
       noInteractive: true,
       resume: false,
       resumePicker: false,
-      debugKeys: false,
       input: 'do something',
     });
   });
@@ -182,7 +179,6 @@ describe('parseCliArgs', () => {
       noInteractive: false,
       resume: false,
       resumePicker: false,
-      debugKeys: false,
     });
   });
 
