@@ -44,3 +44,9 @@ export async function driveTurn(
   await tc.waitForText(reply, 15000);
   if (opts.waitIdle !== false) await tc.waitForIdle(10000);
 }
+
+/** Flatten all store messages to a single searchable string. */
+export async function messageText(tc: E2ETestCase): Promise<string> {
+  const store = await tc.getStore();
+  return store.messages.map((m: unknown) => JSON.stringify(m)).join(' ');
+}
