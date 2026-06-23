@@ -8,13 +8,11 @@ import {
 } from '../e2e_tests/lite/helpers/integ-lifecycle';
 
 /**
- * Long-session repro for the lite flush / newline-wave reports. To hit the
- * real bug the driver needs a SMALL viewport (content overflows so the
- * live→static flush + writeStaticLines overflow-erase path fire) and STREAMED
- * delta chunks (the live region grows a multi-row block before flushing to
- * <Static> — where the "wave of newlines after a response" was emitted). The
- * blank-run scan is restricted to the content region above the prompt divider
- * so empty viewport rows below the prompt aren't miscounted as a wave.
+ * Long-session repro for the lite flush / newline-wave reports. The small
+ * viewport + streamed delta chunks are load-bearing: they force the
+ * live→static flush + writeStaticLines overflow-erase path where the "wave of
+ * newlines after a response" was emitted. The blank-run scan only covers the
+ * content region above the prompt divider (empty rows below it aren't a wave).
  */
 describe('lite long-session flush/newline repro', () => {
   let testCase: TestCase | null = null;
@@ -29,11 +27,7 @@ describe('lite long-session flush/newline repro', () => {
     return lines.length;
   }
 
-  /**
-   * Longest run of blank rows that is INTERNAL to the content region (has a
-   * non-blank row both before and after it). Trailing padding and the
-   * empty viewport below the prompt are excluded.
-   */
+  /** Longest blank-row run INTERNAL to the content region (excludes trailing padding / below-prompt rows). */
   function maxInternalBlankRun(lines: string[]): { run: number; at: number } {
     const end = dividerIndex(lines);
     const content = lines.slice(0, end);
@@ -106,14 +100,14 @@ describe('lite long-session flush/newline repro', () => {
   }
 
   function tallChunks(turn: number): string[] {
-    const lines = [];
-    for (let line = 1; line <= 40; line++) {
-      lines.push(
-        `Line ${line} of tall response turn ${turn} with enough text to be a real row.\n`
-      );
-    }
-    lines.push(`END_TURN_${turn}_ZZ`);
-    return lines;
+    return [
+      ...Array.from(
+        { length: 40 },
+        (_, i) =>
+          `Line ${i + 1} of tall response turn ${turn} with enough text to be a real row.\n`
+      ),
+      `END_TURN_${turn}_ZZ`,
+    ];
   }
 
   /**

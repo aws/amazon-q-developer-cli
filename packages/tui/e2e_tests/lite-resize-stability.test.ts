@@ -1,14 +1,7 @@
 /**
- * E2E test: Lite mode resize does NOT trigger scrollback redraw.
- *
- * Validates bug-mine entry 1.7:
- *   "Text is baked at flush-time width. DO NOT add a resize-driven redraw —
- *    it would either be silently dropped or scramble historical rows."
- *
- * Key invariant:
- *   - Old rows: unchanged byte-for-byte in terminal buffer after resize
- *   - New rows: rendered at new width
- *   - No re-emission of old rows (twinki would silently drop them)
+ * Lite resize must NOT trigger a scrollback redraw [bug-mine 1.7]: text is
+ * baked at flush-time width, so old rows must stay byte-for-byte intact after a
+ * resize (a resize-driven redraw would be dropped or scramble historical rows).
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -18,21 +11,13 @@ import type { PtyManager } from '../src/test-utils/shared/pty-manager';
 import { launchLiteE2E } from './lite/helpers/commands';
 import { driveTurn } from './lite/helpers/responses';
 
-/**
- * Access the private ptyManager to call resize().
- * E2ETestCase doesn't expose resize() publicly, but we need it
- * to actually change PTY dimensions (not just send SIGWINCH).
- */
+/** Resize via the private ptyManager — E2ETestCase doesn't expose resize() (and we need a real dimension change, not just SIGWINCH). */
 function resizePty(testCase: E2ETestCase, cols: number, rows: number): void {
   const mgr = (testCase as unknown as { ptyManager: PtyManager }).ptyManager;
   mgr.resize(cols, rows);
 }
 
-/**
- * Extracts lines containing a marker from the snapshot.
- * Returns the right-trimmed text content of those lines.
- * (xterm pads lines to terminal width with spaces, so we rtrim for comparison.)
- */
+/** Marker lines from the snapshot, rtrimmed (xterm pads to terminal width). */
 function extractMarkerLines(snapshot: string[], marker: string): string[] {
   return snapshot
     .filter((line) => line.includes(marker))

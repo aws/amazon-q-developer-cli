@@ -1,16 +1,11 @@
 /**
- * Mode swap with a pending (undismissed) approval. Bug-mine 2.1 (cursor
- * realignment), 3.5 (approval at mode boundary). Discovered contracts:
- *
- * LITE -> TUI: the ApprovalPrompt replaces PromptInput and captures ALL
- *   keystrokes (y/n/t/Esc/Ctrl+C hotkeys), so typing `/tui` is swallowed — the
- *   `t` opens the trust submenu / auto-trusts. The swap command never reaches
- *   the input; the user must dismiss the approval first.
- *
- * TUI -> LITE: the approval Menu and PromptBar are both visible, and Enter
- *   fires BOTH Menu.onSelect (auto-resolves approval) AND PromptBar.onSubmit.
- *   isProcessing is still true while the tool runs, so the slash command is
- *   rejected until the turn completes.
+ * Mode swap with a pending (undismissed) approval [bug-mine 2.1, 3.5].
+ * Discovered contracts:
+ * - LITE->TUI: ApprovalPrompt captures ALL keystrokes (y/n/t/Esc/Ctrl+C), so
+ *   `/tui` is swallowed (`t` enters the trust submenu) — dismiss approval first.
+ * - TUI->LITE: approval Menu + PromptBar are both live, so Enter fires BOTH
+ *   Menu.onSelect (resolves approval) AND PromptBar.onSubmit (/lite, rejected
+ *   while isProcessing).
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -37,14 +32,12 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
       waitForCommands: false,
     });
 
-    // Stream 1: a write ToolUseEvent that requires approval.
     await pushWriteApprovalEvent(testCase, {
       toolUseId: 'pressure-swap-lite-write',
       path: '/tmp/pressure-swap-lite.txt',
       content: 'pressure swap test',
     });
 
-    // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File created successfully.');
 
     await sendUserMessage(testCase, 'write a test file');
@@ -109,14 +102,12 @@ describe('lite approval pressure swap [bug-mine 2.1, 3.5]', () => {
       waitForCommands: false,
     });
 
-    // Stream 1: a write ToolUseEvent that requires approval.
     await pushWriteApprovalEvent(testCase, {
       toolUseId: 'pressure-swap-tui-write',
       path: '/tmp/pressure-swap-tui.txt',
       content: 'pressure swap test',
     });
 
-    // Stream 2: continuation after the tool is approved.
     await streamReply(testCase, 'File written successfully.');
 
     await sendUserMessage(testCase, 'write a test file');

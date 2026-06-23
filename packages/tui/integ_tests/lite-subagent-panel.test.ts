@@ -127,11 +127,9 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
 
   /**
    * Bug-mine 4.2: a completed stage keeps its footer slot (no reshuffle to tail)
-   * when its summary tool finishes. The driving invariant: stage messages keep
-   * their original interleaved order in `messages`, and the summary tool's
-   * agentName carries through via sessionId fallback (so it isn't filtered out
-   * of the stage walk). Asserts BOTH count >= 3 (summary stays in walk) AND
-   * firstAlpha < firstBeta (no reorder). Anchor: PR #2643 footer ordering.
+   * when its summary tool finishes — stage messages keep their interleaved order
+   * and the summary tool's agentName carries through via sessionId fallback (so
+   * it isn't filtered out of the stage walk). Anchor: PR #2643 footer ordering.
    */
   it('completed stage stays in original position (4.2: terminated session seed)', async () => {
     testCase = await launchLiteInteg('lite-subagent-panel-order');
@@ -155,11 +153,8 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     });
     await testCase.sleepMs(200);
 
-    // Verify messages: stage A's tools should appear BEFORE stage B's tools.
-    // This validates 4.2: terminated sessions are seeded in original order so
-    // the message-walk doesn't re-introduce them at the tail. The store is
-    // read directly so no render-trigger keystroke is needed (a stray 'x'
-    // in the prompt buffer breaks the Ctrl+C exit ladder downstream).
+    // Read the store directly (no render-trigger keystroke): a stray 'x' in the
+    // prompt buffer breaks the Ctrl+C exit ladder downstream.
     await testCase.sleepMs(200);
     const store = await testCase.getStore();
     const stageMessages = store.messages.filter(

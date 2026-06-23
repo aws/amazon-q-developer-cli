@@ -1,16 +1,11 @@
 /**
- * E2E test: real mid-stream mode swap [bug-mine 2.1, 2.2].
+ * Real mid-stream mode swap [bug-mine 2.1, 2.2]. Asserts the observable outcome
+ * (content survives + renders), not the hook timing — bug 2.2's useEffect→
+ * useLayoutEffect fix is what stops the first post-swap lite batch being lost.
  *
- * DIVERGENCE from bug-mine 2.2: bug 2.2 is a race where useEffect (async)
- * misses the first batch of content after a mode swap; the fix is
- * useLayoutEffect (synchronous). This test can only assert the observable
- * outcome (content survival + correct rendering), not the hook timing — under
- * the buggy useEffect the first lite batch after swap would be lost/duplicated.
- *
- * RTS lookahead: the RTS ResponseParser uses 1-lookahead — after consuming an
- * AssistantResponseEvent it peeks the NEXT event for a CodeReferenceEvent, so
- * event N only becomes visible after event N+1 arrives. Tests push N+1 events
- * to ensure N is rendered before the swap.
+ * WHY N+1 events: the RTS ResponseParser uses 1-lookahead (after an
+ * AssistantResponseEvent it peeks the NEXT event for a CodeReferenceEvent), so
+ * event N only becomes visible once event N+1 arrives.
  */
 
 import { describe, expect, it } from 'bun:test';
