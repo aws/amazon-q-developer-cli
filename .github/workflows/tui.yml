@@ -270,9 +270,11 @@ jobs:
       - name: Run E2E tests
         # Cap concurrency: these PTY/IPC e2e tests each spawn a chat_cli, and
         # bun's default (20) starves the 4-core ubuntu runners, causing
-        # idle/exit/IPC-connect timeouts. 8 keeps throughput (CPU-bound at 4
-        # cores, so ~same wall-clock as 10) while leaving contention headroom.
-        run: bun test --max-concurrency=8 ./e2e_tests/
+        # idle/exit/IPC-connect timeouts. 8 still oversubscribed 4 cores enough
+        # to flake the heavy session-resume tests (lite-history-cap); 4 clears
+        # it with no wall-clock cost — the suite is wait-bound, not CPU-bound,
+        # so it runs ~the same on 4/8/16-core runners (~570s locally vs 690s CI).
+        run: bun test --max-concurrency=4 ./e2e_tests/
         working-directory: packages/tui
 
       - name: Upload test logs
