@@ -64,8 +64,13 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     expectNoBootIndicator(testCase.getSnapshot().join('\n'));
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
+    // Generous exit timeout (vs expectExit's 10s default): under uncapped
+    // integ concurrency a CPU-starved chat_cli can take >10s to terminate
+    // after the interrupt. Matches exitLiteInteg.
+    await testCase.expectExit(30000);
+    // Outer timeout accommodates the generous inner waits (10s prompt + 20s
+    // swap poll + 30s exit) under contended CI.
+  }, 75000);
 
   it('boot indicator hidden after init in mock mode [bug-mine 7.2]', async () => {
     // WHY auto-hide: showBootIndicator gates on any 'loading' status. In mock

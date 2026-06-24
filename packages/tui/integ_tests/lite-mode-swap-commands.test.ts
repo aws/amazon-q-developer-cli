@@ -111,7 +111,9 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
       await exitLiteInteg(testCase);
     },
-    30000
+    // Outer timeout accommodates the generous inner waits (idle poll + 20s
+    // swap poll + 30s exit) under contended, uncapped CI.
+    75000
   );
 
   it('same-mode dispatch is a noop (bug 2.9)', async () => {
@@ -129,5 +131,6 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     expect(storeAfter.liteScrollbackClearToken).toBe(tokenBefore);
 
     await exitLiteInteg(testCase);
-  }, 30000);
+    // Outer timeout headroom for exitLiteInteg's generous (30s) exit wait.
+  }, 60000);
 });
