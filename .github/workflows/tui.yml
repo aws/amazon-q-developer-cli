@@ -268,7 +268,11 @@ jobs:
         working-directory: packages/tui
 
       - name: Run E2E tests
-        run: bun test ./e2e_tests/
+        # Cap concurrency: these PTY/IPC e2e tests each spawn a chat_cli, and
+        # bun's default (20) starves the 4-core ubuntu runners, causing
+        # idle/exit/IPC-connect timeouts. 10 keeps throughput while leaving
+        # headroom.
+        run: bun test --max-concurrency=10 ./e2e_tests/
         working-directory: packages/tui
 
       - name: Upload test logs
