@@ -59,6 +59,14 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
           ? await TestCase.builder()
               .withTestName('swap-tui-to-lite')
               .withGlobalSettings({ 'chat.ui.mode': 'tui' })
+              // /lite is gated on the rollout flag (effects.ts switchToLite),
+              // which the preload only sets when an argv token matches `lite-`.
+              // A full-directory run (CI's `bun test ./integ_tests/`, now
+              // uncapped) has no such token, so the flag is unset and /lite
+              // silently no-ops. Set it per-test — the lite→tui leg gets it
+              // from launchLiteInteg's withLite(). Safe here: chat.ui.mode='tui'
+              // is an explicit mode, so the first-launch UI-mode picker (gated
+              // on an unresolved mode + rollout) never triggers.
               .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
               .withTimeout(15000)
               .launch()
@@ -74,8 +82,13 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
       });
       await testCase.typeAndSubmit(prompt);
       await testCase.completeTurn();
+      // completeTurn() only confirms the IPC command was sent; isProcessing
+      // flips back to false asynchronously as the stream-close propagates. A
+      // fixed sleep can lose that race under full-suite load (integ runs
+      // uncapped), and handleUserInput swallows /lite|/tui into the queue
+      // branch while isProcessing is still true — the swap then never lands.
+      // Poll for genuine idle before submitting the swap command.
       await testCase.waitForStore((s) => !s.isProcessing, 10000);
-      await testCase.sleepMs(400);
 
       const storeBefore = await testCase.getStore();
       expect(storeBefore.uiMode).toBe(start);
@@ -84,7 +97,15 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
       await switchMode(testCase);
 
-      const storeAfter = await testCase.getStore();
+      // The /lite|/tui dispatch is still async; poll for the target mode
+      // instead of asserting on a snapshot that may still show the pre-swap
+      // mode. Generous timeout: the end-to-end dispatch (keystrokes →
+      // autocomplete settle → command → setUiMode) can exceed 10s under
+      // contended CI.
+      const storeAfter = await testCase.waitForStore(
+        (s) => s.uiMode === target,
+        20000
+      );
       expect(storeAfter.uiMode).toBe(target);
       expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
       expect(storeAfter.liteStaticSkipBefore).toBe(0);
@@ -95,7 +116,9 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
       await exitLiteInteg(testCase);
     },
-    30000
+    // Outer timeout accommodates the generous inner waits (idle poll + 20s
+    // swap poll + 30s exit) under contended, uncapped CI.
+    75000
   );
 
   it('lite→tui preserves interleaved system rows before completed model text', async () => {
@@ -340,5 +363,6 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     expect(storeAfter.liteScrollbackClearToken).toBe(tokenBefore);
 
     await exitLiteInteg(testCase);
-  }, 30000);
+    // Outer timeout headroom for exitLiteInteg's generous (30s) exit wait.
+  }, 60000);
 });

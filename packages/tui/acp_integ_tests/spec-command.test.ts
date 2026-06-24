@@ -120,7 +120,13 @@ describe('/spec command (_kiro/spec/*)', () => {
      * WHEN   /spec new my-feature
      * THEN   set_config_option(mode:'spec') sent + prompt contains feature name
      */
-    tc = new AcpTestCase({ testName: 'spec-new', cwd: workspaceDir });
+    // Sandbox settings so an ambient chat.defaultAgent doesn't send its own
+    // mode config option ahead of 'spec' and shift modeReqs[0].
+    tc = new AcpTestCase({
+      testName: 'spec-new',
+      cwd: workspaceDir,
+      settings: {},
+    });
     setupHandshake(tc);
     tc.mock.on('session/prompt', async () => {
       if (!tc) return { stopReason: 'end_turn' } as any;

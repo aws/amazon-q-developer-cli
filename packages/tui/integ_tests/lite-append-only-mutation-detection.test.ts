@@ -67,8 +67,18 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     expect(idxC).not.toBe(-1);
 
     // Append-only contract: markers stay in commit order, exactly once each.
-    expect(idxA).toBeLessThan(idxB);
-    expect(idxB).toBeLessThan(idxC);
+    // Assert ordering by character offset in the joined scrollback text rather
+    // than by line index: under load the lite <Static> flush can render two
+    // adjacent (or mock-merged) markers onto the same wrapped row, so distinct
+    // line indices aren't guaranteed. Commit order is still preserved
+    // left-to-right within the text, and a genuine out-of-order flush would
+    // put a later marker's offset before an earlier one's.
+    const text = snap.join('\n');
+    const posA = text.indexOf('MONOTONIC_A_MARKER');
+    const posB = text.indexOf('MONOTONIC_B_MARKER');
+    const posC = text.indexOf('MONOTONIC_C_MARKER');
+    expect(posA).toBeLessThan(posB);
+    expect(posB).toBeLessThan(posC);
 
     const countA = snap.filter((l) => l.includes('MONOTONIC_A_MARKER')).length;
     const countB = snap.filter((l) => l.includes('MONOTONIC_B_MARKER')).length;
