@@ -52,10 +52,11 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     await switchToLite(testCase);
 
     // The /lite dispatch is async; poll for lite mode instead of asserting on
-    // a stale snapshot.
+    // a stale snapshot. Generous timeout: the end-to-end dispatch can exceed
+    // 10s under contended CI (integ runs uncapped).
     const storeAfter = await testCase.waitForStore(
       (s) => s.uiMode === 'lite',
-      10000
+      20000
     );
     expect(storeAfter.uiMode).toBe('lite');
     expect(storeAfter.isInitialized).toBe(true);

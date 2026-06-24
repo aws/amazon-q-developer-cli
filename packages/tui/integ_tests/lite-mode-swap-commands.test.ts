@@ -77,7 +77,13 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
       });
       await testCase.typeAndSubmit(prompt);
       await testCase.completeTurn();
-      await testCase.sleepMs(400);
+      // completeTurn() only confirms the IPC command was sent; isProcessing
+      // flips back to false asynchronously as the stream-close propagates. A
+      // fixed sleep can lose that race under full-suite load (integ runs
+      // uncapped), and handleUserInput swallows /lite|/tui into the queue
+      // branch while isProcessing is still true — the swap then never lands.
+      // Poll for genuine idle before submitting the swap command.
+      await testCase.waitForStore((s) => !s.isProcessing, 10000);
 
       const storeBefore = await testCase.getStore();
       expect(storeBefore.uiMode).toBe(start);
@@ -88,10 +94,12 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
       // The /lite|/tui dispatch is still async; poll for the target mode
       // instead of asserting on a snapshot that may still show the pre-swap
-      // mode.
+      // mode. Generous timeout: the end-to-end dispatch (keystrokes →
+      // autocomplete settle → command → setUiMode) can exceed 10s under
+      // contended CI.
       const storeAfter = await testCase.waitForStore(
         (s) => s.uiMode === target,
-        10000
+        20000
       );
       expect(storeAfter.uiMode).toBe(target);
       expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
