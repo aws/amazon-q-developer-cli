@@ -7,6 +7,10 @@ import {
 /** Agent names that represent the default/built-in agent. */
 const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set([
   KAS_DEFAULT_AGENT_ID,
+  // The lite default session runs as 'kiro_default' (distinct from the KAS
+  // wire id 'default'); without it the default agent tag falls through to a
+  // hashed palette color instead of the brand color.
+  'kiro_default',
 ]);
 
 /** Whether the given agent name is the default built-in agent. */

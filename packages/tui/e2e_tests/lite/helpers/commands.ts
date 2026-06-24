@@ -27,7 +27,18 @@ async function launchModeE2E(
   let builder = E2ETestCase.builder()
     .withTestName(testName)
     .withTerminal(opts.terminal ?? { width: 120, height: 40 });
-  if (lite) builder = builder.withLite();
+  if (lite) {
+    builder = builder.withLite();
+  } else {
+    // Boot in TUI but still enable the lite rollout so a later /lite swap
+    // works. /lite is gated on KIRO_LITE_ROLLOUT_ENABLED (effects.ts
+    // switchToLite); the preload only sets it when an argv token matches
+    // `lite-`, which a full-directory run (`bun test ./e2e_tests/`) lacks — so
+    // without this the tui→lite swap tests silently no-op. Safe: E2ETestCase
+    // always sets an explicit chat.ui.mode='tui', so the first-launch UI-mode
+    // picker (gated on an unresolved mode + rollout) never triggers.
+    builder = builder.withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' });
+  }
   if (opts.cliArgs) builder = builder.withCliArgs(opts.cliArgs);
   const tc = await builder.launch();
   await tc.waitForText(

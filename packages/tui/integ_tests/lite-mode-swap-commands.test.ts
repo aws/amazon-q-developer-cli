@@ -54,6 +54,15 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
           ? await TestCase.builder()
               .withTestName('swap-tui-to-lite')
               .withGlobalSettings({ 'chat.ui.mode': 'tui' })
+              // /lite is gated on the rollout flag (effects.ts switchToLite),
+              // which the preload only sets when an argv token matches `lite-`.
+              // A full-directory run (CI's `bun test ./integ_tests/`, now
+              // uncapped) has no such token, so the flag is unset and /lite
+              // silently no-ops. Set it per-test — the lite→tui leg gets it
+              // from launchLiteInteg's withLite(). Safe here: chat.ui.mode='tui'
+              // is an explicit mode, so the first-launch UI-mode picker (gated
+              // on an unresolved mode + rollout) never triggers.
+              .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
               .withTimeout(15000)
               .launch()
           : await launchLiteInteg('swap-lite-to-tui');
@@ -77,7 +86,13 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
       await switchMode(testCase);
 
-      const storeAfter = await testCase.getStore();
+      // The /lite|/tui dispatch is still async; poll for the target mode
+      // instead of asserting on a snapshot that may still show the pre-swap
+      // mode.
+      const storeAfter = await testCase.waitForStore(
+        (s) => s.uiMode === target,
+        10000
+      );
       expect(storeAfter.uiMode).toBe(target);
       expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
       expect(storeAfter.liteStaticSkipBefore).toBe(0);
