@@ -71,5 +71,7 @@ describe('lite tool batch order [bug-mine 1.2]', () => {
     expect(alphaLine).toBeLessThan(betaLine);
 
     await exitLiteInteg(testCase);
-  }, 30000);
+    // Outer timeout headroom for exitLiteInteg's generous (30s) exit wait
+    // under uncapped integ concurrency.
+  }, 60000);
 });
