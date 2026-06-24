@@ -37,6 +37,7 @@ use tracing::{
     debug,
     error,
     info,
+    trace,
     warn,
 };
 use types::{
@@ -781,7 +782,18 @@ impl StreamParseState {
     /// Whether the stream completed cleanly without ever carrying any content event.
     /// Safe to retry because nothing was rendered to the client.
     fn is_empty_response(&self) -> bool {
-        self.message_stop.is_some() && self.stream_err.is_none() && !self.received_content_event
+        let empty = self.message_stop.is_some() && self.stream_err.is_none() && !self.received_content_event;
+        if empty {
+            trace!(
+                message_stop = ?self.message_stop,
+                received_content_event = self.received_content_event,
+                assistant_text_len = self.assistant_text.len(),
+                tool_uses_count = self.tool_uses.len(),
+                thinking_blocks_count = self.thinking_blocks.len(),
+                "is_empty_response=true — model stream completed with no content events"
+            );
+        }
+        empty
     }
 
     /// Create the final result value from parsing the model response stream

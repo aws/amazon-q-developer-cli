@@ -419,7 +419,13 @@ impl AgentHandle {
     }
 
     pub fn terminate(&self) {
-        _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
+        trace!("AgentHandle::terminate() — fire-and-forget Terminate request");
+        // Fire-and-forget: enqueue the Terminate request without waiting for
+        // the response. The agent loop will process it and break out. We don't
+        // need the TerminateAcknowledged response since this handle is being
+        // dropped — waiting would race (try_recv never sees the response) and
+        // log a spurious error.
+        self.sender.try_send_no_recv(AgentRequest::Terminate);
     }
 
     /// Async version of [`terminate`](Self::terminate) that awaits the agent's cleanup
@@ -1047,7 +1053,9 @@ impl Agent {
                     let res = self.handle_agent_request(req.payload).await;
 
                     if let Ok(AgentResponse::TerminateAcknowledged) = res {
-                        respond!(req, res);
+                        // Best-effort response — the caller may have already dropped the
+                        // receiver (fire-and-forget terminate). Don't log an error.
+                        let _ = req.res_tx.send(res);
                         break;
                     } else {
                         respond!(req, res);
@@ -2214,6 +2222,7 @@ impl Agent {
                     empty_response_retried: true,
                     ..
                 },);
+                trace!(already_retried, "handling LoopError::EmptyResponse in agent loop");
                 if already_retried {
                     warn!("empty response on retry - entering error state");
                     self.enter_error_state(err.clone().into()).await;
