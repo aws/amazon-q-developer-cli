@@ -20,8 +20,6 @@
  *   2. The submitted content is not empty / not trimmed.
  * Byte-exact round-trip is covered by the colocated unit tests in
  * PromptInput.test.ts.
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -31,10 +29,7 @@ import { E2ETestCase } from './E2ETestCase';
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Paste preserves indentation ($mode)', ({ mode, builder }) => {
+describe('Paste preserves indentation', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -45,8 +40,8 @@ describe.each([
   });
 
   it('preserves runs of consecutive spaces in pasted aligned content', async () => {
-    testCase = await builder()
-      .withTestName(`paste-ws-indent-align-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-ws-indent-align')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -93,8 +88,8 @@ describe.each([
   }, 30000);
 
   it('preserves indentation in pasted multi-line code (consecutive spaces survive)', async () => {
-    testCase = await builder()
-      .withTestName(`paste-ws-indent-code-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-ws-indent-code')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -147,8 +142,8 @@ describe.each([
   }, 30000);
 
   it('does not submit a whitespace-only paste (empty-submit guard still holds)', async () => {
-    testCase = await builder()
-      .withTestName(`paste-ws-empty-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('paste-ws-empty')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);

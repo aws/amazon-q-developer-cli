@@ -44,15 +44,15 @@ export async function launchLiteInteg(
 /**
  * Clean lite-mode exit: three Ctrl+C then assert the process exits.
  *
- * Uses a generous exit timeout (30s vs expectExit's 10s default): integ now
- * runs at uncapped concurrency, and under that load a CPU/IO-starved chat_cli
- * can take well over 10s to actually terminate after the interrupt — the
- * teardown timing, not the product, is what's slow. This is the shared exit
- * path for the lite integ suite, so the headroom covers all of them.
+ * Uses a generous exit timeout (60s vs expectExit's 10s default): under load a
+ * CPU/IO-starved chat_cli can take well over 10s to actually terminate after
+ * the interrupt — the teardown timing, not the product, is what's slow. This
+ * is the shared exit path for the lite integ suite, so the headroom covers all
+ * of them.
  */
 export async function exitLiteInteg(tc: TestCase): Promise<void> {
   await tc.sendKeys([0x03, 0x03, 0x03]);
-  await tc.expectExit(30000);
+  await tc.expectExit(60000);
 }
 
 /** completeTurn + settle + clean exit — the repeated tail of most lite integ tests. */

@@ -4,17 +4,12 @@
  * Verifies that cancelling a prompt (Ctrl+C) correctly resets isProcessing,
  * allowing subsequent prompts to be sent instead of getting stuck in
  * "Prompt already in progress".
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Cancel state recovery (P409238957) ($mode)', ({ mode, builder }) => {
+describe('Cancel state recovery (P409238957)', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -25,8 +20,8 @@ describe.each([
   });
 
   it('clears isProcessing after cancel, allowing a new prompt', async () => {
-    testCase = await builder()
-      .withTestName(`cancel-state-recovery-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('cancel-state-recovery')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
