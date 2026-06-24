@@ -50,6 +50,10 @@ export interface ThemeContextValue extends Theme {
    * `KIRO_DISABLE_WRAP=1` env var for dev).
    */
   wrapDisabled: boolean;
+  /**
+   * When true, the TUI is in classic mode (scrollback-friendly, no panels).
+   */
+  classicMode: boolean;
 }
 
 /**
@@ -76,7 +80,8 @@ export const createThemeContext = (
     diff?: DiffPreset | null
   ) => void,
   setBaseTheme: (theme: Theme | null) => void,
-  wrapDisabled: boolean
+  wrapDisabled: boolean,
+  classicMode: boolean = false
 ): ThemeContextValue => {
   // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
   const effectiveColors =
@@ -139,6 +144,7 @@ export const createThemeContext = (
     setBaseTheme,
     baseTheme: theme,
     wrapDisabled,
+    classicMode,
   };
 };
 
@@ -172,6 +178,7 @@ export const ThemeContext = createContext<ThemeContextValue>(
     undefined,
     () => {},
     () => {},
+    false,
     false
   )
 );
@@ -187,6 +194,8 @@ interface ThemeProviderProps {
    * dropped. Controlled by the `chat.disableWrap` setting at startup.
    */
   wrapDisabled?: boolean;
+  /** When true, the TUI is in classic mode. */
+  classicMode?: boolean;
   children: ReactNode;
 }
 
@@ -201,6 +210,7 @@ interface ThemeProviderProps {
 export const ThemeProvider = ({
   theme = 'auto',
   wrapDisabled = false,
+  classicMode = false,
   children,
 }: ThemeProviderProps) => {
   // Detect theme once on mount — avoid re-running OSC 11 queries on every render
@@ -279,7 +289,8 @@ export const ThemeProvider = ({
         userDiffPreset,
         setUserColors,
         setBaseTheme,
-        wrapDisabled
+        wrapDisabled,
+        classicMode
       ),
     [
       resolvedTheme,
@@ -290,6 +301,7 @@ export const ThemeProvider = ({
       setUserColors,
       setBaseTheme,
       wrapDisabled,
+      classicMode,
     ]
   );
   return (

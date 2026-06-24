@@ -78,12 +78,12 @@ export class E2ETestCase {
       fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
     }
 
-    // Write user settings to $HOME/.kiro/settings/cli.json
-    if (this.options.settings) {
-      const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-      fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
-    }
+    // Default to TUI mode so the first-launch UI-mode picker never blocks E2E
+    // flows. Individual tests can still override this with withGlobalSettings().
+    const settings = { 'chat.ui.mode': 'tui', ...(this.options.settings ?? {}) };
+    const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
 
     // Write any prelaunch files into the sandbox HOME before the CLI spawns
     for (const file of this.options.prelaunchFiles ?? []) {
@@ -98,6 +98,10 @@ export class E2ETestCase {
     this.sandboxEnv = {
       CI: 'false',
       KIRO_CHAT_UI: 'tui',
+      // E2E tests default to the full TUI and opt into lite explicitly via
+      // withLite(). This prevents the first-launch mode picker from intercepting
+      // tests that are not about mode selection.
+      KIRO_UI_MODE: 'tui',
       KIRO_TEST_MODE: '1',
       KIRO_DISABLE_TELEMETRY: '1',
       KIRO_INPUT_METRICS: 'true',
@@ -642,6 +646,18 @@ export class E2ETestCaseBuilder {
   withEnv(env: Record<string, string>): E2ETestCaseBuilder {
     this.options.extraEnv = { ...this.options.extraEnv, ...env };
     return this;
+  }
+
+  withUiMode(mode: 'tui' | 'lite'): E2ETestCaseBuilder {
+    this.withGlobalSettings({ 'chat.ui.mode': mode });
+    return this.withEnv({
+      KIRO_UI_MODE: mode,
+      ...(mode === 'lite' ? { KIRO_LITE_ROLLOUT_ENABLED: '1' } : {}),
+    });
+  }
+
+  withLite(): E2ETestCaseBuilder {
+    return this.withUiMode('lite');
   }
 
   withGlobalAgentConfig(name: string, config: Record<string, unknown>): E2ETestCaseBuilder {

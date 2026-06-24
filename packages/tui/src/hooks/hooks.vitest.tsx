@@ -308,6 +308,48 @@ describe('useKeypress', () => {
 
     expect(calls.length).toBe(0);
   });
+
+  test('Return passes through after a printable burst (no burst guard)', async () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const calls: Array<{ input: string; isReturn: boolean }> = [];
+    const terminal = new MockTerminal();
+
+    function TestComponent() {
+      useKeypress((input, key) => {
+        calls.push({ input, isReturn: key.return });
+      });
+      return null;
+    }
+
+    const Wrapper = () => (
+      <AppStoreContext.Provider value={store}>
+        <TestComponent />
+      </AppStoreContext.Provider>
+    );
+
+    const instance = render(<Wrapper />, {
+      terminal,
+      exitOnCtrlC: false,
+    });
+    activeInstance = instance;
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Simulate the StdinBuffer event split for `before\rafter`.
+    terminal.sendInput('before');
+    terminal.sendInput('\r');
+    terminal.sendInput('after');
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    instance.unmount();
+    activeInstance = null;
+
+    // No burst guard: `before`, the `\r` (Enter), and `after` all reach the handler.
+    expect(calls.some((c) => c.input === 'before')).toBe(true);
+    expect(calls.some((c) => c.input === 'after')).toBe(true);
+    expect(calls.some((c) => c.isReturn)).toBe(true);
+  });
 });
 
 describe('useKiro', () => {

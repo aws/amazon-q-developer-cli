@@ -1,6 +1,9 @@
-import { execFileSync as realExecFileSync } from 'child_process';
+import { execFile, execFileSync as realExecFileSync } from 'child_process';
 import { existsSync as realExistsSync, realpathSync } from 'fs';
 import { win32 } from 'path';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 /** Timeout for the branch lookup. Kept short: branch display is cosmetic. */
 const GIT_TIMEOUT_MS = 1000;
@@ -134,6 +137,13 @@ export function resolveGitPath(deps: ResolveGitPathDeps = {}): string | null {
  * Gets the current git branch name.
  * Returns null if not in a git repository, if git cannot be safely resolved,
  * or if git is not available.
+ *
+ * Synchronous variant — blocks the caller for up to 1s. Used at component
+ * mount where a sync result avoids a "flash of no branch" on first paint.
+ * Anywhere we re-check during a running session (e.g. lite layout's
+ * turn-boundary refresh in `LiteLayout.tsx`), use {@link getGitBranchAsync}
+ * instead so a slow `git rev-parse` (NFS home, large repo, cold fs cache)
+ * can't stall a React render for up to a second.
  */
 export function getGitBranch(deps: GetGitBranchDeps = {}): string | null {
   try {
@@ -150,6 +160,27 @@ export function getGitBranch(deps: GetGitBranchDeps = {}): string | null {
         timeout: GIT_TIMEOUT_MS,
       }
     ).trim();
+    return branch || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Async variant of {@link getGitBranch}. Spawns `git rev-parse` off the
+ * render path so a slow filesystem can't pin the UI thread. Same return
+ * contract: branch name string, or null on error / not-a-git-repo.
+ */
+export async function getGitBranchAsync(): Promise<string | null> {
+  try {
+    const gitPath = resolveGitPath();
+    if (gitPath === null) return null;
+    const { stdout } = await execFileAsync(
+      gitPath,
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      { shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS }
+    );
+    const branch = stdout.trim();
     return branch || null;
   } catch {
     return null;

@@ -8,6 +8,28 @@ import { E2ETestCase } from './E2ETestCase';
 describe('/compact and summary', () => {
   let testCase: E2ETestCase | null = null;
 
+  const sendMockedTurn = async (
+    testCase: E2ETestCase,
+    input: string,
+    response: string
+  ) => {
+    await testCase.pushSendMessageResponse([
+      {
+        kind: 'event',
+        data: {
+          kind: 'AssistantResponseEvent',
+          data: { content: response },
+        },
+      },
+    ]);
+    await testCase.pushSendMessageResponse(null);
+
+    await testCase.sendKeys(input);
+    await testCase.pressEnter();
+    await testCase.waitForText(response, 30000);
+    await testCase.waitForIdle(30000);
+  };
+
   afterEach(async () => {
     if (testCase) {
       await testCase.cleanup();
@@ -28,20 +50,11 @@ describe('/compact and summary', () => {
     await testCase.getSessionId();
 
     // Build up a conversation so there's something to compact
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'Hello! How can I help you today?' },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
-
-    await testCase.sendKeys('hello');
-    await testCase.pressEnter();
-    await testCase.waitForIdle(30000);
+    await sendMockedTurn(
+      testCase,
+      'hello',
+      'Hello! How can I help you today?'
+    );
 
     // Wait a bit before typing command
     await testCase.sleepMs(500);
@@ -90,35 +103,12 @@ describe('/compact and summary', () => {
     await testCase.getSessionId(); // ensure session ID is set before pushing mock responses
 
     // Build a multi-turn conversation to give the compaction something to summarize
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'I can help you with that task.' },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
-
-    await testCase.sendKeys('help me with a task');
-    await testCase.pressEnter();
-    await testCase.waitForIdle(30000);
-
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'Sure, here is the result.' },
-        },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
-
-    await testCase.sendKeys('do the task');
-    await testCase.pressEnter();
-    await testCase.waitForIdle(30000);
+    await sendMockedTurn(
+      testCase,
+      'help me with a task',
+      'I can help you with that task.'
+    );
+    await sendMockedTurn(testCase, 'do the task', 'Sure, here is the result.');
 
     // Push a mock response for the compaction LLM call (compaction uses the same
     // send_message path as regular messages, so it consumes the next queued response)

@@ -54,15 +54,20 @@ export class PtyManager {
    * @param args - Arguments to pass to the command
    */
   spawn(command: string, args: string[]): void {
+    const childEnv = {
+      ...(process.env as Record<string, string>),
+      ...this.options.env,
+    };
+    // The host running tests may export NO_COLOR (Codex does), but the PTY
+    // harness needs deterministic color output for render/color assertions.
+    delete childEnv.NO_COLOR;
+
     this.pty = pty.spawn(command, args, {
       name: 'xterm-color',
       cols: this.options.width,
       rows: this.options.height,
       cwd: this.options.cwd || process.cwd(),
-      env: {
-        ...(process.env as Record<string, string>),
-        ...this.options.env,
-      },
+      env: childEnv,
     });
 
     // Capture output and feed to xterm for parsing
@@ -380,8 +385,21 @@ export class PtyManager {
    * @returns Array of per-character attribute objects, or null if text not found
    */
   findTextCells(text: string): CellAttributes[] | null {
+    const all = this.findAllTextCells(text);
+    return all.length > 0 ? all[0]! : null;
+  }
+
+  /**
+   * Returns per-character cell attributes for every occurrence of `text`
+   * across the entire xterm buffer (scrollback + viewport), in top-to-bottom
+   * order. One match per line. Used by /theme reflow tests to compare an
+   * older flushed scrollback row against a newer live-region row painted
+   * after a theme swap.
+   */
+  findAllTextCells(text: string): CellAttributes[][] {
     const buffer = this.terminal.buffer.active;
     const totalLines = buffer.baseY + this.terminal.rows;
+    const matches: CellAttributes[][] = [];
 
     for (let y = 0; y < totalLines; y++) {
       const line = buffer.getLine(y);
@@ -410,9 +428,9 @@ export class PtyManager {
           fgIsRgb: cell.isFgRGB(),
         });
       }
-      return attrs;
+      matches.push(attrs);
     }
-    return null;
+    return matches;
   }
 
   /**
