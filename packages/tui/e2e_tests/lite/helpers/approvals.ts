@@ -1,38 +1,11 @@
 import { expect } from 'bun:test';
 import type { TestCase } from '../../../src/test-utils/TestCase';
-import type { E2ETestCase } from '../../E2ETestCase';
 import {
   AgentEventType,
   ApprovalOptionId,
   type PermissionOption,
   type TrustOption,
 } from '../../../src/types/agent-events';
-
-/** Push a `write` ToolUseEvent (triggers a create-file approval) + terminating null over the e2e agent IPC. */
-export async function pushWriteApprovalEvent(
-  tc: E2ETestCase,
-  opts: { toolUseId: string; path: string; content: string }
-): Promise<void> {
-  await tc.pushSendMessageResponse([
-    {
-      kind: 'event',
-      data: {
-        kind: 'ToolUseEvent',
-        data: {
-          tool_use_id: opts.toolUseId,
-          name: 'write',
-          input: JSON.stringify({
-            command: 'create',
-            path: opts.path,
-            content: opts.content,
-          }),
-          stop: true,
-        },
-      },
-    },
-  ]);
-  await tc.pushSendMessageResponse(null);
-}
 
 const ALLOW_ONCE: PermissionOption = {
   kind: ApprovalOptionId.AllowOnce,
@@ -46,7 +19,7 @@ const REJECT_ONCE: PermissionOption = {
 };
 
 /** Allow Once / Allow Always / Reject Once — the common 3-button option set. */
-export const ALLOW_ALWAYS_REJECT_OPTIONS: PermissionOption[] = [
+const ALLOW_ALWAYS_REJECT_OPTIONS: PermissionOption[] = [
   ALLOW_ONCE,
   {
     kind: ApprovalOptionId.AllowAlways,
