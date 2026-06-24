@@ -64,8 +64,14 @@ describe('lite history cap [bug-mine 2.7]', () => {
 
     await testCase.sleepMs(2000);
 
+    // Resume repaints the full LITE_HISTORY_RENDER_CAP (70) row slice into
+    // <Static>. On weak CI runners that repaint crawls (~1s/row, monotonic —
+    // one run reached HIST_MSG_038 at the old 90s mark, one short of the
+    // target), so give it generous headroom. Concurrency-independent: cap=4
+    // and cap=8 both timed out here, so this is render throughput, not
+    // contention.
     const lastMarker = `HIST_MSG_${String(totalTurns - 1).padStart(3, '0')}`;
-    await testCase.waitForText(`Response ${lastMarker}`, 90000);
+    await testCase.waitForText(`Response ${lastMarker}`, 180000);
 
     // Store holds the full history; only the painted slice is bounded.
     const store = await testCase.getStore();
@@ -105,5 +111,5 @@ describe('lite history cap [bug-mine 2.7]', () => {
     expect(snap2.some((line) => line.includes('POST_RESUME_LIVE_MSG'))).toBe(
       true
     );
-  }, 240000);
+  }, 360000);
 });
