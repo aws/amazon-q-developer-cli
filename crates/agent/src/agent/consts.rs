@@ -14,6 +14,28 @@ pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";
 
+/// Instructional tool_result returned when the model invokes the placeholder
+/// [`DUMMY_TOOL_NAME`] tool.
+///
+/// `enforce_conversation_invariants` advertises the `dummy` tool whenever
+/// history references a tool the current agent can't dispatch (e.g. an executor
+/// tool left in shared history after a `kiro_planner` plan/execute handoff).
+/// Because `dummy` is never registered in the tool map, the model calling it
+/// used to hard-fail with `NameDoesNotExist`, which drove a tight
+/// unavailable-tool retry loop. Instead we hand back this guidance so the model
+/// can self-correct.
+pub const DUMMY_TOOL_RESULT_MESSAGE: &str = "The 'dummy' tool is a placeholder for a tool that is not available to the current agent. You appear to be in planning mode; you cannot execute directly. To execute the plan, call the `switch_to_execution` tool.";
+
+/// Maximum number of consecutive agent-loop turns that yield no executable tool
+/// calls (only parse errors and/or `dummy` placeholder calls) before the agent
+/// stops auto-resending and ends the turn. Guards against an unbounded
+/// request/response loop when the model repeatedly calls an unavailable tool.
+pub const MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS: usize = 3;
+
+/// Assistant message surfaced when [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`]
+/// is reached and the turn is force-ended.
+pub const REPEATED_UNEXECUTABLE_TOOL_MESSAGE: &str = "Stopped after repeated attempts to call tools that aren't available. The required tools may belong to a different agent -- consider switching agents, or rephrase your request.";
+
 /// Safety cap to prevent loading extremely large files into memory.
 /// The actual context budget is enforced separately in create_context_messages.
 pub const MAX_RESOURCE_FILE_LENGTH: u64 = 5 * 1024 * 1024;
