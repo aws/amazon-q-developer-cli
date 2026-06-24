@@ -93,7 +93,10 @@ describe('--agent CLI flag → KAS setSessionConfigOption(mode)', () => {
   }, 15000);
 
   it('does not send mode config option when --agent is absent', async () => {
-    tc = new AcpTestCase({ testName: 'acp-agent-flag-absent' });
+    // Sandbox settings so an ambient chat.defaultAgent in the runner's real
+    // ~/.kiro/settings/cli.json can't make the TUI send a mode config option
+    // and break the "absent" assertion.
+    tc = new AcpTestCase({ testName: 'acp-agent-flag-absent', settings: {} });
 
     tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
       protocolVersion: 1,

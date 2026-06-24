@@ -30,8 +30,6 @@ export interface CliArgs extends AcpSpawnArgs {
   resumeId?: string;
   /** Interactively select a conversation to resume (--resume-picker / --list). TUI-only. */
   resumePicker: boolean;
-  /** Diagnostic mode: print every keypress + parsed sequence and exit. TUI-only. */
-  debugKeys: boolean;
 }
 
 // ── Flag definitions ────────────────────────────────────────────────────
@@ -87,7 +85,6 @@ const FLAG_DEFS: FlagDef[] = [
     key: 'resumePicker',
     flags: ['--resume-picker', '--list'],
   },
-  { type: 'boolean', key: 'debugKeys', flags: ['--debug-keys'] },
   // consumed by Rust ChatArgs before TUI is launched — skip without error
   { type: 'skip', flags: ['--tui', '--v3'] },
   {
@@ -118,7 +115,6 @@ export function parseCliArgs(): CliArgs {
     noInteractive: false,
     resume: false,
     resumePicker: false,
-    debugKeys: false,
   };
 
   // Skip past "chat" subcommand if present
