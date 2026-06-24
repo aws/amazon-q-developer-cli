@@ -31,6 +31,15 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
     testCase = await TestCase.builder()
       .withTestName('lite-boot-no-panel-remount')
       .withGlobalSettings({ 'chat.ui.mode': 'tui' })
+      // Boot in TUI then swap to lite via /lite — but /lite is gated on the
+      // rollout flag (effects.ts switchToLite), which the preload only sets
+      // when an argv token matches `lite-`. A full-directory run (CI's
+      // `bun test ./integ_tests/`, now uncapped) has no such token, so the
+      // flag is unset and /lite silently no-ops. Set it per-test (as
+      // withLite() does) — safe here because chat.ui.mode='tui' is an explicit
+      // mode, so the first-launch UI-mode picker (gated on an unresolved mode
+      // + rollout) never triggers.
+      .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
       .withTimeout(15000)
       .launch();
 
@@ -42,15 +51,26 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
 
     await switchToLite(testCase);
 
-    const storeAfter = await testCase.getStore();
+    // The /lite dispatch is async; poll for lite mode instead of asserting on
+    // a stale snapshot. Generous timeout: the end-to-end dispatch can exceed
+    // 10s under contended CI (integ runs uncapped).
+    const storeAfter = await testCase.waitForStore(
+      (s) => s.uiMode === 'lite',
+      20000
+    );
     expect(storeAfter.uiMode).toBe('lite');
     expect(storeAfter.isInitialized).toBe(true);
 
     expectNoBootIndicator(testCase.getSnapshot().join('\n'));
 
     await testCase.sendKeys([0x03, 0x03, 0x03]);
-    await testCase.expectExit();
-  }, 30000);
+    // Generous exit timeout (vs expectExit's 10s default): under uncapped
+    // integ concurrency a CPU-starved chat_cli can take >10s to terminate
+    // after the interrupt. Matches exitLiteInteg.
+    await testCase.expectExit(30000);
+    // Outer timeout accommodates the generous inner waits (10s prompt + 20s
+    // swap poll + 30s exit) under contended CI.
+  }, 75000);
 
   it('boot indicator hidden after init in mock mode [bug-mine 7.2]', async () => {
     // WHY auto-hide: showBootIndicator gates on any 'loading' status. In mock

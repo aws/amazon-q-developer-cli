@@ -50,8 +50,6 @@ import {
 import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
-  ENABLE_KITTY_KEYBOARD,
-  DISABLE_KITTY_KEYBOARD,
 } from './utils/terminal-sequences';
 import {
   enableFocusTracking,
@@ -93,7 +91,6 @@ process.on('exit', (code) => {
 
 const cleanup = () => {
   try {
-    process.stdout.write(DISABLE_KITTY_KEYBOARD);
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdin.setRawMode?.(false);
@@ -787,18 +784,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
-  // --debug-keys: skip ACP entirely and just mount the diagnostic component
-  // that prints every keypress + parsed key id. Use this to verify which
-  // shortcuts actually reach the handler on the user's terminal.
-  if (cliArgs.debugKeys) {
-    process.stdout.write(ENABLE_BRACKETED_PASTE);
-    process.stdout.write(ENABLE_KITTY_KEYBOARD);
-    const { DebugKeys } = await import('./components/layout/DebugKeys.js');
-    process.stdout.write('\x1b[2J\x1b[H');
-    render(<DebugKeys />, { exitOnCtrlC: false, patchConsole: false });
-    return;
-  }
-
   // Handle --resume-picker before Twinki renders: the interactive picker needs
   // raw terminal access that can't coexist with Twinki's input handling.
   // If --resume-picker is passed, list all sessions, run the picker, then
@@ -1102,18 +1087,17 @@ const startApp = async () => {
   function App() {
     const appStoreRef = useRef<AppStoreApi>(appStore);
 
-    // Enable bracketed paste + Kitty keyboard disambiguation + focus tracking
-    // on mount.
-    // Kitty CSI-u is a no-op on terminals that don't speak the protocol;
-    // on those that do (kitty, WezTerm, Ghostty, alacritty 0.13+, iTerm2
-    // 3.5+ when enabled), it gives Shift+Enter, Ctrl+I-vs-Tab, etc. as
-    // distinct sequences instead of being indistinguishable from Enter/Tab.
+    // Enable bracketed paste + focus tracking on mount. Kitty keyboard
+    // disambiguation is owned solely by twinki's ProcessTerminal, which
+    // queries terminal support and keeps its `kittyProtocolActive` parser
+    // flag in sync. Enabling CSI-u here too (ungated, without that flag)
+    // made the terminal emit Ctrl+C as CSI-u while the parser stayed on the
+    // legacy path — breaking Ctrl+C and other shortcuts (the regression that
+    // got lite landing 7/9 reverted in #3227).
     useEffect(() => {
       process.stdout.write(ENABLE_BRACKETED_PASTE);
-      process.stdout.write(ENABLE_KITTY_KEYBOARD);
       enableFocusTracking();
       return () => {
-        process.stdout.write(DISABLE_KITTY_KEYBOARD);
         disableFocusTracking();
         process.stdout.write(DISABLE_BRACKETED_PASTE);
       };
