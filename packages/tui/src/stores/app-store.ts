@@ -5843,6 +5843,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const metadata = {
         sessionId: get().sessionId ?? undefined,
         isInternal: !!process.env.KIRO_INTERNAL,
+        agentEngine: get().agentEngine,
       };
       submitFormToAperture(survey, answers, { metadata })
         .then((outcome) => {

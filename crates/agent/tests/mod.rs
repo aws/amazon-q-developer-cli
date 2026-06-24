@@ -2565,8 +2565,8 @@ async fn test_swap_agent_updates_knowledge_provider() {
 /// Part A: a model call to the unavailable `dummy` placeholder tool must
 /// resolve to a benign, instructional tool_result (Success) rather than a hard
 /// `NameDoesNotExist` parse error. This is what lets the model self-correct
-/// (e.g. call switch_to_execution) instead of looping on an unavailable tool
-/// after a kiro_planner plan/execute handoff.
+/// (e.g. switch to an agent that provides the tool) instead of looping on an
+/// unavailable tool after a cross-agent handoff.
 #[tokio::test]
 async fn test_dummy_tool_call_returns_benign_result() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -2605,8 +2605,9 @@ async fn test_dummy_tool_call_returns_benign_result() {
         "dummy tool call should yield a successful (benign) tool_result, not an error"
     );
 
-    // The result text must carry the instructional guidance pointing at
-    // switch_to_execution — NOT a "does not exist" / parse-error message.
+    // The result text must carry the instructional guidance about the
+    // unavailable tool belonging to a different agent -- NOT a "does not
+    // exist" / parse-error message.
     let text = resend
         .messages()
         .last()
@@ -2628,8 +2629,8 @@ async fn test_dummy_tool_call_returns_benign_result() {
         })
         .expect("dummy tool_use must have a tool_result");
     assert!(
-        text.contains("switch_to_execution"),
-        "dummy guidance should point to switch_to_execution; got: {text}"
+        text.contains("not available") && text.contains("different agent"),
+        "dummy guidance should describe an unavailable tool belonging to a different agent; got: {text}"
     );
     assert!(
         !text.contains("does not exist") && !text.contains("Failed to parse the tool use"),

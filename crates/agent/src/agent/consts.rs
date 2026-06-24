@@ -24,7 +24,7 @@ pub const DUMMY_TOOL_NAME: &str = "dummy";
 /// used to hard-fail with `NameDoesNotExist`, which drove a tight
 /// unavailable-tool retry loop. Instead we hand back this guidance so the model
 /// can self-correct.
-pub const DUMMY_TOOL_RESULT_MESSAGE: &str = "The 'dummy' tool is a placeholder for a tool that is not available to the current agent. You appear to be in planning mode; you cannot execute directly. To execute the plan, call the `switch_to_execution` tool.";
+pub const DUMMY_TOOL_RESULT_MESSAGE: &str = "The 'dummy' tool is a placeholder for a tool that is not available to the current agent and cannot be called. The tool you attempted to use may belong to a different agent; switch to an agent that provides it if you need it.";
 
 /// Maximum number of consecutive agent-loop turns that yield no executable tool
 /// calls (only parse errors and/or `dummy` placeholder calls) before the agent

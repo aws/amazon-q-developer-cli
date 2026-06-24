@@ -6,7 +6,12 @@
  */
 
 import type { SurveyDefinition } from '../constants/survey.js';
-import { submitForm, type ApertureSubmitResult } from './aperture-client.js';
+import type { AgentEngine } from '../agent-engine.js';
+import {
+  submitForm,
+  buildUserAgent,
+  type ApertureSubmitResult,
+} from './aperture-client.js';
 import { logger } from './logger.js';
 import { hostname } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -42,6 +47,12 @@ export interface SurveyMetadata {
   sessionId?: string;
   taskId?: string;
   isInternal?: boolean;
+  /**
+   * Active agent engine (`v2` = Rust backend, `kas` = KAS backend). When set,
+   * it is appended to the request `User-Agent` so survey responses can be
+   * attributed to v2 vs KAS sessions.
+   */
+  agentEngine?: AgentEngine;
 }
 
 let cachedUserId: string | null = null;
@@ -129,9 +140,26 @@ export async function submitFormToAperture(
   options: { signal?: AbortSignal; metadata?: SurveyMetadata } = {}
 ): Promise<SurveySubmitOutcome> {
   const payload = buildSurveyPayload(survey, answers, options.metadata);
+
+  // Decorate the base User-Agent with the active engine for this survey
+  // submission only (do not mutate the shared aperture-client default).
+  const engine = options.metadata?.agentEngine;
+  // Map the store engine value to its user-facing label (v3 == KAS, v2 == Rust backend).
+  const engineLabel: 'v3' | 'v2' | undefined = engine
+    ? engine === 'kas'
+      ? 'v3'
+      : 'v2'
+    : undefined;
+  const userAgent = engineLabel
+    ? `${buildUserAgent()} engine/${engineLabel}`
+    : buildUserAgent();
+
   let result: ApertureSubmitResult;
   try {
-    result = await submitForm(payload, { signal: options.signal });
+    result = await submitForm(payload, {
+      signal: options.signal,
+      headers: { 'User-Agent': userAgent },
+    });
   } catch (err) {
     logger.warn('[survey-submit] unexpected throw from submitForm', err);
     return { ok: false, rateLimited: false, message: 'Unexpected error' };
