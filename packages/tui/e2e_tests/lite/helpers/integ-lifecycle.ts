@@ -42,17 +42,34 @@ export async function launchLiteInteg(
 }
 
 /**
- * Clean lite-mode exit: three Ctrl+C then assert the process exits.
+ * Clean lite-mode exit.
  *
- * Uses a generous exit timeout (60s vs expectExit's 10s default): under load a
- * CPU/IO-starved chat_cli can take well over 10s to actually terminate after
- * the interrupt — the teardown timing, not the product, is what's slow. This
- * is the shared exit path for the lite integ suite, so the headroom covers all
- * of them.
+ * Two subtle hazards, both fixed here:
+ *
+ * 1. Ctrl+C routing. The quit-key dispatch (app-keypress-dispatch.ts) sends
+ *    Ctrl+C to cancelMessage() while isProcessing is true, and only to
+ *    incrementExitSequence() when idle. So we first wait for the turn to settle
+ *    — otherwise a Ctrl+C meant to exit is eaten as a cancel and the exit
+ *    sequence never reaches its threshold.
+ * 2. Exit-event race. The app calls process.exit() on the second Ctrl+C, which
+ *    can fire bun-pty's (one-shot) onExit *before* expectExit() registers its
+ *    listener — previously hanging that call for its whole timeout. PtyManager
+ *    now latches the exit, so expectExit() resolves even if the process already
+ *    left. We send the two presses spaced (so both land inside the 2s exit
+ *    window) and then await.
  */
 export async function exitLiteInteg(tc: TestCase): Promise<void> {
-  await tc.sendKeys([0x03, 0x03, 0x03]);
-  await tc.expectExit(60000);
+  try {
+    await tc.waitForStore((s) => !s.isProcessing, 15000);
+  } catch {
+    /* settle best-effort; the presses below still drive the exit sequence */
+  }
+
+  await tc.sendKeys([0x03]);
+  await tc.sleepMs(200);
+  await tc.sendKeys([0x03]);
+
+  await tc.expectExit(30000);
 }
 
 /** completeTurn + settle + clean exit — the repeated tail of most lite integ tests. */
