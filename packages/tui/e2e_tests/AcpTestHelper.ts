@@ -75,9 +75,9 @@ export class AcpTestHelper {
       throw new Error('Failed to create ACP helper process stdio');
     }
 
-    // Wait for IPC connection from the agent
+    // Wait for IPC connection from the agent. 45s, not 15s: heavy sessions on contended CI runners can take >15s just to spawn the helper.
     const ipcConnectionPromise = new Promise<TuiIpcConnection>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Timeout waiting for helper IPC connection')), 15000);
+      const timer = setTimeout(() => reject(new Error('Timeout waiting for helper IPC connection')), 45000);
       ipcServer.on('connection', (socket) => {
         clearTimeout(timer);
         resolve(new TuiIpcConnection(socket));
