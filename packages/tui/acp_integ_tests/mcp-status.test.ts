@@ -96,7 +96,14 @@ describe('MCP status + thinking', () => {
      * WHEN   server pushes agent_thought_chunk with reasoning text
      * THEN   thinking content appears in store messages (as model message with thinking)
      */
-    tc = new AcpTestCase({ testName: 'thinking-chunk' });
+    // Pin chat.showThinking so the thinking gate doesn't depend on the
+    // runner's ambient ~/.kiro/settings/cli.json (settings seeds a sandbox
+    // $KIRO_HOME). Without this the test passes only when the ambient config
+    // lacks the key (default 'expanded') and fails when it's off/false.
+    tc = new AcpTestCase({
+      testName: 'thinking-chunk',
+      settings: { 'chat.showThinking': 'expanded' },
+    });
     setupHandshake(tc);
 
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
