@@ -73,6 +73,7 @@ describe('/copy OSC 52 clipboard fallback', () => {
   it('falls back to OSC 52 when platform tools fail', () => {
     const text = 'hello clipboard';
     const ctx = createMockCtx([modelMessage(text)]);
+    (ctx as any).getUiMode = () => 'lite';
 
     runEffect(copyCmd, null, ctx, '');
 
@@ -81,8 +82,13 @@ describe('/copy OSC 52 clipboard fallback', () => {
     expect(calls[0]![0]).toBe('/dev/tty');
     const b64 = Buffer.from(text, 'utf-8').toString('base64');
     expect(calls[0]![1]).toBe(`\x1b]52;c;${b64}\x07`);
-    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('Copied');
-    expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('success');
+    // Confirmation goes via announceSystem (not showAlert) so the row
+    // lands in lite scrollback. showAlert(..., 'success') is silently
+    // dropped in lite — see app-store.ts ~3479. The clipboard is
+    // invisible, so this is the only signal the user gets that /copy
+    // worked. This test pins that contract.
+    expect(ctx._spies.announceSystem).toHaveBeenCalled();
+    expect(ctx._spies.announceSystem!.mock.calls[0]![0]).toContain('Copied');
   });
 
   it('writes correct base64 encoding in OSC 52 sequence', () => {
@@ -122,12 +128,15 @@ describe('/copy OSC 52 clipboard fallback', () => {
   it('skips OSC 52 when platform tool succeeds', () => {
     mockSpawnSync.mockImplementation(() => ({ status: 0 }));
     const ctx = createMockCtx([modelMessage('test')]);
+    (ctx as any).getUiMode = () => 'lite';
 
     runEffect(copyCmd, null, ctx, '');
 
     expect(mockWriteFileSync).not.toHaveBeenCalled();
-    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('Copied');
-    expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('success');
+    // Confirmation goes via announceSystem (not showAlert) — same
+    // contract as the OSC 52 path above.
+    expect(ctx._spies.announceSystem).toHaveBeenCalled();
+    expect(ctx._spies.announceSystem!.mock.calls[0]![0]).toContain('Copied');
   });
 });
 
@@ -158,12 +167,15 @@ describe('copyToSystemClipboard platform behavior', () => {
       messages: [modelMessage('test')],
       slashCommands: [copyCmd],
     });
+    (ctx as any).getUiMode = () => 'lite';
     runEffect(copyCmd, null, ctx, '');
 
     // spawnSync should have been called with pbcopy
     const calls = mockSpawnSync.mock.calls as unknown as unknown[][];
     expect(calls[0]![0]).toBe('pbcopy');
-    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('Copied');
+    // Confirmation goes via announceSystem (not showAlert) — same
+    // contract as the OSC 52 path above.
+    expect(ctx._spies.announceSystem!.mock.calls[0]![0]).toContain('Copied');
   });
 
   it('returns false when all tools fail and no /dev/tty (win32)', () => {
@@ -390,6 +402,69 @@ describe('runEffect routing', () => {
     expect(ctx._spies.clearMessages!).not.toHaveBeenCalled();
   });
 
+  it('/clear in lite mode does NOT wipe the terminal (Rust keep-last-turn path)', () => {
+    // Regression: /clear used to write CSI 2J/3J in lite mode, destroying the
+    // terminal scrollback buffer (pre-kiro shell history + prior sessions)
+    // instead of just clearing conversation context. Lite never emits 2J/3J.
+    // Direct stdout replace (not spyOn) — spyOn(process.stdout,'write') does
+    // not intercept in this runtime; the codebase uses direct assignment
+    // (see utils/__tests__/notification.test.ts, shell-escape.test.ts).
+    const cmd: SlashCommand = {
+      name: '/clear',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    (ctx as any).getUiMode = () => 'lite';
+    const originalWrite = process.stdout.write;
+    const wrote: string[] = [];
+    process.stdout.write = ((chunk: any) => {
+      wrote.push(String(chunk));
+      return true;
+    }) as any;
+    try {
+      runEffect(cmd, null, ctx, '');
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    const joined = wrote.join('');
+    expect(joined).not.toContain('\x1b[2J');
+    expect(joined).not.toContain('\x1b[3J');
+    // Keep-last-turn path still fires (conversation context cleared by backend).
+    expect(ctx._spies.clearMessages!).toHaveBeenCalled();
+  });
+
+  it('/clear in lite mode (KAS new-session path) does NOT wipe the terminal', () => {
+    const cmd: SlashCommand = {
+      name: '/clear',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    (ctx as any).getUiMode = () => 'lite';
+    const result = {
+      success: true,
+      message: 'Conversation cleared',
+      data: { sessionId: 'new-session-id' },
+    };
+    const originalWrite = process.stdout.write;
+    const wrote: string[] = [];
+    process.stdout.write = ((chunk: any) => {
+      wrote.push(String(chunk));
+      return true;
+    }) as any;
+    try {
+      runEffect(cmd, result, ctx, '');
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    const joined = wrote.join('');
+    expect(joined).not.toContain('\x1b[2J');
+    expect(joined).not.toContain('\x1b[3J');
+    // Clean, scrollback-preserving reset path is still used.
+    expect(ctx._spies.resetMessages!).toHaveBeenCalled();
+  });
+
   it('/context with breakdown shows panel', () => {
     const cmd: SlashCommand = {
       name: '/context',
@@ -430,7 +505,23 @@ describe('runEffect routing', () => {
     expect(ctx._spies.sendMessage!).toHaveBeenCalledWith('run this prompt');
   });
 
-  it('/tui calls setShowTuiPanel', () => {
+  it('/tui from TUI mode opens the info panel', () => {
+    const cmd: SlashCommand = {
+      name: '/tui',
+      description: '',
+      source: 'local',
+      meta: { local: true, liteOnly: true },
+    };
+    const ctx = createMockCommandContext();
+    // createMockCommandContext defaults getUiMode() to 'tui'.
+
+    runEffect(cmd, null, ctx, '');
+
+    expect(ctx._spies.setUiMode!).not.toHaveBeenCalled();
+    expect(ctx._spies.setShowTuiPanel!).toHaveBeenCalledWith(true);
+  });
+
+  it('/tui from lite mode switches to TUI', () => {
     const cmd: SlashCommand = {
       name: '/tui',
       description: '',
@@ -438,10 +529,61 @@ describe('runEffect routing', () => {
       meta: { local: true },
     };
     const ctx = createMockCommandContext();
+    (ctx as any).getUiMode = () => 'lite';
 
     runEffect(cmd, null, ctx, '');
 
-    expect(ctx._spies.setShowTuiPanel!).toHaveBeenCalledWith(true);
+    expect(ctx._spies.setUiMode!).toHaveBeenCalledWith('tui');
+    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+      'Switched to TUI mode'
+    );
+  });
+
+  it('/lite is a no-op when KIRO_LITE_ROLLOUT_ENABLED is unset', () => {
+    const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    try {
+      const cmd: SlashCommand = {
+        name: '/lite',
+        description: '',
+        source: 'local',
+        meta: { local: true },
+      };
+      const ctx = createMockCommandContext();
+
+      runEffect(cmd, null, ctx, '');
+
+      expect(ctx._spies.setUiMode!).not.toHaveBeenCalled();
+      expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+        'Lite mode is not available in this build'
+      );
+    } finally {
+      if (prev !== undefined) process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;
+    }
+  });
+
+  it('/lite switches to lite mode when KIRO_LITE_ROLLOUT_ENABLED=1', () => {
+    const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+    try {
+      const cmd: SlashCommand = {
+        name: '/lite',
+        description: '',
+        source: 'local',
+        meta: { local: true },
+      };
+      const ctx = createMockCommandContext();
+
+      runEffect(cmd, null, ctx, '');
+
+      expect(ctx._spies.setUiMode!).toHaveBeenCalledWith('lite');
+      expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+        'Switched to lite mode'
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+      else process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;
+    }
   });
 
   it('/changelog calls setShowChangelogPanel', () => {
@@ -728,7 +870,7 @@ describe('/paste effect', () => {
     ]);
   });
 
-  it('calls showAlert when paste fails with error message', () => {
+  it('shows alert on paste failure', () => {
     const cmd: SlashCommand = {
       name: '/paste',
       description: '',
@@ -743,10 +885,11 @@ describe('/paste effect', () => {
 
     runEffect(cmd, result, ctx, '');
 
-    expect(ctx._spies.showAlert!).toHaveBeenCalled();
-    const call = ctx._spies.showAlert!.mock.calls[0]!;
-    expect(call[0]).toBe('No image found in clipboard');
-    expect(call[1]).toBe('error');
+    expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+      'No image found in clipboard',
+      'error'
+    );
+    expect(ctx._spies.sendMessage!).not.toHaveBeenCalled();
   });
 });
 
@@ -1080,10 +1223,15 @@ describe('showSessionId effect', () => {
     const ctx = createMockCommandContext({
       kiro: { sessionId: 'abc-123' } as any,
     });
+    (ctx as any).getUiMode = () => 'lite';
     runEffect(sessionIdCmd, { success: true, message: '', data: {} }, ctx, '');
-    expect(ctx._spies.showAlert).toHaveBeenCalled();
-    const alertMsg = (ctx._spies.showAlert!.mock.calls[0] as any[])[0];
-    expect(alertMsg).toContain('abc-123');
+    // Confirmation goes via announceSystem (not showAlert) so the row lands
+    // in lite scrollback. showAlert(..., 'success') is silently dropped in
+    // lite — see app-store.ts ~3479. The contract for state-changing
+    // success messages is announceSystem; this test pins that.
+    expect(ctx._spies.announceSystem).toHaveBeenCalled();
+    const announceArg = ctx._spies.announceSystem!.mock.calls[0]![0];
+    expect(announceArg).toBe('Session ID: abc-123');
   });
 });
 
@@ -1224,6 +1372,7 @@ describe('/spawn effect', () => {
         ),
       } as any,
     });
+    (ctx as any).getUiMode = () => 'lite';
     await runEffect(
       spawnCmd,
       { success: true, message: '' },
@@ -1231,7 +1380,14 @@ describe('/spawn effect', () => {
       'do something'
     );
     expect(ctx._spies.addSession).toHaveBeenCalled();
-    expect(ctx._spies.showAlert).toHaveBeenCalled();
+    // Confirmation goes via announceSystem (not showAlert) so the row lands
+    // in lite scrollback. showAlert(..., 'success') is silently dropped in
+    // lite — see app-store.ts ~3479. The contract for state-changing
+    // success messages is announceSystem; this test pins that.
+    expect(ctx._spies.announceSystem).toHaveBeenCalled();
+    const announceArg = ctx._spies.announceSystem!.mock.calls[0]![0];
+    expect(announceArg).toContain('Spawned my-task');
+    expect(announceArg).toContain('do something');
   });
 
   it('parses --name flag', async () => {
@@ -1248,6 +1404,39 @@ describe('/spawn effect', () => {
       '--name custom do work'
     );
     expect(spawnMock).toHaveBeenCalledWith('do work', 'custom');
+  });
+});
+
+describe('/switch effect', () => {
+  const switchCmd: SlashCommand = {
+    name: '/switch',
+    description: 'Switch',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  it('returns to main chat via announceSystem (lite-visible)', () => {
+    const ctx = createMockCommandContext();
+    (ctx as any).getUiMode = () => 'lite';
+    // /switch reads from ctx.sessions to validate at least one session
+    // exists; seed one so the "No active sessions" error path doesn't
+    // fire. Status filter excludes 'pending'.
+    ctx.sessions.set('s1', {
+      id: 's1',
+      name: 'sub-1',
+      status: 'running',
+    } as any);
+    runEffect(switchCmd, { success: true, message: '' }, ctx, 'main');
+    expect(ctx._spies.setActiveSession).toHaveBeenCalledWith('');
+    // Confirmation goes via announceSystem (not showAlert) so the row
+    // lands in lite scrollback. showAlert(..., 'success') is silently
+    // dropped in lite — see app-store.ts ~3479. The named-target branch
+    // has its own visual feedback (alt-screen swap + setMode); the
+    // main-chat branch has no other cue, so without announceSystem the
+    // user sees nothing happen. This test pins that contract.
+    expect(ctx._spies.announceSystem).toHaveBeenCalled();
+    const announceArg = ctx._spies.announceSystem!.mock.calls[0]![0];
+    expect(announceArg).toContain('main chat');
   });
 });
 

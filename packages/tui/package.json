@@ -27,7 +27,8 @@
     "bench:markdown": "bun run scripts/benchmark-markdown.ts",
     "dev:profile": "bun run scripts/start-dev-profile.ts",
     "analyze:profile": "bun run scripts/analyze-profile.ts --html",
-    "knight-rider": "bun run e2e_tests/knight-rider.ts"
+    "knight-rider": "bun run e2e_tests/knight-rider.ts",
+    "test:knight-rider": "KIRO_RUN_KNIGHT_RIDER_TESTS=1 bun test --max-concurrency=1 ./e2e_tests/knight-rider-lite-*.kr.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.19.0",

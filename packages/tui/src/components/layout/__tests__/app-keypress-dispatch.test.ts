@@ -33,6 +33,7 @@ const baseState = (
   overrides: Partial<AppKeypressState> = {}
 ): AppKeypressState => ({
   mode: 'inline',
+  uiMode: 'tui',
   isProcessing: false,
   isShellEscape: false,
   hasCommandInput: false,
@@ -41,6 +42,7 @@ const baseState = (
   editingQueueIndex: null,
   transientAlertHasAction: false,
   pendingOAuthUrl: null,
+  subagentPanelOpen: false,
   surveyPromptVisible: false,
   suspendArmed: false,
   ...overrides,
@@ -131,6 +133,18 @@ describe('dispatchAppKeypress: cancelStream binding', () => {
       '',
       blankKey({ escape: true }),
       baseState({ isProcessing: true, editingQueueIndex: 0 }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBeUndefined();
+  });
+
+  it('esc while subagent panel is open does NOT cancel streaming', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({ isProcessing: true, subagentPanelOpen: true }),
       actions,
       DEFAULT_BINDINGS
     );
@@ -321,6 +335,19 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
     expect(actions._calls.suspendProcess).toBe(1);
   });
 
+  it('Ctrl+Z does NOT suspend when subagent panel is open (panel claims it for jump-to-bottom)', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      'z',
+      blankKey({ ctrl: true }),
+      baseState({ subagentPanelOpen: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(false);
+    expect(actions._calls.suspendProcess).toBeUndefined();
+  });
+
   it('Ctrl+Z when picker open (pendingApproval) still arms suspend', () => {
     const actions = makeActions();
     dispatchAppKeypress(
@@ -435,6 +462,20 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       DEFAULT_BINDINGS
     );
     expect(actions._args.setMode).toEqual(['inline']);
+  });
+
+  it('Ctrl+G in lite mode is a no-op (crew-monitor is TUI-only)', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState({ uiMode: 'lite' }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(false);
+    expect(actions._calls.enterCrewMonitor).toBeUndefined();
+    expect(actions._calls.setMode).toBeUndefined();
   });
 
   it('shell-escape Ctrl+C forwards to PTY and cancels', () => {

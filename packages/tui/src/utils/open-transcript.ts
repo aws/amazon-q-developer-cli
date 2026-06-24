@@ -77,7 +77,11 @@ export function openTranscriptInPager(
         }
       }
     } else {
-      const pager = process.env.PAGER || 'less';
+      // -F: auto-exit if content fits on one screen (avoids opening less for
+      // tiny transcripts); -X: don't init/deinit terminal so quitting leaves
+      // the transcript visible in scrollback instead of wiping it. $PAGER
+      // takes precedence so users with a configured pager keep their setup.
+      const pager = process.env.PAGER || 'less -F -X';
       const quotedPath = `'${tempFile.replace(/'/g, "'\\''")}'`;
       // Start at the bottom so the most recent messages are visible first.
       // +G is understood by less and most less-compatible pagers.

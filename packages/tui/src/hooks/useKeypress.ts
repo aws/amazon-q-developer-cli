@@ -68,16 +68,18 @@ export const useKeypress = (
         return;
       }
 
-      inputMetrics.markKeypress(input);
-      inputMetrics.markHandlerStart();
-
-      handlerRef.current(input, {
+      const enrichedKey: Key = {
         ...key,
         meta: (key as any).meta ?? (key as any).alt ?? false,
         home: key.home ?? false,
         end: key.end ?? false,
         paste: false,
-      });
+      };
+
+      inputMetrics.markKeypress(input);
+      inputMetrics.markHandlerStart();
+
+      handlerRef.current(input, enrichedKey);
     },
     { isActive }
   );

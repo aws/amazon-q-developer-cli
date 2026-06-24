@@ -15,6 +15,12 @@ export type AppMode = 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
 
 export interface AppKeypressState {
   mode: AppMode;
+  /**
+   * Active top-level UI mode. The crew-monitor (Ctrl+G) is a TUI-only
+   * panel — in lite mode the same keystroke must be a no-op so a stray
+   * BEL byte from a paste can't trigger a panel that doesn't render here.
+   */
+  uiMode: 'tui' | 'lite';
   isProcessing: boolean;
   isShellEscape: boolean;
   hasCommandInput: boolean;
@@ -23,6 +29,12 @@ export interface AppKeypressState {
   editingQueueIndex: number | null;
   transientAlertHasAction: boolean;
   pendingOAuthUrl: string | null;
+  /**
+   * Lite mode subagent inspection panel is open. When true, Esc and Ctrl+O
+   * are claimed by the panel — don't fire stream cancel on Esc, and don't
+   * let Ctrl+O trip any future top-level binding.
+   */
+  subagentPanelOpen: boolean;
   surveyPromptVisible: boolean;
   suspendArmed: boolean;
 }
@@ -60,7 +72,7 @@ export interface AppKeypressBindings {
  *   - Ctrl+Y → transient alert action / OAuth URL copy
  *   - Ctrl+D → exit sequence
  *   - `q` in crew-monitor / session-view → back to inline
- *   - Ctrl+G → toggle crew-monitor
+ *   - Ctrl+G → toggle crew-monitor (TUI mode only)
  */
 export function dispatchAppKeypress(
   input: string,
@@ -82,6 +94,12 @@ export function dispatchAppKeypress(
   }
 
   if (key.ctrl && input === 'z') {
+    // The lite subagent panel rebinds Ctrl+Z to "jump to bottom of trace".
+    // Letting the global suspend fire here would background the process the
+    // first time the user tried to jump down. Bail so the panel handler can
+    // claim the keystroke (twinki delivers the same keypress to every active
+    // useKeypress, so we just need to not return `true` here).
+    if (state.subagentPanelOpen) return false;
     if (process.platform === 'win32') return true;
 
     if (state.suspendArmed) {
@@ -144,6 +162,8 @@ export function dispatchAppKeypress(
   }
 
   if (matchesKeybinding(bindings.cancelStream, input, key)) {
+    // Subagent panel claims Esc to close itself — don't piggyback a cancel.
+    if (state.subagentPanelOpen) return true;
     if (
       state.isProcessing &&
       !state.pendingApproval &&
@@ -164,7 +184,7 @@ export function dispatchAppKeypress(
     return true;
   }
 
-  if (key.ctrl && input === 'g') {
+  if (key.ctrl && input === 'g' && state.uiMode === 'tui') {
     if (state.mode === 'crew-monitor') {
       actions.setMode('inline');
     } else {

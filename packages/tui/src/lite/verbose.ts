@@ -396,8 +396,10 @@ export function getVerboseFilters(): string[] {
   return out.includes('all') ? ['all'] : out;
 }
 
-/** Structural equality for the identity-preservation guard above. */
-function sameDisplay(
+/** Structural equality on two VerboseDisplayConfig values. Used by
+ *  getVerboseDisplay's identity-preservation guard and by the effect
+ *  handler's density-preset detection. */
+export function sameDisplay(
   a: VerboseDisplayConfig,
   b: VerboseDisplayConfig
 ): boolean {

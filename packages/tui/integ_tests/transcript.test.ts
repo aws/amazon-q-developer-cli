@@ -27,6 +27,13 @@ async function typeSlowly(tc: TestCase, text: string) {
   await tc.sleepMs(200);
 }
 
+async function submitMessage(tc: TestCase, text: string) {
+  await typeSlowly(tc, text);
+  await tc.pressEnter();
+  await tc.completeTurn();
+  await tc.waitForVisibleText('ask a question', 10000);
+}
+
 describe('/transcript', () => {
   let testCase: TestCase | null = null;
 
@@ -60,9 +67,7 @@ describe('/transcript', () => {
     await testCase.waitForVisibleText('ask a question', 15000);
 
     // Send a user message so the conversation is non-empty
-    await typeSlowly(testCase, 'hello from the test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'hello from the test');
 
     // Open transcript — less takes over the PTY
     await typeSlowly(testCase, '/transcript');
@@ -89,9 +94,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'first message');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'first message');
 
     await typeSlowly(testCase, '/transcript');
     await testCase.pressEnter();
@@ -110,9 +113,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'hello plain');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'hello plain');
 
     await typeSlowly(testCase, '/transcript --plain');
     await testCase.pressEnter();
@@ -137,9 +138,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'save test message');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'save test message');
 
     await typeSlowly(testCase, `/transcript save ${tempDir}/out.md`);
     await testCase.pressEnter();
@@ -160,9 +159,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'plaintext save test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'plaintext save test');
 
     await typeSlowly(testCase, `/transcript save ${tempDir}/out.txt --plain`);
     await testCase.pressEnter();
@@ -184,9 +181,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'json save test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'json save test');
 
     await typeSlowly(testCase, `/transcript save ${tempDir}/out.json --json`);
     await testCase.pressEnter();
@@ -209,9 +204,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'json pager test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'json pager test');
 
     await typeSlowly(testCase, '/transcript --json');
     await testCase.pressEnter();
@@ -232,9 +225,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'tilde test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'tilde test');
 
     const homeTmp = join(homedir(), `.kiro-transcript-test-${Date.now()}.md`);
     const tildeRelative = homeTmp.replace(homedir(), '~');
@@ -260,9 +251,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'spaces test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'spaces test');
 
     await typeSlowly(testCase, `/transcript save ${tempDir}/my file.md`);
     await testCase.pressEnter();
@@ -279,9 +268,7 @@ describe('/transcript', () => {
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
-    await typeSlowly(testCase, 'error test');
-    await testCase.pressEnter();
-    await testCase.sleepMs(500);
+    await submitMessage(testCase, 'error test');
 
     await typeSlowly(testCase, '/transcript save /nonexistent/dir/file.md');
     await testCase.pressEnter();
