@@ -40,8 +40,7 @@ async function submitCommand(tc: TestCase, cmd: string) {
   await tc.sendKeys(cmd);
   await tc.sleepMs(100);
   await tc.pressEnter();
-  await tc.completeTurn();
-  await tc.waitForVisibleText('ask a question', 10000);
+  await tc.sleepMs(500);
 }
 
 describe('Reverse incremental search (Ctrl+R)', () => {

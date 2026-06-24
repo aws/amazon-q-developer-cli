@@ -5,7 +5,6 @@ import { tmpdir } from 'os';
 import {
   readCliSettings,
   readBoolSetting,
-  readStringSetting,
   readOptionalStringSetting,
   writeCliSettings,
   updateCliSetting,
@@ -101,26 +100,6 @@ describe('cli-settings', () => {
     it('returns fallback when value is not boolean', () => {
       writeCliJson({ 'chat.disableWrap': 'yes' });
       expect(readBoolSetting('chat.disableWrap', false)).toBe(false);
-    });
-  });
-
-  describe('readStringSetting', () => {
-    it('returns fallback when key missing', () => {
-      expect(readStringSetting('chat.ui.mode', 'modern')).toBe('modern');
-    });
-
-    it('returns value when it is a string', () => {
-      writeCliJson({ 'chat.ui.mode': 'classic' });
-      expect(readStringSetting('chat.ui.mode', 'modern')).toBe('classic');
-    });
-
-    it('returns fallback when value is not a string', () => {
-      writeCliJson({ 'chat.ui.mode': 123 });
-      expect(readStringSetting('chat.ui.mode', 'modern')).toBe('modern');
-    });
-
-    it('returns empty string as default fallback', () => {
-      expect(readStringSetting('chat.ui.mode')).toBe('');
     });
   });
 

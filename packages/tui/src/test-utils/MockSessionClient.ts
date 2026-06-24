@@ -48,9 +48,6 @@ export const getMockSessionClient = () => mockSessionClientInstance;
 export class MockSessionClient implements SessionClient {
   private updateHandlers: Set<(event: AgentStreamEvent) => void> = new Set();
   private eventQueue: AgentStreamEvent[] = [];
-  private _promptActive = false;
-  private _turnResolve: (() => void) | null = null;
-  private _turnTimeout: ReturnType<typeof setTimeout> | null = null;
   public sessionId?: string;
 
   async initialize(): Promise<void> {
@@ -91,69 +88,18 @@ export class MockSessionClient implements SessionClient {
     return () => this.updateHandlers.delete(handler);
   }
 
-  prompt(_messages: ContentBlock[]): Promise<void> {
-    this._promptActive = true;
-    // Drain any pre-queued events synchronously so they're delivered before
-    // settle() can fire. Since kiro.ts subscribes the per-prompt handler
-    // BEFORE calling prompt(), events broadcast here reach that handler.
-    while (this.eventQueue.length > 0) {
-      const event = this.eventQueue.shift()!;
-      this.processEvent(event);
-    }
-
-    // Return a deferred promise that keeps isProcessing=true in the store.
-    // Tests call completeTurn() via IPC to resolve it when they're done
-    // interacting mid-turn (e.g., pressing Ctrl+O for subagent panels).
-    //
-    // Auto-resolves after 2000ms as a safety net so no test hangs forever.
-    // Tests that need the turn to end quickly for assertions on committed
-    // message content should call completeTurn() explicitly.
-    return new Promise<void>((resolve) => {
-      this._turnResolve = () => {
-        this._promptActive = false;
-        this._turnResolve = null;
-        if (this._turnTimeout) {
-          clearTimeout(this._turnTimeout);
-          this._turnTimeout = null;
-        }
-        resolve();
-      };
-      // Auto-resolve safety net. Default 2s. Tests that need a long-lived
-      // turn (e.g. approval flow with the 2s APPROVAL_IDLE_MS typing-guard
-      // followed by user response) can opt into a longer window via
-      // KIRO_TEST_MOCK_TURN_TIMEOUT_MS. Setting this to 0 or a negative
-      // value disables the safety net entirely.
-      const overrideMs = Number(process.env.KIRO_TEST_MOCK_TURN_TIMEOUT_MS);
-      const timeoutMs = Number.isFinite(overrideMs) ? overrideMs : 2000;
-      if (timeoutMs > 0) {
-        this._turnTimeout = setTimeout(() => {
-          this._turnTimeout = null;
-          if (this._turnResolve) {
-            this._turnResolve();
-          }
-        }, timeoutMs);
+  async prompt(_messages: ContentBlock[]): Promise<void> {
+    // Process any queued events
+    setTimeout(() => {
+      while (this.eventQueue.length > 0) {
+        const event = this.eventQueue.shift()!;
+        this.processEvent(event);
       }
-    });
-  }
-
-  /**
-   * Explicitly resolves the pending prompt(), ending the mock turn.
-   * This causes streamMessage() to resolve, which calls flush() to commit
-   * buffered content to the store, then sets isProcessing=false.
-   *
-   * Call this when your test needs to:
-   * - Verify committed message content (requires turn end + flush)
-   * - Complete the turn before starting another interaction
-   */
-  completeTurn(): void {
-    if (this._turnResolve) {
-      this._turnResolve();
-    }
+    }, 10);
   }
 
   async cancel(): Promise<void> {
-    // Resolve any pending prompt so the process can exit cleanly.
-    this.completeTurn();
+    // No-op for mock
   }
 
   close(): void {
@@ -206,14 +152,7 @@ export class MockSessionClient implements SessionClient {
 
   // Test methods
   injectEvent(event: AgentStreamEvent): void {
-    if (this._promptActive) {
-      // Broadcast immediately if prompt is active (handlers are listening).
-      // This simulates a real ACP client delivering events in real-time
-      // during a streaming response.
-      this.processEvent(event);
-    } else {
-      this.eventQueue.push(event);
-    }
+    this.eventQueue.push(event);
   }
 
   private processEvent(event: AgentStreamEvent): void {

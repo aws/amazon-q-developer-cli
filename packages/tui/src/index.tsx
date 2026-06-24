@@ -38,7 +38,6 @@ import {
   readStringSetting,
   readOptionalStringSetting,
 } from './utils/cli-settings';
-import { UiModeSource } from './types/generated/chat-cli';
 import { Settings } from './constants/settings';
 import { CommandHistory } from './utils/command-history';
 import { GlyphsProvider } from './hooks/useGlyphs';
@@ -50,8 +49,6 @@ import {
 import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
-  ENABLE_KITTY_KEYBOARD,
-  DISABLE_KITTY_KEYBOARD,
 } from './utils/terminal-sequences';
 import {
   enableFocusTracking,
@@ -59,7 +56,6 @@ import {
 } from './utils/focus-tracker';
 import { normalizeAtPrompt } from './utils/normalize-at-prompt';
 import { isTrustGateAccepted } from './utils/trust-gate-state';
-import { LITE_HISTORY_RENDER_CAP } from './components/layout/lite/static-flush';
 import { startProcessHealthCollector } from './utils/process-health-collector';
 import {
   emitCurrentTitle,
@@ -93,7 +89,6 @@ process.on('exit', (code) => {
 
 const cleanup = () => {
   try {
-    process.stdout.write(DISABLE_KITTY_KEYBOARD);
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdin.setRawMode?.(false);
@@ -123,10 +118,6 @@ const getAgentPath = (): string => {
   return agentPath;
 };
 
-// Shut the agent (and its MCP children) down before we leave. kiro.close()
-// signals -pgid so the whole process group dies together; cleanup() resets
-// the terminal and exits. Calling kiro.close() twice is safe (the second
-// SIGTERM is a no-op on a dead pgid).
 process.on('SIGHUP', () => {
   logger.error('[tui] SIGHUP received');
   kiro.close();
@@ -139,27 +130,10 @@ process.on('SIGINT', () => {
   cleanup();
 });
 
-// SIGTERM is what `kill <pid>`, `bun --watch`, IDE restarts, and most
-// supervisors send. Without this handler the TUI exits without ever
-// signalling the agent subprocess, leaving acp-server.js + every MCP it
-// spawned orphaned (ppid=1, never reaped).
-process.on('SIGTERM', () => {
-  logger.error('[tui] SIGTERM received');
-  kiro.close();
-  cleanup();
-});
-
 process.on('uncaughtException', (err) => {
   logger.error('[tui] uncaughtException:', err?.message || String(err));
   kiro.close();
   cleanup();
-});
-
-// beforeExit fires when the loop is about to drain naturally (e.g. all
-// streams ended cleanly, no explicit exit). Last chance to nuke the agent
-// before Node tears down — process.on('exit') is too late for async kills.
-process.on('beforeExit', () => {
-  kiro.close();
 });
 
 // Defense-in-depth: detect parent death via stdin EOF (works when stdin is piped)
@@ -196,7 +170,7 @@ const wireUpHandlers = () => {
   });
 
   // Wire up commands handler before initialize
-  kiro.onCommandsUpdate((commands, mcpServers) => {
+  kiro.onCommandsUpdate((commands) => {
     appStore.getState().setSlashCommands(
       commands.map((cmd) => ({
         name: cmd.name.startsWith('/') ? cmd.name : `/${cmd.name}`,
@@ -205,46 +179,6 @@ const wireUpHandlers = () => {
         meta: cmd.meta,
       }))
     );
-    // Update MCP init status from server advertisements. Seed unseen servers
-    // as 'loading' so the connecting panel shows them with a spinner. The
-    // agent emits commands/available repeatedly during boot — the first one
-    // typically lists every server as 'loading', then later announcements
-    // flip individual servers to 'running'/'failed'. Individual servers are
-    // no longer rendered; only the "Loading N/M MCP server(s)" aggregate is,
-    // so we track just status + startTime (per-server elapsed/error dropped).
-    if (mcpServers && mcpServers.length > 0) {
-      const current = appStore.getState().mcpInitStatus;
-      const updated = new Map(current);
-      for (const server of mcpServers) {
-        const prev = updated.get(server.name);
-        if (server.status === 'loading') {
-          if (!prev) {
-            updated.set(server.name, {
-              status: 'loading',
-              startTime: Date.now(),
-            });
-          }
-        } else if (server.status === 'running') {
-          if (prev?.status === 'loading') {
-            updated.set(server.name, {
-              status: 'ready',
-              startTime: prev.startTime,
-            });
-          } else if (!prev) {
-            updated.set(server.name, {
-              status: 'ready',
-              startTime: Date.now(),
-            });
-          }
-        } else if (server.status === 'failed' || server.status === 'disabled') {
-          updated.set(server.name, {
-            status: 'failed',
-            startTime: prev?.startTime ?? Date.now(),
-          });
-        }
-      }
-      appStore.setState({ mcpInitStatus: updated });
-    }
   });
 
   kiro.onKasCommandsDiscovered((commands) => {
@@ -562,13 +496,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
     logger.info('[tui] inbox notification:', notification);
   });
 
-  // Boot stages — visible above the per-MCP list while connecting. Each
-  // flips loading → ready as the corresponding async step completes, so the
-  // user sees real progress instead of an opaque "connecting..." line.
-  appStore
-    .getState()
-    .setBootStage('agent_connect', 'connecting to agent', 'loading');
-
   initPromise = kiro
     .initialize(agentPath, acpArgs, {
       // CLI flag > cli.json setting > undefined (let agent pick default)
@@ -578,12 +505,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
         cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
     })
     .then(async () => {
-      appStore
-        .getState()
-        .setBootStage('agent_connect', 'connecting to agent', 'ready');
-      appStore
-        .getState()
-        .setBootStage('session_create', 'initializing workspace', 'loading');
       const backendSettings = kiro.settings;
       appStore.setState({
         settings: backendSettings,
@@ -672,9 +593,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
       }
 
       await kiro.createSession(resolvedSessionId);
-      appStore
-        .getState()
-        .setBootStage('session_create', 'initializing workspace', 'ready');
       appStore.setState({ sessionId: kiro.sessionId ?? null });
       if (
         kiro.sessionId &&
@@ -706,15 +624,11 @@ const startInitialization = (resumePickerSessionId?: string) => {
               pendingHistoryEvents.length,
               'history events'
             );
-            // In TUI mode, truncate to recent turns to prevent rendering
-            // thousands of lines (~200ms/frame typing lag — PR #2503).
-            // In lite mode, replay the full session into the store; lite
-            // paints to <Static> rows and skips painting below the cap
-            // via liteStaticSkipBefore, so the long store costs nothing.
-            const isLite = appStore.getState().uiMode === 'lite';
-            const { events, omittedTurns } = isLite
-              ? { events: pendingHistoryEvents, omittedTurns: 0 }
-              : truncateToRecentTurns(pendingHistoryEvents);
+            // Truncate to recent turns to prevent rendering thousands of lines
+            // which causes ~200ms/frame and makes typing unresponsive.
+            // Same cap as /chat load uses.
+            const { events, omittedTurns } =
+              truncateToRecentTurns(pendingHistoryEvents);
             if (omittedTurns > 0) {
               logger.debug(
                 '[index] omitted',
@@ -728,19 +642,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
             }
             handler.flush();
             pendingHistoryEvents = [];
-            // Lite-only: clamp painted history to the most recent
-            // LITE_HISTORY_RENDER_CAP messages on cold-boot --resume. The
-            // store still holds the full session for context-window
-            // accounting; this only suppresses Static emission below the
-            // cap. No-op in TUI mode.
-            appStore
-              .getState()
-              .setLiteStaticSkipBefore(
-                Math.max(
-                  0,
-                  appStore.getState().messages.length - LITE_HISTORY_RENDER_CAP
-                )
-              );
             resolve();
           }, 0);
         });
@@ -769,14 +670,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
       if (errorMsg.includes('active in another process')) {
         guidance =
           'Close the other session first, or start a new session without --resume.';
-      }
-      // Mark any in-flight boot stage as failed so the connecting list
-      // doesn't sit on a spinner forever.
-      const setBootStage = appStore.getState().setBootStage;
-      const bp = appStore.getState().bootProgress;
-      for (const [k, v] of bp.entries()) {
-        if (v.status === 'loading')
-          setBootStage(k, v.label, 'failed', errorMsg);
       }
       // Push into the store so React re-renders and shows the error
       appStore.getState().setAgentError(errorMsg, guidance);
@@ -1003,105 +896,14 @@ const startApp = async () => {
     process.env.KIRO_DISABLE_WRAP === '1' ||
     readBoolSetting(Settings.CHAT_DISABLE_WRAP, false);
 
-  type UiMode = 'tui' | 'lite';
-  type UiModeSourceTag = 'envVar' | 'setting' | 'default';
-
-  // Lite mode is gated on the Rust-side rollout (Feature::Lite, internal+nightly).
-  // The chat-cli-v2 process exports KIRO_LITE_ROLLOUT_ENABLED=1 when the user
-  // is in the cohort. Outside the cohort, lite-mode requests fall back to TUI.
-  const liteRolloutEnabled = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
-
-  // resolveUiMode returns both the chosen mode AND which input source won, so
-  // telemetry can attribute "session started in lite" to env-var vs CLI vs
-  // persisted setting. The persisted-default value (regardless of which source
-  // won) is captured separately on the emit side so dashboards can ask "is
-  // lite this user's default" without having to ignore env-driven sessions.
-  function resolveUiMode(): { mode: UiMode; source: UiModeSourceTag } {
-    const fromEnv = process.env.KIRO_UI_MODE;
-    if (fromEnv === 'lite' || fromEnv === 'tui') {
-      const mode = fromEnv === 'lite' && !liteRolloutEnabled ? 'tui' : fromEnv;
-      return { mode, source: 'envVar' };
-    }
-    const fromSetting = readStringSetting(Settings.CHAT_UI_MODE, '');
-    if (fromSetting === 'lite' || fromSetting === 'tui') {
-      const mode =
-        fromSetting === 'lite' && liteRolloutEnabled ? 'lite' : 'tui';
-      return { mode, source: 'setting' };
-    }
-    return { mode: 'tui', source: 'default' };
-  }
-
-  const { mode: uiMode, source: uiModeSource } = resolveUiMode();
-  // Pure user-setting passed to ThemeProvider so chrome drops only when the
-  // user explicitly opted in (`chat.disableWrap` / `KIRO_DISABLE_WRAP=1`).
-  // Lite mode also drops chrome, but Message/ToolUseMessage compute that at
-  // render time from the live `uiMode` in the store, so a /tui ↔ /lite swap
-  // restores full StatusBar chrome on new rows without baking it into theme.
-  // `effectiveWrapDisabled` here only feeds twinki's `wideLines` perf hint —
-  // safe to leave true for the session even after a swap to TUI mode.
-  const effectiveWrapDisabled = wrapDisabled || uiMode === 'lite';
-
-  // Set uiMode on store (store is created before mode resolution)
-  appStore.setState({ uiMode });
-
-  // First-launch UI mode picker: when nothing told us which mode to use
-  // (no env var, no CLI flag, no persisted setting), block the chat UI on
-  // a one-time picker so the user gets to choose their default. Skipped
-  // for non-interactive launches (they don't have a human to ask) and for
-  // users outside the lite rollout (they can only run TUI anyway, so the
-  // picker has no real choice to offer). The resolution above already
-  // returns 'tui' as the pre-pick fallback, so the TUI keeps booting in
-  // the background while the gate is shown — the picker writes the same
-  // chat.ui.mode setting the gate then closes on top of.
-  const shouldShowFirstLaunchPicker =
-    uiModeSource === 'default' &&
-    !cliArgs.noInteractive &&
-    process.stdout.isTTY &&
-    liteRolloutEnabled;
-  if (shouldShowFirstLaunchPicker) {
-    appStore.setState({ firstLaunchUiModeRequested: true });
-  }
-
-  // Emit `uiModeSessionStart` exactly once per launch. `uiModeDefault` is the
-  // raw persisted setting independent of which source won — that lets a
-  // dashboard count "users whose default is lite" cleanly even when the
-  // env var or CLI arg overrode the default for a given session.
-  // sessionId is intentionally omitted: at this point the ACP session has
-  // not been spawned yet, so attributing this event to a specific session id
-  // would require deferring the emit. The event is per-launch, not per-turn,
-  // so we accept the tradeoff and let the field stay None.
-  const persistedDefault = readStringSetting(Settings.CHAT_UI_MODE, '');
-  const uiModeDefault =
-    persistedDefault === 'lite' || persistedDefault === 'tui'
-      ? persistedDefault
-      : 'unset';
-  const uiModeSourceEnum: UiModeSource =
-    uiModeSource === 'envVar'
-      ? UiModeSource.EnvVar
-      : uiModeSource === 'setting'
-        ? UiModeSource.Setting
-        : UiModeSource.Default;
-  kiro.sendUiModeSessionStart({
-    uiMode,
-    uiModeSource: uiModeSourceEnum,
-    uiModeDefault,
-  });
-
   function App() {
     const appStoreRef = useRef<AppStoreApi>(appStore);
 
-    // Enable bracketed paste + Kitty keyboard disambiguation + focus tracking
-    // on mount.
-    // Kitty CSI-u is a no-op on terminals that don't speak the protocol;
-    // on those that do (kitty, WezTerm, Ghostty, alacritty 0.13+, iTerm2
-    // 3.5+ when enabled), it gives Shift+Enter, Ctrl+I-vs-Tab, etc. as
-    // distinct sequences instead of being indistinguishable from Enter/Tab.
+    // Enable bracketed paste mode and focus tracking on mount
     useEffect(() => {
       process.stdout.write(ENABLE_BRACKETED_PASTE);
-      process.stdout.write(ENABLE_KITTY_KEYBOARD);
       enableFocusTracking();
       return () => {
-        process.stdout.write(DISABLE_KITTY_KEYBOARD);
         disableFocusTracking();
         process.stdout.write(DISABLE_BRACKETED_PASTE);
       };
@@ -1115,10 +917,7 @@ const startApp = async () => {
     return (
       <ErrorBoundary>
         <GlyphsProvider>
-          <ThemeProvider
-            wrapDisabled={wrapDisabled}
-            classicMode={uiMode === 'lite'}
-          >
+          <ThemeProvider wrapDisabled={wrapDisabled}>
             <AppStoreContext.Provider value={appStoreRef.current}>
               <UserThemeBridge />
               <TestModeProvider>
@@ -1141,7 +940,7 @@ const startApp = async () => {
       // (setting `chat.disableWrap` or env `KIRO_DISABLE_WRAP=1`). Required
       // so the differential renderer places the cursor correctly for
       // soft-wrapped lines. Small per-render cost.
-      wideLines: effectiveWrapDisabled,
+      wideLines: wrapDisabled,
     };
   const instance = render(<App />, renderOptions);
 

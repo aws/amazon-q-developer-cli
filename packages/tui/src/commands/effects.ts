@@ -29,7 +29,6 @@ import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
-import { Settings } from '../constants/settings.js';
 import {
   describeSpecDocuments,
   findSpecFeature,
@@ -51,21 +50,6 @@ import {
 } from '../utils/serialize-conversation.js';
 import { findSettingsSubcommand } from './settings-subcommands.js';
 import {
-  getVerboseConfig,
-  getVerboseDisplay,
-  setVerboseConfig,
-  validateTokens,
-  VERBOSE_CATEGORIES,
-  applyDensityPreset,
-  sameDisplay,
-  DENSITY_PRESETS,
-  DENSITY_DISPLAY,
-  DENSITY_FILTERS,
-  DEFAULT_DISPLAY,
-  type ToolArgsMode,
-  type DensityPreset,
-} from '../lite/verbose.js';
-import {
   getCurrentTitle,
   setUserTitle,
   clearUserTitle,
@@ -80,17 +64,8 @@ export type EffectHandler = (
   args: string
 ) => boolean | void | Promise<boolean | void>;
 
-/** One of the four /verbosity truncation knobs. Char caps apply per-value
- *  (chip line, individual string values inside block args, single output
- *  rows); line caps apply to the number of visual rows below the tool name. */
-type TruncationField =
-  | 'argsLines'
-  | 'argsChars'
-  | 'outputLines'
-  | 'outputChars';
-
 /** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'] | 'spawn' | 'switch' | 'spec';
+type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
 
 /** Effect names - semantic actions the TUI can perform */
 type EffectName =
@@ -121,14 +96,12 @@ type EffectName =
   | 'showThemeMenu'
   | 'showGoalPanel'
   | 'showSettingsMenu'
-  | 'switchToTui'
+  | 'showTuiPanel'
   | 'showChangelogPanel'
   | 'showSessionId'
   | 'showStatsPanel'
   | 'switchToGuideAgent'
-  | 'switchToLite'
   | 'switchToPlanMode'
-  | 'verbosityConfig'
   | 'rewindAction'
   | 'updateTitle';
 
@@ -158,15 +131,12 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
-  switch: 'switchSession',
   spec: 'runSpec',
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
   settings: 'showSettingsMenu',
-  tui: 'switchToTui',
-  lite: 'switchToLite',
-  verbosity: 'verbosityConfig',
+  tui: 'showTuiPanel',
   changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
@@ -174,17 +144,6 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   rewind: 'rewindAction',
   title: 'updateTitle',
 };
-
-/**
- * Module-level once-per-session flag for the `/theme has moved to /settings
- * theme` deprecation nudge. The nudge fires via `showAlert(..., 'warning')`
- * — and lite routes warning-status alerts to scrollback as System rows
- * ('success' is dropped, only 'error'/'warning' land there). Without this
- * gate, every `/theme` invocation in lite would stack a fresh deprecation
- * row in the chat log. Reset only on process exit; survives /theme menu
- * re-opens, /lite ↔ /tui swaps, and /settings → Theme drilldowns.
- */
-let themeDeprecationAnnounced = false;
 
 /**
  * Effect handlers.
@@ -196,13 +155,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
-      // Lite has no transient toast; emit a System row so the model swap is
-      // visible in scrollback. TUI keeps origin/main's silent behavior
-      // (byte-equivalent to main) — its status footer shows the current
-      // model continuously, so a confirmation row would be redundant.
-      if (ctx.getUiMode?.() === 'lite') {
-        ctx.announceSystem(`Switched to model: ${data.model.name}`);
-      }
     }
   },
 
@@ -281,9 +233,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         });
       }
       ctx.setCurrentAgent(data.agent);
-      if (ctx.getUiMode?.() === 'lite') {
-        ctx.announceSystem(`Switched to agent: ${data.agent.name}`);
-      }
     }
   },
 
@@ -324,9 +273,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.commands) {
       // Merge backend commands with TUI-local commands for complete help listing.
-      // Lite-only commands (meta.liteOnly) only appear in lite mode — same gating
-      // CommandMenu uses for the autocomplete dropdown.
-      //
       // `SlashCommand` is the only `AvailableCommand` subtype that adds
       // `source`, so checking for the field is enough to narrow.
       const isLocalHostCommand = (
@@ -334,10 +280,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ): c is SlashCommand & { source: 'local' } =>
         'source' in c && c.source === 'local';
 
-      const inLite = ctx.getUiMode?.() === 'lite';
       const localHelpEntries = ctx.slashCommands
         .filter(isLocalHostCommand)
-        .filter((c) => inLite || c.meta?.liteOnly !== true)
         .map((c) => ({
           name: c.name,
           description: c.description,
@@ -428,23 +372,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     ctx.setShowHooksPanel(true, data?.hooks ?? []);
   },
 
-  showKnowledgePanel: (result, ctx, _cmd, args) => {
+  showKnowledgePanel: (result, ctx) => {
     const data = result?.data as
       | { entries?: KnowledgeEntry[]; status?: string }
       | undefined;
     if (data?.entries) {
       ctx.setShowKnowledgePanel(true, data.entries, data.status);
-      return;
-    }
-    ctx.setShowKnowledgePanel(false);
-    // Subcommand failures (e.g. `/knowledge update <path>` with no contexts)
-    // go to the dispatcher's tail alert — emitting here would duplicate the
-    // line in lite scrollback. Bare `/knowledge` with a backend message has
-    // no dispatcher alert (panel + no args is suppressed there) so we still
-    // surface the message ourselves.
-    if (!args && result?.message) {
-      const firstLine = result.message.split('\n')[0] ?? result.message;
-      ctx.showAlert(firstLine, result.success ? 'success' : 'error');
+    } else {
+      ctx.setShowKnowledgePanel(false);
+      if (result?.message) {
+        const firstLine = result.message.split('\n')[0] ?? result.message;
+        ctx.showAlert(firstLine, result.success ? 'success' : 'error');
+      }
     }
   },
 
@@ -467,15 +406,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           currentAgent?: { name: string; welcomeMessage?: string };
         }
       | undefined;
-    // Do NOT physically wipe the terminal in lite mode. CSI 2J/3J destroys
-    // the terminal scrollback buffer (pre-kiro shell history and prior
-    // sessions), which is exactly the regression the user hit: /clear wiped
-    // their terminal instead of clearing the conversation. The backend
-    // already cleared conversation context (clear_conversation) and the
-    // dispatcher surfaces a "Conversation cleared" alert — that's the
-    // feedback. Lite deliberately never emits 2J/3J (see LiteLayout.tsx).
-    // The KAS path below resets via resetMessages(), which bumps
-    // liteScrollbackClearToken for a clean, scrollback-preserving reset.
     if (data?.sessionId) {
       // Preserve the current agent across /clear — the user expects to stay
       // on the same agent, just with a fresh conversation.
@@ -640,8 +570,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | {
           sessionId?: string;
           switchSession?: boolean;
-          resetMessagesBeforeReplay?: boolean;
           suppressAgentWelcome?: boolean;
+          resetMessagesBeforeReplay?: boolean;
         }
       | undefined;
     if (!resultData?.switchSession || !resultData.sessionId) {
@@ -672,13 +602,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (args) {
       if (args === '' || args === 'main') {
         ctx.setActiveSession('');
-        // Lite drops 'success' alerts (app-store.ts ~3479), so confirmations
-        // go to scrollback via announceSystem; TUI keeps the transient toast.
-        if (ctx.getUiMode?.() === 'lite') {
-          ctx.announceSystem('Switched to main chat');
-        } else {
-          ctx.showAlert('Switched to main chat', 'success', 2000);
-        }
+        ctx.showAlert('Switched to main chat', 'success', 2000);
         return;
       }
       const target = sessions.find(
@@ -767,18 +691,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Add to store
       ctx.addSession(session);
 
-      // Lite drops 'success' alerts — scrollback in lite, toast in TUI.
-      if (ctx.getUiMode?.() === 'lite') {
-        ctx.announceSystem(
-          `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`
-        );
-      } else {
-        ctx.showAlert(
-          `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`,
-          'success',
-          3000
-        );
-      }
+      ctx.showAlert(
+        `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`,
+        'success',
+        3000
+      );
     } catch (error) {
       const message = extractRpcErrorMessage(error, 'Failed to spawn session');
       ctx.showAlert(message, 'error', 3000);
@@ -963,13 +880,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Clipboard contents are invisible — confirm the copy. Lite drops
-    // 'success' alerts, so scrollback in lite, toast in TUI.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.announceSystem('Copied to clipboard');
-    } else {
-      ctx.showAlert('Copied to clipboard', 'success', 3000);
-    }
+    ctx.showAlert('Copied to clipboard', 'success', 3000);
     return true;
   },
 
@@ -1036,25 +947,24 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
+  /** Show theme color selection menu */
+  showTuiPanel: (_result, ctx) => {
+    ctx.setShowTuiPanel(true);
+  },
+
   showChangelogPanel: (_result, ctx) => {
     ctx.setShowChangelogPanel(true);
   },
 
   showSessionId: (_result, ctx) => {
     const sessionId = ctx.kiro.sessionId ?? 'none';
-    // /session-id prints the ID for the user to copy. Lite drops 'success'
-    // alerts, so it goes to scrollback (scrollable later); TUI keeps the toast.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.announceSystem(`Session ID: ${sessionId}`);
-    } else {
-      ctx.showAlert(
-        sessionId !== 'none'
-          ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
-          : 'Session ID: none',
-        'success',
-        10000
-      );
-    }
+    ctx.showAlert(
+      sessionId !== 'none'
+        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
+        : 'Session ID: none',
+      'success',
+      10000
+    );
     return true;
   },
 
@@ -1115,277 +1025,17 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
-  showThemeMenu: (_result, ctx, cmd, args) => {
-    // Modern TUI: /theme is a legacy alias that opens main's ThemePanel
-    // (the canonical entry is /settings → theme). Lite keeps its own rich
-    // /theme command-menu with live preview, handled below.
-    if (ctx.getUiMode?.() !== 'lite') {
-      if (cmd.name === '/theme') {
-        ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
-      }
-      ctx.setShowThemePanel(true);
-      return true;
-    }
-    // Deprecation notice shown ONCE per session (not per /theme invocation).
-    // Skipped on in-menu selections (args !== '') and on calls chained from
-    // /settings theme (cmd.name !== '/theme'). Lite routes warning-status
-    // alerts to scrollback, so without the gate every /theme invocation
-    // would stack a fresh row in the chat log.
-    if (cmd.name === '/theme' && args === '' && !themeDeprecationAnnounced) {
-      themeDeprecationAnnounced = true;
+  /**
+   * Legacy /theme alias. The actual theme UI lives in `<ThemePanel>`,
+   * driven by the `showThemePanel` store flag — see settings-subcommands.ts
+   * for the canonical /settings → theme entry. This handler exists purely
+   * to keep `/theme` working with a one-shot deprecation hint.
+   */
+  showThemeMenu: (_result, ctx, cmd) => {
+    if (cmd.name === '/theme') {
       ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
     }
-
-    const prefs = loadUserThemePrefs();
-    const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
-    if (!themeCmd) return;
-
-    const fallbackDiff = buildFallbackDiff(ctx.getThemeDiffHex());
-
-    // Selection-menu command shape used by every /theme submenu.
-    const themeSelection = {
-      ...themeCmd,
-      meta: {
-        ...themeCmd.meta,
-        inputType: 'selection' as const,
-        searchable: false,
-      },
-    };
-    // The three custom-category rows (prompt / response / diff) with their
-    // current preset labels. Shared by `custom` and the apply-return path.
-    const customCategoryOptions = (p: typeof prefs) => [
-      {
-        value: 'prompt',
-        label: 'Prompt style',
-        description: getPromptPreset(p.promptPreset)?.label ?? 'Default',
-      },
-      {
-        value: 'response',
-        label: 'Response text color',
-        description: getResponsePreset(p.responsePreset)?.label ?? 'Default',
-      },
-      {
-        value: 'diff',
-        label: 'Code diff colors',
-        description: getDiffPreset(p.diffPreset)?.label ?? 'Default',
-      },
-    ];
-    // Per-category data driving the preset submenu + apply. `apply` writes the
-    // category's color slot via the correct setUserColors arg position.
-    const CATEGORY = {
-      prompt: {
-        presets: promptPresets,
-        active: prefs.promptPreset ?? 'default',
-        get: getPromptPreset,
-        label: 'Prompt style',
-        apply: (preset: (typeof promptPresets)[number]) =>
-          ctx.setUserColors(
-            { text: preset.textColor, bg: preset.bgColor },
-            undefined,
-            undefined
-          ),
-        setPref: (pr: typeof prefs, id: string | undefined) => {
-          pr.promptPreset = id;
-        },
-      },
-      response: {
-        presets: responsePresets,
-        active: prefs.responsePreset ?? 'default',
-        get: getResponsePreset,
-        label: 'Response color',
-        apply: (preset: (typeof responsePresets)[number]) =>
-          ctx.setUserColors(undefined, preset.textColor, undefined),
-        setPref: (pr: typeof prefs, id: string | undefined) => {
-          pr.responsePreset = id;
-        },
-      },
-      diff: {
-        presets: diffPresets,
-        active: prefs.diffPreset ?? 'default',
-        get: getDiffPreset,
-        label: 'Diff colors',
-        apply: (preset: (typeof diffPresets)[number]) =>
-          ctx.setUserColors(undefined, undefined, preset),
-        setPref: (pr: typeof prefs, id: string | undefined) => {
-          pr.diffPreset = id;
-        },
-      },
-    } as const;
-    type ThemeCategory = keyof typeof CATEGORY;
-
-    // Open a prompt/response/diff preset submenu (ESC → custom menu).
-    const openPresetSubmenu = (category: ThemeCategory) => {
-      const c = CATEGORY[category];
-      ctx.setThemePreview(
-        buildCurrentPreview(prefs, fallbackDiff, kiroSafe.colors.brand)
-      );
-      ctx.setThemeReturnOnEscape('custom');
-      ctx.setActiveCommand({
-        command: themeSelection,
-        options: c.presets.map((p) => ({
-          value: `${category}:${p.id}`,
-          label: p.label,
-          description: p.id === c.active ? '[active]' : '',
-        })),
-      });
-    };
-
-    // /theme bundled:default — reset to auto-detected theme
-    if (args === 'bundled:default') {
-      ctx.setUserColors(null, null, null);
-      ctx.setBaseTheme(null);
-      const saved = saveUserThemePrefs({});
-      ctx.showAlert(
-        saved ? 'Theme reset to default' : 'Theme reset but failed to save',
-        saved ? 'success' : 'error',
-        3000
-      );
-      ctx.setThemePreview(null);
-      return true;
-    }
-
-    // /theme bundled:<id> — apply a bundled theme (Light/Dark)
-    if (args.startsWith('bundled:')) {
-      const themeId = args.slice('bundled:'.length);
-      const bundled = getBundledTheme(themeId);
-      if (!bundled) {
-        ctx.showAlert(`Unknown theme: ${themeId}`, 'error', 3000);
-        return true;
-      }
-      // Switch the base theme (kiroDark/kiroLight) so ALL UI elements update
-      ctx.setBaseTheme(
-        themeId === 'light' ? kiroLight : themeId === 'dark' ? kiroDark : null
-      );
-      ctx.setUserColors(
-        { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
-        bundled.response.textColor,
-        bundled.diff
-      );
-      const baseThemePref: 'dark' | 'light' | undefined =
-        themeId === 'light' ? 'light' : themeId === 'dark' ? 'dark' : undefined;
-      const saved = saveUserThemePrefs({
-        promptPreset:
-          bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
-        responsePreset:
-          bundled.response.id === 'default' ? undefined : bundled.response.id,
-        diffPreset: bundled.diff.id === 'default' ? undefined : bundled.diff.id,
-        baseTheme: baseThemePref,
-      });
-      ctx.showAlert(
-        saved
-          ? `Theme set to ${bundled.label}`
-          : `Theme applied but failed to save`,
-        saved ? 'success' : 'error',
-        3000
-      );
-      ctx.setThemePreview(null);
-      return true;
-    }
-
-    // /theme custom — prompt vs response vs diff selection (ESC → bare /theme).
-    if (args === 'custom') {
-      ctx.setThemePreview(
-        buildCurrentPreview(prefs, fallbackDiff, kiroSafe.colors.brand)
-      );
-      ctx.setThemeReturnOnEscape('');
-      ctx.setActiveCommand({
-        command: themeSelection,
-        options: customCategoryOptions(prefs),
-      });
-      return true;
-    }
-
-    // /theme prompt|response|diff — open the category's preset submenu.
-    if (args === 'prompt' || args === 'response' || args === 'diff') {
-      openPresetSubmenu(args);
-      return true;
-    }
-
-    // /theme <category>:<id> — apply a custom selection, then re-open custom.
-    if (
-      args.startsWith('prompt:') ||
-      args.startsWith('response:') ||
-      args.startsWith('diff:')
-    ) {
-      const colonIdx = args.indexOf(':');
-      const category = args.slice(0, colonIdx) as ThemeCategory;
-      const presetId = args.slice(colonIdx + 1);
-      const c = CATEGORY[category];
-
-      const preset = c.get(presetId);
-      if (!preset) {
-        ctx.showAlert(`Unknown ${category} preset: ${presetId}`, 'error', 3000);
-        return true;
-      }
-      const updatedPrefs = { ...prefs };
-      c.setPref(updatedPrefs, preset.id === 'default' ? undefined : preset.id);
-
-      c.apply(preset as any);
-      const saved = saveUserThemePrefs(updatedPrefs);
-      ctx.showAlert(
-        saved
-          ? `${c.label} set to ${preset.label}`
-          : `${c.label} applied but failed to save`,
-        saved ? 'success' : 'error',
-        3000
-      );
-
-      // Re-open the custom menu with the updated preview (ESC → bare /theme).
-      ctx.setThemePreview(
-        buildCurrentPreview(updatedPrefs, fallbackDiff, kiroSafe.colors.brand)
-      );
-      ctx.setThemeReturnOnEscape('');
-      ctx.setActiveCommand({
-        command: themeSelection,
-        options: customCategoryOptions(updatedPrefs),
-      });
-      return true;
-    }
-
-    // Bare /theme — show top-level: Auto, Dark Theme, Light Theme, Custom
-    // Initial preview matches first highlighted item (Auto)
-    ctx.setThemePreview(ctx.getAutoPreview() || null);
-    // Top-level menu — ESC fully closes the overlay (no parent above).
-    ctx.setThemeReturnOnEscape(null);
-
-    // Determine which option is currently active
-    const activeBundledId = bundledThemes.find((t) => {
-      const matchPrompt = (prefs.promptPreset ?? 'default') === t.prompt.id;
-      const matchResponse =
-        (prefs.responsePreset ?? 'default') === t.response.id;
-      const matchDiff = (prefs.diffPreset ?? 'default') === t.diff.id;
-      return matchPrompt && matchResponse && matchDiff;
-    })?.id;
-    const isCustomActive =
-      !activeBundledId &&
-      (prefs.promptPreset || prefs.responsePreset || prefs.diffPreset);
-
-    const isDefaultActive = !activeBundledId && !isCustomActive;
-
-    ctx.setActiveCommand({
-      command: themeSelection,
-      options: [
-        {
-          value: 'bundled:default',
-          label: 'Auto',
-          description: isDefaultActive
-            ? '[active]'
-            : 'Auto-detected theme for your terminal',
-        },
-        ...bundledThemes.map((t) => ({
-          value: `bundled:${t.id}`,
-          label: t.label,
-          description: t.id === activeBundledId ? '[active]' : '',
-        })),
-        {
-          value: 'custom',
-          label: 'Custom',
-          description: isCustomActive
-            ? '[active]'
-            : 'Choose prompt, response, and diff colors separately',
-        },
-      ],
-    });
+    ctx.setShowThemePanel(true);
     return true;
   },
 
@@ -1397,33 +1047,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
    */
   showSettingsMenu: (_result, ctx, cmd, args) => {
     if (args) {
-      const resolveEffect = (name: string) => {
-        const handler = effectHandlers[name as EffectName];
-        if (!handler) {
-          throw new Error(`Unknown effect handler: ${name}`);
-        }
-        return handler;
-      };
-      // Exact match first — preserves the colon-form values
-      // (e.g. `terminal:interrupt:steer`) the menu rows dispatch directly.
-      let sub = findSettingsSubcommand(args);
-      let arg = '';
-      // Fall back to "subcommand + trailing section", e.g.
-      // `/settings verbosity truncation`. The first space-delimited word is the
-      // subcommand; the rest is forwarded so the handler can drill straight
-      // into a nested menu (mirrors the breadcrumb so nested menus are
-      // reachable as typed subcommands).
-      if (!sub) {
-        const space = args.indexOf(' ');
-        if (space !== -1) {
-          const head = args.slice(0, space);
-          const candidate = findSettingsSubcommand(head);
-          if (candidate) {
-            sub = candidate;
-            arg = args.slice(space + 1).trim();
-          }
-        }
-      }
+      const sub = findSettingsSubcommand(args);
       if (!sub) {
         ctx.showAlert(`Unknown settings subcommand: ${args}`, 'error', 3000);
         return true;
@@ -1432,18 +1056,20 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         sub.handle({
           ctx,
           settingsCommand: cmd,
-          resolveEffect,
-          arg,
+          resolveEffect: (name) => {
+            const handler = effectHandlers[name as EffectName];
+            if (!handler) {
+              throw new Error(`Unknown effect handler: ${name}`);
+            }
+            return handler;
+          },
         })
       );
       return true;
     }
 
-    // Bare /settings opens the shared SettingsPanel overlay in BOTH modes;
-    // the panel handles its own item rendering and routing to sub-panels.
-    // Lite renders the same panel via <BackendPanels> so the two modes stay
-    // 1:1 (breadcrumb titles, panel heights, ESC-back). The lite-only
-    // `verbosity` row is added inside the panel's model, gated on uiMode.
+    // Bare /settings opens the SettingsPanel overlay; the panel handles
+    // its own item rendering and routing to sub-panels.
     ctx.setShowSettingsPanel(true);
     return true;
   },
@@ -1458,900 +1084,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (data?.prompt) {
       ctx.sendMessage(data.prompt);
     }
-  },
-
-  switchToLite: (_result, ctx) => {
-    // Gated on Feature::Lite rollout (internal + nightly). Outside the
-    // cohort, /lite is a no-op so stable users keep the modern TUI
-    // behavior they had before this branch existed.
-    if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') {
-      ctx.announceSystem('Lite mode is not available in this build');
-      return;
-    }
-    const fromMode = ctx.getUiMode?.() ?? 'tui';
-    // tui→lite clears scrollback and re-renders the full conversation in
-    // lite form (symmetric with lite→tui). setUiMode bumps the clear
-    // token; LiteLayout + ConversationView both observe it, wipe their
-    // module-level singletons, and reset twinki's cursor. The user gets
-    // consistent lite styling (You:/<agent>: headers, current verbosity,
-    // current theme) across every message rather than a half-and-half
-    // mix of TUI-styled history + lite-styled new rows.
-    ctx.setUiMode?.('lite');
-    if (fromMode !== 'lite') {
-      ctx.kiro.sendUiModeChanged({
-        from: fromMode,
-        to: 'lite',
-        source: ModeChangeSource.SlashCommand,
-        sessionId: ctx.kiro.sessionId,
-      });
-    }
-    ctx.announceSystem('Switched to lite mode');
-  },
-
-  switchToTui: (_result, ctx) => {
-    // /tui from lite swaps to TUI; from TUI it falls through to the
-    // info panel (origin/main behavior). Symmetric with /lite.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.setUiMode?.('tui');
-      ctx.kiro.sendUiModeChanged({
-        from: 'lite',
-        to: 'tui',
-        source: ModeChangeSource.SlashCommand,
-        sessionId: ctx.kiro.sessionId,
-      });
-      ctx.announceSystem('Switched to TUI mode');
-      return;
-    }
-    ctx.setShowTuiPanel(true);
-  },
-
-  /**
-   * /verbosity: configure lite-mode rendering. Interactive sectioned drilldown
-   * (top → density preset + per-section sub-menus) plus a preserved power-user
-   * CLI form: on|off, status, all, only|add|remove <list>, density <preset>,
-   * reset. Rejected outside lite mode — the renderer hooks only run in
-   * <LiteLayout>.
-   */
-  verbosityConfig: (_result, ctx, cmd, args) => {
-    if (ctx.getUiMode?.() !== 'lite') {
-      ctx.showAlert('/verbosity is only available in lite mode', 'error', 3000);
-      return true;
-    }
-
-    // Resolve the canonical /verbosity command so CommandMenu's
-    // `command.name === '/verbosity'` checks fire whether reached by direct
-    // typing or `/settings verbosity` (else the name is `/settings`). Falls
-    // back to `cmd` when not registered (tests that only register settings).
-    const verbosityCmd =
-      ctx.slashCommands.find((c) => c.name === '/verbosity') ?? cmd;
-
-    // Case folding for command matching. Internal-dispatch forms (`menu:*`,
-    // `set:*`, ...) are written by the menu with exact casing, so preserve
-    // them. Otherwise lowercase only the first word (so `ON`/`Density` match
-    // the routing verbs) while keeping later filter tokens' case (MCP tool
-    // names are case-sensitive).
-    const rawTrimmed = args.trim();
-    const isInternalDispatch =
-      /^(menu|set|category|filter|reset):/.test(rawTrimmed) &&
-      !/\s/.test(rawTrimmed);
-    let trimmed: string;
-    if (isInternalDispatch) {
-      trimmed = rawTrimmed;
-    } else {
-      const firstWs = rawTrimmed.search(/\s/);
-      trimmed =
-        firstWs === -1
-          ? rawTrimmed.toLowerCase()
-          : rawTrimmed.slice(0, firstWs).toLowerCase() +
-            rawTrimmed.slice(firstWs);
-    }
-    const cfg = getVerboseConfig();
-
-    // `null` when the saved shape matches no preset (hand-toggled custom).
-    // `default` and `full` share a display config, so the filter list
-    // (DENSITY_FILTERS — `['all']` for full, `[]` for the rest) disambiguates.
-    const detectActivePreset = (): DensityPreset | null => {
-      const curCfg = getVerboseConfig();
-      const cur = curCfg.display ?? DEFAULT_DISPLAY;
-      for (const preset of DENSITY_PRESETS) {
-        if (!sameDisplay(cur, DENSITY_DISPLAY[preset])) continue;
-        if (!sameFilters(curCfg.filters, DENSITY_FILTERS[preset])) continue;
-        return preset;
-      }
-      return null;
-    };
-
-    const fmtFilters = (f: string[]) => {
-      if (f.length === 0) return 'none';
-      if (f.length === 1 && f[0] === 'all') return 'all';
-      return f.join(', ');
-    };
-    // Collapses with a `+N more` count when the joined form would wrap (lite's
-    // word-break splits on char count, not commas). Budget from terminal width.
-    const fmtFiltersForAnnounce = (f: string[]) => {
-      const joined = f.join(', ');
-      if (f.length <= 1) return fmtFilters(f);
-      const cols = process.stdout.columns ?? 120;
-      const budget = Math.max(40, cols - 30);
-      if (joined.length <= budget) return joined;
-      const head: string[] = [];
-      let used = 0;
-      for (const t of f) {
-        const next = used === 0 ? t.length : used + 2 + t.length;
-        if (next > budget - 12) break;
-        head.push(t);
-        used = next;
-      }
-      const remaining = f.length - head.length;
-      const headStr = head.length > 0 ? head.join(', ') + ', ' : '';
-      return `${f.length} (${headStr}... +${remaining} more)`;
-    };
-    // Status announcements no longer carry an ON/OFF prefix — the filter list
-    // is the source of truth, and an empty list communicates "off" on its own.
-    const showStatus = (msg?: string) => {
-      const cur = getVerboseConfig();
-      if (msg) {
-        ctx.announceSystem(
-          `${msg} · filters: ${fmtFiltersForAnnounce(cur.filters)}`
-        );
-        return;
-      }
-      const density = detectActivePreset() ?? 'custom';
-      ctx.announceSystem(
-        `verbosity · filters: ${fmtFiltersForAnnounce(cur.filters)} · density: ${density}`
-      );
-    };
-
-    // Both `null` and any non-positive value mean "unbounded" — never render a
-    // 0 or negative value as a plausible cap.
-    const fmtCap = (
-      cap: number | null,
-      unit: 'lines' | 'chars' = 'lines'
-    ): string => (cap == null || cap <= 0 ? 'unlimited' : `${cap} ${unit}`);
-
-    // Parent route consumed by CommandMenu's ESC handler (`null` exits, a
-    // `menu:*` route navigates up). The store flag is one-shot: CommandMenu
-    // clears it on consume, so we rewrite it every time we re-open a sub-menu.
-    const setReturn = (route: string | null) => {
-      ctx.setVerboseReturnOnEscape?.(route);
-    };
-
-    const openMenuWith = (
-      options: Array<{
-        value: string;
-        label: string;
-        description?: string;
-        group?: string;
-      }>,
-      initialIndex = 0,
-      previewKey?: string
-    ) => {
-      ctx.setActiveCommand({
-        command: {
-          ...verbosityCmd,
-          meta: {
-            ...verbosityCmd.meta,
-            inputType: 'selection' as const,
-            searchable: false,
-          },
-        },
-        options,
-        initialIndex,
-        previewKey,
-      });
-    };
-
-    const onOff = (b: boolean) => (b ? '[on]' : '[off]');
-
-    // Top-menu row index per submenu key — ESC-back lands the cursor on the
-    // row the user descended from. Must stay in sync with `openTopMenu`'s
-    // option order. `thinking`/`tasks` are inline toggle rows, not submenus,
-    // but are included so re-opens after toggling don't jump to row 0.
-    const TOP_ROW_BY_KEY: Record<string, number> = {
-      density: 0,
-      tool: 1,
-      subagent: 2,
-      thinking: 3,
-      tasks: 4,
-      output: 5,
-      truncation: 6,
-    };
-
-    const openTopMenu = (fromKey?: string) => {
-      setReturn(null);
-      const cur = getVerboseConfig();
-      // getVerboseDisplay so the menu reflects the unified chat.showThinking
-      // value from cli.json (the modern-TUI side), not the possibly-stale
-      // lite_verbose.json copy. Filter rows below still read `cur.filters`.
-      const display = getVerboseDisplay();
-      const preset = detectActivePreset();
-      const presetLabel = preset ?? 'custom';
-      const toolSummary = `args: ${display.toolArgsMode} · reasoning: ${display.showToolReasoning ? 'on' : 'off'} · elapsed: ${display.showElapsed ? 'on' : 'off'}`;
-      // Surfaces only user-meaningful knobs; `roles`/`prompts`/`deps` nest
-      // under the step list and move in lockstep with it.
-      const subSummaryParts: string[] = [];
-      if (display.subagent.pipeline) {
-        const sublist: string[] = [];
-        if (display.subagent.prompts) sublist.push('instructions');
-        if (display.subagent.roles) sublist.push('roles');
-        const stepLabel =
-          sublist.length > 0 ? `steps + ${sublist.join(' + ')}` : 'steps';
-        subSummaryParts.push(stepLabel);
-      }
-      if (display.subagent.responses) subSummaryParts.push('summary');
-      const fullOutputOn =
-        cur.filters.includes('all') || cur.filters.includes('subagent');
-      if (fullOutputOn) subSummaryParts.push('full output');
-      const subSummary =
-        subSummaryParts.length === 0
-          ? '(all hidden)'
-          : subSummaryParts.join(' · ');
-      const outSummary = fmtFilters(cur.filters);
-      const truncSummary = `args ${fmtCap(display.argsMaxLines)}/${fmtCap(display.argsMaxChars, 'chars')} · output ${fmtCap(display.outputMaxLines)}/${fmtCap(display.outputMaxChars, 'chars')}`;
-
-      openMenuWith(
-        [
-          {
-            value: 'menu:density',
-            label: 'Density preset',
-            description: presetLabel,
-            group: 'Density',
-          },
-          {
-            value: 'menu:tool',
-            label: 'Tool calls',
-            description: toolSummary,
-            group: 'Sections',
-          },
-          {
-            value: 'menu:subagent',
-            label: 'Subagent',
-            description: subSummary,
-            group: 'Sections',
-          },
-          {
-            value: 'set:showThinkingContent',
-            label: 'Thinking content',
-            description: onOff(display.showThinkingContent),
-            group: 'Sections',
-          },
-          {
-            value: 'set:showTasks',
-            label: 'Task list',
-            description: onOff(display.showTasks),
-            group: 'Sections',
-          },
-          {
-            value: 'menu:output',
-            label: 'Show output',
-            description: outSummary,
-            group: 'Sections',
-          },
-          {
-            value: 'menu:truncation',
-            label: 'Truncation',
-            description: truncSummary,
-            group: 'Sections',
-          },
-        ],
-        fromKey ? (TOP_ROW_BY_KEY[fromKey] ?? 0) : 0,
-        'top'
-      );
-    };
-
-    // Shared by the density menu rows and the confirm submenu so the confirm
-    // title matches the selected row without drift.
-    const PRESET_DESC: Record<DensityPreset, string> = {
-      minimal: 'name only · no args, no reasoning',
-      lean: 'inline arg chip, no reasoning, full elapsed',
-      default: 'reasoning + block args + full subagent (out-of-the-box)',
-      full: '1:1 of what the parent agent sees · all filters on · no truncation',
-    };
-
-    // Density menu — smart-entry point when a preset is active. Selecting a
-    // preset routes to the `menu:density:confirm:<preset>` gate, not a commit.
-    const openDensityMenu = (initialIndex = 0) => {
-      // ESC fully exits — no parent above the entry point.
-      setReturn(null);
-      const active = detectActivePreset();
-      const options: Array<{
-        value: string;
-        label: string;
-        description: string;
-      }> = DENSITY_PRESETS.map((p) => ({
-        value: `menu:density:confirm:${p}`,
-        label: p,
-        description:
-          active === p ? `[active] · ${PRESET_DESC[p]}` : PRESET_DESC[p],
-      }));
-      options.push({
-        value: 'menu:config',
-        label: 'custom',
-        description:
-          active == null
-            ? '[active] · tweak individual settings'
-            : 'tweak individual settings',
-      });
-      openMenuWith(options, initialIndex, 'density');
-    };
-
-    // Cancel comes first so the default cursor lands on a safe row; Yes commits
-    // (display + filters) and re-opens the density menu.
-    const openPresetConfirmMenu = (which: DensityPreset) => {
-      setReturn('menu:density');
-      openMenuWith(
-        [
-          {
-            value: 'menu:density',
-            label: 'Cancel',
-            description: '',
-            group: `Confirm preset: ${which}`,
-          },
-          {
-            value: `density:apply:${which}`,
-            label: `Yes, switch to ${which}`,
-            description: PRESET_DESC[which],
-            group: `Confirm preset: ${which}`,
-          },
-          { value: 'menu:density', label: '← back', description: '' },
-        ],
-        0,
-        // Preview pane reuses the 'density' fixture set for the confirm gate.
-        'density'
-      );
-    };
-
-    // Shared field→cap mapping for the four truncation knobs (heading, unit,
-    // value accessor). Read by both the numeric editor and the MENUS builder.
-    const TRUNC_FIELDS: Record<
-      TruncationField,
-      {
-        heading: string;
-        unit: 'lines' | 'chars';
-        get: (d: typeof DEFAULT_DISPLAY) => number | null;
-      }
-    > = {
-      argsLines: {
-        heading: 'Tool args · lines',
-        unit: 'lines',
-        get: (d) => d.argsMaxLines,
-      },
-      argsChars: {
-        heading: 'Tool args · chars per value',
-        unit: 'chars',
-        get: (d) => d.argsMaxChars,
-      },
-      outputLines: {
-        heading: 'Tool output · lines',
-        unit: 'lines',
-        get: (d) => d.outputMaxLines,
-      },
-      outputChars: {
-        heading: 'Tool output · chars per line',
-        unit: 'chars',
-        get: (d) => d.outputMaxChars,
-      },
-    };
-
-    type MenuRow = {
-      value: string;
-      label: string;
-      description?: string;
-      group?: string;
-    };
-    // The four sectioned submenus share identical plumbing (done once in
-    // `openMenu`); only the dynamic row content differs, so each entry is a
-    // thunk that reads live display/config. The density confirm gate and
-    // numeric editor are single-purpose cases kept out of this table.
-    type MenuKey = 'tool' | 'subagent' | 'truncation' | 'output';
-    const MENUS: Record<MenuKey, () => MenuRow[]> = {
-      tool: () => {
-        const display = getVerboseDisplay();
-        const argModeRow = (mode: ToolArgsMode): MenuRow => ({
-          value: `set:toolArgsMode:${mode}`,
-          label: `Args: ${mode}`,
-          description: display.toolArgsMode === mode ? '[active]' : '',
-          group: 'Args display',
-        });
-        return [
-          {
-            value: 'set:showToolReasoning',
-            label: 'Reasoning ("why")',
-            description: onOff(display.showToolReasoning),
-            group: 'Per-tool toggles',
-          },
-          {
-            value: 'set:showElapsed',
-            label: 'Elapsed time',
-            description: onOff(display.showElapsed),
-            group: 'Per-tool toggles',
-          },
-          {
-            value: 'set:showWriteDiffs:tool',
-            label: 'Write diffs',
-            description: onOff(display.showWriteDiffs),
-            group: 'Per-tool toggles',
-          },
-          argModeRow('off'),
-          argModeRow('inline'),
-          argModeRow('block'),
-        ];
-      },
-      // prompts/roles only emit when the master step list is on (the renderer
-      // wraps both in `if (sub.pipeline && ...)`), so drop them when pipeline is
-      // off — they'd be dead toggles. fullOutput piggybacks on the `subagent`
-      // filter token (mirrors what `output` does for tool bars).
-      subagent: () => {
-        const cur = getVerboseConfig();
-        const sub = (cur.display ?? DEFAULT_DISPLAY).subagent;
-        const row = (key: keyof typeof sub, label: string): MenuRow => ({
-          value: `set:subagent:${key}`,
-          label,
-          description: onOff(sub[key]),
-          group: 'Subagent display',
-        });
-        const stepRows = sub.pipeline
-          ? [
-              row('prompts', 'Show step instructions'),
-              row('roles', 'Show step role labels'),
-            ]
-          : [];
-        const fullOutputOn =
-          cur.filters.includes('all') || cur.filters.includes('subagent');
-        return [
-          row('pipeline', 'Show subagent steps'),
-          ...stepRows,
-          row('responses', 'Show response summary'),
-          {
-            value: 'set:subagent:fullOutput',
-            label: 'Show full output (verbose)',
-            description: onOff(fullOutputOn),
-            group: 'Subagent display',
-          },
-        ];
-      },
-      // Each row routes to the numeric editor (CommandMenu renders it when
-      // previewKey ends with `:edit`).
-      truncation: () => {
-        const display = getVerboseDisplay();
-        const rows: Array<[TruncationField, string, string]> = [
-          ['argsLines', 'Args · lines', 'Tool args'],
-          ['argsChars', 'Args · chars per value', 'Tool args'],
-          ['outputLines', 'Output · lines', 'Tool output'],
-          ['outputChars', 'Output · chars per line', 'Tool output'],
-        ];
-        return rows.map(([field, label, group]) => {
-          const { unit, get } = TRUNC_FIELDS[field];
-          return {
-            value: `menu:truncation:${field}:edit`,
-            label,
-            description: fmtCap(get(display), unit),
-            group,
-          };
-        });
-      },
-      output: () => {
-        const cur = getVerboseConfig();
-        const isAll = cur.filters.includes('all');
-        const filterSet = new Set(cur.filters);
-        // Master row label flips to read as the action it fires: when every
-        // tool is on it says "none" (press clears), inverse when off.
-        const masterLabel = isAll ? 'none' : 'all';
-        const masterDesc = isAll
-          ? '[active] · every tool · press to clear'
-          : 'turn every tool on';
-        return [
-          {
-            value: 'filter:all',
-            label: masterLabel,
-            description: masterDesc,
-            group: 'Filter',
-          },
-          ...VERBOSE_CATEGORIES.map((category) => ({
-            value: `category:${category}`,
-            label: category,
-            description: onOff(isAll || filterSet.has(category)),
-            group: 'Filter',
-          })),
-        ];
-      },
-    };
-
-    const openMenu = (key: MenuKey) => {
-      // ESC returns to the top menu on this section's row (`menu:top:<key>`);
-      // the trailing `← back` row encodes the same route.
-      const backRoute = `menu:top:${key}`;
-      setReturn(backRoute);
-      openMenuWith(
-        [
-          ...MENUS[key](),
-          { value: backRoute, label: '← back', description: '' },
-        ],
-        0,
-        key
-      );
-    };
-
-    // The single menu row is a placeholder — CommandMenu renders
-    // VerbosityTruncationEditor when previewKey ends with `:edit`.
-    const openTruncationEditor = (which: TruncationField) => {
-      // Esc from the editor returns to the Truncation submenu, NOT the top.
-      setReturn('menu:truncation');
-      const display = getVerboseDisplay();
-      const { heading, unit, get } = TRUNC_FIELDS[which];
-      openMenuWith(
-        [
-          {
-            value: `menu:truncation:${which}:edit`,
-            label: heading,
-            description: fmtCap(get(display), unit),
-            group: heading,
-          },
-        ],
-        0,
-        `truncation:${which}:edit`
-      );
-    };
-
-    // Toggle a single filter token, expanding the implicit `['all']` set into
-    // the explicit category list first so dropping one token doesn't leave the
-    // user with everything still on. Shared by the per-category rows and the
-    // subagent full-output toggle (which piggybacks on the `subagent` token).
-    const toggleFilterToken = (token: string) => {
-      const curFilters = getVerboseConfig().filters;
-      const baseline = curFilters.includes('all')
-        ? Array.from(VERBOSE_CATEGORIES)
-        : [...curFilters];
-      const filterSet = new Set(baseline);
-      if (filterSet.has(token)) filterSet.delete(token);
-      else filterSet.add(token);
-      setVerboseConfig({ filters: Array.from(filterSet) });
-    };
-
-    // ── Routing ────────────────────────────────────────────────────────────
-
-    // Bare /verbosity: smart entry — density menu when a preset is active
-    // (common case), else the config menu. `menu:density` / `menu:config`
-    // let internal dispatch reach either one explicitly.
-    if (trimmed === '' || trimmed === 'config') {
-      if (trimmed === 'config') {
-        openTopMenu();
-      } else if (detectActivePreset() != null) {
-        openDensityMenu();
-      } else {
-        openTopMenu();
-      }
-      return true;
-    }
-    if (trimmed === 'menu:config') {
-      openTopMenu();
-      return true;
-    }
-    if (trimmed === 'menu:top') {
-      openTopMenu();
-      return true;
-    }
-    // `menu:top:<key>` lands the cursor on the row for that submenu rather
-    // than resetting to row 0 (used by ESC-back and the `← back` rows).
-    if (trimmed.startsWith('menu:top:')) {
-      const fromKey = trimmed.slice('menu:top:'.length);
-      openTopMenu(fromKey);
-      return true;
-    }
-    if (trimmed === 'menu:density') {
-      openDensityMenu();
-      return true;
-    }
-    {
-      const confirmMatch = trimmed.match(/^menu:density:confirm:([a-z]+)$/);
-      if (confirmMatch) {
-        const preset = confirmMatch[1] as DensityPreset;
-        if (!DENSITY_PRESETS.includes(preset)) {
-          ctx.showAlert(`Unknown density preset: ${preset}`, 'error', 3000);
-          return true;
-        }
-        openPresetConfirmMenu(preset);
-        return true;
-      }
-    }
-    {
-      const editMatch = trimmed.match(
-        /^menu:truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
-      );
-      if (editMatch) {
-        openTruncationEditor(editMatch[1] as TruncationField);
-        return true;
-      }
-    }
-
-    // Section-menu aliases: internal `menu:<section>` dispatch plus friendly
-    // forms users type. `density` is intentionally absent — bare `density` is
-    // the CLI set-preset form, and the density menu is the smart-entry default.
-    {
-      const MENU_ALIASES: Record<string, MenuKey> = {
-        'menu:tool': 'tool',
-        tool: 'tool',
-        tools: 'tool',
-        'tool calls': 'tool',
-        'menu:subagent': 'subagent',
-        subagent: 'subagent',
-        subagents: 'subagent',
-        'menu:output': 'output',
-        output: 'output',
-        'menu:truncation': 'truncation',
-        truncation: 'truncation',
-      };
-      const key = MENU_ALIASES[trimmed];
-      if (key) {
-        openMenu(key);
-        return true;
-      }
-    }
-
-    // CLI aliases — map onto the filter list (the master enabled toggle is gone).
-    if (trimmed === 'on') {
-      setVerboseConfig({ filters: ['all'] });
-      showStatus();
-      return true;
-    }
-    if (trimmed === 'off') {
-      setVerboseConfig({ filters: [] });
-      showStatus();
-      return true;
-    }
-    if (trimmed === 'status') {
-      showStatus();
-      return true;
-    }
-    if (trimmed === 'all' || trimmed === 'filter:all') {
-      // CLI `all` is a one-shot reset to every-on; the menu's `filter:all`
-      // row is a toggle (every-on flips to every-off, else flips to every-on).
-      if (trimmed === 'all') {
-        setVerboseConfig({ filters: ['all'] });
-        showStatus('verbosity: filters reset');
-        return true;
-      }
-      const cur = getVerboseConfig();
-      const wasAll = cur.filters.length === 1 && cur.filters[0] === 'all';
-      setVerboseConfig({ filters: wasAll ? [] : ['all'] });
-      openMenu('output');
-      return true;
-    }
-    // CLI `reset` is a power-user shortcut for the `default` preset; bypasses
-    // the menu confirmation since the user opted in by typing the verb.
-    if (trimmed === 'reset') {
-      applyDensityPreset('default');
-      ctx.announceSystem('verbosity: reset to defaults');
-      openTopMenu();
-      return true;
-    }
-
-    // Bare preset name (e.g. `/verbosity full`) — same path as
-    // `/verbosity density <preset>` (the menu surfaces these as first-class).
-    if (DENSITY_PRESETS.includes(trimmed as DensityPreset)) {
-      applyDensityPreset(trimmed as DensityPreset);
-      ctx.announceSystem(`verbosity: density set to ${trimmed}`);
-      return true;
-    }
-
-    // CLI `density <preset>` commits immediately; menu form is
-    // `density:apply:<preset>` (post-confirmation Yes); `density:<preset>` is
-    // a CLI shortcut. All apply the preset's display AND filter list.
-    const densityCliMatch = trimmed.match(/^density(?:\s+(.+))?$/);
-    const densityMenuMatch = trimmed.match(/^density:([a-z]+)$/);
-    const densityApplyMatch = trimmed.match(/^density:apply:([a-z]+)$/);
-    if (densityCliMatch || densityMenuMatch || densityApplyMatch) {
-      const preset = (
-        densityApplyMatch?.[1] ??
-        densityMenuMatch?.[1] ??
-        densityCliMatch?.[1] ??
-        ''
-      ).trim();
-      if (!preset) {
-        ctx.showAlert(
-          `density needs a preset: ${DENSITY_PRESETS.join(', ')}`,
-          'error',
-          4000
-        );
-        return true;
-      }
-      if (!DENSITY_PRESETS.includes(preset as DensityPreset)) {
-        ctx.showAlert(`Unknown density preset: ${preset}`, 'error', 3000);
-        return true;
-      }
-      applyDensityPreset(preset as DensityPreset);
-      ctx.announceSystem(`verbosity: density set to ${preset}`);
-      // Picking a preset is a finish action — close the overlay so the user
-      // lands at the prompt. An open menu after commit read as "did that do
-      // anything?". The verb form (`density <preset>`) had no open menu.
-      if (densityApplyMatch || densityMenuMatch) {
-        ctx.setActiveCommand(null);
-        ctx.setVerboseReturnOnEscape(null);
-      }
-      return true;
-    }
-
-    // Display flag toggles: set:<key> flips the boolean. Args mode uses the
-    // explicit `set:toolArgsMode:<value>` form because it's a 3-state.
-    if (trimmed.startsWith('set:')) {
-      const rest = trimmed.slice('set:'.length);
-      // getVerboseDisplay so toggles compute off the unified value (cli.json
-      // override), not the possibly-stale verbose-config.json copy.
-      const display = getVerboseDisplay();
-      const TOOL_BOOL_TOGGLES: Record<
-        string,
-        'showToolReasoning' | 'showElapsed' | 'showWriteDiffs'
-      > = {
-        showToolReasoning: 'showToolReasoning',
-        showElapsed: 'showElapsed',
-        'showWriteDiffs:tool': 'showWriteDiffs',
-      };
-      const toolToggleField = TOOL_BOOL_TOGGLES[rest];
-      if (toolToggleField) {
-        setVerboseConfig({
-          display: { ...display, [toolToggleField]: !display[toolToggleField] },
-        });
-        openMenu('tool');
-        return true;
-      }
-      if (rest === 'showThinkingContent') {
-        const newVal = !display.showThinkingContent;
-        setVerboseConfig({
-          display: {
-            ...display,
-            showThinkingContent: newVal,
-          },
-        });
-        // Also notify the ACP/Rust side so any modern-TUI surface holding
-        // a React copy of `chat.showThinking` (DisplaySettingsPanel,
-        // useShowThinking) picks up the new value on its next read. The
-        // verbose.ts mirror has already written cli.json directly, so
-        // this RPC is idempotent — Rust does locked R-M-W on the same
-        // file and reads back the value we just wrote. Best-effort: a
-        // failed RPC doesn't roll back the lite-side toggle.
-        ctx.kiro
-          .setSetting(Settings.CHAT_SHOW_THINKING, newVal)
-          .catch(() => {});
-        openTopMenu('thinking');
-        return true;
-      }
-      if (rest === 'showTasks') {
-        setVerboseConfig({
-          display: { ...display, showTasks: !display.showTasks },
-        });
-        openTopMenu('tasks');
-        return true;
-      }
-      const argMatch = rest.match(/^toolArgsMode:(off|inline|block)$/);
-      if (argMatch) {
-        const mode = argMatch[1] as ToolArgsMode;
-        setVerboseConfig({ display: { ...display, toolArgsMode: mode } });
-        openMenu('tool');
-        return true;
-      }
-      // Truncation cap setters: `set:<field>:<value>` where value is `null`
-      // (unlimited) or a positive integer. Non-positive/non-numeric values
-      // collapse to `null` so a corrupt value can't truncate everything to 0.
-      const capMatch = rest.match(
-        /^(argsMaxLines|outputMaxLines|argsMaxChars|outputMaxChars):(null|\d+)$/
-      );
-      if (capMatch) {
-        const field = capMatch[1] as
-          | 'argsMaxLines'
-          | 'outputMaxLines'
-          | 'argsMaxChars'
-          | 'outputMaxChars';
-        const raw = capMatch[2]!;
-        let value: number | null;
-        if (raw === 'null') {
-          value = null;
-        } else {
-          const n = parseInt(raw, 10);
-          // Non-positive values are not user-selectable from the menu, but
-          // guard for them on CLI typed input.
-          value = Number.isFinite(n) && n > 0 ? n : null;
-        }
-        setVerboseConfig({ display: { ...display, [field]: value } });
-        // Return to the truncation submenu so the user sees the updated cap.
-        openMenu('truncation');
-        return true;
-      }
-      const subMatch = rest.match(
-        /^subagent:(pipeline|prompts|roles|deps|responses)$/
-      );
-      if (subMatch) {
-        const key = subMatch[1] as keyof typeof display.subagent;
-        const cur = display.subagent[key];
-        setVerboseConfig({
-          display: {
-            ...display,
-            subagent: { ...display.subagent, [key]: !cur },
-          },
-        });
-        openMenu('subagent');
-        return true;
-      }
-      // fullOutput piggybacks on the `subagent` filter token (same gate the
-      // renderer uses for the verbose `full output:` body).
-      if (rest === 'subagent:fullOutput') {
-        toggleFilterToken('subagent');
-        openMenu('subagent');
-        return true;
-      }
-      ctx.showAlert(`Unknown toggle: ${rest}`, 'error', 3000);
-      return true;
-    }
-
-    // Multi-token subcommands: only/add/remove. The first word is the verb,
-    // remaining whitespace-separated tokens are the filter list. We validate
-    // tokens up front so typos surface as a warning instead of silently
-    // landing in the saved config.
-    const subMatch = trimmed.match(/^(only|add|remove)\b\s*(.*)$/);
-    if (subMatch) {
-      const verb = subMatch[1] as 'only' | 'add' | 'remove';
-      const rest = (subMatch[2] ?? '').trim();
-      if (!rest) {
-        ctx.showAlert(
-          `/verbosity ${verb} needs at least one filter token`,
-          'error',
-          3000
-        );
-        return true;
-      }
-      const tokens = rest.split(/\s+/);
-      const { accepted, rejected, unknown } = validateTokens(tokens);
-      if (accepted.length === 0) {
-        ctx.showAlert(
-          `No valid tokens in: ${rejected.join(', ')}`,
-          'error',
-          4000
-        );
-        return true;
-      }
-      const current = cfg.filters.includes('all') ? [] : [...cfg.filters];
-      let nextFilters: string[];
-      if (verb === 'only') {
-        nextFilters = accepted;
-      } else if (verb === 'add') {
-        const set = new Set(current);
-        for (const t of accepted) set.add(t);
-        nextFilters = Array.from(set);
-      } else {
-        const drop = new Set(accepted);
-        nextFilters = current.filter((t) => !drop.has(t));
-      }
-      setVerboseConfig({ filters: nextFilters });
-      const tail =
-        rejected.length > 0 ? ` (ignored: ${rejected.join(', ')})` : '';
-      // Soft-warn on unknown tokens (typos, unrecognized categories) on the
-      // remove path too — a user removing a misspelled tool name should
-      // know the input didn't match anything saved.
-      const warn =
-        unknown.length > 0
-          ? ` · warning: ${unknown.join(', ')} ${unknown.length === 1 ? `doesn't` : `don't`} match any known tool or category`
-          : '';
-      showStatus(`verbosity: filters updated${tail}${warn}`);
-      return true;
-    }
-
-    if (trimmed.startsWith('category:')) {
-      const cat = trimmed.slice('category:'.length);
-      if (!VERBOSE_CATEGORIES.includes(cat as any)) {
-        ctx.showAlert(`Unknown category: ${cat}`, 'error', 3000);
-        return true;
-      }
-      toggleFilterToken(cat);
-      // Re-open the output sub-menu so the user can keep toggling categories.
-      openMenu('output');
-      return true;
-    }
-
-    ctx.showAlert(
-      `Unknown /verbosity subcommand: ${trimmed}. Try /verbosity, /verbosity on|off|status|all, /verbosity density <preset>, /verbosity only|add|remove <list>.`,
-      'error',
-      6000
-    );
-    return true;
   },
 
   switchToPlanMode: (result, ctx) => {
@@ -2395,6 +1127,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             data: {
               sessionId: data.sessionId,
               switchSession: true,
+              // /rewind-only: skip the agent welcome message on reload since
+              // the user is continuing, not starting fresh.
+              suppressAgentWelcome: true,
               // /rewind-only: clear live messages before replaying the forked
               // session's history so stale turns from the old session don't
               // leak into the new session's display.
@@ -2425,40 +1160,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 };
 
-/** Order-insensitive equality on filter lists — paired with sameDisplay to
- *  detect which density preset is currently active. The saved filter list
- *  may have arbitrary token order, so we compare as sets. Both lists are
- *  short (a handful of tokens at most), so the O(n²) avoidance via Set is
- *  fine. */
-function sameFilters(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  if (a.length === 0) return true;
-  const set = new Set(a);
-  for (const t of b) {
-    if (!set.has(t)) return false;
-  }
-  return true;
-}
-
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
-import { kiroDark } from '../theme/kiroDark.js';
-import { kiroLight } from '../theme/kiroLight.js';
-import { kiroSafe } from '../theme/kiroSafe.js';
-import {
-  promptPresets,
-  responsePresets,
-  diffPresets,
-  bundledThemes,
-  buildCurrentPreview,
-  buildFallbackDiff,
-  loadUserThemePrefs,
-  saveUserThemePrefs,
-  getPromptPreset,
-  getResponsePreset,
-  getDiffPreset,
-  getBundledTheme,
-} from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
 
 /**

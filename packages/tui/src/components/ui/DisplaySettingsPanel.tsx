@@ -6,12 +6,7 @@ import { Icon, IconType } from './icon/Icon.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTextStyle } from '../../hooks/useTextStyle.js';
 import { Settings } from '../../constants/settings.js';
-import {
-  readBoolSetting,
-  readStringSetting,
-  readCliSettings,
-  writeCliSettings,
-} from '../../utils/cli-settings.js';
+import { readBoolSetting } from '../../utils/cli-settings.js';
 import {
   useAllowAsciiArt,
   useAllowAnimations,
@@ -25,7 +20,7 @@ interface ToggleItem {
   key: string;
   label: string;
   description: string;
-  defaultValue: boolean | string;
+  defaultValue: boolean;
   inverted?: boolean;
   /** When set, the item cycles through these string values instead of on/off. */
   cycle?: string[];
@@ -33,19 +28,7 @@ interface ToggleItem {
 
 const THINKING_MODES: ThinkingMode[] = ['collapsed', 'expanded', 'off'];
 
-/** Normalize the persisted chat.ui.mode setting for telemetry payloads. */
-function normalizeUiModeForTelemetry(raw: string): 'lite' | 'tui' | 'unset' {
-  return raw === 'lite' || raw === 'tui' ? raw : 'unset';
-}
-
 const ITEMS: ToggleItem[] = [
-  {
-    key: Settings.CHAT_UI_MODE,
-    label: 'Default UI',
-    description: 'UI launched when you open Kiro CLI (lite or tui)',
-    defaultValue: 'tui',
-    cycle: ['tui', 'lite'],
-  },
   {
     key: Settings.CHAT_ANIMATIONS,
     label: 'Animations',
@@ -106,10 +89,8 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       ITEMS.map((item) => [
         item.key,
         item.cycle
-          ? item.key === Settings.CHAT_SHOW_THINKING
-            ? thinkingMode
-            : readStringSetting(item.key, String(item.defaultValue))
-          : readBoolSetting(item.key, item.defaultValue === true),
+          ? thinkingMode
+          : readBoolSetting(item.key, item.defaultValue),
       ])
     )
   );
@@ -126,27 +107,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         const cur = String(values[key]);
         const next =
           item.cycle[(item.cycle.indexOf(cur) + 1) % item.cycle.length]!;
-        if (key === Settings.CHAT_UI_MODE) {
-          // Default UI: dual-write (cli.json + ACP setSetting) so the next
-          // session boots into the chosen layout, plus emit the
-          // uiModeDefaultChanged telemetry event when the value actually
-          // changes. Mirrors the dispatch the old `/settings default-ui:<mode>`
-          // handler used to do — only the entry point moved into this panel.
-          const previous = normalizeUiModeForTelemetry(cur);
-          const settings = readCliSettings();
-          settings[key] = next;
-          writeCliSettings(settings);
-          kiro.setSetting(key, next).catch(() => {});
-          if (previous !== next) {
-            kiro.sendUiModeDefaultChanged?.({
-              from: previous,
-              to: next as 'lite' | 'tui',
-              sessionId: kiro.sessionId,
-            });
-          }
-        } else {
-          kiro.setSetting(key, next).catch(() => {});
-        }
+        kiro.setSetting(key, next).catch(() => {});
         setValues((prev) => ({ ...prev, [key]: next }));
         if (key === Settings.CHAT_SHOW_THINKING) {
           setThinkingMode(next as ThinkingMode);

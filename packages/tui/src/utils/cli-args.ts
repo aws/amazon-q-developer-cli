@@ -141,8 +141,8 @@ export function parseCliArgs(): CliArgs {
         (result as any)[def.key] = csv.split(',');
       } else if (def.type === 'boolean') {
         (result as any)[def.key] = true;
-      } else if (def.type === 'skip') {
-        if (def.hasValue && eqValue === undefined) i++; // consume next arg
+      } else if (def.type === 'skip' && def.hasValue) {
+        if (eqValue === undefined) i++; // consume next arg
       }
     } else if (raw.startsWith('-')) {
       // Unknown flag — skip its value if the next arg looks like a value

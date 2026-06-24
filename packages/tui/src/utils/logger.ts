@@ -4,31 +4,6 @@ import { join } from 'path';
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
-// JSON.stringify(new Error('x')) returns "{}" because message/stack/name are
-// non-enumerable. Pull them off explicitly so error logs aren't black holes.
-export function formatArg(arg: unknown): string {
-  if (arg instanceof Error) {
-    const parts: Record<string, unknown> = {
-      name: arg.name,
-      message: arg.message,
-    };
-    if (arg.stack) parts.stack = arg.stack;
-    if ((arg as any).code !== undefined) parts.code = (arg as any).code;
-    if ((arg as any).cause !== undefined) {
-      parts.cause = formatArg((arg as any).cause);
-    }
-    return JSON.stringify(parts);
-  }
-  if (typeof arg === 'object' && arg !== null) {
-    try {
-      return JSON.stringify(arg);
-    } catch {
-      return String(arg);
-    }
-  }
-  return String(arg);
-}
-
 const LOG_LEVELS: Record<LogLevel, number> = {
   error: 0,
   warn: 1,
@@ -67,24 +42,13 @@ class Logger {
     this.logFile = process.env.KIRO_TUI_LOG_FILE || getDefaultLogFile();
     this.logLevel = (process.env.KIRO_TUI_LOG_LEVEL as LogLevel) || 'error';
 
-    // Per-launch separator: write a banner on every TUI start (not only
-    // first-ever launch). Without this, multiple TUI processes appending to
-    // the same file are indistinguishable in the log — a stdin EOF + restart
-    // looks identical to a single long-running process. The banner anchors
-    // post-mortem reads to a specific PID/launch.
-    if (this.logFile) {
+    // Initialize log file
+    if (this.logFile && !existsSync(this.logFile)) {
       try {
-        if (!existsSync(this.logFile)) {
-          writeFileSync(
-            this.logFile,
-            `=== TUI Log Started ${new Date().toISOString()} pid=${process.pid} ===\n`
-          );
-        } else {
-          appendFileSync(
-            this.logFile,
-            `=== TUI Launch ${new Date().toISOString()} pid=${process.pid} ===\n`
-          );
-        }
+        writeFileSync(
+          this.logFile,
+          `=== TUI Log Started ${new Date().toISOString()} ===\n`
+        );
       } catch {
         // If we can't write the default log file, disable file logging
         if (!process.env.KIRO_TUI_LOG_FILE) {
@@ -103,7 +67,14 @@ class Logger {
 
     const timestamp = new Date().toISOString();
     const formattedArgs =
-      args.length > 0 ? ' ' + args.map(formatArg).join(' ') : '';
+      args.length > 0
+        ? ' ' +
+          args
+            .map((arg) =>
+              typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            )
+            .join(' ')
+        : '';
 
     const logLine = `[${timestamp}] ${level.toUpperCase()}: ${message}${formattedArgs}\n`;
 

@@ -1,11 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
-import { LiteLayout } from './lite/index.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
-import { FirstLaunchUiModeGate } from '../ui/FirstLaunchUiModeGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
@@ -50,7 +48,6 @@ function suspendProcess(): void {
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
-  const uiMode = useAppStore((state) => state.uiMode);
   const trustAllToolsRequested = useAppStore(
     (state) => state.trustAllToolsRequested
   );
@@ -59,12 +56,6 @@ export const AppContainer: React.FC = () => {
   );
   const confirmTrustAllTools = useAppStore(
     (state) => state.confirmTrustAllTools
-  );
-  const firstLaunchUiModeRequested = useAppStore(
-    (state) => state.firstLaunchUiModeRequested
-  );
-  const confirmFirstLaunchUiMode = useAppStore(
-    (state) => state.confirmFirstLaunchUiMode
   );
   const onExit = useAppStore((state) => state.onExit);
   const kiro = useAppStore((state) => state.kiro);
@@ -91,7 +82,6 @@ export const AppContainer: React.FC = () => {
   const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
   const agentEngine = useAppStore((state) => state.agentEngine);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
-  const subagentPanelOpen = useAppStore((state) => state.subagentPanelOpen);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
   const voiceCancel = useAppStore((state) => state.voiceCancel);
@@ -123,31 +113,11 @@ export const AppContainer: React.FC = () => {
 
   const keybindings = useKeybindings();
 
-  // Mirror state into refs so the keypress handler reads fresh values rather
-  // than the React render snapshot. Without this, Ctrl+C arriving in the same
-  // tick as `isProcessing` flipped from true→false (e.g. agent's last token
-  // streamed) would see stale state and skip the cancel branch — the
-  // visible UI says "still streaming" but the snapshot says idle.
-  const isProcessingRef = useRef(isProcessing);
-  isProcessingRef.current = isProcessing;
-  const pendingApprovalRef = useRef(pendingApproval);
-  pendingApprovalRef.current = pendingApproval;
-  const editingQueueIndexRef = useRef(editingQueueIndex);
-  editingQueueIndexRef.current = editingQueueIndex;
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-  const isShellEscapeRef = useRef(isShellEscape);
-  isShellEscapeRef.current = isShellEscape;
-  const subagentPanelOpenRef = useRef(subagentPanelOpen);
-  subagentPanelOpenRef.current = subagentPanelOpen;
-  const uiModeRef = useRef(uiMode);
-  uiModeRef.current = uiMode;
-
   useKeypress((userInput, key) => {
     // Shell-escape forwarding needs keyToRawBytes, which is TUI-specific.
     // Handle the "not Ctrl+C" case here; dispatchAppKeypress handles Ctrl+C.
     if (
-      isShellEscapeRef.current &&
+      isShellEscape &&
       shellEscapeWriter &&
       !(key.ctrl && userInput === 'c')
     ) {
@@ -162,17 +132,15 @@ export const AppContainer: React.FC = () => {
     const firstOAuthUrl = firstOAuthEntry ? firstOAuthEntry[1] : null;
 
     const state: AppKeypressState = {
-      mode: modeRef.current,
-      uiMode: uiModeRef.current,
-      isProcessing: isProcessingRef.current,
-      isShellEscape: isShellEscapeRef.current,
+      mode,
+      isProcessing,
+      isShellEscape,
       hasCommandInput,
       reverseSearchActive,
-      pendingApproval: !!pendingApprovalRef.current,
-      editingQueueIndex: editingQueueIndexRef.current ?? null,
+      pendingApproval: !!pendingApproval,
+      editingQueueIndex: editingQueueIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
-      subagentPanelOpen: subagentPanelOpenRef.current,
       surveyPromptVisible: !!surveyPrompt,
       suspendArmed,
     };
@@ -239,18 +207,9 @@ export const AppContainer: React.FC = () => {
     );
   }
 
-  // First-launch UI mode picker. Shown only on a fresh install (no
-  // chat.ui.mode persisted, no env var, no --lite/--tui CLI flag); index.tsx
-  // sets the request flag after resolving the mode. Trust gate above wins
-  // when both are set so users only see one block at a time.
-  if (firstLaunchUiModeRequested) {
-    return <FirstLaunchUiModeGate onPick={confirmFirstLaunchUiMode} />;
-  }
-
   return (
     <AnimationPausedContext.Provider value={!allowAnimations}>
-      {mode === 'inline' && uiMode === 'tui' && <InlineLayout />}
-      {mode === 'inline' && uiMode === 'lite' && <LiteLayout />}
+      {mode === 'inline' && <InlineLayout />}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}

@@ -130,64 +130,6 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
           return { kind: 'MOCK_SESSION_UPDATE' };
         }
 
-        case 'MOCK_ADD_SESSION': {
-          // Test-only sideband to seed the lite subagent layout's
-          // `sessions` map without orchestrating a real subagent_list_update
-          // event. Subagent panel + kill-ladder tests need
-          // sessions.values() to contain the stage row so
-          // subagentSessionIdByName resolves the focused name.
-          if (!appStore) {
-            return { kind: 'ERROR', error: 'AppStoreContext not mounted' };
-          }
-          try {
-            const now = new Date();
-            const session = {
-              agentName: command.session.name,
-              status: 'busy' as const,
-              type: 'ephemeral' as const,
-              created: now,
-              lastActivity: now,
-              ...command.session,
-            };
-            appStore.getState().addSession(session as any);
-            const after = appStore.getState().sessions;
-            if (after.size === 0) {
-              return {
-                kind: 'ERROR',
-                error: `addSession returned but sessions still empty (size=${after.size})`,
-              };
-            }
-            return { kind: 'MOCK_ADD_SESSION' };
-          } catch (e) {
-            return {
-              kind: 'ERROR',
-              error: `MOCK_ADD_SESSION threw: ${(e as Error).message}`,
-            };
-          }
-        }
-
-        case 'MOCK_START_EDITING_QUEUE': {
-          // Test-only sideband: the user-facing editing path goes
-          // through the activity tray (Ctrl+X → ↑/↓ → Enter), which is
-          // gated on tasks.length > 0 in lite mode. Driving it that way
-          // would require seeding tasks unrelated to the assertion.
-          // Calling startEditingQueue directly mirrors what the tray
-          // does once the user picks a row.
-          if (!appStore) {
-            return { kind: 'ERROR', error: 'AppStoreContext not mounted' };
-          }
-          appStore.getState().startEditingQueue(command.index);
-          return { kind: 'MOCK_START_EDITING_QUEUE' };
-        }
-
-        case 'COMPLETE_TURN': {
-          const mockClient = getMockSessionClient();
-          if (!mockClient)
-            return { kind: 'ERROR', error: 'Mock client not available' };
-          mockClient.completeTurn();
-          return { kind: 'COMPLETE_TURN' };
-        }
-
         default:
           throw new Error(`Unknown command: ${(command as TestCommand).kind}`);
       }
