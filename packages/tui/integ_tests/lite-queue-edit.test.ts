@@ -12,7 +12,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 import { TestCase } from '../src/test-utils/TestCase';
 
 // TEMPORARILY SKIPPED: mid-turn message queueing in lite is known to be

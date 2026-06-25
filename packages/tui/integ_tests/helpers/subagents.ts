@@ -1,5 +1,5 @@
-import type { TestCase } from '../../../src/test-utils/TestCase';
-import { AgentEventType } from '../../../src/types/agent-events';
+import type { TestCase } from '../../src/test-utils/TestCase';
+import { AgentEventType } from '../../src/types/agent-events';
 
 export interface SubagentStage {
   toolId: string;

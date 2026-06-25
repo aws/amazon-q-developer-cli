@@ -816,10 +816,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
  * ```
  */
 export function parseKey(data: string): KeyId | undefined {
-	// Kitty mode is enabled by ProcessTerminal only for known-compatible
-	// terminals or after a positive protocol query response. Keep CSI-u parsing
-	// behind the same runtime flag so non-Kitty terminals stay on the legacy
-	// parse path.
+	// Try Kitty protocol first
 	if (kittyProtocolActive) {
 		const parsed = parseKittySequence(data);
 		if (parsed) {

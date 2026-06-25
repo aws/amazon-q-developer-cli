@@ -5,13 +5,13 @@ import { MessageRole } from '../src/stores/app-store';
 import {
   CMD_CLEAR,
   typeSlashCommand,
-} from '../e2e_tests/lite/helpers/commands';
+} from './helpers/commands';
 import {
   exitLiteInteg,
   finishAndExitLite,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /** Bug-mine category 10: miscellaneous lite-mode edge cases (per-it ids below). */
 describe('lite miscellaneous [bug-mine 10.x]', () => {

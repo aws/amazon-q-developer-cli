@@ -7,7 +7,7 @@ import {
   launchLiteInteg,
   startBusyTurn,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * Bug-mine 5.1-5.7: cancel/interrupt invariants in lite mode. Non-obvious bits:

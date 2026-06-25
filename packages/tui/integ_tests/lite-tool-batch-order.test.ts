@@ -5,7 +5,7 @@ import {
   exitLiteInteg,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * Bug-mine 1.2: Tool batch held until contiguous done-prefix settles.

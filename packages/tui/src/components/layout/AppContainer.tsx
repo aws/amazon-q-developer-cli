@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
@@ -123,31 +123,13 @@ export const AppContainer: React.FC = () => {
 
   const keybindings = useKeybindings();
 
-  // Mirror state into refs so the keypress handler reads fresh values rather
-  // than the React render snapshot. Without this, Ctrl+C arriving in the same
-  // tick as `isProcessing` flipped from true→false (e.g. agent's last token
-  // streamed) would see stale state and skip the cancel branch — the
-  // visible UI says "still streaming" but the snapshot says idle.
-  const isProcessingRef = useRef(isProcessing);
-  isProcessingRef.current = isProcessing;
-  const pendingApprovalRef = useRef(pendingApproval);
-  pendingApprovalRef.current = pendingApproval;
-  const editingQueueIndexRef = useRef(editingQueueIndex);
-  editingQueueIndexRef.current = editingQueueIndex;
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-  const isShellEscapeRef = useRef(isShellEscape);
-  isShellEscapeRef.current = isShellEscape;
-  const subagentPanelOpenRef = useRef(subagentPanelOpen);
-  subagentPanelOpenRef.current = subagentPanelOpen;
-  const uiModeRef = useRef(uiMode);
-  uiModeRef.current = uiMode;
-
+  // useKeypress always invokes the latest handler closure (handlerRef), so the
+  // values below are as fresh as the last render — no ref mirroring needed.
   useKeypress((userInput, key) => {
     // Shell-escape forwarding needs keyToRawBytes, which is TUI-specific.
     // Handle the "not Ctrl+C" case here; dispatchAppKeypress handles Ctrl+C.
     if (
-      isShellEscapeRef.current &&
+      isShellEscape &&
       shellEscapeWriter &&
       !(key.ctrl && userInput === 'c')
     ) {
@@ -162,17 +144,17 @@ export const AppContainer: React.FC = () => {
     const firstOAuthUrl = firstOAuthEntry ? firstOAuthEntry[1] : null;
 
     const state: AppKeypressState = {
-      mode: modeRef.current,
-      uiMode: uiModeRef.current,
-      isProcessing: isProcessingRef.current,
-      isShellEscape: isShellEscapeRef.current,
+      mode,
+      uiMode,
+      isProcessing,
+      isShellEscape,
       hasCommandInput,
       reverseSearchActive,
-      pendingApproval: !!pendingApprovalRef.current,
-      editingQueueIndex: editingQueueIndexRef.current ?? null,
+      pendingApproval: !!pendingApproval,
+      editingQueueIndex: editingQueueIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
-      subagentPanelOpen: subagentPanelOpenRef.current,
+      subagentPanelOpen,
       surveyPromptVisible: !!surveyPrompt,
       suspendArmed,
     };

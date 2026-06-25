@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
-import { switchToLite, switchToTui } from '../e2e_tests/lite/helpers/mode-swap';
+import { switchToLite, switchToTui } from './helpers/mode-swap';
 import {
   exitLiteInteg,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * The KIRO welcome banner is the lite UI's session delimiter: it emits once
