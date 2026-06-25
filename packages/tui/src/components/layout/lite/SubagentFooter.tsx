@@ -17,12 +17,30 @@ export type SubagentRow = {
   activeToolFinished: boolean;
 };
 
-const SUMMARY_TOOL_NAMES = new Set(['summary']);
+type SubagentSummaryToolKind = 'summary' | 'subagent_response';
+
+function normalizeSummaryToolName(
+  name: string
+): SubagentSummaryToolKind | null {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return normalized === 'summary' || normalized === 'subagent_response'
+    ? normalized
+    : null;
+}
+
+export function subagentSummaryToolKind(
+  name: string | undefined | null
+): SubagentSummaryToolKind | null {
+  return name ? normalizeSummaryToolName(name) : null;
+}
 
 export function isSubagentSummaryToolName(
   name: string | undefined | null
 ): boolean {
-  return !!name && SUMMARY_TOOL_NAMES.has(name);
+  return subagentSummaryToolKind(name) !== null;
 }
 
 /**

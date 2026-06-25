@@ -3,6 +3,7 @@ import stripAnsi from 'strip-ansi';
 import { MessageRole, type MessageType } from '../../../../stores/app-store.js';
 import { DEFAULT_DISPLAY } from '../../../../lite/verbose.js';
 import type { AgentSession } from '../../../../types/multi-session.js';
+import { renderSubagentFinalBlock } from '../../../../lite/render.js';
 import {
   collectSubagentSummariesByParent,
   markSubagentSummariesEmitted,
@@ -25,19 +26,32 @@ function parent(id: string, group: string): MessageType {
   };
 }
 
-function summary(
+function toolUse(
   id: string,
+  name: string,
   content: Record<string, unknown>,
   agentName?: string
 ): MessageType {
   return {
     id,
     role: MessageRole.ToolUse,
-    name: 'summary',
+    name,
     content: JSON.stringify(content),
     isFinished: true,
     ...(agentName ? { agentName } : {}),
   };
+}
+
+function summary(
+  id: string,
+  content: Record<string, unknown>,
+  agentName?: string
+): MessageType {
+  return toolUse(id, 'summary', content, agentName);
+}
+
+function kasResponse(id: string, response: string, agentName: string) {
+  return toolUse(id, 'Subagent Response', { response, files: [] }, agentName);
 }
 
 function session(id: string, name: string, group: string): AgentSession {
@@ -147,6 +161,76 @@ describe('collectSubagentSummariesByParent', () => {
         taskResult: 'read src/components/chat',
       },
     ]);
+  });
+
+  test('collects KAS subagent_response output and preserves verbose full output', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      result: { status: 'success', output: 'done' },
+    } as MessageType;
+    const kasOutput = Array.from(
+      { length: 35 },
+      (_, i) => `FULLOUTPUTKAS-${i}`
+    ).join('\n');
+    const messages = [parentMsg];
+    const sessions = new Map([
+      ['sub-respond', session('sub-respond', 'respond', 'crew-1')],
+    ]);
+    const conversations = new Map<string, MessageType[]>([
+      ['sub-respond', [kasResponse('response-1', kasOutput, 'respond')]],
+    ]);
+
+    const summaries = collectSubagentSummariesByParent(
+      messages,
+      sessions,
+      conversations,
+      'kiro'
+    );
+
+    expect(summaries.get('parent-1')).toEqual([
+      {
+        stageName: 'respond',
+        kind: 'response',
+        contextSummary: '',
+        taskResult: kasOutput,
+      },
+    ]);
+
+    const parentToolMsg = parentMsg as Extract<
+      MessageType,
+      { role: MessageRole.ToolUse }
+    >;
+    const text = renderSubagentSummaryAppendix(parentToolMsg, 'kiro', {
+      subagentSummariesById: summaries,
+      display: DEFAULT_DISPLAY,
+    });
+    const plain = stripAnsi(text ?? '');
+    expect(plain).toContain('subagent response');
+    expect(plain).toContain('response:');
+    expect(plain).not.toContain('response summary:');
+    expect(plain).toContain('FULLOUTPUTKAS-0');
+    expect(plain).toContain('(+5 more lines)');
+    expect(plain).not.toContain('FULLOUTPUTKAS-34');
+
+    const verboseBlock = stripAnsi(
+      renderSubagentFinalBlock(
+        parentToolMsg.content,
+        parentToolMsg.result,
+        'done',
+        undefined,
+        summaries.get('parent-1'),
+        {
+          display: DEFAULT_DISPLAY,
+          filtersOverride: ['subagent'],
+        }
+      )
+    );
+    const fullOutputStart = verboseBlock.indexOf('full output:');
+    const responseStart = verboseBlock.indexOf('response:');
+    expect(fullOutputStart).toBeGreaterThanOrEqual(0);
+    expect(responseStart).toBeGreaterThan(fullOutputStart);
+    const fullOutput = verboseBlock.slice(fullOutputStart, responseStart);
+    expect(fullOutput).toContain('FULLOUTPUTKAS-34');
   });
 
   test('renders a user-visible late summary appendix for an already-flushed parent', () => {
@@ -315,6 +399,44 @@ describe('collectSubagentSummariesByParent', () => {
         summaries
       )
     ).toBe(false);
+  });
+
+  test('renders late KAS response appendix even when responses display is disabled', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      result: { status: 'success', output: 'done' },
+    } as MessageType;
+    const summaries = [
+      {
+        stageName: 'respond',
+        kind: 'response' as const,
+        contextSummary: '',
+        taskResult: 'KASRESPONSEPROBE',
+      },
+    ];
+    const display = {
+      ...DEFAULT_DISPLAY,
+      subagent: { ...DEFAULT_DISPLAY.subagent, responses: false },
+    };
+
+    // KAS plain responses are the subagent's real output, not a synthesized
+    // summary, so they survive responses:false (Path B parity with render.ts's
+    // hasPlainResponses) — otherwise a late-arriving KAS response would be
+    // collected but never printed to scrollback.
+    expect(
+      shouldRenderSubagentResponseSummaries(
+        parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
+        display,
+        summaries
+      )
+    ).toBe(true);
+    const text = renderSubagentSummaryAppendix(
+      parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
+      'kiro',
+      { display },
+      summaries
+    );
+    expect(stripAnsi(text ?? '')).toContain('KASRESPONSEPROBE');
   });
 
   test('suppresses late summary appendix for failed or cancelled parents', () => {

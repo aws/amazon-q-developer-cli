@@ -11,15 +11,25 @@ import {
   getVerboseDisplay,
   type VerboseDisplayConfig,
 } from '../../../lite/verbose.js';
-import { isSubagentSummaryToolName } from './SubagentFooter.js';
+import { subagentSummaryToolKind } from './SubagentFooter.js';
 
 function parseSummaryTool(
   msg: Extract<MessageType, { role: MessageRole.ToolUse }>,
   stageName: string
 ): SubagentStageSummary | null {
-  if (!isSubagentSummaryToolName(msg.name)) return null;
+  const toolKind = subagentSummaryToolKind(msg.name);
+  if (!toolKind) return null;
   try {
     const args = JSON.parse(msg.content);
+    const response = typeof args.response === 'string' ? args.response : '';
+    if (toolKind === 'subagent_response' && response) {
+      return {
+        stageName,
+        kind: 'response',
+        contextSummary: '',
+        taskResult: response,
+      };
+    }
     const contextSummary =
       typeof args.contextSummary === 'string' ? args.contextSummary : '';
     const taskResult =
@@ -54,7 +64,7 @@ function pushSummary(
 }
 
 export function subagentSummaryKey(summary: SubagentStageSummary): string {
-  return `${summary.stageName}\0${summary.contextSummary}\0${summary.taskResult}`;
+  return `${summary.stageName}\0${summary.kind ?? 'summary'}\0${summary.contextSummary}\0${summary.taskResult}`;
 }
 
 export function selectUnemittedSubagentSummaries(
@@ -131,7 +141,11 @@ export function shouldRenderSubagentResponseSummaries(
   summaries: readonly SubagentStageSummary[]
 ): boolean {
   if (summaries.length === 0) return false;
-  if (!display.subagent.responses) return false;
+  // KAS plain responses (kind:'response') are the subagent's actual output, not
+  // a synthesized summary — they render regardless of the responses toggle,
+  // mirroring renderSubagentFinalBlock's hasPlainResponses escape hatch.
+  const hasPlainResponses = summaries.some((s) => s.kind === 'response');
+  if (!display.subagent.responses && !hasPlainResponses) return false;
   if (!msg.isFinished) return false;
   const result = msg.result as ToolResult | undefined;
   if (result?.status !== 'success') return false;
@@ -206,7 +220,10 @@ export function renderSubagentSummaryAppendix(
     glyphs: renderCtx.glyphs,
   });
   if (lines.length === 0) return null;
-  return ['subagent response summary', ...lines].join('\n');
+  const title = summaries.every((summary) => summary.kind === 'response')
+    ? 'subagent response'
+    : 'subagent response summary';
+  return [title, ...lines].join('\n');
 }
 
 export function renderPendingSubagentSummaryAppendices(

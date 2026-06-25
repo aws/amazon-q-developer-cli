@@ -100,6 +100,48 @@ describe('lite subagent panel [bug-mine 4.1, 4.2, 4.6]', () => {
     await finishAndExitLite(testCase);
   }, 30000);
 
+  // KAS subagents emit a 'Subagent Response' tool (not v2's 'summary'); its
+  // output must land in the printed scrollback, not just a transient footer.
+  // This is the end-to-end proof for the lite KAS subagent-response rendering.
+  it('KAS subagent response renders into scrollback', async () => {
+    testCase = await launchLiteInteg('lite-subagent-kas-response');
+
+    await seedSubagentPipeline(testCase, {
+      parentId: 'subagent-parent-kas',
+      pipeline: 'kas-response-test',
+      prompt: 'go',
+      stages: [
+        {
+          toolId: 'tool-kas-response-1',
+          name: 'Subagent Response',
+          kind: 'read',
+          args: { response: 'KASSCROLLBACKPROBE', files: [] },
+          sessionId: 'session-respond',
+        },
+      ],
+    });
+
+    // Finish the response stage + the parent, then complete the turn so the
+    // parent subagent block flushes from the live region into <Static> scrollback.
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tool-kas-response-1',
+      result: { status: 'success', output: 'KASSCROLLBACKPROBE' },
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.ToolCallFinished,
+      id: 'subagent-parent-kas',
+      result: { status: 'success', output: 'done' },
+    });
+    await testCase.completeTurn();
+    await testCase.sleepMs(400);
+
+    const snapshot = testCase.getSnapshot().join('\n');
+    expect(snapshot).toContain('KASSCROLLBACKPROBE');
+
+    await finishAndExitLite(testCase);
+  }, 30000);
+
   it('panel auto-closes when all subagents complete (4.6)', async () => {
     testCase = await launchLiteInteg('lite-subagent-panel-autoclose');
 

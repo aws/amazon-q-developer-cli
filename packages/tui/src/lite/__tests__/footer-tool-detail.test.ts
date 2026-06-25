@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'bun:test';
-import { extractFooterToolDetail } from '../../components/layout/lite/SubagentFooter.js';
+import {
+  extractFooterToolDetail,
+  isSubagentSummaryToolName,
+} from '../../components/layout/lite/SubagentFooter.js';
 
 describe('extractFooterToolDetail — lean inline-arg formatting', () => {
   it('grep: shows pattern + path in lean style', () => {
@@ -91,5 +94,12 @@ describe('extractFooterToolDetail — lean inline-arg formatting', () => {
     expect(detail).not.toBeNull();
     expect(detail!.startsWith('[')).toBe(false);
     expect(detail!.endsWith(']')).toBe(false);
+  });
+
+  it('treats KAS subagent responses as summary lifecycle tools', () => {
+    expect(isSubagentSummaryToolName('summary')).toBe(true);
+    expect(isSubagentSummaryToolName('subagent_response')).toBe(true);
+    expect(isSubagentSummaryToolName('Subagent Response')).toBe(true);
+    expect(isSubagentSummaryToolName('read_file')).toBe(false);
   });
 });

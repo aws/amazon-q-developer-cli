@@ -50,6 +50,7 @@ import { ApprovalPrompt } from './ApprovalPrompt.js';
 import {
   formatSubagentRow,
   extractFooterToolDetail,
+  isSubagentSummaryToolName,
   type SubagentRow,
 } from './SubagentFooter.js';
 import { shouldCancelApprovalForKilledStage } from './subagent-kill.js';
@@ -1148,7 +1149,7 @@ export const LiteLayout: React.FC = () => {
       // clears). Complete + killed are terminal — early-continue so the walk
       // can't downgrade them back to running.
       if (row.phase === 'complete' || row.phase === 'killed') continue;
-      if (m.name === 'summary') {
+      if (isSubagentSummaryToolName(m.name)) {
         row.phase = m.isFinished ? 'complete' : 'summarizing';
         row.activeToolName = null;
         row.activeToolDetail = null;

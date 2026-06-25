@@ -2493,7 +2493,12 @@ export function renderSubagentResponseSummaryLines(
     }
   }
   if (renderable.length === 0) return [];
-  return renderDigestSection(chalk.dim('  response summary:'), renderable, {
+  const allResponses = renderable.every((entry) => {
+    const summary = stageSummaries.find((s) => s.stageName === entry.stageName);
+    return summary?.kind === 'response';
+  });
+  const header = allResponses ? '  response:' : '  response summary:';
+  return renderDigestSection(chalk.dim(header), renderable, {
     chipFn: (name) => chalk.bold(outputColor(name)(`▸ ${name}`)),
     cols,
     glyphs: colors?.glyphs,
@@ -2678,8 +2683,11 @@ export function renderSubagentFinalBlock(
     }
   }
 
+  const hasPlainResponses =
+    Array.isArray(stageSummaries) &&
+    stageSummaries.some((s) => s.kind === 'response');
   if (
-    sub.responses &&
+    (sub.responses || hasPlainResponses) &&
     status === 'done' &&
     result?.status !== 'error' &&
     Array.isArray(stageSummaries) &&
@@ -2787,6 +2795,8 @@ export interface MessageLike {
 
 export interface SubagentStageSummary {
   stageName: string;
+  /** KAS emits plain subagent responses; V2 emits synthesized summaries. */
+  kind?: 'summary' | 'response';
   /** Compressed digest from the stage's `summary` tool call, harvested off
    *  the inner message (the agent_crew joiner discards it before the parent's
    *  combined output). May be empty — render falls back to taskResult. */
