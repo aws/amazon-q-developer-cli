@@ -1631,6 +1631,29 @@ abstract class BaseAcpClient implements SessionClient {
               newText: c.newText ?? '',
               oldText: c.oldText ?? undefined,
             }));
+          // KAS emits the subagent's final output as a Completed-only
+          // tool_call_update (no preceding `tool_call`) with the text in
+          // rawInput.response and a null rawOutput. Without a `tool_call` the
+          // store never creates a message carrying that response, so it renders
+          // nowhere. Synthesize the missing ToolCall from rawInput so the
+          // response harvest (parseSummaryTool reads msg.content) sees it.
+          const rawInput = update.rawInput as
+            | Record<string, unknown>
+            | undefined;
+          if (rawInput && typeof rawInput.response === 'string') {
+            const synthesized: AgentStreamEvent = {
+              type: AgentEventType.ToolCall,
+              id: update.toolCallId,
+              name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
+              kind: update.kind ?? undefined,
+              args: rawInput,
+              ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
+            };
+            if (notifSessionId && notifSessionId !== this.sessionId) {
+              synthesized.sessionId = notifSessionId;
+            }
+            this.broadcastSynthesizedFailedToolCall(synthesized);
+          }
           return {
             type: AgentEventType.ToolCallFinished,
             id: update.toolCallId,

@@ -1659,7 +1659,7 @@ function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
 
 /** Text-only form of unwrapToolOutput; JSON envelopes become a compact
  *  safeJson string (used by the read-tool path). */
-export function unwrapToolOutputAsText(output: unknown): string {
+function unwrapToolOutputAsText(output: unknown): string {
   const r = unwrapToolOutput(output);
   if (r.kind === 'text') return r.value;
   return unescapeJsonNewlines(safeJson(r.value, 1_000_000));

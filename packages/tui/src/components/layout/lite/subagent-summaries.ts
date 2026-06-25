@@ -4,7 +4,6 @@ import { MessageRole, ToolUseStatus } from '../../../stores/app-store.js';
 import type { AgentSession } from '../../../types/multi-session.js';
 import {
   renderSubagentResponseSummaryLines,
-  unwrapToolOutputAsText,
   type RenderContext,
   type SubagentStageSummary,
 } from '../../../lite/render.js';
@@ -22,15 +21,7 @@ function parseSummaryTool(
   if (!toolKind) return null;
   try {
     const args = JSON.parse(msg.content);
-    let response = typeof args.response === 'string' ? args.response : '';
-    // Live KAS puts the response in the tool's OUTPUT envelope, not its args.
-    if (
-      !response &&
-      toolKind === 'subagent_response' &&
-      msg.result?.status === 'success'
-    ) {
-      response = unwrapToolOutputAsText(msg.result.output);
-    }
+    const response = typeof args.response === 'string' ? args.response : '';
     if (toolKind === 'subagent_response' && response) {
       return {
         stageName,

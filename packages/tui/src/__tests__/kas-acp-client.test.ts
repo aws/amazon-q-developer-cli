@@ -3698,6 +3698,81 @@ describe('KasAcpClient', () => {
     expect(mainEvents.map((event) => event.id)).toEqual(['crew-op']);
   });
 
+  it('synthesizes a ToolCall from rawInput for an update-only Subagent Response so its text renders', async () => {
+    // KAS sends the subagent's final output as a Completed-only
+    // tool_call_update (NO preceding tool_call) with the text in
+    // rawInput.response and rawOutput=null. Without synthesizing the missing
+    // ToolCall, the store never gets a message carrying that response, so it
+    // renders nowhere (the live bug). Assert the synthesized ToolCall reaches
+    // the subagent session with the response in args.
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    // Register the stage so the subtask routes panel-only (matches a live crew).
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-resp',
+              stages: [
+                {
+                  name: 'inspect',
+                  role: 'general',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'sub-inspect',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    multiEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tooluse_resp',
+        title: 'Subagent Response',
+        status: 'completed',
+        rawInput: { response: 'THE FINAL ANSWER', files: [] },
+        rawOutput: null,
+        _meta: { kiro: { agentSubtaskId: 'sub-inspect' } },
+      },
+    });
+
+    // A ToolCall carrying the response in args must reach the subagent session.
+    const synth = multiEvents.find(
+      (e) =>
+        e.event.id === 'tooluse_resp' &&
+        e.event.type === AgentEventType.ToolCall
+    );
+    expect(synth).toBeDefined();
+    expect(synth!.sessionId).toBe('sub-inspect');
+    expect(synth!.event.name).toBe('Subagent Response');
+    expect((synth!.event.args as any).response).toBe('THE FINAL ANSWER');
+    // It stays panel-only (crew activity), not leaked to main.
+    expect(mainEvents.some((e) => e.id === 'tooluse_resp')).toBe(false);
+  });
+
   it('keeps early KAS child tool_call_chunk placeholders out of main once the pipeline snapshot registers the stage', async () => {
     const client = new KasAcpClient();
     const mainEvents: any[] = [];
