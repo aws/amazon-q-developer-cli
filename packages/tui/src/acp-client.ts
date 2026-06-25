@@ -3847,7 +3847,11 @@ export class KasAcpClient extends BaseAcpClient {
       throw new Error(result.message || '/context show failed');
     }
     const data = result.data as KasContextShowResponse | undefined;
-    return { entries: data?.entries ?? [], message: data?.message };
+    return {
+      entries: data?.entries ?? [],
+      message: data?.message,
+      breakdown: data?.breakdown,
+    };
   }
 
   async contextAdd(

@@ -54,8 +54,38 @@ describe('handleContext (KAS-mode dispatch)', () => {
       const [shown, breakdown] = setBreakdown.mock.calls[0];
       expect(shown).toBe(true);
       expect(breakdown.initialExpanded).toBe(false);
-      // Cached path → no agent round-trip.
-      expect((ctx.kiro.contextShow as any).mock.calls.length).toBe(0);
+      // Always round-trips now (the show response carries a fresh breakdown);
+      // the cache is only a fallback when the agent omits one.
+      expect((ctx.kiro.contextShow as any).mock.calls.length).toBe(1);
+    });
+
+    it('prefers the show-response breakdown over the cached one', async () => {
+      // The cache is stale (e.g. right after an /agent switch); the fresh
+      // show-response breakdown must win.
+      const ctx = ctxWith({
+        getCachedContextBreakdown: mock(() => ({
+          contextFiles: { tokens: 1, percent: 1, items: [{ name: 'stale' }] },
+        })),
+        contextShow: mock(() =>
+          Promise.resolve({
+            entries: [],
+            breakdown: {
+              contextFiles: {
+                tokens: 999,
+                percent: 9,
+                items: [{ name: 'fresh' }],
+              },
+            },
+          })
+        ),
+      });
+      await handleContext(CONTEXT_CMD, 'show', ctx);
+
+      const setBreakdown = ctx._spies.setShowContextBreakdown as any;
+      expect(setBreakdown).toHaveBeenCalled();
+      const breakdown = setBreakdown.mock.calls[0][1];
+      expect(breakdown.contextFiles.items[0].name).toBe('fresh');
+      expect(breakdown.initialExpanded).toBe(true);
     });
 
     it('/context show with cached breakdown opens the panel expanded', async () => {
