@@ -3,6 +3,7 @@ import {
   extractFooterToolDetail,
   isSubagentSummaryToolName,
 } from '../../components/layout/lite/SubagentFooter.js';
+import { stripShellPreamble } from '../render.js';
 
 describe('extractFooterToolDetail — lean inline-arg formatting', () => {
   it('grep: shows pattern + path in lean style', () => {
@@ -80,6 +81,15 @@ describe('extractFooterToolDetail — lean inline-arg formatting', () => {
     expect(detail).toContain('git status --short');
   });
 
+  it('shell tool: strips leading "cd … &&" so the real command shows', () => {
+    const content = JSON.stringify({
+      command: 'cd /Users/me/proj/packages/tui && bun test src/lite/foo.test.ts',
+    });
+    const detail = extractFooterToolDetail('shell', content);
+    expect(detail).toContain('bun test src/lite/foo.test.ts');
+    expect(detail).not.toContain('cd /Users/me/proj');
+  });
+
   it('returns null for empty content', () => {
     expect(extractFooterToolDetail('grep', '')).toBeNull();
   });
@@ -101,5 +111,41 @@ describe('extractFooterToolDetail — lean inline-arg formatting', () => {
     expect(isSubagentSummaryToolName('subagent_response')).toBe(true);
     expect(isSubagentSummaryToolName('Subagent Response')).toBe(true);
     expect(isSubagentSummaryToolName('read_file')).toBe(false);
+  });
+});
+
+describe('stripShellPreamble — surface the command meat, not navigation', () => {
+  it('strips a leading "cd <path> &&" segment', () => {
+    expect(stripShellPreamble('cd /a/b/c && bun test x.ts --bail')).toBe(
+      'bun test x.ts --bail'
+    );
+  });
+
+  it('strips "pushd <path> &&" too', () => {
+    expect(stripShellPreamble('pushd /a/b && make')).toBe('make');
+  });
+
+  it('strips leading VAR=value env prefixes', () => {
+    expect(stripShellPreamble('FOO=bar NODE_ENV=test node s.js --flag')).toBe(
+      'node s.js --flag'
+    );
+  });
+
+  it('strips env prefix then cd segment together', () => {
+    expect(stripShellPreamble('FOO=1 cd /a && ./run.sh')).toBe('./run.sh');
+  });
+
+  it('leaves a bare "cd /x" alone (nothing significant after)', () => {
+    expect(stripShellPreamble('cd /x')).toBe('cd /x');
+  });
+
+  it('leaves a plain command unchanged', () => {
+    expect(stripShellPreamble('git status --short')).toBe('git status --short');
+  });
+
+  it('does not strip a cd that is not the leading navigation segment', () => {
+    // `git log` is the real command; no leading cd to remove.
+    const cmd = 'git log --oneline && cd /tmp';
+    expect(stripShellPreamble(cmd)).toBe(cmd);
   });
 });

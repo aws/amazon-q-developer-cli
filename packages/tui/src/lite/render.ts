@@ -1784,6 +1784,23 @@ function shortenPathForChip(path: string): string {
 }
 
 /**
+ * Drop a leading `cd <path> &&` / `pushd <path> &&` segment and any leading
+ * `VAR=value` env prefixes so the chip shows the command's actual work, not the
+ * navigation boilerplate that otherwise wins the head-only clip. Falls back to
+ * the original when nothing significant remains (e.g. a bare `cd /x`).
+ */
+export function stripShellPreamble(command: string): string {
+  let rest = command.trim();
+  // Leading env-var assignments: FOO=bar BAZ=qux <cmd>
+  const envRe = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+/;
+  while (envRe.test(rest)) rest = rest.replace(envRe, '');
+  // A single leading `cd`/`pushd <path> &&` segment.
+  const cdMatch = /^(?:cd|pushd)\s+\S[^&]*?&&\s*(\S.*)$/.exec(rest);
+  if (cdMatch?.[1]) rest = cdMatch[1].trim();
+  return rest.length > 0 ? rest : command;
+}
+
+/**
  * Build the inline arg chip: the most informative single-line summary of the
  * tool's args. Search tools combine "what" + " in " + "where"; write tools
  * surface a verb + path (so create/edit/insert/delete differ at a glance).
@@ -1812,7 +1829,8 @@ export function extractInlineArg(
     typeof args.command === 'string' &&
     args.command.length > 0
   ) {
-    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
+    const firstLine = args.command.split('\n')[0] ?? '';
+    return `[${clipChars(stripShellPreamble(firstLine), maxChars)}]`;
   }
 
   // Write tools: verb + relative path (path alone hides the operation).
@@ -1891,7 +1909,7 @@ export function extractInlineArg(
   if (typeof purpose === 'string' && purpose.length > 0)
     return `[${clipChars(purpose, maxChars)}]`;
   if (typeof args.command === 'string' && args.command.length > 0)
-    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
+    return `[${clipChars(stripShellPreamble(args.command.split('\n')[0] ?? ''), maxChars)}]`;
   return undefined;
 }
 
