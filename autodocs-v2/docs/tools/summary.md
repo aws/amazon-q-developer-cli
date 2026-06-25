@@ -1,23 +1,23 @@
 ---
 doc_meta:
   title: summary
-  description: Subagent tool for reporting task results back to the main agent
+  description: Mandatory subagent tool for reporting task results back to the main agent
   category: tool
-  keywords: [summary, subagent, task, result, report, agent-crew, pipeline]
+  keywords: [summary, subagent, task, result, report, agent-crew, pipeline, mandatory]
   related: [subagent]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-06-25
+  commit: 84fded8f7
   status: validated
   testable_headless: true
 ---
 
 ## Overview
 
-The summary tool allows a subagent to report its task results back to the main agent that spawned it. When the main agent spawns work via the `subagent` tool, the subagent uses `summary` to send back its findings, context, and final result.
+The summary tool is the **mandatory** mechanism for a subagent to deliver task results back to the main agent that spawned it. Subagents must always call this tool before ending their turn — ending with a plain text response instead of calling summary will fail to deliver results to the parent agent.
 
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
-This tool is only available to subagents — it is excluded from the main agent's tool set and always included for subagents.
+This tool is only available to subagents — it is excluded from the main agent's tool set and always included for subagents. It is prioritized first in the subagent's tool list to maximize the model's attention on calling it.
 
 ## Usage
 
@@ -26,6 +26,16 @@ The tool accepts three parameters:
 - `taskDescription` (required) — Description of the task that was assigned to the subagent
 - `contextSummary` (optional) — Relevant context and information gathered during task execution that aids subsequent actions
 - `taskResult` (required) — The final result or outcome of the completed task
+
+### Calling behavior
+
+The summary tool **must** be called before the subagent's turn ends. This is enforced through:
+
+1. **Positional priority** — The summary tool is placed first in the subagent's tool list, ahead of even the code tool, to maximize model attention on it.
+2. **Mandatory language in the tool description** — The tool description explicitly states the subagent must call it before ending.
+3. **Embedded instructions** — The subagent's system prompt reinforces the requirement to call summary rather than ending with plain text.
+
+If the subagent ends without calling summary, its results are not delivered to the parent agent.
 
 ## Examples
 
@@ -71,14 +81,21 @@ When used in a multi-stage pipeline via the `subagent` tool:
 ### Summary not received by main agent
 
 The summary tool emits an `AgentEvent::SubagentSummary` event. If the main agent doesn't receive results:
-- The subagent may have errored before calling summary
+- The subagent may have ended its turn without calling summary (ended with plain text instead)
+- The subagent may have errored before reaching the summary call
 - Check that the subagent task completed successfully
+
+### Subagent ended without calling summary
+
+This can happen when the model produces a text response instead of a tool call. The positional prioritization and mandatory language in the tool description are designed to minimize this. If it occurs consistently:
+- The task prompt may be ambiguous — make it clearer that a concrete result is expected
+- The subagent may have hit a context limit before completing
 
 ### Tool not available
 
 The summary tool is only available to subagents. If you see it missing:
 - This is expected for the main agent — it cannot call summary on itself
-- Only agents spawned via the `subagent` tool have access to this tool
+- Only agents spawned via the `subagent` tool or orchestrated sessions have access to this tool
 
 ## Related
 

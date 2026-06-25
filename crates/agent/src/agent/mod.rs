@@ -3373,7 +3373,7 @@ impl Agent {
         if !sanitized_specs.filtered_specs().is_empty() {
             warn!(filtered_specs = ?sanitized_specs.filtered_specs(), "filtered some tool specs");
         }
-        let mut tool_specs = sanitized_specs.tool_specs();
+        let mut tool_specs = sanitized_specs.tool_specs_with_priority(self.is_subagent);
         add_tool_use_purpose_arg(&mut tool_specs);
         self.cached_tool_specs = Some(sanitized_specs);
         tool_specs

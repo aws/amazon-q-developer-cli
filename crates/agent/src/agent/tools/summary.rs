@@ -36,10 +36,11 @@ pub struct Summary {
 }
 
 const SUMMARY_TOOL_DESCRIPTION: &str = r#"
-A tool for conveying task summary and results from subagent to main agent. 
+MANDATORY tool for conveying task results from subagent to main agent. You MUST call this tool before ending your turn — do NOT end with a plain text response.
 
 WHEN TO USE THIS TOOL: 
-- As a subagent, when a task is completed, use this tool to send the findings / conclusions to the main agent
+- ALWAYS call this tool when your task is done, before your turn ends
+- This is the ONLY way to deliver results back to the main agent
 
 HOW TO USE:
 - Provide the description of the task given

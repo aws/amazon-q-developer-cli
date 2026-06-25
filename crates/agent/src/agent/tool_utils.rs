@@ -101,12 +101,30 @@ impl SanitizedToolSpecs {
     /// byte-identical across turns, which is required for prompt caching.
     ///
     /// Following classic mode behavior, the code tool is pinned first to
-    /// prioritize it in the model's context window. Remaining tools are sorted
-    /// alphabetically.
-    pub fn tool_specs(&self) -> Vec<ToolSpec> {
+    /// prioritize it in the model's context window. For subagents, the summary
+    /// tool is pinned before code to maximize the model's attention on it —
+    /// extended thinking disables `tool_choice` forcing, so positional salience
+    /// is the primary lever for ensuring the model calls summary before ending.
+    /// Remaining tools are sorted alphabetically.
+    ///
+    /// When `is_subagent` is true, pins the summary tool first.
+    pub fn tool_specs_with_priority(&self, is_subagent: bool) -> Vec<ToolSpec> {
         let code_tool_name = BuiltInToolName::Code.to_string();
+        let summary_tool_name = BuiltInToolName::Summary.to_string();
         let mut specs: Vec<ToolSpec> = self.tool_map.values().map(|v| v.tool_spec.clone()).collect();
         specs.sort_by(|a, b| {
+            // For subagents: summary first, then code, then alphabetical.
+            if is_subagent {
+                let a_is_summary = a.name == summary_tool_name;
+                let b_is_summary = b.name == summary_tool_name;
+                if a_is_summary != b_is_summary {
+                    return if a_is_summary {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Greater
+                    };
+                }
+            }
             let a_is_code = a.name == code_tool_name;
             let b_is_code = b.name == code_tool_name;
             match (a_is_code, b_is_code) {
@@ -404,10 +422,54 @@ mod tests {
             },
         ]);
 
-        let result = specs.tool_specs();
+        let result = specs.tool_specs_with_priority(false);
         let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names[0], BuiltInToolName::Code.to_string(), "code tool must be first");
         assert_eq!(&names[1..], &["alpha_mcp", "glob", "read", "shell", "write"]);
+    }
+
+    /// For subagents, summary is pinned before code to maximize model attention
+    /// on calling it — extended thinking disables tool_choice forcing.
+    #[test]
+    fn tool_specs_summary_first_for_subagents() {
+        let specs = make_sanitized_specs(&[
+            CanonicalToolName::BuiltIn(BuiltInToolName::FsWrite),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Code),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Summary),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Glob),
+        ]);
+
+        let result = specs.tool_specs_with_priority(true);
+        let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names[0],
+            BuiltInToolName::Summary.to_string(),
+            "summary must be first for subagents"
+        );
+        assert_eq!(
+            names[1],
+            BuiltInToolName::Code.to_string(),
+            "code must be second for subagents"
+        );
+    }
+
+    /// When not a subagent, summary follows normal alphabetical sorting.
+    #[test]
+    fn tool_specs_summary_not_first_for_non_subagents() {
+        let specs = make_sanitized_specs(&[
+            CanonicalToolName::BuiltIn(BuiltInToolName::FsWrite),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Code),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Summary),
+            CanonicalToolName::BuiltIn(BuiltInToolName::Glob),
+        ]);
+
+        let result = specs.tool_specs_with_priority(false);
+        let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names[0],
+            BuiltInToolName::Code.to_string(),
+            "code must be first for non-subagents"
+        );
     }
 
     // --- add_tool_use_purpose_arg tests ---

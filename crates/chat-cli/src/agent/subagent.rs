@@ -91,8 +91,10 @@ use crate::telemetry::{
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
+CRITICAL: You MUST call the `summary` tool before ending your turn. Do NOT end with a plain text response — always close out by calling the summary tool with your findings.
+
 You are a subagent executing a task delegated to you by the main agent.
-After what is asked of you has concluded, call the summary tool to convey your findings to the main agent.
+Reminder: When your task is complete, you MUST call the summary tool (not just respond with text).
 "#;
 
 const SUMMARY_FAILSAFE_MSG: &str = r#"

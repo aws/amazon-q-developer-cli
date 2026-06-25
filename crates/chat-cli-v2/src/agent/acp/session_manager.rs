@@ -1989,7 +1989,9 @@ impl SessionManager {
         let group_name_clone = group_name_for_task;
         let parent_sid = parent_session_id.clone();
         let embedded_msg = format!(
-            "You are '{}' — an orchestrated session.\nYour task: {}\n{}\nWhen your task is complete, call the summary tool with your findings.",
+            "CRITICAL: You MUST call the `summary` tool before ending your turn. Do NOT end with a plain text response — always close out by calling the summary tool with your findings.\n\n\
+             You are '{}' — an orchestrated session.\nYour task: {}\n{}\n\
+             Reminder: When your task is complete, you MUST call the summary tool (not just respond with text).",
             session_name,
             task,
             role.map(|r| format!("Your role: {}", r)).unwrap_or_default(),
