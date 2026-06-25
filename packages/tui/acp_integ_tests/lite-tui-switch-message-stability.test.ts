@@ -10,10 +10,7 @@ import type {
 import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 import { CMD_TUI } from '../integ_tests/helpers/commands';
-import {
-  visibleCount,
-  visibleIndex,
-} from '../integ_tests/helpers/mode-swap';
+import { visibleCount, visibleIndex } from '../integ_tests/helpers/mode-swap';
 
 const SESSION_ID = 'kas-lite-tui-stability-session';
 
