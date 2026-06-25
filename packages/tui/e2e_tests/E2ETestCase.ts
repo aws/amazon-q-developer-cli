@@ -1,6 +1,6 @@
 /**
  * E2E TestCase for full-stack testing of Kiro CLI.
- *
+ * 
  * Spawns the real `kiro-cli chat` command, enabling dual IPC connections
  * to both TUI (Zustand store) and Rust backend session state.
  */
@@ -35,10 +35,10 @@ interface E2ETestCaseOptions {
 
 /**
  * E2ETestCase provides full-stack E2E testing for the Kiro CLI application.
- *
+ * 
  * Unlike integration tests that mock the ACP layer, E2E tests run the complete
  * stack: TUI -> ACP -> Rust Agent.
- *
+ * 
  * Key features:
  * - Real PTY for authentic terminal behavior
  * - Dual IPC: TUI state (Zustand) + Rust backend session state (AgentSnapshot)
@@ -105,8 +105,6 @@ export class E2ETestCase {
       KIRO_TEST_MODE: '1',
       KIRO_DISABLE_TELEMETRY: '1',
       KIRO_INPUT_METRICS: 'true',
-      FORCE_COLOR: '3',
-      COLORTERM: 'truecolor',
       KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
       KIRO_TEST_CHAT_IPC_SOCKET_PATH: this.paths.agentIpcSocket,
       ...(process.platform === 'win32' ? {
@@ -532,16 +530,6 @@ export class E2ETestCase {
    */
   findTextCells(text: string): CellAttributes[] | null {
     return this.ptyManager.findTextCells(text);
-  }
-
-  /**
-   * Returns cell attributes for every line containing `text` (top-to-bottom).
-   * Used by tests that compare older scrollback rows against newer live-region
-   * rows — e.g. /theme reflow assertions where the old row's color must stay
-   * frozen and the new row's color must update.
-   */
-  findAllTextCells(text: string): CellAttributes[][] {
-    return this.ptyManager.findAllTextCells(text);
   }
 
   /**

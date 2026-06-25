@@ -226,6 +226,30 @@ describe('dispatch - additional coverage', () => {
       expect(call[0]).toBe('Something went wrong');
       expect(call[1]).toBe('error');
     });
+
+    it('shows /knowledge update errors with args via tail alert', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: false,
+        message: 'No contexts found under /tmp/missing',
+        data: undefined,
+      });
+
+      const cmd = makeCmd({
+        name: '/knowledge',
+        source: 'backend',
+        meta: { inputType: 'panel' },
+      });
+      await dispatch(cmd, 'update /tmp/missing', ctx);
+
+      expect(ctx._spies.setShowKnowledgePanel!).toHaveBeenCalledWith(false);
+      expect(ctx._spies.showAlert!).toHaveBeenCalledTimes(1);
+      expect(ctx._spies.showAlert!).toHaveBeenCalledWith(
+        'No contexts found under /tmp/missing',
+        'error',
+        5000
+      );
+    });
   });
 
   describe('local commands skip backend', () => {

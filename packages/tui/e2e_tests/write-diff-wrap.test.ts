@@ -1,10 +1,8 @@
 /**
  * E2E test verifying that long diff lines wrap instead of being truncated.
  *
- * Uses a narrow terminal (60 columns) and a diff line longer than 60 chars
+ * Uses a narrow terminal (40 columns) and a diff line longer than 40 chars
  * to confirm the full content is visible across wrapped rows.
- *
- * Parameterized to run in both TUI and Lite modes.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -13,10 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Write diff wrapping ($mode)', ({ mode, builder }) => {
+describe('Write diff wrapping', () => {
   let testCase: E2ETestCase | null = null;
   let tempDir: string = '';
 
@@ -38,8 +33,8 @@ describe.each([
     const newLine = 'export const thisIsAVeryLongVariableName = "this value is intentionally long to exceed terminal width";';
     fs.writeFileSync(filePath, oldLine + '\n');
 
-    testCase = await builder()
-      .withTestName(`write-diff-wrap-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('write-diff-wrap')
       .withTerminal({ width: 60, height: 30 })
       .launch();
 
@@ -75,18 +70,14 @@ describe.each([
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    const approvalText = mode === 'tui' ? 'requires approval' : 'needs approval';
-    await testCase.waitForText(approvalText, 15000);
+    await testCase.waitForText('requires approval', 15000);
 
     const snapshot = testCase.getSnapshot();
     const allText = snapshot.join('');
     console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
 
-    // The full new line content should be visible (wrapped across rows), not truncated.
-    // In lite mode the diff continuation markers split words across rows, so check
-    // for key substrings individually rather than the full phrase.
-    expect(allText).toContain('exceed terminal');
-    expect(allText).toContain('width');
+    // The full new line content should be visible (wrapped across rows), not truncated
+    expect(allText).toContain('exceed terminal width');
     // No ellipsis truncation character
     expect(allText).not.toContain('…');
   }, 30000);

@@ -6,12 +6,12 @@ import {
   finishAndExitLite,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
-import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
+} from './helpers/integ-lifecycle';
+import { seedSubagentPipeline } from './helpers/subagents';
 import {
   injectApproval,
   ALLOW_REJECT_OPTIONS,
-} from '../e2e_tests/lite/helpers/approvals';
+} from './helpers/approvals';
 
 type ToolUseMessage = Extract<MessageType, { role: MessageRole.ToolUse }>;
 

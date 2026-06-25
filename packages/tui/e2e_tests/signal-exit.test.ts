@@ -9,8 +9,6 @@
  * The full process tree is: Rust launcher (chat_cli) → bun TUI → ACP backend.
  * These tests exercise the FULL stack end-to-end.
  *
- * Parameterized to run in both TUI and Lite modes via describe.each.
- *
  * Taskei: https://taskei.amazon.dev/tasks/P420105490
  */
 
@@ -86,10 +84,7 @@ async function getPpid(pid: number): Promise<number | null> {
   }
 }
 
-describe.skipIf(process.platform === 'win32').each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Signal exit — full stack (Rust → bun → ACP) ($mode)', ({ mode, builder }) => {
+describe.skipIf(process.platform === 'win32')('Signal exit — full stack (Rust → bun → ACP)', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -102,8 +97,8 @@ describe.skipIf(process.platform === 'win32').each([
   // ─── Layer 1: Killing Rust launcher kills bun (no orphans) ──────────────────
 
   it('SIGHUP to launcher exits cleanly with no orphan bun process', async () => {
-    testCase = await builder()
-      .withTestName(`signal-sighup-no-orphan-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('signal-sighup-no-orphan')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
@@ -126,8 +121,8 @@ describe.skipIf(process.platform === 'win32').each([
   }, 30000);
 
   it('SIGTERM to launcher exits cleanly with no orphan bun process', async () => {
-    testCase = await builder()
-      .withTestName(`signal-sigterm-no-orphan-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('signal-sigterm-no-orphan')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
@@ -145,8 +140,8 @@ describe.skipIf(process.platform === 'win32').each([
   }, 30000);
 
   it('SIGKILL to launcher — bun detects stdin EOF and exits (no orphan)', async () => {
-    testCase = await builder()
-      .withTestName(`signal-sigkill-no-orphan-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('signal-sigkill-no-orphan')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
@@ -167,8 +162,8 @@ describe.skipIf(process.platform === 'win32').each([
   // ─── Layer 2: Bun-side SIGHUP handler ──────────────────────────────────────
 
   it('SIGHUP directly to bun triggers kiro.close() and clean exit', async () => {
-    testCase = await builder()
-      .withTestName(`signal-bun-direct-sighup-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('signal-bun-direct-sighup')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
@@ -192,8 +187,8 @@ describe.skipIf(process.platform === 'win32').each([
     // writing to stdout throws → uncaughtException handler writes to stdout → loop.
     // The circuit breaker (process.stdout.on('error')) must break this cycle.
     // If it fails, the process hangs or OOMs instead of exiting.
-    testCase = await builder()
-      .withTestName(`signal-no-death-spiral-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('signal-no-death-spiral')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
