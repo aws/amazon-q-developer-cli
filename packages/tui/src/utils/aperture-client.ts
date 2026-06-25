@@ -69,6 +69,16 @@ export function resolveApertureUrl(override?: string): string {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/**
+ * Base `User-Agent` for Aperture requests: `kiro-cli/<version>`.
+ *
+ * Exported so callers (e.g. survey submission) can decorate it with extra
+ * tokens without reaching into the default header construction here.
+ */
+export function buildUserAgent(): string {
+  return `kiro-cli/${getCliVersion()}`;
+}
+
 /** Fetch with an abort-linked timeout that cleans up on success or failure. */
 async function fetchWithTimeout(
   url: string,
@@ -129,7 +139,7 @@ export async function submitForm(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     // Help the Aperture team identify client traffic without phoning home PII.
-    'User-Agent': `kiro-cli/${getCliVersion()}`,
+    'User-Agent': buildUserAgent(),
     ...options.headers,
   };
 

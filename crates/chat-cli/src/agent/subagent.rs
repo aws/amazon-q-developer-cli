@@ -76,6 +76,7 @@ use tracing::{
     debug,
     error,
     info,
+    trace,
     warn,
 };
 
@@ -633,6 +634,7 @@ impl<'a> Subagent<'a> {
                         AgentEvent::EndTurn(metadata) => {
                             // Snapshot this turn's text for the empty-response fallback.
                             let turn_text = std::mem::take(&mut current_turn_text);
+                            trace!(turn_text_len = turn_text.len(), has_sent_failsafe_msg, "subagent EndTurn received");
                             if !turn_text.trim().is_empty() {
                                 last_message = Some(turn_text);
                             }
@@ -641,12 +643,14 @@ impl<'a> Subagent<'a> {
                             if !matches!(query_status, QueryStatus::Resolved(_))
                                 && let Some(s) = agent.take_summary().await
                             {
+                                trace!("recovered summary from lossless channel on EndTurn");
                                 query_status = QueryStatus::Resolved(s);
                             }
                             if matches!(query_status, QueryStatus::Resolved(_)) {
                                 user_turn_metadata.push(metadata.clone());
                                 break;
                             } else if !has_sent_failsafe_msg {
+                                trace!("no summary on EndTurn — sending failsafe message");
                                 agent
                                     .send_prompt(SendPromptArgs {
                                         content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
@@ -659,21 +663,37 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
+                            trace!(?agent_error, ?has_sent_failsafe_msg, last_message_len = last_message.as_ref().map(|m| m.len()), "subagent Stop(Error) received");
                             telemetry_sink.update_stop_reason(agent_error.to_string());
                             // Honor a summary delivered just before the error landed.
                             if !matches!(query_status, QueryStatus::Resolved(_))
                                 && let Some(s) = agent.take_summary().await
                             {
+                                trace!("recovered summary from lossless channel after Stop(Error)");
                                 query_status = QueryStatus::Resolved(s);
                                 break;
                             }
-                            // Empty response degrades to the last message; other errors fail.
+                            // Empty response: send the failsafe prompt instead of immediately
+                            // degrading — gives the model one more chance to call summary.
+                            if stop_error_is_degradable(&agent_error) && !has_sent_failsafe_msg {
+                                trace!("EmptyResponse on first attempt — sending failsafe instead of degrading");
+                                agent
+                                    .send_prompt(SendPromptArgs {
+                                        content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
+                                        should_continue_turn: None,
+                                    })
+                                    .await?;
+                                has_sent_failsafe_msg = true;
+                                continue;
+                            }
+                            // Failsafe already sent or non-degradable error — degrade/fail.
                             let summary = disposition_for_stop_error(
                                 self.query,
                                 &agent_error,
                                 last_message.as_deref(),
                             );
                             query_status = if stop_error_is_degradable(&agent_error) {
+                                trace!("EmptyResponse after failsafe — degrading to fallback");
                                 QueryStatus::Resolved(summary)
                             } else {
                                 QueryStatus::Error(summary)

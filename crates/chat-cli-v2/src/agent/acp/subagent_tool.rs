@@ -181,6 +181,14 @@ pub(crate) async fn handle_internal_prompt(
                     return Err(InternalPromptError::Cancelled);
                 },
                 AgentEvent::Stop(AgentStopReason::Error(e)) => {
+                    // A summary delivered before the error landed wins. The subagent
+                    // commonly calls summary successfully and then takes one more
+                    // model round-trip that comes back empty, erroring the turn with
+                    // EmptyResponse. Without draining the lossless channel here we
+                    // would discard that real result and return the empty fallback.
+                    if let Some(s) = agent.take_summary().await.or(summary.take()) {
+                        return Ok(s);
+                    }
                     // An empty response is not a failure: before empty responses
                     // started erroring, the subagent would fall back to its last
                     // message. Preserve that behavior by degrading to the last
@@ -402,6 +410,64 @@ mod tests {
             result.task_result,
             "The subagent returned an empty response without calling the summary tool. \
              This is the content of its last available message:\n\n"
+        );
+    }
+
+    /// Regression for the observed failure where a subagent calls the summary
+    /// tool successfully, then takes one more model round-trip that comes back
+    /// empty (erroring the turn with EmptyResponse). The real summary — already
+    /// delivered on the lossless channel — must win over the empty-response
+    /// fallback. Before the fix, the Stop(Error(EmptyResponse)) arm returned the
+    /// fallback without checking the lossless channel, discarding the result.
+    #[tokio::test]
+    async fn summary_then_empty_trailing_turn_keeps_summary() {
+        let registry = MockResponseRegistryHandle::spawn();
+        let session_id = "summary-then-empty";
+        let agent = spawn_test_agent(&registry, session_id).await;
+
+        // Turn 1: model emits text and calls the summary tool with a real result.
+        let summary_input = serde_json::json!({
+            "taskDescription": "tell a joke",
+            "taskResult": "Why do programmers prefer dark mode? Because light attracts bugs.",
+        });
+        registry
+            .push_events(
+                session_id.to_string(),
+                Some(vec![
+                    MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+                        content: "Here is a joke.".to_string(),
+                    }),
+                    MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                        tool_use_id: "tooluse_summary".to_string(),
+                        name: "summary".to_string(),
+                        input: Some(summary_input.to_string()),
+                        stop: Some(true),
+                    }),
+                ]),
+            )
+            .await;
+        registry.push_events(session_id.to_string(), None).await;
+
+        // Trailing round-trip(s) after the summary tool result come back empty,
+        // which errors the turn with EmptyResponse (retried once, also empty).
+        for _ in 0..2 {
+            registry
+                .push_events(session_id.to_string(), Some(empty_response_stream()))
+                .await;
+            registry.push_events(session_id.to_string(), None).await;
+        }
+
+        let result = timeout(
+            Duration::from_secs(5),
+            handle_internal_prompt("tell a joke".to_string(), agent),
+        )
+        .await
+        .expect("Should not timeout")
+        .expect("Should return the delivered summary, not an error");
+
+        assert_eq!(
+            result.task_result, "Why do programmers prefer dark mode? Because light attracts bugs.",
+            "the real summary must win over the empty-response fallback"
         );
     }
 }

@@ -2629,3 +2629,177 @@ async fn test_swap_agent_updates_knowledge_provider() {
         "knowledge provider should be preserved when swap passes None (reload case)"
     );
 }
+
+/// Part A: a model call to the unavailable `dummy` placeholder tool must
+/// resolve to a benign, instructional tool_result (Success) rather than a hard
+/// `NameDoesNotExist` parse error. This is what lets the model self-correct
+/// (e.g. switch to an agent that provides the tool) instead of looping on an
+/// unavailable tool after a cross-agent handoff.
+#[tokio::test]
+async fn test_dummy_tool_call_returns_benign_result() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("dummy tool call returns benign result")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/dummy_tool_call_benign.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("do the thing".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected initial request + one resend carrying the dummy tool_result, got {}",
+        requests.len()
+    );
+
+    // The dummy call must resolve to a SUCCESS tool_result (benign no-op), not a
+    // NameDoesNotExist error.
+    let resend = &requests[1];
+    assert!(
+        resend.has_tool_result(
+            |tr| tr.tool_use_id == "tooluse_dummy_1" && matches!(tr.status, ToolResultStatus::Success)
+        ),
+        "dummy tool call should yield a successful (benign) tool_result, not an error"
+    );
+
+    // The result text must carry the instructional guidance about the
+    // unavailable tool belonging to a different agent -- NOT a "does not
+    // exist" / parse-error message.
+    let text = resend
+        .messages()
+        .last()
+        .expect("resend should have a last message")
+        .content
+        .iter()
+        .find_map(|c| match c {
+            ContentBlock::ToolResult(tr) if tr.tool_use_id == "tooluse_dummy_1" => Some(
+                tr.content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ToolResultContentBlock::Text(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .expect("dummy tool_use must have a tool_result");
+    assert!(
+        text.contains("not available") && text.contains("different agent"),
+        "dummy guidance should describe an unavailable tool belonging to a different agent; got: {text}"
+    );
+    assert!(
+        !text.contains("does not exist") && !text.contains("Failed to parse the tool use"),
+        "dummy must not be reported as a nonexistent / unparseable tool; got: {text}"
+    );
+}
+
+/// Part B: when the model repeatedly calls the unavailable `dummy` tool and
+/// never ends the turn, the consecutive-unexecutable breaker must stop
+/// auto-resending after the cap (3) and force-end the turn — so the agent can
+/// never infinite-loop and the ACP bridge's pending prompt is released.
+#[tokio::test]
+async fn test_repeated_dummy_tool_calls_break_loop() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("repeated dummy tool calls break loop")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/repeated_dummy_tool_calls.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("keep going".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    // Exactly 3 requests are sent (initial + 2 resends); the 3rd consecutive
+    // unexecutable turn trips the breaker, so no 4th request is made.
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "breaker should stop auto-resending after 3 unexecutable turns; got {} requests",
+        requests.len()
+    );
+
+    // A clear assistant message explaining the stop must be surfaced to the user.
+    let surfaced = test.agent_events().iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::Update(agent::protocol::UpdateEvent::AgentContent(
+                agent::protocol::ContentChunk::Text(t),
+            )) if t.contains("Stopped after repeated attempts to call tools that aren't available")
+        )
+    });
+    assert!(
+        surfaced,
+        "expected a 'Stopped after repeated attempts to call tools that aren't available' assistant message"
+    );
+
+    // The turn must terminate (EndTurn) so the ACP bridge releases the prompt.
+    assert!(
+        test.agent_events().iter().any(|e| matches!(e, AgentEvent::EndTurn(_))),
+        "expected EndTurn to be emitted so the pending prompt resolves"
+    );
+}
+
+/// Part B (reset): a successful tool dispatch in the middle of a run resets the
+/// unavailable-tool breaker, so it only trips on consecutive unexecutable
+/// turns. Flow: dummy, dummy, read(success → reset), dummy, dummy, dummy(trip).
+/// A correct implementation sends exactly 6 requests; without the reset it
+/// would trip at request 4.
+#[tokio::test]
+async fn test_unexecutable_tool_breaker_resets_after_success() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("unexecutable tool breaker resets after success")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_file(("a.txt", "alpha"))
+        .with_responses(
+            parse_response_streams(include_str!(
+                "./mock_responses/dummy_breaker_resets_after_success.jsonl"
+            ))
+            .await
+            .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("work on it".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    // The successful read resets the counter, so the breaker only trips on the
+    // 3rd CONSECUTIVE dummy after the reset: exactly 6 requests.
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        6,
+        "breaker should reset after the successful tool; expected 6 requests, got {}",
+        requests.len()
+    );
+    assert!(
+        test.agent_events().iter().any(|e| matches!(e, AgentEvent::EndTurn(_))),
+        "expected EndTurn after the breaker eventually trips"
+    );
+}
