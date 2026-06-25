@@ -183,6 +183,28 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function extractKasSubagentName(title: string | undefined): string | undefined {
+  const match = title?.match(/^Sub-agent:\s*(.+)$/);
+  const name = match?.[1]?.trim();
+  return name || undefined;
+}
+
+function kasSubagentNameFromArgs(
+  args: Record<string, unknown> | undefined
+): string | undefined {
+  if (!args) return undefined;
+  return (
+    stringValue(args.name) ??
+    stringValue(args.agentName) ??
+    stringValue(args.subAgentName) ??
+    stringValue(args.agent)
+  );
+}
+
+function kasPermissionMeta(params: any): KiroMeta | undefined {
+  return params?._meta?.kiro ?? params?.toolCall?._meta?.kiro;
+}
+
 function inferKasShellPermissionToolCall(request: any): {
   title?: string;
   rawInput?: Record<string, unknown>;
@@ -1186,11 +1208,19 @@ abstract class BaseAcpClient implements SessionClient {
     this.updateHandlers.forEach((handler) => handler(event));
   }
 
+  protected broadcastSynthesizedFailedToolCall(event: AgentStreamEvent): void {
+    this.broadcastStreamEvent(event);
+  }
+
   protected broadcastMultiSession(
     sessionId: string,
     event: AgentStreamEvent
   ): void {
     this.multiSessionHandlers.forEach((h) => h(sessionId, event));
+  }
+
+  protected broadcastSessionEvent(event: any): void {
+    this.sessionEventHandlers.forEach((h) => h(event));
   }
 
   protected broadcastSubagentList(
@@ -1553,10 +1583,16 @@ abstract class BaseAcpClient implements SessionClient {
 
       case 'agent_thought_chunk': {
         if (update.content.type === 'text') {
+          // Carry _meta.kiro so a KAS subagent's reasoning is routed to its
+          // subtask session by routeKasSubtaskEvent instead of bleeding into the
+          // main agent's bufferedThinking. Mirrors the agent_message_chunk case
+          // above — without it the subtask discriminator (agentSubtaskId) is lost.
+          const kiroMeta = extractKiroMetaFromUpdate(update);
           return {
             type: AgentEventType.Thought,
             id: crypto.randomUUID(),
             content: { type: ContentType.Text, text: update.content.text },
+            ...(kiroMeta && { meta: { kiro: kiroMeta } }),
           };
         }
         return null;
@@ -1601,6 +1637,29 @@ abstract class BaseAcpClient implements SessionClient {
               newText: c.newText ?? '',
               oldText: c.oldText ?? undefined,
             }));
+          // KAS emits the subagent's final output as a Completed-only
+          // tool_call_update (no preceding `tool_call`) with the text in
+          // rawInput.response and a null rawOutput. Without a `tool_call` the
+          // store never creates a message carrying that response, so it renders
+          // nowhere. Synthesize the missing ToolCall from rawInput so the
+          // response harvest (parseSummaryTool reads msg.content) sees it.
+          const rawInput = update.rawInput as
+            | Record<string, unknown>
+            | undefined;
+          if (rawInput && typeof rawInput.response === 'string') {
+            const synthesized: AgentStreamEvent = {
+              type: AgentEventType.ToolCall,
+              id: update.toolCallId,
+              name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
+              kind: update.kind ?? undefined,
+              args: rawInput,
+              ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
+            };
+            if (notifSessionId && notifSessionId !== this.sessionId) {
+              synthesized.sessionId = notifSessionId;
+            }
+            this.broadcastSynthesizedFailedToolCall(synthesized);
+          }
           return {
             type: AgentEventType.ToolCallFinished,
             id: update.toolCallId,
@@ -1638,7 +1697,7 @@ abstract class BaseAcpClient implements SessionClient {
             if (notifSessionId && notifSessionId !== this.sessionId) {
               synthesized.sessionId = notifSessionId;
             }
-            this.broadcastStreamEvent(synthesized);
+            this.broadcastSynthesizedFailedToolCall(synthesized);
           }
           // Prefer a descriptive error from the content block; fall back to
           // rawOutput, then a generic message.
@@ -2447,18 +2506,9 @@ const STANDALONE_MAIN_FORWARD_TYPES: ReadonlySet<AgentEventType> = new Set([
   AgentEventType.Thought,
 ]);
 
-/**
- * Crew pipeline stage statuses that mean a stage has finished. Any status NOT
- * in this set (pending/running/queued/…) means the pipeline is still active.
- * KAS only ever sets completed/failed for stages today (see
- * orchestrate-subagent.ts); `cancelled` is included defensively in case that
- * changes.
- */
-const TERMINAL_STAGE_STATUSES: ReadonlySet<string> = new Set([
-  'completed',
-  'failed',
-  'cancelled',
-]);
+function isDerivedPipelineStageSubtaskId(subtaskId: string): boolean {
+  return /^invoke_sub_?agent_.+_stage_.+$/.test(subtaskId);
+}
 
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
@@ -2622,29 +2672,48 @@ export class KasAcpClient extends BaseAcpClient {
     });
   }
 
-  // Pipeline support: maps toolCallId → agentSubtaskId for permission routing
+  // Pipeline support: maps toolCallId → agentSubtaskId for event routing and
+  // permission routing. This intentionally includes ordinary child tools.
   private toolCallToSubtask: Map<string, string> = new Map();
+
+  // Lifecycle-only correlation for independent KAS subagent sessions. Only
+  // wrapper/lifecycle tool calls populate this map; ordinary child tools must
+  // not terminate the independent session when they finish.
+  private subagentLifecycleToolCallToSubtask: Map<string, string> = new Map();
+
+  // Subtasks that correspond to explicit independent KAS subagent sessions.
+  // Child tool events for these subtasks render inside the subagent stream
+  // only; the lifecycle wrapper is the parent transcript representation.
+  private independentSubagentSubtasks: Set<string> = new Set();
+
+  // Tool IDs whose initial standalone/lifecycle card was forwarded to the
+  // main transcript. KAS sometimes omits _meta on later updates/finishes; this
+  // lets mapped updates complete only the cards that actually exist in main.
+  private standaloneMainForwardedToolCalls: Set<string> = new Set();
+
+  // KAS may announce a child tool via tool_call_chunk before the parent
+  // pipeline snapshot that classifies the subtask as crew-owned. Keep those
+  // chunks panel-only until a later signal proves they are standalone.
+  private chunkDiscoveredToolCalls: Map<string, string> = new Map();
+  private standaloneSubtasks: Set<string> = new Set();
+
+  // Tool call metadata from the initial KAS tool_call/tool_call_chunk event.
+  // Some KAS permission requests only carry toolCallId; approvals still need
+  // the title and raw input details from the original tool call.
+  private kasToolCallSnapshots: Map<
+    string,
+    {
+      title?: string;
+      kind?: string;
+      rawInput?: Record<string, unknown>;
+    }
+  > = new Map();
 
   // Subtasks that correspond to a VISIBLE pipeline stage (a crew panel was
   // registered via handlePipelineStateUpdate → broadcastSubagentList). Only
   // these route tool approvals to the crew monitor; hidden/one-off spec
   // subagents have no panel, so their approvals must surface in the main view.
   private pipelineStageSubtasks: Set<string> = new Set();
-
-  // Crew pipeline groups (keyed by `pipeline.groupId`) that currently have at
-  // least one non-terminal stage. While ANY group is active, every
-  // agentSubtaskId-tagged event is kept out of the main stream — it belongs to
-  // the crew and renders in the SUBAGENT OUTPUT panel via multi-session.
-  //
-  // This is the fix for per-stage WRAPPER tool_calls ("Sub-agent: <role>"),
-  // which KAS tags with a DERIVED subtaskId (e.g.
-  // "invoke_subagent_tooluse_<parent>_stage_<name>") rather than the stage UUID
-  // registered in pipelineStageSubtasks. The wrapper therefore failed the
-  // pipelineStageSubtasks check and leaked into main as a duplicate. Gating on
-  // an active group instead of per-subtask registration closes that gap.
-  // pipelineStageSubtasks is retained as a trailing-event safety net for a
-  // stage event that arrives just after its group cleared.
-  private activeCrewGroups: Set<string> = new Set();
 
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
@@ -2732,9 +2801,12 @@ export class KasAcpClient extends BaseAcpClient {
     // any still-active stages get re-registered before their events arrive.
     this.pipelineStageSubtasks.clear();
     this.toolCallToSubtask.clear();
-    // Drop crew-liveness state too, so a stale active group from the previous
-    // session can't keep suppressing the next session's standalone subagents.
-    this.activeCrewGroups.clear();
+    this.subagentLifecycleToolCallToSubtask.clear();
+    this.independentSubagentSubtasks.clear();
+    this.standaloneMainForwardedToolCalls.clear();
+    this.chunkDiscoveredToolCalls.clear();
+    this.standaloneSubtasks.clear();
+    this.kasToolCallSnapshots.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -2833,64 +2905,21 @@ export class KasAcpClient extends BaseAcpClient {
         const meta = event ? extractKiroMetaFromEvent(event) : undefined;
 
         if (!event) return;
+        this.rememberKasToolCall(event);
 
         // Intercept pipeline metadata → emit subagent list update
         if (meta?.pipeline) {
-          this.handlePipelineStateUpdate(meta.pipeline);
-          // Backstop clear: the orchestrate_subagent card carries pipeline meta
-          // on every emission, including its terminal one (KAS maps a terminal
-          // tool_call_update → ToolCallFinished, preserving _meta.kiro.pipeline).
-          // handlePipelineStateUpdate's all-terminal check releases the group on
-          // a clean finish, but a failed/cancelled pipeline STOPS mid-flight and
-          // leaves unexecuted stages 'pending', so the snapshot is never
-          // all-terminal. The orchestrate card finishing is the one signal that
-          // fires for every terminal path, so clear on it unconditionally.
-          if (event.type === AgentEventType.ToolCallFinished) {
-            this.activeCrewGroups.delete(meta.pipeline.groupId);
-          }
+          const pipelineToolCallId =
+            event.type === AgentEventType.ToolCall ||
+            event.type === AgentEventType.ToolCallFinished
+              ? event.id
+              : undefined;
+          this.handlePipelineStateUpdate(meta.pipeline, pipelineToolCallId);
         }
 
-        // Intercept per-stage events → route to multi-session handlers
-        if (meta?.agentSubtaskId) {
-          const subtaskId = meta.agentSubtaskId;
-          // While a crew pipeline is active, ALL agentSubtaskId-tagged events are
-          // crew activity and render exclusively in the crew panel via
-          // multi-session — they must NOT also leak into the main conversation.
-          // The active-group gate (not per-subtask registration) is what catches
-          // per-stage WRAPPER tool_calls, which carry a DERIVED subtaskId that
-          // was never registered in pipelineStageSubtasks. pipelineStageSubtasks
-          // is kept as a trailing-event safety net for a stage event that lands
-          // just after its group cleared. When NO crew is active, the subtask is
-          // a standalone/hidden spec subagent with no panel — its tool cards
-          // would render NOWHERE if dropped, so we forward those to the main
-          // stream as normal inline tool cards.
-          const isCrewActivity =
-            this.activeCrewGroups.size > 0 ||
-            this.pipelineStageSubtasks.has(subtaskId);
-          if (event.type === AgentEventType.ToolCall) {
-            event.sessionId = subtaskId;
-            this.toolCallToSubtask.set(event.id, subtaskId);
-          }
-          this.broadcastMultiSession(subtaskId, event);
-          // Crew activity: panel-only (the SUBAGENT OUTPUT panel renders it, so
-          // it must NOT also leak into the main conversation as a duplicate).
-          // Standalone subtasks: also surface in main. The main copy strips
-          // `sessionId` (set above for ToolCall, for crew correlation) so it
-          // renders as a normal inline tool card rather than a tagged subagent
-          // tool. Multi-session already received the tagged copy by reference.
-          if (
-            !isCrewActivity &&
-            STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
-          ) {
-            // Strip the crew-correlation sessionId (set above for ToolCall) so
-            // the main copy renders as a normal inline card. Only the ToolCall
-            // variant carries sessionId; other forwarded types are sent as-is.
-            const mainEvent =
-              event.type === AgentEventType.ToolCall
-                ? { ...event, sessionId: undefined }
-                : event;
-            this.broadcastStreamEvent(mainEvent);
-          }
+        const routedToSubtask = this.routeKasSubtaskEvent(event, meta);
+        this.forgetFinishedKasToolCallSnapshot(event);
+        if (routedToSubtask) {
           return;
         }
 
@@ -2932,16 +2961,266 @@ export class KasAcpClient extends BaseAcpClient {
     return event;
   }
 
-  private handlePipelineStateUpdate(pipeline: {
-    groupId: string;
-    stages: Array<{
-      name: string;
-      role: string;
-      status: string;
-      dependsOn: string[];
-      agentSubtaskId: string | null;
-    }>;
-  }): void {
+  protected override handleExtSessionUpdate(
+    params: Record<string, unknown>
+  ): void {
+    const update = params.update as Record<string, unknown> | undefined;
+    if (update?.sessionUpdate === 'tool_call_chunk') {
+      const kiroMeta = extractKiroMetaFromUpdate(update as AcpSessionUpdate);
+      if (kiroMeta?.agentSubtaskId) {
+        const chunk = update as {
+          toolCallId: string;
+          title: string;
+          kind: string;
+        };
+        const event: AgentStreamEvent = {
+          type: AgentEventType.ToolCall,
+          id: chunk.toolCallId,
+          name: stripMcpTitlePrefix(chunk.title) || chunk.title,
+          kind: chunk.kind,
+          args: {},
+          sessionId: kiroMeta.agentSubtaskId,
+          meta: { kiro: kiroMeta },
+        };
+        this.rememberKasToolCall(event);
+        this.toolCallToSubtask.set(event.id, kiroMeta.agentSubtaskId);
+        this.chunkDiscoveredToolCalls.set(event.id, kiroMeta.agentSubtaskId);
+        this.broadcastMultiSession(kiroMeta.agentSubtaskId, event);
+        return;
+      }
+    }
+    super.handleExtSessionUpdate(params);
+  }
+
+  private finishSubagentLifecycleToolCall(
+    toolCallId: string,
+    subtaskId: string,
+    isExplicitLifecycleSignal = false
+  ): void {
+    const lifecycleSubtaskId =
+      this.subagentLifecycleToolCallToSubtask.get(toolCallId);
+    if (isExplicitLifecycleSignal || lifecycleSubtaskId === subtaskId) {
+      this.broadcastSessionEvent({
+        type: 'session_terminated',
+        sessionId: subtaskId,
+      });
+      this.independentSubagentSubtasks.delete(subtaskId);
+    }
+    this.subagentLifecycleToolCallToSubtask.delete(toolCallId);
+  }
+
+  protected override broadcastSynthesizedFailedToolCall(
+    event: AgentStreamEvent
+  ): void {
+    this.rememberKasToolCall(event);
+    const meta = extractKiroMetaFromEvent(event);
+    if (this.routeKasSubtaskEvent(event, meta)) return;
+    this.broadcastStreamEvent(event);
+  }
+
+  private rememberKasToolCall(event: AgentStreamEvent): void {
+    if (event.type !== AgentEventType.ToolCall) return;
+    this.kasToolCallSnapshots.set(event.id, {
+      title: event.name,
+      kind: event.kind,
+      rawInput: event.args,
+    });
+  }
+
+  private forgetFinishedKasToolCallSnapshot(event: AgentStreamEvent): void {
+    if (event.type !== AgentEventType.ToolCallFinished) return;
+    this.kasToolCallSnapshots.delete(event.id);
+  }
+
+  private isMappedStandaloneSubtask(subtaskId: string): boolean {
+    return (
+      this.standaloneSubtasks.has(subtaskId) &&
+      !this.pipelineStageSubtasks.has(subtaskId) &&
+      !this.independentSubagentSubtasks.has(subtaskId)
+    );
+  }
+
+  private isUnclassifiedChunkToolCall(
+    toolCallId: string,
+    subtaskId: string
+  ): boolean {
+    return (
+      this.chunkDiscoveredToolCalls.get(toolCallId) === subtaskId &&
+      !this.standaloneSubtasks.has(subtaskId) &&
+      !this.pipelineStageSubtasks.has(subtaskId) &&
+      !this.independentSubagentSubtasks.has(subtaskId)
+    );
+  }
+
+  private promoteMappedStandaloneToolCallToMain(
+    toolCallId: string,
+    subtaskId: string,
+    event?: AgentStreamEvent
+  ): boolean {
+    if (!this.isMappedStandaloneSubtask(subtaskId)) return false;
+    if (this.standaloneMainForwardedToolCalls.has(toolCallId)) return false;
+    if (event?.type === AgentEventType.ToolCall) {
+      this.standaloneMainForwardedToolCalls.add(toolCallId);
+      this.broadcastStreamEvent({ ...event, sessionId: undefined });
+      return true;
+    }
+    const snapshot = this.kasToolCallSnapshots.get(toolCallId);
+    if (!snapshot) return false;
+    this.standaloneMainForwardedToolCalls.add(toolCallId);
+    this.broadcastStreamEvent({
+      type: AgentEventType.ToolCall,
+      id: toolCallId,
+      name: snapshot.title ?? toolCallId,
+      kind: snapshot.kind,
+      args: snapshot.rawInput ?? {},
+    });
+    return true;
+  }
+
+  private routeKasSubtaskEvent(
+    event: AgentStreamEvent,
+    meta: KiroMeta | undefined
+  ): boolean {
+    if (meta?.agentSubtaskId) {
+      const subtaskId = meta.agentSubtaskId;
+      const isKnownIndependentSubagent =
+        this.independentSubagentSubtasks.has(subtaskId);
+      const isDerivedPipelineStageSubtask =
+        isDerivedPipelineStageSubtaskId(subtaskId);
+      const isIndependentLifecycleSignal =
+        meta.kind === 'agent-subtask' &&
+        !this.pipelineStageSubtasks.has(subtaskId) &&
+        !isDerivedPipelineStageSubtask;
+      const isCrewActivity =
+        !isKnownIndependentSubagent &&
+        !isIndependentLifecycleSignal &&
+        (this.pipelineStageSubtasks.has(subtaskId) ||
+          isDerivedPipelineStageSubtask);
+      const shouldManageSubagentLifecycle =
+        isIndependentLifecycleSignal && !isCrewActivity;
+      const isIndependentLifecycleToolCall =
+        shouldManageSubagentLifecycle ||
+        ('id' in event &&
+          this.subagentLifecycleToolCallToSubtask.get(event.id) === subtaskId);
+      const isUnclassifiedChunkCall =
+        'id' in event && this.isUnclassifiedChunkToolCall(event.id, subtaskId);
+      if (event.type === AgentEventType.ToolCall) {
+        event.sessionId = subtaskId;
+        this.toolCallToSubtask.set(event.id, subtaskId);
+        if (shouldManageSubagentLifecycle) {
+          this.independentSubagentSubtasks.add(subtaskId);
+          this.subagentLifecycleToolCallToSubtask.set(event.id, subtaskId);
+          const sessionName =
+            kasSubagentNameFromArgs(event.args) ??
+            extractKasSubagentName(event.name) ??
+            subtaskId;
+          this.broadcastSessionEvent({
+            type: 'session_created',
+            session: {
+              id: subtaskId,
+              name: sessionName,
+              agentName: sessionName,
+              status: 'busy',
+              type: 'ephemeral',
+              created: new Date(),
+              lastActivity: new Date(),
+              ...(this.sessionId ? { parentSession: this.sessionId } : {}),
+            },
+          });
+        }
+      }
+      this.broadcastMultiSession(subtaskId, event);
+      if (
+        !isCrewActivity &&
+        !isUnclassifiedChunkCall &&
+        (!isKnownIndependentSubagent || isIndependentLifecycleToolCall) &&
+        STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
+      ) {
+        const mainEvent =
+          event.type === AgentEventType.ToolCall
+            ? { ...event, sessionId: undefined }
+            : event;
+        if (event.type === AgentEventType.ToolCall) {
+          this.standaloneMainForwardedToolCalls.add(event.id);
+        }
+        this.broadcastStreamEvent(mainEvent);
+      }
+      if (event.type === AgentEventType.ToolCallFinished) {
+        this.toolCallToSubtask.delete(event.id);
+        this.standaloneMainForwardedToolCalls.delete(event.id);
+        this.chunkDiscoveredToolCalls.delete(event.id);
+        this.finishSubagentLifecycleToolCall(
+          event.id,
+          subtaskId,
+          shouldManageSubagentLifecycle
+        );
+      }
+      return true;
+    }
+
+    const mappedSubtaskId =
+      'id' in event ? this.toolCallToSubtask.get(event.id) : undefined;
+    if (!mappedSubtaskId) return false;
+
+    const mappedEvent =
+      event.type === AgentEventType.ToolCall
+        ? { ...event, sessionId: mappedSubtaskId }
+        : event;
+    this.broadcastMultiSession(mappedSubtaskId, mappedEvent);
+    if (
+      event.type === AgentEventType.ToolCall &&
+      this.chunkDiscoveredToolCalls.get(event.id) === mappedSubtaskId
+    ) {
+      this.standaloneSubtasks.add(mappedSubtaskId);
+    }
+    const promotedMappedStandaloneToolCall =
+      event.type === AgentEventType.ToolCall &&
+      this.promoteMappedStandaloneToolCallToMain(
+        event.id,
+        mappedSubtaskId,
+        event
+      );
+    if (
+      'id' in event &&
+      !promotedMappedStandaloneToolCall &&
+      STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
+    ) {
+      this.promoteMappedStandaloneToolCallToMain(event.id, mappedSubtaskId);
+    }
+    if (
+      'id' in event &&
+      this.standaloneMainForwardedToolCalls.has(event.id) &&
+      !promotedMappedStandaloneToolCall
+    ) {
+      const mainEvent =
+        event.type === AgentEventType.ToolCall
+          ? { ...event, sessionId: undefined }
+          : event;
+      this.broadcastStreamEvent(mainEvent);
+    }
+    if (event.type === AgentEventType.ToolCallFinished) {
+      this.toolCallToSubtask.delete(event.id);
+      this.standaloneMainForwardedToolCalls.delete(event.id);
+      this.chunkDiscoveredToolCalls.delete(event.id);
+      this.standaloneSubtasks.delete(mappedSubtaskId);
+      this.finishSubagentLifecycleToolCall(event.id, mappedSubtaskId);
+    }
+    return true;
+  }
+
+  private handlePipelineStateUpdate(
+    pipeline: {
+      groupId: string;
+      stages: Array<{
+        name: string;
+        role: string;
+        status: string;
+        dependsOn: string[];
+        agentSubtaskId: string | null;
+      }>;
+    },
+    parentToolCallId?: string
+  ): void {
     const statusMap: Record<string, { type: string }> = {
       running: { type: 'working' },
       completed: { type: 'terminated' },
@@ -2949,7 +3228,7 @@ export class KasAcpClient extends BaseAcpClient {
     };
 
     const subagents = pipeline.stages
-      .filter((s) => s.agentSubtaskId != null)
+      .filter((s) => s.agentSubtaskId != null && s.status !== 'pending')
       .map((s) => ({
         sessionId: s.agentSubtaskId!,
         sessionName: s.name,
@@ -2960,32 +3239,30 @@ export class KasAcpClient extends BaseAcpClient {
         dependsOn: s.dependsOn,
       }));
 
-    // Record every stage's subtask as a visible crew stage so its tool
-    // approvals can route to the crew monitor (see handleKasPermissionRequest).
+    // Record every assigned stage subtask as a crew stage so early tool
+    // approvals can route to the crew monitor, even if the stage is still
+    // pending and must not yet appear as an active footer row.
+    //
+    // KAS also emits per-stage wrapper cards with derived ids like
+    // `invoke_subagent_<parentToolCallId>_stage_<stageName>`. Register the
+    // derived ids beside the real stage ids so wrappers stay panel-only even
+    // when their subtask id is not the stage UUID.
     for (const s of pipeline.stages) {
       if (s.agentSubtaskId) this.pipelineStageSubtasks.add(s.agentSubtaskId);
-    }
-
-    // Track pipeline liveness by groupId. While any stage is non-terminal the
-    // crew is active → every agentSubtaskId event is suppressed from main (see
-    // the agentSubtaskId branch). Once every stage is terminal the crew is done
-    // → release the group so a later standalone subagent surfaces in main again.
-    // (Empty stages → no active stages → treated as not active, so the parent
-    // card still surfaces normally.) A failed/cancelled pipeline can leave
-    // unexecuted stages 'pending' here; the ToolCallFinished backstop in the
-    // session handler covers that case.
-    const anyNonTerminal = pipeline.stages.some(
-      (s) => !TERMINAL_STAGE_STATUSES.has(s.status)
-    );
-    if (anyNonTerminal) {
-      this.activeCrewGroups.add(pipeline.groupId);
-    } else {
-      this.activeCrewGroups.delete(pipeline.groupId);
+      if (parentToolCallId && s.name) {
+        this.pipelineStageSubtasks.add(
+          `invoke_subagent_${parentToolCallId}_stage_${s.name}`
+        );
+        this.pipelineStageSubtasks.add(
+          `invoke_sub_agent_${parentToolCallId}_stage_${s.name}`
+        );
+      }
     }
 
     const pendingStages = pipeline.stages
       .filter((s) => s.status === 'pending')
       .map((s) => ({
+        ...(s.agentSubtaskId ? { sessionId: s.agentSubtaskId } : {}),
         name: s.name,
         role: s.role,
         agentName: s.role,
@@ -3002,23 +3279,26 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<acp.RequestPermissionResponse> {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
-    const subtaskId = this.toolCallToSubtask.get(toolCallId);
+    const kiroMeta = kasPermissionMeta(request);
+    const subtaskId =
+      this.toolCallToSubtask.get(toolCallId) ??
+      stringValue(kiroMeta?.agentSubtaskId);
+    const cachedToolCall = this.kasToolCallSnapshots.get(toolCallId);
     // Sub-agent spawn approvals are parent-session decisions — surface them
     // in main view (V1 `use_subagent` UX), not the crew prompt.
-    const isSubagentSpawn =
-      (request as any)?._meta?.kiro?.consent?.capability ===
-      KAS_CAPABILITIES.SUBAGENT;
-    // Only route a child tool approval to the crew monitor when its subtask is
-    // a VISIBLE pipeline stage (a crew panel was registered). Hidden/one-off
-    // spec subagents never register a stage, so attaching their subtaskId as
-    // `sessionId` would route the prompt to a crew panel that doesn't exist —
-    // it would never render, resolve() would never fire, and KAS would deadlock
-    // ("turn may be stuck", isProcessing=true forever). Surfacing in the main
-    // view keeps the prompt resolvable. Ordering caveat: if the pipeline state
-    // update arrives AFTER this request, the approval routes to main rather
-    // than crew — acceptable, since main is always resolvable and never hangs.
-    const isVisibleCrewStage =
-      !!subtaskId && this.pipelineStageSubtasks.has(subtaskId);
+    const consent = (
+      kiroMeta as { consent?: { capability?: string } } | undefined
+    )?.consent;
+    const isSubagentSpawn = consent?.capability === KAS_CAPABILITIES.SUBAGENT;
+    // Route a child tool approval to a subagent context only when the subtask
+    // has a visible UI surface: either a crew pipeline stage or an explicit
+    // independent KAS subagent session. Hidden/one-off spec subagents never
+    // register either surface, so attaching their subtaskId as `sessionId`
+    // would route the prompt to a panel that doesn't exist.
+    const hasRenderableSubagentSession =
+      !!subtaskId &&
+      (this.pipelineStageSubtasks.has(subtaskId) ||
+        this.independentSubagentSubtasks.has(subtaskId));
     const shellPermission = inferKasShellPermissionToolCall(request);
     const existingToolCall = request.toolCall ?? {};
     const enriched = {
@@ -3026,13 +3306,28 @@ export class KasAcpClient extends BaseAcpClient {
       toolCall: {
         ...existingToolCall,
         toolCallId,
-        title: existingToolCall.title ?? shellPermission.title,
-        rawInput: existingToolCall.rawInput ?? shellPermission.rawInput,
+        title:
+          existingToolCall.title ??
+          shellPermission.title ??
+          cachedToolCall?.title,
+        rawInput:
+          existingToolCall.rawInput ??
+          shellPermission.rawInput ??
+          cachedToolCall?.rawInput,
       },
       ...(subtaskId &&
         !isSubagentSpawn &&
-        isVisibleCrewStage && { sessionId: subtaskId }),
+        hasRenderableSubagentSession && { sessionId: subtaskId }),
+      ...(originSessionId ? { originSessionId } : {}),
     };
+    if (
+      subtaskId &&
+      !hasRenderableSubagentSession &&
+      !isSubagentSpawn &&
+      !this.chunkDiscoveredToolCalls.has(toolCallId)
+    ) {
+      this.standaloneSubtasks.add(subtaskId);
+    }
     return this.handlePermissionRequest(enriched);
   }
 
@@ -3184,7 +3479,12 @@ export class KasAcpClient extends BaseAcpClient {
     // Mirror wireSessionListeners: drop subtask correlation state on teardown.
     this.pipelineStageSubtasks.clear();
     this.toolCallToSubtask.clear();
-    this.activeCrewGroups.clear();
+    this.subagentLifecycleToolCallToSubtask.clear();
+    this.independentSubagentSubtasks.clear();
+    this.standaloneMainForwardedToolCalls.clear();
+    this.chunkDiscoveredToolCalls.clear();
+    this.standaloneSubtasks.clear();
+    this.kasToolCallSnapshots.clear();
     super.close();
   }
 

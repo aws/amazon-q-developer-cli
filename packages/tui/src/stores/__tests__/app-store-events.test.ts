@@ -577,6 +577,41 @@ describe('Stream event handler — cancel mid-reasoning', () => {
   });
 });
 
+describe('Stream event handler — SteeringConsumed thinking reset', () => {
+  it('does not re-attach turn-1 thinking to the reply-to-steer Model row', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    // Turn 1: think, then speak — thinking attaches to the first Model row.
+    handler({
+      type: AgentEventType.Thought,
+      id: 't-1',
+      content: { type: ContentType.Text, text: 'Pondering turn one.' },
+    });
+    handler({
+      type: AgentEventType.Content,
+      id: 'c-1',
+      content: { type: ContentType.Text, text: 'Answer one.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    // Mid-turn steer, then the reply to it.
+    handler({ type: AgentEventType.SteeringConsumed, content: 'do X instead' });
+    handler({
+      type: AgentEventType.Content,
+      id: 'c-2',
+      content: { type: ContentType.Text, text: 'Reply to steer.' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    handler.dispose();
+
+    const thinkingRows = store
+      .getState()
+      .messages.filter((m: any) => m.role === MessageRole.Model && m.thinking);
+    // Exactly ONE Model row carries thinking (the pre-steer one), not two.
+    expect(thinkingRows.length).toBe(1);
+    expect((thinkingRows[0] as any).thinking).toBe('Pondering turn one.');
+  });
+});
+
 describe('Stream event handler — McpServerInitFailure', () => {
   it('adds to initErrors and shows alert', () => {
     const store = makeStore();

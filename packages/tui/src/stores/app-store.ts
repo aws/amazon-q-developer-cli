@@ -427,6 +427,8 @@ export type MessageType =
       id: string;
       role: MessageRole.ToolUse;
       name: string;
+      sessionId?: string;
+      pipelineGroupId?: string;
       kind?: ToolKind;
       content: string;
       /**
@@ -457,6 +459,8 @@ export type MessageType =
       role: MessageRole.System;
       content: string;
       success: boolean;
+      /** True for status rows emitted while a user turn is in flight. */
+      turnOwned?: boolean;
     };
 
 /**
@@ -2240,7 +2244,7 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
-    ].filter((cmd) => agentEngine !== 'kas' || cmd.name !== '/tui'), // Backend sends all commands via CommandsUpdate
+    ],
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],
@@ -3073,6 +3077,10 @@ export const createAppStore = (props: AppStoreProps) => {
                     const messages = [...state.messages];
                     messages[existingIndex] = {
                       ...existingMsg,
+                      sessionId: event.sessionId ?? existingMsg.sessionId,
+                      pipelineGroupId:
+                        event.meta?.kiro?.pipeline?.groupId ??
+                        existingMsg.pipelineGroupId,
                       content,
                       purpose: purpose ?? existingMsg.purpose,
                       kind: event.kind || existingMsg.kind,
@@ -3146,6 +3154,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     id: event.id,
                     role: MessageRole.ToolUse,
                     name: event.name,
+                    sessionId: event.sessionId,
+                    pipelineGroupId: event.meta?.kiro?.pipeline?.groupId,
                     kind: event.kind,
                     content,
                     purpose,
@@ -3649,6 +3659,12 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             bufferedContent = '';
             lastContentEventId = null;
+            // Also reset thinking buffers (the sibling boundary handlers do):
+            // else turn 1's thinking re-attaches to turn 2's Model row and the
+            // same thinking block renders twice — once above, once below.
+            bufferedThinking = '';
+            thinkingStart = null;
+            thinkingMs = null;
 
             // Clear the queued message from the activity tray and render a user
             // bubble in the conversation at the injection point. Also drop any
@@ -4004,6 +4020,7 @@ export const createAppStore = (props: AppStoreProps) => {
               role: MessageRole.System,
               content: `⟳ Goal: "${desc}" · ${maxIter} iteration${maxIter === 1 ? '' : 's'} max`,
               success: true,
+              ...(s.isProcessing ? { turnOwned: true } : {}),
             },
           ],
         }));

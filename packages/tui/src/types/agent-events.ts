@@ -93,6 +93,15 @@ export const SHELL_TOOL_NAMES: Set<string> = new Set([
   'Run Command',
   'Control Process',
 ]);
+// KAS process-management tools. Kept separate from SHELL_TOOL_NAMES so they
+// keep their own display labels (resolveToolId only reads SHELL_TOOL_NAMES),
+// but verbose.ts umbrellas them under the 'shell' verbosity category.
+export const SHELL_PROCESS_TOOL_NAMES: Set<string> = new Set([
+  'list_processes',
+  'List Processes',
+  'get_process_output',
+  'Get Process Output',
+]);
 export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set([
   'web_search',
   'Searching the web',
@@ -392,6 +401,10 @@ export interface AgentThoughtEvent {
   type: AgentEventType.Thought;
   id: string;
   content: ContentChunk;
+  /** KAS subagent discriminator. Carried so a pipeline stage's reasoning can be
+   *  routed to its subtask session instead of bleeding into the main agent's
+   *  thinking block. Mirrors AgentContentEvent. */
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface UserMessageEvent {

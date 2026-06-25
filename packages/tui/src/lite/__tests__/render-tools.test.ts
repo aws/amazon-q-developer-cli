@@ -644,7 +644,7 @@ describe('verbose tool output rendering', () => {
     {
       name: 'verbose off: no output bar but tool name still renders',
       filters: [],
-      contains: ['execute_bash'],
+      contains: ['Shell'],
       absent: ['hi from stdout', '│', 'output:'],
     },
     {
@@ -831,7 +831,7 @@ describe('verbose output envelope unwrapping', () => {
       overrides: {
         result: ok({ items: [{ Json: { exit_status: 'exit status: 0' } }] }),
       },
-      contains: ['execute_bash'],
+      contains: ['Shell'],
       absent: ['"items"'],
     },
   ])('$name', ({ overrides, contains, absent, minBars }) => {
@@ -1167,7 +1167,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
         'kiro_default'
       )
     );
-    expect(out).toContain('fs_write');
+    expect(out).toContain('Write');
     // Every line survives — head and tail — and no truncation marker appears.
     expect(out).toMatch(/\+\s+line-0/);
     expect(out).toMatch(new RegExp(`\\+\\s+line-${count - 1}`));
@@ -1377,7 +1377,7 @@ describe('display.toolArgsMode rendering', () => {
       'block renders the full key:value tree (default)',
       { toolArgsMode: 'block' as const },
       [
-        'shell',
+        'Shell',
         'check git state',
         'command: git status',
         'working_dir: /tmp/repo',
@@ -1387,13 +1387,13 @@ describe('display.toolArgsMode rendering', () => {
     [
       'off hides args entirely; reasoning still shows',
       { toolArgsMode: 'off' as const },
-      ['shell', 'check git state'],
+      ['Shell', 'check git state'],
       ['command: git status', 'working_dir'],
     ],
     [
       'inline + reasoning off shows tool [arg] chip',
       { toolArgsMode: 'inline' as const, showToolReasoning: false },
-      ['shell', '[git status]'],
+      ['Shell', '[git status]'],
       ['check git state', 'working_dir: /tmp/repo'],
     ],
   ])('toolArgsMode %s', (_name, overrides, contains, absent) => {
@@ -1412,7 +1412,7 @@ describe('display.toolArgsMode rendering', () => {
       finishTime: 1500,
     };
     const out = stripAnsi(renderMessageToText(msg, 'kiro_default'));
-    expect(out).toContain('shell');
+    expect(out).toContain('Shell');
     expect(out).not.toContain('1.5s');
     expect(out).not.toContain('1500ms');
   });
@@ -1420,7 +1420,7 @@ describe('display.toolArgsMode rendering', () => {
   test('showToolReasoning false drops the purple "why" segment from the header', () => {
     setDisplay({ showToolReasoning: false });
     const out = stripAnsi(renderMessageToText(buildToolMsg(), 'kiro_default'));
-    expect(out).toContain('shell');
+    expect(out).toContain('Shell');
     expect(out).not.toContain('check git state');
   });
 });
@@ -1482,34 +1482,34 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       name: 'grep pattern + relative path → "pattern in path"',
       tool: 'grep',
       args: { pattern: 'wrapAnsiLine', path: 'packages/tui/src' },
-      contains: 'grep [wrapAnsiLine in packages/tui/src]',
+      contains: 'Grep [wrapAnsiLine in packages/tui/src]',
     },
     {
       name: 'grep absolute path inside cwd → cwd-relative',
       tool: 'grep',
       args: { pattern: 'foo', path: 'CWD/src/lite' },
-      contains: 'grep [foo in src/lite]',
+      contains: 'Grep [foo in src/lite]',
       noCwd: 'output',
     },
     {
       name: 'grep pattern only drops the " in path" suffix',
       tool: 'grep',
       args: { pattern: 'wrapAnsiLine' },
-      contains: 'grep [wrapAnsiLine]',
+      contains: 'Grep [wrapAnsiLine]',
       absent: [' in '],
     },
     {
       name: 'grep path "." dropped (adds no info)',
       tool: 'grep',
       args: { pattern: 'foo', path: '.' },
-      contains: 'grep [foo]',
+      contains: 'Grep [foo]',
       absent: [' in ', '[foo in .'],
     },
     {
       name: 'glob pattern + path → " in "',
       tool: 'glob',
       args: { pattern: '**/*.tsx', path: 'src/components' },
-      contains: 'glob [**/*.tsx in src/components]',
+      contains: 'Glob [**/*.tsx in src/components]',
     },
     {
       name: 'fs_write strReplace → "edit <path>" (not the discriminator)',
@@ -1520,14 +1520,14 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
         oldStr: 'foo',
         newStr: 'bar',
       },
-      contains: 'fs_write [edit src/lite/render.ts]',
+      contains: 'Write [edit src/lite/render.ts]',
       absent: ['[strReplace]'],
     },
     {
       name: 'fs_write create → "create <path>"',
       tool: 'fs_write',
       args: { command: 'create', path: 'src/foo.ts', content: 'hello' },
-      contains: 'fs_write [create src/foo.ts]',
+      contains: 'Write [create src/foo.ts]',
     },
     {
       name: 'fs_write insert → "insert <path>"',
@@ -1538,13 +1538,13 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
         insertLine: 5,
         content: 'hello',
       },
-      contains: 'fs_write [insert src/foo.ts]',
+      contains: 'Write [insert src/foo.ts]',
     },
     {
       name: 'fs_write delete → "delete <path>"',
       tool: 'fs_write',
       args: { command: 'delete', path: 'src/foo.ts' },
-      contains: 'fs_write [delete src/foo.ts]',
+      contains: 'Write [delete src/foo.ts]',
     },
     {
       // The diff body below the tool line legitimately shows the full path;
@@ -1557,7 +1557,7 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
         oldStr: 'a',
         newStr: 'b',
       },
-      contains: 'fs_write [edit src/foo.ts]',
+      contains: 'Write [edit src/foo.ts]',
       noCwd: 'chip',
     },
     {
@@ -1566,7 +1566,7 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       name: 'shell shows the command',
       tool: 'shell',
       args: { command: 'git status' },
-      contains: 'shell [git status]',
+      contains: 'Shell [git status]',
     },
     {
       // Regression guard: an agent-advertised title (capital "Shell") isn't in
@@ -1593,7 +1593,7 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
     if (noCwd === 'output') {
       expect(out).not.toContain(cwd);
     } else if (noCwd === 'chip') {
-      const chipMatch = out.match(/fs_write \[([^\]]+)\]/);
+      const chipMatch = out.match(/Write \[([^\]]+)\]/);
       expect(chipMatch).not.toBeNull();
       expect(chipMatch![1]).not.toContain(cwd);
     }

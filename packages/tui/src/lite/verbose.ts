@@ -20,6 +20,7 @@ import { Settings } from '../constants/settings.js';
 import {
   READ_TOOL_NAMES,
   SHELL_TOOL_NAMES,
+  SHELL_PROCESS_TOOL_NAMES,
   WEB_SEARCH_TOOL_NAMES,
   WEB_FETCH_TOOL_NAMES,
   GREP_TOOL_NAMES,
@@ -555,7 +556,10 @@ export function shouldShowToolOutput(
  *  category — see VERBOSE_CATEGORIES. */
 export function categorize(toolName: string): VerboseCategory | null {
   if (toolName.startsWith('mcp__')) return 'mcp';
-  if (SHELL_TOOL_NAMES.has(toolName)) return 'shell';
+  // KAS shell-process tools (titles on the wire) ride the shell category for
+  // verbosity, but stay out of SHELL_TOOL_NAMES so they keep their own labels.
+  if (SHELL_TOOL_NAMES.has(toolName) || SHELL_PROCESS_TOOL_NAMES.has(toolName))
+    return 'shell';
   if (READ_TOOL_NAMES.has(toolName)) return 'read';
   // Intentionally no WRITE_TOOL_NAMES branch — see docstring.
   if (WEB_SEARCH_TOOL_NAMES.has(toolName) || WEB_FETCH_TOOL_NAMES.has(toolName))

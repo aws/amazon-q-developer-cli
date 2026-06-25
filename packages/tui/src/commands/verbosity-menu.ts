@@ -204,7 +204,11 @@ export function handleVerbosity(
         sublist.length > 0 ? `steps + ${sublist.join(' + ')}` : 'steps';
       subSummaryParts.push(stepLabel);
     }
-    if (display.subagent.responses) subSummaryParts.push('summary');
+    if (ctx.agentEngine === 'kas') {
+      subSummaryParts.push('response');
+    } else if (display.subagent.responses) {
+      subSummaryParts.push('summary');
+    }
     const fullOutputOn =
       cur.filters.includes('all') || cur.filters.includes('subagent');
     if (fullOutputOn) subSummaryParts.push('full output');
@@ -417,12 +421,16 @@ export function handleVerbosity(
             row('roles', 'Show step role labels'),
           ]
         : [];
+      const responseRows =
+        ctx.agentEngine === 'kas'
+          ? []
+          : [row('responses', 'Show response summary')];
       const fullOutputOn =
         cur.filters.includes('all') || cur.filters.includes('subagent');
       return [
         row('pipeline', 'Show subagent steps'),
         ...stepRows,
-        row('responses', 'Show response summary'),
+        ...responseRows,
         {
           value: 'set:subagent:fullOutput',
           label: 'Show full output (verbose)',
@@ -768,6 +776,15 @@ export function handleVerbosity(
     );
     if (subMatch) {
       const key = subMatch[1] as keyof typeof display.subagent;
+      if (ctx.agentEngine === 'kas' && key === 'responses') {
+        ctx.showAlert(
+          'KAS subagents provide responses, not response summaries',
+          'warning',
+          3000
+        );
+        openMenu('subagent');
+        return true;
+      }
       const cur = display.subagent[key];
       setVerboseConfig({
         display: {

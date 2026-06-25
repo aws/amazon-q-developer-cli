@@ -7,6 +7,7 @@ import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
 import { visibleWidth } from '../utils/text-width.js';
 import { resolveHighlightLanguage } from '../utils/highlight-languages.js';
+import { getAgentDisplayName } from '../utils/agentColors.js';
 import {
   parseMarkdown,
   parseInlineMarkdown,
@@ -31,7 +32,9 @@ import {
   WRITE_TOOL_NAMES,
   TASK_TOOL_NAMES,
   isParentSubagentTool,
+  resolveToolId,
 } from '../types/agent-events.js';
+import { getToolLabel } from '../types/tool-status.js';
 import {
   getVerboseDisplay,
   shouldShowToolOutput,
@@ -608,9 +611,10 @@ export function renderAgentMessage(
   glyphs?: Glyphs
 ): string {
   if (!content.trim()) return '';
-  // Use the active agent's name verbatim (custom agents / swapped via /agent)
-  // so the user can tell which persona answered; default "Kiro".
-  const tag = agentName && agentName.trim() ? agentName : 'Kiro';
+  // Default to "Kiro" when no active agent is known. Built-in mode ids use
+  // canonical product labels; custom agent names pass through.
+  const rawAgentName = agentName?.trim();
+  const tag = rawAgentName ? getAgentDisplayName(rawAgentName) : 'Kiro';
   // Per-agent role-tag color so scrollback matches the footer (getAgentColor);
   // falls back to theme.brand for the default agent and pure contexts.
   const tagColorFn =
@@ -1035,6 +1039,13 @@ export interface ToolCallRenderInfo {
   runningSpinner?: string;
   /** See STATUS-SLOT CONTRACT — takes precedence over runningSpinner. */
   awaitingApproval?: boolean;
+}
+
+/** Canonical built-in label (Shell/Read/…) so KAS titles ("Run Command",
+ *  "List Directory") read like v2; raw name for MCP/unknown tools. */
+export function toolDisplayName(name: string): string {
+  const id = resolveToolId(name);
+  return id ? getToolLabel(id) : name;
 }
 
 export function renderToolCall(
@@ -1782,6 +1793,23 @@ function shortenPathForChip(path: string): string {
 }
 
 /**
+ * Drop a leading `cd <path> &&` / `pushd <path> &&` segment and any leading
+ * `VAR=value` env prefixes so the chip shows the command's actual work, not the
+ * navigation boilerplate that otherwise wins the head-only clip. Falls back to
+ * the original when nothing significant remains (e.g. a bare `cd /x`).
+ */
+export function stripShellPreamble(command: string): string {
+  let rest = command.trim();
+  // Leading env-var assignments: FOO=bar BAZ=qux <cmd>
+  const envRe = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+/;
+  while (envRe.test(rest)) rest = rest.replace(envRe, '');
+  // A single leading `cd`/`pushd <path> &&` segment.
+  const cdMatch = /^(?:cd|pushd)\s+\S[^&]*?&&\s*(\S.*)$/.exec(rest);
+  if (cdMatch?.[1]) rest = cdMatch[1].trim();
+  return rest.length > 0 ? rest : command;
+}
+
+/**
  * Build the inline arg chip: the most informative single-line summary of the
  * tool's args. Search tools combine "what" + " in " + "where"; write tools
  * surface a verb + path (so create/edit/insert/delete differ at a glance).
@@ -1810,7 +1838,8 @@ export function extractInlineArg(
     typeof args.command === 'string' &&
     args.command.length > 0
   ) {
-    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
+    const firstLine = args.command.split('\n')[0] ?? '';
+    return `[${clipChars(stripShellPreamble(firstLine), maxChars)}]`;
   }
 
   // Write tools: verb + relative path (path alone hides the operation).
@@ -1889,7 +1918,7 @@ export function extractInlineArg(
   if (typeof purpose === 'string' && purpose.length > 0)
     return `[${clipChars(purpose, maxChars)}]`;
   if (typeof args.command === 'string' && args.command.length > 0)
-    return `[${clipChars(args.command.split('\n')[0] ?? '', maxChars)}]`;
+    return `[${clipChars(stripShellPreamble(args.command.split('\n')[0] ?? ''), maxChars)}]`;
   return undefined;
 }
 
@@ -2406,6 +2435,8 @@ function renderPipelineStages(
   return out;
 }
 
+const TASK_RESULT_MAX_LINES = 30;
+
 /**
  * "Chip at col 7 + markdown body at col 9" digest section (shared by `full
  * output:` and `response summary:`), pre-wrapped via wrapAnsiLine (SGR carryover)
@@ -2442,6 +2473,79 @@ function renderDigestSection(
     if (i < entries.length - 1) out.push('');
   }
   return out;
+}
+
+export function renderSubagentResponseSummaryLines(
+  stageSummaries: readonly SubagentStageSummary[],
+  cols: number,
+  colors?: {
+    getStageInputColor?: (stageName: string) => (text: string) => string;
+    getStageOutputColor?: (stageName: string) => (text: string) => string;
+    glyphs?: Glyphs;
+  }
+): string[] {
+  type RenderableStage = {
+    stageName: string;
+    body: string;
+    truncatedBy: number;
+  };
+  const outputColor = (name: string): ((text: string) => string) =>
+    colors?.getStageOutputColor?.(name) ?? responseChip;
+  // Plain responses chip in the input color so they match the prompt's stage
+  // name; summaries fall back to the response chip.
+  const inputColor = (name: string): ((text: string) => string) =>
+    colors?.getStageInputColor?.(name) ?? outputColor(name);
+  const renderable: RenderableStage[] = [];
+  for (const s of stageSummaries) {
+    const ctx = (s.contextSummary ?? '').trim();
+    if (ctx.length > 0) {
+      renderable.push({
+        stageName: s.stageName,
+        body: s.contextSummary,
+        truncatedBy: 0,
+      });
+      continue;
+    }
+    const tr = (s.taskResult ?? '').trim();
+    if (tr.length === 0) continue;
+    // Plain responses (the subagent's actual answer) render in full, matching
+    // the inline block; only v2 summaries truncate to TASK_RESULT_MAX_LINES.
+    const trLines = s.taskResult.split('\n');
+    if (s.kind === 'response' || trLines.length <= TASK_RESULT_MAX_LINES) {
+      renderable.push({
+        stageName: s.stageName,
+        body: s.taskResult,
+        truncatedBy: 0,
+      });
+    } else {
+      const truncated = trLines.slice(0, TASK_RESULT_MAX_LINES).join('\n');
+      renderable.push({
+        stageName: s.stageName,
+        body: truncated,
+        truncatedBy: trLines.length - TASK_RESULT_MAX_LINES,
+      });
+    }
+  }
+  if (renderable.length === 0) return [];
+  const allResponses = renderable.every((entry) => {
+    const summary = stageSummaries.find((s) => s.stageName === entry.stageName);
+    return summary?.kind === 'response';
+  });
+  const header = allResponses ? '  response:' : '  response summary:';
+  // Plain-response stages chip in the input color (match the prompt); summary
+  // stages keep the response/output color.
+  const isResponseStage = (name: string): boolean =>
+    stageSummaries.find((s) => s.stageName === name)?.kind === 'response';
+  return renderDigestSection(chalk.dim(header), renderable, {
+    chipFn: (name) =>
+      chalk.bold(
+        (isResponseStage(name) ? inputColor(name) : outputColor(name))(
+          `▸ ${name}`
+        )
+      ),
+    cols,
+    glyphs: colors?.glyphs,
+  });
 }
 
 /**
@@ -2597,19 +2701,47 @@ export function renderSubagentFinalBlock(
     );
   }
 
+  const finished = status === 'done' && result?.status !== 'error';
+  const hasPlainResponses =
+    Array.isArray(stageSummaries) &&
+    stageSummaries.some((s) => s.kind === 'response');
+
+  // KAS plain responses (the subagent's actual final output): render them with
+  // the `full output:` digest style — full text, ▸ chips colored to MATCH the
+  // pipeline prompt's stage name (input color). Always shown (not gated on the
+  // verbose `subagent` filter) since this IS the subagent's answer. They are
+  // excluded from the summary/raw sections below so the output isn't doubled.
+  if (hasPlainResponses && finished) {
+    const responseStages = stageSummaries!
+      .filter(
+        (s) => s.kind === 'response' && (s.taskResult ?? '').trim().length > 0
+      )
+      .map((s) => ({ stageName: s.stageName, body: s.taskResult }));
+    if (responseStages.length > 0) {
+      lines.push(
+        ...renderDigestSection(chalk.bold('  response:'), responseStages, {
+          chipFn: (n) => chalk.bold(inputColor(n)(`▸ ${n}`)),
+          cols,
+          glyphs: colors?.glyphs,
+        })
+      );
+    }
+  }
+
   // Verbose mode (subagent passes the filter): surface the FULL per-stage
   // taskResult with red ▸ chips — what the parent literally received before
   // the joiner discarded it. Order is pipeline → raw → summary so the eye
-  // lands on the digest last.
+  // lands on the digest last. Plain responses already rendered above.
   const showRawSection =
-    status === 'done' &&
-    result?.status !== 'error' &&
+    finished &&
     Array.isArray(stageSummaries) &&
     stageSummaries.length > 0 &&
     shouldShowToolOutput('subagent', colors?.filtersOverride);
   if (showRawSection) {
     const rawStages = stageSummaries!
-      .filter((s) => (s.taskResult ?? '').trim().length > 0)
+      .filter(
+        (s) => s.kind !== 'response' && (s.taskResult ?? '').trim().length > 0
+      )
       .map((s) => ({ stageName: s.stageName, body: s.taskResult }));
     if (rawStages.length > 0) {
       lines.push(
@@ -2622,59 +2754,18 @@ export function renderSubagentFinalBlock(
     }
   }
 
-  if (
-    sub.responses &&
-    status === 'done' &&
-    result?.status !== 'error' &&
-    Array.isArray(stageSummaries) &&
-    stageSummaries.length > 0
-  ) {
-    type RenderableStage = {
-      stageName: string;
-      body: string;
-      truncatedBy: number;
-    };
-    // Cap fallback taskResult bodies (contextSummary is already a digest).
-    const TASK_RESULT_MAX_LINES = 30;
-    const renderable: RenderableStage[] = [];
-    for (const s of stageSummaries) {
-      const ctx = (s.contextSummary ?? '').trim();
-      if (ctx.length > 0) {
-        renderable.push({
-          stageName: s.stageName,
-          body: s.contextSummary,
-          truncatedBy: 0,
-        });
-        continue;
-      }
-      const tr = (s.taskResult ?? '').trim();
-      if (tr.length === 0) continue;
-      const trLines = s.taskResult.split('\n');
-      if (trLines.length <= TASK_RESULT_MAX_LINES) {
-        renderable.push({
-          stageName: s.stageName,
-          body: s.taskResult,
-          truncatedBy: 0,
-        });
-      } else {
-        const truncated = trLines.slice(0, TASK_RESULT_MAX_LINES).join('\n');
-        renderable.push({
-          stageName: s.stageName,
-          body: truncated,
-          truncatedBy: trLines.length - TASK_RESULT_MAX_LINES,
-        });
-      }
-    }
-    if (renderable.length > 0) {
-      // Always emit the chip (even single-stage) as the "returned" signal.
-      lines.push(
-        ...renderDigestSection(chalk.dim('  response summary:'), renderable, {
-          chipFn: (n) => chalk.bold(outputColor(n)(`▸ ${n}`)),
-          cols,
-          glyphs: colors?.glyphs,
-        })
-      );
-    }
+  // v2 summary digests (kind undefined: contextSummary/taskResult). Plain
+  // responses are handled above, so this path is summaries-only now.
+  const summaryStages = Array.isArray(stageSummaries)
+    ? stageSummaries.filter((s) => s.kind !== 'response')
+    : [];
+  if (sub.responses && finished && summaryStages.length > 0) {
+    lines.push(
+      ...renderSubagentResponseSummaryLines(summaryStages, cols, {
+        getStageOutputColor: outputColor,
+        glyphs: colors?.glyphs,
+      })
+    );
   }
 
   // Errors still surface.
@@ -2771,6 +2862,8 @@ export interface MessageLike {
 
 export interface SubagentStageSummary {
   stageName: string;
+  /** KAS emits plain subagent responses; V2 emits synthesized summaries. */
+  kind?: 'summary' | 'response';
   /** Compressed digest from the stage's `summary` tool call, harvested off
    *  the inner message (the agent_crew joiner discards it before the parent's
    *  combined output). May be empty — render falls back to taskResult. */
@@ -2992,7 +3085,7 @@ export function renderMessageToText(
         : undefined;
 
       const info: ToolCallRenderInfo = {
-        name: msg.name || 'unknown',
+        name: toolDisplayName(msg.name || 'unknown'),
         status,
         description: reasoning,
         inlineArg,

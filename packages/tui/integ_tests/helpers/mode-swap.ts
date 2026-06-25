@@ -14,3 +14,11 @@ export async function switchToTui(tc: TestCase): Promise<void> {
     postEnterMs: 800,
   });
 }
+
+export function visibleIndex(snapshot: string[], marker: string): number {
+  return snapshot.findIndex((line) => line.includes(marker));
+}
+
+export function visibleCount(snapshot: string[], marker: string): number {
+  return snapshot.filter((line) => line.includes(marker)).length;
+}

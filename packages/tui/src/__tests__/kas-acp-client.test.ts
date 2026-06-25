@@ -3641,6 +3641,605 @@ describe('KasAcpClient', () => {
     expect(event.message).toBe('rust queued steer');
   });
 
+  it('routes KAS pipeline tool_call_chunk child events to the child session only', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-chunk-route',
+              stages: [
+                {
+                  name: 'explore-components',
+                  role: 'explorer',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'sub-components',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'read-components',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'sub-components' } },
+      },
+    });
+
+    expect(multiEvents).toEqual([
+      expect.objectContaining({
+        sessionId: 'sub-components',
+        event: expect.objectContaining({
+          id: 'read-components',
+          type: AgentEventType.ToolCall,
+          sessionId: 'sub-components',
+        }),
+      }),
+    ]);
+    expect(mainEvents.map((event) => event.id)).toEqual(['crew-op']);
+  });
+
+  it('synthesizes a ToolCall from rawInput for an update-only Subagent Response so its text renders', async () => {
+    // KAS sends the subagent's final output as a Completed-only
+    // tool_call_update (NO preceding tool_call) with the text in
+    // rawInput.response and rawOutput=null. Without synthesizing the missing
+    // ToolCall, the store never gets a message carrying that response, so it
+    // renders nowhere (the live bug). Assert the synthesized ToolCall reaches
+    // the subagent session with the response in args.
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    // Register the stage so the subtask routes panel-only (matches a live crew).
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-resp',
+              stages: [
+                {
+                  name: 'inspect',
+                  role: 'general',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'sub-inspect',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    multiEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tooluse_resp',
+        title: 'Subagent Response',
+        status: 'completed',
+        rawInput: { response: 'THE FINAL ANSWER', files: [] },
+        rawOutput: null,
+        _meta: { kiro: { agentSubtaskId: 'sub-inspect' } },
+      },
+    });
+
+    // A ToolCall carrying the response in args must reach the subagent session.
+    const synth = multiEvents.find(
+      (e) =>
+        e.event.id === 'tooluse_resp' &&
+        e.event.type === AgentEventType.ToolCall
+    );
+    expect(synth).toBeDefined();
+    expect(synth!.sessionId).toBe('sub-inspect');
+    expect(synth!.event.name).toBe('Subagent Response');
+    expect((synth!.event.args as any).response).toBe('THE FINAL ANSWER');
+    // It stays panel-only (crew activity), not leaked to main.
+    expect(mainEvents.some((e) => e.id === 'tooluse_resp')).toBe(false);
+  });
+
+  it('keeps early KAS child tool_call_chunk placeholders out of main once the pipeline snapshot registers the stage', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'early-read',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'sub-before-pipeline' } },
+      },
+    });
+
+    expect(multiEvents).toEqual([
+      expect.objectContaining({
+        sessionId: 'sub-before-pipeline',
+        event: expect.objectContaining({
+          id: 'early-read',
+          type: AgentEventType.ToolCall,
+          sessionId: 'sub-before-pipeline',
+        }),
+      }),
+    ]);
+    expect(mainEvents).toEqual([]);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-early-route',
+              stages: [
+                {
+                  name: 'explore-components',
+                  role: 'explorer',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'sub-before-pipeline',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'early-read',
+        title: 'read_file',
+        kind: 'read',
+        rawInput: { path: 'src/components/chat' },
+        content: [],
+        locations: [],
+        _meta: { kiro: { agentSubtaskId: 'sub-before-pipeline' } },
+      },
+    });
+
+    expect(
+      multiEvents.filter((entry) => entry.event.id === 'early-read')
+    ).toHaveLength(2);
+    expect(mainEvents).toEqual([]);
+  });
+
+  it('does not treat a main-routed permission as standalone proof for a chunk-first subtask', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'standalone-read',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'hidden-standalone' } },
+      },
+    });
+
+    expect(mainEvents).toEqual([]);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'standalone-read',
+        title: 'read_file',
+        kind: 'read',
+        rawInput: { path: 'src/components/chat' },
+        content: [],
+        locations: [],
+        _meta: { kiro: { agentSubtaskId: 'hidden-standalone' } },
+      },
+    });
+    expect(mainEvents).toEqual([]);
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'standalone-read',
+      permissions: [
+        { id: 'allow_once', name: 'Allow once' },
+        { id: 'reject_once', name: 'Reject once' },
+      ],
+      _meta: { kiro: { consent: { capability: 'fs_read' } } },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const approval = mainEvents.find(
+      (event) => event.type === AgentEventType.ApprovalRequest
+    );
+    expect(approval?.value.sessionId).toBeUndefined();
+    approval.value.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'standalone-read',
+        status: 'completed',
+        rawOutput: { content: [{ type: 'text', text: 'done' }] },
+        content: [],
+      },
+    });
+
+    expect(
+      multiEvents.filter((entry) => entry.event.id === 'standalone-read')
+    ).toHaveLength(3);
+    expect(mainEvents).toEqual([]);
+  });
+
+  it('lets chunk-first hidden standalone subagent tool calls surface when the full tool_call omits KAS metadata', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'standalone-read-no-meta',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'hidden-standalone-no-meta' } },
+      },
+    });
+
+    expect(mainEvents).toEqual([]);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'standalone-read-no-meta',
+        title: 'read_file',
+        kind: 'read',
+        rawInput: { path: 'src/components/layout' },
+        content: [],
+        locations: [],
+      },
+    });
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'standalone-read-no-meta',
+        status: 'completed',
+        rawOutput: { content: [{ type: 'text', text: 'done' }] },
+        content: [],
+      },
+    });
+
+    expect(
+      multiEvents.filter(
+        (entry) => entry.event.id === 'standalone-read-no-meta'
+      )
+    ).toHaveLength(3);
+    expect(mainEvents.map((event) => event.id)).toEqual([
+      'standalone-read-no-meta',
+      'standalone-read-no-meta',
+    ]);
+  });
+
+  it('keeps a permission-routed chunk-only subtask panel-only until another signal classifies it', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'standalone-chunk-only',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'hidden-chunk-only' } },
+      },
+    });
+
+    expect(mainEvents).toEqual([]);
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'standalone-chunk-only',
+      permissions: [
+        { id: 'allow_once', name: 'Allow once' },
+        { id: 'reject_once', name: 'Reject once' },
+      ],
+      _meta: { kiro: { consent: { capability: 'fs_read' } } },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const approval = mainEvents.find(
+      (event) => event.type === AgentEventType.ApprovalRequest
+    );
+    expect(approval?.value.sessionId).toBeUndefined();
+    approval.value.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'standalone-chunk-only',
+        status: 'completed',
+        rawOutput: { content: [{ type: 'text', text: 'done' }] },
+        content: [],
+      },
+    });
+
+    expect(
+      multiEvents.filter((entry) => entry.event.id === 'standalone-chunk-only')
+    ).toHaveLength(2);
+    expect(mainEvents).toEqual([]);
+  });
+
+  it('keeps chunk-first pipeline children panel-only when permission, full, and finish beat the pipeline snapshot', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'early-pipeline-read',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'sub-late-pipeline' } },
+      },
+    });
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'early-pipeline-read',
+      permissions: [
+        { id: 'allow_once', name: 'Allow once' },
+        { id: 'reject_once', name: 'Reject once' },
+      ],
+      _meta: { kiro: { consent: { capability: 'fs_read' } } },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const approval = mainEvents.find(
+      (event) => event.type === AgentEventType.ApprovalRequest
+    );
+    expect(approval?.value.sessionId).toBeUndefined();
+    approval.value.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'early-pipeline-read',
+        title: 'read_file',
+        kind: 'read',
+        rawInput: { path: 'src/components/chat' },
+        content: [],
+        locations: [],
+        _meta: { kiro: { agentSubtaskId: 'sub-late-pipeline' } },
+      },
+    });
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'early-pipeline-read',
+        status: 'completed',
+        rawOutput: { content: [{ type: 'text', text: 'done' }] },
+        content: [],
+      },
+    });
+
+    expect(
+      multiEvents.filter((entry) => entry.event.id === 'early-pipeline-read')
+    ).toHaveLength(3);
+    expect(mainEvents).toEqual([]);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-late-route',
+              stages: [
+                {
+                  name: 'explore-components',
+                  role: 'explorer',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'sub-late-pipeline',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(mainEvents.map((event) => event.id)).toEqual(['crew-op']);
+  });
+
+  it('does not let an unrelated active pipeline hide chunk-first standalone subagent tool calls', async () => {
+    const client = new KasAcpClient();
+    const mainEvents: any[] = [];
+    const multiEvents: Array<{ sessionId: string; event: any }> = [];
+    client.onUpdate((event: any) => mainEvents.push(event));
+    client.onMultiSessionUpdate((sessionId: string, event: any) => {
+      multiEvents.push({ sessionId, event });
+    });
+    await client.newSession();
+    mainEvents.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'crew-op',
+        title: 'Orchestrate Sub-agent',
+        kind: 'other',
+        rawInput: { task: 'test' },
+        content: [],
+        locations: [],
+        _meta: {
+          kiro: {
+            pipeline: {
+              groupId: 'pipeline-active-with-hidden',
+              stages: [
+                {
+                  name: 'explore-components',
+                  role: 'explorer',
+                  status: 'running',
+                  dependsOn: [],
+                  agentSubtaskId: 'pipeline-subtask',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'standalone-while-pipeline',
+        title: 'read_file',
+        kind: 'read',
+        _meta: { kiro: { agentSubtaskId: 'hidden-while-pipeline' } },
+      },
+    });
+    expect(mainEvents.map((event) => event.id)).toEqual(['crew-op']);
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'standalone-while-pipeline',
+        title: 'read_file',
+        kind: 'read',
+        rawInput: { path: 'src/components/layout' },
+        content: [],
+        locations: [],
+      },
+    });
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'standalone-while-pipeline',
+        status: 'completed',
+        rawOutput: { content: [{ type: 'text', text: 'done' }] },
+        content: [],
+      },
+    });
+
+    expect(
+      multiEvents.filter(
+        (entry) => entry.event.id === 'standalone-while-pipeline'
+      )
+    ).toHaveLength(3);
+    expect(mainEvents.map((event) => event.id)).toEqual([
+      'crew-op',
+      'standalone-while-pipeline',
+      'standalone-while-pipeline',
+    ]);
+  });
+
   // ── effortLevel config option → EffortUpdate ──
 
   it('newSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {
@@ -4822,6 +5421,29 @@ describe('MCP OAuth flow', () => {
       expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
     });
 
+    it('agent_thought_chunk with _meta.kiro.agentSubtaskId produces Thought event with meta', async () => {
+      // Bug A: a subagent's reasoning carries agentSubtaskId on the MAIN session;
+      // the converter must keep that meta (like agent_message_chunk) so the thought
+      // is routed to its subtask instead of bleeding into the main thinking block.
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'Looking for the file now.' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const [, event] = multiHandler.mock.calls[0]!;
+      expect((event as any).type).toBe(AgentEventType.Thought);
+      expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
+    });
+
     it('tool_call without _meta works (no regression)', async () => {
       const client = new KasAcpClient();
       const handler = mock((_event: any) => {});
@@ -5039,6 +5661,67 @@ describe('MCP OAuth flow', () => {
       const [sessionId, event] = multiHandler.mock.calls[0]!;
       expect(sessionId).toBe('sub-1');
       expect(event.type).toBe(AgentEventType.Content);
+    });
+
+    it('crew-stage agent_thought_chunk goes to the subtask ONLY, not main (Bug A: thinking bleed)', async () => {
+      // A registered pipeline stage's reasoning must not reach the main stream —
+      // else the subagent's thinking renders inside the main agent's "Thought for
+      // Ns" block in lite scrollback.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      // Register 'sub-1' as a visible crew stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'Looking for the file now.' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(multiHandler.mock.calls[0]![0]).toBe('sub-1');
+      expect(
+        mainHandler.mock.calls.filter(
+          (call) => call[0]?.type === AgentEventType.Thought
+        )
+      ).toEqual([]);
     });
 
     it('pipeline parent event still broadcasts to main stream', async () => {
@@ -5418,9 +6101,9 @@ describe('MCP OAuth flow', () => {
     });
   });
 
-  // ── Crew per-stage WRAPPER card duplicate suppression (active-pipeline gate) ──
+  // ── Crew per-stage WRAPPER card duplicate suppression (per-subtask ownership) ──
 
-  describe('crew wrapper cards do not duplicate into main (active-pipeline gate)', () => {
+  describe('crew wrapper cards do not duplicate into main (per-subtask ownership)', () => {
     // Helper: deliver the crew pipeline state update that KAS emits FIRST on the
     // orchestrate_subagent card. Registers stage UUIDs and marks the group
     // active. Mirrors the live ACP recording (groupId + stage agentSubtaskIds
@@ -5468,8 +6151,8 @@ describe('MCP OAuth flow', () => {
       // agentSubtaskId is a DERIVED id ("invoke_subagent_tooluse_<parent>_stage_
       // <name>"), NOT the stage UUID registered via the pipeline meta. Pre-fix
       // the pipelineStageSubtasks check missed it and it leaked into main as a
-      // duplicate (it also correctly renders in the SUBAGENT OUTPUT panel). With
-      // the active-pipeline gate it must reach multi-session ONLY.
+      // duplicate (it also correctly renders in the SUBAGENT OUTPUT panel). Once
+      // registered as a pipeline stage it must reach multi-session ONLY.
       const client = new KasAcpClient();
       const mainHandler = mock((_event: any) => {});
       const multiHandler = mock((_sessionId: string, _event: any) => {});
@@ -5650,13 +6333,10 @@ describe('MCP OAuth flow', () => {
       expect(mainHandler).toHaveBeenCalledTimes(1);
     });
 
-    it('CAVEAT: a standalone subagent running concurrently with an active crew is suppressed from main', async () => {
-      // Documented tradeoff: the active-pipeline gate keys on "any crew active",
-      // not on which group a subtask belongs to. So a hidden/standalone spec
-      // subagent that happens to run WHILE a crew pipeline is active is also
-      // kept out of main (it still renders via multi-session). This is rare and
-      // preferred over the duplicate-card regression. Pinned here so a future
-      // change to this behavior is a conscious decision, not an accident.
+    it('lets an unrelated standalone subagent surface in main while a crew is active', async () => {
+      // Ownership is per subtask, not global crew liveness. A registered
+      // pipeline-stage subtask stays panel-only, but an unrelated hidden
+      // standalone subagent still surfaces in main once KAS sends its full card.
       const client = new KasAcpClient();
       const mainHandler = mock((_event: any) => {});
       const multiHandler = mock((_sessionId: string, _event: any) => {});
@@ -5684,7 +6364,12 @@ describe('MCP OAuth flow', () => {
       });
 
       expect(multiHandler).toHaveBeenCalledTimes(1);
-      expect(mainHandler).not.toHaveBeenCalled();
+      expect(mainHandler).toHaveBeenCalledTimes(1);
+      expect(mainHandler.mock.calls[0]![0]).toMatchObject({
+        type: AgentEventType.ToolCall,
+        id: 'read-concurrent',
+        sessionId: undefined,
+      });
     });
   });
 

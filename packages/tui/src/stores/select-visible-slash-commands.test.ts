@@ -188,34 +188,20 @@ describe('selectVisibleSlashCommands', () => {
   });
 });
 
-describe('/tui filter — KAS vs V2', () => {
-  it("when agentEngine is 'kas', /tui is NOT in slashCommands", () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
-    const visible = selectVisibleSlashCommands(store.getState());
-    const tui = visible.find((c) => c.name === '/tui');
-    expect(tui).toBeUndefined();
-  });
+describe('UI mode commands — KAS vs V2', () => {
+  for (const agentEngine of ['kas', 'v2'] as const) {
+    it(`keeps /lite and /tui visible for ${agentEngine} mode switching`, () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine });
+      const visible = selectVisibleSlashCommands(store.getState());
 
-  it("when agentEngine is 'v2', /tui IS in slashCommands", () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
-    const visible = selectVisibleSlashCommands(store.getState());
-    const tui = visible.find((c) => c.name === '/tui');
-    expect(tui).toBeDefined();
-    // Lite repurposes /tui as the mode-switch command (it switches the user
-    // out of lite into the full TUI), so its description differs from the
-    // legacy "What's new in the TUI experience" info-command wording.
-    expect(tui!.description).toContain('Switch to TUI mode');
-  });
-
-  it("when agentEngine is 'kas', /tui is not in the raw slashCommands slice", () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
-    const raw = store.getState().slashCommands;
-    expect(raw.find((c) => c.name === '/tui')).toBeUndefined();
-  });
-
-  it("when agentEngine is 'v2', /tui is in the raw slashCommands slice", () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
-    const raw = store.getState().slashCommands;
-    expect(raw.find((c) => c.name === '/tui')).toBeDefined();
-  });
+      for (const [name, description] of [
+        ['/lite', 'Switch to lite mode'],
+        ['/tui', 'Switch to TUI mode'],
+      ] as const) {
+        const cmd = visible.find((c) => c.name === name);
+        expect(cmd).toBeDefined();
+        expect(cmd!.description).toContain(description);
+      }
+    });
+  }
 });

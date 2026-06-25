@@ -17,6 +17,32 @@ export type SubagentRow = {
   activeToolFinished: boolean;
 };
 
+type SubagentSummaryToolKind = 'summary' | 'subagent_response';
+
+function normalizeSummaryToolName(
+  name: string
+): SubagentSummaryToolKind | null {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return normalized === 'summary' || normalized === 'subagent_response'
+    ? normalized
+    : null;
+}
+
+export function subagentSummaryToolKind(
+  name: string | undefined | null
+): SubagentSummaryToolKind | null {
+  return name ? normalizeSummaryToolName(name) : null;
+}
+
+export function isSubagentSummaryToolName(
+  name: string | undefined | null
+): boolean {
+  return subagentSummaryToolKind(name) !== null;
+}
+
 /**
  * Format one row of the subagent activity strip:
  *   "[stage-name] tool-name detail..."         (running)

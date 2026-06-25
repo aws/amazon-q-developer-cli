@@ -76,8 +76,9 @@ const verbosityCmd: SlashCommand = {
   meta: { local: true, liteOnly: true },
 };
 
-function liteCtx() {
+function liteCtx(agentEngine: 'v2' | 'kas' = 'v2') {
   const ctx = createMockCommandContext({ slashCommands: [verbosityCmd] });
+  (ctx as any).agentEngine = agentEngine;
   // Override the default 'tui' to 'lite' so the verbosity handler's lite-only
   // gate accepts the call.
   (ctx as any).getUiMode = () => 'lite';
@@ -631,6 +632,25 @@ describe('/verbosity drilldown menus', () => {
     expect(values).not.toContain('set:subagent:roles');
   });
 
+  it('menu:subagent omits response-summary toggle in KAS mode', () => {
+    const ctx = liteCtx('kas');
+    runEffect(verbosityCmd, null, ctx, 'menu:subagent');
+    const values = menuValues(ctx);
+    expect(values).toContain('set:subagent:pipeline');
+    expect(values).toContain('set:subagent:fullOutput');
+    expect(values).not.toContain('set:subagent:responses');
+  });
+
+  it('KAS mode ignores typed response-summary toggle', () => {
+    setVerboseConfig({ display: display({ subagent: { responses: false } }) });
+    const ctx = liteCtx('kas');
+    runEffect(verbosityCmd, null, ctx, 'set:subagent:responses');
+    expect(getVerboseConfig().display!.subagent.responses).toBe(false);
+    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
+    expect(calls.at(-1)![0]).toContain('KAS subagents provide responses');
+    expect(calls.at(-1)![1]).toBe('warning');
+  });
+
   it('set:subagent:fullOutput from "all" baseline drops just subagent', () => {
     // fullOutput piggybacks on the `subagent` filter token via the same
     // toggleFilterToken path as category:<name> rows. The distinct regression
@@ -766,6 +786,7 @@ describe('/verbosity config-menu row summaries', () => {
     subagent?: Record<string, unknown>;
     rowLabel: string;
     expected: string;
+    agentEngine?: 'v2' | 'kas';
   }>([
     {
       name: 'output none',
@@ -812,9 +833,23 @@ describe('/verbosity config-menu row summaries', () => {
       rowLabel: 'Subagent',
       expected: '(all hidden)',
     },
+    {
+      name: 'kas subagent labels plain responses',
+      filters: [],
+      subagent: {
+        pipeline: false,
+        prompts: false,
+        roles: false,
+        deps: false,
+        responses: false,
+      },
+      rowLabel: 'Subagent',
+      expected: 'response',
+      agentEngine: 'kas' as const,
+    },
   ])(
     '$name → $rowLabel summarizes as "$expected"',
-    ({ filters, subagent, rowLabel, expected }) => {
+    ({ filters, subagent, rowLabel, expected, agentEngine = 'v2' }) => {
       setVerboseConfig({
         filters,
         ...(subagent
@@ -827,7 +862,7 @@ describe('/verbosity config-menu row summaries', () => {
             }
           : {}),
       });
-      const ctx = liteCtx();
+      const ctx = liteCtx(agentEngine);
       runEffect(verbosityCmd, null, ctx, 'config');
       expect(rowDesc(ctx, rowLabel)).toBe(expected);
     }

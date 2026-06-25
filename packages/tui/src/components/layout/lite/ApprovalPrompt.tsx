@@ -24,6 +24,7 @@ import {
   formatToolArgLines,
   formatSubagentApprovalLines,
   renderUnifiedDiff,
+  toolDisplayName,
 } from '../../../lite/render.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import chalk from 'chalk';
@@ -97,6 +98,9 @@ export function ApprovalPrompt({
   const rawToolName =
     toolMsg && toolMsg.role === MessageRole.ToolUse ? toolMsg.name : null;
   const toolName = rawToolName || approval.toolCall.title || 'tool';
+  // Display label (KAS "Run Command"→"Shell") to match scrollback; keep raw
+  // toolName for extractApprovalDetail, which keys on lowercase wire aliases.
+  const displayToolName = toolDisplayName(toolName);
 
   // Subagent attribution: only mark the prompt as a subagent request when
   // the requesting tool's agentName actually differs from the main agent's
@@ -501,13 +505,13 @@ export function ApprovalPrompt({
   if (page === 'trust') {
     const rows = [
       ...trustOptions.map((t) => ({ label: t.label, display: t.display })),
-      { label: 'Trust entire tool', display: toolName },
+      { label: 'Trust entire tool', display: displayToolName },
     ];
     return (
       <Box flexDirection="column">
         {stageHeader}
         <Text>
-          {chalk.yellow.bold(toolName)} {chalk.dim('· trust scope')}
+          {chalk.yellow.bold(displayToolName)} {chalk.dim('· trust scope')}
         </Text>
         {rows.map((row, i) => {
           const focused = i === trustIdx;
@@ -539,7 +543,7 @@ export function ApprovalPrompt({
       <Box flexDirection="column">
         {stageHeader}
         <Text>
-          {chalk.yellow.bold(toolName)}{' '}
+          {chalk.yellow.bold(displayToolName)}{' '}
           {chalk.dim(`· trust scope [${scopeLabel}]`)}
         </Text>
         {kasScopeRows.map((row, i) => {
@@ -570,7 +574,7 @@ export function ApprovalPrompt({
     <Box flexDirection="column">
       {stageHeader}
       <Text>
-        {chalk.yellow.bold(toolName)} {chalk.dim('needs approval')}
+        {chalk.yellow.bold(displayToolName)} {chalk.dim('needs approval')}
       </Text>
       {writeDiffLines &&
         writeDiffLines.map((line, i) => (

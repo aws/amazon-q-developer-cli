@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
-import { switchToLite, switchToTui } from './helpers/mode-swap';
+import {
+  switchToLite,
+  switchToTui,
+  visibleCount,
+  visibleIndex,
+} from './helpers/mode-swap';
 import {
   exitLiteInteg,
   launchLiteInteg,
@@ -115,6 +120,233 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     // swap poll + 30s exit) under contended, uncapped CI.
     75000
   );
+
+  it('lite→tui preserves interleaved system rows before completed model text', async () => {
+    testCase = await launchLiteInteg('swap-lite-to-tui-interleaved-system');
+
+    await testCase.typeAndSubmit('hello lite');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'INTERLEAVED_SYSTEM_BEFORE_MODEL',
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'lite-interleaved-model',
+      content: {
+        type: 'text' as any,
+        text: 'LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM',
+      },
+    });
+    await testCase.completeTurn();
+    await testCase.waitForStore((s) => !s.isProcessing, 10000);
+    await testCase.waitForVisibleText('LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM');
+
+    const tokenBefore = (await testCase.getStore()).liteScrollbackClearToken;
+    await switchToTui(testCase);
+
+    const storeAfter = await testCase.getStore();
+    expect(storeAfter.uiMode).toBe('tui');
+    expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
+
+    const snap = testCase.getSnapshot();
+    const statusRow = '⟳ Goal: "INTERLEAVED_SYSTEM_BEFORE_MODEL"';
+    const liteGoalSetRow = 'goal set · INTERLEAVED_SYSTEM_BEFORE_MODEL';
+    expect(visibleCount(snap, statusRow)).toBe(1);
+    expect(visibleCount(snap, liteGoalSetRow)).toBe(1);
+
+    const goalIdx = visibleIndex(snap, statusRow);
+    const liteGoalSetIdx = visibleIndex(snap, liteGoalSetRow);
+    const responseIdx = visibleIndex(
+      snap,
+      'LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM'
+    );
+    const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
+
+    expect(goalIdx).toBeGreaterThanOrEqual(0);
+    expect(liteGoalSetIdx).toBeGreaterThan(goalIdx);
+    expect(responseIdx).toBeGreaterThan(liteGoalSetIdx);
+    expect(switchIdx).toBeGreaterThanOrEqual(0);
+
+    await exitLiteInteg(testCase);
+  }, 30000);
+
+  it('post-switch TUI turn keeps interleaved system rows owned by the turn', async () => {
+    testCase = await launchLiteInteg('swap-lite-to-tui-post-switch-system');
+
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'lite-pre-switch-model',
+      content: { type: 'text' as any, text: 'LITE_BEFORE_POST_SWITCH_SYSTEM' },
+    });
+    await testCase.typeAndSubmit('hello lite');
+    await testCase.completeTurn();
+    await testCase.waitForStore((s) => !s.isProcessing, 10000);
+    await testCase.waitForVisibleText('LITE_BEFORE_POST_SWITCH_SYSTEM');
+
+    await switchToTui(testCase);
+    await testCase.waitForVisibleText('Switched to TUI mode');
+
+    await testCase.typeAndSubmit('post switch system');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'POST_SWITCH_INTERLEAVED_SYSTEM',
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'post-switch-interleaved-model',
+      content: {
+        type: 'text' as any,
+        text: 'POST_SWITCH_MODEL_AFTER_SYSTEM',
+      },
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'cleared',
+      iteration: 0,
+      maxIterations: 3,
+    });
+    await testCase.waitForStore((s) => s.goalStatus === null, 10000);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('POST_SWITCH_MODEL_AFTER_SYSTEM');
+
+    await testCase.typeAndSubmit('flush post switch system turn');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'post-switch-flush-model',
+      content: { type: 'text' as any, text: 'POST_SWITCH_SYSTEM_FLUSHED' },
+    });
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('POST_SWITCH_SYSTEM_FLUSHED');
+
+    const snap = testCase.getSnapshot();
+    const statusRow = '⟳ Goal: "POST_SWITCH_INTERLEAVED_SYSTEM"';
+    expect(visibleCount(snap, statusRow)).toBe(1);
+
+    const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
+    const systemIdx = visibleIndex(snap, statusRow);
+    const modelIdx = visibleIndex(snap, 'POST_SWITCH_MODEL_AFTER_SYSTEM');
+    const flushIdx = visibleIndex(snap, 'POST_SWITCH_SYSTEM_FLUSHED');
+
+    expect(switchIdx).toBeGreaterThanOrEqual(0);
+    expect(systemIdx).toBeGreaterThan(switchIdx);
+    expect(modelIdx).toBeGreaterThan(systemIdx);
+    expect(flushIdx).toBeGreaterThan(modelIdx);
+
+    await exitLiteInteg(testCase);
+  }, 30000);
+
+  it('lite status-only turn completes before the /tui switch announcement', async () => {
+    testCase = await launchLiteInteg('swap-lite-status-only-to-tui');
+
+    await testCase.typeAndSubmit('lite status only');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'PRE_SWITCH_STATUS_ONLY_SYSTEM',
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'cleared',
+      iteration: 0,
+      maxIterations: 3,
+    });
+    await testCase.waitForStore((s) => s.goalStatus === null, 10000);
+    await testCase.completeTurn();
+    await testCase.waitForStore((s) => !s.isProcessing, 10000);
+    await testCase.waitForVisibleText('PRE_SWITCH_STATUS_ONLY_SYSTEM');
+
+    await switchToTui(testCase);
+    await testCase.waitForVisibleText('Switched to TUI mode');
+
+    const snap = testCase.getSnapshot();
+    const statusRow = '⟳ Goal: "PRE_SWITCH_STATUS_ONLY_SYSTEM"';
+    expect(visibleCount(snap, statusRow)).toBe(1);
+    expect(visibleCount(snap, 'Switched to TUI mode')).toBe(1);
+
+    const systemIdx = visibleIndex(snap, statusRow);
+    const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
+
+    expect(systemIdx).toBeGreaterThanOrEqual(0);
+    expect(switchIdx).toBeGreaterThanOrEqual(0);
+
+    await exitLiteInteg(testCase);
+  }, 30000);
+
+  it('post-switch TUI status-only turn still renders as cancelled', async () => {
+    testCase = await launchLiteInteg('swap-lite-to-tui-status-only-cancelled');
+
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'lite-before-status-only',
+      content: { type: 'text' as any, text: 'LITE_BEFORE_STATUS_ONLY' },
+    });
+    await testCase.typeAndSubmit('hello lite');
+    await testCase.completeTurn();
+    await testCase.waitForStore((s) => !s.isProcessing, 10000);
+
+    await switchToTui(testCase);
+    await testCase.waitForVisibleText('Switched to TUI mode');
+
+    await testCase.typeAndSubmit('status only turn');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'active',
+      iteration: 0,
+      maxIterations: 3,
+      message: 'POST_SWITCH_STATUS_ONLY_SYSTEM',
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'cleared',
+      iteration: 0,
+      maxIterations: 3,
+    });
+    await testCase.waitForStore((s) => s.goalStatus === null, 10000);
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('POST_SWITCH_STATUS_ONLY_SYSTEM');
+
+    await testCase.typeAndSubmit('flush status only turn');
+    await testCase.waitForStore((s) => s.isProcessing, 10000);
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.Content,
+      id: 'post-status-only-flush-model',
+      content: { type: 'text' as any, text: 'POST_STATUS_ONLY_FLUSHED' },
+    });
+    await testCase.completeTurn();
+    await testCase.waitForVisibleText('POST_STATUS_ONLY_FLUSHED');
+
+    const snap = testCase.getSnapshot();
+    const statusRow = '⟳ Goal: "POST_SWITCH_STATUS_ONLY_SYSTEM"';
+    expect(visibleCount(snap, statusRow)).toBe(1);
+    expect(visibleCount(snap, 'Cancelled')).toBe(1);
+
+    const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
+    const systemIdx = visibleIndex(snap, statusRow);
+    const cancelledIdx = visibleIndex(snap, 'Cancelled');
+    const flushIdx = visibleIndex(snap, 'POST_STATUS_ONLY_FLUSHED');
+
+    expect(switchIdx).toBeGreaterThanOrEqual(0);
+    expect(systemIdx).toBeGreaterThanOrEqual(0);
+    expect(systemIdx).toBeLessThan(cancelledIdx);
+    expect(cancelledIdx).toBeGreaterThan(switchIdx);
+    expect(flushIdx).toBeGreaterThan(cancelledIdx);
+    expect(systemIdx).toBeGreaterThan(switchIdx);
+
+    await exitLiteInteg(testCase);
+  }, 30000);
 
   it('same-mode dispatch is a noop (bug 2.9)', async () => {
     testCase = await launchLiteInteg('swap-noop-same-mode');

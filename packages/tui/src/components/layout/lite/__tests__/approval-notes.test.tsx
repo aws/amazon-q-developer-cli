@@ -235,6 +235,51 @@ describe('ApprovalPrompt — fast path (no staged note)', () => {
   });
 });
 
+describe('ApprovalPrompt — tool display label', () => {
+  // KAS ships the raw title 'Run Command'; the header must show the v2 display
+  // label 'Shell' to match scrollback (toolDisplayName), not the raw wire name.
+  test('renders the display label (Run Command -> Shell) in the header', async () => {
+    const terminal = new MockTerminal();
+    const toolMsg: MessageType = {
+      id: 'call-1',
+      role: MessageRole.ToolUse,
+      name: 'Run Command',
+      content: JSON.stringify({ command: 'git status' }),
+      isFinished: false,
+    };
+    const instance = render(
+      <AppStoreContext.Provider
+        value={createAppStore({ kiro: new Kiro(), agentEngine: 'kas' })}
+      >
+        <ApprovalPrompt
+          messages={[toolMsg]}
+          approval={{
+            toolCall: {
+              toolCallId: 'call-1',
+              title: 'Run Command',
+              rawInput: '',
+            },
+            permissionOptions: [
+              { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+              { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+            ],
+            trustOptions: [],
+          }}
+          respondToApproval={vi.fn()}
+          getStageInputColor={() => (t: string) => t}
+          mainAgentName="main"
+          onNotesSubmit={vi.fn()}
+        />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    activeInstance = instance;
+    await flush();
+    expect(terminal.output).toContain('Shell');
+    expect(terminal.output).not.toContain('Run Command');
+  });
+});
+
 describe('ApprovalPrompt — staged-note flow', () => {
   test('default page advertises [tab] add note', async () => {
     const h = mountApproval();

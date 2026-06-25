@@ -273,6 +273,9 @@ describe('categorize', () => {
   test.each([
     ['mcp__nova-memory-mcp__recall', 'mcp'],
     ['execute_bash', 'shell'],
+    // KAS shell-process tools umbrella under 'shell' (wire titles + ids).
+    ['List Processes', 'shell'],
+    ['get_process_output', 'shell'],
     ['fs_write', null],
     ['fs_read', 'read'],
     ['subagent', 'subagent'],
