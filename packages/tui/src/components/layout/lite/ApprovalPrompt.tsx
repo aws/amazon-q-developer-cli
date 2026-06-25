@@ -173,7 +173,9 @@ export function ApprovalPrompt({
   // while the approval shows (LiteLayout gates it on !showApproval), so this
   // seed can't leak into it.
   const openNotesPage = () => {
-    if (stagedNote) setCommandInput(stagedNote);
+    // Always seed (empty when no staged note) so a stale global compose value
+    // — e.g. a stray key spammed at the y/t/n row — can't prefill the box.
+    setCommandInput(stagedNote ?? '');
     setPage('notes');
   };
 

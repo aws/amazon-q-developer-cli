@@ -132,8 +132,7 @@ interface Harness {
   onNotesSubmit: ReturnType<typeof vi.fn>;
 }
 
-function mountApproval(): Harness {
-  const store = createAppStore({ kiro: new Kiro() });
+function mountApproval(store = createAppStore({ kiro: new Kiro() })): Harness {
   const terminal = new MockTerminal();
   const respondToApproval = vi.fn();
   const onNotesSubmit = vi.fn();
@@ -240,6 +239,21 @@ describe('ApprovalPrompt — staged-note flow', () => {
     expect(h.terminal.output).toContain('add your feedback');
     // Tab must not fire an approval response.
     expect(h.respondToApproval).not.toHaveBeenCalled();
+  });
+
+  test('Tab opens an EMPTY notes input even when the global compose slot is stale', async () => {
+    // A stray key (e.g. a 't' spammed at the y/t/n row) can leave a value in
+    // the shared compose slot. Opening notes must clear it, not prefill it.
+    const store = createAppStore({ kiro: new Kiro() });
+    store.getState().setCommandInput('t');
+    const h = mountApproval(store);
+    await flush();
+    h.terminal.output = '';
+    h.terminal.sendInput(TAB);
+    await flush();
+    // Empty PromptInput shows its placeholder; the stale char must not prefill.
+    expect(h.terminal.output).toContain('add your feedback');
+    expect(store.getState().commandInputValue).toBe('');
   });
 
   test('submitting the feedback input stages the note without resolving', async () => {
