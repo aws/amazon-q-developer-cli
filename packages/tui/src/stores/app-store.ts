@@ -3659,6 +3659,12 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             bufferedContent = '';
             lastContentEventId = null;
+            // Also reset thinking buffers (the sibling boundary handlers do):
+            // else turn 1's thinking re-attaches to turn 2's Model row and the
+            // same thinking block renders twice — once above, once below.
+            bufferedThinking = '';
+            thinkingStart = null;
+            thinkingMs = null;
 
             // Clear the queued message from the activity tray and render a user
             // bubble in the conversation at the injection point. Also drop any

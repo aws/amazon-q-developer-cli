@@ -233,6 +233,35 @@ describe('collectSubagentSummariesByParent', () => {
     expect(fullOutput).toContain('FULLOUTPUTKAS-34');
   });
 
+  test('harvests response from result.output when args lack it (live KAS shape)', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      result: { status: 'success', output: 'done' },
+    } as MessageType;
+    // Live KAS: args carry NO response; it arrives in the tool output envelope.
+    const respMsg = {
+      ...toolUse('response-1', 'Subagent Response', { files: [] }, 'respond'),
+      result: {
+        status: 'success' as const,
+        output: { content: [{ type: 'text', text: 'OUTPUTONLYKAS' }] },
+      },
+    } as MessageType;
+    const summaries = collectSubagentSummariesByParent(
+      [parentMsg],
+      new Map([['sub-respond', session('sub-respond', 'respond', 'crew-1')]]),
+      new Map<string, MessageType[]>([['sub-respond', [respMsg]]]),
+      'kiro'
+    );
+    expect(summaries.get('parent-1')).toEqual([
+      {
+        stageName: 'respond',
+        kind: 'response',
+        contextSummary: '',
+        taskResult: 'OUTPUTONLYKAS',
+      },
+    ]);
+  });
+
   test('renders a user-visible late summary appendix for an already-flushed parent', () => {
     const parentMsg = {
       ...parent('parent-1', 'crew-1'),
