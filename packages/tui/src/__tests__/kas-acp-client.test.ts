@@ -5424,6 +5424,29 @@ describe('MCP OAuth flow', () => {
       expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
     });
 
+    it('agent_thought_chunk with _meta.kiro.agentSubtaskId produces Thought event with meta', async () => {
+      // Bug A: a subagent's reasoning carries agentSubtaskId on the MAIN session;
+      // the converter must keep that meta (like agent_message_chunk) so the thought
+      // is routed to its subtask instead of bleeding into the main thinking block.
+      const client = new KasAcpClient();
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'Looking for the file now.' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      const [, event] = multiHandler.mock.calls[0]!;
+      expect((event as any).type).toBe(AgentEventType.Thought);
+      expect((event as any).meta?.kiro?.agentSubtaskId).toBe('sub-1');
+    });
+
     it('tool_call without _meta works (no regression)', async () => {
       const client = new KasAcpClient();
       const handler = mock((_event: any) => {});
@@ -5641,6 +5664,67 @@ describe('MCP OAuth flow', () => {
       const [sessionId, event] = multiHandler.mock.calls[0]!;
       expect(sessionId).toBe('sub-1');
       expect(event.type).toBe(AgentEventType.Content);
+    });
+
+    it('crew-stage agent_thought_chunk goes to the subtask ONLY, not main (Bug A: thinking bleed)', async () => {
+      // A registered pipeline stage's reasoning must not reach the main stream —
+      // else the subagent's thinking renders inside the main agent's "Thought for
+      // Ns" block in lite scrollback.
+      const client = new KasAcpClient();
+      const mainHandler = mock((_event: any) => {});
+      const multiHandler = mock((_sessionId: string, _event: any) => {});
+      client.onUpdate(mainHandler);
+      client.onMultiSessionUpdate(multiHandler);
+      await client.newSession();
+
+      // Register 'sub-1' as a visible crew stage.
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'crew-op',
+          title: 'Orchestrate Sub-agent',
+          kind: 'other',
+          rawInput: { task: 'test' },
+          content: [],
+          locations: [],
+          _meta: {
+            kiro: {
+              pipeline: {
+                groupId: 'pipeline-test',
+                stages: [
+                  {
+                    name: 'research',
+                    role: 'explorer',
+                    status: 'running',
+                    dependsOn: [],
+                    agentSubtaskId: 'sub-1',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mainHandler.mockClear();
+      multiHandler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'Looking for the file now.' },
+          _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+        },
+      });
+
+      expect(multiHandler).toHaveBeenCalledTimes(1);
+      expect(multiHandler.mock.calls[0]![0]).toBe('sub-1');
+      expect(
+        mainHandler.mock.calls.filter(
+          (call) => call[0]?.type === AgentEventType.Thought
+        )
+      ).toEqual([]);
     });
 
     it('pipeline parent event still broadcasts to main stream', async () => {

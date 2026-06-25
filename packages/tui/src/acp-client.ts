@@ -1583,10 +1583,16 @@ abstract class BaseAcpClient implements SessionClient {
 
       case 'agent_thought_chunk': {
         if (update.content.type === 'text') {
+          // Carry _meta.kiro so a KAS subagent's reasoning is routed to its
+          // subtask session by routeKasSubtaskEvent instead of bleeding into the
+          // main agent's bufferedThinking. Mirrors the agent_message_chunk case
+          // above — without it the subtask discriminator (agentSubtaskId) is lost.
+          const kiroMeta = extractKiroMetaFromUpdate(update);
           return {
             type: AgentEventType.Thought,
             id: crypto.randomUUID(),
             content: { type: ContentType.Text, text: update.content.text },
+            ...(kiroMeta && { meta: { kiro: kiroMeta } }),
           };
         }
         return null;

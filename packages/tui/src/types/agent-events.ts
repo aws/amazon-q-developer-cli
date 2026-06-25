@@ -401,6 +401,10 @@ export interface AgentThoughtEvent {
   type: AgentEventType.Thought;
   id: string;
   content: ContentChunk;
+  /** KAS subagent discriminator. Carried so a pipeline stage's reasoning can be
+   *  routed to its subtask session instead of bleeding into the main agent's
+   *  thinking block. Mirrors AgentContentEvent. */
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface UserMessageEvent {
