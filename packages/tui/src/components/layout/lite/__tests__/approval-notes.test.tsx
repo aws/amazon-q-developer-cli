@@ -132,7 +132,12 @@ interface Harness {
   onNotesSubmit: ReturnType<typeof vi.fn>;
 }
 
-function mountApproval(store = createAppStore({ kiro: new Kiro() })): Harness {
+// Default store pins v2 so baseline tests don't pick up a leaked
+// KIRO_AGENT_ENGINE=kas from another suite (which would flip [t] to the KAS
+// whole-capability path). KAS tests pass their own agentEngine:'kas' store.
+function mountApproval(
+  store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' })
+): Harness {
   const terminal = new MockTerminal();
   const respondToApproval = vi.fn();
   const onNotesSubmit = vi.fn();
