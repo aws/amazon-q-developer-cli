@@ -62,6 +62,7 @@ import {
   DENSITY_DISPLAY,
   DENSITY_FILTERS,
   DEFAULT_DISPLAY,
+  sameFilters,
   type ToolArgsMode,
   type DensityPreset,
 } from '../lite/verbose.js';
@@ -79,6 +80,14 @@ export type EffectHandler = (
   cmd: AvailableCommand,
   args: string
 ) => boolean | void | Promise<boolean | void>;
+
+function confirmAction(ctx: CommandContext, msg: string, ms = 3000): void {
+  if (ctx.getUiMode?.() === 'lite') {
+    ctx.announceSystem(msg);
+  } else {
+    ctx.showAlert(msg, 'success', ms);
+  }
+}
 
 /** One of the four /verbosity truncation knobs. Char caps apply per-value
  *  (chip line, individual string values inside block args, single output
@@ -175,15 +184,7 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   title: 'updateTitle',
 };
 
-/**
- * Module-level once-per-session flag for the `/theme has moved to /settings
- * theme` deprecation nudge. The nudge fires via `showAlert(..., 'warning')`
- * — and lite routes warning-status alerts to scrollback as System rows
- * ('success' is dropped, only 'error'/'warning' land there). Without this
- * gate, every `/theme` invocation in lite would stack a fresh deprecation
- * row in the chat log. Reset only on process exit; survives /theme menu
- * re-opens, /lite ↔ /tui swaps, and /settings → Theme drilldowns.
- */
+// Fire once per session to avoid stacking deprecation rows in lite scrollback.
 let themeDeprecationAnnounced = false;
 
 /**
@@ -196,10 +197,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
-      // Lite has no transient toast; emit a System row so the model swap is
-      // visible in scrollback. TUI keeps origin/main's silent behavior
-      // (byte-equivalent to main) — its status footer shows the current
-      // model continuously, so a confirmation row would be redundant.
+      // Lite has no transient toast; emit a System row for scrollback visibility.
       if (ctx.getUiMode?.() === 'lite') {
         ctx.announceSystem(`Switched to model: ${data.model.name}`);
       }
@@ -467,15 +465,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           currentAgent?: { name: string; welcomeMessage?: string };
         }
       | undefined;
-    // Do NOT physically wipe the terminal in lite mode. CSI 2J/3J destroys
-    // the terminal scrollback buffer (pre-kiro shell history and prior
-    // sessions), which is exactly the regression the user hit: /clear wiped
-    // their terminal instead of clearing the conversation. The backend
-    // already cleared conversation context (clear_conversation) and the
-    // dispatcher surfaces a "Conversation cleared" alert — that's the
-    // feedback. Lite deliberately never emits 2J/3J (see LiteLayout.tsx).
-    // The KAS path below resets via resetMessages(), which bumps
-    // liteScrollbackClearToken for a clean, scrollback-preserving reset.
+    // Lite mode: do NOT emit CSI 2J/3J (destroys terminal scrollback).
+    // Backend already cleared context; dispatcher shows confirmation alert.
     if (data?.sessionId) {
       // Preserve the current agent across /clear — the user expects to stay
       // on the same agent, just with a fresh conversation.
@@ -672,13 +663,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (args) {
       if (args === '' || args === 'main') {
         ctx.setActiveSession('');
-        // Lite drops 'success' alerts (app-store.ts ~3479), so confirmations
-        // go to scrollback via announceSystem; TUI keeps the transient toast.
-        if (ctx.getUiMode?.() === 'lite') {
-          ctx.announceSystem('Switched to main chat');
-        } else {
-          ctx.showAlert('Switched to main chat', 'success', 2000);
-        }
+        confirmAction(ctx, 'Switched to main chat', 2000);
         return;
       }
       const target = sessions.find(
@@ -767,18 +752,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Add to store
       ctx.addSession(session);
 
-      // Lite drops 'success' alerts — scrollback in lite, toast in TUI.
-      if (ctx.getUiMode?.() === 'lite') {
-        ctx.announceSystem(
-          `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`
-        );
-      } else {
-        ctx.showAlert(
-          `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`,
-          'success',
-          3000
-        );
-      }
+      confirmAction(
+        ctx,
+        `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`
+      );
     } catch (error) {
       const message = extractRpcErrorMessage(error, 'Failed to spawn session');
       ctx.showAlert(message, 'error', 3000);
@@ -963,13 +940,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    // Clipboard contents are invisible — confirm the copy. Lite drops
-    // 'success' alerts, so scrollback in lite, toast in TUI.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.announceSystem('Copied to clipboard');
-    } else {
-      ctx.showAlert('Copied to clipboard', 'success', 3000);
-    }
+    confirmAction(ctx, 'Copied to clipboard');
     return true;
   },
 
@@ -1609,9 +1580,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       unit: 'lines' | 'chars' = 'lines'
     ): string => (cap == null || cap <= 0 ? 'unlimited' : `${cap} ${unit}`);
 
-    // Parent route consumed by CommandMenu's ESC handler (`null` exits, a
-    // `menu:*` route navigates up). The store flag is one-shot: CommandMenu
-    // clears it on consume, so we rewrite it every time we re-open a sub-menu.
+    // Stash the keyed parent route consumed by CommandMenu's ESC handler.
+    // `null` exits; `menu:top:<key>` goes up one level.
     const setReturn = (route: string | null) => {
       ctx.setVerboseReturnOnEscape?.(route);
     };
@@ -2027,10 +1997,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       openTopMenu();
       return true;
     }
-    if (trimmed === 'menu:top') {
-      openTopMenu();
-      return true;
-    }
     // `menu:top:<key>` lands the cursor on the row for that submenu rather
     // than resetting to row 0 (used by ESC-back and the `← back` rows).
     if (trimmed.startsWith('menu:top:')) {
@@ -2202,13 +2168,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             showThinkingContent: newVal,
           },
         });
-        // Also notify the ACP/Rust side so any modern-TUI surface holding
-        // a React copy of `chat.showThinking` (DisplaySettingsPanel,
-        // useShowThinking) picks up the new value on its next read. The
-        // verbose.ts mirror has already written cli.json directly, so
-        // this RPC is idempotent — Rust does locked R-M-W on the same
-        // file and reads back the value we just wrote. Best-effort: a
-        // failed RPC doesn't roll back the lite-side toggle.
+        // Sync to ACP/Rust side; best-effort (lite toggle stands if RPC fails).
         ctx.kiro
           .setSetting(Settings.CHAT_SHOW_THINKING, newVal)
           .catch(() => {});
@@ -2256,6 +2216,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         openMenu('truncation');
         return true;
       }
+      // `deps` is CLI-only for now: it is persisted and used by presets, but
+      // hidden from the menu because dependency labels are nested under steps.
       const subMatch = rest.match(
         /^subagent:(pipeline|prompts|roles|deps|responses)$/
       );
@@ -2424,21 +2386,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 };
-
-/** Order-insensitive equality on filter lists — paired with sameDisplay to
- *  detect which density preset is currently active. The saved filter list
- *  may have arbitrary token order, so we compare as sets. Both lists are
- *  short (a handful of tokens at most), so the O(n²) avoidance via Set is
- *  fine. */
-function sameFilters(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  if (a.length === 0) return true;
-  const set = new Set(a);
-  for (const t of b) {
-    if (!set.has(t)) return false;
-  }
-  return true;
-}
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
