@@ -52,7 +52,9 @@ describe('Display settings panel', () => {
     }
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
 
   it('renders with correct items and default values', async () => {
@@ -89,9 +91,8 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // ASCII art is the third item (after Default UI, Animations); navigate down twice then toggle
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
+    // ASCII art is the second item (after Animations); navigate down once then toggle.
+    // (The "Default UI" row is gated to the lite rollout cohort, absent here.)
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
     await testCase.sendKeys(RIGHT_ARROW);
@@ -112,9 +113,8 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // Animations is the second item (after Default UI); navigate down once then toggle
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
+    // Animations is the first item (the gated "Default UI" row is absent here),
+    // so it's already highlighted on open; toggle without navigating.
     await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
@@ -161,7 +161,11 @@ describe('Display settings panel', () => {
   it('respects pre-existing settings on open', async () => {
     // Write settings before launching: allowAsciiArt=false means display shows "off"
     const settingsPath = join(testDir, 'settings', 'cli.json');
-    writeFileSync(settingsPath, JSON.stringify({ 'chat.allowAsciiArt': false }), 'utf-8');
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ 'chat.allowAsciiArt': false }),
+      'utf-8'
+    );
 
     testCase = await TestCase.builder()
       .withTestName('display-settings-preexisting')
@@ -187,9 +191,8 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // Show thinking is the 5th item (after Default UI); navigate down 4 times then toggle
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
+    // Show thinking is the 4th item (Animations, ASCII art, Icons, Show thinking);
+    // the gated "Default UI" row is absent here, so navigate down 3 times then toggle.
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
     await testCase.sendKeys(DOWN_ARROW);
@@ -207,7 +210,11 @@ describe('Display settings panel', () => {
 
   it('respects pre-existing showThinking=false setting on open', async () => {
     const settingsPath = join(testDir, 'settings', 'cli.json');
-    writeFileSync(settingsPath, JSON.stringify({ 'chat.showThinking': false }), 'utf-8');
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ 'chat.showThinking': false }),
+      'utf-8'
+    );
 
     testCase = await TestCase.builder()
       .withTestName('display-settings-preexisting-thinking')
