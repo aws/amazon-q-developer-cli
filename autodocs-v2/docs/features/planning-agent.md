@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-09
-  commit: 96dc37b3f
+  validated: 2026-06-23
+  commit: 2a3269819
   status: validated
   testable_headless: false
   category: feature
   title: Planning Agent
   description: Built-in agent that transforms ideas into structured implementation plans with requirements gathering and task breakdown
-  keywords: [planning, agent, plan, requirements, tasks, workflow]
-  related: [plan, agent-configuration]
+  keywords: [planning, agent, plan, requirements, tasks, workflow, loop, stuck, unavailable tools]
+  related: [plan, agent-configuration, switch-to-execution]
 ---
 
 # Planning Agent
@@ -159,6 +159,16 @@ Ready to exit Plan agent to start your implementation? [y/n]:
 **Cannot switch to execution**: System defaults to `kiro_default` agent if no previous agent exists.
 **Planning interrupted**: Use `/plan` to restart or continue with partial requirements.
 **Need to make changes**: Switch to execution mode (`Shift + Tab`) for file modifications.
+
+**"Stopped after repeated attempts to call tools that aren't available"**: The agent tried to call tools that don't exist in its current context (e.g., execution tools while in planning mode). After 3 consecutive failed attempts, the turn ends automatically to prevent hanging. Switch to the correct agent mode or rephrase your request.
+
+```
+Stopped after repeated attempts to call tools that aren't available. 
+The required tools may belong to a different agent -- consider switching 
+agents, or rephrase your request.
+```
+
+This typically occurs during plan/execute handoffs when the agent gets confused about which mode it's in. Use `Shift + Tab` or `/plan` to switch to the appropriate mode.
 
 ## Appendix
 ### Example - Complex Planning Workflow

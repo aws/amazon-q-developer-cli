@@ -12,6 +12,42 @@
     },
     {
       "type": "release",
+      "date": "2026-06-22",
+      "version": "2.9.0",
+      "title": "Version 2.9.0",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "External IdP token refresh now replays scopes, fixing session expiration for Entra ID (Azure AD) users"
+        },
+        {
+          "type": "fixed",
+          "description": "Custom agents no longer load a file twice when it is both listed in resources and matched by an inherited resource glob"
+        },
+        {
+          "type": "fixed",
+          "description": "Arrow keys now navigate correctly in tool approval prompts instead of cancelling edit mode"
+        },
+        {
+          "type": "fixed",
+          "description": "[V3] Agent-crew sub-agent activity no longer appears duplicated in the main conversation"
+        },
+        {
+          "type": "fixed",
+          "description": "[V3] Show the credits column in the /model picker, matching v2"
+        },
+        {
+          "type": "fixed",
+          "description": "[V3] Compound shell commands (e.g. `git status && echo done`) no longer loop on the approval prompt; the trust exact-match and pattern options now target the gated sub-command"
+        },
+        {
+          "type": "changed",
+          "description": "[V3] Sub-agent tool cards show a one-line prompt preview (expand with ctrl+o) instead of full arguments"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-06-17",
       "version": "2.8.1",
       "title": "Version 2.8.1",
