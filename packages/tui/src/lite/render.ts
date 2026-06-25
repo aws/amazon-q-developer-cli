@@ -2508,8 +2508,10 @@ export function renderSubagentResponseSummaryLines(
     }
     const tr = (s.taskResult ?? '').trim();
     if (tr.length === 0) continue;
+    // Plain responses (the subagent's actual answer) render in full, matching
+    // the inline block; only v2 summaries truncate to TASK_RESULT_MAX_LINES.
     const trLines = s.taskResult.split('\n');
-    if (trLines.length <= TASK_RESULT_MAX_LINES) {
+    if (s.kind === 'response' || trLines.length <= TASK_RESULT_MAX_LINES) {
       renderable.push({
         stageName: s.stageName,
         body: s.taskResult,

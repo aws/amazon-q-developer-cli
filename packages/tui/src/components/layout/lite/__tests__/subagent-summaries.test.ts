@@ -208,9 +208,11 @@ describe('collectSubagentSummariesByParent', () => {
     expect(plain).toContain('subagent response');
     expect(plain).toContain('response:');
     expect(plain).not.toContain('response summary:');
+    // Plain responses render in FULL (the subagent's actual answer), not
+    // truncated — matches the inline block; no "(+N more lines)" elision.
     expect(plain).toContain('FULLOUTPUTKAS-0');
-    expect(plain).toContain('(+5 more lines)');
-    expect(plain).not.toContain('FULLOUTPUTKAS-34');
+    expect(plain).toContain('FULLOUTPUTKAS-34');
+    expect(plain).not.toContain('more lines)');
 
     // Even with the verbose `subagent` filter on, a plain response renders ONLY
     // in the `response:` section — NOT also in a `full output:` section (that
