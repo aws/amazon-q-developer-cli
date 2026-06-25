@@ -251,7 +251,11 @@ describe('ApprovalPrompt — tool display label', () => {
         <ApprovalPrompt
           messages={[toolMsg]}
           approval={{
-            toolCall: { toolCallId: 'call-1', title: 'Run Command', rawInput: '' },
+            toolCall: {
+              toolCallId: 'call-1',
+              title: 'Run Command',
+              rawInput: '',
+            },
             permissionOptions: [
               { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
               { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
