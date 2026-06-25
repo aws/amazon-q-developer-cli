@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Box, useInput } from './../../renderer.js';
 import { Panel } from './panel/Panel.js';
 import { Text } from './text/Text.js';
@@ -38,7 +38,7 @@ function normalizeUiModeForTelemetry(raw: string): 'lite' | 'tui' | 'unset' {
   return raw === 'lite' || raw === 'tui' ? raw : 'unset';
 }
 
-const ITEMS: ToggleItem[] = [
+const ALL_ITEMS: ToggleItem[] = [
   {
     key: Settings.CHAT_UI_MODE,
     label: 'Default UI',
@@ -81,6 +81,21 @@ const ITEMS: ToggleItem[] = [
   },
 ];
 
+/**
+ * The Display rows for the current rollout cohort. The "Default UI" (tui/lite)
+ * row is dropped outside the cohort (KIRO_LITE_ROLLOUT_ENABLED !== '1'): the
+ * same gate resolveUiMode() and switchToLite() read. Outside the cohort
+ * resolveUiMode forces 'tui', so the toggle would only persist a dead
+ * chat.ui.mode='lite' value and emit uiModeDefaultChanged telemetry — a
+ * leaking affordance with no effect. The other rows are legitimately
+ * cross-mode, so we gate the row, not the panel.
+ */
+export function selectDisplayItems(rolloutEnabled: boolean): ToggleItem[] {
+  return rolloutEnabled
+    ? ALL_ITEMS
+    : ALL_ITEMS.filter((item) => item.key !== Settings.CHAT_UI_MODE);
+}
+
 interface DisplaySettingsPanelProps {
   onClose: () => void;
   onDismiss?: () => void;
@@ -100,6 +115,12 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowAnimations } = useAllowAnimations();
   const { setAllowIcons } = useAllowIcons();
   const { thinkingMode, setThinkingMode } = useThinkingMode();
+
+  const ITEMS = useMemo(
+    () => selectDisplayItems(process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'),
+    []
+  );
+
   const [index, setIndex] = useState(0);
   const [values, setValues] = useState<Record<string, boolean | string>>(() =>
     Object.fromEntries(
