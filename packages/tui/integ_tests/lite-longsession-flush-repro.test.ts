@@ -4,7 +4,7 @@ import { AgentEventType, ContentType } from '../src/types/agent-events';
 import {
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * Long-session repro for the lite flush / newline-wave reports. The small

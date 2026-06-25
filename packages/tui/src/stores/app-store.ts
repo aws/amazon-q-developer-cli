@@ -1519,8 +1519,8 @@ export interface AppState {
   settingsReturnOnEscape: boolean;
   /**
    * Parent route to re-dispatch on ESC from a /verbose sub-menu. Set by the
-   * verboseConfig handler when it opens any non-root menu (e.g. the density
-   * sub-menu sets this to `'menu:top'`). CommandMenu's escape handler clears
+   * verboseConfig handler when it opens any non-root menu (e.g. the tool
+   * sub-menu sets this to `'menu:top:tool'`). CommandMenu's escape handler clears
    * the active overlay, then if this is non-null, it re-runs `/verbose` with
    * the saved route so the user lands one level up instead of dropping out
    * of the entire menu. Cleared on consume and on full menu exit.

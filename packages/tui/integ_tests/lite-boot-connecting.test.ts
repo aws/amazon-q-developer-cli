@@ -2,13 +2,13 @@ import { describe, expect, it } from 'bun:test';
 import { TestCase } from '../src/test-utils/TestCase';
 import { AgentEventType } from '../src/types/agent-events';
 import { MessageRole } from '../src/stores/app-store';
-import { switchToLite } from '../e2e_tests/lite/helpers/mode-swap';
+import { switchToLite } from './helpers/mode-swap';
 import {
   exitLiteInteg,
   finishAndExitLite,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * Lite boot UX (bug-mine 7.x):

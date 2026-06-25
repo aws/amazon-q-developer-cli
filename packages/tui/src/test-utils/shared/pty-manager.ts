@@ -37,6 +37,13 @@ export class PtyManager {
   private pty?: pty.IPty;
   private output: string = '';
   private terminal: Terminal;
+  // Latched exit state. bun-pty's onExit fires once and is NOT replayed to
+  // listeners that register afterward, so a process that dies before
+  // expectExit() is called would otherwise hang that call for its full
+  // timeout. We record the exit eagerly in spawn() and let expectExit()
+  // short-circuit on it.
+  private exited = false;
+  private exitCode: number | null = null;
 
   constructor(private options: PtyOptions) {
     this.terminal = new Terminal({
@@ -74,6 +81,13 @@ export class PtyManager {
     this.pty.onData((data) => {
       this.output += data;
       this.terminal.write(data);
+    });
+
+    // Latch exit eagerly so a later expectExit() never waits on an event that
+    // already fired (see the `exited` field).
+    this.pty.onExit(({ exitCode }) => {
+      this.exited = true;
+      this.exitCode = exitCode;
     });
   }
 
@@ -143,6 +157,10 @@ export class PtyManager {
    */
   async expectExit(timeout_ms: number = 10000): Promise<number> {
     if (!this.pty) throw new Error('PTY not spawned');
+
+    // Already gone — resolve immediately rather than waiting on an onExit that
+    // has already fired.
+    if (this.exited) return this.exitCode ?? 0;
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

@@ -1,34 +1,9 @@
-/**
- * E2E tests for /chat slash command (session loading).
- *
- * Uses testCase.launchAcpHelper() to create a real session with history via a
- * separate ACP connection, then verifies the TUI can load and display it.
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
- */
-
 import { afterEach, describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { E2ETestCase } from './E2ETestCase';
 
-async function waitForFile(
-  testCase: E2ETestCase,
-  filePath: string,
-  timeoutMs = 15000
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (fs.existsSync(filePath)) return;
-    await testCase.sleepMs(100);
-  }
-  throw new Error(`Timed out waiting for file: ${filePath}`);
-}
-
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Chat Command ($mode)', ({ mode, builder }) => {
+describe('Chat Command', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -41,9 +16,9 @@ describe.each([
   it.skipIf(process.platform === 'win32')(
     'loads a previous session and displays its history',
     async () => {
-      testCase = await builder()
+      testCase = await E2ETestCase.builder()
         .withTerminal({ width: 120, height: 40 })
-        .withTestName(`chat-command-load-${mode}`)
+        .withTestName('chat-command-load')
         .withGlobalAgentConfig('test-agent', {
           name: 'test-agent',
           description: 'Test agent for e2e',
@@ -123,9 +98,9 @@ describe.each([
   it.skipIf(process.platform === 'win32')(
     'replays persisted thinking blocks on resume',
     async () => {
-      testCase = await builder()
+      testCase = await E2ETestCase.builder()
         .withTerminal({ width: 120, height: 40 })
-        .withTestName(`chat-cmd-resume-think-${mode}`)
+        .withTestName('chat-cmd-resume-think')
         // Explicitly set `chat.showThinking` to true to be resilient against
         // future default changes. The setting itself is exercised by
         // show-thinking-setting.test.ts.
@@ -196,17 +171,11 @@ describe.each([
       }
 
       const snapshot = testCase.getSnapshot().join('\n');
-      // Replayed thinking lands in the static buffer. TUI shows the collapsed
-      // header, while lite's explicit show-thinking mode renders the body.
+      // Replayed thinking lands in the collapsed static buffer: a header
+      // ("Thinking..." or "Thought for Ns...") with the reasoning body hidden.
       expect(snapshot).toMatch(/Thought for \d+s|Thinking/);
-      if (mode === 'lite') {
-        // Lite's explicit show-thinking mode renders the body in scrollback.
-        expect(snapshot).toContain('Thinking step one.');
-        expect(snapshot).toContain('Thinking step three.');
-      } else {
-        expect(snapshot).not.toContain('Thinking step one.');
-        expect(snapshot).not.toContain('Thinking step three.');
-      }
+      expect(snapshot).not.toContain('Thinking step one.');
+      expect(snapshot).not.toContain('Thinking step three.');
 
       // ...but the Model message still has its `thinking` field populated by
       // the replayed AgentThoughtChunk, proving the chunk survived
@@ -225,9 +194,9 @@ describe.each([
   );
 
   it('/chat new starts a fresh conversation', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`chat-new-${mode}`)
+      .withTestName('chat-new')
       .launch();
 
     await testCase.waitForText('ask a question', 15000);
@@ -279,9 +248,9 @@ describe.each([
   it.skipIf(process.platform === 'win32')(
     '/chat save followed by /chat load creates a fresh session id on disk',
     async () => {
-      testCase = await builder()
+      testCase = await E2ETestCase.builder()
         .withTerminal({ width: 120, height: 40 })
-        .withTestName(`chat-save-load-roundtrip-${mode}`)
+        .withTestName('chat-save-load-roundtrip')
         .launch();
 
       await testCase.waitForText('ask a question', 15000);
@@ -326,7 +295,8 @@ describe.each([
         await testCase.sleepMs(20);
       }
       await testCase.pressEnter();
-      await waitForFile(testCase, exportPath);
+      await testCase.waitForText(`Saved session to ${exportPath}`, 15000);
+      expect(fs.existsSync(exportPath)).toBe(true);
 
       // Load the saved file. The V2 backend's load_session generates a
       // fresh UUID and writes it under the sessions dir, then the TUI
@@ -336,6 +306,7 @@ describe.each([
         await testCase.sleepMs(20);
       }
       await testCase.pressEnter();
+      await testCase.waitForText('Session loaded', 15000);
 
       // The loaded session's id is reflected in the store.
       const deadline = Date.now() + 10000;

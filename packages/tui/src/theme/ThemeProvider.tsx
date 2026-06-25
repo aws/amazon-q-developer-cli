@@ -51,9 +51,9 @@ export interface ThemeContextValue extends Theme {
    */
   wrapDisabled: boolean;
   /**
-   * When true, the TUI is in classic mode (scrollback-friendly, no panels).
+   * When true, the TUI is in lite mode (scrollback-friendly, no panels).
    */
-  classicMode: boolean;
+  liteMode: boolean;
 }
 
 /**
@@ -81,7 +81,7 @@ export const createThemeContext = (
   ) => void,
   setBaseTheme: (theme: Theme | null) => void,
   wrapDisabled: boolean,
-  classicMode: boolean = false
+  liteMode: boolean = false
 ): ThemeContextValue => {
   // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
   const effectiveColors =
@@ -144,7 +144,7 @@ export const createThemeContext = (
     setBaseTheme,
     baseTheme: theme,
     wrapDisabled,
-    classicMode,
+    liteMode,
   };
 };
 
@@ -194,8 +194,8 @@ interface ThemeProviderProps {
    * dropped. Controlled by the `chat.disableWrap` setting at startup.
    */
   wrapDisabled?: boolean;
-  /** When true, the TUI is in classic mode. */
-  classicMode?: boolean;
+  /** When true, the TUI is in lite mode. */
+  liteMode?: boolean;
   children: ReactNode;
 }
 
@@ -210,7 +210,7 @@ interface ThemeProviderProps {
 export const ThemeProvider = ({
   theme = 'auto',
   wrapDisabled = false,
-  classicMode = false,
+  liteMode = false,
   children,
 }: ThemeProviderProps) => {
   // Detect theme once on mount — avoid re-running OSC 11 queries on every render
@@ -290,7 +290,7 @@ export const ThemeProvider = ({
         setUserColors,
         setBaseTheme,
         wrapDisabled,
-        classicMode
+        liteMode
       ),
     [
       resolvedTheme,
@@ -301,7 +301,7 @@ export const ThemeProvider = ({
       setUserColors,
       setBaseTheme,
       wrapDisabled,
-      classicMode,
+      liteMode,
     ]
   );
   return (

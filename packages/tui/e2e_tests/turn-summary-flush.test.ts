@@ -6,17 +6,12 @@
  * tail messages are appended to <Static> as individual `msg` items — but no
  * summary item is appended. The summary was only visible in the dynamic
  * ActiveTurnTail area, which gets replaced by the new active turn.
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Turn summary survives incremental flush ($mode)', ({ mode, builder }) => {
+describe('Turn summary survives incremental flush', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -27,11 +22,8 @@ describe.each([
   });
 
   it('turn summary remains visible after starting a second turn', async () => {
-    // Both modes render "Credits: 0.47" via the shared app-store turn summary
-    const summarySearchText = 'Credits';
-
-    testCase = await builder()
-      .withTestName(`turn-summary-flush-${mode}`)
+    testCase = await E2ETestCase.builder()
+      .withTestName('turn-summary-flush')
       .withTerminal({ width: 120, height: 50 })
       .launch();
 
@@ -61,13 +53,13 @@ describe.each([
     await testCase.waitForIdle(10000);
 
     // Wait for the turn summary to render on screen
-    await testCase.waitForText(summarySearchText, 10000);
+    await testCase.waitForText('Credits', 10000);
 
     console.log('Snapshot before turn 2:\n' + testCase.getSnapshotFormatted());
 
     // Verify summary is visible before second turn
     const snapshotBeforeTurn2 = testCase.getSnapshot();
-    expect(snapshotBeforeTurn2.some(line => line.includes(summarySearchText))).toBe(true);
+    expect(snapshotBeforeTurn2.some(line => line.includes('Credits'))).toBe(true);
 
     // Turn 2: simple response (forces turn 1 to complete and move to static)
     await testCase.pushSendMessageResponse([
@@ -89,7 +81,7 @@ describe.each([
     // doesn't append a summary item to <Static>.
     const snapshotAfterTurn2 = testCase.getSnapshot();
     expect(
-      snapshotAfterTurn2.some(line => line.includes(summarySearchText)),
+      snapshotAfterTurn2.some(line => line.includes('Credits')),
     ).toBe(true);
   }, 60000);
 });
