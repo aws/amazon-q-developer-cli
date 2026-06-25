@@ -68,6 +68,7 @@ describe('Display settings panel', () => {
     const snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('/settings');
     expect(snap).toContain('display');
+    expect(snap).toContain('Default UI');
     expect(snap).toContain('Animations');
     expect(snap).toContain('ASCII art');
     expect(snap).toContain('Icons');
@@ -89,7 +90,9 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // ASCII art is the second item; navigate down once then toggle
+    // ASCII art is the third item; navigate past Default UI and Animations.
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
     await testCase.sendKeys(RIGHT_ARROW);
@@ -110,7 +113,9 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // Animations is the first item (already selected); toggle it off
+    // Animations is the second item; navigate past Default UI then toggle it off.
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
     await testCase.sendKeys(RIGHT_ARROW);
     await testCase.sleepMs(500);
 
@@ -128,8 +133,15 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // First item (Animations) should show its description
+    // First item (Default UI) should show its description
     let snap = testCase.getSnapshot().join('\n');
+    expect(snap).toContain('UI launched when you open Kiro CLI');
+
+    // Navigate down to Animations
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(300);
+
+    snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('Spinners, progress bars');
 
     // Navigate down to ASCII art
@@ -183,7 +195,10 @@ describe('Display settings panel', () => {
     await openDisplaySettings(testCase);
     await testCase.waitForVisibleText('Animations', 5000);
 
-    // Show thinking is the 4th item; navigate down 3 times then toggle
+    // Show thinking is the 5th item; navigate past Default UI, Animations,
+    // ASCII art, and Icons, then toggle.
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(200);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(200);
     await testCase.sendKeys(DOWN_ARROW);

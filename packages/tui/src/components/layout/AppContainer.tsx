@@ -3,7 +3,9 @@ import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
+import { LiteLayout } from './lite/index.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
+import { FirstLaunchUiModeGate } from '../ui/FirstLaunchUiModeGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
@@ -48,6 +50,7 @@ function suspendProcess(): void {
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
+  const uiMode = useAppStore((state) => state.uiMode);
   const trustAllToolsRequested = useAppStore(
     (state) => state.trustAllToolsRequested
   );
@@ -56,6 +59,12 @@ export const AppContainer: React.FC = () => {
   );
   const confirmTrustAllTools = useAppStore(
     (state) => state.confirmTrustAllTools
+  );
+  const firstLaunchUiModeRequested = useAppStore(
+    (state) => state.firstLaunchUiModeRequested
+  );
+  const confirmFirstLaunchUiMode = useAppStore(
+    (state) => state.confirmFirstLaunchUiMode
   );
   const onExit = useAppStore((state) => state.onExit);
   const kiro = useAppStore((state) => state.kiro);
@@ -82,6 +91,7 @@ export const AppContainer: React.FC = () => {
   const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
   const agentEngine = useAppStore((state) => state.agentEngine);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
+  const subagentPanelOpen = useAppStore((state) => state.subagentPanelOpen);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
   const voiceCancel = useAppStore((state) => state.voiceCancel);
@@ -113,6 +123,8 @@ export const AppContainer: React.FC = () => {
 
   const keybindings = useKeybindings();
 
+  // useKeypress always invokes the latest handler closure (handlerRef), so the
+  // values below are as fresh as the last render — no ref mirroring needed.
   useKeypress((userInput, key) => {
     // Shell-escape forwarding needs keyToRawBytes, which is TUI-specific.
     // Handle the "not Ctrl+C" case here; dispatchAppKeypress handles Ctrl+C.
@@ -133,6 +145,7 @@ export const AppContainer: React.FC = () => {
 
     const state: AppKeypressState = {
       mode,
+      uiMode,
       isProcessing,
       isShellEscape,
       hasCommandInput,
@@ -141,6 +154,7 @@ export const AppContainer: React.FC = () => {
       editingQueueIndex: editingQueueIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
+      subagentPanelOpen,
       surveyPromptVisible: !!surveyPrompt,
       suspendArmed,
     };
@@ -207,9 +221,18 @@ export const AppContainer: React.FC = () => {
     );
   }
 
+  // First-launch UI mode picker. Shown only on a fresh install (no
+  // chat.ui.mode persisted, no env var, no --lite/--tui CLI flag); index.tsx
+  // sets the request flag after resolving the mode. Trust gate above wins
+  // when both are set so users only see one block at a time.
+  if (firstLaunchUiModeRequested) {
+    return <FirstLaunchUiModeGate onPick={confirmFirstLaunchUiMode} />;
+  }
+
   return (
     <AnimationPausedContext.Provider value={!allowAnimations}>
-      {mode === 'inline' && <InlineLayout />}
+      {mode === 'inline' && uiMode === 'tui' && <InlineLayout />}
+      {mode === 'inline' && uiMode === 'lite' && <LiteLayout />}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}

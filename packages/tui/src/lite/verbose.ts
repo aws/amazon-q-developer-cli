@@ -396,8 +396,10 @@ export function getVerboseFilters(): string[] {
   return out.includes('all') ? ['all'] : out;
 }
 
-/** Structural equality for the identity-preservation guard above. */
-function sameDisplay(
+/** Structural equality on two VerboseDisplayConfig values. Used by
+ *  getVerboseDisplay's identity-preservation guard and by the effect
+ *  handler's density-preset detection. */
+export function sameDisplay(
   a: VerboseDisplayConfig,
   b: VerboseDisplayConfig
 ): boolean {
@@ -407,6 +409,20 @@ function sameDisplay(
   for (const { local } of CAP_FIELDS) if (a[local] !== b[local]) return false;
   for (const { local } of SUBAGENT_FIELDS)
     if (a.subagent[local] !== b.subagent[local]) return false;
+  return true;
+}
+
+/** Order-insensitive equality on short filter lists. */
+export function sameFilters(
+  a: readonly string[],
+  b: readonly string[]
+): boolean {
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  const set = new Set(a);
+  for (const t of b) {
+    if (!set.has(t)) return false;
+  }
   return true;
 }
 

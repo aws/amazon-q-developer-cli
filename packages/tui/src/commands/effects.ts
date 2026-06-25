@@ -49,6 +49,7 @@ import {
   type TranscriptFormat,
 } from '../utils/serialize-conversation.js';
 import { findSettingsSubcommand } from './settings-subcommands.js';
+import { handleVerbosity } from './verbosity-menu.js';
 import {
   getCurrentTitle,
   setUserTitle,
@@ -64,8 +65,17 @@ export type EffectHandler = (
   args: string
 ) => boolean | void | Promise<boolean | void>;
 
+// Symmetric same-text success confirmation: lite → scrollback row, TUI → toast.
+function confirmAction(ctx: CommandContext, msg: string, ms = 3000): void {
+  if (ctx.getUiMode?.() === 'lite') {
+    ctx.announceSystem(msg);
+  } else {
+    ctx.showAlert(msg, 'success', ms);
+  }
+}
+
 /** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'] | 'spawn' | 'spec';
+type CommandName = TuiCommand['command'] | 'spawn' | 'switch' | 'spec';
 
 /** Effect names - semantic actions the TUI can perform */
 type EffectName =
@@ -96,12 +106,14 @@ type EffectName =
   | 'showThemeMenu'
   | 'showGoalPanel'
   | 'showSettingsMenu'
-  | 'showTuiPanel'
+  | 'switchToTui'
   | 'showChangelogPanel'
   | 'showSessionId'
   | 'showStatsPanel'
   | 'switchToGuideAgent'
+  | 'switchToLite'
   | 'switchToPlanMode'
+  | 'verbosityConfig'
   | 'rewindAction'
   | 'updateTitle';
 
@@ -131,12 +143,15 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   reply: 'replyEditor',
   code: 'showCodePanel',
   spawn: 'spawnSession',
+  switch: 'switchSession',
   spec: 'runSpec',
   copy: 'copyToClipboard',
   transcript: 'openRawView',
   theme: 'showThemeMenu',
   settings: 'showSettingsMenu',
-  tui: 'showTuiPanel',
+  tui: 'switchToTui',
+  lite: 'switchToLite',
+  verbosity: 'verbosityConfig',
   changelog: 'showChangelogPanel',
   'session-id': 'showSessionId',
   guide: 'switchToGuideAgent',
@@ -144,6 +159,9 @@ const commandEffects: Partial<Record<string, EffectName>> = {
   rewind: 'rewindAction',
   title: 'updateTitle',
 };
+
+// Fire once per session to avoid stacking deprecation rows in lite scrollback.
+let themeDeprecationAnnounced = false;
 
 /**
  * Effect handlers.
@@ -155,6 +173,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
+      // Lite has no transient toast; emit a System row for scrollback visibility.
+      if (ctx.getUiMode?.() === 'lite') {
+        ctx.announceSystem(`Switched to model: ${data.model.name}`);
+      }
     }
   },
 
@@ -233,6 +255,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         });
       }
       ctx.setCurrentAgent(data.agent);
+      if (ctx.getUiMode?.() === 'lite') {
+        ctx.announceSystem(`Switched to agent: ${data.agent.name}`);
+      }
     }
   },
 
@@ -273,6 +298,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | undefined;
     if (data?.commands) {
       // Merge backend commands with TUI-local commands for complete help listing.
+      // Lite-only commands (meta.liteOnly) only appear in lite mode — same gating
+      // CommandMenu uses for the autocomplete dropdown.
+      //
       // `SlashCommand` is the only `AvailableCommand` subtype that adds
       // `source`, so checking for the field is enough to narrow.
       const isLocalHostCommand = (
@@ -280,8 +308,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ): c is SlashCommand & { source: 'local' } =>
         'source' in c && c.source === 'local';
 
+      const inLite = ctx.getUiMode?.() === 'lite';
       const localHelpEntries = ctx.slashCommands
         .filter(isLocalHostCommand)
+        .filter((c) => inLite || c.meta?.liteOnly !== true)
         .map((c) => ({
           name: c.name,
           description: c.description,
@@ -372,18 +402,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     ctx.setShowHooksPanel(true, data?.hooks ?? []);
   },
 
-  showKnowledgePanel: (result, ctx) => {
+  showKnowledgePanel: (result, ctx, _cmd, args) => {
     const data = result?.data as
       | { entries?: KnowledgeEntry[]; status?: string }
       | undefined;
     if (data?.entries) {
       ctx.setShowKnowledgePanel(true, data.entries, data.status);
-    } else {
-      ctx.setShowKnowledgePanel(false);
-      if (result?.message) {
-        const firstLine = result.message.split('\n')[0] ?? result.message;
-        ctx.showAlert(firstLine, result.success ? 'success' : 'error');
-      }
+      return;
+    }
+    ctx.setShowKnowledgePanel(false);
+    // Subcommand failures (e.g. `/knowledge update <path>` with no contexts)
+    // go to the dispatcher's tail alert — emitting here would duplicate the
+    // line in lite scrollback. Bare `/knowledge` with a backend message has
+    // no dispatcher alert (panel + no args is suppressed there) so we still
+    // surface the message ourselves.
+    if (!args && result?.message) {
+      const firstLine = result.message.split('\n')[0] ?? result.message;
+      ctx.showAlert(firstLine, result.success ? 'success' : 'error');
     }
   },
 
@@ -406,6 +441,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
           currentAgent?: { name: string; welcomeMessage?: string };
         }
       | undefined;
+    // Lite mode: do NOT emit CSI 2J/3J (destroys terminal scrollback).
+    // Backend already cleared context; dispatcher shows confirmation alert.
     if (data?.sessionId) {
       // Preserve the current agent across /clear — the user expects to stay
       // on the same agent, just with a fresh conversation.
@@ -570,8 +607,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       | {
           sessionId?: string;
           switchSession?: boolean;
-          suppressAgentWelcome?: boolean;
           resetMessagesBeforeReplay?: boolean;
+          suppressAgentWelcome?: boolean;
         }
       | undefined;
     if (!resultData?.switchSession || !resultData.sessionId) {
@@ -602,7 +639,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     if (args) {
       if (args === '' || args === 'main') {
         ctx.setActiveSession('');
-        ctx.showAlert('Switched to main chat', 'success', 2000);
+        confirmAction(ctx, 'Switched to main chat', 2000);
         return;
       }
       const target = sessions.find(
@@ -691,10 +728,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Add to store
       ctx.addSession(session);
 
-      ctx.showAlert(
-        `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`,
-        'success',
-        3000
+      confirmAction(
+        ctx,
+        `Spawned ${displayName}: ${task.slice(0, 40)}${task.length > 40 ? '…' : ''}`
       );
     } catch (error) {
       const message = extractRpcErrorMessage(error, 'Failed to spawn session');
@@ -880,7 +916,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return true;
     }
 
-    ctx.showAlert('Copied to clipboard', 'success', 3000);
+    confirmAction(ctx, 'Copied to clipboard');
     return true;
   },
 
@@ -947,24 +983,25 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
-  /** Show theme color selection menu */
-  showTuiPanel: (_result, ctx) => {
-    ctx.setShowTuiPanel(true);
-  },
-
   showChangelogPanel: (_result, ctx) => {
     ctx.setShowChangelogPanel(true);
   },
 
   showSessionId: (_result, ctx) => {
     const sessionId = ctx.kiro.sessionId ?? 'none';
-    ctx.showAlert(
-      sessionId !== 'none'
-        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
-        : 'Session ID: none',
-      'success',
-      10000
-    );
+    // /session-id prints the ID for the user to copy. Lite drops 'success'
+    // alerts, so it goes to scrollback (scrollable later); TUI keeps the toast.
+    if (ctx.getUiMode?.() === 'lite') {
+      ctx.announceSystem(`Session ID: ${sessionId}`);
+    } else {
+      ctx.showAlert(
+        sessionId !== 'none'
+          ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
+          : 'Session ID: none',
+        'success',
+        10000
+      );
+    }
     return true;
   },
 
@@ -1025,17 +1062,277 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     return true;
   },
 
-  /**
-   * Legacy /theme alias. The actual theme UI lives in `<ThemePanel>`,
-   * driven by the `showThemePanel` store flag — see settings-subcommands.ts
-   * for the canonical /settings → theme entry. This handler exists purely
-   * to keep `/theme` working with a one-shot deprecation hint.
-   */
-  showThemeMenu: (_result, ctx, cmd) => {
-    if (cmd.name === '/theme') {
+  showThemeMenu: (_result, ctx, cmd, args) => {
+    // Modern TUI: /theme is a legacy alias that opens main's ThemePanel
+    // (the canonical entry is /settings → theme). Lite keeps its own rich
+    // /theme command-menu with live preview, handled below.
+    if (ctx.getUiMode?.() !== 'lite') {
+      if (cmd.name === '/theme') {
+        ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
+      }
+      ctx.setShowThemePanel(true);
+      return true;
+    }
+    // Deprecation notice shown ONCE per session (not per /theme invocation).
+    // Skipped on in-menu selections (args !== '') and on calls chained from
+    // /settings theme (cmd.name !== '/theme'). Lite routes warning-status
+    // alerts to scrollback, so without the gate every /theme invocation
+    // would stack a fresh row in the chat log.
+    if (cmd.name === '/theme' && args === '' && !themeDeprecationAnnounced) {
+      themeDeprecationAnnounced = true;
       ctx.showAlert('/theme has moved to /settings theme', 'warning', 4000);
     }
-    ctx.setShowThemePanel(true);
+
+    const prefs = loadUserThemePrefs();
+    const themeCmd = ctx.slashCommands.find((c) => c.name === '/theme');
+    if (!themeCmd) return;
+
+    const fallbackDiff = buildFallbackDiff(ctx.getThemeDiffHex());
+
+    // Selection-menu command shape used by every /theme submenu.
+    const themeSelection = {
+      ...themeCmd,
+      meta: {
+        ...themeCmd.meta,
+        inputType: 'selection' as const,
+        searchable: false,
+      },
+    };
+    // The three custom-category rows (prompt / response / diff) with their
+    // current preset labels. Shared by `custom` and the apply-return path.
+    const customCategoryOptions = (p: typeof prefs) => [
+      {
+        value: 'prompt',
+        label: 'Prompt style',
+        description: getPromptPreset(p.promptPreset)?.label ?? 'Default',
+      },
+      {
+        value: 'response',
+        label: 'Response text color',
+        description: getResponsePreset(p.responsePreset)?.label ?? 'Default',
+      },
+      {
+        value: 'diff',
+        label: 'Code diff colors',
+        description: getDiffPreset(p.diffPreset)?.label ?? 'Default',
+      },
+    ];
+    // Per-category data driving the preset submenu + apply. `apply` writes the
+    // category's color slot via the correct setUserColors arg position.
+    const CATEGORY = {
+      prompt: {
+        presets: promptPresets,
+        active: prefs.promptPreset ?? 'default',
+        get: getPromptPreset,
+        label: 'Prompt style',
+        apply: (preset: (typeof promptPresets)[number]) =>
+          ctx.setUserColors(
+            { text: preset.textColor, bg: preset.bgColor },
+            undefined,
+            undefined
+          ),
+        setPref: (pr: typeof prefs, id: string | undefined) => {
+          pr.promptPreset = id;
+        },
+      },
+      response: {
+        presets: responsePresets,
+        active: prefs.responsePreset ?? 'default',
+        get: getResponsePreset,
+        label: 'Response color',
+        apply: (preset: (typeof responsePresets)[number]) =>
+          ctx.setUserColors(undefined, preset.textColor, undefined),
+        setPref: (pr: typeof prefs, id: string | undefined) => {
+          pr.responsePreset = id;
+        },
+      },
+      diff: {
+        presets: diffPresets,
+        active: prefs.diffPreset ?? 'default',
+        get: getDiffPreset,
+        label: 'Diff colors',
+        apply: (preset: (typeof diffPresets)[number]) =>
+          ctx.setUserColors(undefined, undefined, preset),
+        setPref: (pr: typeof prefs, id: string | undefined) => {
+          pr.diffPreset = id;
+        },
+      },
+    } as const;
+    type ThemeCategory = keyof typeof CATEGORY;
+
+    // Open a prompt/response/diff preset submenu (ESC → custom menu).
+    const openPresetSubmenu = (category: ThemeCategory) => {
+      const c = CATEGORY[category];
+      ctx.setThemePreview(
+        buildCurrentPreview(prefs, fallbackDiff, kiroSafe.colors.brand)
+      );
+      ctx.setThemeReturnOnEscape('custom');
+      ctx.setActiveCommand({
+        command: themeSelection,
+        options: c.presets.map((p) => ({
+          value: `${category}:${p.id}`,
+          label: p.label,
+          description: p.id === c.active ? '[active]' : '',
+        })),
+      });
+    };
+
+    // /theme bundled:default — reset to auto-detected theme
+    if (args === 'bundled:default') {
+      ctx.setUserColors(null, null, null);
+      ctx.setBaseTheme(null);
+      const saved = saveUserThemePrefs({});
+      ctx.showAlert(
+        saved ? 'Theme reset to default' : 'Theme reset but failed to save',
+        saved ? 'success' : 'error',
+        3000
+      );
+      ctx.setThemePreview(null);
+      return true;
+    }
+
+    // /theme bundled:<id> — apply a bundled theme (Light/Dark)
+    if (args.startsWith('bundled:')) {
+      const themeId = args.slice('bundled:'.length);
+      const bundled = getBundledTheme(themeId);
+      if (!bundled) {
+        ctx.showAlert(`Unknown theme: ${themeId}`, 'error', 3000);
+        return true;
+      }
+      // Switch the base theme (kiroDark/kiroLight) so ALL UI elements update
+      ctx.setBaseTheme(
+        themeId === 'light' ? kiroLight : themeId === 'dark' ? kiroDark : null
+      );
+      ctx.setUserColors(
+        { text: bundled.prompt.textColor, bg: bundled.prompt.bgColor },
+        bundled.response.textColor,
+        bundled.diff
+      );
+      const baseThemePref: 'dark' | 'light' | undefined =
+        themeId === 'light' ? 'light' : themeId === 'dark' ? 'dark' : undefined;
+      const saved = saveUserThemePrefs({
+        promptPreset:
+          bundled.prompt.id === 'default' ? undefined : bundled.prompt.id,
+        responsePreset:
+          bundled.response.id === 'default' ? undefined : bundled.response.id,
+        diffPreset: bundled.diff.id === 'default' ? undefined : bundled.diff.id,
+        baseTheme: baseThemePref,
+      });
+      ctx.showAlert(
+        saved
+          ? `Theme set to ${bundled.label}`
+          : `Theme applied but failed to save`,
+        saved ? 'success' : 'error',
+        3000
+      );
+      ctx.setThemePreview(null);
+      return true;
+    }
+
+    // /theme custom — prompt vs response vs diff selection (ESC → bare /theme).
+    if (args === 'custom') {
+      ctx.setThemePreview(
+        buildCurrentPreview(prefs, fallbackDiff, kiroSafe.colors.brand)
+      );
+      ctx.setThemeReturnOnEscape('');
+      ctx.setActiveCommand({
+        command: themeSelection,
+        options: customCategoryOptions(prefs),
+      });
+      return true;
+    }
+
+    // /theme prompt|response|diff — open the category's preset submenu.
+    if (args === 'prompt' || args === 'response' || args === 'diff') {
+      openPresetSubmenu(args);
+      return true;
+    }
+
+    // /theme <category>:<id> — apply a custom selection, then re-open custom.
+    if (
+      args.startsWith('prompt:') ||
+      args.startsWith('response:') ||
+      args.startsWith('diff:')
+    ) {
+      const colonIdx = args.indexOf(':');
+      const category = args.slice(0, colonIdx) as ThemeCategory;
+      const presetId = args.slice(colonIdx + 1);
+      const c = CATEGORY[category];
+
+      const preset = c.get(presetId);
+      if (!preset) {
+        ctx.showAlert(`Unknown ${category} preset: ${presetId}`, 'error', 3000);
+        return true;
+      }
+      const updatedPrefs = { ...prefs };
+      c.setPref(updatedPrefs, preset.id === 'default' ? undefined : preset.id);
+
+      c.apply(preset as any);
+      const saved = saveUserThemePrefs(updatedPrefs);
+      ctx.showAlert(
+        saved
+          ? `${c.label} set to ${preset.label}`
+          : `${c.label} applied but failed to save`,
+        saved ? 'success' : 'error',
+        3000
+      );
+
+      // Re-open the custom menu with the updated preview (ESC → bare /theme).
+      ctx.setThemePreview(
+        buildCurrentPreview(updatedPrefs, fallbackDiff, kiroSafe.colors.brand)
+      );
+      ctx.setThemeReturnOnEscape('');
+      ctx.setActiveCommand({
+        command: themeSelection,
+        options: customCategoryOptions(updatedPrefs),
+      });
+      return true;
+    }
+
+    // Bare /theme — show top-level: Auto, Dark Theme, Light Theme, Custom
+    // Initial preview matches first highlighted item (Auto)
+    ctx.setThemePreview(ctx.getAutoPreview() || null);
+    // Top-level menu — ESC fully closes the overlay (no parent above).
+    ctx.setThemeReturnOnEscape(null);
+
+    // Determine which option is currently active
+    const activeBundledId = bundledThemes.find((t) => {
+      const matchPrompt = (prefs.promptPreset ?? 'default') === t.prompt.id;
+      const matchResponse =
+        (prefs.responsePreset ?? 'default') === t.response.id;
+      const matchDiff = (prefs.diffPreset ?? 'default') === t.diff.id;
+      return matchPrompt && matchResponse && matchDiff;
+    })?.id;
+    const isCustomActive =
+      !activeBundledId &&
+      (prefs.promptPreset || prefs.responsePreset || prefs.diffPreset);
+
+    const isDefaultActive = !activeBundledId && !isCustomActive;
+
+    ctx.setActiveCommand({
+      command: themeSelection,
+      options: [
+        {
+          value: 'bundled:default',
+          label: 'Auto',
+          description: isDefaultActive
+            ? '[active]'
+            : 'Auto-detected theme for your terminal',
+        },
+        ...bundledThemes.map((t) => ({
+          value: `bundled:${t.id}`,
+          label: t.label,
+          description: t.id === activeBundledId ? '[active]' : '',
+        })),
+        {
+          value: 'custom',
+          label: 'Custom',
+          description: isCustomActive
+            ? '[active]'
+            : 'Choose prompt, response, and diff colors separately',
+        },
+      ],
+    });
     return true;
   },
 
@@ -1047,7 +1344,33 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
    */
   showSettingsMenu: (_result, ctx, cmd, args) => {
     if (args) {
-      const sub = findSettingsSubcommand(args);
+      const resolveEffect = (name: string) => {
+        const handler = effectHandlers[name as EffectName];
+        if (!handler) {
+          throw new Error(`Unknown effect handler: ${name}`);
+        }
+        return handler;
+      };
+      // Exact match first — preserves the colon-form values
+      // (e.g. `terminal:interrupt:steer`) the menu rows dispatch directly.
+      let sub = findSettingsSubcommand(args);
+      let arg = '';
+      // Fall back to "subcommand + trailing section", e.g.
+      // `/settings verbosity truncation`. The first space-delimited word is the
+      // subcommand; the rest is forwarded so the handler can drill straight
+      // into a nested menu (mirrors the breadcrumb so nested menus are
+      // reachable as typed subcommands).
+      if (!sub) {
+        const space = args.indexOf(' ');
+        if (space !== -1) {
+          const head = args.slice(0, space);
+          const candidate = findSettingsSubcommand(head);
+          if (candidate) {
+            sub = candidate;
+            arg = args.slice(space + 1).trim();
+          }
+        }
+      }
       if (!sub) {
         ctx.showAlert(`Unknown settings subcommand: ${args}`, 'error', 3000);
         return true;
@@ -1056,20 +1379,18 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         sub.handle({
           ctx,
           settingsCommand: cmd,
-          resolveEffect: (name) => {
-            const handler = effectHandlers[name as EffectName];
-            if (!handler) {
-              throw new Error(`Unknown effect handler: ${name}`);
-            }
-            return handler;
-          },
+          resolveEffect,
+          arg,
         })
       );
       return true;
     }
 
-    // Bare /settings opens the SettingsPanel overlay; the panel handles
-    // its own item rendering and routing to sub-panels.
+    // Bare /settings opens the shared SettingsPanel overlay in BOTH modes;
+    // the panel handles its own item rendering and routing to sub-panels.
+    // Lite renders the same panel via <BackendPanels> so the two modes stay
+    // 1:1 (breadcrumb titles, panel heights, ESC-back). The lite-only
+    // `verbosity` row is added inside the panel's model, gated on uiMode.
     ctx.setShowSettingsPanel(true);
     return true;
   },
@@ -1085,6 +1406,54 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ctx.sendMessage(data.prompt);
     }
   },
+
+  switchToLite: (_result, ctx) => {
+    // Gated on Feature::Lite rollout (internal + nightly). Outside the
+    // cohort, /lite is a no-op so stable users keep the modern TUI
+    // behavior they had before this branch existed.
+    if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') {
+      ctx.announceSystem('Lite mode is not available in this build');
+      return;
+    }
+    const fromMode = ctx.getUiMode?.() ?? 'tui';
+    // tui→lite clears scrollback and re-renders the full conversation in
+    // lite form (symmetric with lite→tui). setUiMode bumps the clear
+    // token; LiteLayout + ConversationView both observe it, wipe their
+    // module-level singletons, and reset twinki's cursor. The user gets
+    // consistent lite styling (You:/<agent>: headers, current verbosity,
+    // current theme) across every message rather than a half-and-half
+    // mix of TUI-styled history + lite-styled new rows.
+    ctx.setUiMode?.('lite');
+    if (fromMode !== 'lite') {
+      ctx.kiro.sendUiModeChanged({
+        from: fromMode,
+        to: 'lite',
+        source: ModeChangeSource.SlashCommand,
+        sessionId: ctx.kiro.sessionId,
+      });
+    }
+    ctx.announceSystem('Switched to lite mode');
+  },
+
+  switchToTui: (_result, ctx) => {
+    // /tui from lite swaps to TUI; from TUI it falls through to the
+    // info panel (origin/main behavior). Symmetric with /lite.
+    if (ctx.getUiMode?.() === 'lite') {
+      ctx.setUiMode?.('tui');
+      ctx.kiro.sendUiModeChanged({
+        from: 'lite',
+        to: 'tui',
+        source: ModeChangeSource.SlashCommand,
+        sessionId: ctx.kiro.sessionId,
+      });
+      ctx.announceSystem('Switched to TUI mode');
+      return;
+    }
+    ctx.setShowTuiPanel(true);
+  },
+
+  /** /verbosity implementation lives in ./verbosity-menu.ts. */
+  verbosityConfig: handleVerbosity,
 
   switchToPlanMode: (result, ctx) => {
     const data = result?.data as
@@ -1127,9 +1496,6 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
             data: {
               sessionId: data.sessionId,
               switchSession: true,
-              // /rewind-only: skip the agent welcome message on reload since
-              // the user is continuing, not starting fresh.
-              suppressAgentWelcome: true,
               // /rewind-only: clear live messages before replaying the forked
               // session's history so stale turns from the old session don't
               // leak into the new session's display.
@@ -1162,6 +1528,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
 import { formatImageLabel } from '../utils/image-label.js';
 import { MessageRole } from '../stores/app-store.js';
+import { kiroDark } from '../theme/kiroDark.js';
+import { kiroLight } from '../theme/kiroLight.js';
+import { kiroSafe } from '../theme/kiroSafe.js';
+import {
+  promptPresets,
+  responsePresets,
+  diffPresets,
+  bundledThemes,
+  buildCurrentPreview,
+  buildFallbackDiff,
+  loadUserThemePrefs,
+  saveUserThemePrefs,
+  getPromptPreset,
+  getResponsePreset,
+  getDiffPreset,
+  getBundledTheme,
+} from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
 
 /**

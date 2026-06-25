@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { executeCommand, executeCommandWithArg } from '../index.js';
+import {
+  executeCommand,
+  executeCommandWithArg,
+  isKnownSlashCommandToken,
+} from '../index.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
 
@@ -183,5 +187,54 @@ describe('executeCommandWithArg', () => {
     const executeCall = (ctx.kiro.executeCommand as any).mock.calls[0]!;
     expect(executeCall[0].command).toBe('help');
     expect(executeCall[0].args).toEqual({});
+  });
+});
+
+describe('isKnownSlashCommandToken', () => {
+  const verbose = makeCmd({ name: '/verbose', meta: { local: true } });
+  const clear = makeCmd({ name: '/clear', meta: { local: true } });
+  const commands = [verbose, clear];
+
+  it('returns true when first token is an exact registered command', () => {
+    expect(isKnownSlashCommandToken('/verbose', commands)).toBe(true);
+    expect(isKnownSlashCommandToken('/clear', commands)).toBe(true);
+  });
+
+  it('matches case-insensitively', () => {
+    expect(isKnownSlashCommandToken('/VERBOSE', commands)).toBe(true);
+  });
+
+  it('looks at the FIRST whitespace-separated token only', () => {
+    // /verbose foozle: first token "verbose" is known → true (handler will
+    // error on the bogus subcommand, that's the dispatcher's job).
+    expect(isKnownSlashCommandToken('/verbose foozle', commands)).toBe(true);
+    expect(isKnownSlashCommandToken('/verbose density minimal', commands)).toBe(
+      true
+    );
+  });
+
+  it('returns false for prefix-only matches (exact only)', () => {
+    // /ver does not exactly match /verbose. Lite mode treats this as a
+    // chat message rather than dispatching the prefix-matched command.
+    expect(isKnownSlashCommandToken('/ver', commands)).toBe(false);
+    expect(isKnownSlashCommandToken('/cl', commands)).toBe(false);
+  });
+
+  it('returns false for unknown commands like /foozle', () => {
+    expect(isKnownSlashCommandToken('/foozle', commands)).toBe(false);
+    expect(isKnownSlashCommandToken('/notacommand here', commands)).toBe(false);
+  });
+
+  it('returns false for paths and non-command slash strings', () => {
+    expect(isKnownSlashCommandToken('/Users/me/file.txt', commands)).toBe(
+      false
+    );
+    expect(isKnownSlashCommandToken('/some/file/path', commands)).toBe(false);
+    expect(isKnownSlashCommandToken('/Makefile', commands)).toBe(false);
+  });
+
+  it('returns false for non-slash input', () => {
+    expect(isKnownSlashCommandToken('hello world', commands)).toBe(false);
+    expect(isKnownSlashCommandToken('verbose', commands)).toBe(false);
   });
 });

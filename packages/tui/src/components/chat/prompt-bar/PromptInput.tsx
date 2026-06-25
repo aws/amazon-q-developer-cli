@@ -122,6 +122,13 @@ export interface PromptInputProps {
   triggerRules?: TriggerRule[];
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
   placeholder?: string;
+  /**
+   * When true, unmodified ↑/↓ are forwarded to whatever component owns the
+   * focus instead of editing the input or navigating history. Used by lite
+   * mode's subagent panel so the user can scroll/cycle while the input stays
+   * mounted for typing.
+   */
+  suppressArrows?: boolean;
 }
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
@@ -170,6 +177,7 @@ export const PromptInput = React.memo(function PromptInput({
   triggerRules = [],
   onTriggerDetected,
   placeholder = 'ask a question, or describe a task ↵',
+  suppressArrows = false,
 }: PromptInputProps) {
   const {
     activeTrigger,
@@ -1110,6 +1118,12 @@ export const PromptInput = React.memo(function PromptInput({
           applyEdit(deleteForward(segments, cursor));
         }
       } else if (key.leftArrow) {
+        // suppressArrows only blocks unmodified ↑/↓ — horizontal arrows
+        // remain available so the user can still move the input cursor while
+        // a parent handler claims arrows for navigation. Shift+← may still
+        // be claimed by the parent (e.g. lite's subagent panel cycle binding)
+        // — bail in that case so we don't fight over the keystroke.
+        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         if (key.ctrl || key.meta) {
           // Ctrl+Left or Cmd+Left - move word backward
@@ -1118,6 +1132,7 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.max(0, cursor - 1));
         }
       } else if (key.rightArrow) {
+        if (suppressArrows && key.shift) return;
         inputMetrics.markStateUpdate();
         // Accept shadow text when cursor is at end of input
         if (commandShadowText && cursor === totalWidth(segments)) {
@@ -1136,6 +1151,7 @@ export const PromptInput = React.memo(function PromptInput({
           setCursor(Math.min(totalWidth(segments), cursor + 1));
         }
       } else if (key.upArrow) {
+        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
@@ -1180,6 +1196,7 @@ export const PromptInput = React.memo(function PromptInput({
           syncToStore(newSegs);
         }
       } else if (key.downArrow) {
+        if (suppressArrows) return;
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
