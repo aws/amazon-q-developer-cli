@@ -399,3 +399,14 @@ KAS logs are at `~/.kiro/logs/<timestamp>/kiro.log`. Use `KIRO_KAS_SERVER_PATH` 
 
 MCP logs: Same directory, `mcp.log`
 
+## Change Discipline
+
+Applies to every change, by humans and agents (Kiro, Claude, Codex).
+
+- **No deferring.** Make a requested change in this PR, or decline it with a concrete reason the owner accepted. "Defer", "follow-up later", and "too risky / too much churn" are not reasons to skip review feedback — if it should be done, do it and test it.
+- **Verify; don't rubber-stamp.** Keeping code a reviewer questioned requires proving it is needed against the actual code — a caller, a test, or a concrete failure it prevents. Say "checked: needed", never "assumed needed".
+- **Comments: one line per block, the _why_ only.** No line-by-line narration, no multi-line essays, no design rationale inline (put that in a doc). Prefer self-documenting code.
+- **No dead code, no scope creep.** Every changed line traces to the change's stated purpose. No drive-by edits to unrelated files; no code without a caller; remove anything you orphan.
+- **Claims need evidence.** "Done / works / safe" must cite a check you ran (typecheck, test, diff, build). Keep PR comments and status consistent with reality; delete stale claims instead of leaving them.
+- **Root-cause before attributing.** When CI or a build breaks, prove the cause from what actually changed (diff, inputs) before claiming or denying responsibility.
+
