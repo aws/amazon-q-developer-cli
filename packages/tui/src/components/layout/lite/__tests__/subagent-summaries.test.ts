@@ -163,7 +163,7 @@ describe('collectSubagentSummariesByParent', () => {
     ]);
   });
 
-  test('collects KAS subagent_response output and preserves verbose full output', () => {
+  test('collects KAS subagent_response output and renders it ONCE (no full-output dup)', () => {
     const parentMsg = {
       ...parent('parent-1', 'crew-1'),
       result: { status: 'success', output: 'done' },
@@ -212,6 +212,10 @@ describe('collectSubagentSummariesByParent', () => {
     expect(plain).toContain('(+5 more lines)');
     expect(plain).not.toContain('FULLOUTPUTKAS-34');
 
+    // Even with the verbose `subagent` filter on, a plain response renders ONLY
+    // in the `response:` section — NOT also in a `full output:` section (that
+    // double-render was the reported bug). Plain responses aren't raw tool
+    // output, so full output: must omit them.
     const verboseBlock = stripAnsi(
       renderSubagentFinalBlock(
         parentToolMsg.content,
@@ -225,12 +229,11 @@ describe('collectSubagentSummariesByParent', () => {
         }
       )
     );
-    const fullOutputStart = verboseBlock.indexOf('full output:');
-    const responseStart = verboseBlock.indexOf('response:');
-    expect(fullOutputStart).toBeGreaterThanOrEqual(0);
-    expect(responseStart).toBeGreaterThan(fullOutputStart);
-    const fullOutput = verboseBlock.slice(fullOutputStart, responseStart);
-    expect(fullOutput).toContain('FULLOUTPUTKAS-34');
+    expect(verboseBlock).not.toContain('full output:');
+    expect(verboseBlock).toContain('response:');
+    // The output appears exactly once (in response:, truncated).
+    const occurrences = verboseBlock.split('FULLOUTPUTKAS-0').length - 1;
+    expect(occurrences).toBe(1);
   });
 
   test('renders a user-visible late summary appendix for an already-flushed parent', () => {

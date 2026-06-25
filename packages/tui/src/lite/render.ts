@@ -2479,6 +2479,7 @@ export function renderSubagentResponseSummaryLines(
   stageSummaries: readonly SubagentStageSummary[],
   cols: number,
   colors?: {
+    getStageInputColor?: (stageName: string) => (text: string) => string;
     getStageOutputColor?: (stageName: string) => (text: string) => string;
     glyphs?: Glyphs;
   }
@@ -2490,6 +2491,10 @@ export function renderSubagentResponseSummaryLines(
   };
   const outputColor = (name: string): ((text: string) => string) =>
     colors?.getStageOutputColor?.(name) ?? responseChip;
+  // Plain responses chip in the input color so they match the prompt's stage
+  // name; summaries fall back to the response chip.
+  const inputColor = (name: string): ((text: string) => string) =>
+    colors?.getStageInputColor?.(name) ?? outputColor(name);
   const renderable: RenderableStage[] = [];
   for (const s of stageSummaries) {
     const ctx = (s.contextSummary ?? '').trim();
@@ -2525,8 +2530,17 @@ export function renderSubagentResponseSummaryLines(
     return summary?.kind === 'response';
   });
   const header = allResponses ? '  response:' : '  response summary:';
+  // Plain-response stages chip in the input color (match the prompt); summary
+  // stages keep the response/output color.
+  const isResponseStage = (name: string): boolean =>
+    stageSummaries.find((s) => s.stageName === name)?.kind === 'response';
   return renderDigestSection(chalk.dim(header), renderable, {
-    chipFn: (name) => chalk.bold(outputColor(name)(`▸ ${name}`)),
+    chipFn: (name) =>
+      chalk.bold(
+        (isResponseStage(name) ? inputColor(name) : outputColor(name))(
+          `▸ ${name}`
+        )
+      ),
     cols,
     glyphs: colors?.glyphs,
   });
@@ -2685,19 +2699,47 @@ export function renderSubagentFinalBlock(
     );
   }
 
+  const finished = status === 'done' && result?.status !== 'error';
+  const hasPlainResponses =
+    Array.isArray(stageSummaries) &&
+    stageSummaries.some((s) => s.kind === 'response');
+
+  // KAS plain responses (the subagent's actual final output): render them with
+  // the `full output:` digest style — full text, ▸ chips colored to MATCH the
+  // pipeline prompt's stage name (input color). Always shown (not gated on the
+  // verbose `subagent` filter) since this IS the subagent's answer. They are
+  // excluded from the summary/raw sections below so the output isn't doubled.
+  if (hasPlainResponses && finished) {
+    const responseStages = stageSummaries!
+      .filter(
+        (s) => s.kind === 'response' && (s.taskResult ?? '').trim().length > 0
+      )
+      .map((s) => ({ stageName: s.stageName, body: s.taskResult }));
+    if (responseStages.length > 0) {
+      lines.push(
+        ...renderDigestSection(chalk.bold('  response:'), responseStages, {
+          chipFn: (n) => chalk.bold(inputColor(n)(`▸ ${n}`)),
+          cols,
+          glyphs: colors?.glyphs,
+        })
+      );
+    }
+  }
+
   // Verbose mode (subagent passes the filter): surface the FULL per-stage
   // taskResult with red ▸ chips — what the parent literally received before
   // the joiner discarded it. Order is pipeline → raw → summary so the eye
-  // lands on the digest last.
+  // lands on the digest last. Plain responses already rendered above.
   const showRawSection =
-    status === 'done' &&
-    result?.status !== 'error' &&
+    finished &&
     Array.isArray(stageSummaries) &&
     stageSummaries.length > 0 &&
     shouldShowToolOutput('subagent', colors?.filtersOverride);
   if (showRawSection) {
     const rawStages = stageSummaries!
-      .filter((s) => (s.taskResult ?? '').trim().length > 0)
+      .filter(
+        (s) => s.kind !== 'response' && (s.taskResult ?? '').trim().length > 0
+      )
       .map((s) => ({ stageName: s.stageName, body: s.taskResult }));
     if (rawStages.length > 0) {
       lines.push(
@@ -2710,18 +2752,14 @@ export function renderSubagentFinalBlock(
     }
   }
 
-  const hasPlainResponses =
-    Array.isArray(stageSummaries) &&
-    stageSummaries.some((s) => s.kind === 'response');
-  if (
-    (sub.responses || hasPlainResponses) &&
-    status === 'done' &&
-    result?.status !== 'error' &&
-    Array.isArray(stageSummaries) &&
-    stageSummaries.length > 0
-  ) {
+  // v2 summary digests (kind undefined: contextSummary/taskResult). Plain
+  // responses are handled above, so this path is summaries-only now.
+  const summaryStages = Array.isArray(stageSummaries)
+    ? stageSummaries.filter((s) => s.kind !== 'response')
+    : [];
+  if (sub.responses && finished && summaryStages.length > 0) {
     lines.push(
-      ...renderSubagentResponseSummaryLines(stageSummaries, cols, {
+      ...renderSubagentResponseSummaryLines(summaryStages, cols, {
         getStageOutputColor: outputColor,
         glyphs: colors?.glyphs,
       })

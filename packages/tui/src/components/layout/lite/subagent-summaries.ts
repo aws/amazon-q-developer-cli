@@ -215,7 +215,11 @@ export function renderSubagentSummaryAppendix(
   }
 
   const cols = Math.max(40, renderCtx.termCols ?? 120);
+  // Plain responses render with the input color (matching the prompt's stage
+  // name); summaries keep the response-chip color. renderSubagentResponseSummaryLines
+  // picks the chip per-stage from kind, so thread both colors.
   const lines = renderSubagentResponseSummaryLines(summaries, cols, {
+    getStageInputColor: renderCtx.getStageInputColor,
     getStageOutputColor: renderCtx.getStageOutputColor,
     glyphs: renderCtx.glyphs,
   });
