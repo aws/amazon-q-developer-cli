@@ -1405,6 +1405,36 @@ describe('/spawn effect', () => {
     );
     expect(spawnMock).toHaveBeenCalledWith('do work', 'custom');
   });
+
+  // Ralph hunt-1 — KAS's spawnSession is a stub returning an empty sessionId
+  // (no manual ephemeral-spawn RPC). The effect must NOT build a bogus
+  // `session-` name, register a dead id:'' session (which pollutes /switch
+  // with a phantom row opening a broken session-view), or announce a
+  // misleading "Spawned session-: …". It must show a clean "not supported"
+  // error and touch no state.
+  it('shows a clean "not supported" error and adds no session when sessionId is empty (KAS stub)', async () => {
+    const ctx = createMockCommandContext({
+      kiro: {
+        // Mirror the KAS stub: empty sessionId.
+        spawnSession: mock(() => Promise.resolve({ sessionId: '', name: '' })),
+      } as any,
+    });
+    (ctx as any).getUiMode = () => 'lite';
+    await runEffect(
+      spawnCmd,
+      { success: true, message: '' },
+      ctx,
+      'do a research task'
+    );
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      '/spawn is not supported in KAS mode',
+      'error',
+      3000
+    );
+    // No phantom session registered, no misleading confirmation.
+    expect(ctx._spies.addSession).not.toHaveBeenCalled();
+    expect(ctx._spies.announceSystem).not.toHaveBeenCalled();
+  });
 });
 
 describe('/switch effect', () => {

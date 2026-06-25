@@ -1655,6 +1655,74 @@ async fn test_parse_error_preserved_when_sibling_denied() {
     );
 }
 
+/// A note steered alongside a REJECTED tool must drain into the same follow-up
+/// request that carries the denial — not wait until end-of-turn. Regression
+/// test for the lite "attach note then reject" flow: the user saw the note
+/// land immediately on approve/trust but "queued for afterwards" on reject,
+/// because the deny branch sent its tool_results via `send_request` directly,
+/// bypassing the `send_tool_results` steering drain. The fix drains queued
+/// steering in the deny branch too, so all dispositions behave identically.
+#[tokio::test]
+async fn test_steered_note_drains_on_reject() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("steered note drains on reject")
+        .with_default_agent_config()
+        // The fs_write pauses for approval; we steer a note, then reject it.
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/parse_error_with_denied_sibling.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("write hello.py and list the missing dir".to_string())
+        .await;
+
+    // When the approval lands, steer a note BEFORE rejecting — mirroring the
+    // lite respondWithNote flow (note is buffered, then the disposition is
+    // sent). The note must ride the very next request, alongside the denial.
+    test.steer_then_approve(
+        Duration::from_secs(5),
+        "please use a different filename",
+        ApprovalResult {
+            option_id: PermissionOptionId::RejectOnce,
+            reason: None,
+            trust_option: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 requests (initial + tool_results after deny), got {}",
+        requests.len()
+    );
+
+    // The follow-up request (the deny send) must carry BOTH the denial tool
+    // result AND the steered note as user text — proving the note drained at
+    // the reject boundary rather than waiting for end-of-turn.
+    let follow_up = &requests[1];
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_write" && matches!(tr.status, ToolResultStatus::Error)),
+        "follow-up should include the error tool_result for the denied write"
+    );
+    assert!(
+        follow_up.prompt_contains_text("please use a different filename"),
+        "the steered note must drain into the SAME follow-up request as the denial \
+         (it rides as a [LIVE STEERING ...] user text block); if this fails the note \
+         was deferred to end-of-turn — the bug this guards against"
+    );
+}
+
 /// Tests that an empty response (messageStart + messageStop + metadata, no
 /// text/tools/thinking) triggers exactly one retry. When the retry succeeds, the agent
 /// completes normally.

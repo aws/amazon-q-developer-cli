@@ -37,6 +37,7 @@ import {
   selectStaticEligible,
 } from './static-flush.js';
 import { previewLine } from './queue-preview.js';
+import { buildUnifiedQueueEntries } from '../../../utils/queue-navigation.js';
 import { renderMessageToText, buildRenderTheme } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../lite/tips.js';
@@ -116,6 +117,8 @@ export const LiteLayout: React.FC = () => {
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
+  const pendingSteerContent = useAppStore((s) => s.pendingSteerContent);
+  const editingSteerLineIndex = useAppStore((s) => s.editingSteerLineIndex);
   const tasks = useAppStore((s) => s.tasks);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
@@ -203,6 +206,14 @@ export const LiteLayout: React.FC = () => {
 
   const pendingSwap = usePendingSwap();
   const pendingAgentName = pendingSwap?.name ?? null;
+  const unifiedQueueEntries = useMemo(
+    () => buildUnifiedQueueEntries(pendingSteerContent, queuedMessages),
+    [pendingSteerContent, queuedMessages]
+  );
+  const isEditingEntry = useCallback(
+    () => editingQueueIndex != null || editingSteerLineIndex != null,
+    [editingQueueIndex, editingSteerLineIndex]
+  );
 
   // Subagent inline-trace panel (Ctrl+O). subagentOpenIndex = inspected stage
   // (null = closed); mirrored into app-store so dispatch stops Esc from also
@@ -351,7 +362,7 @@ export const LiteLayout: React.FC = () => {
   useKeypress((input, key) => {
     if (!(key.ctrl && (input === 'x' || input === 'X'))) return;
     if (tasks.length === 0) return;
-    if (editingQueueIndexRef.current != null) return;
+    if (isEditingEntry()) return;
     if (pendingApprovalRef.current) return;
     if (anyPanelOpenRef.current) return;
     if (subagentOpenIndexRef.current != null) return;
@@ -973,6 +984,25 @@ export const LiteLayout: React.FC = () => {
     [handleUserInput]
   );
 
+  // Flush a staged approval note to the model. ApprovalPrompt calls this just
+  // BEFORE it sends the user's y/t/n disposition (see respondWithNote): the
+  // note rides as a mid-turn steer, and the steer frame must reach the backend
+  // ahead of the approval response so the deny path's drain consumes it on the
+  // same request (otherwise it slips to end-of-turn — the "queued for
+  // afterwards" bug). This must NOT cancel the approval (that would undo the
+  // disposition and force a denial, the ORIGINAL bug). It only injects the
+  // staged text as a user turn — the only channel that reaches the model, since
+  // the backend approval response can't carry free text (v2
+  // ApprovalResult.reason is ignored by handle_approval_result). The
+  // empty-string guard lives in ApprovalPrompt (respondWithNote only calls this
+  // when the trimmed note is non-empty).
+  const handleNotesSubmit = useCallback(
+    (value: string) => {
+      handleUserInput(value);
+    },
+    [handleUserInput]
+  );
+
   const handleTriggerDetected = useCallback(
     (
       trigger: {
@@ -1466,27 +1496,34 @@ export const LiteLayout: React.FC = () => {
       {/* Queued messages — preview rows only (full text lives in the store).
           previewLine cap + truncate-end bound each row by width; rendering full
           text here hung the UI on multi-KB paste. Hidden during shell escape. */}
-      {queuedMessages.length > 0 && !isShellEscape && (
+      {unifiedQueueEntries.length > 0 && !isShellEscape && (
         <Box flexDirection="column">
-          {queuedMessages.map((msg, i) => {
-            const editing = editingQueueIndex === i;
+          {unifiedQueueEntries.map((entry, displayIndex) => {
+            const editing =
+              entry.kind === 'queue'
+                ? editingQueueIndex === entry.queueIndex
+                : editingSteerLineIndex === displayIndex;
             const marker = editing ? chalk.cyan(`${glyphs.chevron} `) : '  ';
             // Reserve cols for marker + index prefix so a wide preview can't
             // overrun the terminal edge before truncate-end kicks in.
             const cols = process.stdout.columns ?? 80;
             const previewWidth = Math.max(20, cols - 8);
-            const preview = previewLine(msg, previewWidth);
-            const body = editing
-              ? chalk.cyan(`${i + 1}. ${preview}`)
-              : chalk.dim(`${i + 1}. ${preview}`);
+            const preview = previewLine(entry.text, previewWidth);
+            // Steer entries get a leading marker so they read as "in flight"
+            // (injected mid-turn) vs. the plain queue order below.
+            const label =
+              entry.kind === 'steer'
+                ? `${displayIndex + 1}. (steer) ${preview}`
+                : `${displayIndex + 1}. ${preview}`;
+            const body = editing ? chalk.cyan(label) : chalk.dim(label);
             return (
-              <Text key={i} wrap="truncate-end">
+              <Text key={displayIndex} wrap="truncate-end">
                 {marker}
                 {body}
               </Text>
             );
           })}
-          <Text>{chalk.dim(`  (${queuedMessages.length} queued)`)}</Text>
+          <Text>{chalk.dim(`  (${unifiedQueueEntries.length} queued)`)}</Text>
         </Box>
       )}
 
@@ -1564,6 +1601,7 @@ export const LiteLayout: React.FC = () => {
               getAgentColor(stageName, getColor)
             }
             mainAgentName={agentName}
+            onNotesSubmit={handleNotesSubmit}
           />
         </Box>
       )}
@@ -1579,10 +1617,12 @@ export const LiteLayout: React.FC = () => {
 
       {!showApproval && !anyPanelOpen && (
         <Box flexDirection="column">
-          {editingQueueIndex != null && (
+          {isEditingEntry() && (
             <Text>
               {chalk.cyan(
-                `${glyphs.chevron} editing queued #${editingQueueIndex + 1}`
+                editingSteerLineIndex != null
+                  ? `${glyphs.chevron} editing steer #${editingSteerLineIndex + 1}`
+                  : `${glyphs.chevron} editing queued #${editingQueueIndex! + 1}`
               )}
               {chalk.dim(' · enter saves · ctrl+x deletes · esc cancels')}
             </Text>

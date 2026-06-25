@@ -12,6 +12,7 @@ import {
   type TrustOption,
 } from '../../../types/agent-events.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   buildRenderTheme,
@@ -37,6 +38,7 @@ export function ApprovalPrompt({
   respondToApproval,
   getStageInputColor,
   mainAgentName,
+  onNotesSubmit,
 }: {
   messages: MessageType[];
   approval: any;
@@ -45,6 +47,18 @@ export function ApprovalPrompt({
     target?: any,
     _meta?: Record<string, unknown>
   ) => void;
+  /**
+   * Flush a staged approval note to the model as a mid-turn steer. Pressing
+   * [tab] on the default page swaps the y/t/n hotkey row for a feedback input;
+   * submitting it STAGES the text (see stagedNote) without resolving the
+   * approval. respondWithNote then calls this just BEFORE sending the chosen
+   * y/t/n disposition, so the note rides as a follow-up user turn while the
+   * tool still gets the disposition the user picked. The parent (LiteLayout)
+   * wires this to handleUserInput; it must NOT cancel the approval (the old
+   * cancel-and-inject behavior force-denied every noted tool). respondWithNote
+   * only calls this with a non-empty trimmed note.
+   */
+  onNotesSubmit: (value: string) => void;
   /**
    * Resolves a stage name to its per-agent input color. Used so the subagent
    * approval pipeline tree shows each stage in the same shade as the chat-log
@@ -120,10 +134,17 @@ export function ApprovalPrompt({
   // keystroke can't surprise anyone. No intermediate confirm page.
   const trustOptions: TrustOption[] = approval.trustOptions ?? [];
   const hasTrustTiers = trustOptions.length > 0;
-  const [page, setPage] = useState<'default' | 'trust'>('default');
+  const [page, setPage] = useState<'default' | 'trust' | 'notes'>('default');
   // +1 row at the end of the submenu for "Trust entire tool". Reset to top
   // every time the page is opened.
   const [trustIdx, setTrustIdx] = useState(0);
+  // The note typed on the [tab] feedback page, held until the user picks the
+  // real y/t/n disposition. Pressing Enter in the notes box *stages* the text
+  // here and returns to the picker — it does NOT submit/deny the tool (the old
+  // behavior cancelled the approval, marking every noted request DENIED). The
+  // staged note is flushed to the model as a follow-up turn once a disposition
+  // is chosen (see flushStagedNote).
+  const [stagedNote, setStagedNote] = useState('');
 
   // Reset to the default page whenever the approval changes (e.g. a sibling
   // tool in a concurrent batch resolves and the next one slides in). Without
@@ -136,6 +157,7 @@ export function ApprovalPrompt({
   useEffect(() => {
     setPage('default');
     setTrustIdx(0);
+    setStagedNote('');
   }, [approvalToolCallId]);
 
   const opts = approval.permissionOptions || [];
@@ -143,6 +165,54 @@ export function ApprovalPrompt({
     opts.find((o: PermissionOption) => o.kind === kind)?.optionId ?? kind;
   const allowAlwaysId = findOpt(ApprovalOptionId.AllowAlways);
   const cancelMessage = useAppStore((s) => s.cancelMessage);
+  const setCommandInput = useAppStore((s) => s.setCommandInput);
+
+  // Open the notes page, seeding the shared input slot with any prior staged
+  // note so [tab] genuinely edits the existing text (the mounted PromptInput
+  // syncs from commandInputValue on mount). The main lite input is unmounted
+  // while the approval shows (LiteLayout gates it on !showApproval), so this
+  // seed can't leak into it.
+  const openNotesPage = () => {
+    // Always seed (empty when no staged note) so a stale global compose value
+    // — e.g. a stray key spammed at the y/t/n row — can't prefill the box.
+    setCommandInput(stagedNote ?? '');
+    setPage('notes');
+  };
+
+  // Stash the typed note and return to the y/t/n row WITHOUT resolving the
+  // approval. PromptInput has already cleared the shared input slot via its
+  // clearAll() on submit, so nothing leaks into the main input.
+  const handleStageNote = (value: string) => {
+    setStagedNote(value);
+    setPage('default');
+  };
+
+  // Flush the staged note as a steer FIRST, then send the chosen disposition.
+  //
+  // The backend approval response can't carry free text (the v2
+  // ApprovalResult.reason field is ignored by handle_approval_result and the
+  // deny path hardcodes its reason), so the note rides as a mid-turn steer via
+  // onNotesSubmit. Ordering matters: SteerMessage and SendApprovalResult are
+  // two independent ACP round-trips that the backend actor processes in
+  // arrival order off a single mailbox. The note MUST be buffered before the
+  // disposition is processed — on REJECT the deny path resumes the model
+  // immediately, draining the steering buffer right then; if the steer hasn't
+  // landed yet the note slips to the next turn (the "queued for afterwards"
+  // bug). On approve/trust the tools run in the background, so the window is
+  // wide and either order happens to work — but sending the note first makes
+  // all three dispositions deterministic.
+  //
+  // Sending the note first is safe now that handleNotesSubmit no longer cancels
+  // the approval (the old force-deny path): it only buffers a steer, leaving the
+  // tool to take the disposition the user actually picks one line below.
+  const respondWithNote = (
+    optionId: string,
+    meta?: Record<string, unknown>
+  ) => {
+    const trimmed = stagedNote.trim();
+    if (trimmed) onNotesSubmit(trimmed);
+    respondToApproval(optionId, undefined, meta);
+  };
 
   useKeypress((input, key) => {
     if (page === 'default') {
@@ -156,10 +226,22 @@ export function ApprovalPrompt({
         cancelMessage();
         return;
       }
+      // Tab → notes page. Parity with the full TUI, where Tab (or Right
+      // arrow) flips the dropdown into drill-in mode. We use Tab only:
+      // shift+letter isn't reliably detectable (see keybindings.ts:141-143),
+      // and Tab is modifier-independent, currently free in this handler, and
+      // matches the muscle memory TUI users already have. The notes-page
+      // PromptInput owns Tab once mounted (it uses Tab for completion/expand),
+      // and because this handler branches on `page` the default-page Tab
+      // handler can't fire again while page === 'notes'.
+      if (key.tab) {
+        openNotesPage();
+        return;
+      }
       if (input === 'y' || input === 'Y')
-        respondToApproval(findOpt(ApprovalOptionId.AllowOnce));
+        respondWithNote(findOpt(ApprovalOptionId.AllowOnce));
       else if (input === 'n' || input === 'N')
-        respondToApproval(findOpt(ApprovalOptionId.RejectOnce));
+        respondWithNote(findOpt(ApprovalOptionId.RejectOnce));
       else if (input === 't' || input === 'T') {
         if (hasTrustTiers) {
           setTrustIdx(0);
@@ -168,9 +250,28 @@ export function ApprovalPrompt({
           // No backend tiers — `[t]` trusts the whole tool directly. The
           // hotkey row spells this out (`[t] TRUST whole tool`) so the
           // single keystroke can't surprise the user.
-          respondToApproval(allowAlwaysId);
+          respondWithNote(allowAlwaysId);
         }
       }
+      return;
+    }
+    if (page === 'notes') {
+      // Esc steps back to the default page only — never interrupts the turn.
+      // The layout-level always-armed Esc/Ctrl+C handler no-ops while
+      // pendingApproval is set (LiteLayout.tsx ~446: it calls cancelMessage()
+      // only when `isProcessing && !pendingApproval`), so this setPage wins
+      // and Esc can't abort the running turn. Mirrors the trust submenu's
+      // Esc-back below. The notes-page PromptInput is mounted and consumes
+      // printable keys / Enter; it does not claim a bare Esc (its Esc handling
+      // is gated on reverse-search / queue-restore state, neither active here),
+      // so this handler sees Esc cleanly.
+      if (key.escape) {
+        setPage('default');
+        return;
+      }
+      // Enter is handled by the mounted PromptInput via handleStageNote, which
+      // stashes the text and returns to the y/t/n row; y/t/n are literal
+      // characters typed into the feedback box, not hotkeys.
       return;
     }
     // page === 'trust'
@@ -181,11 +282,11 @@ export function ApprovalPrompt({
       setTrustIdx((i) => (i + 1) % rowCount);
     } else if (key.return) {
       if (trustIdx < trustOptions.length) {
-        respondToApproval(allowAlwaysId, undefined, {
+        respondWithNote(allowAlwaysId, {
           trustOption: trustOptions[trustIdx],
         });
       } else {
-        respondToApproval(allowAlwaysId);
+        respondWithNote(allowAlwaysId);
       }
     } else if (key.escape) {
       // Esc inside the submenu only steps back; the always-armed Ctrl+C/Esc
@@ -370,12 +471,42 @@ export function ApprovalPrompt({
         </Text>
       )}
       <Text> </Text>
-      <Text>
-        {chalk.green('[y]')} allow once {chalk.dim('·')} {chalk.yellow('[t]')}{' '}
-        {hasTrustTiers ? 'trust scope' : chalk.bold('TRUST whole tool')}{' '}
-        {chalk.dim('·')} {chalk.red('[n]')} deny {chalk.dim('·')}{' '}
-        {chalk.red('[esc]')} interrupt
-      </Text>
+      {page === 'notes' ? (
+        // Notes page: the y/t/n hotkey row is replaced by a feedback input.
+        // Submitting STAGES the text and returns to the picker — it does not
+        // resolve or cancel the approval. The staged note is later flushed to
+        // the model as a follow-up turn once the user picks y/t/n (see
+        // respondWithNote). The normal lite input row stays suppressed
+        // (LiteLayout gates it on !showApproval), so this is the only mounted
+        // input while approval shows. PromptInput is keyed on the staged note
+        // so re-entering the page remounts it seeded with the prior text via
+        // the store's commandInputValue sync.
+        <>
+          <PromptInput
+            onSubmit={handleStageNote}
+            isProcessing={false}
+            placeholder="add your feedback, then pick y/t/n..."
+          />
+          <Text>{chalk.dim('[enter] save note · [esc] back')}</Text>
+        </>
+      ) : (
+        <>
+          {stagedNote.trim() && (
+            <Text>
+              {chalk.dim('note attached:')}{' '}
+              {chalk.hex('#C19AFF')(truncateLine(stagedNote.trim(), 60))}
+            </Text>
+          )}
+          <Text>
+            {chalk.green('[y]')} allow once {chalk.dim('·')}{' '}
+            {chalk.yellow('[t]')}{' '}
+            {hasTrustTiers ? 'trust scope' : chalk.bold('TRUST whole tool')}{' '}
+            {chalk.dim('·')} {chalk.red('[n]')} deny {chalk.dim('·')}{' '}
+            {chalk.cyan('[tab]')} {stagedNote.trim() ? 'edit note' : 'add note'}{' '}
+            {chalk.dim('·')} {chalk.red('[esc]')} interrupt
+          </Text>
+        </>
+      )}
     </Box>
   );
 }

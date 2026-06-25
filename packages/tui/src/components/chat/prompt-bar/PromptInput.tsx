@@ -78,7 +78,10 @@ import {
   navigateQueueUp,
   navigateQueueDown,
   commitQueueRestore,
+  buildUnifiedQueueEntries,
   type QueueRestoreState,
+  type QueueReplace,
+  type UnifiedQueueEntry,
 } from '../../../utils/queue-navigation.js';
 // TODO: Long-term, PromptInput should migrate to use Twinki's Input/TextInput
 // component (or a segment-aware extension of it) instead of reimplementing
@@ -239,15 +242,67 @@ export const PromptInput = React.memo(function PromptInput({
   const isLiteMode = useAppStore((state) => state.uiMode === 'lite');
   const queuedMessagesRef = useRef<readonly string[]>([]);
   queuedMessagesRef.current = useAppStore((state) => state.queuedMessages);
+  // Unified ↑/↓ nav source: steer lines (mid-turn backend message, echoed as
+  // pendingSteerContent) come FIRST because the backend injects the steer
+  // before the local queue drains, then the editable queuedMessages. The
+  // nav/commit machine routes each entry to its own transport by `kind`, so
+  // a steer edit becomes a clear-and-resteer — never a queuedMessages append
+  // (which would double-send: once via processQueue, once via the backend's
+  // own injection). See utils/queue-navigation.ts.
+  const pendingSteerContentRef = useRef<string | null>(null);
+  pendingSteerContentRef.current = useAppStore(
+    (state) => state.pendingSteerContent
+  );
+  const unifiedEntriesRef = useRef<readonly UnifiedQueueEntry[]>([]);
+  unifiedEntriesRef.current = buildUnifiedQueueEntries(
+    pendingSteerContentRef.current,
+    queuedMessagesRef.current
+  );
   const replaceQueuedMessage = useAppStore(
     (state) => state.replaceQueuedMessage
   );
+  const replaceSteerMessage = useAppStore((state) => state.replaceSteerMessage);
+  const clearSteerMessage = useAppStore((state) => state.clearSteerMessage);
   // Mirror queue-restore state into the store (the source of truth for the
   // "editing queued #N" header) so external index flips stay in sync.
   const setEditingQueueIndex = useAppStore(
     (state) => state.setEditingQueueIndex
   );
+  const setEditingSteerLineIndex = useAppStore(
+    (state) => state.setEditingSteerLineIndex
+  );
   const removeQueuedMessage = useAppStore((state) => state.removeQueuedMessage);
+
+  // Reflect a restore-state transition into the store's editing-chevron flags.
+  // null → clear both; queue → editingQueueIndex; steer → editingSteerLineIndex.
+  const setEditingEntry = useCallback(
+    (state: QueueRestoreState | null) => {
+      if (state == null) {
+        setEditingQueueIndex(null);
+        setEditingSteerLineIndex(null);
+        return;
+      }
+      if (state.kind === 'queue') {
+        setEditingQueueIndex(state.queueIndex ?? null);
+      } else {
+        setEditingSteerLineIndex(state.index);
+      }
+    },
+    [setEditingQueueIndex, setEditingSteerLineIndex]
+  );
+
+  // Apply a dirty-commit instruction emitted by the nav machine when stepping
+  // away from an edited entry. Queue → in-place replace; steer → resteer.
+  const applyQueueReplace = useCallback(
+    (replace: QueueReplace) => {
+      if (replace.kind === 'queue') {
+        replaceQueuedMessage(replace.queueIndex, replace.text);
+      } else {
+        replaceSteerMessage(replace.text, replace.targetLine);
+      }
+    },
+    [replaceQueuedMessage, replaceSteerMessage]
+  );
 
   // Refs shadow the latest state so input handlers never read stale closures.
   // Without these, keypresses arriving faster than React re-renders would
@@ -809,10 +864,10 @@ export const PromptInput = React.memo(function PromptInput({
         loadSegments: boolean
       ) => {
         if (result.replace) {
-          replaceQueuedMessage(result.replace.index, result.replace.text);
+          applyQueueReplace(result.replace);
         }
         queueRestoreRef.current = result.state;
-        setEditingQueueIndex(result.state ? result.state.index : null);
+        setEditingEntry(result.state);
         if (!loadSegments) return;
         suppressNextTriggerRef.current = true;
         setPromptHint(null);
@@ -893,7 +948,7 @@ export const PromptInput = React.memo(function PromptInput({
       // Exit queue-restore mode and reset to an empty compose buffer.
       const clearQueueRestoreInput = () => {
         queueRestoreRef.current = null;
-        setEditingQueueIndex(null);
+        setEditingEntry(null);
         const newSegs: Segment[] = [{ type: 'text', value: '' }];
         setSegments(newSegs);
         setCursor(0);
@@ -913,10 +968,10 @@ export const PromptInput = React.memo(function PromptInput({
       // buffer (reserved, no behavior today).
       if (key.ctrl && userInput === 'x' && queueRestoreRef.current) {
         const restore = queueRestoreRef.current;
-        // Translate the restore index against the current queue snapshot —
-        // processQueue may have shifted slots while the user was editing.
-        if (restore.index < queuedMessagesRef.current.length) {
-          removeQueuedMessage(restore.index);
+        if (restore.kind === 'queue') {
+          removeQueuedMessage(restore.queueIndex!);
+        } else {
+          clearSteerMessage(restore.originalText);
         }
         clearQueueRestoreInput();
         return;
@@ -970,22 +1025,32 @@ export const PromptInput = React.memo(function PromptInput({
           if (restore) {
             const content = buildContent(segments);
             queueRestoreRef.current = null;
-            setEditingQueueIndex(null);
+            setEditingEntry(null);
             const result = commitQueueRestore(
               restore,
               content,
-              queuedMessagesRef.current
+              unifiedEntriesRef.current
             );
             clearAll();
-            if (result.kind === 'replace') {
-              if (result.text.trim()) {
-                replaceQueuedMessage(result.index, result.text);
-              } else {
-                removeQueuedMessage(result.index);
-              }
-            } else if (result.text.trim()) {
-              // Fallback: slot drained or shifted — send as fresh message.
-              onSubmit(result.text);
+            switch (result.kind) {
+              case 'replace-queue':
+                replaceQueuedMessage(result.queueIndex, result.text);
+                break;
+              case 'delete-queue':
+                removeQueuedMessage(result.queueIndex);
+                break;
+              case 'replace-steer':
+                replaceSteerMessage(result.text, result.targetLine);
+                break;
+              case 'delete-steer':
+                clearSteerMessage(result.targetLine);
+                break;
+              case 'fallback':
+                if (result.text.trim()) {
+                  // Fallback: slot drained or shifted — send as fresh message.
+                  onSubmit(result.text);
+                }
+                break;
             }
             return;
           }
@@ -1173,7 +1238,7 @@ export const PromptInput = React.memo(function PromptInput({
           const result = navigateQueueUp(
             queueRestoreRef.current,
             getVisibleText(segments),
-            queuedMessagesRef.current
+            unifiedEntriesRef.current
           );
           if (result.kind === 'queue') {
             applyQueueNav(result, result.state != null);
@@ -1216,7 +1281,7 @@ export const PromptInput = React.memo(function PromptInput({
           const result = navigateQueueDown(
             queueRestoreRef.current,
             getVisibleText(segments),
-            queuedMessagesRef.current
+            unifiedEntriesRef.current
           );
           if (result.kind === 'queue') {
             applyQueueNav(result, true);

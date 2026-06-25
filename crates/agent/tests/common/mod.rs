@@ -312,6 +312,55 @@ impl TestCase {
         Ok(())
     }
 
+    /// Drive the event loop until the first `ApprovalRequest`, steer
+    /// `note_before` (mirroring the lite flow: note buffered, THEN the
+    /// disposition sent) while the turn is still paused on approval, then
+    /// answer with `result`. Returns once the approval has been sent. Unlike
+    /// `wait_until_agent_stop`, this gives a test a deterministic hook BETWEEN
+    /// the approval request and the disposition — exactly the window where a
+    /// staged note is steered.
+    ///
+    /// The actor processes `SteerMessage` and `SendApprovalResult` off a single
+    /// mailbox interleaved (via `tokio::select!`) with the in-flight stream, so
+    /// `steer_message().await` returning does not, on its own, guarantee the
+    /// buffer is set before the approval is dequeued. We therefore wait until
+    /// the `SteeringQueued` event is observed — proof the note is buffered —
+    /// before sending the disposition. That makes the test deterministic while
+    /// still exercising the real "note queued at reject time drains with the
+    /// denial" invariant. (The agent stays parked in WaitingForApproval until
+    /// the disposition arrives, so draining buffered events here is safe.)
+    pub async fn steer_then_approve(
+        &mut self,
+        timeout: Duration,
+        note_before: impl Into<String>,
+        result: ApprovalResult,
+    ) -> Result<()> {
+        let note = note_before.into();
+        let timeout_at = Instant::now() + timeout;
+        // 1. Wait for the approval request and capture the tool id.
+        let id = loop {
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
+            if let AgentEvent::ApprovalRequest(req) = &evt {
+                break req.id.clone();
+            }
+        };
+        // 2. Buffer the note as a steer.
+        self.agent.steer_message(note).await?;
+        // 3. Confirm it landed in the steering queue before disposing.
+        loop {
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
+            if matches!(evt, AgentEvent::SteeringQueued { .. }) {
+                break;
+            }
+        }
+        // 4. Now send the disposition — the buffer is guaranteed non-empty.
+        self.agent
+            .send_tool_use_approval_result(SendApprovalResultArgs { id, result })
+            .await
+            .unwrap();
+        Ok(())
+    }
+
     pub async fn create_snapshot(&self) -> AgentSnapshot {
         self.agent.create_snapshot().await.expect("failed to create snapshot")
     }

@@ -49,6 +49,19 @@ export function usePendingSwap(): PendingSwap | null {
     }
   }, [currentAgent, pendingSwap]);
 
+  // Clear on RPC resolution that did NOT land an agent change. The dispatcher
+  // clears `loadingMessage` the moment executeCommand resolves (success or
+  // failure — dispatcher.ts). If the swap had succeeded, the agent-name effect
+  // above would already have cleared us; reaching here with a still-latched
+  // swap and no loadingMessage means the swap failed (e.g. `/agent nonexistent`
+  // returns success:false), so drop the spinner instead of hanging until the
+  // 30s timeout. The failure is surfaced separately via the transient alert.
+  useEffect(() => {
+    if (pendingSwap && !loadingMessage) {
+      setPendingSwap(null);
+    }
+  }, [loadingMessage, pendingSwap]);
+
   useEffect(() => {
     if (!pendingSwap) return;
     const t = setTimeout(() => setPendingSwap(null), 30_000);
