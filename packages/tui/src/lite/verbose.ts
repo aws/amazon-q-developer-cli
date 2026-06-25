@@ -412,6 +412,20 @@ export function sameDisplay(
   return true;
 }
 
+/** Order-insensitive equality on short filter lists. */
+export function sameFilters(
+  a: readonly string[],
+  b: readonly string[]
+): boolean {
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  const set = new Set(a);
+  for (const t of b) {
+    if (!set.has(t)) return false;
+  }
+  return true;
+}
+
 /** Patch for {@link setVerboseConfig}: display (and subagent) fields are
  *  shallow-merged; filters is the canonical full list (normalized/deduped). */
 export interface VerboseConfigPatch {

@@ -132,8 +132,7 @@ interface Harness {
   onNotesSubmit: ReturnType<typeof vi.fn>;
 }
 
-function mountApproval(): Harness {
-  const store = createAppStore({ kiro: new Kiro() });
+function mountApproval(store = createAppStore({ kiro: new Kiro() })): Harness {
   const terminal = new MockTerminal();
   const respondToApproval = vi.fn();
   const onNotesSubmit = vi.fn();
@@ -249,6 +248,21 @@ describe('ApprovalPrompt — staged-note flow', () => {
     expect(h.respondToApproval).not.toHaveBeenCalled();
   });
 
+  test('Tab opens an EMPTY notes input even when the global compose slot is stale', async () => {
+    // A stray key (e.g. a 't' spammed at the y/t/n row) can leave a value in
+    // the shared compose slot. Opening notes must clear it, not prefill it.
+    const store = createAppStore({ kiro: new Kiro() });
+    store.getState().setCommandInput('t');
+    const h = mountApproval(store);
+    await flush();
+    h.terminal.output = '';
+    h.terminal.sendInput(TAB);
+    await flush();
+    // Empty PromptInput shows its placeholder; the stale char must not prefill.
+    expect(h.terminal.output).toContain('add your feedback');
+    expect(store.getState().commandInputValue).toBe('');
+  });
+
   test('submitting the feedback input stages the note without resolving', async () => {
     const h = mountApproval();
     await flush();
@@ -307,6 +321,106 @@ describe('ApprovalPrompt — staged-note flow', () => {
     expect(h.terminal.output).not.toContain('add your feedback');
     expect(h.onNotesSubmit).not.toHaveBeenCalled();
     expect(h.respondToApproval).not.toHaveBeenCalled();
+  });
+});
+
+// KAS ships shell trust scope in consentContext with EMPTY trustOptions. The
+// fixtures above feed trustOptions manually, masking this real flow — these
+// tests exercise it: a granular scope page must appear and whole-tool trust
+// must send {kasWholeCapability:true} so resource:'*' persists (else KAS
+// re-asks the same command).
+function makeKasShellApproval() {
+  return {
+    toolId: 'execute_bash',
+    toolCall: { toolCallId: 'call-1', title: 'execute_bash', rawInput: '' },
+    permissionOptions: [
+      { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+      { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+      { kind: ApprovalOptionId.AllowAlways, optionId: 'always-accept' },
+    ],
+    trustOptions: [],
+    consentContext: { capability: 'shell', resource: 'git status' },
+  };
+}
+
+function mountKasShellApproval(): Harness {
+  const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+  const terminal = new MockTerminal();
+  const respondToApproval = vi.fn();
+  const onNotesSubmit = vi.fn();
+  const instance = render(
+    <AppStoreContext.Provider value={store}>
+      <ApprovalPrompt
+        messages={[TOOL_MSG]}
+        approval={makeKasShellApproval()}
+        respondToApproval={respondToApproval}
+        getStageInputColor={() => (t: string) => t}
+        mainAgentName="main"
+        onNotesSubmit={onNotesSubmit}
+      />
+    </AppStoreContext.Provider>,
+    { terminal, exitOnCtrlC: false }
+  );
+  activeInstance = instance;
+  return { terminal, respondToApproval, onNotesSubmit };
+}
+
+describe('ApprovalPrompt — KAS shell trust (empty trustOptions)', () => {
+  test('[t] opens a granular scope page deriving rows from consentContext', async () => {
+    const h = mountKasShellApproval();
+    await flush();
+    // Default page advertises trust scope (not "TRUST whole tool"), proving the
+    // KAS scope page is detected from consentContext.
+    expect(h.terminal.output).toContain('trust scope');
+    h.terminal.output = '';
+    h.terminal.sendInput('t');
+    await flush();
+    // The pattern row derived from the shell command is offered, and [t] did
+    // NOT immediately resolve the approval (it opened the sub-page).
+    expect(h.terminal.output).toContain('Trust "git *"');
+    expect(h.terminal.output).toContain('[s] scope');
+    expect(h.respondToApproval).not.toHaveBeenCalled();
+  });
+
+  test('selecting the entire-tool row sends {kasWholeCapability:true}', async () => {
+    const h = mountKasShellApproval();
+    await flush();
+    h.terminal.sendInput('t'); // open scope page
+    await flush();
+    // Rows: [exact "git status", pattern "git *", entire tool]. Down twice to
+    // land on the entire-tool row.
+    h.terminal.sendInput('\x1b[B');
+    h.terminal.sendInput('\x1b[B');
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      undefined,
+      {
+        kasScope: 'session',
+        kasWholeCapability: true,
+      }
+    );
+  });
+
+  test('selecting the pattern row sends kasResource (granular trust)', async () => {
+    const h = mountKasShellApproval();
+    await flush();
+    h.terminal.sendInput('t'); // open scope page
+    await flush();
+    h.terminal.sendInput('\x1b[B'); // exact -> pattern
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      undefined,
+      {
+        kasScope: 'session',
+        kasResource: 'git *',
+      }
+    );
   });
 });
 

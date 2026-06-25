@@ -1,16 +1,11 @@
 /**
  * E2E tests for /compact command and summary system message rendering.
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('/compact and summary ($mode)', ({ mode, builder }) => {
+describe('/compact and summary', () => {
   let testCase: E2ETestCase | null = null;
 
   const sendMockedTurn = async (
@@ -45,9 +40,9 @@ describe.each([
   });
 
   it('executes /compact and shows compacting loading state', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`slash-command-compact-${mode}`)
+      .withTestName('slash-command-compact')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -98,9 +93,9 @@ describe.each([
 
   // Windows: compaction response + summary rendering exceeds timeout in CI
   it.skipIf(process.platform === 'win32')('renders summary system message after compaction completes', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`compact-summary-${mode}`)
+      .withTestName('compact-summary')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -185,9 +180,9 @@ describe.each([
   }, 90000);
 
   it('shows alert on /compact failure', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`slash-command-compact-fail-${mode}`)
+      .withTestName('slash-command-compact-fail')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);

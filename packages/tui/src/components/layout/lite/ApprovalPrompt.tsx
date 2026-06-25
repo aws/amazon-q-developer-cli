@@ -10,7 +10,12 @@ import {
   isParentSubagentTool,
   type PermissionOption,
   type TrustOption,
+  type ConsentContext,
 } from '../../../types/agent-events.js';
+import {
+  deriveShellTrustOptions,
+  isKasShellCapability,
+} from '../../../utils/shell-trust-options.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
@@ -134,10 +139,32 @@ export function ApprovalPrompt({
   // keystroke can't surprise anyone. No intermediate confirm page.
   const trustOptions: TrustOption[] = approval.trustOptions ?? [];
   const hasTrustTiers = trustOptions.length > 0;
-  const [page, setPage] = useState<'default' | 'trust' | 'notes'>('default');
+  // KAS ships shell trust scope in consentContext (not trustOptions), so derive
+  // a granular scope page when v2-style tiers are absent — mirrors the TUI's
+  // hasKasScopePage (ApprovalRequest.tsx).
+  const agentEngine = useAppStore((s) => s.agentEngine);
+  const consentContext: ConsentContext | undefined = approval.consentContext;
+  const { gatedResource, exactResource, patternResource } =
+    deriveShellTrustOptions({
+      capability: consentContext?.capability,
+      resource: consentContext?.resource,
+      triggeringResource: consentContext?.triggeringResource,
+    });
+  const hasKasScopePage =
+    !hasTrustTiers &&
+    agentEngine === 'kas' &&
+    isKasShellCapability(consentContext?.capability);
+  const [page, setPage] = useState<'default' | 'trust' | 'kas-scope' | 'notes'>(
+    'default'
+  );
   // +1 row at the end of the submenu for "Trust entire tool". Reset to top
   // every time the page is opened.
   const [trustIdx, setTrustIdx] = useState(0);
+  // KAS persistence scope, cycled with [s] on the scope page (session by
+  // default; 'global' maps to the wire 'user' scope, matching the TUI).
+  const [trustScope, setTrustScope] = useState<
+    'session' | 'workspace' | 'global'
+  >('session');
   // The note typed on the [tab] feedback page, held until the user picks the
   // real y/t/n disposition. Pressing Enter in the notes box *stages* the text
   // here and returns to the picker — it does NOT submit/deny the tool (the old
@@ -157,6 +184,7 @@ export function ApprovalPrompt({
   useEffect(() => {
     setPage('default');
     setTrustIdx(0);
+    setTrustScope('session');
     setStagedNote('');
   }, [approvalToolCallId]);
 
@@ -173,7 +201,9 @@ export function ApprovalPrompt({
   // while the approval shows (LiteLayout gates it on !showApproval), so this
   // seed can't leak into it.
   const openNotesPage = () => {
-    if (stagedNote) setCommandInput(stagedNote);
+    // Always seed (empty when no staged note) so a stale global compose value
+    // — e.g. a stray key spammed at the y/t/n row — can't prefill the box.
+    setCommandInput(stagedNote ?? '');
     setPage('notes');
   };
 
@@ -212,6 +242,40 @@ export function ApprovalPrompt({
     respondToApproval(optionId, undefined, meta);
   };
 
+  // KAS scope-page rows: optional exact + optional pattern, then entire-tool.
+  // Each carries the meta the store's buildKasConsentMeta turns into a consent
+  // reply (kasResource → exact/pattern, kasWholeCapability → resource:'*').
+  const scopeValue = trustScope === 'global' ? 'user' : trustScope;
+  const kasScopeRows: {
+    label: string;
+    display: string;
+    meta: Record<string, unknown>;
+  }[] = [
+    ...(exactResource
+      ? [
+          {
+            label: `Trust "${truncateLine(exactResource, 50)}"`,
+            display: `exact · ${trustScope === 'global' ? 'always' : trustScope}`,
+            meta: { kasScope: scopeValue, kasResource: exactResource },
+          },
+        ]
+      : []),
+    ...(patternResource && patternResource !== gatedResource
+      ? [
+          {
+            label: `Trust "${patternResource}"`,
+            display: `pattern · ${trustScope === 'global' ? 'always' : trustScope}`,
+            meta: { kasScope: scopeValue, kasResource: patternResource },
+          },
+        ]
+      : []),
+    {
+      label: 'Trust entire tool',
+      display: trustScope === 'global' ? 'always' : trustScope,
+      meta: { kasScope: scopeValue, kasWholeCapability: true },
+    },
+  ];
+
   useKeypress((input, key) => {
     if (page === 'default') {
       // Esc / Ctrl+C interrupt the agent's current turn in addition to
@@ -244,12 +308,46 @@ export function ApprovalPrompt({
         if (hasTrustTiers) {
           setTrustIdx(0);
           setPage('trust');
+        } else if (hasKasScopePage) {
+          setTrustIdx(0);
+          setPage('kas-scope');
         } else {
           // No backend tiers — `[t]` trusts the whole tool directly. The
           // hotkey row spells this out (`[t] TRUST whole tool`) so the
-          // single keystroke can't surprise the user.
-          respondWithNote(allowAlwaysId);
+          // single keystroke can't surprise the user. KAS needs the
+          // whole-capability flag so resource:'*' persists (else it re-asks).
+          respondWithNote(
+            allowAlwaysId,
+            agentEngine === 'kas' ? { kasWholeCapability: true } : undefined
+          );
         }
+      }
+      return;
+    }
+    if (page === 'kas-scope') {
+      // [s] cycles persistence scope; ↑↓ select; enter resolves with the row's
+      // meta; esc steps back (the layout Esc no-ops while an approval is set).
+      if (key.escape) {
+        setPage('default');
+        return;
+      }
+      if (input === 's' || input === 'S') {
+        setTrustScope((p) =>
+          p === 'session'
+            ? 'workspace'
+            : p === 'workspace'
+              ? 'global'
+              : 'session'
+        );
+        return;
+      }
+      const kasRowCount = kasScopeRows.length;
+      if (key.upArrow) {
+        setTrustIdx((i) => (i - 1 + kasRowCount) % kasRowCount);
+      } else if (key.downArrow) {
+        setTrustIdx((i) => (i + 1) % kasRowCount);
+      } else if (key.return) {
+        respondWithNote(allowAlwaysId, kasScopeRows[trustIdx]?.meta);
       }
       return;
     }
@@ -284,7 +382,12 @@ export function ApprovalPrompt({
           trustOption: trustOptions[trustIdx],
         });
       } else {
-        respondWithNote(allowAlwaysId);
+        // Entire tool — KAS needs the whole-capability flag so resource:'*'
+        // persists (else it re-asks the same command).
+        respondWithNote(
+          allowAlwaysId,
+          agentEngine === 'kas' ? { kasWholeCapability: true } : undefined
+        );
       }
     } else if (key.escape) {
       // Esc inside the submenu only steps back; the always-armed Ctrl+C/Esc
@@ -430,6 +533,39 @@ export function ApprovalPrompt({
     );
   }
 
+  if (page === 'kas-scope') {
+    const scopeLabel = trustScope === 'global' ? 'always' : trustScope;
+    return (
+      <Box flexDirection="column">
+        {stageHeader}
+        <Text>
+          {chalk.yellow.bold(toolName)}{' '}
+          {chalk.dim(`· trust scope [${scopeLabel}]`)}
+        </Text>
+        {kasScopeRows.map((row, i) => {
+          const focused = i === trustIdx;
+          const arrow = focused
+            ? allowIcons
+              ? chalk.cyan(`${glyphs.chevron} `)
+              : '  '
+            : '  ';
+          const label = focused ? chalk.cyan(row.label) : row.label;
+          const display = row.display ? chalk.dim(`  ${row.display}`) : '';
+          return (
+            <Text key={i}>
+              {arrow}
+              {label}
+              {display}
+            </Text>
+          );
+        })}
+        <Text>
+          {chalk.dim('[↑↓] select  [enter] confirm  [s] scope  [esc] back')}
+        </Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       {stageHeader}
@@ -498,7 +634,9 @@ export function ApprovalPrompt({
           <Text>
             {chalk.green('[y]')} allow once {chalk.dim('·')}{' '}
             {chalk.yellow('[t]')}{' '}
-            {hasTrustTiers ? 'trust scope' : chalk.bold('TRUST whole tool')}{' '}
+            {hasTrustTiers || hasKasScopePage
+              ? 'trust scope'
+              : chalk.bold('TRUST whole tool')}{' '}
             {chalk.dim('·')} {chalk.red('[n]')} deny {chalk.dim('·')}{' '}
             {chalk.cyan('[tab]')} {stagedNote.trim() ? 'edit note' : 'add note'}{' '}
             {chalk.dim('·')} {chalk.red('[esc]')} interrupt

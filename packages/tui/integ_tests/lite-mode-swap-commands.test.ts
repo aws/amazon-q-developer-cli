@@ -6,12 +6,12 @@ import {
   switchToTui,
   visibleCount,
   visibleIndex,
-} from '../e2e_tests/lite/helpers/mode-swap';
+} from './helpers/mode-swap';
 import {
   exitLiteInteg,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * /lite and /tui mode-swap commands (bug-mine 2.9). setUiMode's contract:

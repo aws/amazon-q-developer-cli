@@ -13,8 +13,8 @@ import {
   finishAndExitLite,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
-import { seedSubagentPipeline } from '../e2e_tests/lite/helpers/subagents';
+} from './helpers/integ-lifecycle';
+import { seedSubagentPipeline } from './helpers/subagents';
 
 describe('lite subagent kill ladder Ctrl+X', () => {
   let testCase: TestCase | null = null;

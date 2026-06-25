@@ -5,12 +5,12 @@ import {
   injectApproval,
   expectApprovalPainted,
   ALLOW_REJECT_OPTIONS,
-} from '../e2e_tests/lite/helpers/approvals';
+} from './helpers/approvals';
 import {
   finishAndExitLite,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /** Bug-mine 3.1-3.6 + 6.4: lite approval flow behavior (per-case rationale inline). */
 describe('lite approval flow [bug-mine 3.1, 3.2, 3.3, 3.4, 3.6, 6.4]', () => {

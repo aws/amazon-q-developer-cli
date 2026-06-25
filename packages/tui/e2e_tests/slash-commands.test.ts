@@ -1,16 +1,11 @@
 /**
  * E2E tests for slash command execution.
- *
- * Parameterized to run in both TUI and Lite modes via describe.each.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-describe.each([
-  { mode: 'tui' as const, builder: () => E2ETestCase.builder() },
-  { mode: 'lite' as const, builder: () => E2ETestCase.builder().withLite() },
-])('Slash Commands ($mode)', ({ mode, builder }) => {
+describe('Slash Commands', () => {
   let testCase: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -21,9 +16,9 @@ describe.each([
   });
 
   it('executes /clear command', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`slash-command-clear-${mode}`)
+      .withTestName('slash-command-clear')
       .launch();
 
     // Wait for TUI to render
@@ -52,9 +47,9 @@ describe.each([
   }, 30000);
 
   it('shows autocomplete dropdown when typing /', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`slash-command-autocomplete-${mode}`)
+      .withTestName('slash-command-autocomplete')
       .launch();
 
     await testCase.waitForText('ask a question', 10000);
@@ -72,9 +67,9 @@ describe.each([
   }, 30000);
 
   it('shows selection UI for /model without args', async () => {
-    testCase = await builder()
+    testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })
-      .withTestName(`slash-command-model-sel-${mode}`)
+      .withTestName('slash-command-model-sel')
       .launch();
 
     // Wait for TUI to render

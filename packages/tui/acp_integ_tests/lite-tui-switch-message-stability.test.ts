@@ -9,11 +9,11 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
-import { CMD_TUI } from '../e2e_tests/lite/helpers/commands';
+import { CMD_TUI } from '../integ_tests/helpers/commands';
 import {
   visibleCount,
   visibleIndex,
-} from '../e2e_tests/lite/helpers/mode-swap';
+} from '../integ_tests/helpers/mode-swap';
 
 const SESSION_ID = 'kas-lite-tui-stability-session';
 
