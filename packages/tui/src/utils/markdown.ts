@@ -397,22 +397,24 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
           const isSeparator = (line: string): boolean =>
             /^[\s|:-]+$/.test(line);
 
-          let sepIdx = tableLines.findIndex((l) => isSeparator(l));
-          if (sepIdx === -1) sepIdx = 1;
+          const foundSepIdx = tableLines.findIndex((l) => isSeparator(l));
+          const hasSep = foundSepIdx !== -1;
+          const sepIdx = hasSep ? foundSepIdx : -1;
 
           const headers = parseRow(tableLines[0] || '');
 
-          const sepCells = parseRow(tableLines[sepIdx] || '');
-          const alignments = sepCells.map((cell) => {
-            const trimmed = cell.replace(/\s/g, '');
-            if (trimmed.startsWith(':') && trimmed.endsWith(':'))
-              return 'center' as const;
-            if (trimmed.endsWith(':')) return 'right' as const;
-            return 'left' as const;
-          });
+          const alignments = hasSep
+            ? parseRow(tableLines[sepIdx] || '').map((cell) => {
+                const trimmed = cell.replace(/\s/g, '');
+                if (trimmed.startsWith(':') && trimmed.endsWith(':'))
+                  return 'center' as const;
+                if (trimmed.endsWith(':')) return 'right' as const;
+                return 'left' as const;
+              })
+            : headers.map(() => 'left' as const);
 
           const rows = tableLines
-            .filter((_, i) => i !== 0 && i !== sepIdx)
+            .filter((_, i) => i !== 0 && (!hasSep || i !== sepIdx))
             .map(parseRow);
 
           segments.push({ text: '', table: { headers, rows, alignments } });

@@ -363,6 +363,33 @@ describe('parseMarkdown', () => {
       }
     });
 
+    it('keeps every data row when the separator row is missing', () => {
+      const result = parseMarkdown(
+        '| Command | Description |\n| ls | list files |\n| cd | change dir |\n| pwd | print dir |'
+      );
+      const table = result.find((s) => s.table)?.table;
+      expect(table).toBeDefined();
+      expect(table!.headers).toEqual(['Command', 'Description']);
+      expect(table!.rows).toEqual([
+        ['ls', 'list files'],
+        ['cd', 'change dir'],
+        ['pwd', 'print dir'],
+      ]);
+      expect(table!.alignments).toEqual(['left', 'left']);
+    });
+
+    it('still skips the separator row and parses alignments when present', () => {
+      const result = parseMarkdown(
+        '| A | B |\n| --- | :-: |\n| 1 | 2 |\n| 3 | 4 |'
+      );
+      const table = result.find((s) => s.table)?.table;
+      expect(table!.rows).toEqual([
+        ['1', '2'],
+        ['3', '4'],
+      ]);
+      expect(table!.alignments).toEqual(['left', 'center']);
+    });
+
     it('should handle table with surrounding text', () => {
       const result = parseMarkdown('Before\n| A |\n|---|\n| 1 |\nAfter');
       expect(result.length).toBe(3); // text, table, text

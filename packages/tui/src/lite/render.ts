@@ -16,6 +16,8 @@ import {
   constrainColumnWidths,
   wrapCellText,
   padCell,
+  shouldStackTable,
+  formatStackedTable,
   type Alignment,
 } from '../utils/table-layout.js';
 import { UNICODE_GLYPHS, type Glyphs } from '../utils/glyphs.js';
@@ -773,10 +775,11 @@ export function renderMarkdownToLines(
     ) {
       flushTextGroup();
       const lines = renderBlockSegment(seg, restWidth, glyphs, theme);
-      const skipBlank =
-        !!prev && prev.listItem && seg.listItem
+      const skipBlank = prev
+        ? prev.listItem && seg.listItem
           ? prev.listItem.indent === seg.listItem.indent
-          : false;
+          : !!prev.blockquote && !!seg.blockquote
+        : false;
       if (!isFirstBlock && !skipBlank) out.push('');
       out.push(...lines);
       isFirstBlock = false;
@@ -889,6 +892,15 @@ function renderMarkdownTable(
     const dataW = table.rows.map((r) => measureRendered(r[ci] || ''));
     return Math.max(headerW, ...dataW, 3);
   });
+
+  if (shouldStackTable(colWidths, termWidth)) {
+    return formatStackedTable(
+      headers,
+      table.rows,
+      (s) => renderInlineMarkdown(s, theme),
+      chalk.bold
+    );
+  }
 
   if (termWidth > 0) constrainColumnWidths(colWidths, termWidth);
 
@@ -1233,7 +1245,7 @@ export function renderReadToolCall(
     const dimNum = chalk.dim(`  ${numStr} `);
     const blankNum = chalk.dim('  ' + ' '.repeat(LINE_NUM_WIDTH) + ' ');
     const styled = highlightLineSafe(line, language);
-    const chunks = wrapAtWords(styled, codeCols, codeCols);
+    const chunks = wrapAnsiLine(styled, codeCols, codeCols);
     if (chunks.length === 0) {
       visualRows.push(dimNum);
       continue;
@@ -2154,17 +2166,24 @@ export function formatTaskToolBody(
   const renderTaskList = (tasks: TaskInputArg[]): string[] => {
     const out: string[] = [];
     if (tasks.length === 0) return out;
+    const renderable = tasks
+      .map((t) => ({
+        subject:
+          typeof t.task_description === 'string'
+            ? t.task_description.trim()
+            : '',
+        details: typeof t.details === 'string' ? t.details.trim() : '',
+      }))
+      .filter((t) => t.subject);
+    if (renderable.length === 0) return out;
     // Pad the index to the widest so "Task 10" doesn't shift vs "Task 1".
-    const idxWidth = `${tasks.length}.`.length;
+    const idxWidth = `${renderable.length}.`.length;
     const prefixCols = 2 + 3 + 1 + idxWidth + 1;
     const subjectAvail = Math.max(20, cols - prefixCols);
     const continuationIndent = ' '.repeat(prefixCols);
-    for (let i = 0; i < tasks.length; i++) {
-      const t = tasks[i] ?? {};
-      const subject =
-        typeof t.task_description === 'string' ? t.task_description.trim() : '';
-      if (!subject) continue;
-      const isLast = i === tasks.length - 1;
+    for (let i = 0; i < renderable.length; i++) {
+      const { subject, details } = renderable[i]!;
+      const isLast = i === renderable.length - 1;
       const connector = isLast ? g.treeCorner : g.treeBranch;
       const num = `${i + 1}.`.padEnd(idxWidth + 1);
       const wrapped = wrapAtWords(subject, subjectAvail, subjectAvail);
@@ -2174,7 +2193,6 @@ export function formatTaskToolBody(
       for (const line of wrapped.slice(1)) {
         out.push(`${continuationIndent}${line}`);
       }
-      const details = typeof t.details === 'string' ? t.details.trim() : '';
       if (details) {
         const wrappedDetails = wrapAtWords(details, subjectAvail, subjectAvail);
         for (const line of wrappedDetails) {

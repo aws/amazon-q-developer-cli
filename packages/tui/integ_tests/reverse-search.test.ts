@@ -40,8 +40,12 @@ async function submitCommand(tc: TestCase, cmd: string) {
   await tc.sendKeys(cmd);
   await tc.sleepMs(100);
   await tc.pressEnter();
+  await tc.sleepMs(500);
+  // The mock turn stays open (isProcessing=true) until completeTurn(). Without
+  // it the next submit is queued instead of added to history, and Ctrl+C
+  // cancels the turn rather than contributing to the double-Ctrl+C exit.
   await tc.completeTurn();
-  await tc.waitForVisibleText('ask a question', 10000);
+  await tc.sleepMs(100);
 }
 
 describe('Reverse incremental search (Ctrl+R)', () => {
