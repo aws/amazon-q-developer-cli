@@ -83,9 +83,6 @@ export async function handleContext(
 }
 
 /**
- * Show flow: prefer the breakdown cached on the client (no round-trip),
- * fall back to the agent's attached-files list otherwise.
- *
  * `explicitShow=true` (user typed `/context show`) opens the panel
  * expanded; bare `/context` keeps it collapsed — matches V2 Rust.
  */
@@ -93,15 +90,6 @@ async function runShow(
   ctx: CommandContext,
   explicitShow: boolean
 ): Promise<void> {
-  const cached = ctx.kiro.getCachedContextBreakdown();
-  if (cached) {
-    ctx.setShowContextBreakdown(true, {
-      ...cached,
-      initialExpanded: explicitShow,
-    });
-    return;
-  }
-
   let response: KasContextShowResponse;
   try {
     response = await ctx.kiro.contextShow();
@@ -114,6 +102,18 @@ async function runShow(
     return;
   }
 
+  // Prefer the fresh show-response breakdown; the cache can be stale after
+  // an /agent switch. Fall back to the cache for older agents.
+  const breakdown = response.breakdown ?? ctx.kiro.getCachedContextBreakdown();
+  if (breakdown) {
+    ctx.setShowContextBreakdown(true, {
+      ...breakdown,
+      initialExpanded: explicitShow,
+    });
+    return;
+  }
+
+  // No breakdown at all — fall back to the attached-files alert.
   const entries: KasContextEntry[] = response.entries ?? [];
   if (entries.length === 0) {
     ctx.showAlert(

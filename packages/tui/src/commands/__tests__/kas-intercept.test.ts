@@ -245,8 +245,9 @@ describe('dispatcher KAS intercept', () => {
     await dispatch(CONTEXT_CMD, '', ctx);
 
     expect(ctx._spies.setShowContextBreakdown).toHaveBeenCalled();
-    // No agent round-trip when the breakdown is cached.
-    expect((ctx.kiro.contextShow as any).mock.calls.length).toBe(0);
+    // Always round-trips now; the cached breakdown is the fallback used
+    // here because the (stub) show response carries no fresh breakdown.
+    expect((ctx.kiro.contextShow as any).mock.calls.length).toBe(1);
     expect(ctx._spies.showAlert).not.toHaveBeenCalled();
   });
 

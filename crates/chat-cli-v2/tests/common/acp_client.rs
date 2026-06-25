@@ -55,6 +55,16 @@ pub enum PermissionResponse {
     Cancel,
 }
 
+/// Response from the `_session/spawn` ext method (spawns an orchestrated subagent).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpawnSessionResponse {
+    /// The newly created subagent session's id.
+    pub session_id: String,
+    /// The auto-assigned subagent name.
+    pub name: String,
+}
+
 /// Commands sent to the ACP actor.
 enum Command {
     Initialize {
@@ -102,6 +112,12 @@ enum Command {
         session_id: acp::SessionId,
         command: String,
         reply: oneshot::Sender<acp::Result<agent::tui_commands::CommandOptionsResponse>>,
+    },
+    SpawnSession {
+        parent_session_id: acp::SessionId,
+        agent_name: String,
+        task: String,
+        reply: oneshot::Sender<acp::Result<SpawnSessionResponse>>,
     },
     Steer {
         session_id: acp::SessionId,
@@ -437,6 +453,32 @@ impl AcpTestClient {
             .map_err(|_e| acp::Error::new(-1, "get_command_options actor channel closed".to_string()))?
     }
 
+    /// Spawn an orchestrated subagent via the `_session/spawn` ext method.
+    ///
+    /// Returns the new subagent session's id and auto-assigned name. The
+    /// subagent runs its task to completion in the background; mock LLM
+    /// responses for it are pushed via the harness keyed on the returned
+    /// `session_id`.
+    pub async fn spawn_session(
+        &self,
+        parent_session_id: acp::SessionId,
+        agent_name: &str,
+        task: &str,
+    ) -> acp::Result<SpawnSessionResponse> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::SpawnSession {
+                parent_session_id,
+                agent_name: agent_name.to_string(),
+                task: task.to_string(),
+                reply,
+            })
+            .await
+            .ok();
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "spawn_session actor channel closed".to_string()))?
+    }
+
     /// Send a `_session/steer` ext method to queue a steering message.
     pub async fn steer(&self, session_id: acp::SessionId, message: &str) -> acp::Result<serde_json::Value> {
         let (reply, rx) = oneshot::channel();
@@ -618,6 +660,34 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                             .await
                             .and_then(|resp| {
                                 serde_json::from_str::<agent::tui_commands::CommandOptionsResponse>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
+                            });
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            Command::SpawnSession {
+                parent_session_id,
+                agent_name,
+                task,
+                reply,
+            } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        // The SDK prepends the leading underscore for ext methods,
+                        // so "session/spawn" reaches the agent's `_session/spawn` handler.
+                        let params = serde_json::json!({
+                            "sessionId": parent_session_id.0.as_ref(),
+                            "task": task,
+                            "agentName": agent_name,
+                        });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest::new("session/spawn", raw_params.into()))
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<SpawnSessionResponse>(resp.0.get())
                                     .map_err(|e| acp::Error::new(-1, e.to_string()))
                             });
                         let _ = reply.send(result);

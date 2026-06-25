@@ -1159,46 +1159,6 @@ async fn http_mcp_server_oauth_request_triggers_ext_notification() {
     );
 }
 
-/// Minimal HTTP endpoint that returns a fixed JSON body for any GET. Stands in
-/// for the MCP registry the agent fetches via `KIRO_MCP_REGISTRY_URL_OVERRIDE`.
-/// Returns the URL and a task handle (aborted on drop by the caller).
-async fn spawn_mock_registry(body: String) -> (String, tokio::task::JoinHandle<()>) {
-    use tokio::io::{
-        AsyncReadExt,
-        AsyncWriteExt,
-    };
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind registry listener");
-    let addr = listener.local_addr().unwrap();
-    let url = format!("http://{addr}/registry");
-
-    let task = tokio::spawn(async move {
-        loop {
-            let Ok((mut stream, _)) = listener.accept().await else {
-                break;
-            };
-            let body = body.clone();
-            tokio::spawn(async move {
-                // Drain the request (a single GET fits in one read); we serve the
-                // same body regardless of path.
-                let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf).await;
-                let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                let _ = stream.write_all(resp.as_bytes()).await;
-                let _ = stream.flush().await;
-            });
-        }
-    });
-
-    (url, task)
-}
-
 /// End-to-end: initial OAuth flow against a **registry-sourced** MCP server.
 ///
 /// This drives the full stack — the real `chat_cli acp` subprocess, the ACP
@@ -1257,7 +1217,7 @@ async fn e2e_oauth_registry_resolved_server_completes_handshake() {
         }]
     })
     .to_string();
-    let (registry_url, registry_task) = spawn_mock_registry(registry_body).await;
+    let (registry_url, registry_task) = common::spawn_mock_registry(registry_body).await;
 
     // 3. Agent whose only MCP server is a registry placeholder; the real RegistryAdapter resolves it
     //    against the registry above.

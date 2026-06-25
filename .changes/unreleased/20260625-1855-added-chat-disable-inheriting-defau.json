@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`chat.disableInheritingDefaultResources` setting to prevent custom agents from inheriting default resources like steering files, skills, and AGENTS.md"
+}
