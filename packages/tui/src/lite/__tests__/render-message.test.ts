@@ -160,7 +160,7 @@ describe('renderMessageToText (tool_use)', () => {
         working_dir: '/tmp/repo',
         __tool_use_purpose: 'Exercise the Shell tool UI with git log',
       },
-      headHas: ['shell', 'Exercise the Shell tool UI with git log'],
+      headHas: ['Shell', 'Exercise the Shell tool UI with git log'],
       headLacks: ['git log --oneline -5'],
       contains: ['command: git log --oneline -5', 'working_dir: /tmp/repo'],
       noPurposeRow: true,
@@ -206,7 +206,7 @@ describe('renderMessageToText (tool_use)', () => {
       name: 'no inline reasoning when agent omits __tool_use_purpose (block mode)',
       tool: 'shell',
       content: { command: 'ls -la' },
-      headHas: ['shell'],
+      headHas: ['Shell'],
       headLacks: ['ls -la'],
       contains: ['command: ls -la'],
       once: ['ls -la'],
@@ -217,7 +217,7 @@ describe('renderMessageToText (tool_use)', () => {
       name: 'block mode without __tool_use_purpose: path appears exactly once',
       tool: 'fs_read',
       content: { operations: [{ path: '/etc/hosts', limit: 50 }] },
-      headHas: ['fs_read'],
+      headHas: ['Read'],
       headLacks: ['/etc/hosts'],
       once: ['/etc/hosts'],
     },
@@ -282,7 +282,7 @@ describe('renderMessageToText (tool_use)', () => {
           },
           'kiro_default'
         ),
-        { contains: ['fs_write'], absent: ['undefined', ...extraAbsent] }
+        { contains: ['Write'], absent: ['undefined', ...extraAbsent] }
       );
     }
   );
@@ -416,10 +416,10 @@ describe('renderMessageToText for task tools', () => {
     },
     {
       // Unknown command → formatTaskToolBody returns null and the generic
-      // JSON printer takes over (wire name kept, fields surfaced).
+      // JSON printer takes over (label shown, fields surfaced).
       name: 'malformed args fall through to generic JSON pretty-printer',
       content: { command: 'unknown_command', foo: 'bar' },
-      contains: ['todo_list', 'foo: bar'],
+      contains: ['Task', 'foo: bar'],
     },
     {
       // On error, renderVerboseOutput appends the failure cause below the
@@ -560,7 +560,7 @@ describe('renderVerbosityPreview', () => {
       name: 'picks fs_read when only read is enabled; no hint (matches reality)',
       cap: 5,
       filters: ['read'],
-      contains: ['fs_read'],
+      contains: ['Read'],
       absent: ['preview-only'],
     },
     {
@@ -610,9 +610,9 @@ describe('renderVerbosityPreview', () => {
     });
     const stripped = stripAnsi(text);
     // Write tool (with its diff path).
-    expect(stripped).toContain('fs_write');
+    expect(stripped).toContain('Write');
     // Grep with the long pattern.
-    expect(stripped).toContain('grep');
+    expect(stripped).toContain('Grep');
     // MCP tool (the recall fixture).
     expect(stripped).toContain('mcp__nova-memory-mcp__recall');
     // Agent message body — ensures non-tool content also renders.

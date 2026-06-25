@@ -32,7 +32,9 @@ import {
   WRITE_TOOL_NAMES,
   TASK_TOOL_NAMES,
   isParentSubagentTool,
+  resolveToolId,
 } from '../types/agent-events.js';
+import { getToolLabel } from '../types/tool-status.js';
 import {
   getVerboseDisplay,
   shouldShowToolOutput,
@@ -1037,6 +1039,13 @@ export interface ToolCallRenderInfo {
   runningSpinner?: string;
   /** See STATUS-SLOT CONTRACT — takes precedence over runningSpinner. */
   awaitingApproval?: boolean;
+}
+
+/** Canonical built-in label (Shell/Read/…) so KAS titles ("Run Command",
+ *  "List Directory") read like v2; raw name for MCP/unknown tools. */
+export function toolDisplayName(name: string): string {
+  const id = resolveToolId(name);
+  return id ? getToolLabel(id) : name;
 }
 
 export function renderToolCall(
@@ -3036,7 +3045,7 @@ export function renderMessageToText(
         : undefined;
 
       const info: ToolCallRenderInfo = {
-        name: msg.name || 'unknown',
+        name: toolDisplayName(msg.name || 'unknown'),
         status,
         description: reasoning,
         inlineArg,

@@ -42,6 +42,7 @@ import { buildUnifiedQueueEntries } from '../../../utils/queue-navigation.js';
 import {
   renderMessageToText,
   buildRenderTheme,
+  toolDisplayName,
   type SubagentStageSummary,
 } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
@@ -1157,7 +1158,7 @@ export const LiteLayout: React.FC = () => {
         continue;
       }
       if (row.phase === 'summarizing') continue;
-      row.activeToolName = m.name;
+      row.activeToolName = toolDisplayName(m.name);
       row.activeToolDetail = extractFooterToolDetail(m.name, m.content);
       row.activeToolFinished = !!m.isFinished;
       // Set after activeToolName/Detail so the chip includes the tool name.
