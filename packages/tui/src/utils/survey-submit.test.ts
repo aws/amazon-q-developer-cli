@@ -1,6 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 
-import { buildSurveyPayload, submitFormToAperture } from './survey-submit.js';
+import {
+  buildSurveyPayload,
+  submitFormToAperture,
+  type SurveyMetadata,
+} from './survey-submit.js';
 import {
   SESSION_FEEDBACK_SURVEY,
   PLAN_QUALITY_SURVEY,
@@ -217,5 +221,43 @@ describe('submitFormToAperture', () => {
       experience: 'Good',
     });
     expect(outcome.ok).toBe(false);
+  });
+
+  // Capture the User-Agent header from the outgoing request.
+  const captureUserAgent = async (
+    metadata?: SurveyMetadata
+  ): Promise<string | undefined> => {
+    let captured: string | undefined;
+    globalThis.fetch = mock(async (_url: unknown, init: unknown) => {
+      const headers = (init as RequestInit).headers as
+        | Record<string, string>
+        | undefined;
+      captured = headers?.['User-Agent'];
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await submitFormToAperture(
+      SESSION_FEEDBACK_SURVEY,
+      { experience: 'Good' },
+      metadata ? { metadata } : {}
+    );
+    return captured;
+  };
+
+  test('appends engine/v3 to User-Agent for KAS sessions', async () => {
+    const ua = await captureUserAgent({ agentEngine: 'kas' });
+    expect(ua).toMatch(/^kiro-cli\/\S+ engine\/v3$/);
+  });
+
+  test('appends engine/v2 to User-Agent for v2 sessions', async () => {
+    const ua = await captureUserAgent({ agentEngine: 'v2' });
+    expect(ua).toMatch(/^kiro-cli\/\S+ engine\/v2$/);
+  });
+
+  test('omits engine token when agentEngine is undefined', async () => {
+    const ua = await captureUserAgent(undefined);
+    expect(ua).toBeDefined();
+    expect(ua).not.toContain('engine/');
+    expect(ua).toMatch(/^kiro-cli\/\S+$/);
   });
 });

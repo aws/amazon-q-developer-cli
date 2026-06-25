@@ -183,7 +183,12 @@ use crate::agent::compact::{
     CompactStrategy,
     create_compaction_request,
 };
-use crate::agent::consts::DUMMY_TOOL_NAME;
+use crate::agent::consts::{
+    DUMMY_TOOL_NAME,
+    DUMMY_TOOL_RESULT_MESSAGE,
+    MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS,
+    REPEATED_UNEXECUTABLE_TOOL_MESSAGE,
+};
 use crate::agent::mcp::{
     McpManager,
     McpManagerHandle,
@@ -414,7 +419,13 @@ impl AgentHandle {
     }
 
     pub fn terminate(&self) {
-        _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
+        trace!("AgentHandle::terminate() — fire-and-forget Terminate request");
+        // Fire-and-forget: enqueue the Terminate request without waiting for
+        // the response. The agent loop will process it and break out. We don't
+        // need the TerminateAcknowledged response since this handle is being
+        // dropped — waiting would race (try_recv never sees the response) and
+        // log a spurious error.
+        self.sender.try_send_no_recv(AgentRequest::Terminate);
     }
 
     /// Async version of [`terminate`](Self::terminate) that awaits the agent's cleanup
@@ -738,6 +749,15 @@ pub struct Agent {
     /// drained, the steers' text is concatenated with "\n\n" into a single LLM
     /// continuation request, while one consume notification is emitted per steer.
     queued_steers: Vec<QueuedSteer>,
+
+    /// Number of consecutive agent-loop turns that produced no executable tool
+    /// calls (only parse errors and/or `dummy` placeholder calls). Incremented
+    /// each time we would auto-resend synthesized failure/guidance results with
+    /// nothing to execute, and reset to 0 whenever a real tool dispatches or a
+    /// new user prompt arrives. Once it reaches
+    /// [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`] the turn is force-ended to
+    /// prevent an unbounded unavailable-tool retry loop.
+    consecutive_unexecutable_tool_turns: usize,
 }
 
 /// A single queued steering message awaiting injection.
@@ -851,6 +871,7 @@ impl Agent {
             tool_search_activated: HashSet::new(),
             tool_search_active: false,
             queued_steers: Vec::new(),
+            consecutive_unexecutable_tool_turns: 0,
         })
     }
 
@@ -1032,7 +1053,9 @@ impl Agent {
                     let res = self.handle_agent_request(req.payload).await;
 
                     if let Ok(AgentResponse::TerminateAcknowledged) = res {
-                        respond!(req, res);
+                        // Best-effort response — the caller may have already dropped the
+                        // receiver (fire-and-forget terminate). Don't log an error.
+                        let _ = req.res_tx.send(res);
                         break;
                     } else {
                         respond!(req, res);
@@ -2213,6 +2236,7 @@ impl Agent {
                     empty_response_retried: true,
                     ..
                 },);
+                trace!(already_retried, "handling LoopError::EmptyResponse in agent loop");
                 if already_retried {
                     warn!("empty response on retry - entering error state");
                     self.enter_error_state(err.clone().into()).await;
@@ -2374,6 +2398,11 @@ impl Agent {
                 return Err(AgentError::NotIdle);
             },
         }
+
+        // A fresh user prompt starts a new logical turn — reset the
+        // unavailable-tool breaker so prior dummy/parse-error turns don't carry
+        // over and prematurely trip it.
+        self.consecutive_unexecutable_tool_turns = 0;
 
         // Run per-prompt hooks, if required.
         let hooks = self.get_hooks(HookTrigger::UserPromptSubmit);
@@ -2665,7 +2694,7 @@ impl Agent {
         debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest { .. }));
 
         // First, parse tool uses.
-        let (tools, errors) = self.parse_tools(tool_uses).await;
+        let (tools, errors, dummy_tool_uses) = self.parse_tools(tool_uses).await;
 
         // Parse errors don't short-circuit the rest of the batch. When the
         // model dispatches multiple tools in parallel and one fails parse-
@@ -2682,6 +2711,26 @@ impl Agent {
         // model emitted gets a real, accurate tool_result paired with it.
         let mut pre_built_content: Vec<ContentBlock> = Vec::new();
         let mut pre_built_results: HashMap<String, LogToolResult> = HashMap::new();
+
+        // Resolve any `dummy` placeholder calls to a benign instructional
+        // tool_result. The model gets actionable guidance (e.g. "call
+        // switch_to_execution") instead of a hard NameDoesNotExist error, so it
+        // can self-correct rather than re-calling the unavailable tool.
+        for tool_use in &dummy_tool_uses {
+            let tool_use_id = tool_use.tool_use_id.clone();
+            pre_built_content.push(ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: tool_use_id.clone(),
+                content: vec![ToolResultContentBlock::Text(DUMMY_TOOL_RESULT_MESSAGE.to_string())],
+                status: ToolResultStatus::Success,
+            }));
+            pre_built_results.insert(tool_use_id, LogToolResult {
+                tool: None,
+                result: ToolCallResult::Success(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(
+                    DUMMY_TOOL_RESULT_MESSAGE.to_string(),
+                )])),
+            });
+        }
+
         if !errors.is_empty() {
             trace!(?errors, "failed to parse tools");
             for e in errors {
@@ -2713,24 +2762,56 @@ impl Agent {
                         error: user_err_msg,
                     }));
             }
-            // Whole batch failed parse — nothing to execute, send the
-            // parse-error results immediately so the model can react.
-            if tools.is_empty() {
-                let pending = PendingUserMessage::new_tool_results(pre_built_content.clone(), pre_built_results);
-                let args = self.format_request(&pending).await;
-                self.send_request(args).await?;
-                self.set_active_state(ActiveState::ExecutingRequest {
-                    compaction_retry: None,
-                    empty_response_retried: false,
-                    pending_user_message: Some(pending),
-                })
-                .await;
+        }
+
+        // Nothing in this batch is executable — every tool_use was a parse
+        // error and/or a `dummy` placeholder. Send the synthesized results
+        // straight back so the model can react, BUT guard against an unbounded
+        // unavailable-tool retry loop: after too many consecutive non-executable
+        // turns, stop resending and force-end the turn so the prompt resolves
+        // instead of the agent (and the ACP bridge's pending prompt) hanging.
+        if tools.is_empty() {
+            if pre_built_content.is_empty() {
+                // No tool_uses to act on at all. handle_tool_uses is only
+                // invoked with a non-empty batch, so this is defensive and
+                // currently unreachable. Fail loud in debug/test builds: a
+                // future refactor that lands here would return without ending
+                // the turn, leaving the agent stuck in ExecutingRequest with
+                // the loop alive (re-introducing the prompt hang this breaker
+                // was added to fix).
+                debug_assert!(
+                    false,
+                    "handle_tool_uses reached with no actionable tool_uses; returning here would leave the turn unended"
+                );
                 return Ok(());
             }
-            // Otherwise fall through with `pre_built_*` carrying the parse-
-            // error results; they'll be merged by send_tool_results once the
-            // parsed-OK tools finish executing.
+            self.consecutive_unexecutable_tool_turns += 1;
+            if self.consecutive_unexecutable_tool_turns >= MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS {
+                warn!(
+                    count = self.consecutive_unexecutable_tool_turns,
+                    "ending turn after repeated turns with no executable tool calls"
+                );
+                return self
+                    .end_turn_with_unexecutable_results(pre_built_content, pre_built_results)
+                    .await;
+            }
+            let pending = PendingUserMessage::new_tool_results(pre_built_content.clone(), pre_built_results);
+            let args = self.format_request(&pending).await;
+            self.send_request(args).await?;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: None,
+                empty_response_retried: false,
+                pending_user_message: Some(pending),
+            })
+            .await;
+            return Ok(());
         }
+
+        // We have at least one executable tool — real progress was made, so
+        // reset the unavailable-tool breaker. Any held parse-error / dummy
+        // results in `pre_built_*` flow through to send_tool_results and get
+        // merged into the eventual outbound batch.
+        self.consecutive_unexecutable_tool_turns = 0;
 
         // Next, evaluate permissions.
         let mut needs_approval = Vec::new();
@@ -3299,11 +3380,34 @@ impl Agent {
     }
 
     /// Parses tool use blocks into concrete tools, returning those that failed to be parsed.
-    async fn parse_tools(&mut self, tool_uses: Vec<ToolUseBlock>) -> (Vec<(ToolUseBlock, Tool)>, Vec<ToolParseError>) {
+    /// Parses a batch of model-emitted tool uses into executable tools.
+    ///
+    /// Returns a triple of `(executable, parse_errors, dummy)`:
+    /// - `executable`: tool uses that mapped to a known tool and passed validation.
+    /// - `parse_errors`: tool uses that failed name lookup, schema parsing, or validation.
+    /// - `dummy`: tool uses naming the [`DUMMY_TOOL_NAME`] placeholder. These are neither
+    ///   executable nor hard errors — the caller resolves them to a benign instructional
+    ///   tool_result (see [`DUMMY_TOOL_RESULT_MESSAGE`]) so the model can self-correct instead of
+    ///   looping on an unavailable tool.
+    async fn parse_tools(
+        &mut self,
+        tool_uses: Vec<ToolUseBlock>,
+    ) -> (Vec<(ToolUseBlock, Tool)>, Vec<ToolParseError>, Vec<ToolUseBlock>) {
         let mut tools: Vec<(ToolUseBlock, Tool)> = Vec::new();
         let mut parse_errors: Vec<ToolParseError> = Vec::new();
+        let mut dummy_tool_uses: Vec<ToolUseBlock> = Vec::new();
 
         for tool_use in tool_uses {
+            // The `dummy` placeholder is advertised by enforce_conversation_invariants when
+            // history references a tool the current agent can't dispatch (it is never
+            // registered in the tool map). Treat a model call to it as a benign no-op handled
+            // by the caller, rather than a NameDoesNotExist error that would drive a tight
+            // unavailable-tool retry loop.
+            if tool_use.name == DUMMY_TOOL_NAME {
+                dummy_tool_uses.push(tool_use);
+                continue;
+            }
+
             // If cached_tool_specs was invalidated (e.g. by a late MCP Initialized or
             // ToolListChanged event arriving between format_request and parse_tools),
             // rebuild them so we don't silently drop the tool the model just requested.
@@ -3351,7 +3455,7 @@ impl Agent {
             }
         }
 
-        (tools, parse_errors)
+        (tools, parse_errors, dummy_tool_uses)
     }
 
     async fn validate_tool(&self, tool: &mut Tool) -> Result<(), ToolParseErrorKind> {
@@ -3757,6 +3861,54 @@ impl Agent {
             self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
             self.set_active_state(ActiveState::Idle).await;
         }
+        Ok(())
+    }
+
+    /// Force-ends the current turn after [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`]
+    /// consecutive turns produced no executable tool calls (only parse errors
+    /// and/or `dummy` placeholder calls). This breaks the otherwise-unbounded
+    /// auto-resend loop.
+    ///
+    /// `content`/`results` are the synthesized tool_results for the offending
+    /// batch. We commit them to history so every dangling tool_use is paired
+    /// with a result (keeping the conversation valid for the next turn), surface
+    /// a short assistant message explaining the stop, then cancel the agent loop
+    /// so the turn ends and the ACP bridge releases its pending prompt response.
+    async fn end_turn_with_unexecutable_results(
+        &mut self,
+        content: Vec<ContentBlock>,
+        results: HashMap<String, LogToolResult>,
+    ) -> Result<(), AgentError> {
+        // Pair the unanswered tool_uses with their synthesized results so the
+        // alternating tool_use/tool_result invariant holds for the next turn.
+        self.append_tool_results(Uuid::new_v4().to_string(), content, results);
+
+        // Surface a clear assistant message and persist it (this also restores
+        // role alternation: the just-appended tool_results are a user message).
+        self.agent_event_buf.push(AgentEvent::Update(UpdateEvent::AgentContent(
+            REPEATED_UNEXECUTABLE_TOOL_MESSAGE.to_string().into(),
+        )));
+        self.append_assistant_message(Message::new(
+            // synthetic id; message only sent as history, not as the active prompt of a request
+            Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::Text(REPEATED_UNEXECUTABLE_TOOL_MESSAGE.to_string())],
+            Some(Utc::now()),
+        ));
+
+        // Reset so a subsequent user prompt starts with a clean breaker count.
+        self.consecutive_unexecutable_tool_turns = 0;
+
+        // Drop the (already-committed) stale pending so end_current_turn() won't
+        // re-append it when draining UserTurnEnd, and so it doesn't synthesize
+        // "cancelled" results for the now-answered tool_uses. Then end the turn:
+        // end_current_turn cancels the loop, which emits UserTurnEnd → EndTurn,
+        // and the ACP bridge releases the pending prompt response on EndTurn.
+        // Emit EndTurn (inside end_current_turn) before Stop to match the
+        // drain_steering_or_end_turn ordering.
+        self.set_active_state(ActiveState::Idle).await;
+        self.end_current_turn().await?;
+        self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
         Ok(())
     }
 

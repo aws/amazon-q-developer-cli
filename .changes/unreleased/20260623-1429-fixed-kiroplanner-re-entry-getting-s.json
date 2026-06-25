@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`kiro_planner` re-entry getting stuck on a nonexistent `dummy` tool after a plan-to-execute handoff"
+}

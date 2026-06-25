@@ -112,6 +112,19 @@ where
         }
     }
 
+    /// Fire-and-forget: enqueue the request without waiting for a response.
+    /// The oneshot receiver is intentionally dropped — the responder's send
+    /// will fail silently, which is acceptable for termination signals where
+    /// the caller doesn't need acknowledgment.
+    pub fn try_send_no_recv(&self, payload: Req) {
+        trace!(?payload, "fire-and-forget send");
+        let (res_tx, _res_rx) = oneshot::channel();
+        let request = Request { payload, res_tx };
+        if self.tx.try_send(request).is_err() {
+            warn!("request receiver has closed (fire-and-forget)");
+        }
+    }
+
     pub fn count(&self) -> usize {
         self.tx.strong_count()
     }
