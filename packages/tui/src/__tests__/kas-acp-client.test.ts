@@ -1016,14 +1016,24 @@ describe('KasAcpClient', () => {
 
   // ── /compact ──
   // executeCommand resolves synchronously with "Compacting..."; the terminating
-  // CompactionStatus is broadcast later from `.then()`/`.catch()`. Flush a
-  // macrotask after invoking so those broadcasts settle before asserting.
+  // fallback CompactionStatus is delayed so a real summarization_completed
+  // report can win the race and land before queued input.
   const flushAsync = () => new Promise((r) => setTimeout(r, 0));
+  const waitCompactFallback = () => new Promise((r) => setTimeout(r, 550));
+  const sendKasSessionInfoUpdate = (kiro: Record<string, unknown>) =>
+    capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: { kiro },
+      },
+    });
 
-  it('executeCommand("compact") broadcasts started then completed on success', async () => {
+  it('executeCommand("compact") broadcasts started then fallback completed on success', async () => {
     // Derived purely from success: KAS returns { success: true } for both a
     // real compaction and a no-op (e.g. empty conversation). Either way we
-    // terminate the spinner with 'completed' — we do not infer a reason.
+    // eventually terminate the spinner with 'completed' — we do not infer a
+    // reason.
     mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
     const client = new KasAcpClient();
     const handler = mock((_event: any) => {});
@@ -1034,12 +1044,161 @@ describe('KasAcpClient', () => {
     await client.executeCommand({ command: 'compact' } as any);
     await flushAsync();
 
+    let statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => s.status)).toEqual(['started']);
+
+    await waitCompactFallback();
+
+    statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => s.status)).toEqual([
+      'started',
+      'completed',
+    ]);
+  });
+
+  it('executeCommand("compact") lets the summarization report suppress the success fallback', async () => {
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'summarization_completed',
+            conversationSummary: 'report first',
+          },
+        },
+      },
+    });
+    await waitCompactFallback();
+
     const statuses = handler.mock.calls
       .map((c) => c[0])
       .filter((e: any) => e.type === AgentEventType.CompactionStatus);
     expect(statuses.map((s: any) => s.status)).toEqual([
       'started',
       'completed',
+    ]);
+  });
+
+  it('executeCommand("compact") still emits a delayed report after the fallback clears the spinner', async () => {
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+    await waitCompactFallback();
+    await sendKasSessionInfoUpdate({
+      kind: 'summarization_completed',
+      conversationSummary: 'late report',
+    });
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => [s.status, s.summary])).toEqual([
+      ['started', undefined],
+      ['completed', undefined],
+      ['completed', 'late report'],
+    ]);
+    expect(statuses[2]?.attemptId).toBe(statuses[1]?.attemptId);
+  });
+
+  it('executeCommand("compact") ignores an older RPC success after a real report and newer compact start', async () => {
+    let resolveFirstCompact!: (value: unknown) => void;
+    mockKiroSendExtMethod
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstCompact = resolve;
+          })
+      )
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'summarization_completed',
+            conversationSummary: 'first report',
+          },
+        },
+      },
+    });
+    await client.executeCommand({ command: 'compact' } as any);
+    resolveFirstCompact({ success: true });
+    await flushAsync();
+    await waitCompactFallback();
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => s.status)).toEqual([
+      'started',
+      'completed',
+      'started',
+    ]);
+  });
+
+  it('executeCommand("compact") treats a no-report fallback as terminal before the next compact', async () => {
+    mockKiroSendExtMethod
+      .mockResolvedValueOnce({ success: true })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await client.executeCommand({ command: 'compact' } as any);
+    await flushAsync();
+    await waitCompactFallback();
+    await client.executeCommand({ command: 'compact' } as any);
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'summarization_completed',
+            conversationSummary: 'second report',
+          },
+        },
+      },
+    });
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses.map((s: any) => [s.status, s.attemptId])).toEqual([
+      ['started', 1],
+      ['completed', 1],
+      ['started', 2],
+      ['completed', 2],
     ]);
   });
 
@@ -1089,6 +1248,106 @@ describe('KasAcpClient', () => {
     expect(failed).toBeDefined();
     expect(failed.error).toBe('kas is down');
   });
+
+  it('session_info_update kind=summarization_failed surfaces the backend error', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await sendKasSessionInfoUpdate({ kind: 'summarization_started' });
+    await sendKasSessionInfoUpdate({
+      kind: 'summarization_failed',
+      error: 'Out of memory',
+    });
+
+    const failed = handler.mock.calls
+      .map((c) => c[0])
+      .find(
+        (e: any) =>
+          e.type === AgentEventType.CompactionStatus && e.status === 'failed'
+      );
+    expect(failed).toBeDefined();
+    expect(failed.error).toBe('Out of memory');
+  });
+
+  it('session_info_update drops orphan summarization terminal events', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+
+    await sendKasSessionInfoUpdate({
+      kind: 'summarization_completed',
+      conversationSummary: 'orphan report',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'summarization_failed',
+      error: 'orphan failure',
+    });
+
+    const statuses = handler.mock.calls
+      .map((c) => c[0])
+      .filter((e: any) => e.type === AgentEventType.CompactionStatus);
+    expect(statuses).toEqual([]);
+  });
+
+  it.each([
+    [
+      'top-level conversationSummary',
+      { conversationSummary: 'top level' },
+      'top level',
+    ],
+    [
+      'summarization summary string',
+      { summarization: { status: 'completed', summary: 'summary string' } },
+      'summary string',
+    ],
+    [
+      'summarization summary conversationSummary',
+      {
+        summarization: {
+          status: 'completed',
+          summary: { conversationSummary: 'summary object' },
+        },
+      },
+      'summary object',
+    ],
+    [
+      'summarization summary content',
+      {
+        summarization: {
+          status: 'completed',
+          summary: { content: 'summary content' },
+        },
+      },
+      'summary content',
+    ],
+  ])(
+    'session_info_update kind=summarization_completed broadcasts %s',
+    async (_label, metaFields, expectedSummary) => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+
+      await sendKasSessionInfoUpdate({ kind: 'summarization_started' });
+      await sendKasSessionInfoUpdate({
+        kind: 'summarization_completed',
+        ...metaFields,
+      });
+
+      const event = handler.mock.calls
+        .map((c) => c[0])
+        .find(
+          (e: any) =>
+            e.type === AgentEventType.CompactionStatus &&
+            e.status === 'completed'
+        );
+      expect(event).toBeDefined();
+      expect(event.summary).toBe(expectedSummary);
+    }
+  );
 
   it('executeCommand("agent") with agentName swaps via setSessionConfigOption', async () => {
     const client = new KasAcpClient();
@@ -6363,7 +6622,7 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
 
   // Drive an incoming KAS permission request and return the captured
   // ApprovalRequest value + the pending response promise.
-  async function driveCompoundPermission(client: any) {
+  async function driveCompoundPermission(client: any, capability = 'shell') {
     let approvalInfo: any = null;
     const handler = mock((event: any) => {
       if (event.type === AgentEventType.ApprovalRequest) {
@@ -6383,7 +6642,7 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
       _meta: {
         kiro: {
           consent: {
-            capability: 'shell',
+            capability,
             resource: COMPOUND,
             triggeringResource: GATED,
           },
@@ -6412,6 +6671,27 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
     expect(approval.consentContext.triggeringResource).toBe(GATED);
 
     // Resolve so the pending ACP promise never dangles.
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+  });
+
+  it('ingestion: shell:exec consent is treated as a shell approval', async () => {
+    const client = new KasAcpClient();
+    const { getApproval, permissionPromise } = await driveCompoundPermission(
+      client,
+      'shell:exec'
+    );
+
+    const approval = getApproval();
+    expect(approval).not.toBeNull();
+    expect(approval.consentContext).toMatchObject({
+      capability: 'shell:exec',
+      resource: COMPOUND,
+      triggeringResource: GATED,
+    });
+    expect(approval.toolCall.title).toBe('run_command');
+    expect(approval.toolCall.rawInput.command).toBe(COMPOUND);
+
     approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
     await permissionPromise;
   });

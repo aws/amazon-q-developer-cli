@@ -13,13 +13,7 @@ export async function handleCompact(
     command: 'compact',
     args: { ...(args.trim() && { value: args.trim() }) },
   } as any);
-  if (result.success) {
-    ctx.showAlert(
-      result.message || 'Compacting conversation...',
-      'success',
-      3000
-    );
-  } else {
+  if (!result.success) {
     ctx.showAlert(
       extractRpcErrorMessage(result.message, 'Compaction failed'),
       'error',

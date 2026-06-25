@@ -1141,7 +1141,7 @@ describe('Compaction drains queue', () => {
     const store = createTestStore();
     store.setState({
       isCompacting: true,
-      isProcessing: true,
+      isProcessing: false,
       activeInterruptMode: 'queue',
       sessionId: 'session-abc',
       queuedMessages: ['queued during compaction'],
@@ -1160,7 +1160,7 @@ describe('Compaction drains queue', () => {
     const store = createTestStore();
     store.setState({
       isCompacting: true,
-      isProcessing: true,
+      isProcessing: false,
       activeInterruptMode: 'queue',
       sessionId: 'session-abc',
       queuedMessages: ['queued during compaction'],
@@ -1174,6 +1174,40 @@ describe('Compaction drains queue', () => {
 
     expect(store.getState().isCompacting).toBe(false);
     expect(store.getState().queuedMessages).toEqual([]);
+  });
+
+  it('processQueue does not drain while compaction is active', async () => {
+    const store = createTestStore();
+    const sendMessage = mock(async () => {});
+    store.setState({
+      isCompacting: true,
+      isProcessing: false,
+      activeInterruptMode: 'queue',
+      sessionId: 'session-abc',
+      queuedMessages: ['queued during compaction'],
+      sendMessage: sendMessage as any,
+    });
+
+    await store.getState().processQueue();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getState().queuedMessages).toEqual([
+      'queued during compaction',
+    ]);
+  });
+
+  it('sendMessage queues locally while compaction is active', async () => {
+    const store = createTestStore();
+    store.setState({
+      uiMode: 'lite',
+      isCompacting: true,
+      activeInterruptMode: 'steer',
+      sessionId: 'session-abc',
+    });
+
+    await store.getState().sendMessage('follow up');
+
+    expect(store.getState().queuedMessages).toEqual(['follow up']);
   });
 
   it('queue is untouched when compaction starts', async () => {

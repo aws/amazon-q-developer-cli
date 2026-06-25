@@ -1,0 +1,201 @@
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import React from 'react';
+import { render, type Instance, type Terminal } from 'twinki';
+import {
+  AppStoreContext,
+  createAppStore,
+  MessageRole,
+  type MessageType,
+} from '../../../../stores/app-store.js';
+import { sessionConversationsStore } from '../../../../stores/session-conversations.js';
+import { Kiro } from '../../../../kiro.js';
+import {
+  ApprovalOptionId,
+  type ApprovalRequestInfo,
+} from '../../../../types/agent-events.js';
+import { ApprovalPanel } from '../ApprovalPanel.js';
+
+const DOWN = '\x1b[B';
+const ENTER = '\r';
+
+class MockTerminal implements Terminal {
+  private onInput: ((data: string) => void) | null = null;
+  public output = '';
+  get columns() {
+    return 80;
+  }
+  get rows() {
+    return 24;
+  }
+  get kittyProtocolActive() {
+    return true;
+  }
+  start(onInput: (data: string) => void): void {
+    this.onInput = onInput;
+  }
+  stop(): void {}
+  async drainInput(): Promise<void> {}
+  write(data: string): void {
+    this.output += data;
+  }
+  moveBy(): void {}
+  hideCursor(): void {}
+  showCursor(): void {}
+  clearLine(): void {}
+  clearFromCursor(): void {}
+  clearScreen(): void {}
+  enableMouse(): void {}
+  disableMouse(): void {}
+  setTitle(): void {}
+  sendInput(data: string): void {
+    this.onInput?.(data);
+  }
+}
+
+let activeInstance: Instance | null = null;
+
+afterEach(() => {
+  activeInstance?.unmount();
+  activeInstance = null;
+  sessionConversationsStore.setState({ conversations: new Map() });
+});
+
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await Promise.resolve();
+}
+
+const TOOL_MSG: MessageType = {
+  id: 'call-1',
+  role: MessageRole.ToolUse,
+  name: 'execute_bash',
+  content: JSON.stringify({ command: 'echo hello' }),
+  isFinished: false,
+};
+
+function makeKasShellApproval(
+  overrides: Partial<ApprovalRequestInfo> = {}
+): ApprovalRequestInfo {
+  return {
+    sessionId: 'session-1',
+    toolId: 'execute_bash',
+    toolCall: {
+      toolCallId: 'call-1',
+      title: 'execute_bash',
+      rawInput: { command: 'echo hello' },
+    },
+    permissionOptions: [
+      {
+        kind: ApprovalOptionId.AllowOnce,
+        name: 'Allow Once',
+        optionId: 'allow_once',
+      },
+      {
+        kind: ApprovalOptionId.AllowAlways,
+        name: 'Always',
+        optionId: 'always-accept',
+      },
+      {
+        kind: ApprovalOptionId.RejectOnce,
+        name: 'Reject Once',
+        optionId: 'reject_once',
+      },
+    ],
+    trustOptions: [],
+    consentContext: {
+      capability: 'shell',
+      resource: 'echo hello',
+    },
+    resolve: vi.fn(),
+    ...overrides,
+  };
+}
+
+function mountApprovalPanel(approval: ApprovalRequestInfo) {
+  const store = createAppStore({
+    kiro: new Kiro(),
+    agentEngine: 'kas',
+  });
+  const terminal = new MockTerminal();
+  const respondToApproval = vi.fn();
+  store.setState({ respondToApproval });
+  sessionConversationsStore.setState({
+    conversations: new Map([['session-1', [TOOL_MSG]]]),
+  });
+
+  activeInstance = render(
+    <AppStoreContext.Provider value={store}>
+      <ApprovalPanel approval={approval} />
+    </AppStoreContext.Provider>,
+    { terminal, exitOnCtrlC: false }
+  );
+
+  return { terminal, respondToApproval };
+}
+
+describe('ApprovalPanel KAS shell trust', () => {
+  test('legacy trust-options entire-tool selection sends whole-tool metadata with KAS optionId', async () => {
+    const approval = makeKasShellApproval({
+      trustOptions: [
+        {
+          label: 'Exact command',
+          display: 'echo hello',
+          setting_key: 'allowedCommands',
+          patterns: ['echo hello'],
+        },
+      ],
+    });
+    const h = mountApprovalPanel(approval);
+    await flush();
+
+    h.terminal.sendInput(DOWN);
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+
+    expect(h.terminal.output).toContain('trust options');
+
+    h.terminal.sendInput(DOWN);
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      approval,
+      {
+        kasWholeCapability: true,
+      }
+    );
+  });
+
+  test('KAS shell approvals without legacy trustOptions offer whole-tool scope trust', async () => {
+    const approval = makeKasShellApproval();
+    const h = mountApprovalPanel(approval);
+    await flush();
+
+    h.terminal.sendInput('t');
+    await flush();
+
+    expect(h.terminal.output).toContain('Trust "echo hello"');
+    expect(h.terminal.output).toContain('Trust "echo *"');
+    expect(h.terminal.output).toContain('Trust entire tool');
+
+    h.terminal.sendInput(DOWN);
+    await flush();
+    h.terminal.sendInput(DOWN);
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      approval,
+      {
+        kasScope: 'session',
+        kasWholeCapability: true,
+      }
+    );
+  });
+});

@@ -551,12 +551,17 @@ describe('--trust-all-tools auto-approval', () => {
 
   function makeApprovalWithAlways(
     toolCallId: string,
-    resolve?: (r: any) => void
+    resolve?: (r: any) => void,
+    options: { toolId?: string; consentContext?: Record<string, unknown> } = {}
   ): AgentStreamEvent {
     return {
       type: AgentEventType.ApprovalRequest,
       value: {
         toolCall: { toolCallId },
+        ...(options.toolId ? { toolId: options.toolId } : {}),
+        ...(options.consentContext
+          ? { consentContext: options.consentContext }
+          : {}),
         permissionOptions: [
           {
             kind: ApprovalOptionId.AllowOnce,
@@ -595,7 +600,7 @@ describe('--trust-all-tools auto-approval', () => {
     expect(store.getState().pendingApproval).toBeNull();
   });
 
-  it('in KAS mode, auto-approve attaches _meta.kiro.consent.scope', () => {
+  it('in KAS mode, auto-approve attaches capability and scope', () => {
     const mockKiro = new Kiro();
     const store = createAppStore({
       kiro: mockKiro,
@@ -607,12 +612,21 @@ describe('--trust-all-tools auto-approval', () => {
     const resolve = mock((_r: any) => {});
 
     handler(makeToolCallEvent('tc-kas', 'shell', 'npm test'));
-    handler(makeApprovalWithAlways('tc-kas', resolve));
+    handler(
+      makeApprovalWithAlways('tc-kas', resolve, {
+        toolId: 'shell',
+        consentContext: { capability: 'shell', resource: 'npm test' },
+      })
+    );
 
     expect(resolve).toHaveBeenCalledTimes(1);
     const call = resolve.mock.calls[0]![0];
     expect(call.optionId).toBe('always-accept');
-    expect(call._meta?.kiro?.consent?.scope).toBe('session');
+    expect(call._meta?.kiro?.consent).toEqual({
+      capability: 'shell',
+      scope: 'session',
+      resource: '*',
+    });
   });
 
   it('falls back to allow_once when allow_always not offered', () => {
