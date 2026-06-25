@@ -51,6 +51,12 @@ const ENTER = '\r';
 class MockTerminal implements Terminal {
   private _onInput: ((data: string) => void) | null = null;
   public output = '';
+  // True once twinki has wired its stdin handler via start(). flush() polls
+  // this so keystrokes are never sent before the handler exists (the old fixed
+  // 20ms sleep dropped the first keystroke under CI load — flaky first test).
+  get inputReady(): boolean {
+    return this._onInput !== null;
+  }
   get columns() {
     return 80;
   }
@@ -83,25 +89,31 @@ class MockTerminal implements Terminal {
 }
 
 let activeInstance: Instance | null = null;
+let activeTerminal: MockTerminal | null = null;
 afterEach(() => {
   if (activeInstance) {
     activeInstance.unmount();
     activeInstance = null;
   }
+  activeTerminal = null;
   vi.useRealTimers();
 });
 
 /**
- * Drive a few render cycles + drain microtasks so React effects flush AND
- * twinki has registered its stdin handler. The first commit after render()
- * wires terminal.start(onInput) asynchronously, so a too-short wait drops the
- * first keystroke (observed as flaky first-test failures). 20ms + two
- * microtask drains is comfortably past the commit on CI-class hardware.
+ * Drive render cycles + drain microtasks so React effects flush AND twinki has
+ * registered its stdin handler. The first commit after render() wires
+ * terminal.start(onInput) asynchronously, so sending a keystroke too early
+ * drops it (was a flaky first-test failure under CI load with a fixed sleep).
+ * Poll terminal.inputReady instead of guessing a delay — deterministic on any
+ * hardware. Caps at ~1s so a genuine wiring bug fails loudly, not by hanging.
  */
 async function flush(): Promise<void> {
-  await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  await Promise.resolve();
+  for (let i = 0; i < 100; i++) {
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await Promise.resolve();
+    if (!activeTerminal || activeTerminal.inputReady) return;
+  }
 }
 
 // A minimal approval shape — only the fields ApprovalPrompt reads. The tool
@@ -151,6 +163,7 @@ function mountApproval(store = createAppStore({ kiro: new Kiro() })): Harness {
     { terminal, exitOnCtrlC: false }
   );
   activeInstance = instance;
+  activeTerminal = terminal;
   return { terminal, respondToApproval, onNotesSubmit };
 }
 
