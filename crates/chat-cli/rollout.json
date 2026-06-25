@@ -14,6 +14,12 @@
     "treatment_percent": 100,
     "segment": "internal"
   },
+  "lite": {
+    "description": "Lite TUI mode - internal nightly only initially",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
+  },
   "test": {
     "description": "Test experiment for unit tests",
     "treatment_percent": 100
