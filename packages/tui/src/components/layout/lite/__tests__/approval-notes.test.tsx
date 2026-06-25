@@ -51,12 +51,6 @@ const ENTER = '\r';
 class MockTerminal implements Terminal {
   private _onInput: ((data: string) => void) | null = null;
   public output = '';
-  // True once twinki has wired its stdin handler via start(). flush() polls
-  // this so keystrokes are never sent before the handler exists (the old fixed
-  // 20ms sleep dropped the first keystroke under CI load — flaky first test).
-  get inputReady(): boolean {
-    return this._onInput !== null;
-  }
   get columns() {
     return 80;
   }
@@ -89,30 +83,27 @@ class MockTerminal implements Terminal {
 }
 
 let activeInstance: Instance | null = null;
-let activeTerminal: MockTerminal | null = null;
 afterEach(() => {
   if (activeInstance) {
     activeInstance.unmount();
     activeInstance = null;
   }
-  activeTerminal = null;
   vi.useRealTimers();
 });
 
 /**
- * Drive render cycles + drain microtasks so React effects flush AND twinki has
- * registered its stdin handler. The first commit after render() wires
- * terminal.start(onInput) asynchronously, so sending a keystroke too early
- * drops it (was a flaky first-test failure under CI load with a fixed sleep).
- * Poll terminal.inputReady instead of guessing a delay — deterministic on any
- * hardware. Caps at ~1s so a genuine wiring bug fails loudly, not by hanging.
+ * Settle render + effects so twinki's useInput subscription is live before we
+ * send keys. twinki registers that subscription on a MACROTASK turn after the
+ * first commit (terminal.start() runs earlier, so the handler being wired is
+ * NOT a sufficient signal — the React effect hasn't subscribed yet). One timer
+ * turn left the first test flaky (~17/20 under load); empirically two turns is
+ * reliable (20/20), so pump several timer turns for CI headroom. Microtask
+ * drains alone never advance it — the subscription only runs on a timer turn.
  */
 async function flush(): Promise<void> {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 6; i++) {
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    await Promise.resolve();
-    if (!activeTerminal || activeTerminal.inputReady) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 }
 
@@ -168,7 +159,6 @@ function mountApproval(
     { terminal, exitOnCtrlC: false }
   );
   activeInstance = instance;
-  activeTerminal = terminal;
   return { terminal, respondToApproval, onNotesSubmit };
 }
 
@@ -380,7 +370,6 @@ function mountKasShellApproval(): Harness {
     { terminal, exitOnCtrlC: false }
   );
   activeInstance = instance;
-  activeTerminal = terminal;
   return { terminal, respondToApproval, onNotesSubmit };
 }
 
