@@ -1,0 +1,53 @@
+// Part B (reset): two dummy turns, then a real successful tool call (read),
+// then three more dummy turns. The successful tool dispatch must reset the
+// breaker, so the breaker only trips on the 3rd CONSECUTIVE dummy turn after
+// the reset. A correct implementation sends exactly 6 requests; if the counter
+// did NOT reset, it would trip after the 4th request instead.
+
+// Response 1: dummy.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_dummy_1","name":"dummy"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-dummy-1","statusCode":null}}}}
+
+// Response 2: dummy.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_dummy_2","name":"dummy"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:21.190846Z","requestEndTime":"2025-10-29T17:26:25.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-dummy-2","statusCode":null}}}}
+
+// Response 3: a real, successful read — resets the breaker counter to 0.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_read_ok","name":"read"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"a.txt\"}]}"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:26.190846Z","requestEndTime":"2025-10-29T17:26:30.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-read-ok","statusCode":null}}}}
+
+// Response 4: dummy (consecutive count = 1 after reset).
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_dummy_3","name":"dummy"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:31.190846Z","requestEndTime":"2025-10-29T17:26:35.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-dummy-3","statusCode":null}}}}
+
+// Response 5: dummy (consecutive count = 2).
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_dummy_4","name":"dummy"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:36.190846Z","requestEndTime":"2025-10-29T17:26:40.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-dummy-4","statusCode":null}}}}
+
+// Response 6: dummy (consecutive count = 3) — breaker trips, no 7th request.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_dummy_5","name":"dummy"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:41.190846Z","requestEndTime":"2025-10-29T17:26:45.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"reset-dummy-5","statusCode":null}}}}
