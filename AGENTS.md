@@ -401,10 +401,8 @@ MCP logs: Same directory, `mcp.log`
 
 ## Change Discipline
 
-Applies to every change, by humans and agents (Kiro, Claude, Codex).
-
 - **No deferring.** Make a requested change in this PR, or decline it with a concrete reason the owner accepted. "Defer", "follow-up later", and "too risky / too much churn" are not reasons to skip review feedback — if it should be done, do it and test it.
-- **Verify; don't rubber-stamp.** Keeping code a reviewer questioned requires proving it is needed against the actual code — a caller, a test, or a concrete failure it prevents. Say "checked: needed", never "assumed needed".
+- **Re-audit your own verdicts.** A confident first pass often rationalizes rather than verifies — problems surface only after a skeptical "are you sure?". Before keeping questioned code or skipping a change, ask what a reviewer would flag and resolve it before it's raised, checking the actual code (a caller, a test, or a failure it prevents).
 - **Comments: one line per block, the _why_ only.** No line-by-line narration, no multi-line essays, no design rationale inline (put that in a doc). Prefer self-documenting code.
 - **No dead code, no scope creep.** Every changed line traces to the change's stated purpose. No drive-by edits to unrelated files; no code without a caller; remove anything you orphan.
 - **Claims need evidence.** "Done / works / safe" must cite a check you ran (typecheck, test, diff, build). Keep PR comments and status consistent with reality; delete stale claims instead of leaving them.
