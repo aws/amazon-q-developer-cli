@@ -11,7 +11,7 @@ import {
   exitLiteInteg,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 describe('lite /verbosity mid-stream cycling', () => {
   let testCase: TestCase | null = null;

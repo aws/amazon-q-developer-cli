@@ -1,4 +1,4 @@
-import type { TestCase } from '../../../src/test-utils/TestCase';
+import type { TestCase } from '../../src/test-utils/TestCase';
 import { CMD_LITE, CMD_TUI, typeSlashCommand } from './commands';
 
 export async function switchToLite(tc: TestCase): Promise<void> {

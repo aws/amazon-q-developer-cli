@@ -10,7 +10,7 @@ import { TestCase } from '../src/test-utils/TestCase';
 import {
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 // Control keys
 const CTRL_A = '\x01';

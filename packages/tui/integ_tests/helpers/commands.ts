@@ -4,7 +4,7 @@
  * only this file -- all tests import from here.
  */
 
-import type { TestCase } from '../../../src/test-utils/TestCase';
+import type { TestCase } from '../../src/test-utils/TestCase';
 
 /**
  * Type a slash command char-by-char (the per-char delay avoids the

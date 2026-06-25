@@ -1,6 +1,6 @@
 import { afterEach } from 'bun:test';
-import { TestCase } from '../../../src/test-utils/TestCase';
-import { AgentEventType, ContentType } from '../../../src/types/agent-events';
+import { TestCase } from '../../src/test-utils/TestCase';
+import { AgentEventType, ContentType } from '../../src/types/agent-events';
 
 interface Cleanable {
   cleanup(): Promise<void>;

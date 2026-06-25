@@ -5,7 +5,7 @@ import {
   exitLiteInteg,
   launchLiteInteg,
   trackCleanup,
-} from '../e2e_tests/lite/helpers/integ-lifecycle';
+} from './helpers/integ-lifecycle';
 
 /**
  * Bug-mine 1.1, 1.3, 1.4, 1.5: lite append-only contract — the single owner of

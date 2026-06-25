@@ -1,11 +1,11 @@
 import { expect } from 'bun:test';
-import type { TestCase } from '../../../src/test-utils/TestCase';
+import type { TestCase } from '../../src/test-utils/TestCase';
 import {
   AgentEventType,
   ApprovalOptionId,
   type PermissionOption,
   type TrustOption,
-} from '../../../src/types/agent-events';
+} from '../../src/types/agent-events';
 
 const ALLOW_ONCE: PermissionOption = {
   kind: ApprovalOptionId.AllowOnce,
