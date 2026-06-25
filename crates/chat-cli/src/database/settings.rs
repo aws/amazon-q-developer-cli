@@ -210,6 +210,10 @@ pub enum Setting {
     ChatDefaultInterruptBehavior,
     #[strum(message = "Key binding to toggle follow-up delivery mode (string, default: ctrl+s)")]
     ChatKeybindingsToggleInterruptBehavior,
+    #[strum(
+        message = "Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (boolean, default: false)"
+    )]
+    ChatDisableInheritingDefaultResources,
     #[cfg(feature = "voice")]
     #[strum(message = "Voice input language (string)")]
     VoiceLanguage,
@@ -371,6 +375,7 @@ impl AsRef<str> for Setting {
             Self::ChatTerminalTitle => "chat.terminalTitle",
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
+            Self::ChatDisableInheritingDefaultResources => "chat.disableInheritingDefaultResources",
             #[cfg(feature = "voice")]
             Self::VoiceLanguage => "voice.language",
             #[cfg(feature = "voice")]
@@ -478,6 +483,7 @@ impl TryFrom<&str> for Setting {
             "chat.terminalTitle" => Ok(Self::ChatTerminalTitle),
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
+            "chat.disableInheritingDefaultResources" => Ok(Self::ChatDisableInheritingDefaultResources),
             #[cfg(feature = "voice")]
             "voice.language" => Ok(Self::VoiceLanguage),
             #[cfg(feature = "voice")]

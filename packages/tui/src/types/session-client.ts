@@ -48,6 +48,11 @@ export interface KasContextEntry {
 export interface KasContextShowResponse {
   entries?: KasContextEntry[];
   message?: string;
+  /**
+   * Freshly-computed breakdown for the current agent. Absent on older
+   * agents — callers fall back to the cached breakdown.
+   */
+  breakdown?: ContextBreakdownData;
 }
 
 /**

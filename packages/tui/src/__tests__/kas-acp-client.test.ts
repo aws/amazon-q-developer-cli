@@ -471,20 +471,22 @@ describe('KasAcpClient', () => {
     }
   });
 
-  it('newSession() applies initialAgent via setSessionConfigOption(mode)', async () => {
+  it('newSession() applies initialAgent as _meta.kiro.modeId (no mode round-trip)', async () => {
     const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
     await client.newSession();
 
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith(
+    expect(mockKiroNewSession).toHaveBeenCalledWith(
       expect.objectContaining({
-        configId: 'mode',
-        value: 'plan',
-        sessionId: 'kas-session-1',
+        _meta: { kiro: { modeId: 'plan' } },
       })
     );
+    const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'mode'
+    );
+    expect(modeCalls.length).toBe(0);
   });
 
-  it('newSession() does not set mode config when initialAgent absent and KIRO_MODE unset', async () => {
+  it('newSession() does not set mode when initialAgent absent and KIRO_MODE unset', async () => {
     const prev = process.env.KIRO_MODE;
     delete process.env.KIRO_MODE;
     try {
@@ -494,6 +496,9 @@ describe('KasAcpClient', () => {
         ([req]: any[]) => req?.configId === 'mode'
       );
       expect(modeCalls.length).toBe(0);
+      expect(mockKiroNewSession).toHaveBeenCalledWith(
+        expect.not.objectContaining({ _meta: expect.anything() })
+      );
     } finally {
       if (prev !== undefined) process.env.KIRO_MODE = prev;
     }
@@ -505,11 +510,13 @@ describe('KasAcpClient', () => {
     try {
       const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
       await client.newSession();
+      expect(mockKiroNewSession).toHaveBeenCalledWith(
+        expect.objectContaining({ _meta: { kiro: { modeId: 'plan' } } })
+      );
       const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
         ([req]: any[]) => req?.configId === 'mode'
       );
-      expect(modeCalls.length).toBe(1);
-      expect(modeCalls[0][0].value).toBe('plan');
+      expect(modeCalls.length).toBe(0);
     } finally {
       if (prev === undefined) delete process.env.KIRO_MODE;
       else process.env.KIRO_MODE = prev;
@@ -4531,16 +4538,6 @@ describe('MCP OAuth flow', () => {
       expect(switched).toBeDefined();
       expect(switched.agentName).toBe('default');
       expect(switched.previousAgentName).toBe('kiro_planner');
-    });
-
-    it('refreshModeFromConfigOptions normalizes the requestedMode on the no-config-info fallback path', async () => {
-      const client = new KasAcpClient();
-      await client.initialize();
-      await client.newSession();
-      // No array of config options -> falls back to the requested mode, which
-      // must still be normalized from the wire id.
-      (client as any).refreshModeFromConfigOptions(undefined, 'vibe');
-      expect((client as any).modesState.currentModeId).toBe('default');
     });
   });
 

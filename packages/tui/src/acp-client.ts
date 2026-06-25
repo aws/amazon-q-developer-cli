@@ -3189,9 +3189,13 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   async newSession(): Promise<SessionResult> {
+    const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     const r = await this.kiroClient.newSession({
       cwd: process.cwd(),
       mcpServers: [],
+      ...(initialMode && {
+        _meta: { kiro: { modeId: toKasModeId(initialMode) } },
+      }),
     });
     const sid = r.sessionId;
     this.sessionId = sid;
@@ -3212,28 +3216,6 @@ export class KasAcpClient extends BaseAcpClient {
       });
     } catch (e) {
       logger.debug('Failed to set autopilot config:', e);
-    }
-
-    // Initial agent (KAS "mode") resolution.  CLI `--agent` flag takes
-    // precedence over the legacy `KIRO_MODE` env var so explicit user
-    // input always wins; the env var remains a propagation channel for
-    // the KAS-only Rust mode flag.
-    const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
-    if (initialMode) {
-      try {
-        const modeResp = await this.kiroClient.setSessionConfigOption({
-          sessionId: sid,
-          configId: 'mode',
-          value: toKasModeId(initialMode),
-        });
-        // Read the actual mode from the response (may differ if KAS fell back)
-        this.refreshModeFromConfigOptions(
-          (modeResp as { configOptions?: unknown }).configOptions,
-          initialMode
-        );
-      } catch (e) {
-        logger.debug('Failed to set mode:', e);
-      }
     }
 
     if (this.initialModel) {
@@ -3999,7 +3981,11 @@ export class KasAcpClient extends BaseAcpClient {
       throw new Error(result.message || '/context show failed');
     }
     const data = result.data as KasContextShowResponse | undefined;
-    return { entries: data?.entries ?? [], message: data?.message };
+    return {
+      entries: data?.entries ?? [],
+      message: data?.message,
+      breakdown: data?.breakdown,
+    };
   }
 
   async contextAdd(
@@ -4236,30 +4222,6 @@ export class KasAcpClient extends BaseAcpClient {
         ? { previousAgentName: fromKasModeId(p.previousAgentName) }
         : {}),
     });
-  }
-
-  /** Update cached currentModeId from a setSessionConfigOption response.
-   *  Falls back to `requestedMode` if the response doesn't contain mode info. */
-  private refreshModeFromConfigOptions(
-    configOptions: unknown,
-    requestedMode: string
-  ): void {
-    if (!Array.isArray(configOptions)) {
-      this.modesState = {
-        ...this.modesState,
-        currentModeId: fromKasModeId(requestedMode),
-      };
-      return;
-    }
-    const modeOpt = (configOptions as Array<Record<string, unknown>>).find(
-      (o) => o.id === 'mode'
-    );
-    const actual = (modeOpt as { currentValue?: string } | undefined)
-      ?.currentValue;
-    this.modesState = {
-      ...this.modesState,
-      currentModeId: fromKasModeId(actual ?? requestedMode),
-    };
   }
 
   /**
