@@ -12,28 +12,18 @@ const PLACEHOLDER_VERSION = '0.0.0-dev';
 const DEV_FALLBACK_VERSION = '99.99.99-dev';
 
 /**
- * Returns the CLI version.
+ * Returns the CLI version. Supports KIRO_VERSION_OVERRIDE env var
+ * for testing version-gated features before a release.
  *
- * Resolution order:
- *   1. KIRO_VERSION_OVERRIDE — test-only escape hatch for version-gated
- *      features before a release.
- *   2. KIRO_VERSION — injected by the Rust host (chat-cli / chat-cli-v2)
- *      when it spawns the bun subprocess. This carries the real
- *      CARGO_PKG_VERSION (set at build time from KIRO_VERSION on stable /
- *      toolbox releases). The bundled package.json below is pinned to
- *      "0.0.0-dev" in-repo and is NOT bumped by the tag-based release flow,
- *      so without this env the footer showed 0.0.0-dev on real releases.
- *   3. DEV_FALLBACK_VERSION — when package.json is still the "0.0.0-dev"
- *      placeholder (pure-source/dev runs like `bun run dev` where no Rust
- *      host set KIRO_VERSION), map to a high dev version so KRS doesn't
- *      disable thinking (gated on >= 2.4.0).
- *   4. package.json.version — final fallback.
+ * The package.json ships `0.0.0-dev` as a placeholder for the
+ * tag-driven release model — CI rewrites it at build time. Local
+ * dev runs (`bun run dev`) inherit the placeholder, which would
+ * cause KRS to disable thinking (gated on >= 2.4.0). Map it to a
+ * high dev version so outbound traffic always reports a usable value.
  */
 export function getCliVersion(): string {
   const override = process.env.KIRO_VERSION_OVERRIDE?.trim();
   if (override) return override;
-  const hostVersion = process.env.KIRO_VERSION;
-  if (hostVersion) return hostVersion;
   if (packageJson.version === PLACEHOLDER_VERSION) return DEV_FALLBACK_VERSION;
   return packageJson.version;
 }

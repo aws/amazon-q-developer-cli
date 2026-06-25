@@ -1113,7 +1113,7 @@ const startApp = async () => {
         <GlyphsProvider>
           <ThemeProvider
             wrapDisabled={wrapDisabled}
-            classicMode={uiMode === 'lite'}
+            liteMode={uiMode === 'lite'}
           >
             <AppStoreContext.Provider value={appStoreRef.current}>
               <UserThemeBridge />

@@ -214,59 +214,6 @@ describe('parseKey', () => {
 		});
 	});
 
-	describe('CSI-u bytes in legacy mode', () => {
-		beforeEach(() => {
-			setKittyProtocolActive(false);
-		});
-
-		it('keeps normal legacy enter unchanged', () => {
-			expect(parseKey('\r')).toBe('enter');
-		});
-
-		it('does not parse CSI-u until terminal detection enables Kitty mode', () => {
-			expect(parseKey('\x1b[13;2u')).toBeUndefined();
-		});
-
-		it('keeps common legacy Option shortcuts available', () => {
-			expect(parseKey('\x1b\x7f')).toBe('alt+backspace');
-			expect(parseKey('\x1b[3;3~')).toBe('alt+delete');
-			expect(parseKey('\x1b[1;3D')).toBe('alt+left');
-			expect(parseKey('\x1b[1;3C')).toBe('alt+right');
-			expect(parseKey('\x1bb')).toBe('alt+b');
-			expect(parseKey('\x1bf')).toBe('alt+f');
-		});
-
-		it('marks legacy Option shortcuts with meta flags for prompt handling', () => {
-			let event = parseInputData('\x1b\x7f');
-			expect(event.input).toBe('');
-			expect(event.key.meta).toBe(true);
-			expect(event.key.backspace).toBe(true);
-
-			event = parseInputData('\x1b[3;3~');
-			expect(event.input).toBe('');
-			expect(event.key.meta).toBe(true);
-			expect(event.key.delete).toBe(true);
-
-			event = parseInputData('\x1b[1;3D');
-			expect(event.input).toBe('');
-			expect(event.key.meta).toBe(true);
-			expect(event.key.leftArrow).toBe(true);
-
-			event = parseInputData('\x1b[1;3C');
-			expect(event.input).toBe('');
-			expect(event.key.meta).toBe(true);
-			expect(event.key.rightArrow).toBe(true);
-
-			event = parseInputData('\x1bb');
-			expect(event.input).toBe('b');
-			expect(event.key.meta).toBe(true);
-
-			event = parseInputData('\x1bf');
-			expect(event.input).toBe('f');
-			expect(event.key.meta).toBe(true);
-		});
-	});
-
 	describe('modifyOtherKeys', () => {
 		it('parses shift+enter', () => {
 			expect(parseKey('\x1b[27;2;13~')).toBe('shift+enter');

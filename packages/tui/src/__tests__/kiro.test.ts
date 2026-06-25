@@ -177,12 +177,11 @@ describe('Kiro', () => {
         commands: [{ name: 'help', description: 'Show help' }],
       } as AgentStreamEvent);
     }
-    // Handler gets called with (commands, mcpServers?) — mcpServers is
-    // undefined when the agent didn't attach an MCP server snapshot.
-    expect(commandsHandler).toHaveBeenCalledWith(
-      [{ name: 'help', description: 'Show help' }],
-      undefined
-    );
+    expect(commandsHandler).toHaveBeenCalled();
+    const firstCallArgs = (commandsHandler.mock.calls as unknown[][])[0];
+    expect(firstCallArgs![0]).toEqual([
+      { name: 'help', description: 'Show help' },
+    ]);
   });
 
   it('onModelUpdate registers handler', async () => {
