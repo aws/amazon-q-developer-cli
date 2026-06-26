@@ -34,7 +34,7 @@ import {
   isParentSubagentTool,
   resolveToolId,
 } from '../types/agent-events.js';
-import { getToolLabel } from '../types/tool-status.js';
+import { getToolLabel, formatLineRange } from '../types/tool-status.js';
 import {
   getVerboseDisplay,
   shouldShowToolOutput,
@@ -1866,6 +1866,22 @@ export function extractInlineArg(
     }
   }
 
+  // Code intelligence: `operation` is the discriminator (search_symbols vs
+  // goto_definition vs get_diagnostics…); the generic branches below drop it
+  // and show only the symbol/path. Prefix it + the target, like Code.tsx.
+  if (resolveToolId(toolName) === 'code') {
+    const operation =
+      typeof args.operation === 'string' ? args.operation : null;
+    const target =
+      (typeof args.symbol_name === 'string' && args.symbol_name) ||
+      (typeof args.pattern === 'string' && `"${args.pattern}"`) ||
+      (typeof args.file_path === 'string' &&
+        shortenPathForChip(args.file_path)) ||
+      null;
+    const label = [operation, target].filter(Boolean).join(' ');
+    if (label) return `[${clipChars(label, maxChars)}]`;
+  }
+
   // Pattern/query tools (grep, glob, search): combine "what" + " in " + path.
   const queryField =
     (typeof args.pattern === 'string' && args.pattern) ||
@@ -1890,17 +1906,20 @@ export function extractInlineArg(
   }
 
   // Read tools may pass an `operations: [{ path }]` array (multi-read API).
+  // Append the line range (offset/limit) so reads of the same file at different
+  // ranges read distinctly — matching the full-TUI Read component.
   const op = Array.isArray(args.operations)
     ? (args.operations[0] as Record<string, unknown> | undefined)
     : undefined;
   if (op && typeof op.path === 'string')
-    return `[${clipChars(shortenPathForChip(op.path), maxChars)}]`;
+    return `[${clipChars(shortenPathForChip(op.path) + formatLineRange(op as { offset?: number; limit?: number }), maxChars)}]`;
 
-  // Path-only tools (read, etc.).
+  // Path-only tools (read, etc.). KAS read_file sends offset/limit alongside
+  // the flat `path`, so append the same line-range suffix.
   for (const key of ['path', 'file_path', 'filePath']) {
     const v = args[key];
     if (typeof v === 'string' && v.length > 0)
-      return `[${clipChars(shortenPathForChip(v), maxChars)}]`;
+      return `[${clipChars(shortenPathForChip(v) + formatLineRange(args as { offset?: number; limit?: number }), maxChars)}]`;
   }
 
   // `name` / `key` are short identifiers — pass through unshortened.

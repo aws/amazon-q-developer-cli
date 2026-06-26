@@ -7,7 +7,7 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { FileList } from './FileList.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-import { getToolLabel } from '../../../types/tool-status.js';
+import { getToolLabel, formatLineRange } from '../../../types/tool-status.js';
 
 const PREVIEW_FILES = 5;
 
@@ -15,17 +15,6 @@ interface ReadOp {
   path: string;
   limit?: number;
   offset?: number;
-}
-
-/** Format a human-readable line range suffix, e.g. " (L10-20)" */
-function formatLineRange(op: ReadOp): string {
-  if (op.offset == null && op.limit == null) return '';
-  const start = (op.offset ?? 0) + 1; // offset is 0-based, display as 1-based
-  if (op.limit != null) {
-    const end = start + op.limit - 1;
-    return ` (L${start}-${end})`;
-  }
-  return ` (L${start}+)`;
 }
 
 export interface ReadProps {

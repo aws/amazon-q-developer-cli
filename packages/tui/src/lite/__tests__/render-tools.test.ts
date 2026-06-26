@@ -1582,7 +1582,48 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       tool: 'fs_read',
       args: { operations: [{ path: 'CWD/src/lite/render.ts' }] },
       contains: '[src/lite/render.ts]',
+      absent: ['(L'],
       noCwd: 'output',
+    },
+    {
+      // KAS read_file flat shape: offset/limit are siblings of `path`. The
+      // chip must carry the range (1-based) so distinct reads of one file read
+      // distinctly — parity with the full-TUI Read component.
+      name: 'read flat path with offset+limit shows 1-based line range',
+      tool: 'read_file',
+      args: { path: 'src/main.ts', offset: 10, limit: 50 },
+      contains: '[src/main.ts (L11-60)]',
+    },
+    {
+      // operations[] shape: range lives on the op, not the top-level args.
+      name: 'read operations[] with offset+limit shows line range',
+      tool: 'fs_read',
+      args: { operations: [{ path: 'src/main.ts', offset: 0, limit: 20 }] },
+      contains: '[src/main.ts (L1-20)]',
+    },
+    {
+      // Code's `operation` discriminator must lead the chip + the symbol target.
+      name: 'code op with symbol shows operation and symbol',
+      tool: 'code',
+      args: { operation: 'lookup_symbols', symbol_name: 'extractInlineArg' },
+      contains: '[lookup_symbols extractInlineArg]',
+    },
+    {
+      // file_path-only ops (goto_definition/get_diagnostics) used to show a
+      // bare path with no operation — now the op leads.
+      name: 'code op with only file_path shows operation and path',
+      tool: 'code',
+      args: { operation: 'get_diagnostics', file_path: 'CWD/src/main.ts' },
+      contains: '[get_diagnostics src/main.ts]',
+      noCwd: 'output',
+    },
+    {
+      // Param-less ops (generate_codebase_overview) still surface the operation
+      // rather than rendering no chip at all.
+      name: 'code op with no target shows operation alone',
+      tool: 'code',
+      args: { operation: 'generate_codebase_overview' },
+      contains: '[generate_codebase_overview]',
     },
   ])('$name', ({ tool, args, contains, absent, noCwd }) => {
     const resolvedArgs = JSON.parse(sub(JSON.stringify(args)));

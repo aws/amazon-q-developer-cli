@@ -1029,6 +1029,86 @@ describe('KasAcpClient', () => {
       },
     });
 
+  // ── steering accumulation ──
+  // KAS sends one steering_queued per steer with only that steer's text; the
+  // SteeringQueued handler expects the full buffer (Rust echoes it whole), so
+  // the client accumulates by messageId. Regression: a 2nd steer must not drop
+  // the 1st in the display.
+  it('steering_queued accumulates successive KAS steers into the full buffer', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm1',
+      content: 'First',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm2',
+      content: 'Second',
+    });
+
+    const queued = events.filter(
+      (e) => e.type === AgentEventType.SteeringQueued
+    );
+    expect(queued.map((e) => e.message)).toEqual(['First', 'First\n\nSecond']);
+  });
+
+  it('a new session resets the steer buffer (no stale carryover after /clear mid-steer)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    // Steer, then start a new session WITHOUT an injected/cleared event.
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm1',
+      content: 'Stale',
+    });
+    await client.newSession();
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm2',
+      content: 'Fresh',
+    });
+
+    const queued = events.filter(
+      (e) => e.type === AgentEventType.SteeringQueued
+    );
+    expect(queued[queued.length - 1].message).toBe('Fresh');
+  });
+
+  it('steering_injected then steering_queued starts a fresh buffer', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm1',
+      content: 'First',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_injected',
+      content: 'First',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'm2',
+      content: 'Second',
+    });
+
+    const queued = events.filter(
+      (e) => e.type === AgentEventType.SteeringQueued
+    );
+    expect(queued.map((e) => e.message)).toEqual(['First', 'Second']);
+  });
+
   it('executeCommand("compact") broadcasts started then fallback completed on success', async () => {
     // Derived purely from success: KAS returns { success: true } for both a
     // real compaction and a no-op (e.g. empty conversation). Either way we

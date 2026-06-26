@@ -63,3 +63,22 @@ export const TOOL_LABELS: Record<BuiltinToolId, string> = {
 export function getToolLabel(toolId: BuiltinToolId): string {
   return TOOL_LABELS[toolId];
 }
+
+/**
+ * Format a human-readable line range suffix for a read op, e.g. " (L10-20)".
+ * Shared by the full-TUI Read component and the lite tool-row renderer so both
+ * disambiguate reads of the same file at different ranges identically.
+ * Returns '' when neither offset nor limit is present (whole-file read).
+ */
+export function formatLineRange(op: {
+  offset?: number;
+  limit?: number;
+}): string {
+  if (op.offset == null && op.limit == null) return '';
+  const start = (op.offset ?? 0) + 1; // offset is 0-based, display as 1-based
+  if (op.limit != null) {
+    const end = start + op.limit - 1;
+    return ` (L${start}-${end})`;
+  }
+  return ` (L${start}+)`;
+}

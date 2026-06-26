@@ -394,13 +394,10 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   metrics?: unknown;
   elapsedTime?: unknown;
   status?: unknown;
-  // Mid-turn steering queue lifecycle (KAS): `steering_queued` and
-  // `steering_injected` carry the raw user text in `content`, which the TUI
-  // surfaces. The accompanying id fields (`messageId` on queued/injected,
-  // `messageIds` on cleared) are part of the KAS contract but unused here, so
-  // they are intentionally not modeled. See @kiro/acp-type-covenant
-  // KiroSessionInfoUpdate for the full shape.
   content?: string;
+  // KAS sends one steering_queued per steer (only its own text), unlike Rust
+  // which echoes the whole buffer; accumulate by messageId to rebuild it.
+  messageId?: string;
 };
 
 const COMPACT_COMPLETION_FALLBACK_MS = 500;
@@ -996,6 +993,11 @@ abstract class BaseAcpClient implements SessionClient {
   private externalCompactInProgress = false;
   protected promptsCache: PromptEntry[] = [];
   protected cachedBreakdown: unknown = null;
+  // KAS steers accumulated by messageId, to rebuild the full buffer the
+  // SteeringQueued handler expects (Rust sends it whole; KAS sends deltas).
+  // Reset per-session in wireSessionListeners (a /clear mid-steer ends the
+  // session with no injected/cleared event, so it can't reset itself).
+  protected kasSteerBuffer = new Map<string, string>();
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -1996,13 +1998,15 @@ abstract class BaseAcpClient implements SessionClient {
         // side-effect broadcasts (like `context_usage`), so broadcast and
         // return null rather than returning the event.
         if (meta?.kind === 'steering_queued') {
+          this.kasSteerBuffer.set(meta.messageId ?? '', meta.content ?? '');
           this.broadcastStreamEvent({
             type: AgentEventType.SteeringQueued,
-            message: meta.content ?? '',
+            message: [...this.kasSteerBuffer.values()].join('\n\n'),
           });
           return null;
         }
         if (meta?.kind === 'steering_injected') {
+          this.kasSteerBuffer.clear();
           this.broadcastStreamEvent({
             type: AgentEventType.SteeringConsumed,
             content: meta.content ?? '',
@@ -2010,6 +2014,7 @@ abstract class BaseAcpClient implements SessionClient {
           return null;
         }
         if (meta?.kind === 'steering_cleared') {
+          this.kasSteerBuffer.clear();
           this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
           return null;
         }
@@ -2807,6 +2812,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.chunkDiscoveredToolCalls.clear();
     this.standaloneSubtasks.clear();
     this.kasToolCallSnapshots.clear();
+    this.kasSteerBuffer.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;

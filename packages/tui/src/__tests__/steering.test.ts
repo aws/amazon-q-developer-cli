@@ -1,6 +1,7 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 import { createAppStore, MessageRole } from '../stores/app-store';
+import { buildUnifiedQueueEntries } from '../utils/queue-navigation';
 
 /**
  * Unit tests for TUI steering integration.
@@ -439,6 +440,49 @@ describe('TUI Steering Integration', () => {
 
       expect(store.getState().pendingSteerContent).toBeNull();
       expect(mockClearSteering).toHaveBeenCalledWith('session-xyz');
+    });
+  });
+
+  describe('KAS steering stacking renders as distinct queue rows (cross-layer)', () => {
+    // Closes the E2E gap: KAS has no mock-backend support, so this drives the
+    // real seam — accumulated SteeringQueued buffer → store → display builder —
+    // proving two stacked steers render as two rows, not one overwritten one.
+    it('two accumulated steers split into two steer rows in the unified queue', () => {
+      const mockKiro = {
+        sendMessage: mock(() => Promise.resolve()),
+        steerMessage: mock(() => Promise.resolve()),
+        streamMessage: mock(() => Promise.resolve()),
+        cancel: mock(() => Promise.resolve()),
+        close: mock(() => {}),
+        onCommandsUpdate: mock(() => () => {}),
+        onModelUpdate: mock(() => () => {}),
+        onAgentUpdate: mock(() => () => {}),
+        onPromptsUpdate: mock(() => () => {}),
+        executeCommand: mock(() =>
+          Promise.resolve({ success: true, message: '' })
+        ),
+        getCommandOptions: mock(() => Promise.resolve({ options: [] })),
+        settings: {},
+      };
+
+      const store = createAppStore({ kiro: mockKiro as any });
+      const handler = store.getState().createStreamEventHandler();
+
+      // The acp-client accumulates KAS deltas; these are the buffers it emits.
+      handler({ type: AgentEventType.SteeringQueued, message: 'First' });
+      handler({
+        type: AgentEventType.SteeringQueued,
+        message: 'First\n\nSecond',
+      });
+
+      const entries = buildUnifiedQueueEntries(
+        store.getState().pendingSteerContent,
+        store.getState().queuedMessages
+      );
+      expect(entries).toEqual([
+        { kind: 'steer', text: 'First' },
+        { kind: 'steer', text: 'Second' },
+      ]);
     });
   });
 });
