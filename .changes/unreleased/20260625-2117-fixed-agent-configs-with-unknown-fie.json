@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Agent configs with unknown fields (e.g. `permissions`) no longer fail to load in `--legacy-ui` mode"
+}
