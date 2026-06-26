@@ -2244,7 +2244,14 @@ export const createAppStore = (props: AppStoreProps) => {
         source: 'local' as const,
         meta: { local: true },
       },
-    ],
+    ]
+      // /lite is a dead entry off the rollout (switchToLite no-ops), so drop
+      // it from the menu there. /tui stays — KAS lite↔TUI switching dispatches
+      // it through this same local list (liteGateCommands).
+      .filter(
+        (cmd) =>
+          cmd.name !== '/lite' || process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
+      ),
     kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
     agentEngine,
     prompts: [],

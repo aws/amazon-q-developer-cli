@@ -15,6 +15,9 @@ export async function handleHelp(
   ctx: CommandContext,
   _options?: DispatchOptions
 ): Promise<void> {
+  // liteOnly commands bind lite-only rendering hooks, so hide them outside
+  // lite — matching the V2 showHelpPanel effect and the autocomplete menu.
+  const inLite = ctx.getUiMode?.() === 'lite';
   const commands = [
     ...ctx.kasCommands.map((c) => ({
       name: c.name,
@@ -24,6 +27,7 @@ export async function handleHelp(
     })),
     ...ctx.slashCommands
       .filter((c) => 'source' in c && c.source === 'local')
+      .filter((c) => inLite || c.meta?.liteOnly !== true)
       .map((c) => ({
         name: c.name,
         description: c.description,

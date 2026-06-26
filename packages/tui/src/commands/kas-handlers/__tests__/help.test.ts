@@ -49,6 +49,45 @@ describe('/help KAS handler — client-side command list', () => {
     expect(names).toEqual(sortedNames);
   });
 
+  it('hides liteOnly local commands in TUI mode, shows them in lite mode', async () => {
+    // /verbosity is liteOnly; KAS /help used to leak it in TUI mode.
+    const slashCommands = [
+      {
+        name: '/quit',
+        description: 'Exit',
+        source: 'local' as const,
+        meta: {},
+      },
+      {
+        name: '/verbosity',
+        description: 'Configure lite-mode rendering',
+        source: 'local' as const,
+        meta: { local: true, liteOnly: true },
+      },
+    ];
+
+    const tuiCtx = createMockCommandContext({
+      slashCommands: slashCommands as any,
+    });
+    (tuiCtx.getUiMode as any).mockReturnValue('tui');
+    await handleHelp({ name: '/help' } as any, '', tuiCtx);
+    const tuiNames = (
+      tuiCtx._spies.setShowHelpPanel!.mock.calls[0]![1] as any[]
+    ).map((c) => c.name);
+    expect(tuiNames).not.toContain('/verbosity');
+    expect(tuiNames).toContain('/quit');
+
+    const liteCtx = createMockCommandContext({
+      slashCommands: slashCommands as any,
+    });
+    (liteCtx.getUiMode as any).mockReturnValue('lite');
+    await handleHelp({ name: '/help' } as any, '', liteCtx);
+    const liteNames = (
+      liteCtx._spies.setShowHelpPanel!.mock.calls[0]![1] as any[]
+    ).map((c) => c.name);
+    expect(liteNames).toContain('/verbosity');
+  });
+
   it('includes subcommands metadata from kas commands', async () => {
     const kasCommands = [
       {

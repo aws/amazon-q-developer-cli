@@ -189,19 +189,42 @@ describe('selectVisibleSlashCommands', () => {
 });
 
 describe('UI mode commands — KAS vs V2', () => {
-  for (const agentEngine of ['kas', 'v2'] as const) {
-    it(`keeps /lite and /tui visible for ${agentEngine} mode switching`, () => {
-      const store = createAppStore({ kiro: new Kiro(), agentEngine });
-      const visible = selectVisibleSlashCommands(store.getState());
+  const withRollout = (value: string | undefined, fn: () => void) => {
+    const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    if (value === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    else process.env.KIRO_LITE_ROLLOUT_ENABLED = value;
+    try {
+      fn();
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+      else process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;
+    }
+  };
 
-      for (const [name, description] of [
-        ['/lite', 'Switch to lite mode'],
-        ['/tui', 'Switch to TUI mode'],
-      ] as const) {
-        const cmd = visible.find((c) => c.name === name);
-        expect(cmd).toBeDefined();
-        expect(cmd!.description).toContain(description);
-      }
+  // /tui must stay visible in both engines — KAS lite↔TUI switching dispatches
+  // it through this list (liteGateCommands), so filtering it breaks the swap.
+  for (const agentEngine of ['kas', 'v2'] as const) {
+    it(`keeps /tui visible for ${agentEngine} mode switching`, () => {
+      const cmd = selectVisibleSlashCommands(
+        createAppStore({ kiro: new Kiro(), agentEngine }).getState()
+      ).find((c) => c.name === '/tui');
+      expect(cmd?.description).toContain('Switch to TUI mode');
+    });
+
+    // /lite is the same swap entry but gated on the rollout.
+    it(`gates /lite on the rollout for ${agentEngine} mode switching`, () => {
+      withRollout('1', () => {
+        const cmd = selectVisibleSlashCommands(
+          createAppStore({ kiro: new Kiro(), agentEngine }).getState()
+        ).find((c) => c.name === '/lite');
+        expect(cmd?.description).toContain('Switch to lite mode');
+      });
+      withRollout(undefined, () => {
+        const cmd = selectVisibleSlashCommands(
+          createAppStore({ kiro: new Kiro(), agentEngine }).getState()
+        ).find((c) => c.name === '/lite');
+        expect(cmd).toBeUndefined();
+      });
     });
   }
 });
