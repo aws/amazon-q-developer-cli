@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "V3: Agent now correctly reports the active model when asked"
+}
