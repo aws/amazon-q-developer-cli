@@ -94,7 +94,7 @@ import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
 import { useUIState } from '../../../stores/selectors.js';
-import { formatEffort } from '../../../utils/string.js';
+import { formatEffort, shortenPath } from '../../../utils/string.js';
 import { packStatusSegments } from './status-segments.js';
 
 const TRIGGER_RULES = [
@@ -1597,17 +1597,18 @@ export const LiteLayout: React.FC = () => {
                 spinners.brailleRotate
               )
             : colorAgentName(agentName, getColor);
+          // Colors mirror the modern TUI ContextBar chips: model=primary,
+          // effort=secondary, workspace=brand, branch value=primary in
+          // secondary parens. ctx keeps its usage gradient.
+          const secondary = getColor('secondary');
           const segments = [
             agentSeg,
-            modelName ? chalk.dim(modelName) : '',
-            currentEffort ? chalk.dim(formatEffort(currentEffort)) : '',
+            modelName ? getColor('primary')(modelName) : '',
+            currentEffort ? secondary(formatEffort(currentEffort)) : '',
             `${ctxColor(`${ctxPct}%`)} ${chalk.dim('ctx')}`,
+            getColor('brand')(shortenPath(process.cwd())),
             gitBranch
-              ? chalk.dim(
-                  gitBranch.length > 24
-                    ? gitBranch.slice(0, 23) + '…'
-                    : gitBranch
-                )
+              ? `${secondary('(')}${getColor('primary')(gitBranch)}${secondary(')')}`
               : '',
             formatGoalStatusSegment(goalStatus),
           ];
