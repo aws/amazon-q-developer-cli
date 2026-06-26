@@ -127,7 +127,7 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
-    #[strum(message = "Specify UI variant to use (string)")]
+    #[strum(message = "Specify UI variant to use (string)", props(scope = "global_only"))]
     UiMode,
     #[strum(message = "External diff tool command (string)")]
     ChatDiffTool,
@@ -761,6 +761,8 @@ mod test {
     fn test_workspace_overridable() {
         assert!(!Setting::TelemetryEnabled.is_workspace_overridable());
         assert!(!Setting::ApiCodeWhispererService.is_workspace_overridable());
+        // The default UI (chat.ui.mode: lite vs tui) is global so it applies to all workspaces.
+        assert!(!Setting::UiMode.is_workspace_overridable());
         assert!(Setting::ChatDefaultModel.is_workspace_overridable());
         assert!(Setting::EnabledTangentMode.is_workspace_overridable());
     }

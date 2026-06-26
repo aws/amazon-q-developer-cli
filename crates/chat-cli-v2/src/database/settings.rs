@@ -120,7 +120,7 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
-    #[strum(message = "Specify UI variant to use (string)")]
+    #[strum(message = "Specify UI variant to use (string)", props(scope = "global_only"))]
     UiMode,
     #[strum(message = "External diff tool command (string)")]
     ChatDiffTool,
@@ -885,6 +885,12 @@ mod test {
     fn test_auto_expand_tool_output_is_workspace_overridable() {
         // UI settings should be overridable per workspace
         assert!(Setting::ChatAutoExpandToolOutput.is_workspace_overridable());
+    }
+
+    #[test]
+    fn test_ui_mode_is_global_only() {
+        // The default UI (chat.ui.mode: lite vs tui) is global so it applies to all workspaces.
+        assert!(!Setting::UiMode.is_workspace_overridable());
     }
 
     #[tokio::test]
