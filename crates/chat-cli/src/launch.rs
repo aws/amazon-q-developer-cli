@@ -166,11 +166,8 @@ fn client_application_for_agent_engine(agent_engine: AgentEngine) -> ClientAppli
     }
 }
 
-/// User-agent tokens the CLI attaches to its ACP `clientInfo._meta` so KAS can
-/// append them to the user agent it sends to the backend. `app/AmazonQ-For-CLI`
-/// is required for backend ALB routing and `ClientMetadataUtil` parsing; KAS
-/// derives the `KiroCLI/<version>`, `KAS/`, `os/`, and `md/appVersion-` segments
-/// itself, so only the non-derivable token is supplied here.
+/// `app/AmazonQ-For-CLI` is required for backend ALB routing / `ClientMetadataUtil`;
+/// KAS derives the rest of the user agent itself.
 fn client_info_user_agent_meta() -> agent_client_protocol::Meta {
     let mut meta = agent_client_protocol::Meta::new();
     meta.insert("userAgentTags".to_string(), serde_json::json!(["app/AmazonQ-For-CLI"]));
@@ -274,6 +271,16 @@ fn tui_child_env(current_exe: &Path, version: OsString) -> Vec<(&'static str, Os
         // survey User-Agent and KAS clientInfo aligned with the Rust user agent.
         (KIRO_VERSION_OVERRIDE, version),
     ]
+}
+
+/// The launcher owns the effective OTLP endpoint: it honors a non-empty parent
+/// override, else falls back to `crate::telemetry::DEFAULT_OTLP_ENDPOINT` (the
+/// single source of truth). Deliberately never returns a `:14318` loopback.
+fn resolve_otlp_endpoint(parent: Option<String>) -> String {
+    match parent {
+        Some(value) if !value.trim().is_empty() => value,
+        _ => crate::telemetry::DEFAULT_OTLP_ENDPOINT.to_string(),
+    }
 }
 
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
@@ -393,6 +400,20 @@ async fn launch_acp_interactive(
         {
             cmd.env(env_var, value);
         }
+    }
+
+    // Supply the default only when telemetry is enabled AND there's no parent
+    // override; when disabled, leave the endpoint unset so opt-out users never
+    // emit to prod (the TUI treats unset as "do not emit").
+    let parent_otlp_endpoint = std::env::var(crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT).ok();
+    let has_parent_override = parent_otlp_endpoint
+        .as_ref()
+        .is_some_and(|value| !value.trim().is_empty());
+    if telemetry_enabled && !has_parent_override {
+        cmd.env(
+            crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
+            resolve_otlp_endpoint(parent_otlp_endpoint),
+        );
     }
 
     match agent_engine {
@@ -696,9 +717,6 @@ async fn launch_acp_non_interactive(
                 acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
                     acp::Implementation::new("kiro-cli-non-interactive", env!("CARGO_PKG_VERSION"))
                         .title(Some("Kiro CLI (non-interactive)".to_string()))
-                        // app/AmazonQ-For-CLI lets the backend identify CLI-via-KAS traffic
-                        // (ALB routing + ClientMetadataUtil). KAS reads _meta.userAgentTags
-                        // and appends these segments to the derived user agent.
                         .meta(client_info_user_agent_meta()),
                 )),
             )
@@ -814,6 +832,42 @@ mod tests {
             version.as_deref(),
             Some(OsString::from("7.7.7-test").as_os_str()),
             "TUI child env must forward the caller-resolved override value verbatim"
+        );
+    }
+
+    #[test]
+    fn resolve_otlp_endpoint_resolution() {
+        // Empty/whitespace fall back to the default; a non-empty override wins.
+        let default = crate::telemetry::DEFAULT_OTLP_ENDPOINT;
+        let cases = [
+            (None, default),
+            (Some(String::new()), default),
+            (Some("   ".to_string()), default),
+            (
+                Some("https://otlp.example.test:4318".to_string()),
+                "https://otlp.example.test:4318",
+            ),
+        ];
+        for (parent, want) in cases {
+            assert_eq!(
+                resolve_otlp_endpoint(parent.clone()),
+                want,
+                "resolve_otlp_endpoint({parent:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_otlp_endpoint_default_is_never_loopback() {
+        // Lock in the "no collector loopback" contract.
+        let default = resolve_otlp_endpoint(None);
+        assert!(
+            !default.contains("14318"),
+            "default OTLP endpoint must not be the collector loopback port :14318, got {default}"
+        );
+        assert!(
+            !default.contains("127.0.0.1"),
+            "default OTLP endpoint must not be a loopback address, got {default}"
         );
     }
 

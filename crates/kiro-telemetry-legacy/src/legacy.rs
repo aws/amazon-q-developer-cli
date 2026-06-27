@@ -43,7 +43,7 @@ fn emits_legacy_user_turn_counter(event_type: LegacyEventType) -> bool {
 
 #[cfg(test)]
 fn emits_legacy_tool_call_total(event_type: LegacyEventType) -> bool {
-    matches_counter_target(event_type, "tool_call_total")
+    matches_counter_target(event_type, "kiro_cli_tool_call_total")
 }
 
 #[cfg(test)]
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn exposes_metric_kind_for_dual_write_routing() {
         let counter = legacy_otel_target(LegacyEventType::ToolUseSuggested).expect("tool use target");
-        assert_eq!(counter.metric_name, "tool_call_total");
+        assert_eq!(counter.metric_name, "kiro_cli_tool_call_total");
         assert_eq!(counter.metric_kind, MetricKind::Counter);
 
         let log = legacy_otel_target(LegacyEventType::RecordUserTurnCompletion).expect("turn completion target");
@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn creates_metric_records_for_metric_shaped_targets() {
         let counter = legacy_metric_record(LegacyEventType::ToolUseSuggested).expect("counter target");
-        assert_eq!(counter.name, "tool_call_total");
+        assert_eq!(counter.name, "kiro_cli_tool_call_total");
         assert_eq!(counter.value, MetricValue::Counter(1));
         assert!(emits_legacy_tool_call_total(LegacyEventType::ToolUseSuggested));
         assert!(!emits_legacy_tool_call_total(LegacyEventType::ChatAddedMessage));

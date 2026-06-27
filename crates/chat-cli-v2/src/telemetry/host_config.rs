@@ -95,9 +95,12 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: uuid::Uu
         KIRO_TELEMETRY_OTLP_ENDPOINT,
         KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
     };
+    // Default to DualWrite (KUTS/OTel + legacy Toolkit) so pre-existing metrics
+    // dual-hit both backends without opt-in. An explicit `KIRO_TELEMETRY_OTEL=0`
+    // still parses to Off (the user opt-out), and `2` selects OtelOnly.
     let otel_mode = env
         .get(KIRO_TELEMETRY_OTEL)
-        .map_or(kiro_telemetry::OtelMode::Off, |value| {
+        .map_or(kiro_telemetry::OtelMode::DualWrite, |value| {
             kiro_telemetry::OtelMode::parse(&value)
         });
     let otlp_endpoint = env
@@ -241,7 +244,7 @@ mod test {
         let turn_record = expect_metric(
             &records,
             metric::user_turns(
-                metric::ModelClass::AnthropicSonnet,
+                Some("claude-4-sonnet"),
                 metric::ClientApplication::ChatCliV2,
                 metric::ResultKind::Success,
                 false,
@@ -249,7 +252,7 @@ mod test {
             ),
         );
         expect_metric_attrs(turn_record, &[
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-4-sonnet"),
             ("client_application", "chat_cli_v2"),
             ("result", "success"),
             ("mode", "interactive"),

@@ -17,7 +17,8 @@ cargo run -q -p kiro-telemetry --features test-support --example catalog_smoke \
   --manifest-path "${repo_root}/Cargo.toml"
 
 # Every metric-instrument name in the catalog (counters/histograms/gauges).
-# log_event and derived rows are excluded: logs land in Loki, derived are computed downstream.
+# log_event and derived rows are excluded: KUTS is metrics-only (no logs), and
+# derived rows are computed downstream.
 metrics="$(
   awk '
     /^  - name:/ { name=$3 }

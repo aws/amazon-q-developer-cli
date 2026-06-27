@@ -11,7 +11,6 @@ use crate::metric::{
     McpServerClass,
     McpServerInit,
     MetricBuildError,
-    ModelClass,
     Outcome,
     ResultKind,
     SubagentDepthBucket,
@@ -149,7 +148,7 @@ pub fn conversation_completed(
 
 pub fn metering_event(
     request_id: Option<&str>,
-    model_class: Option<ModelClass>,
+    model: Option<&str>,
     client_application: Option<ClientApplication>,
     usage: f64,
     unit: &str,
@@ -160,7 +159,7 @@ pub fn metering_event(
         .attribute("metering_unit", unit)
         .attribute("metering_unit_plural", unit_plural)
         .optional_attribute("request_id", request_id)
-        .optional_attribute("model_class", model_class.map(|value| value.as_str()))
+        .optional_attribute("model", model)
         .optional_attribute("client_application", client_application.map(|value| value.as_str()))
         .expect_valid()
 }
@@ -186,7 +185,7 @@ pub fn metering_event_from_names(
 #[derive(Clone, Copy, Debug)]
 pub struct MeteringEventLog<'a> {
     pub request_id: Option<&'a str>,
-    pub model_class: Option<ModelClass>,
+    pub model: Option<&'a str>,
     pub client_application: Option<ClientApplication>,
     pub usage: f64,
     pub unit: &'a str,
@@ -197,7 +196,7 @@ impl<'a> MeteringEventLog<'a> {
     pub const fn new(usage: f64, unit: &'a str, unit_plural: &'a str) -> Self {
         Self {
             request_id: None,
-            model_class: None,
+            model: None,
             client_application: None,
             usage,
             unit,
@@ -215,7 +214,7 @@ impl<'a> MeteringEventLog<'a> {
     ) -> Self {
         Self {
             request_id,
-            model_class: model_id.map(|model| ModelClass::from_model_id(Some(model))),
+            model: model_id,
             client_application: client_application.map(|value| ClientApplication::from_name(Some(value))),
             usage,
             unit,
@@ -227,7 +226,7 @@ impl<'a> MeteringEventLog<'a> {
 pub fn metering_event_record(input: MeteringEventLog<'_>) -> TelemetryLogRecord {
     metering_event(
         input.request_id,
-        input.model_class,
+        input.model,
         input.client_application,
         input.usage,
         input.unit,
@@ -240,7 +239,7 @@ pub fn tool_invoked(
     tool_name: Option<&str>,
     mcp_server_name: Option<&str>,
     is_success: Option<bool>,
-    model_class: Option<ModelClass>,
+    model: Option<&str>,
     execution_duration_ms: Option<f64>,
 ) -> TelemetryLogRecord {
     event("kiro_cli_tool_invoked")
@@ -248,7 +247,7 @@ pub fn tool_invoked(
         .optional_attribute("tool_name", tool_name)
         .optional_attribute("mcp_server_name", mcp_server_name)
         .optional_attribute("is_success", is_success.map(|value| value.to_string()))
-        .optional_attribute("model_class", model_class.map(|value| value.as_str()))
+        .optional_attribute("model", model)
         .optional_attribute(
             "execution_duration_ms",
             execution_duration_ms.map(|value| format!("{value:.3}")),
@@ -269,7 +268,7 @@ pub fn tool_invoked_from_names(
         tool_name,
         mcp_server_name,
         is_success,
-        model_id.map(|model| ModelClass::from_model_id(Some(model))),
+        model_id,
         execution_duration_ms,
     )
 }
@@ -280,7 +279,7 @@ pub struct ToolInvokedLog<'a> {
     pub tool_name: Option<&'a str>,
     pub mcp_server_name: Option<&'a str>,
     pub is_success: Option<bool>,
-    pub model_class: Option<ModelClass>,
+    pub model: Option<&'a str>,
     pub execution_duration: Option<Duration>,
 }
 
@@ -291,7 +290,7 @@ impl<'a> ToolInvokedLog<'a> {
             tool_name: None,
             mcp_server_name: None,
             is_success: None,
-            model_class: None,
+            model: None,
             execution_duration: None,
         }
     }
@@ -309,7 +308,7 @@ impl<'a> ToolInvokedLog<'a> {
             tool_name,
             mcp_server_name,
             is_success,
-            model_class: model_id.map(|model| ModelClass::from_model_id(Some(model))),
+            model: model_id,
             execution_duration,
         }
     }
@@ -332,7 +331,7 @@ pub fn tool_invoked_record(input: ToolInvokedLog<'_>) -> TelemetryLogRecord {
         input.tool_name,
         input.mcp_server_name,
         input.is_success,
-        input.model_class,
+        input.model,
         execution_duration_ms,
     )
 }
@@ -366,9 +365,9 @@ impl SubagentInvokedBuilder {
         self
     }
 
-    pub fn model_class(mut self, model_class: Option<ModelClass>) -> Self {
-        if let Some(model_class) = model_class {
-            self.builder = self.builder.attribute("model_class", model_class.as_str());
+    pub fn model(mut self, model: Option<&str>) -> Self {
+        if let Some(model) = model {
+            self.builder = self.builder.attribute("model", model);
         }
         self
     }
@@ -409,7 +408,6 @@ pub struct UserTurnCompletedLog<'a> {
     pub output_tokens: Option<i64>,
     pub cache_read_input_tokens: Option<i64>,
     pub cache_write_input_tokens: Option<i64>,
-    pub estimated_cost_usd: Option<f64>,
 }
 
 impl<'a> UserTurnCompletedLog<'a> {
@@ -446,7 +444,6 @@ impl<'a> UserTurnCompletedLog<'a> {
             output_tokens: None,
             cache_read_input_tokens: None,
             cache_write_input_tokens: None,
-            estimated_cost_usd: None,
         }
     }
 
@@ -529,11 +526,6 @@ impl<'a> UserTurnCompletedLog<'a> {
         self.cache_write_input_tokens = cache_write_input_tokens;
         self
     }
-
-    pub const fn estimated_cost_usd(mut self, estimated_cost_usd: Option<f64>) -> Self {
-        self.estimated_cost_usd = estimated_cost_usd;
-        self
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -550,12 +542,12 @@ impl UserTurnCompletedBuilder {
         self.optional_attribute("message_id", value)
     }
 
-    pub fn model_class(self, model_class: Option<ModelClass>) -> Self {
-        self.optional_attribute("model_class", model_class.map(|value| value.as_str()))
+    pub fn model(self, model: Option<impl Into<String>>) -> Self {
+        self.optional_attribute("model", model)
     }
 
     pub fn model_id(self, value: Option<impl AsRef<str>>) -> Self {
-        self.model_class(value.map(|value| ModelClass::from_model_id(Some(value.as_ref()))))
+        self.model(value.map(|value| value.as_ref().to_string()))
     }
 
     pub fn client_application(self, client_application: Option<ClientApplication>) -> Self {
@@ -612,10 +604,6 @@ impl UserTurnCompletedBuilder {
 
     pub fn cache_write_input_tokens(self, value: Option<i64>) -> Self {
         self.optional_attribute("cache_write_input_tokens", value.map(|value| value.to_string()))
-    }
-
-    pub fn estimated_cost_usd(self, value: Option<f64>) -> Self {
-        self.optional_attribute("estimated_cost_usd", value.map(|value| format!("{value:.9}")))
     }
 
     pub fn build(self) -> TelemetryLogRecord {
@@ -677,7 +665,6 @@ pub fn user_turn_completed_record(input: UserTurnCompletedLog<'_>) -> TelemetryL
     .output_tokens(input.output_tokens)
     .cache_read_input_tokens(input.cache_read_input_tokens)
     .cache_write_input_tokens(input.cache_write_input_tokens)
-    .estimated_cost_usd(input.estimated_cost_usd)
     .build()
 }
 
@@ -732,11 +719,11 @@ mod tests {
             .expect("valid log event");
         assert_eq!(record.name, "kiro_cli_conversation_completed");
 
-        let error = event("chat_cli.session.completed")
+        let error = event("kiro_cli.session.completed")
             .build()
             .expect_err("metric is not a log event");
         assert_eq!(error, MetricBuildError::KindMismatch {
-            metric: "chat_cli.session.completed".to_string(),
+            metric: "kiro_cli.session.completed".to_string(),
             expected: MetricKind::Counter,
             actual: MetricKind::LogEvent,
         });
@@ -810,7 +797,7 @@ mod tests {
     fn metering_event_builds_fact_log() {
         let record = metering_event(
             Some("request-1"),
-            Some(ModelClass::AnthropicSonnet),
+            Some("claude-sonnet-4"),
             Some(ClientApplication::ChatCliV2),
             42.0,
             "token",
@@ -819,7 +806,7 @@ mod tests {
 
         assert_log_shape(record, "kiro_cli_metering_event", &[
             ("request_id", "request-1"),
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-sonnet-4"),
             ("client_application", "chat_cli_v2"),
             ("metering_usage", "42"),
             ("metering_unit", "token"),
@@ -836,7 +823,7 @@ mod tests {
         );
         assert_log_shape(record, "kiro_cli_metering_event", &[
             ("request_id", "request-1"),
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-4-sonnet"),
             ("client_application", "chat_cli_v2"),
             ("metering_usage", "42"),
             ("metering_unit", "token"),
@@ -853,7 +840,7 @@ mod tests {
         ));
         assert_log_shape(record, "kiro_cli_metering_event", &[
             ("request_id", "request-1"),
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-4-sonnet"),
             ("client_application", "chat_cli_v3"),
             ("metering_usage", "42"),
             ("metering_unit", "token"),
@@ -868,7 +855,7 @@ mod tests {
             Some("fs_read"),
             Some("filesystem"),
             Some(true),
-            Some(ModelClass::AnthropicHaiku),
+            Some("claude-haiku"),
             Some(12.3456),
         );
 
@@ -877,7 +864,7 @@ mod tests {
             ("tool_name", "fs_read"),
             ("mcp_server_name", "filesystem"),
             ("is_success", "true"),
-            ("model_class", "anthropic_haiku"),
+            ("model", "claude-haiku"),
             ("execution_duration_ms", "12.346"),
         ]);
 
@@ -894,7 +881,7 @@ mod tests {
             ("tool_name", "fs_read"),
             ("mcp_server_name", "filesystem"),
             ("is_success", "true"),
-            ("model_class", "anthropic_haiku"),
+            ("model", "claude-4-haiku"),
             ("execution_duration_ms", "12.346"),
         ]);
 
@@ -911,7 +898,7 @@ mod tests {
             ("tool_name", "fs_read"),
             ("mcp_server_name", "filesystem"),
             ("is_success", "true"),
-            ("model_class", "anthropic_haiku"),
+            ("model", "claude-4-haiku"),
             ("execution_duration_ms", "12.346"),
         ]);
 
@@ -952,13 +939,13 @@ mod tests {
     fn subagent_invoked_builder_adds_schema_attributes() {
         let record = subagent_invoked("code-review")
             .depth_bucket(Some(SubagentDepthBucket::ThreePlus))
-            .model_class(Some(ModelClass::AnthropicSonnet))
+            .model(Some("claude-sonnet-4"))
             .build();
 
         assert_log_shape(record, "kiro_cli_subagent_invoked", &[
             ("subagent_name", "code-review"),
             ("depth_bucket", "3+"),
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-sonnet-4"),
         ]);
     }
 
@@ -970,7 +957,6 @@ mod tests {
             .model_id(Some("gpt-5-codex"))
             .client_application_name(Some("chat_cli_v2"))
             .status_code(Some(200))
-            .estimated_cost_usd(Some(0.000_123_456))
             .build();
 
         assert_log_shape(record, "kiro_cli_user_turn_completed", &[
@@ -983,10 +969,9 @@ mod tests {
             ("follow_up_count", "2"),
             ("request_id", "request-1"),
             ("message_id", "message-1"),
-            ("model_class", "openai_gpt5"),
+            ("model", "gpt-5-codex"),
             ("client_application", "chat_cli_v2"),
             ("status_code", "200"),
-            ("estimated_cost_usd", "0.000123456"),
         ]);
     }
 
@@ -1008,8 +993,7 @@ mod tests {
             .uncached_input_tokens(Some(10))
             .output_tokens(Some(5))
             .cache_read_input_tokens(Some(2))
-            .cache_write_input_tokens(Some(3))
-            .estimated_cost_usd(Some(0.000_123_456));
+            .cache_write_input_tokens(Some(3));
 
         let record = user_turn_completed_record(input);
 
@@ -1023,7 +1007,7 @@ mod tests {
             ("follow_up_count", "2"),
             ("request_id", "request-1,request-2"),
             ("message_id", "message-1"),
-            ("model_class", "anthropic_sonnet"),
+            ("model", "claude-4-sonnet"),
             ("client_application", "chat_cli_v3"),
             ("turn_failure_reason", "ServiceFailure"),
             ("reason_desc", "redacted"),
@@ -1037,7 +1021,6 @@ mod tests {
             ("output_tokens", "5"),
             ("cache_read_input_tokens", "2"),
             ("cache_write_input_tokens", "3"),
-            ("estimated_cost_usd", "0.000123456"),
         ]);
     }
 }

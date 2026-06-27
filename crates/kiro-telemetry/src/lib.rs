@@ -54,11 +54,7 @@ pub use otel::{
     init_noop_otel,
     init_otel,
 };
-pub use pricing::{
-    PRICING_TABLE_VERSION,
-    TokenUsage,
-    estimate_cost_usd,
-};
+pub use pricing::TokenUsage;
 pub use record::{
     Attribute,
     MetricRecord,

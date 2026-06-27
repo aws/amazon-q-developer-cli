@@ -16,11 +16,11 @@ export KIRO_STATE_DIR="${KIRO_STATE_DIR:-${TMPDIR:-/tmp}/kiro-telemetry-local-sm
 cargo run -p kiro-telemetry --example local_smoke --manifest-path "${repo_root}/Cargo.toml"
 
 queries=(
-  'feature_used_total{feature="local_smoke"}'
-  'feature_used_total_total{feature="local_smoke"}'
-  'chat_session_started_total{client_application="chat_cli_v3",mode="plan"}'
-  'chat_session_started_total_total{client_application="chat_cli_v3",mode="plan"}'
-  'chat_cli_session_completed_total{agent_kind="kas",exit_reason="clean"}'
+  'kiro_cli_feature_used_total{feature="local_smoke"}'
+  'kiro_cli_feature_used_total_total{feature="local_smoke"}'
+  'kiro_cli_chat_session_started_total{client_application="chat_cli_v3",mode="plan"}'
+  'kiro_cli_chat_session_started_total_total{client_application="chat_cli_v3",mode="plan"}'
+  'kiro_cli_session_completed_total{agent_kind="kas",exit_reason="clean"}'
 )
 
 for attempt in {1..24}; do

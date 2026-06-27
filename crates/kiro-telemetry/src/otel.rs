@@ -113,20 +113,20 @@ const BATCH_SIZE_BOUNDARIES: &[f64] = &[1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0
 fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
     match name {
         // Latencies recorded in seconds.
-        "chat_cli.bedrock.stream.ttft"
-        | "chat_cli.bedrock.stream.inter_token_latency"
-        | "chat_cli.bedrock.stream.duration"
-        | "chat_cli.bedrock.request.duration"
+        "kiro_cli.bedrock.stream.ttft"
+        | "kiro_cli.bedrock.stream.inter_token_latency"
+        | "kiro_cli.bedrock.stream.duration"
+        | "kiro_cli.bedrock.request.duration"
         | "kiro_cli_user_turn_duration_seconds"
-        | "telemetry.exporter.send.duration"
-        | "chat_cli.startup.duration"
-        | "chat_cli.agent.loop.iteration_duration" => Some(SECONDS_LATENCY_BOUNDARIES),
+        | "kiro_cli.telemetry.exporter.send.duration"
+        | "kiro_cli.startup.duration"
+        | "kiro_cli.agent.loop.iteration_duration" => Some(SECONDS_LATENCY_BOUNDARIES),
         // Unit-interval ratios (0..=1).
-        "kiro_cli_cache_hit_ratio" | "chat_cli.process.cpu.utilization" => Some(RATIO_BOUNDARIES),
+        "kiro_cli_cache_hit_ratio" | "kiro_cli.process.cpu.utilization" => Some(RATIO_BOUNDARIES),
         // Memory growth rate, bytes/second.
-        "chat_cli.process.memory.growth_rate" => Some(MEMORY_GROWTH_RATE_BOUNDARIES),
+        "kiro_cli.process.memory.growth_rate" => Some(MEMORY_GROWTH_RATE_BOUNDARIES),
         // Export batch sizes (record counts).
-        "telemetry.batch.size" => Some(BATCH_SIZE_BOUNDARIES),
+        "kiro_cli.telemetry.batch.size" => Some(BATCH_SIZE_BOUNDARIES),
         _ => None,
     }
 }
@@ -647,7 +647,7 @@ mod tests {
     fn histogram_boundaries_target_non_millisecond_instruments() {
         // Second-scale latencies must not inherit the SDK's ms-scale defaults.
         assert_eq!(
-            histogram_boundaries("chat_cli.bedrock.stream.ttft"),
+            histogram_boundaries("kiro_cli.bedrock.stream.ttft"),
             Some(SECONDS_LATENCY_BOUNDARIES)
         );
         assert_eq!(
@@ -657,16 +657,16 @@ mod tests {
         // Unit-interval ratios.
         assert_eq!(histogram_boundaries("kiro_cli_cache_hit_ratio"), Some(RATIO_BOUNDARIES));
         assert_eq!(
-            histogram_boundaries("chat_cli.process.cpu.utilization"),
+            histogram_boundaries("kiro_cli.process.cpu.utilization"),
             Some(RATIO_BOUNDARIES)
         );
         // Bytes/second growth rate and record-count batch sizes.
         assert_eq!(
-            histogram_boundaries("chat_cli.process.memory.growth_rate"),
+            histogram_boundaries("kiro_cli.process.memory.growth_rate"),
             Some(MEMORY_GROWTH_RATE_BOUNDARIES)
         );
         assert_eq!(
-            histogram_boundaries("telemetry.batch.size"),
+            histogram_boundaries("kiro_cli.telemetry.batch.size"),
             Some(BATCH_SIZE_BOUNDARIES)
         );
 
@@ -700,7 +700,7 @@ mod tests {
 
         let providers = init_noop_otel(&config);
         let counter = global::meter("kiro-telemetry-test")
-            .u64_counter("telemetry.sdk.up")
+            .u64_counter("kiro_cli.telemetry.sdk.up")
             .build();
 
         counter.add(1, &[KeyValue::new("partition", "aws")]);
@@ -760,17 +760,9 @@ mod tests {
             ))
             .expect("counter emit should succeed");
         client
-            .emit(metric::estimated_cost_usd(
-                0.00042,
-                metric::ModelClass::AnthropicSonnet,
-                metric::ClientApplication::ChatCliV2,
-                false,
-            ))
-            .expect("float counter emit should succeed");
-        client
             .emit(metric::bedrock_stream_ttft(
                 0.25,
-                metric::ModelClass::AnthropicSonnet,
+                Some("claude-sonnet-4"),
                 metric::PromptSizeBucket::Small,
                 false,
             ))
@@ -795,7 +787,7 @@ mod tests {
         client
             .emit_log(
                 log::subagent_invoked("code-review")
-                    .model_class(Some(metric::ModelClass::AnthropicSonnet))
+                    .model(Some("claude-sonnet-4"))
                     .build(),
             )
             .expect("log emit should succeed");
@@ -803,7 +795,7 @@ mod tests {
         let logs = records.lock().expect("capture log mutex poisoned");
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].event_name(), Some("kiro_cli_subagent_invoked"));
-        assert!(sdk_log_has_string_attr(&logs[0], "model_class", "anthropic_sonnet"));
+        assert!(sdk_log_has_string_attr(&logs[0], "model", "claude-sonnet-4"));
     }
 
     #[test]
@@ -822,7 +814,7 @@ mod tests {
             .emit_log(
                 crate::TelemetryLogRecord::new("kiro_cli_subagent_invoked")
                     .with_attribute("subagent_name", "code-review")
-                    .with_attribute("model_class", "raw-model-id"),
+                    .with_attribute("model", "raw-model-id"),
             )
             .expect("log emit should succeed");
 
@@ -834,9 +826,11 @@ mod tests {
         let logs = records.lock().expect("capture log mutex poisoned");
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].event_name(), Some("kiro_cli_subagent_invoked"));
-        assert!(logs[0].attributes_iter().any(|(key, value)| {
-            key.as_str() == "model_class" && value == &AnyValue::String("raw-model-id".into())
-        }));
+        assert!(
+            logs[0]
+                .attributes_iter()
+                .any(|(key, value)| { key.as_str() == "model" && value == &AnyValue::String("raw-model-id".into()) })
+        );
     }
 
     #[test]
@@ -865,9 +859,7 @@ mod tests {
             .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&providers)));
 
         let expected_metric = metric::cli_session_completed(metric::ExitReason::Clean, metric::AgentKind::V2);
-        let expected_log = log::subagent_invoked("review")
-            .model_class(Some(metric::ModelClass::AnthropicSonnet))
-            .build();
+        let expected_log = log::subagent_invoked("review").model(Some("claude-sonnet-4")).build();
 
         client
             .emit(expected_metric.clone())

@@ -7,8 +7,6 @@ services:
     ports:
       - "4318:4318"
       - "9464:9464"
-    depends_on:
-      - loki
 
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -22,14 +20,6 @@ services:
       - "9090:9090"
     depends_on:
       - otel-collector
-
-  loki:
-    image: grafana/loki:3.2.0
-    command: ["-config.file=/etc/loki/local-config.yaml"]
-    volumes:
-      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
-    ports:
-      - "3100:3100"
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -45,4 +35,3 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-      - loki

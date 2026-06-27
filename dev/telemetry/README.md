@@ -1,12 +1,15 @@
 # Local telemetry stack
 
 This stack lets you run `kiro-cli` locally and inspect OpenTelemetry metrics
-and logs in Grafana:
+in Grafana:
 
 ```text
-kiro-cli ──OTLP/HTTP──▶ otel-collector ──┬─ Prometheus ──▶ Grafana (metrics)
-                                         └─ Loki         ──▶ Grafana (logs)
+kiro-cli ──OTLP/HTTP──▶ otel-collector ──▶ Prometheus ──▶ Grafana (metrics)
 ```
+
+The local stack is **metrics-only** (Prometheus + Grafana). KUTS, the
+production backend, does not support OTLP logs, so there is no log pipeline to
+mirror locally.
 
 ## Start the stack with Finch
 
@@ -21,8 +24,8 @@ You can also start it from the repository root with
 `finch compose -f dev/telemetry/compose.yaml up -d`.
 
 Grafana is available at http://localhost:3000/d/kiro-telemetry-local/kiro-cli-local-telemetry.
-Prometheus is at http://localhost:9090, the collector's Prometheus exporter at
-http://localhost:9464/metrics, and Loki at http://localhost:3100.
+Prometheus is at http://localhost:9090 and the collector's Prometheus exporter
+is at http://localhost:9464/metrics.
 
 To smoke-test the collector → Prometheus path before launching Kiro:
 
@@ -46,6 +49,14 @@ bash verify-catalog.sh
 The same record set is asserted in CI by the `catalog_coverage` integration test
 (`cargo test -p kiro-telemetry --features test-support --test catalog_coverage`),
 which fails if any non-derived catalog metric lacks a typed constructor.
+
+This stack is also exercised end-to-end by CI: the `tui-telemetry-e2e` job in
+`.github/workflows/tui.yml` brings the stack up with `docker compose` and runs
+`validate-metrics-e2e.sh`, which drives the Rust catalog emitter + the TUI
+emitter fixture (`emit-tui-metrics.fixture.ts`) through the real code paths and
+asserts each metric lands in Prometheus. It runs whenever telemetry-relevant
+paths change (`dev/telemetry/**`, `crates/kiro-telemetry*/**`, or the TUI metric
+emitters), so these scripts are part of the test suite, not dev-only cruft.
 
 ## Run Kiro against the local collector
 
@@ -101,43 +112,6 @@ The collector also prints detailed OTLP metric and log payloads:
 finch compose logs -f otel-collector
 ```
 
-## Inspecting tool usage by name (Loki)
-
-Per-tool counts are not available as Prometheus labels (cardinality control —
-the metric `kiro_cli_tool_invocations` only carries `tool_origin` and `outcome`).
-The tool name lives on the `kiro_cli_tool_invoked` log record, which is now
-shipped to Loki and provisioned as a Grafana datasource.
-
-The dashboard includes:
-
-- **Tool Usage by Name** — time series of per-tool invocation counts.
-- **Top Tools (by count, current range)** — bar gauge of the top 15 tools.
-- **Tool Outcomes by Name** — invocations split by `tool_name` × `outcome`.
-- **Recent Tool Invocations (raw log)** — explore the raw log records and their
-  attributes (use the panel's "Inspect → Logs" view to see all fields).
-
-Or query Loki directly in Grafana → Explore → datasource **Loki**:
-
-```logql
-# total per tool over the selected range
-sum by (tool_name)
-  (count_over_time({service_name="kiro-cli"} |= "kiro_cli_tool_invoked" [$__range]))
-
-# only MCP tools, broken down by server
-sum by (tool_name, server_name)
-  (count_over_time({service_name="kiro-cli", tool_origin="mcp"} |= "kiro_cli_tool_invoked" [$__range]))
-
-# error-only invocations
-{service_name="kiro-cli", outcome="error"} |= "kiro_cli_tool_invoked"
-```
-
-Loki promotes a wide set of OTLP attributes to labels by default. The event
-identity (`kiro_cli_tool_invoked`, `kiro_cli_user_turn_completed`, etc.) lives
-in the log **body**, not as a label, so always pair the stream selector with a
-line filter (`|= "kiro_cli_tool_invoked"`) to scope to a specific event.
-Common useful labels: `tool_name`, `tool_origin`, `outcome`, `model_class`,
-`client_application`, `is_subagent`, `os_type`, `service_name`.
-
 ## Stop the stack
 
 ```bash
@@ -145,4 +119,4 @@ cd dev/telemetry
 finch compose down
 ```
 
-Add `-v` if you also want to wipe Prometheus/Loki state between runs.
+Add `-v` if you also want to wipe Prometheus state between runs.

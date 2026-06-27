@@ -1,9 +1,18 @@
 # Telemetry host extraction and local OTel Collector
 
-**Status:** Proposed (host-extraction Phase 1 PRs already open: #3008/#3009/#3010)
+**Status:** ⚠️ **Superseded (collector dropped).** The host-extraction crate work
+(PRs A–F) landed and stands. The **bundled local OTel Collector** decision in this
+doc — PR G (bundle + Apple notarization) and the default-on `ensure_running` spawn —
+was **not adopted.** PR #3191 emits OTLP directly to KUTS (Rust launcher via the OTel
+SDK; TUI via `otlp-emit.ts`) and keeps the `kiro-telemetry-collector` crate **dormant /
+opt-in** for the rare multi-emitter case. See
+[`telemetry-metric-inventory.md`](./telemetry-metric-inventory.md)
+for the current design and rationale. The sections below are retained for history; where
+they say the collector is "chosen" or the default, read that as the *prior* proposal.
 **Owners:** vinayshah1998
 **Reviewers:** kensave (G1 review prompted this design)
 **Successor to:** [`telemetry-otel-cloudwatch-migration.md`](./telemetry-otel-cloudwatch-migration.md)
+**Superseded by (collector decision):** [`telemetry-metric-inventory.md`](./telemetry-metric-inventory.md) (§"What shipped")
 
 ## Why a new doc
 
@@ -302,7 +311,7 @@ This is the part the original migration doc didn't address. The N concurrent pro
 
 ### Deduplication: per-user-per-day events
 
-Some catalog metrics are **session-lifecycle** (`cli_session_started_total`, `chat_session_started_total`) and N processes correctly produce N counts.
+Some catalog metrics are **session-lifecycle** (`kiro_cli_session_started_total`, `kiro_cli_chat_session_started_total`) and N processes correctly produce N counts.
 
 Others are **per-user-per-day** invariants:
 - `kiro_cli_daily_heartbeat`

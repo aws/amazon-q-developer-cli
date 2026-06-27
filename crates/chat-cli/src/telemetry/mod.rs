@@ -1200,13 +1200,20 @@ impl TelemetryClient {
     }
 }
 
-/// Default OTLP collector endpoint when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
-const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
+/// Default OTLP endpoint (KUTS) when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
+///
+/// `pub(crate)` so the launcher (`crate::launch`) can resolve the same endpoint
+/// it forwards to the TUI child from the single source of truth the host's own
+/// OTel pipeline uses — no dependency on the collector crate.
+pub(crate) const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
 
 fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: Uuid) -> OtelTelemetryConfig {
+    // Default to DualWrite (KUTS/OTel + legacy Toolkit) so pre-existing metrics
+    // dual-hit both backends without opt-in. An explicit `KIRO_TELEMETRY_OTEL=0`
+    // still parses to Off (the user opt-out), and `2` selects OtelOnly.
     let otel_mode = env
         .get(KIRO_TELEMETRY_OTEL)
-        .map_or(OtelMode::Off, |value| OtelMode::parse(&value));
+        .map_or(OtelMode::DualWrite, |value| OtelMode::parse(&value));
     let otlp_endpoint = env
         .get(KIRO_TELEMETRY_OTLP_ENDPOINT)
         .ok()
@@ -1273,6 +1280,8 @@ mod test {
             Some(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff").hyphenated().to_string())
         );
         assert_eq!(context.ide_version.as_deref(), Some(PRODUCT_VERSION));
+        // Exports stay disabled here because telemetry_enabled is false under
+        // cfg!(test), independent of the (now DualWrite) default OTel mode.
         assert!(!client.otel_exports_enabled());
     }
 
@@ -1359,7 +1368,7 @@ mod test {
     fn govcloud_disabled_record_shape() {
         let record = govcloud_channel_disabled_record("legacy_toolkit", "aws-us-gov");
 
-        assert_eq!(record.name, "govcloud_channel_disabled_total");
+        assert_eq!(record.name, "kiro_cli_govcloud_channel_disabled_total");
         assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
         assert!(
             record
@@ -1385,7 +1394,7 @@ mod test {
     fn govcloud_leak_record_shape() {
         let record = govcloud_channel_leak_record("legacy_toolkit");
 
-        assert_eq!(record.name, "govcloud_channel_leak_total");
+        assert_eq!(record.name, "kiro_cli_govcloud_channel_leak_total");
         assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
         assert!(
             record

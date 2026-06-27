@@ -21,7 +21,7 @@
 //! `TelemetryObserver::handle_event`, which produces a `ChatAddedMessage`
 //! `Event`, which the observer's forwarding task hands to `TelemetryThread`,
 //! which fans the event through `V2OtelTranslator` (kiro-telemetry-legacy)
-//! into OTel records. The `model_invocations_total` counter is the canonical
+//! into OTel records. The `kiro_cli_model_invocations_total` counter is the canonical
 //! observable side-effect of the observer-translated `ChatAddedMessage` path.
 
 use std::env;

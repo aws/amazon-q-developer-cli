@@ -71,7 +71,6 @@ use agent::{
     AgentHandle,
 };
 use code_agent_sdk::CodeIntelligence;
-use kiro_telemetry_legacy::estimated_cost_usd;
 use sacp::schema::{
     AGENT_METHOD_NAMES,
     AgentCapabilities,
@@ -4927,7 +4926,6 @@ pub fn kas_turn_completion_events(payload: super::schema::TurnCompletionTelemetr
     if should_emit_turn_completion {
         let result = kas_turn_result(payload.status);
         let (reason, reason_desc) = kas_turn_failure_reason(payload.status);
-        let token_usage = kas_token_usage(&payload);
         events.push(kas_telemetry_event(EventType::RecordUserTurnCompletion {
             conversation_id,
             result,
@@ -4940,7 +4938,6 @@ pub fn kas_turn_completion_events(payload: super::schema::TurnCompletionTelemetr
                 output_tokens: positive_token_count(payload.output_tokens),
                 cache_read_input_tokens: positive_token_count(payload.cache_read_input_tokens),
                 cache_write_input_tokens: positive_token_count(payload.cache_write_input_tokens),
-                estimated_cost_usd: kas_estimated_cost_usd(&model, token_usage),
                 user_turn_duration_seconds: kas_turn_duration_seconds(payload.turn_duration_ms),
                 emit_user_turn_counter: true,
                 ..Default::default()
@@ -5096,26 +5093,6 @@ fn positive_token_count(value: Option<i64>) -> Option<i64> {
     value.filter(|value| *value > 0)
 }
 
-fn kas_token_usage(payload: &super::schema::TurnCompletionTelemetryPayload) -> kiro_telemetry::TokenUsage {
-    kiro_telemetry::TokenUsage {
-        uncached_input_tokens: positive_token_count(payload.uncached_input_tokens).unwrap_or_default() as u64,
-        cache_read_input_tokens: positive_token_count(payload.cache_read_input_tokens).unwrap_or_default() as u64,
-        cache_write_input_tokens: positive_token_count(payload.cache_write_input_tokens).unwrap_or_default() as u64,
-        output_tokens: positive_token_count(payload.output_tokens).unwrap_or_default() as u64,
-    }
-}
-
-fn kas_estimated_cost_usd(model: &Option<String>, usage: kiro_telemetry::TokenUsage) -> Option<f64> {
-    if usage.uncached_input_tokens == 0
-        && usage.cache_read_input_tokens == 0
-        && usage.cache_write_input_tokens == 0
-        && usage.output_tokens == 0
-    {
-        return None;
-    }
-    estimated_cost_usd(model, usage)
-}
-
 fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
     match mime {
         "image/png" => Some(ImageFormat::Png),
@@ -5134,7 +5111,6 @@ mod kas_turn_completion_telemetry_tests {
         log_attr,
     };
     use kiro_telemetry::{
-        TokenUsage,
         log as telemetry_log,
         metric,
     };
@@ -5309,7 +5285,7 @@ mod kas_turn_completion_telemetry_tests {
             std::slice::from_ref(&context_usage),
             metric::context_usage_percentage(
                 42.0,
-                metric::ModelClass::AnthropicSonnet,
+                Some("claude-4-sonnet"),
                 metric::ClientApplication::ChatCliV3,
                 false,
             ),
@@ -5329,10 +5305,6 @@ mod kas_turn_completion_telemetry_tests {
                 assert_eq!(args.output_tokens, Some(5));
                 assert_eq!(args.cache_read_input_tokens, Some(2));
                 assert_eq!(args.cache_write_input_tokens, Some(3));
-                assert!(
-                    args.estimated_cost_usd
-                        .is_some_and(|cost| (cost - 0.00010785).abs() < 0.000000001)
-                );
                 assert_eq!(args.user_turn_duration_seconds, 1);
                 assert!(args.emit_user_turn_counter);
             },
@@ -5344,13 +5316,9 @@ mod kas_turn_completion_telemetry_tests {
         assert_eq!(log_attr(&turn_log, "output_tokens"), Some("5"));
         assert_eq!(log_attr(&turn_log, "cache_read_input_tokens"), Some("2"));
         assert_eq!(log_attr(&turn_log, "cache_write_input_tokens"), Some("3"));
-        assert_eq!(log_attr(&turn_log, "estimated_cost_usd"), Some("0.000107850"));
         let turn_records = event_to_otel_metric_records(&events[2]);
-        let invocation = metric::InvocationContext::new(
-            metric::ModelClass::AnthropicSonnet,
-            metric::ClientApplication::ChatCliV3,
-            false,
-        );
+        let invocation =
+            metric::InvocationContext::new(Some("claude-4-sonnet"), metric::ClientApplication::ChatCliV3, false);
         expect_metric(
             &turn_records,
             metric::user_turns_for_invocation(invocation, metric::ResultKind::Success, metric::Mode::Interactive),
@@ -5368,24 +5336,8 @@ mod kas_turn_completion_telemetry_tests {
             &turn_records,
             metric::tokens_consumed(
                 10,
-                metric::ModelClass::AnthropicSonnet,
+                Some("claude-4-sonnet"),
                 metric::TokenType::InputUncached,
-                metric::ClientApplication::ChatCliV3,
-                false,
-            ),
-        );
-        expect_metric(
-            &turn_records,
-            metric::estimated_cost_usd(
-                invocation
-                    .estimated_cost_usd(TokenUsage {
-                        uncached_input_tokens: 10,
-                        cache_read_input_tokens: 2,
-                        cache_write_input_tokens: 3,
-                        output_tokens: 5,
-                    })
-                    .expect("sonnet pricing is known"),
-                metric::ModelClass::AnthropicSonnet,
                 metric::ClientApplication::ChatCliV3,
                 false,
             ),
@@ -5394,7 +5346,7 @@ mod kas_turn_completion_telemetry_tests {
         let invocation = event_to_otel_metric_record(&events[3]).expect("model invocation metric");
         expect_metric(
             std::slice::from_ref(&invocation),
-            metric::model_invocation(metric::ModelClass::AnthropicSonnet),
+            metric::model_invocation(Some("claude-4-sonnet")),
         );
     }
 
@@ -5490,7 +5442,7 @@ mod kas_turn_completion_telemetry_tests {
         );
         let builtin_log = event_to_otel_log_record(&events[0]).expect("builtin tool log");
         assert_eq!(log_attr(&builtin_log, "tool_name"), Some("fs_read"));
-        assert_eq!(log_attr(&builtin_log, "model_class"), Some("anthropic_sonnet"));
+        assert_eq!(log_attr(&builtin_log, "model"), Some("claude-4-sonnet"));
 
         let mcp_records = event_to_otel_metric_records(&events[1]);
         expect_metric(
@@ -5528,7 +5480,6 @@ mod kas_turn_completion_telemetry_tests {
             EventType::RecordUserTurnCompletion { result, args, .. } => {
                 assert_eq!(*result, TelemetryResult::Succeeded);
                 assert_eq!(args.total_tokens, Some(17));
-                assert!(args.estimated_cost_usd.is_some());
             },
             other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
         }
@@ -5538,28 +5489,8 @@ mod kas_turn_completion_telemetry_tests {
             &records,
             metric::tokens_consumed(
                 5,
-                metric::ModelClass::AnthropicSonnet,
+                Some("claude-4-sonnet"),
                 metric::TokenType::Output,
-                metric::ClientApplication::ChatCliV3,
-                false,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::estimated_cost_usd(
-                metric::InvocationContext::new(
-                    metric::ModelClass::AnthropicSonnet,
-                    metric::ClientApplication::ChatCliV3,
-                    false,
-                )
-                .estimated_cost_usd(TokenUsage {
-                    uncached_input_tokens: 10,
-                    cache_read_input_tokens: 2,
-                    cache_write_input_tokens: 3,
-                    output_tokens: 5,
-                })
-                .expect("sonnet pricing is known"),
-                metric::ModelClass::AnthropicSonnet,
                 metric::ClientApplication::ChatCliV3,
                 false,
             ),

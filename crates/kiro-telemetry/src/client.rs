@@ -193,7 +193,9 @@ mod tests {
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
-            .emit(MetricRecord::counter("model_invocations_total", 1).with_attribute("model_class", "anthropic_sonnet"))
+            .emit(
+                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
+            )
             .expect("emit should not fail");
 
         assert!(!outcome.emitted);
@@ -208,7 +210,9 @@ mod tests {
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
-            .emit(MetricRecord::counter("model_invocations_total", 1).with_attribute("model_class", "anthropic_sonnet"))
+            .emit(
+                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
+            )
             .expect("emit should not fail");
 
         assert!(outcome.emitted);

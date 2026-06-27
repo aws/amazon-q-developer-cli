@@ -51,7 +51,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(cli_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(cli_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (client_application) (increase(kiro_cli_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{client_application}}",
           "refId": "A"
         }
@@ -101,7 +101,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(chat_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(chat_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (client_application) (increase(kiro_cli_chat_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_chat_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{client_application}}",
           "refId": "A"
         }
@@ -151,61 +151,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(chat_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(chat_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (client_application) (increase(kiro_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{client_application}}",
           "refId": "A"
         }
       ],
       "title": "CLI Sessions Completed",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Estimated spend (USD) accumulated over the selected time range, split by client_application.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (client_application) (increase(kiro_cli_estimated_cost_usd_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_estimated_cost_usd_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Estimated Cost",
       "type": "stat"
     },
     {
@@ -254,7 +205,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, agent_kind) (chat_cli_process_memory_rss{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"})",
+          "expr": "sum by (client_application, agent_kind) (kiro_cli_process_memory_rss{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"})",
           "legendFormat": "{{client_application}} {{agent_kind}} rss",
           "refId": "A"
         }
@@ -358,7 +309,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, agent_kind, exit_reason) (increase(chat_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, agent_kind, exit_reason) (increase(chat_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (client_application, agent_kind, exit_reason) (increase(kiro_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, agent_kind, exit_reason) (increase(kiro_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{client_application}} {{agent_kind}} {{exit_reason}}",
           "refId": "A",
           "instant": true
@@ -404,7 +355,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (client_application, le) (rate(chat_cli_bedrock_stream_ttft_bucket{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (client_application, le) (rate(kiro_cli_bedrock_stream_ttft_bucket{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__rate_interval])))",
           "legendFormat": "{{client_application}} p95",
           "refId": "A"
         }
@@ -454,7 +405,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, upstream, retry_reason) (increase(chat_cli_retry_attempts_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, upstream, retry_reason) (increase(chat_cli_retry_attempts_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by (client_application, upstream, retry_reason) (increase(kiro_cli_retry_attempts_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, upstream, retry_reason) (increase(kiro_cli_retry_attempts_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{client_application}} {{upstream}} {{retry_reason}}",
           "refId": "A",
           "instant": true
@@ -518,7 +469,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\", __name__=~\"cli_session_started.*|chat_session_started.*|chat_cli_.*|kiro_cli_.*|telemetry_.*|meta_meter_.*\"}",
+          "expr": "{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\", __name__=~\"kiro_cli_.*\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -527,178 +478,6 @@
       ],
       "title": "All Kiro Metric Samples",
       "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Per-tool invocation counts sourced from kiro_cli_tool_invoked log records. service_name is parameterized ($service_name) so V1/V3 (kiro-cli / kiro-tui) emitters are both covered.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "id": 9,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum by (tool_name) (count_over_time({service_name=~\"$service_name\"} |= \"kiro_cli_tool_invoked\" [$__auto]))",
-          "legendFormat": "{{tool_name}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Tool Usage by Name",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Top 15 tools used in the current time range. service_name is parameterized ($service_name).",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "id": 10,
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true,
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "topk(15, sum by (tool_name) (count_over_time({service_name=~\"$service_name\"} |= \"kiro_cli_tool_invoked\" [$__range])))",
-          "legendFormat": "{{tool_name}}",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "title": "Top Tools (by count, current range)",
-      "type": "bargauge"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Tool calls broken down by tool_name and outcome (success/error). service_name is parameterized ($service_name).",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum by (tool_name, outcome) (count_over_time({service_name=~\"$service_name\"} |= \"kiro_cli_tool_invoked\" [$__auto]))",
-          "legendFormat": "{{tool_name}} {{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Tool Outcomes by Name",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Raw kiro_cli_tool_invoked log records — inspect attributes for debugging. service_name is parameterized ($service_name).",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
-      "id": 12,
-      "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "dedupStrategy": "none",
-        "sortOrder": "Descending"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "{service_name=~\"$service_name\"} |= \"kiro_cli_tool_invoked\"",
-          "refId": "A"
-        }
-      ],
-      "title": "Recent Tool Invocations (raw log)",
-      "type": "logs"
     }
   ],
   "refresh": "5s",
@@ -758,37 +537,6 @@
         },
         "includeAll": true,
         "allValue": ".*",
-        "multi": true,
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "refresh": 2,
-        "sort": 1,
-        "hide": 0
-      },
-      {
-        "name": "service_name",
-        "label": "Log service_name",
-        "description": "Loki service_name to source logs from. V1 CLI emits as kiro-cli; V3/TUI emits as kiro-tui. Defaults to All so both are covered.",
-        "type": "query",
-        "datasource": {
-          "type": "loki",
-          "uid": "loki"
-        },
-        "definition": "label_values(service_name)",
-        "query": {
-          "qryType": 1,
-          "query": "label_values(service_name)",
-          "refId": "LokiVariableQueryEditor-VariableQuery"
-        },
-        "includeAll": true,
-        "allValue": ".+",
         "multi": true,
         "current": {
           "selected": true,

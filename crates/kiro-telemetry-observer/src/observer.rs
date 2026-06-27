@@ -132,7 +132,6 @@ struct TurnState {
     output_tokens: i64,
     cache_read_input_tokens: i64,
     cache_write_input_tokens: i64,
-    estimated_cost_usd: f64,
     has_tool_use: bool,
     follow_up_count: i64,
     message_meta_tags: Vec<MessageMetaTag>,
@@ -145,7 +144,7 @@ struct TurnState {
 }
 
 impl TurnState {
-    fn record_usage(&mut self, model: &Option<String>, usage: &MetadataUsage) {
+    fn record_usage(&mut self, usage: &MetadataUsage) {
         let input = usage.input_tokens.unwrap_or(0) as i64;
         let output = usage.output_tokens.unwrap_or(0) as i64;
         let cache_read = usage.cache_read_input_tokens.unwrap_or(0) as i64;
@@ -156,14 +155,6 @@ impl TurnState {
         self.output_tokens += output;
         self.cache_read_input_tokens += cache_read;
         self.cache_write_input_tokens += usage.cache_write_input_tokens.unwrap_or(0) as i64;
-        self.estimated_cost_usd += metric::InvocationContext::from_names(model.as_deref(), None, false)
-            .estimated_cost_usd(kiro_telemetry::TokenUsage {
-                uncached_input_tokens: usage.input_tokens.unwrap_or(0) as u64,
-                cache_read_input_tokens: usage.cache_read_input_tokens.unwrap_or(0) as u64,
-                cache_write_input_tokens: usage.cache_write_input_tokens.unwrap_or(0) as u64,
-                output_tokens: usage.output_tokens.unwrap_or(0) as u64,
-            })
-            .unwrap_or_default();
     }
 
     fn add_message_meta_tag(&mut self, tag: MessageMetaTag) {
@@ -605,7 +596,7 @@ impl TelemetryObserver {
         session.turn_state.time_to_first_chunks_ms.push(time_to_first_chunk_ms);
         session.turn_state.assistant_response_length += response_len.unwrap_or(0) as i64;
         if let Some(usage) = usage {
-            session.turn_state.record_usage(&self.context.model(), usage);
+            session.turn_state.record_usage(usage);
         }
         if let Some(attempts) = metadata.request_attempts {
             session.turn_state.last_request_attempts = Some(attempts);
@@ -668,7 +659,6 @@ impl TelemetryObserver {
                 output_tokens: positive_i64(turn.output_tokens),
                 cache_read_input_tokens: positive_i64(turn.cache_read_input_tokens),
                 cache_write_input_tokens: positive_i64(turn.cache_write_input_tokens),
-                estimated_cost_usd: positive_f64(turn.estimated_cost_usd),
                 user_turn_duration_seconds,
                 follow_up_count: turn.follow_up_count,
                 message_meta_tags: turn.message_meta_tags,
@@ -799,10 +789,6 @@ impl TelemetryObserver {
 
 fn positive_i64(value: i64) -> Option<i64> {
     (value > 0).then_some(value)
-}
-
-fn positive_f64(value: f64) -> Option<f64> {
-    (value.is_finite() && value > 0.0).then_some(value)
 }
 
 fn mcp_server_name_from_tool_name(tool_name: &str) -> Option<String> {

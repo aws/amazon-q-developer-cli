@@ -38,10 +38,31 @@ export interface ProcessHealthSnapshot {
 
 type SendFn = (payload: ProcessHealthSnapshot) => void;
 type GetSessionIdFn = () => string | null;
+/** Promote a snapshot to §E SDK metrics (alongside the log). */
+type EmitMetricsFn = (payload: ProcessHealthSnapshot) => void;
+/** Flush batched SDK metrics before exit; best-effort, must not throw. */
+type FlushFn = () => Promise<void>;
+
+export interface ProcessHealthCollectorOpts {
+  /**
+   * Promote each snapshot to §E SDK metrics (in addition to the log `sendFn`).
+   * Called on every 60s tick AND once more on teardown with a final sample.
+   */
+  emitMetrics?: EmitMetricsFn;
+  /**
+   * Force-flush the SDK metric pipeline. Awaited (with a bounded timeout) on
+   * teardown so the final delta window — including the monotonic peak_rss
+   * high-water mark — is delivered before exit. Never blocks exit indefinitely.
+   */
+  flushMetrics?: FlushFn;
+}
+
+const EXIT_FLUSH_TIMEOUT_MS = 2000;
 
 export function startProcessHealthCollector(
   sendFn: SendFn,
-  getSessionId?: GetSessionIdFn
+  getSessionId?: GetSessionIdFn,
+  opts?: ProcessHealthCollectorOpts
 ): () => void {
   let prevCpu = process.cpuUsage();
   let prevRenderCount = 0;
@@ -66,7 +87,10 @@ export function startProcessHealthCollector(
 
   const startTime = Date.now();
 
-  const timer = setInterval(() => {
+  // Has side effects (resets the rolling CPU/render/event-loop/input
+  // accumulators) so each sample reports the delta since the previous one —
+  // call it exactly once per emission, including the final exit sample.
+  const sample = (): ProcessHealthSnapshot => {
     const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
     let heapUsedMb: number;
     let lastRenderMs = 0;
@@ -126,7 +150,7 @@ export function startProcessHealthCollector(
       inputMetrics.clear();
     }
 
-    sendFn({
+    return {
       rssMb,
       heapUsedMb,
       peakRssMb,
@@ -146,12 +170,64 @@ export function startProcessHealthCollector(
       sessionId: getSessionId?.() ?? null,
       version: getCliVersion(),
       platform: process.platform,
-    });
+    };
+  };
+
+  // Emit a snapshot on both transports: the log (sendFn) and the §E SDK metrics
+  // (emitMetrics). Both are fire-and-forget; a failure in one must not stop the
+  // other or throw.
+  const emit = (snapshot: ProcessHealthSnapshot): void => {
+    try {
+      sendFn(snapshot);
+    } catch {
+      // never let the log transport break metric emission or the tick
+    }
+    try {
+      opts?.emitMetrics?.(snapshot);
+    } catch {
+      // ignore
+    }
+  };
+
+  const timer = setInterval(() => {
+    emit(sample());
   }, INTERVAL_MS);
   timer.unref();
 
-  return () => {
+  // Teardown runs at most once. It takes ONE final sample (so the monotonic
+  // peak_rss and the crash-adjacent CPU/render window are not lost), emits it,
+  // then force-flushes the SDK metric pipeline with a bounded timeout so exit
+  // is never blocked indefinitely. SIGINT/SIGTERM are wired so Ctrl-C flushes.
+  let torndown = false;
+  const stop = (): void => {
+    if (torndown) return;
+    torndown = true;
     clearInterval(timer);
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
+    try {
+      emit(sample());
+    } catch {
+      // a final-sample failure must never break exit
+    }
     eld?.disable();
+
+    // Best-effort, bounded flush — NOT awaited (teardown is sync and exit must
+    // not block on the network); the promise races a timeout, errors swallowed.
+    const flush = opts?.flushMetrics;
+    if (flush) {
+      const bounded = Promise.race([
+        flush().catch(() => {}),
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, EXIT_FLUSH_TIMEOUT_MS).unref?.()
+        ),
+      ]);
+      void bounded;
+    }
   };
+
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+
+  return stop;
 }

@@ -54,13 +54,10 @@ pub fn in_memory_telemetry(config: TelemetryConfig) -> InMemoryTelemetry {
 /// they are computed downstream, never emitted from the binary.
 #[allow(clippy::vec_init_then_push)] // sectioned per §5 catalog for readability + interspersed extend()
 pub fn catalog_metric_records() -> Vec<MetricRecord> {
+    use crate::TokenUsage;
     use crate::metric::*;
-    use crate::{
-        PRICING_TABLE_VERSION,
-        TokenUsage,
-    };
 
-    let invocation = InvocationContext::new(ModelClass::AnthropicSonnet, ClientApplication::ChatCliV3, false);
+    let invocation = InvocationContext::new(Some("claude-sonnet-4"), ClientApplication::ChatCliV3, false);
     let mut records = Vec::new();
 
     // §5.1 Usage & adoption
@@ -69,7 +66,19 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         InstallSource::Internal,
         ClientApplication::ChatCliV3,
     ));
+    records.push(user_logged_in(ClientApplication::ChatCliV3, CredentialKind::BuilderId));
     records.push(chat_session_started(Mode::Interactive, ClientApplication::ChatCliV3));
+    records.push(ui_mode_session_started(
+        UiMode::Tui,
+        UiModeSource::Default,
+        UiMode::Unset,
+    ));
+    records.push(ui_mode_changed(
+        UiMode::Lite,
+        UiMode::Tui,
+        UiModeChangeSource::SlashCommand,
+    ));
+    records.push(ui_mode_default_changed(UiMode::Lite, UiMode::Tui));
     records.push(daily_heartbeat(ClientApplication::ChatCliV3, InstallSource::Internal));
     records.push(active_users_daily(
         1234.0,
@@ -107,39 +116,39 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(tool_call_total(ToolOrigin::Builtin, Some("fs_read"), Outcome::Success));
     records.push(tool_using_sessions_pct(72.0));
     records.push(mcp_server_connected_total(McpServerClass::BuiltinFs));
-    records.push(model_invocation(ModelClass::AnthropicSonnet));
+    records.push(model_invocation(Some("claude-sonnet-4")));
 
     // §5.3 Performance
     records.push(bedrock_stream_ttft(
         0.25,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         PromptSizeBucket::Small,
         true,
     ));
     records.push(bedrock_stream_duration(
         2.0,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         crate::log::CompletionReason::Stop,
     ));
     records.push(bedrock_request_duration(
         1.5,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         Operation::Stream,
         Outcome::Success,
     ));
-    records.push(bedrock_stream_inter_token_latency(0.05, ModelClass::AnthropicSonnet));
+    records.push(bedrock_stream_inter_token_latency(0.05, Some("claude-sonnet-4")));
     records.push(startup_duration(0.5, VersionMinorBucket::Current, true, OsType::Macos));
     records.push(agent_loop_iteration_duration(2.0, LoopPhase::ModelCall));
     records.push(user_turn_duration_seconds(
         5.0,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         ChatConversationKind::Interactive,
         false,
         Mode::Interactive,
     ));
     records.push(time_to_first_chunk_ms(
         250.0,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         ClientApplication::ChatCliV3,
         false,
     ));
@@ -149,12 +158,12 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(crash_total(CrashKind::Panic, OsType::Macos, HostArch::Aarch64));
     records.push(startup_failure(FailureStage::Config, OsType::Macos));
     records.push(bedrock_request_error(
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         Operation::Stream,
         ErrorKind::Throttling,
         StatusClass::Class5xx,
     ));
-    records.push(empty_response_retry(ModelClass::AnthropicSonnet, Outcome::Recovered));
+    records.push(empty_response_retry(Some("claude-sonnet-4"), Outcome::Recovered));
     records.push(retry_attempt(
         Upstream::Bedrock,
         RetryReason::Throttled,
@@ -191,22 +200,15 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         cache_write_input_tokens: 0,
         output_tokens: 128,
     }));
-    records.push(estimated_cost_usd(
-        0.0123,
-        ModelClass::AnthropicSonnet,
-        ClientApplication::ChatCliV3,
-        false,
-    ));
-    records.push(pricing_table_active(PRICING_TABLE_VERSION));
     records.push(cache_hit_ratio(
         0.5,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         ChatConversationKind::Interactive,
         ClientApplication::ChatCliV3,
     ));
     records.push(context_usage_percentage(
         50.0,
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         ClientApplication::ChatCliV3,
         false,
     ));
@@ -218,7 +220,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
 
     // §5.8 Quality / outcomes
     records.push(user_turns(
-        ModelClass::AnthropicSonnet,
+        Some("claude-sonnet-4"),
         ClientApplication::ChatCliV3,
         ResultKind::Success,
         false,
@@ -226,7 +228,41 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     ));
     records.push(session_outcome(SessionOutcome::TaskCompleted));
     records.push(user_feedback(Sentiment::Positive, FeedbackSurface::Chat));
-    records.push(message_regenerated(ModelClass::AnthropicSonnet));
+    records.push(message_regenerated(Some("claude-sonnet-4")));
+    records.push(turn_outcome_total(
+        TurnOutcomeReason::Interrupted,
+        Some("claude-sonnet-4"),
+        Mode::Interactive,
+        Engine::V3,
+    ));
+    records.push(subagent_delegations_total(
+        SubagentNameClass::CodeReview,
+        Some("claude-sonnet-4"),
+        Engine::V3,
+    ));
+    records.push(mode_active_total(Mode::Interactive, Engine::V3));
+
+    // §5.5b Health (process/perf — TUI-promoted)
+    records.push(process_memory_peak_rss(
+        256.0 * 1024.0 * 1024.0,
+        VersionMinorBucket::Current,
+        Engine::V3,
+        ProcessRole::Tui,
+    ));
+    records.push(process_memory_heap_used(
+        96.0 * 1024.0 * 1024.0,
+        VersionMinorBucket::Current,
+        Engine::V3,
+        ProcessRole::Tui,
+    ));
+    records.push(tui_event_loop_delay(0.012, Engine::V3, ProcessRole::Tui));
+    records.push(tui_input_latency(0.008, Engine::V3, ProcessRole::Tui));
+    records.push(tui_render_duration(
+        0.004,
+        RenderKind::Full,
+        Engine::V3,
+        ProcessRole::Tui,
+    ));
 
     // §5.9 Security & privacy (paired posture)
     records.push(telemetry_opt_out_respected(TelemetryChannel::Otel, EventClass::Metric));
@@ -317,21 +353,13 @@ pub fn catalog_log_records() -> Vec<TelemetryLogRecord> {
     use crate::log;
     use crate::metric::{
         McpServerClass,
-        ModelClass,
         Outcome,
     };
 
     vec![
         log::client_identity("catalog-client", "brew", 20_000, false),
         log::feature_first_use("catalog-client", "tangent_mode", "catalog-session", "slash_command"),
-        log::metering_event(
-            Some("req-1"),
-            Some(ModelClass::AnthropicSonnet),
-            None,
-            42.0,
-            "token",
-            "tokens",
-        ),
+        log::metering_event(Some("req-1"), Some("claude-sonnet-4"), None, 42.0, "token", "tokens"),
         log::user_turn_completed(
             "catalog-conversation",
             crate::metric::ResultKind::Success,
@@ -347,12 +375,12 @@ pub fn catalog_log_records() -> Vec<TelemetryLogRecord> {
             Some("fs_read"),
             None,
             Some(true),
-            Some(ModelClass::AnthropicSonnet),
+            Some("claude-sonnet-4"),
             Some(42.0),
         ),
         log::mcp_server_init("fs", McpServerClass::BuiltinFs, Outcome::Success),
         log::subagent_invoked("code-review")
-            .model_class(Some(ModelClass::AnthropicSonnet))
+            .model(Some("claude-sonnet-4"))
             .build(),
         log::conversation_completed("catalog-session", "catalog-conversation", log::CompletionReason::Stop),
     ]
@@ -995,7 +1023,7 @@ mod tests {
 
         harness
             .client
-            .emit(metric::model_invocation(metric::ModelClass::AnthropicSonnet))
+            .emit(metric::model_invocation(Some("claude-sonnet-4")))
             .expect("metric should emit");
         harness
             .client
@@ -1008,7 +1036,7 @@ mod tests {
 
         expect_metric(
             &harness.sink.records(),
-            metric::model_invocation(metric::ModelClass::AnthropicSonnet),
+            metric::model_invocation(Some("claude-sonnet-4")),
         );
         expect_log(
             &harness.sink.log_records(),

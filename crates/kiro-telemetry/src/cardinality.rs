@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn accepts_known_metric_with_valid_attribute() {
         validate_metric_record(
-            &MetricRecord::counter("model_invocations_total", 1).with_attribute("model_class", "anthropic_sonnet"),
+            &MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
         )
         .expect("valid record");
     }
@@ -179,12 +179,12 @@ mod tests {
     #[test]
     fn rejects_forbidden_metric_attributes() {
         let err = validate_metric_record(
-            &MetricRecord::counter("model_invocations_total", 1).with_attribute("anonymous_client_id", "abc"),
+            &MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("anonymous_client_id", "abc"),
         )
         .expect_err("high-cardinality user ids are metric-forbidden");
 
         assert_eq!(err, LimitError::ForbiddenMetricAttribute {
-            metric: "model_invocations_total".to_string(),
+            metric: "kiro_cli_model_invocations_total".to_string(),
             attribute: "anonymous_client_id".to_string()
         });
     }
@@ -203,14 +203,14 @@ mod tests {
     #[test]
     fn rejects_attributes_not_declared_on_metric() {
         let err = validate_metric_record(
-            &MetricRecord::counter("model_invocations_total", 1)
-                .with_attribute("model_class", "anthropic_sonnet")
+            &MetricRecord::counter("kiro_cli_model_invocations_total", 1)
+                .with_attribute("model", "claude-sonnet-4")
                 .with_attribute("version_full", "1.2.3"),
         )
         .expect_err("metric-specific attributes are enforced");
 
         assert_eq!(err, LimitError::UnexpectedAttribute {
-            metric: "model_invocations_total".to_string(),
+            metric: "kiro_cli_model_invocations_total".to_string(),
             attribute: "version_full".to_string()
         });
     }
@@ -218,12 +218,13 @@ mod tests {
     #[test]
     fn rejects_wrong_metric_value_kind() {
         let err = validate_metric_record(
-            &MetricRecord::histogram("model_invocations_total", 1.0).with_attribute("model_class", "anthropic_sonnet"),
+            &MetricRecord::histogram("kiro_cli_model_invocations_total", 1.0)
+                .with_attribute("model", "claude-sonnet-4"),
         )
         .expect_err("metric kind is enforced");
 
         assert_eq!(err, LimitError::WrongMetricKind {
-            metric: "model_invocations_total".to_string(),
+            metric: "kiro_cli_model_invocations_total".to_string(),
             expected: MetricKind::Counter,
             actual: MetricKind::Histogram,
         });
@@ -232,15 +233,15 @@ mod tests {
     #[test]
     fn rejects_duplicate_attribute_keys() {
         let err = validate_metric_record(
-            &MetricRecord::counter("model_invocations_total", 1)
-                .with_attribute("model_class", "anthropic_sonnet")
-                .with_attribute("model_class", "anthropic_haiku"),
+            &MetricRecord::counter("kiro_cli_model_invocations_total", 1)
+                .with_attribute("model", "claude-sonnet-4")
+                .with_attribute("model", "claude-haiku"),
         )
         .expect_err("duplicate keys are ambiguous");
 
         assert_eq!(err, LimitError::DuplicateAttribute {
-            metric: "model_invocations_total".to_string(),
-            attribute: "model_class".to_string()
+            metric: "kiro_cli_model_invocations_total".to_string(),
+            attribute: "model".to_string()
         });
     }
 

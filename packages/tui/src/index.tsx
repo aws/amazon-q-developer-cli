@@ -60,6 +60,10 @@ import { isTrustGateAccepted } from './utils/trust-gate-state';
 import { LITE_HISTORY_RENDER_CAP } from './components/layout/lite/static-flush';
 import { startProcessHealthCollector } from './utils/process-health-collector';
 import {
+  recordTuiProcessHealth,
+  forceFlushMetrics,
+} from './utils/tui-telemetry-observer';
+import {
   emitCurrentTitle,
   initTerminalTitle,
   refreshFromSession,
@@ -746,12 +750,22 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Mark initialization complete and drain any messages queued while initializing
       appStore.setState({ isInitialized: true });
       await appStore.getState().processQueue();
-      // Start process health telemetry collector (60s interval)
+      // Process-health collector (§E, 60s). Runs for both engines: the TUI
+      // samples ITSELF (process_role=tui), so it never double-counts the host's
+      // pid-tree sample (process_role=host).
+      const engine: 'v2' | 'v3' = resolveAgentEngine() === 'kas' ? 'v3' : 'v2';
       startProcessHealthCollector(
         (payload) => {
           kiro.sendProcessHealthMetrics(payload);
         },
-        () => kiro.sessionId ?? null
+        () => kiro.sessionId ?? null,
+        {
+          emitMetrics: (payload) => recordTuiProcessHealth(payload, engine),
+          // Always wire the exit flush: it is a no-op when no metrics were
+          // emitted (provider never built), and on KAS it delivers the final
+          // delta window incl. the monotonic peak_rss before exit.
+          flushMetrics: forceFlushMetrics,
+        }
       );
     })
     .catch((error) => {

@@ -92,7 +92,7 @@ mod tests {
     fn builds_schema_backed_consent_integrity_record() {
         let record = consent_record_integrity_record(ConsentCheckKind::Perms, ConsentIntegrityResult::Ok);
 
-        assert_eq!(record.name, "consent_record_integrity_total");
+        assert_eq!(record.name, "kiro_cli_consent_record_integrity_total");
         assert_eq!(metric_attr(&record, "check_kind"), Some("perms"));
         assert_eq!(metric_attr(&record, "integrity_result"), Some("ok"));
     }

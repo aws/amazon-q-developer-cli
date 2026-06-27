@@ -47,7 +47,7 @@ Detailed inventory in `docs/oncall/metrics_and_telemetry.md` and the V1/V2 schem
 - `MeteringEvent` from the streaming client is dropped on the floor (`api_client/model.rs`).
 - No PII redaction is performed today on telemetry payloads; outbound free-text fields like `reason_desc`, `error_type`, `init_failure_reason`, `all_tool_names` are sent verbatim.
 - No telemetry-on-telemetry: no exporter drop counter, no queue depth, no batch flush latency, no opt-out-respected counter.
-- No `pii_redaction_runs_total` (the redactor does not run).
+- No `kiro_cli_pii_redaction_runs_total` (the redactor does not run).
 - No per-version active-user gauge → rollback decisions are reactive (forum-post-driven), not metric-driven.
 - No `install_date` / `first_message_date` propagation → cohort retention is not computable.
 
@@ -62,7 +62,7 @@ Detailed inventory in `docs/oncall/metrics_and_telemetry.md` and the V1/V2 schem
 - **G1. Single schema source of truth.** One canonical `kiro-telemetry-schema` crate replaces V1 + V2 `telemetry_definitions.json`; `aws-toolkit-telemetry-definitions/def.json` is bridged via one-way generator (see §7a) until external consumers are inventoried and migrated.
 - **G2. OTel SDK at the boundary.** All emit sites in chat-cli/chat-cli-v2 use OpenTelemetry Metrics + Logs APIs through a single `kiro-telemetry-facade`. No direct calls to Toolkit Telemetry or `SendTelemetryEvent` from product code.
 - **G3. CloudWatch alarm parity.** Every existing alarm keeps firing on equivalent OTel-derived metrics during dual-write; cut over only after ≥30 days of side-by-side parity within 0.5%.
-- **G4. Privacy proof points.** `telemetry_opt_out_respected_total`, `telemetry_opt_out_violation_total` (must stay 0), `pii_redaction_coverage_ratio` (0 → ≥0.999), `consent_record_integrity_total`, `govcloud_channel_disabled_total` / `govcloud_channel_leak_total` paired counters wired before any new outbound channel turns on. End-to-end opt-out test in CI (see §11).
+- **G4. Privacy proof points.** `kiro_cli_telemetry_opt_out_respected_total`, `kiro_cli_telemetry_opt_out_violation_total` (must stay 0), `kiro_cli_pii_redaction_coverage_ratio` (0 → ≥0.999), `kiro_cli_consent_record_integrity_total`, `kiro_cli_govcloud_channel_disabled_total` / `kiro_cli_govcloud_channel_leak_total` paired counters wired before any new outbound channel turns on. End-to-end opt-out test in CI (see §11).
 - **G5. Cardinality budget enforced at the SDK boundary.** Closed enums in registry, `_other_` bucketing on overflow, runtime cardinality limiter, build-time lint that rejects free-form attribute insertion. Hard caps: ≤10 dims/metric; per-metric series cap default 5,000.
 - **G6. Telemetry-on-telemetry.** P0 self-observability set ships day one (§5.10).
 
@@ -211,8 +211,8 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Rationale | Alert idea | Pri |
 |---|---|---|---|---|---|---|
-| `cli_session_started_total` | counter | 1 | `version_minor_bucket`, `os`, `install_source`, `client_application` | Foundational top-of-funnel; denominator for ratios | Anomaly: -20% WoW per (os, install_source) >1k baseline | P0 |
-| `chat_session_started_total` | counter | 1 | `version_minor_bucket`, `mode`, `client_application` | Distinct from cli_session — first prompt sent | — | P0 |
+| `kiro_cli_session_started_total` | counter | 1 | `version_minor_bucket`, `os`, `install_source`, `client_application` | Foundational top-of-funnel; denominator for ratios | Anomaly: -20% WoW per (os, install_source) >1k baseline | P0 |
+| `kiro_cli_chat_session_started_total` | counter | 1 | `version_minor_bucket`, `mode`, `client_application` | Distinct from cli_session — first prompt sent | — | P0 |
 | `active_users_daily` | observable_gauge | users | `install_method`, `client_application`, `is_internal_amazon` | Daily rollup from facts; aggregate-only series | DAU drop >15% WoW per install_method | P0 |
 | `active_users_weekly` | observable_gauge | users | same | WAU smooths weekend troughs | Growth flatlines (<1% WoW) for 3 weeks | P0 |
 | `active_users_monthly` | observable_gauge | users | (none) | Single global gauge | — | P0 |
@@ -221,7 +221,7 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 | `client_version_seen` | observable_gauge | users | `version_full` (LRU 200), `release_channel`, `os_type` | Only place full semver allowed; 200 × 3 × 4 = 2,400 series cap | — | P0 |
 | `version_adoption_pct` | observable_gauge | percent | `version_minor_bucket`, `release_channel` | "Are users upgrading?" | Latest stable <50% adoption 14d post-release | P0 |
 | `stale_version_users` | observable_gauge | users | `staleness_bucket` ∈ {<30d, 30-60, 60-90, >90} | Long-tail upgrade pressure | — | P1 |
-| `upgrade_completed_total` | counter | 1 | `from_version_minor_bucket`, `to_version_minor_bucket`, `trigger` ∈ {auto, prompted, manual} | Rollout safety | — | P1 |
+| `kiro_cli_upgrade_completed_total` | counter | 1 | `from_version_minor_bucket`, `to_version_minor_bucket`, `trigger` ∈ {auto, prompted, manual} | Rollout safety | — | P1 |
 | `kiro_cli_client_identity` | log_event | event | `anonymous_client_id`, `install_method`, `install_date_epoch_day`, `first_seen_*`, `is_internal_amazon` | Dim table for ALL cohort joins; high-cardinality fields belong here, not in metrics | — | P0 |
 | `kiro_cli_daily_heartbeat` | counter | 1 | `client_application`, `install_method` | MAU computation; `client_version` excluded (resource attr only, 90-day rolling) | Volume drop >10% WoW | P1 |
 
@@ -229,13 +229,13 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Rationale | Alert idea | Pri |
 |---|---|---|---|---|---|---|
-| `slash_command_invoked_total` | counter | 1 | `command` (registry enum, top-N + `_other_`), `version_minor_bucket` | "Which slash commands are used" | New command <100 invocations 7d post-release | P0 |
-| `feature_used_total` | counter | 1 | `feature` (registry enum, top-50 + `_other_`), `version_minor_bucket` | Generic non-slash feature counter | — | P0 |
+| `kiro_cli_slash_command_invoked_total` | counter | 1 | `command` (registry enum, top-N + `_other_`), `version_minor_bucket` | "Which slash commands are used" | New command <100 invocations 7d post-release | P0 |
+| `kiro_cli_feature_used_total` | counter | 1 | `feature` (registry enum, top-50 + `_other_`), `version_minor_bucket` | Generic non-slash feature counter | — | P0 |
 | `feature_unique_users_weekly` | observable_gauge | users | `feature` | Reach (distinguishes spam from breadth) | New feature <5% WAU after 14d | P0 |
-| `tool_call_total` | counter | 1 | `tool_origin` ∈ {builtin, mcp, custom, subagent_delegate, aws_api}, `builtin_tool_name` (only when `tool_origin=builtin`), `outcome` ∈ {success, error, denied, cancelled} | MCP/custom tool names live on `kiro_cli_tool_invoked` log only | denied/total >5% (UX friction) | P0 |
+| `kiro_cli_tool_call_total` | counter | 1 | `tool_origin` ∈ {builtin, mcp, custom, subagent_delegate, aws_api}, `builtin_tool_name` (only when `tool_origin=builtin`), `outcome` ∈ {success, error, denied, cancelled} | MCP/custom tool names live on `kiro_cli_tool_invoked` log only | denied/total >5% (UX friction) | P0 |
 | `tool_using_sessions_pct` | observable_gauge | percent | (none) | % of sessions invoking ≥1 tool | -5pp WoW (agentic discovery regression) | P0 |
-| `mcp_server_connected_total` | counter | 1 | `mcp_server_class` ∈ {builtin_<name>, official_third_party, user_defined, internal_amazon} | Bucketed; raw names → `kiro_cli_mcp_server_init` log | — | P1 |
-| `model_invocations_total` | counter | 1 | `model_class` ∈ {anthropic_opus, anthropic_sonnet, anthropic_haiku, openai_gpt5, other} | Provider+family bucket; full `model_id` lives on logs | — | P0 |
+| `kiro_cli_mcp_server_connected_total` | counter | 1 | `mcp_server_class` ∈ {builtin_<name>, official_third_party, user_defined, internal_amazon} | Bucketed; raw names → `kiro_cli_mcp_server_init` log | — | P1 |
+| `kiro_cli_model_invocations_total` | counter | 1 | `model_class` ∈ {anthropic_opus, anthropic_sonnet, anthropic_haiku, openai_gpt5, other} | Provider+family bucket; full `model_id` lives on logs | — | P0 |
 | `mode_active_users_weekly` | observable_gauge | users | `mode` ∈ {interactive, oneshot, agent, plan, review, tangent, voice, acp_external, generate_agent} | Mode adoption | New mode <2% WAU after 30d | P0 |
 | `kiro_cli_feature_first_use` | log_event | event | `anonymous_client_id`, `feature_name`, `first_used_at`, `session_id`, `trigger` | Funnel attribution for activation | — | P1 |
 | `voice_session` | log_event | event | (full attrs on log; metric counter `voice_sessions_total` summarizes) | bounded; Whisper backend, model size | — | P2 |
@@ -246,12 +246,12 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Buckets / Notes | Pri |
 |---|---|---|---|---|---|
-| `chat_cli.bedrock.stream.ttft` | histogram | s | `model_class`, `prompt_size_bucket`, `tools_enabled` | 0.1, 0.25, 0.5, 1, 2, 5, 10, 30 | P0 |
-| `chat_cli.bedrock.stream.duration` | histogram | s | `model_class`, `completion_reason` | 1, 2, 5, 10, 30, 60, 120, 300 | P0 |
-| `chat_cli.bedrock.request.duration` | histogram | s | `model_class`, `operation`, `outcome` | same buckets | P0 |
-| `chat_cli.bedrock.stream.inter_token_latency` | histogram | s | `model_class` | 0.01, 0.04, 0.1, 0.25, 1, 5 | P1 |
-| `chat_cli.startup.duration` | histogram | s | `version_minor_bucket`, `cold_start`, `os_type` | 0.1, 0.25, 0.5, 1, 2, 5, 10 | P0 |
-| `chat_cli.agent.loop.iteration_duration` | histogram | s | `loop_phase` ∈ {model_call, tool_exec, parse, render} | 0.1, 0.5, 2, 10, 30, 120, 300 | P0 |
+| `kiro_cli.bedrock.stream.ttft` | histogram | s | `model_class`, `prompt_size_bucket`, `tools_enabled` | 0.1, 0.25, 0.5, 1, 2, 5, 10, 30 | P0 |
+| `kiro_cli.bedrock.stream.duration` | histogram | s | `model_class`, `completion_reason` | 1, 2, 5, 10, 30, 60, 120, 300 | P0 |
+| `kiro_cli.bedrock.request.duration` | histogram | s | `model_class`, `operation`, `outcome` | same buckets | P0 |
+| `kiro_cli.bedrock.stream.inter_token_latency` | histogram | s | `model_class` | 0.01, 0.04, 0.1, 0.25, 1, 5 | P1 |
+| `kiro_cli.startup.duration` | histogram | s | `version_minor_bucket`, `cold_start`, `os_type` | 0.1, 0.25, 0.5, 1, 2, 5, 10 | P0 |
+| `kiro_cli.agent.loop.iteration_duration` | histogram | s | `loop_phase` ∈ {model_call, tool_exec, parse, render} | 0.1, 0.5, 2, 10, 30, 120, 300 | P0 |
 | `kiro_cli_user_turn_duration_seconds` | histogram | s | `model_class`, `chat_conversation_type`, `is_subagent`, `mode` | 1, 2, 5, 10, 30, 60, 120, 300, 600 | P0 |
 | `kiro_cli_time_to_first_chunk_ms` | histogram | ms | `model_class`, `client_application`, `is_subagent` | 100, 250, 500, 1000, 2000, 5000, 10000 | P1 |
 | `kiro_cli_session_duration_seconds` | histogram | s | `client_application`, `launch_mode`, `primary_model_class` | 30, 120, 600, 1800, 7200, 28800 | P2 |
@@ -260,27 +260,27 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Rationale | Alert idea | Pri |
 |---|---|---|---|---|---|---|
-| `chat_cli.session.completed` | counter | 1 | `exit_reason` ∈ {clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage}, `agent_kind` (closed enum) | Pairs with started; success ratio numerator | clean/started <0.85 over 15m on any version_minor | P0 |
-| `chat_cli.crash.total` | counter | 1 | `crash_kind` ∈ {panic, segfault, abort, unhandled_signal}, `os_type`, `host_arch` | `panic_location` is **NOT** a metric dim — it goes to a separate `kiro_cli_panic` log with a 16-bit `panic_signature_hash` exemplar | New panic rate >0.1% of sessions on a version | P0 |
-| `chat_cli.startup.failures` | counter | 1 | `failure_stage` ∈ {config, db_migrate, runtime, panic}, `os_type` | Pre-steady-state failures | startup_failures/started >0.5% over 5m | P0 |
-| `chat_cli.bedrock.request.errors` | counter | 1 | `model_class`, `operation`, `error_kind` ∈ {throttling, validation, model_error, server_error, timeout, connection, access_denied}, `status_class` ∈ {2xx,4xx,5xx} | `error_code` is closed enum allowlist; raw codes → log | 5xx-rate >5% over 5m | P0 |
-| `chat_cli.bedrock.empty_response.retries` | counter | 1 | `model_class`, `outcome` ∈ {recovered, still_empty} | Tracks the `a953a204b` empty-response retry; `still_empty` rising = Bedrock brownout | still_empty >0.5% of turns | P0 |
-| `chat_cli.retry.attempts` | counter | 1 | `upstream` ∈ {bedrock, rts, kas, krs, cognito}, `retry_reason` (closed enum), `attempt_number_bucket` ∈ {1,2,3+} | SDK retry classifier | retry/requests >15% over 5m | P0 |
-| `chat_cli.retry.exhausted` | counter | 1 | `upstream`, `final_error_kind` | True user-visible failures | rate >1% over 5m | P0 |
-| `chat_cli.agent.loop.stuck` | counter | 1 | `stuck_phase`, `detection` | Watchdog-emitted; >5m no progress | rate >0.1% sessions over 5m | P0 |
-| `chat_cli.upstream.dependency.up` | observable_gauge | 1 | `dependency` ∈ {bedrock, rts, kas, krs, cognito, oauth_idp}, `partition` | Synthetic 1/0; cleanest tile | any dep=0 over 5m → page | P0 |
-| `chat_cli.slo.success_rate` | derived (recording rule) | 1 | `slo_target` ∈ {turn, session, login} | Computed in CloudWatch from session.completed counters; **NOT** emitted from the binary | Multi-burn-rate alarms (1h+5m@14.4×, 6h+30m@6×) | P0 |
-| `chat_cli.slo.availability` | derived (recording rule) | 1 | `slo_target` | Likewise computed | Same | P0 |
+| `kiro_cli.session.completed` | counter | 1 | `exit_reason` ∈ {clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage}, `agent_kind` (closed enum) | Pairs with started; success ratio numerator | clean/started <0.85 over 15m on any version_minor | P0 |
+| `kiro_cli.crash.total` | counter | 1 | `crash_kind` ∈ {panic, segfault, abort, unhandled_signal}, `os_type`, `host_arch` | `panic_location` is **NOT** a metric dim — it goes to a separate `kiro_cli_panic` log with a 16-bit `panic_signature_hash` exemplar | New panic rate >0.1% of sessions on a version | P0 |
+| `kiro_cli.startup.failures` | counter | 1 | `failure_stage` ∈ {config, db_migrate, runtime, panic}, `os_type` | Pre-steady-state failures | startup_failures/started >0.5% over 5m | P0 |
+| `kiro_cli.bedrock.request.errors` | counter | 1 | `model_class`, `operation`, `error_kind` ∈ {throttling, validation, model_error, server_error, timeout, connection, access_denied}, `status_class` ∈ {2xx,4xx,5xx} | `error_code` is closed enum allowlist; raw codes → log | 5xx-rate >5% over 5m | P0 |
+| `kiro_cli.bedrock.empty_response.retries` | counter | 1 | `model_class`, `outcome` ∈ {recovered, still_empty} | Tracks the `a953a204b` empty-response retry; `still_empty` rising = Bedrock brownout | still_empty >0.5% of turns | P0 |
+| `kiro_cli.retry.attempts` | counter | 1 | `upstream` ∈ {bedrock, rts, kas, krs, cognito}, `retry_reason` (closed enum), `attempt_number_bucket` ∈ {1,2,3+} | SDK retry classifier | retry/requests >15% over 5m | P0 |
+| `kiro_cli.retry.exhausted` | counter | 1 | `upstream`, `final_error_kind` | True user-visible failures | rate >1% over 5m | P0 |
+| `kiro_cli.agent.loop.stuck` | counter | 1 | `stuck_phase`, `detection` | Watchdog-emitted; >5m no progress | rate >0.1% sessions over 5m | P0 |
+| `kiro_cli.upstream.dependency.up` | observable_gauge | 1 | `dependency` ∈ {bedrock, rts, kas, krs, cognito, oauth_idp}, `partition` | Synthetic 1/0; cleanest tile | any dep=0 over 5m → page | P0 |
+| `kiro_cli.slo.success_rate` | derived (recording rule) | 1 | `slo_target` ∈ {turn, session, login} | Computed in CloudWatch from session.completed counters; **NOT** emitted from the binary | Multi-burn-rate alarms (1h+5m@14.4×, 6h+30m@6×) | P0 |
+| `kiro_cli.slo.availability` | derived (recording rule) | 1 | `slo_target` | Likewise computed | Same | P0 |
 
 ### 5.5 Health (process)
 
 | Name | Kind | Unit | Dimensions | Notes | Pri |
 |---|---|---|---|---|---|
-| `chat_cli.process.memory.rss` | observable_gauge | By | `version_minor_bucket`, `agent_kind` | Sampled per-session; alerts on cohort p95, not per-host | P0 |
-| `chat_cli.process.memory.growth_rate` | histogram | By/s | `version_minor_bucket`, `agent_kind` | Linear-fit slope over rolling N min; leak detector | P1 |
-| `chat_cli.process.cpu.utilization` | histogram | 1 | `version_minor_bucket`, `agent_kind`, `state` ∈ {streaming, idle, tool_running, compaction} | Idle CPU = busy-wait detector | P0 |
-| `chat_cli.process.fds.open` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | FD leaks before EMFILE | P1 |
-| `chat_cli.process.threads` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | Tokio pool blowup detector | P2 |
+| `kiro_cli.process.memory.rss` | observable_gauge | By | `version_minor_bucket`, `agent_kind` | Sampled per-session; alerts on cohort p95, not per-host | P0 |
+| `kiro_cli.process.memory.growth_rate` | histogram | By/s | `version_minor_bucket`, `agent_kind` | Linear-fit slope over rolling N min; leak detector | P1 |
+| `kiro_cli.process.cpu.utilization` | histogram | 1 | `version_minor_bucket`, `agent_kind`, `state` ∈ {streaming, idle, tool_running, compaction} | Idle CPU = busy-wait detector | P0 |
+| `kiro_cli.process.fds.open` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | FD leaks before EMFILE | P1 |
+| `kiro_cli.process.threads` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | Tokio pool blowup detector | P2 |
 
 `panic_location` and `host_id_hash` are **excluded** as metric dimensions — both reviewers flagged these as cardinality bombs. Crash signatures live on `kiro_cli_panic` log records; crash-loop detection comes from a separate per-process detector that emits `chat_cli.process.crashloop.detected` (no host dim).
 
@@ -311,9 +311,9 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 | Name | Kind | Unit | Dimensions | Pri |
 |---|---|---|---|---|
 | `kiro_cli_user_turns` | counter | 1 | `model_class`, `client_application`, `result` ∈ {success, failed, cancelled}, `is_subagent`, `mode` | P0 |
-| `session_outcome_total` | counter | 1 | `outcome` ∈ {user_quit, task_completed, error, timeout, crash} | P0 |
-| `user_feedback_total` | counter | 1 | `sentiment` ∈ {positive, negative, neutral}, `surface` (closed enum) | P0 |
-| `message_regenerated_total` | counter | 1 | `model_class` | P1 |
+| `kiro_cli_session_outcome_total` | counter | 1 | `outcome` ∈ {user_quit, task_completed, error, timeout, crash} | P0 |
+| `kiro_cli_user_feedback_total` | counter | 1 | `sentiment` ∈ {positive, negative, neutral}, `surface` (closed enum) | P0 |
+| `kiro_cli_message_regenerated_total` | counter | 1 | `model_class` | P1 |
 | `kiro_cli_conversation_completed` | log_event | event | end-of-conversation rollup; `completion_reason`, turn/tool counts, cost, duration | P0 |
 | `kiro_cli_compaction_event` | log_event | event | trigger, ratio, duration, result | P2 |
 
@@ -321,19 +321,19 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Pri |
 |---|---|---|---|---|
-| `telemetry_opt_out_respected_total` | counter | 1 | `channel`, `event_class` (closed enum) | P0 |
-| `telemetry_opt_out_violation_total` | counter | 1 | (≤2 attrs by design — emergency signal that bypasses opt-out gate) | P0 |
-| `pii_redaction_runs_total` | counter | 1 | `redactor`, `event_class`, `channel`, `result` ∈ {scrubbed, passthrough, error} | P0 |
-| `pii_redaction_matches_total` | counter | 1 | `pii_type` (closed enum: email, aws_access_key, aws_secret, arn, ipv4, home_path, phone, jwt, credit_card), `field_class` ∈ {prompt, context, tool_output, file_content, http_header, other} | P0 |
-| `pii_redaction_errors_total` | counter | 1 | `redactor`, `error_kind`, `fail_action` ∈ {dropped, passthrough} (passthrough must always be 0) | P1 |
-| `pii_redaction_coverage_ratio` | derived (recording rule) | 1 | computed downstream from `pii_redaction_runs_total` / `telemetry_events_emitted_total` — **NOT** an emitted gauge | P0 |
-| `govcloud_channel_disabled_total` | counter | 1 | `channel`, `partition`, `reason` (closed enum) | P0 |
-| `govcloud_channel_leak_total` | counter | 1 | (≤2 attrs by design) | P0 |
-| `consent_record_integrity_total` | counter | 1 | `check_kind` ∈ {hash, perms, owner, signature}, `result` ∈ {ok, tampered, missing, unreadable} | P0 |
-| `auth_credential_failure_total` | counter | 1 | `auth_provider`, `error_code` (closed allowlist), `operation` (closed), `partition` | P0 |
-| `auth_unexpected_identity_total` | counter | 1 | `expected_partition`, `actual_partition`, `operation` | P0 |
-| `tls_validation_failure_total` | counter | 1 | `destination_class`, `failure_reason` (closed) | P0 |
-| `tool_egress_destinations_total` | counter | 1 | `destination_class` ∈ {public_internet, aws_endpoint, internal_amzn, localhost}, `scheme`, `is_allowlisted` | P1 |
+| `kiro_cli_telemetry_opt_out_respected_total` | counter | 1 | `channel`, `event_class` (closed enum) | P0 |
+| `kiro_cli_telemetry_opt_out_violation_total` | counter | 1 | (≤2 attrs by design — emergency signal that bypasses opt-out gate) | P0 |
+| `kiro_cli_pii_redaction_runs_total` | counter | 1 | `redactor`, `event_class`, `channel`, `result` ∈ {scrubbed, passthrough, error} | P0 |
+| `kiro_cli_pii_redaction_matches_total` | counter | 1 | `pii_type` (closed enum: email, aws_access_key, aws_secret, arn, ipv4, home_path, phone, jwt, credit_card), `field_class` ∈ {prompt, context, tool_output, file_content, http_header, other} | P0 |
+| `kiro_cli_pii_redaction_errors_total` | counter | 1 | `redactor`, `error_kind`, `fail_action` ∈ {dropped, passthrough} (passthrough must always be 0) | P1 |
+| `kiro_cli_pii_redaction_coverage_ratio` | derived (recording rule) | 1 | computed downstream from `kiro_cli_pii_redaction_runs_total` / `telemetry_events_emitted_total` — **NOT** an emitted gauge | P0 |
+| `kiro_cli_govcloud_channel_disabled_total` | counter | 1 | `channel`, `partition`, `reason` (closed enum) | P0 |
+| `kiro_cli_govcloud_channel_leak_total` | counter | 1 | (≤2 attrs by design) | P0 |
+| `kiro_cli_consent_record_integrity_total` | counter | 1 | `check_kind` ∈ {hash, perms, owner, signature}, `result` ∈ {ok, tampered, missing, unreadable} | P0 |
+| `kiro_cli_auth_credential_failure_total` | counter | 1 | `auth_provider`, `error_code` (closed allowlist), `operation` (closed), `partition` | P0 |
+| `kiro_cli_auth_unexpected_identity_total` | counter | 1 | `expected_partition`, `actual_partition`, `operation` | P0 |
+| `kiro_cli_tls_validation_failure_total` | counter | 1 | `destination_class`, `failure_reason` (closed) | P0 |
+| `kiro_cli_tool_egress_destinations_total` | counter | 1 | `destination_class` ∈ {public_internet, aws_endpoint, internal_amzn, localhost}, `scheme`, `is_allowlisted` | P1 |
 
 #### Identifier and consent semantics
 
@@ -347,19 +347,19 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Catches |
 |---|---|---|---|---|
-| `telemetry.exporter.send.attempts` | counter | 1 | `exporter`, `signal`, `outcome` ∈ {success, retry, dropped, permanent_failure} | Exporter health |
-| `telemetry.exporter.send.duration` | histogram | s | `exporter`, `signal` | Slow exporter → drops |
-| `telemetry.exporter.dropped` | counter | 1 | `exporter`, `signal`, `drop_reason` (closed) | Single most important on-call counter |
-| `telemetry.queue.depth` | observable_gauge | 1 | `exporter`, `signal` | Leading drop indicator |
-| `telemetry.batch.size` | histogram | 1 | `exporter`, `signal` | Sizing visibility |
+| `kiro_cli.telemetry.exporter.send.attempts` | counter | 1 | `exporter`, `signal`, `outcome` ∈ {success, retry, dropped, permanent_failure} | Exporter health |
+| `kiro_cli.telemetry.exporter.send.duration` | histogram | s | `exporter`, `signal` | Slow exporter → drops |
+| `kiro_cli.telemetry.exporter.dropped` | counter | 1 | `exporter`, `signal`, `drop_reason` (closed) | Single most important on-call counter |
+| `kiro_cli.telemetry.queue.depth` | observable_gauge | 1 | `exporter`, `signal` | Leading drop indicator |
+| `kiro_cli.telemetry.batch.size` | histogram | 1 | `exporter`, `signal` | Sizing visibility |
 | `telemetry.spool.bytes` | observable_gauge | By | `state` ∈ {pending, replaying} | Offline buffer growth |
 | `telemetry.spool.evicted_total` | counter | 1 | `reason` ∈ {expired, oversize, corrupt} | Replay correctness |
 | `telemetry.spool.purged_on_optout_total` | counter | 1 | (none) | Cross-process opt-out semantics |
 | `telemetry.cardinality.overflow_total` | counter | 1 | `metric_name`, `attribute` | LRU bucketing fired |
-| `telemetry.emit.failures` | counter | 1 | `subsystem`, `failure_kind` (closed) | Bugs in our telemetry layer |
-| `telemetry.sdk.up` | observable_gauge | 1 | `partition`, `os_type`, `release_channel` | "Are we seeing data?" |
-| `telemetry.flush_on_exit.dropped_total` | counter | 1 | `shutdown_path` ∈ {clean, signal, panic} | Short-lived process drop accounting |
-| `meta_meter.up` | observable_gauge | 1 | `partition`, `os_type` | Meta-meter watchdog (direct PutMetricData; does not share fate with OTLP) |
+| `kiro_cli.telemetry.emit.failures` | counter | 1 | `subsystem`, `failure_kind` (closed) | Bugs in our telemetry layer |
+| `kiro_cli.telemetry.sdk.up` | observable_gauge | 1 | `partition`, `os_type`, `release_channel` | "Are we seeing data?" |
+| `kiro_cli.telemetry.flush_on_exit.dropped_total` | counter | 1 | `shutdown_path` ∈ {clean, signal, panic} | Short-lived process drop accounting |
+| `kiro_cli.meta_meter.up` | observable_gauge | 1 | `partition`, `os_type` | Meta-meter watchdog (direct PutMetricData; does not share fate with OTLP) |
 
 **Why direct PutMetricData for the meta-meter.** EMF via ADOT requires the collector to be reachable. If it's not (which is exactly when you need meta-metrics), EMF won't arrive. The meta-meter is ~20 series at 5-minute interval, costs ~$6/month per fleet, and uses the existing SigV4 chain.
 
@@ -384,17 +384,17 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 |---|---|---|
 | `crates/chat-cli/src/telemetry/mod.rs:202-220` | `TelemetryThread::new` gains `MeterProvider`/`LoggerProvider` init via `kiro_telemetry::init`; signature unchanged | (init only) |
 | `crates/chat-cli-v2/src/telemetry/mod.rs:203-241` | Mirror | (init only) |
-| `crates/chat-cli/src/telemetry/mod.rs:609-611` | Wrap `TelemetryClient::new` in `OptOutGate::allow()`; on disabled, return no-op provider | `telemetry_opt_out_respected_total` |
+| `crates/chat-cli/src/telemetry/mod.rs:609-611` | Wrap `TelemetryClient::new` in `OptOutGate::allow()`; on disabled, return no-op provider | `kiro_cli_telemetry_opt_out_respected_total` |
 | `crates/chat-cli-v2/src/telemetry/mod.rs:706-708` | Mirror | same |
-| `crates/chat-cli/src/telemetry/mod.rs:213-234` (GovCloud guard) | Add compile-flag (`#[cfg(feature="govcloud")]`) + runtime double-check; emit paired counters | `govcloud_channel_disabled_total`, `govcloud_channel_leak_total` |
+| `crates/chat-cli/src/telemetry/mod.rs:213-234` (GovCloud guard) | Add compile-flag (`#[cfg(feature="govcloud")]`) + runtime double-check; emit paired counters | `kiro_cli_govcloud_channel_disabled_total`, `kiro_cli_govcloud_channel_leak_total` |
 | `crates/chat-cli/src/telemetry/mod.rs:675-678` (`TelemetryClient::send_event`) | Replace direct sink calls with `Vec<Arc<dyn TelemetrySink>>` fan-out using **per-sink bounded mpsc + 5s/100ms timeouts** (NOT `join_all` — a slow sink would block the queue) | (routing only) |
 | `crates/chat-cli/src/telemetry/mod.rs:680-775` (`send_cw_telemetry_event`) | Wrap behind `legacy_codewhisperer_sink` feature flag; routing matrix is now a static table validated by build-time check that every `EventType` appears exactly once | (legacy preserved through Phase 3) |
 | `crates/chat-cli/src/telemetry/mod.rs:778-808` (`send_telemetry_toolkit_metric`) | Wrap behind `legacy_toolkit_sink` feature flag | (legacy preserved through Phase 4) |
 | `crates/chat-cli-v2/src/telemetry/mod.rs:266-268` | Mirror fan-out with timeouts | — |
 | `crates/chat-cli-v2/src/telemetry/observer.rs` (find `TelemetryObserver::spawn` — file is 1091 lines, not 1-50) | Inject `MeterProvider`; in `AgentEvent` match arms, emit OTel histograms for `time_to_first_chunk`, turn duration, tokens; `client_application` from V2 `Event` struct (NOT `app_type` — see resource-vs-attribute table below) | `kiro_cli_time_to_first_chunk_ms`, `kiro_cli_user_turn_duration_seconds`, `kiro_cli_tokens_consumed`, `kiro_cli_user_turn_completed` log |
-| `crates/chat-cli/src/agent/rts/mod.rs:~542` | Existing `time_to_first_chunk` log site → also emit OTel histogram | `chat_cli.bedrock.stream.ttft` |
+| `crates/chat-cli/src/agent/rts/mod.rs:~542` | Existing `time_to_first_chunk` log site → also emit OTel histogram | `kiro_cli.bedrock.stream.ttft` |
 | `crates/chat-cli/src/api_client/model.rs` (where `MeteringEvent` is currently dropped) | Wire to `kiro_cli_metering_event` log emit | `kiro_cli_metering_event` |
-| Empty-response retry path (commit `a953a204b`) | Wire to counter | `chat_cli.bedrock.empty_response.retries{outcome}` |
+| Empty-response retry path (commit `a953a204b`) | Wire to counter | `kiro_cli.bedrock.empty_response.retries{outcome}` |
 | `crates/chat-cli/src/launch.rs:137,143` | `KIRO_TELEMETRY_ENABLED` env precedence stays; add `KIRO_TELEMETRY_OTEL=0/1/2` (off / dual / OTel-only) | (config only) |
 | `crates/chat-cli/src/telemetry/cognito.rs` | Stays untouched through Phase 3; deleted in Phase 4 | — |
 | `crates/aws-toolkit-telemetry-definitions/build.rs:42-279` | Replaced by 5-line `pub use kiro_telemetry_schema::legacy::*;` | — |
@@ -486,7 +486,7 @@ OTel SDK in tree (no-op by default), `kiro-telemetry-schema` crate landed alongs
 - WAL replay: `kill -9` mid-export of N=10,000 metric points, restart, assert all replayed with original timestamps and `replayed=true` resource attribute.
 - Panic-hook test: inject panic mid-session, assert `force_flush(deadline=500ms)` completed, WAL contains `crash_signature`.
 - Opt-out E2E test (the test that didn't exist before): see §11.
-- `meta_meter.up = 1` across CI, dev, and dogfood fleet for 7 days.
+- `kiro_cli.meta_meter.up = 1` across CI, dev, and dogfood fleet for 7 days.
 
 ### Phase 1 — Dual-write commercial (4 weeks)
 
@@ -501,9 +501,9 @@ OTel facade ships behind `KIRO_TELEMETRY_OTEL=1`. Internal Amazon dogfood week 0
 
 **Exit gates:**
 
-- `telemetry_opt_out_violation_total = 0`, `govcloud_channel_leak_total = 0` for 14 consecutive days fleet-wide.
-- `telemetry.exporter.send.attempts{outcome=success}` rate ≥ 99% over rolling 7 days.
-- `pii_redaction_coverage_ratio ≥ 0.99` on outbound free-text fields.
+- `kiro_cli_telemetry_opt_out_violation_total = 0`, `kiro_cli_govcloud_channel_leak_total = 0` for 14 consecutive days fleet-wide.
+- `kiro_cli.telemetry.exporter.send.attempts{outcome=success}` rate ≥ 99% over rolling 7 days.
+- `kiro_cli_pii_redaction_coverage_ratio ≥ 0.99` on outbound free-text fields.
 - Parity job within tolerance for every mapped EventType for 14 consecutive days.
 - Cardinality budget held: no metric exceeds 5,000 series; `cardinality.overflow_total` p99 ≤ 100/day.
 - Cost: standing CW metric cost ≤ $4,000/month per partition.
@@ -550,7 +550,7 @@ Stop dual-writing. Remove `CognitoProvider`-driven `PostMetrics`. Delete V1 + V2
 |---|---|---|---|
 | R1 | Cardinality explosion (rogue dim → CW bill spike) | Critical | Closed-enum registry, runtime LRU limiter with `_other_` overflow, per-metric 5k-series cap, CI lint rejecting free-form attrs, `telemetry.cardinality.overflow_total` P0 page, weekly cost-anomaly review on `ChatCLI` namespace. |
 | R2 | Cost blow-up during dual-write | High | Standing budget $4K/mo per partition; dual-write capped at 30 days; cost reviewed weekly; Kinesis-side legacy sampling toggle if budget breached. |
-| R3 | Privacy regression (opt-out leak, PII outbound) | Critical | Paired counters (`telemetry_opt_out_violation_total`, `govcloud_channel_leak_total` must = 0; pageable). Redactor fail-closed (drop event, never passthrough). E2E opt-out test in CI. `pii_redaction_coverage_ratio ≥ 0.999` SLO. |
+| R3 | Privacy regression (opt-out leak, PII outbound) | Critical | Paired counters (`kiro_cli_telemetry_opt_out_violation_total`, `kiro_cli_govcloud_channel_leak_total` must = 0; pageable). Redactor fail-closed (drop event, never passthrough). E2E opt-out test in CI. `kiro_cli_pii_redaction_coverage_ratio ≥ 0.999` SLO. |
 | R4 | Parity drift during dual-write | High | Quantitative parity job nightly; Phase gates require per-metric tolerance for 14d; PM Athena audit before Phase 3. |
 | R5 | CloudWatch alarm cutover breaks on-call | High | 30-day shadow mode; legacy alarms armed through Phase 4; per-alarm rollback runbook in `docs/oncall/cloudwatch_alarms_and_dashboard.md`. |
 | R6 | ADOT Collector unavailability (offline/disconnected hosts) | Medium | On-disk WAL with 7-day TTL, 64 MB cap; meta-meter on direct PutMetricData survives ADOT outage; failover sticky-per-session across home → us-east-1 → us-west-2. |
@@ -559,7 +559,7 @@ Stop dual-writing. Remove `CognitoProvider`-driven `PostMetrics`. Delete V1 + V2
 | R9 | ACP-external client misattribution during dual-write | Medium | `client_application`, `acp_client_name`, `acp_client_version_major` are per-record metric attributes (NOT resource attrs); V1 `Event` struct backported in Phase 1 to carry these fields. |
 | R10 | OTel Rust patch CVE response | Medium | `~0.32.0` allows dependabot patch updates; EMF byte-equality contract test (§11) is the safety net; major-version bumps gated by full SLO regression suite. |
 | R11 | `anonymous_client_id` reverse-lookup risk | Medium | UUID v4, locally generated, never derived from PII; rotated on opt-in/out cycle; documented as personal data; 13-month retention. |
-| R12 | GovCloud partition-bridging compliance SEV | Critical | Compile-flag (`#[cfg(feature="govcloud")]`) + runtime guard; mutually-exclusive features prevent commercial sinks linking; quarterly compliance report from `govcloud_channel_leak_total = 0`. |
+| R12 | GovCloud partition-bridging compliance SEV | Critical | Compile-flag (`#[cfg(feature="govcloud")]`) + runtime guard; mutually-exclusive features prevent commercial sinks linking; quarterly compliance report from `kiro_cli_govcloud_channel_leak_total = 0`. |
 | R13 | Crash-time WAL flush + tokio runtime poisoning | Medium | Panic hook posts to a dedicated `std::thread`-spawned writer that owns the WAL fd and a small mpsc; never re-enters the tokio runtime; 500ms deadline. |
 | R14 | Spool replay leaks old events past opt-out | High | On startup, before any flush, if `OptOutGate::allow == false` → unconditionally truncate spool dir; counted by `telemetry.spool.purged_on_optout_total`. Tested in §11. |
 | R15 | KUTS GA timeline uncertain | Medium | Decoupled — we ship to ADOT → CW directly. KUTS adoption is a future exporter swap. Coordinate with KUTS team in Phase 1 to confirm OTLP shape compatibility, but do not block. |
@@ -582,19 +582,19 @@ All of the following must hold for ≥30 consecutive days post-Phase-4 cutover.
 **Reliability.**
 
 - All 5 critical CloudWatch alarms fire from OTel-derived metrics with zero parity-drift incidents in the prior 30 days.
-- `chat_cli.slo.success_rate{slo_target=turn} ≥ 0.99` over 30-day window.
-- `chat_cli.slo.availability{slo_target=session} ≥ 0.995`.
+- `kiro_cli.slo.success_rate{slo_target=turn} ≥ 0.99` over 30-day window.
+- `kiro_cli.slo.availability{slo_target=session} ≥ 0.995`.
 - TTFT p95 < 3s, end-to-end turn p95 < 20s.
-- `telemetry.sdk.up ≥ 0.95` across the active fleet.
-- `telemetry.exporter.send.attempts{outcome=success} ≥ 0.99`, `dropped` rate < 1%.
+- `kiro_cli.telemetry.sdk.up ≥ 0.95` across the active fleet.
+- `kiro_cli.telemetry.exporter.send.attempts{outcome=success} ≥ 0.99`, `dropped` rate < 1%.
 - On-call MTT-localize regressions cut by ≥ 50% vs static-alarm baseline (measured against next 5 release-induced regressions).
 
 **Privacy.**
 
-- `telemetry_opt_out_violation_total = 0` since Phase 1.
-- `govcloud_channel_leak_total = 0` since Phase 1.
-- `pii_redaction_coverage_ratio ≥ 0.999`.
-- `consent_record_integrity_total{result=tampered|unreadable} = 0`.
+- `kiro_cli_telemetry_opt_out_violation_total = 0` since Phase 1.
+- `kiro_cli_govcloud_channel_leak_total = 0` since Phase 1.
+- `kiro_cli_pii_redaction_coverage_ratio ≥ 0.999`.
+- `kiro_cli_consent_record_integrity_total{result=tampered|unreadable} = 0`.
 - One-page customer-trust artifact backed by these metrics published.
 
 **Schema & cost.**
@@ -730,7 +730,7 @@ pub fn init(cfg: TelemetryConfig) -> anyhow::Result<SdkMeterProvider> {
 5. GovCloud: compile-flag is the primary kill-switch; runtime guard is defense-in-depth.
 6. Per-instrument temporality: Counter/Histogram=Delta; UpDownCounter/ObservableGauge=Cumulative.
 7. SLO metrics are **derived recording rules in CloudWatch**, not emitted from the binary.
-8. `pii_redaction_coverage_ratio`, `telemetry_channel_parity_ratio` are derived recording rules, not exported gauges.
+8. `kiro_cli_pii_redaction_coverage_ratio`, `telemetry_channel_parity_ratio` are derived recording rules, not exported gauges.
 9. `panic_location`, `host_id_hash`, `price_table_version`, `feature_flag_assignments` map are **never** metric dimensions.
 
 ---
@@ -849,7 +849,7 @@ exporter.with_header("Authorization", "Bearer <token>")    // future, when Kiro 
 
 **4. Rust SDK.** Plain `opentelemetry-otlp` with `http-proto`. No Smithy codegen. The four `X-KUTS-*` headers are server-added on egress, **not client-required**.
 
-**5. Payload size.** KUTS caps at 1 MiB per request (`TelemetryHttpServer.java`). Re-validate the §6 batch sizing (`batch (10000/60s)`) against this ceiling on cutover day. Add a meta-meter counter `kuts_export_oversize_total` so we catch silent drops.
+**5. Payload size.** KUTS caps at 1 MiB per request (`TelemetryHttpServer.java`). Re-validate the §6 batch sizing (`batch (10000/60s)`) against this ceiling on cutover day. Add a meta-meter counter `kiro_cli_kuts_export_oversize_total` so we catch silent drops.
 
 **6. Downstream EMF log group.** KUTS-side ADOT writes `/kiro/metrics`, **not** `/aws/chat-cli/emf` (the design's chosen group at §6). Cutover to KUTS therefore implies a **second** consumer migration: the 5 SEV alarms (§1) and the Kibana consumer set (§7a) need to point at the KUTS-side log group. Budget 2w for this — see Phase 3.75 below.
 
@@ -881,7 +881,7 @@ KUTS is **not** a parallel system to CloudWatch. It is the same shape as the tea
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | K1 | KUTS prod flag never flips, or flips and rolls back | Medium | High — Phase 3.5 stalls | Gate Phase 3.5 entry on a written sign-off from kiro-controlplane that prod has been live ≥30d at ≥99.95%; otherwise stay on team-owned ADOT indefinitely. |
-| K2 | 1 MiB request cap drops large batch exports silently | Medium | Medium — metric loss / parity drift | Tune `BatchProcessor max_export_batch_size`; add `kuts_export_oversize_total` meta-meter; OTel exporter already raises errors on 4xx — wire to existing drop counters. |
+| K2 | 1 MiB request cap drops large batch exports silently | Medium | Medium — metric loss / parity drift | Tune `BatchProcessor max_export_batch_size`; add `kiro_cli_kuts_export_oversize_total` meta-meter; OTel exporter already raises errors on 4xx — wire to existing drop counters. |
 | K3 | Bearer auth (Kiro Auth Proxy) never lands; user-scoped dashboards blocked | Medium | Medium — limits Phase 2+ KPI granularity by user | Plan all dashboards machine-scoped first (already aligned with §3 P2 stretch goals). |
 | K4 | us-east-1-only KUTS violates partition isolation (§5: GovCloud no-fallback) | High today | High in GovCloud, Medium commercial | Keep team-owned ADOT alive in non-us-east-1 until KUTS multi-region ships. **Do not route GovCloud through KUTS.** |
 | K5 | Wadi throttle limits unknown — could 429 normal traffic during incident bursts | Medium | Medium | Exponential backoff in OTel exporter (default), `kuts_throttle_429_total` meta-meter, request documented quota from kiro-controlplane before Phase 3.5. |

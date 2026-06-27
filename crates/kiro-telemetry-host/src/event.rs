@@ -125,6 +125,16 @@ pub enum ModeChangeSource {
     SlashCommand,
 }
 
+/// Total mapping — a new variant above is a compile error here, never a silent `Other`.
+impl From<ModeChangeSource> for metric::UiModeChangeSource {
+    fn from(value: ModeChangeSource) -> Self {
+        match value {
+            ModeChangeSource::ShiftTab => Self::ShiftTab,
+            ModeChangeSource::SlashCommand => Self::SlashCommand,
+        }
+    }
+}
+
 /// Which input source resolved the UI mode at session start. The wire format is the
 /// camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
 /// persisted setting > built-in default).
@@ -143,6 +153,17 @@ pub enum UiModeSource {
     Setting,
     /// No env / setting — fell through to the built-in default.
     Default,
+}
+
+/// Total mapping — a new variant above is a compile error here, never a silent `Other`.
+impl From<UiModeSource> for metric::UiModeSource {
+    fn from(value: UiModeSource) -> Self {
+        match value {
+            UiModeSource::EnvVar => Self::EnvVar,
+            UiModeSource::Setting => Self::Setting,
+            UiModeSource::Default => Self::Default,
+        }
+    }
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
@@ -206,8 +227,6 @@ pub struct RecordUserTurnCompletionArgs {
     pub cache_read_input_tokens: Option<i64>,
     #[serde(default)]
     pub cache_write_input_tokens: Option<i64>,
-    #[serde(default)]
-    pub estimated_cost_usd: Option<f64>,
     pub user_turn_duration_seconds: i64,
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,

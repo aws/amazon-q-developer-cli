@@ -6,12 +6,11 @@ use serde::{
     Serialize,
 };
 
-pub const DEFAULT_SERIES_CAP: usize = 5_000;
 pub const CLOUDWATCH_LEGACY_NAMESPACE: &str = "Toolkit";
 pub const CLOUDWATCH_OTEL_NAMESPACE: &str = "ChatCLI";
 pub const CLOUDWATCH_PRODUCT_DIMENSION: &str = "product";
 pub const CLOUDWATCH_PRODUCT_VALUE: &str = "CodewhispererTerminal";
-pub const KUTS_EXPORT_OVERSIZE_METRIC: &str = "kuts_export_oversize_total";
+pub const KUTS_EXPORT_OVERSIZE_METRIC: &str = "kiro_cli_kuts_export_oversize_total";
 
 const METRICS_YAML: &str = include_str!("../schema/metrics.yaml");
 const TYPES_YAML: &str = include_str!("../schema/types.yaml");
@@ -121,14 +120,6 @@ pub struct MetricSpec {
     pub attributes: Vec<String>,
     #[serde(default)]
     pub temporality: Option<Temporality>,
-    #[serde(default)]
-    pub series_cap: Option<usize>,
-}
-
-impl MetricSpec {
-    pub fn series_cap(&self) -> usize {
-        self.series_cap.unwrap_or(DEFAULT_SERIES_CAP)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -419,8 +410,8 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert!(registry.metric("cli_session_started_total").is_some());
-        assert!(registry.metric("telemetry.emit.failures").is_some());
+        assert!(registry.metric("kiro_cli_session_started_total").is_some());
+        assert!(registry.metric("kiro_cli.telemetry.emit.failures").is_some());
         assert!(
             registry
                 .attribute("anonymous_client_id")
@@ -540,29 +531,24 @@ mod tests {
         assert!(!ParityTolerance::HighVolume.is_within_threshold(0.0, 1.0));
     }
 
+    /// Every metric dimension must be bounded — a closed enum or `max_distinct`.
+    /// Per-series cardinality is now enforced by the OTel collector (not the
+    /// client), so we only assert each dimension is *declared* bounded; we do
+    /// not multiply out a client-side worst-case series budget.
     #[test]
-    fn metric_attributes_have_bounded_series_budget() {
+    fn metric_attributes_are_bounded() {
         let registry = Registry::parse().expect("schema should load");
 
         for metric in registry.metrics.iter().filter(|metric| metric.kind.is_metric()) {
-            let mut product = 1usize;
             for attribute in &metric.attributes {
                 let attr = registry.attribute(attribute).expect("attribute exists");
-                let budget = attr.cardinality_budget().unwrap_or_else(|| {
-                    panic!(
-                        "{} uses unbounded attribute {}; metric attributes must be closed or max_distinct",
-                        metric.name, attribute
-                    )
-                });
-                product = product.saturating_mul(budget);
+                assert!(
+                    attr.cardinality_budget().is_some(),
+                    "{} uses unbounded attribute {}; metric attributes must be closed or max_distinct",
+                    metric.name,
+                    attribute
+                );
             }
-            assert!(
-                product <= metric.series_cap(),
-                "{} worst-case series {} exceeds cap {}",
-                metric.name,
-                product,
-                metric.series_cap()
-            );
         }
     }
 
@@ -841,7 +827,7 @@ use kiro_telemetry::metric as typed_metric;
         let literals = raw_telemetry_record_literals(
             r#"
 fn valid_return_type() -> MetricRecord {
-    metric::model_invocation(metric::ModelClass::AnthropicSonnet)
+    metric::model_invocation(Some("claude-sonnet-4"))
 }
 
 fn invalid_literal() -> MetricRecord {

@@ -19,6 +19,8 @@ attributes:
     allowed_values: [brew, download, internal, cargo, unknown, _other_]
   - name: client_application
     allowed_values: [chat_cli, chat_cli_v2, chat_cli_v3, acp_external, kiro_ide, _other_]
+  - name: credential_kind
+    allowed_values: [builder_id, idc, iam, unknown]
   - name: is_internal_amazon
     allowed_values: ["true", "false"]
   - name: release_channel
@@ -29,6 +31,22 @@ attributes:
     allowed_values: [auto, prompted, manual, _other_]
   - name: mode
     allowed_values: [interactive, oneshot, agent, plan, review, tangent, voice, acp_external, generate_agent, _other_]
+  - name: ui_mode
+    allowed_values: [tui, lite, unset, _other_]
+  - name: ui_mode_source
+    allowed_values: [env_var, setting, default, _other_]
+  - name: ui_mode_default
+    allowed_values: [tui, lite, unset, _other_]
+  - name: ui_mode_from
+    allowed_values: [tui, lite, unset, _other_]
+  - name: ui_mode_to
+    allowed_values: [tui, lite, unset, _other_]
+  - name: ui_mode_change_source
+    allowed_values: [shift_tab, slash_command, _other_]
+  - name: ui_mode_default_from
+    allowed_values: [tui, lite, unset, _other_]
+  - name: ui_mode_default_to
+    allowed_values: [tui, lite, unset, _other_]
   - name: command
     max_distinct: 64
   - name: feature
@@ -55,8 +73,8 @@ attributes:
     allowed_values: ["true", "false"]
   - name: is_subagent
     allowed_values: ["true", "false"]
-  - name: model_class
-    allowed_values: [anthropic_opus, anthropic_sonnet, anthropic_haiku, openai_gpt5, other, _other_]
+  - name: model
+    max_distinct: 10
   - name: prompt_size_bucket
     allowed_values: [small, medium, large, xlarge, _other_]
   - name: tools_enabled
@@ -71,6 +89,16 @@ attributes:
     allowed_values: [clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage, _other_]
   - name: agent_kind
     allowed_values: [v1, v2, subagent, kas, _other_]
+  - name: engine
+    allowed_values: [v2, v3]
+  - name: process_role
+    allowed_values: [host, tui, kas_subprocess]
+  - name: render_kind
+    allowed_values: [partial, full]
+  - name: turn_outcome_reason
+    allowed_values: [interrupted, model_error, tool_error, timeout, context_limit, _other_]
+  - name: subagent_name_class
+    allowed_values: [code_review, general, custom, _other_]
   - name: crash_kind
     allowed_values: [panic, segfault, abort, unhandled_signal, _other_]
   - name: failure_stage
@@ -220,8 +248,6 @@ attributes:
   - name: cache_read_input_tokens
     metric_allowed: false
   - name: cache_write_input_tokens
-    metric_allowed: false
-  - name: estimated_cost_usd
     metric_allowed: false
   - name: panic_location
     metric_allowed: false

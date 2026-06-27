@@ -155,7 +155,7 @@ mod tests {
         assert!(outcome.text.contains("[REDACTED:arn]"));
 
         let records = outcome.metric_records(EventClass::Log, TelemetryChannel::Otel);
-        assert_eq!(records[0].name, "pii_redaction_runs_total");
+        assert_eq!(records[0].name, "kiro_cli_pii_redaction_runs_total");
         assert!(
             records[0]
                 .attributes
@@ -163,7 +163,7 @@ mod tests {
                 .any(|attr| attr.key == "redaction_result" && attr.value == "scrubbed")
         );
         assert!(records.iter().any(|record| {
-            record.name == "pii_redaction_matches_total"
+            record.name == "kiro_cli_pii_redaction_matches_total"
                 && record
                     .attributes
                     .iter()
@@ -172,7 +172,7 @@ mod tests {
         assert!(
             records
                 .iter()
-                .filter(|record| record.name == "pii_redaction_matches_total")
+                .filter(|record| record.name == "kiro_cli_pii_redaction_matches_total")
                 .all(|record| record
                     .attributes
                     .iter()
@@ -190,7 +190,7 @@ mod tests {
 
         let records = outcome.metric_records(EventClass::Metric, TelemetryChannel::Otel);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].name, "pii_redaction_runs_total");
+        assert_eq!(records[0].name, "kiro_cli_pii_redaction_runs_total");
         assert!(
             records[0]
                 .attributes

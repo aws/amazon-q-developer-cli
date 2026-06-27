@@ -5596,7 +5596,6 @@ impl ChatSession {
                     output_tokens: positive_token_sum(|md| md.output_tokens),
                     cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
                     cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
-                    estimated_cost_usd: None,
                     message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
                     user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
                     user_turn_duration_seconds,

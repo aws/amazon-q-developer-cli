@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tui-changed: ${{ steps.filter.outputs.tui }}
+      telemetry-changed: ${{ steps.filter.outputs.telemetry }}
       is-fork: ${{ steps.fork.outputs.is-fork }}
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,13 @@ jobs:
             tui:
               - 'packages/tui/**'
               - 'packages/twinki/**'
+              - '.github/workflows/tui.yml'
+            telemetry:
+              - 'dev/telemetry/**'
+              - 'crates/kiro-telemetry*/**'
+              - 'packages/tui/src/utils/meter.ts'
+              - 'packages/tui/src/utils/tui-telemetry-observer.ts'
+              - 'packages/tui/src/utils/otlp-emit.ts'
               - '.github/workflows/tui.yml'
       - name: Detect fork PR
         id: fork
@@ -285,6 +293,69 @@ jobs:
           path: packages/tui/e2e_tests/test-outputs/
           retention-days: 7
 
+  tui-telemetry-e2e:
+    name: Telemetry E2E
+    needs: check-paths
+    if: needs.check-paths.outputs.telemetry-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The validation script runs `cargo run -p kiro-telemetry --example
+      # catalog_smoke`, which needs a Rust toolchain + protobuf-compiler
+      # (kiro-telemetry depends on prost/opentelemetry-proto under the
+      # `test-support` feature). `jq` + `curl` are used to query Prometheus.
+      - name: Install build deps (protobuf, jq)
+        run: sudo apt-get update && sudo apt-get install -y -qq protobuf-compiler jq curl
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-e2e-${{ runner.os }}-
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Run telemetry E2E validation
+        # Brings up the local OTel stack (collector + Prometheus + Grafana) via
+        # `docker compose`, emits Rust catalog metrics and all TUI metrics
+        # through the REAL code paths, and asserts each metric name lands in
+        # Prometheus. The script defaults to FRESH=1 (down -v then up) and tears
+        # the stack down on EXIT — no KEEP_STACK.
+        run: COMPOSE_CMD="docker compose" bash dev/telemetry/validate-metrics-e2e.sh
+
+      - name: Upload collector logs on failure
+        if: failure()
+        run: docker compose -f dev/telemetry/compose.yaml logs > /tmp/telemetry-stack.log 2>&1 || true
+      - name: Upload stack logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-e2e-stack-logs
+          path: /tmp/telemetry-stack.log
+          retention-days: 7
+
   # Gate jobs: always run so they can be set as required status checks.
   # When TUI files aren't changed OR the PR is from a fork, the upstream
   # jobs are skipped, but these still report success — unblocking the PR.
@@ -350,6 +421,27 @@ jobs:
           fi
           if [[ "${{ needs.tui-e2e.result }}" != "success" ]]; then
             echo "::error::TUI E2E tests failed"
+            exit 1
+          fi
+
+  tui-telemetry-e2e-required:
+    name: "TUI: Telemetry E2E (required)"
+    if: always()
+    needs: [check-paths, tui-telemetry-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.check-paths.outputs.telemetry-changed }}" != "true" ]]; then
+            echo "Telemetry files not changed — skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — telemetry E2E needs CodeArtifact + Docker, deferred"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-telemetry-e2e.result }}" != "success" ]]; then
+            echo "::error::TUI telemetry E2E failed"
             exit 1
           fi
 

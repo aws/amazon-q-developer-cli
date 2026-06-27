@@ -13,7 +13,6 @@ pub mod event_translation;
 pub mod legacy;
 
 pub use event_translation::{
-    estimated_cost_usd,
     event_to_metric_datum,
     event_to_otel_log_record,
     event_to_otel_metric_record,

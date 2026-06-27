@@ -32,6 +32,48 @@ describe('ProcessHealthCollector', () => {
     expect(typeof startProcessHealthCollector).toBe('function');
   });
 
+  it('emits metrics and force-flushes on teardown (exit-flush bug fix)', async () => {
+    const { startProcessHealthCollector } =
+      await import('../process-health-collector');
+    const logged: any[] = [];
+    const metricked: any[] = [];
+    let flushes = 0;
+
+    const stop = startProcessHealthCollector(
+      (p) => logged.push(p),
+      () => 'session-1',
+      {
+        emitMetrics: (p) => metricked.push(p),
+        flushMetrics: async () => {
+          flushes += 1;
+        },
+      }
+    );
+
+    // No 60s tick has fired yet, so nothing emitted until teardown.
+    expect(logged.length).toBe(0);
+    expect(metricked.length).toBe(0);
+
+    // Teardown takes one final sample and emits on BOTH transports, then flushes.
+    stop();
+
+    expect(logged.length).toBe(1);
+    expect(metricked.length).toBe(1);
+    // Same snapshot object goes to both transports.
+    expect(metricked[0]).toBe(logged[0]);
+    // peak_rss field is present on the exit sample (monotonic high-water mark).
+    expect(typeof metricked[0].peakRssMb).toBe('number');
+
+    // Flush was kicked off (bounded race; allow the microtask to settle).
+    await Bun.sleep(0);
+    expect(flushes).toBe(1);
+
+    // Teardown is idempotent — a second call does nothing.
+    stop();
+    expect(logged.length).toBe(1);
+    expect(metricked.length).toBe(1);
+  });
+
   it('gracefully handles missing twinki instance', async () => {
     // Ensure no twinki instance
     const saved = (globalThis as any).__TWINKI_INSTANCE__;

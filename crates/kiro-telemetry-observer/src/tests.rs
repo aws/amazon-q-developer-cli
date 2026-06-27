@@ -648,10 +648,6 @@ fn test_turn_completion_accumulates_token_counts() {
             assert_eq!(args.output_tokens, Some(5));
             assert_eq!(args.cache_read_input_tokens, Some(2));
             assert_eq!(args.cache_write_input_tokens, Some(3));
-            assert!(
-                args.estimated_cost_usd
-                    .is_some_and(|cost| (cost - 0.00010785).abs() < 0.000000001)
-            );
         },
         other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
     }
@@ -857,8 +853,8 @@ fn test_use_aws_tool_call_emits_aws_origin_metadata() {
     let records = event_to_otel_metric_records(&event);
     let tool_call = records
         .iter()
-        .find(|record| record.name == "tool_call_total")
-        .expect("tool_call_total");
+        .find(|record| record.name == "kiro_cli_tool_call_total")
+        .expect("kiro_cli_tool_call_total");
     assert!(
         tool_call
             .attributes

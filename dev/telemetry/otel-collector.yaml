@@ -10,10 +10,6 @@ processors:
 exporters:
   prometheus:
     endpoint: 0.0.0.0:9464
-  otlphttp/loki:
-    endpoint: http://loki:3100/otlp
-    tls:
-      insecure: true
   debug:
     verbosity: detailed
 
@@ -23,7 +19,3 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [prometheus, debug]
-    logs:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [otlphttp/loki, debug]
