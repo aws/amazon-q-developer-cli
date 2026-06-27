@@ -202,7 +202,8 @@ function withActiveMarker(label: string, isActive: boolean): string {
 export function buildRows(
   screen: Screen,
   settings: SettingsSnapshot,
-  uiMode?: UiMode
+  uiMode?: UiMode,
+  rolloutEnabled: boolean = true
 ): ExplorerRow[] {
   switch (screen.type) {
     case 'top': {
@@ -213,7 +214,15 @@ export function buildRows(
           : TOP_ITEMS;
       return topItems.map((item) => ({
         id: item.id,
-        values: { label: item.label, description: item.description },
+        values: {
+          label: item.label,
+          // "Default UI at startup" is rollout-gated (selectDisplayItems); drop
+          // it from the preview too when off the cohort.
+          description:
+            item.id === 'display' && !rolloutEnabled
+              ? 'Animations, ASCII art, icons, and thinking'
+              : item.description,
+        },
       }));
     }
     case 'terminal':

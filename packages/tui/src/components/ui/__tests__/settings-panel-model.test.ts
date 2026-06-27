@@ -74,6 +74,23 @@ describe('settings-panel-model', () => {
     });
   });
 
+  describe('Display preview rollout gate', () => {
+    // Parallels selectDisplayItems: the rollout-gated "Default UI at startup"
+    // toggle is hidden off the cohort, so its preview clause drops too.
+    const displayDesc = (rolloutEnabled: boolean) =>
+      buildRows(
+        { type: 'top' },
+        defaultSnapshot,
+        undefined,
+        rolloutEnabled
+      ).find((r) => r.id === 'display')?.values.description;
+
+    it('drops "Default UI at startup" off the rollout, keeps it on', () => {
+      expect(displayDesc(false)).not.toContain('Default UI');
+      expect(displayDesc(true)).toContain('Default UI at startup');
+    });
+  });
+
   describe('sub-screen rows', () => {
     // Every sub-screen exposes its leaf rows in order (reachability guard);
     // terminal=[newlines,interrupt] pins the interrupt-dropped-out regression.

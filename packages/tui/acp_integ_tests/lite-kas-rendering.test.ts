@@ -219,9 +219,10 @@ describe('KAS engine on lite UI (wire)', () => {
     await tc.waitForVisibleText('KAS_TOOLS_DONE', 10000);
     const flat = tc.getSnapshotFormatted();
 
-    // read_file → friendly "Read" + path chip (inline args mode); the raw result
-    // envelope must never reach the UI.
-    expect(flat).toContain('Read [src/index.ts]');
+    // read_file → friendly "Read" + path chip with the line range (offset 9 /
+    // limit 20 → L10-29, inline args mode); the raw result envelope must never
+    // reach the UI.
+    expect(flat).toContain('Read [src/index.ts (L10-29)]');
     expect(flat).not.toContain('secret body');
     expect(flat).not.toContain('"message"');
 

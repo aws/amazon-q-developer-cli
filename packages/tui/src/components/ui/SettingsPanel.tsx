@@ -214,7 +214,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
             DEFAULT_INTERRUPT_MODE
           ),
         },
-        uiMode
+        uiMode,
+        process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
       ),
     [screen, uiMode]
   );
