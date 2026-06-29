@@ -4639,6 +4639,7 @@ fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
         },
         ToolNameKind::AgentGlob(_) => false,
         ToolNameKind::Agent(_) => false,
+        ToolNameKind::Subagent { .. } => tool.builtin_tool_name() == Some(tools::BuiltInToolName::AgentCrew),
     }
 }
 

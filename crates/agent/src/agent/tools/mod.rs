@@ -684,6 +684,9 @@ pub(crate) fn get_available_tool_names(
                     // check all agent names
                 },
                 ToolNameKind::Agent(_) => {},
+                ToolNameKind::Subagent { .. } => {
+                    tool_names.insert(CanonicalToolName::BuiltIn(BuiltInToolName::AgentCrew));
+                },
             }
         }
     }

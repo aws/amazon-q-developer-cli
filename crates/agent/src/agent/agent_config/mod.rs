@@ -218,6 +218,7 @@ impl From<UtilError> for AgentConfigError {
 pub use definitions::default_legacy_oauth_scopes;
 pub use load::{
     build_default_agent,
+    is_kas_only_agent_config,
     load_agents,
 };
 

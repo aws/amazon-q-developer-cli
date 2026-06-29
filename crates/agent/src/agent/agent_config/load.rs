@@ -342,6 +342,22 @@ fn normalize_agent_json(contents: &str, path: &Path) -> String {
     }
 }
 
+const KAS_ONLY_FIELDS: &[&str] = &["permissions", "includePowers", "excludedTools"];
+const V2_TRUST_FIELDS: &[&str] = &["allowedTools", "toolsSettings"];
+
+/// Returns true when the config is purely KAS-only (V3 fields, no V2 trust).
+/// Universal configs (both V2 + V3) return false so V2 loads them.
+pub fn is_kas_only_agent_config(contents: &str) -> bool {
+    match serde_json::from_str::<serde_json::Value>(contents) {
+        Ok(serde_json::Value::Object(map)) => {
+            let has_kas_field = KAS_ONLY_FIELDS.iter().any(|f| map.contains_key(*f));
+            let has_v2_field = V2_TRUST_FIELDS.iter().any(|f| map.contains_key(*f));
+            has_kas_field && !has_v2_field
+        },
+        _ => false,
+    }
+}
+
 async fn load_agents_from_dir<P: SystemProvider>(
     dir: &Path,
     source: ConfigSource,
@@ -401,6 +417,11 @@ async fn load_agents_from_dir<P: SystemProvider>(
         };
 
         let entry_contents = normalize_agent_json(&entry_contents, &entry_path);
+
+        // Skip KAS-only configs (V3 fields, no V2 trust fields).
+        if is_kas_only_agent_config(&entry_contents) {
+            continue;
+        }
 
         match serde_json::from_str::<AgentConfig>(&entry_contents) {
             Ok(config) => {
@@ -1222,5 +1243,63 @@ mod tests {
             default_resources.iter().any(|r| r == &"file://AGENTS.md"),
             "built-in default agent should always inherit AGENTS.md, got: {default_resources:?}"
         );
+    }
+
+    #[test]
+    fn test_is_kas_only_agent_config() {
+        // V3 fields, no V2 trust → KAS-only
+        assert!(is_kas_only_agent_config(
+            r#"{"name": "a", "permissions": {"rules": []}}"#
+        ));
+        assert!(is_kas_only_agent_config(r#"{"name": "a", "includePowers": false}"#));
+
+        // Universal (both V2 + V3) → not KAS-only, V2 should load
+        assert!(!is_kas_only_agent_config(
+            r#"{"name": "a", "allowedTools": ["fs_read"], "permissions": {"rules": []}}"#
+        ));
+        assert!(!is_kas_only_agent_config(
+            r#"{"name": "a", "toolsSettings": {}, "permissions": {"rules": []}}"#
+        ));
+
+        // Plain V2 → not KAS-only
+        assert!(!is_kas_only_agent_config(r#"{"name": "a", "tools": ["fs_read"]}"#));
+
+        // Malformed → not KAS-only
+        assert!(!is_kas_only_agent_config("not json"));
+    }
+
+    #[tokio::test]
+    async fn test_kas_only_config_skipped_in_v2() {
+        let v2_agent = r#"{"name": "v2", "tools": ["fs_read"]}"#;
+        let kas_agent = r#"{"name": "kas", "tools": ["read"], "permissions": {"rules": []}}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/v2.json", v2_agent))
+            .await
+            .with_file((".kiro/agents/kas.json", kas_agent))
+            .await;
+
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
+        assert!(errors.is_empty());
+        let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
+        assert!(names.contains(&"v2"));
+        assert!(!names.contains(&"kas"), "KAS-only must be skipped");
+    }
+
+    #[tokio::test]
+    async fn test_universal_config_loaded_in_v2() {
+        let universal =
+            r#"{"name": "uni", "tools": ["read"], "allowedTools": ["fs_read"], "permissions": {"rules": []}}"#;
+
+        let base = TestBase::new()
+            .await
+            .with_file((".kiro/agents/uni.json", universal))
+            .await;
+
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
+        assert!(errors.is_empty());
+        let names: Vec<&str> = agents.iter().map(|a| a.name()).collect();
+        assert!(names.contains(&"uni"), "universal config must load in V2");
     }
 }

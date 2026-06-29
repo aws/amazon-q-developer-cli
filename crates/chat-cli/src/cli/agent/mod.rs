@@ -1499,6 +1499,12 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
+            // Skip pure KAS-only configs (V3 fields without V2 trust fields).
+            if let Ok(contents) = os.fs.read_to_string(file_path).await
+                && is_kas_only_config(&contents)
+            {
+                continue;
+            }
             let agent_res = Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await;
             if let Ok(agent) = &agent_res
                 && res.iter().any(|res| match res {
@@ -1684,6 +1690,11 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
     }
 
     Ok(())
+}
+
+/// Returns true when a config JSON has KAS-only fields (permissions, includePowers,
+fn is_kas_only_config(contents: &str) -> bool {
+    agent::agent_config::is_kas_only_agent_config(contents)
 }
 
 #[cfg(test)]

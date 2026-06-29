@@ -118,6 +118,9 @@ pub enum ToolNameKind<'a> {
     AgentGlob(&'a str),
     /// A reference to an agent name. Follows the format `#agent_name`
     Agent(&'a str),
+    /// Scoped subagent: `subagent/<name>`. Registers the canonical subagent
+    /// built-in tool. Mirrors KAS's per-subagent tool tag.
+    Subagent { pattern: &'a str },
 }
 
 impl<'a> ToolNameKind<'a> {
@@ -162,6 +165,13 @@ impl<'a> ToolNameKind<'a> {
             } else {
                 return Ok(Self::Agent(rest));
             }
+        }
+
+        // `subagent/<name>` — scoped subagent tool tag (KAS format).
+        if let Some(rest) = name.strip_prefix("subagent/")
+            && !rest.is_empty()
+        {
+            return Ok(Self::Subagent { pattern: rest });
         }
 
         // Rest, must be a built-in
@@ -783,5 +793,45 @@ mod tests {
         // McpServer is not supported in CanonicalToolName::from_str
         let result: Result<CanonicalToolName, _> = "@server".parse();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_subagent() {
+        match ToolNameKind::parse("subagent/researcher").unwrap() {
+            ToolNameKind::Subagent { pattern } => assert_eq!(pattern, "researcher"),
+            other => panic!("expected Subagent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_subagent_with_path() {
+        match ToolNameKind::parse("subagent/team/planner").unwrap() {
+            ToolNameKind::Subagent { pattern } => assert_eq!(pattern, "team/planner"),
+            other => panic!("expected Subagent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse_subagent_glob() {
+        match ToolNameKind::parse("subagent/research-*").unwrap() {
+            ToolNameKind::Subagent { pattern } => assert_eq!(pattern, "research-*"),
+            other => panic!("expected Subagent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_bare_subagent_is_builtin() {
+        match ToolNameKind::parse("subagent").unwrap() {
+            ToolNameKind::BuiltIn(name) => assert_eq!(name, "subagent"),
+            other => panic!("expected BuiltIn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_tool_name_kind_bare_subagent_slash_falls_through() {
+        match ToolNameKind::parse("subagent/").unwrap() {
+            ToolNameKind::BuiltIn(name) => assert_eq!(name, "subagent/"),
+            other => panic!("expected BuiltIn fallthrough, got {:?}", other),
+        }
     }
 }
