@@ -31,6 +31,8 @@ ignore = [
   "RUSTSEC-2026-0173",
   # rmcp 0.17 DNS rebinding — workspace pins 0.17; upgrade to 1.4+ requires breaking changes
   "RUSTSEC-2026-0189",
+  # ttf-parser is unmaintained, transitive dep via pdf-extract -> lopdf
+  "RUSTSEC-2026-0192",
 ]
 
 [licenses]
