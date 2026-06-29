@@ -1254,13 +1254,23 @@ impl Agent {
     async fn enter_error_state(&mut self, err: AgentError) {
         self.set_active_state(ActiveState::Errored(err.clone())).await;
         self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::Error(err)));
-        if let Err(e) = self.end_current_turn().await {
+        if let Err(e) = self.end_current_turn(true).await {
             warn!(?e, "failed to end current turn after entering error state");
         }
     }
 
     /// Ends the current user turn by cancelling [Self::agent_loop] if it exists.
-    async fn end_current_turn(&mut self) -> Result<Option<UserTurnMetadata>, AgentError> {
+    ///
+    /// `salvage_pending_summary` recovers a pending (un-executed) `summary` tool
+    /// use onto the lossless summary channel before it is replaced with a
+    /// synthetic cancelled result. This is set only on the error-teardown path
+    /// (e.g. an empty/cancelled trailing model response erroring the turn after
+    /// the subagent already produced its result); explicit user cancellation
+    /// passes `false` so a killed subagent reports no result, as intended.
+    async fn end_current_turn(
+        &mut self,
+        salvage_pending_summary: bool,
+    ) -> Result<Option<UserTurnMetadata>, AgentError> {
         let Some(mut handle) = self.agent_loop.take() else {
             return Ok(None);
         };
@@ -1288,6 +1298,22 @@ impl Agent {
             if let Some(m) = self.conversation_state.messages().last() {
                 for c in &m.content {
                     if let ContentBlock::ToolUse(tool_use) = c {
+                        // A subagent commonly calls `summary` as the last thing it does, but the
+                        // turn can be torn down (e.g. an empty/cancelled trailing model response
+                        // erroring the turn) before the tool actually executes. The model already
+                        // produced the real result in the tool_use input, so salvage it onto the
+                        // lossless summary channel here; otherwise the parent degrades to the
+                        // empty-response fallback and the user's result is silently lost. Gated to
+                        // the error path only — explicit user cancellation reports no result.
+                        if salvage_pending_summary
+                            && let Some(summary) = recover_pending_summary(&tool_use.name, &tool_use.input)
+                        {
+                            if self.summary_tx.send(summary).is_err() {
+                                trace!("no summary receiver while salvaging cancelled summary tool use");
+                            } else {
+                                trace!("salvaged summary from cancelled summary tool use on turn teardown");
+                            }
+                        }
                         content.push(ContentBlock::ToolResult(ToolResultBlock {
                             tool_use_id: tool_use.tool_use_id.clone(),
                             content: vec![ToolResultContentBlock::Text(
@@ -2210,7 +2236,7 @@ impl Agent {
         }
 
         // Send a stop event if required.
-        if (self.end_current_turn().await?).is_some() {
+        if (self.end_current_turn(false).await?).is_some() {
             match self.active_state() {
                 ActiveState::WaitingForApproval(_)
                 | ActiveState::ExecutingHooks(_)
@@ -2721,7 +2747,7 @@ impl Agent {
             ActiveState::Idle => (),
             ActiveState::Errored(_) => {
                 if !args.should_continue_turn() {
-                    self.end_current_turn().await?;
+                    self.end_current_turn(false).await?;
                 }
             },
             ActiveState::WaitingForApproval { .. } => (),
@@ -3452,7 +3478,7 @@ impl Agent {
         // instead of sending tool results back to the LLM. This mirrors V1's behavior
         // of returning to PromptUser when a pending agent swap is detected.
         if self.should_end_turn_for_switch_to_execution(&executing_tools) {
-            self.end_current_turn().await?;
+            self.end_current_turn(false).await?;
             // Transition to Idle so the ACP layer can immediately swap_agent
             // when it processes the EndTurn event.
             if !matches!(self.active_state(), ActiveState::Idle) {
@@ -4241,7 +4267,7 @@ impl Agent {
         // Emit EndTurn (inside end_current_turn) before Stop to match the
         // drain_steering_or_end_turn ordering.
         self.set_active_state(ActiveState::Idle).await;
-        self.end_current_turn().await?;
+        self.end_current_turn(false).await?;
         self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
         Ok(())
     }
@@ -5382,10 +5408,64 @@ pub enum HookStage {
     },
 }
 
+/// Recover a [`Summary`] from a pending (un-executed) `summary` tool use.
+///
+/// When the summary tool is the last thing a subagent emitted but its turn is
+/// torn down by an error before the tool executes, the model's real result is
+/// still present in the tool-use input. Returns `Some` only when `name` is the
+/// summary tool and its `input` deserializes into a valid [`Summary`].
+fn recover_pending_summary(name: &str, input: &serde_json::Value) -> Option<Summary> {
+    if name != tools::BuiltInToolName::Summary.to_string() {
+        return None;
+    }
+    match serde_json::from_value::<Summary>(input.clone()) {
+        Ok(summary) => Some(summary),
+        Err(e) => {
+            warn!(?e, "failed to deserialize pending summary tool use during salvage");
+            None
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::util::test::TestBase;
+
+    /// A pending summary tool use carries the model's real result in its input;
+    /// the salvage path must recover it verbatim so a turn torn down by an error
+    /// before the tool executed still delivers the subagent's result.
+    #[test]
+    fn recover_pending_summary_extracts_result_from_input() {
+        let name = tools::BuiltInToolName::Summary.to_string();
+        let input = serde_json::json!({
+            "taskDescription": "find research papers",
+            "contextSummary": "searched internal + external",
+            "taskResult": "Found 3 relevant papers on deal recommendation.",
+        });
+
+        let summary = recover_pending_summary(&name, &input).expect("summary should be recovered");
+        assert_eq!(summary.task_description, "find research papers");
+        assert_eq!(summary.context_summary.as_deref(), Some("searched internal + external"));
+        assert_eq!(summary.task_result, "Found 3 relevant papers on deal recommendation.");
+    }
+
+    /// Non-summary tool uses must never be salvaged as a summary.
+    #[test]
+    fn recover_pending_summary_ignores_other_tools() {
+        let input = serde_json::json!({ "path": "/tmp/foo.txt" });
+        assert!(recover_pending_summary("fs_read", &input).is_none());
+    }
+
+    /// A summary-named tool use whose input is missing required fields must not
+    /// fabricate a partial summary — it returns None so the existing fallback runs.
+    #[test]
+    fn recover_pending_summary_rejects_malformed_input() {
+        let name = tools::BuiltInToolName::Summary.to_string();
+        // Missing the required `taskResult` field.
+        let input = serde_json::json!({ "taskDescription": "incomplete" });
+        assert!(recover_pending_summary(&name, &input).is_none());
+    }
 
     #[tokio::test]
     async fn test_collect_resources() {

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagent result silently dropped when the summary tool was cancelled before executing during an error teardown"
+}
