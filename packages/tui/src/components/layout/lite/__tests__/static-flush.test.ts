@@ -331,12 +331,9 @@ describe('needsLeadingBlank — section-boundary rules', () => {
     );
   });
 
-  test('rule 5: trailer text starts with a blank line', () => {
-    // formatTurnSummaryRow guarantees the leading blank — even if the
-    // upstream renderer changes its color/indent. Locks the rule against
-    // future tweaks to the trailer's appearance.
-    const out = formatTurnSummaryRow('  Credits: 0.05 · Time: 3s');
-    expect(out.startsWith('\n')).toBe(true);
-    expect(out).toBe('\n  Credits: 0.05 · Time: 3s');
+  test('rule 5: trailer text renders directly below response (no leading blank)', () => {
+    const out = formatTurnSummaryRow('\tCredits: 0.05 · Time: 3s');
+    expect(out.startsWith('\n')).toBe(false);
+    expect(out).toBe('\tCredits: 0.05 · Time: 3s');
   });
 });

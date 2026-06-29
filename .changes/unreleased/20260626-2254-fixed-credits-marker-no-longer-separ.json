@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Credits and time trailer now appears directly below the agent response with a tab indent, removing the extra blank line"
+}

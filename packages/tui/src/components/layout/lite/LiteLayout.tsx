@@ -873,7 +873,7 @@ export const LiteLayout: React.FC = () => {
       const summaryId = `${userId}__summary`;
       items.push({
         id: summaryId,
-        text: formatTurnSummaryRow(chalk.dim(`  ${summary}`)),
+        text: formatTurnSummaryRow(chalk.dim(`\t${summary}`)),
       });
     };
 

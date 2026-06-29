@@ -179,11 +179,9 @@ export function needsLeadingBlank(
 }
 
 /**
- * Format the per-turn credits/time trailer row with its leading blank baked
- * in (rule 5: blank BEFORE the trailer). Pure helper — `rendered` is already
- * styled by the caller; the leading '\n' is safe because the turn's User
- * message always precedes the trailer.
+ * Format the per-turn credits/time trailer row. Renders directly below the
+ * final agent response with a tab indent, no leading blank line.
  */
 export function formatTurnSummaryRow(rendered: string): string {
-  return '\n' + rendered;
+  return rendered;
 }
