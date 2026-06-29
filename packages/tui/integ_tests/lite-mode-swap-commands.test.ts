@@ -154,12 +154,9 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
     const snap = testCase.getSnapshot();
     const statusRow = '⟳ Goal: "INTERLEAVED_SYSTEM_BEFORE_MODEL"';
-    const liteGoalSetRow = 'goal set · INTERLEAVED_SYSTEM_BEFORE_MODEL';
     expect(visibleCount(snap, statusRow)).toBe(1);
-    expect(visibleCount(snap, liteGoalSetRow)).toBe(1);
 
     const goalIdx = visibleIndex(snap, statusRow);
-    const liteGoalSetIdx = visibleIndex(snap, liteGoalSetRow);
     const responseIdx = visibleIndex(
       snap,
       'LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM'
@@ -167,8 +164,7 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
 
     expect(goalIdx).toBeGreaterThanOrEqual(0);
-    expect(liteGoalSetIdx).toBeGreaterThan(goalIdx);
-    expect(responseIdx).toBeGreaterThan(liteGoalSetIdx);
+    expect(responseIdx).toBeGreaterThan(goalIdx);
     expect(switchIdx).toBeGreaterThanOrEqual(0);
 
     await exitLiteInteg(testCase);

@@ -517,47 +517,6 @@ export const LiteLayout: React.FC = () => {
     showTransientAlert,
   ]);
 
-  // One-time scrollback confirmation when a NEW goal is set (lite has no goal
-  // chip). Dedup by goal text in a ref (goalStatus re-fires every iteration).
-  // Same partial-snapshot guard as the cancel appender: defer past a live
-  // streaming Model row.
-  const announcedGoalRef = useRef<string | null>(null);
-  useEffect(() => {
-    const msg = goalStatus?.message ?? null;
-    if (!goalStatus || !msg) {
-      // Goal cleared — reset so the next goal set re-announces.
-      if (!goalStatus) announcedGoalRef.current = null;
-      return;
-    }
-    if (msg === announcedGoalRef.current) return; // already confirmed
-    // Terminal states aren't a "set" — don't emit a confirmation for them.
-    if (goalStatus.state === 'completed' || goalStatus.state === 'exhausted')
-      return;
-    if (!store) return;
-    const tail = messages[messages.length - 1];
-    if (
-      isProcessing &&
-      tail &&
-      tail.role === MessageRole.Model &&
-      !tail.standalone
-    )
-      return; // defer past a live streaming model row
-    announcedGoalRef.current = msg;
-    store.setState((s) => ({
-      messages: [
-        ...s.messages,
-        {
-          id: crypto.randomUUID(),
-          role: MessageRole.System,
-          content: chalk.dim(
-            `goal set · ${msg} · looping up to ${goalStatus.maxIterations} iterations · /goal clear to cancel`
-          ),
-          success: true,
-        },
-      ],
-    }));
-  }, [goalStatus, messages, isProcessing, store]);
-
   // Boot indicator: one dim row surfacing in-flight async setup (agent_connect >
   // session_create > MCP aggregate), hidden once nothing is 'loading'. Failure
   // detail lives elsewhere (McpServerInitFailure alert + /mcp); this only
