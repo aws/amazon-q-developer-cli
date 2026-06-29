@@ -575,8 +575,10 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // CLI flag > cli.json setting > undefined (let agent pick default)
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      initialModel:
-        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+      // Pass the explicit --model flag only; the saved `chat.defaultModel` is
+      // re-read fresh inside newSession so a mid-run sticky write is honored.
+      initialModel: cliArgs.model,
+      hasExplicitEffort: !!cliArgs.effort,
     })
     .then(async () => {
       appStore
@@ -808,8 +810,9 @@ const startApp = async () => {
     await kiro.initialize(agentPath, acpArgs, {
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      initialModel:
-        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+      // Explicit --model only; saved default is re-read inside newSession.
+      initialModel: cliArgs.model,
+      hasExplicitEffort: !!cliArgs.effort,
     });
     const listing = await listAllSessions();
     if (!listing.ok) {

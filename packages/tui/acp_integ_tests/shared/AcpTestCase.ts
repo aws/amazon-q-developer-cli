@@ -74,6 +74,16 @@ export class AcpTestCase {
     const { mockKasSessionListResult, extraEnv, ...rest } = options;
     this.inner = new TestCase({
       ...rest,
+      // Always sandbox `$KIRO_HOME` so the TUI's `cli-settings` reader sees an
+      // isolated, empty `cli.json` rather than the developer's real `~/.kiro`
+      // (or a value a sibling test persisted into that shared file earlier in
+      // the same run). Sticky model/effort defaults written by `/model` and
+      // `/effort` (chat.defaultModel, chat.modelDefaults) would otherwise leak
+      // in and fire `maybeApplySavedEffortDefault` on session start —
+      // surfacing as an unexpected `effortLevel` set_config_option and a chip
+      // clobber — even though the test assumes no default is saved. Tests that
+      // need seeded settings pass their own `settings`, which wins here.
+      settings: rest.settings ?? {},
       extraEnv: {
         ...extraEnv,
         // Turn off MockSessionClient (base TestCase's default mock path)

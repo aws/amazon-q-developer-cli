@@ -2206,8 +2206,11 @@ describe('KasAcpClient', () => {
       value: 'gpt-5',
     });
     expect(result.success).toBe(true);
-    expect(result.message).toBe('Switched to GPT-5');
+    // Sticky default is ON by default: the swap persists chat.defaultModel and
+    // the message reflects it.
+    expect(result.message).toBe('Switched to GPT-5 (saved as default)');
     expect(result.data).toEqual({ model: { id: 'gpt-5', name: 'GPT-5' } });
+    expect(readTestCliJson()['chat.defaultModel']).toBe('gpt-5');
 
     // Cache should now mark gpt-5 as active
     const options = await client.getCommandOptions('/model', '');
@@ -2671,6 +2674,531 @@ describe('KasAcpClient', () => {
       o.description?.startsWith('[active]')
     );
     expect(activeEntry?.value).toBe('xhigh');
+  });
+
+  // ── Sticky model/effort defaults (persist-by-default + auto-apply) ──
+
+  describe('sticky defaults', () => {
+    // Some tests below install a persistent mockImplementation; freshMocks()
+    // only clears call history (not the implementation), so restore the
+    // module default here to avoid leaking into later tests.
+    afterEach(() => {
+      mockKiroSetSessionConfigOption.mockImplementation(() =>
+        Promise.resolve()
+      );
+    });
+
+    // configOptions carrying both a model and an effortLevel select, used to
+    // drive setSessionConfigOption('model') responses.
+    function modelAndEffortConfig(opts: {
+      modelId: string;
+      effort: string;
+      effortSchemaPath?: 'output_config' | 'reasoning';
+    }) {
+      // Attach KAS-advertised effort meta to the CURRENTLY selected model only
+      // (mirrors KAS, which advertises effortSchemaPath per model option).
+      const modelOption = (value: string, name: string) =>
+        value === opts.modelId && opts.effortSchemaPath
+          ? {
+              value,
+              name,
+              _meta: { kiro: { effortSchemaPath: opts.effortSchemaPath } },
+            }
+          : { value, name };
+      return [
+        {
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: opts.modelId,
+          options: [
+            modelOption('claude-4', 'Claude 4'),
+            modelOption('gpt-5', 'GPT-5'),
+          ],
+        },
+        {
+          type: 'select',
+          id: 'effortLevel',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: opts.effort,
+          options: [
+            { value: 'low', name: 'Low' },
+            { value: 'high', name: 'High' },
+          ],
+        },
+      ];
+    }
+
+    it('/model swap persists chat.defaultModel by default', async () => {
+      seedSessionWithModels({
+        currentValue: 'claude-4',
+        models: [
+          { value: 'claude-4', name: 'Claude 4' },
+          { value: 'gpt-5', name: 'GPT-5' },
+        ],
+      });
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'model',
+            category: 'model',
+            currentValue: 'gpt-5',
+            options: [
+              { value: 'claude-4', name: 'Claude 4' },
+              { value: 'gpt-5', name: 'GPT-5' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'model',
+        args: { value: 'gpt-5' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('saved as default');
+      expect(readTestCliJson()['chat.defaultModel']).toBe('gpt-5');
+    });
+
+    it('/model swap does NOT persist when chat.disableAutoDefaultModel is true', async () => {
+      writeTestCliJson({ 'chat.disableAutoDefaultModel': true });
+      seedSessionWithModels({
+        currentValue: 'claude-4',
+        models: [
+          { value: 'claude-4', name: 'Claude 4' },
+          { value: 'gpt-5', name: 'GPT-5' },
+        ],
+      });
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'model',
+            category: 'model',
+            currentValue: 'gpt-5',
+            options: [
+              { value: 'claude-4', name: 'Claude 4' },
+              { value: 'gpt-5', name: 'GPT-5' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'model',
+        args: { value: 'gpt-5' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('Switched to GPT-5');
+      expect(readTestCliJson()['chat.defaultModel']).toBeUndefined();
+    });
+
+    it('/effort persists a per-model default (nested shape) by default', async () => {
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-sticky',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'claude-4',
+          effort: 'high',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            category: 'thought_level',
+            currentValue: 'low',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'effort',
+        args: { value: 'low' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('saved for');
+      expect(readTestCliJson()['chat.modelDefaults']).toEqual({
+        'claude-4': { output_config: { effort: 'low' } },
+      });
+    });
+
+    it('/effort persists at the KAS-advertised effortSchemaPath, beating the name heuristic', async () => {
+      // claude-4's name heuristic resolves to output_config, but KAS advertises
+      // effortSchemaPath='reasoning' on the model option — the authoritative
+      // path must win so the write lands at reasoning.effort.
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-sticky',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'claude-4',
+          effort: 'high',
+          effortSchemaPath: 'reasoning',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            category: 'thought_level',
+            currentValue: 'low',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'effort',
+        args: { value: 'low' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('saved for');
+      // reasoning.effort (meta), NOT output_config.effort (heuristic).
+      expect(readTestCliJson()['chat.modelDefaults']).toEqual({
+        'claude-4': { reasoning: { effort: 'low' } },
+      });
+    });
+
+    it('/effort falls back to the name heuristic when KAS omits effortSchemaPath', async () => {
+      // gpt-5 with no effortSchemaPath meta → heuristic resolves reasoning.
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-sticky',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'gpt-5',
+          effort: 'high',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            category: 'thought_level',
+            currentValue: 'low',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'effort',
+        args: { value: 'low' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(readTestCliJson()['chat.modelDefaults']).toEqual({
+        'gpt-5': { reasoning: { effort: 'low' } },
+      });
+    });
+
+    it('/effort heuristic resolves output_config for a Claude-named model when KAS omits effortSchemaPath', async () => {
+      // Discriminating counterpart to the meta-beats-heuristic case above:
+      // claude-4 with NO effortSchemaPath meta must fall back to the name
+      // heuristic, which picks output_config — unlike claude-4 + meta='reasoning'
+      // which lands at reasoning.effort.
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-sticky',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'claude-4',
+          effort: 'high',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            category: 'thought_level',
+            currentValue: 'low',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'effort',
+        args: { value: 'low' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(readTestCliJson()['chat.modelDefaults']).toEqual({
+        'claude-4': { output_config: { effort: 'low' } },
+      });
+    });
+
+    it('/effort does NOT persist when chat.disableAutoDefaultEffort is true', async () => {
+      writeTestCliJson({ 'chat.disableAutoDefaultEffort': true });
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-sticky',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'claude-4',
+          effort: 'high',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.newSession();
+      mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+        configOptions: [
+          {
+            type: 'select',
+            id: 'effortLevel',
+            category: 'thought_level',
+            currentValue: 'low',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
+        ],
+      } as any);
+      const result = await client.executeCommand({
+        command: 'effort',
+        args: { value: 'low' },
+      } as any);
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('Effort set to Low');
+      expect(readTestCliJson()['chat.modelDefaults']).toBeUndefined();
+    });
+
+    it('loadSession does NOT apply a saved effort default', async () => {
+      writeTestCliJson({
+        'chat.modelDefaults': {
+          'claude-4': { output_config: { effort: 'low' } },
+        },
+      });
+      // Load advertises model=claude-4 and effort=high already persisted.
+      mockKiroLoadSession.mockResolvedValueOnce({
+        sessionId: 'kas-loaded',
+        models: null,
+        modes: null,
+        configOptions: modelAndEffortConfig({
+          modelId: 'claude-4',
+          effort: 'high',
+        }),
+      } as any);
+      const client = new KasAcpClient();
+      await client.loadSession('kas-loaded');
+      // A late config_option_update during/after replay must not trigger apply.
+      await capturedSessionUpdateHandler?.({
+        sessionId: 'kas-loaded',
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: modelAndEffortConfig({
+            modelId: 'claude-4',
+            effort: 'high',
+          }),
+        },
+      });
+      const effortCall = mockKiroSetSessionConfigOption.mock.calls.find(
+        (c: any) => c[0]?.configId === 'effortLevel'
+      );
+      expect(effortCall).toBeUndefined();
+    });
+
+    it('resumed session (applyEffortDefaultForSession=false) STILL applies the new model\u2019s saved effort default on a /model switch', async () => {
+      // Parity-gap repro. loadSession leaves `applyEffortDefaultForSession`
+      // false to protect a resumed session's RESTORED effort at LOAD time. But
+      // a later deliberate `/model` switch is a distinct mid-session trigger
+      // that must STILL apply the new model's saved per-model default — v2
+      // applies on EVERY switch regardless of how the session began. Without
+      // the `fromModelSwitch` bypass the swap's apply is silently suppressed
+      // and the switch lands on the carried-over effort (the bug this guards).
+      writeTestCliJson({
+        'chat.modelDefaults': {
+          // gpt-5 is GPT-family → effort under `reasoning.effort` (v2 shape).
+          'gpt-5': { reasoning: { effort: 'high' } },
+        },
+      });
+
+      // Stateful KAS mock mirroring agent.ts: a MODEL change carries the
+      // current effort when valid for the new model (both 'low'/'high' are
+      // valid for both models here), else falls back to the native default; an
+      // EFFORT change records the advertised level. Every response returns the
+      // full configOptions and NEVER pushes a config_option_update (the
+      // client-initiated path), so the swap itself is the only apply trigger.
+      const LEVELS = ['low', 'high'];
+      const NATIVE_DEFAULT = 'low';
+      let sessionModel = 'claude-4';
+      let sessionEffort = 'low'; // resumed session's RESTORED effort.
+      const cfg = () =>
+        modelAndEffortConfig({ modelId: sessionModel, effort: sessionEffort });
+      mockKiroLoadSession.mockResolvedValueOnce({
+        sessionId: 'kas-resumed',
+        models: null,
+        modes: null,
+        configOptions: cfg(),
+      } as any);
+      mockKiroSetSessionConfigOption.mockImplementation((req: any) => {
+        if (req.configId === 'model') {
+          sessionModel = req.value;
+          if (!LEVELS.includes(sessionEffort)) sessionEffort = NATIVE_DEFAULT;
+        } else if (
+          req.configId === 'effortLevel' &&
+          LEVELS.includes(req.value)
+        ) {
+          sessionEffort = req.value;
+        }
+        return Promise.resolve({ configOptions: cfg() });
+      });
+
+      const client = new KasAcpClient();
+      await client.loadSession('kas-resumed');
+
+      // Resume protection holds AT LOAD: no effortLevel write during load. The
+      // restored claude-4 @ 'low' is left untouched even though a saved default
+      // exists for gpt-5 (not the active model).
+      expect(
+        mockKiroSetSessionConfigOption.mock.calls.filter(
+          (c: any) => c[0]?.configId === 'effortLevel'
+        ).length
+      ).toBe(0);
+
+      // Mid-session /model switch to gpt-5. Carry-over keeps 'low' (valid for
+      // gpt-5); the swap then applies gpt-5's saved 'high' from the
+      // set_config_option RESPONSE — the `fromModelSwitch` bypass lets this run
+      // despite applyEffortDefaultForSession=false. WITHOUT the fix, the swap's
+      // maybeApplySavedEffortDefault early-returns on the closed session-start
+      // gate and NO effortLevel write happens (this assertion then fails).
+      const swap = await client.executeCommand({
+        command: 'model',
+        args: { value: 'gpt-5' },
+      } as any);
+      expect(swap.success).toBe(true);
+
+      const highCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+        (c: any) => c[0]?.configId === 'effortLevel' && c[0]?.value === 'high'
+      );
+      expect(highCalls.length).toBe(1);
+      expect(sessionEffort).toBe('high');
+
+      // Loop-safety: an echoed config_option_update (gpt-5 already at 'high',
+      // SAME model id → refreshModelCache does NOT re-arm the guard) routes
+      // through the handler's no-`fromModelSwitch` maybeApply, which
+      // early-returns (the resumed session's session-start gate is still
+      // closed, and the apply-once guard is set). No second write.
+      await capturedSessionUpdateHandler?.({
+        sessionId: 'kas-resumed',
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: cfg(),
+        },
+      });
+      expect(
+        mockKiroSetSessionConfigOption.mock.calls.filter(
+          (c: any) => c[0]?.configId === 'effortLevel'
+        ).length
+      ).toBe(1);
+    });
+
+    it('applies a saved effort default exactly once when the NEW session resolves model+effort LATE', async () => {
+      writeTestCliJson({
+        'chat.modelDefaults': {
+          'claude-4': { output_config: { effort: 'low' } },
+        },
+      });
+      // Initial newSession response resolves NEITHER model nor effort: the
+      // model list (and its effort schema) arrives later via a pushed
+      // config_option_update (e.g. once auth completes post-launch).
+      mockKiroNewSession.mockResolvedValueOnce({
+        sessionId: 'kas-session-late',
+        models: null,
+        modes: null,
+        configOptions: [],
+      } as any);
+      mockKiroSetSessionConfigOption.mockImplementation((req: any) => {
+        if (req.configId === 'effortLevel') {
+          return Promise.resolve({
+            configOptions: [
+              {
+                type: 'select',
+                id: 'effortLevel',
+                category: 'thought_level',
+                currentValue: req.value,
+                options: [
+                  { value: 'low', name: 'Low' },
+                  { value: 'high', name: 'High' },
+                ],
+              },
+            ],
+          });
+        }
+        return Promise.resolve({});
+      });
+      const client = new KasAcpClient();
+      await client.newSession();
+      // No model known yet → nothing applied during newSession.
+      expect(
+        mockKiroSetSessionConfigOption.mock.calls.filter(
+          (c: any) => c[0]?.configId === 'effortLevel'
+        ).length
+      ).toBe(0);
+
+      // Late resolution: model=claude-4 advertised at effort 'high'; saved
+      // default is 'low' so the apply fires once.
+      await capturedSessionUpdateHandler?.({
+        sessionId: 'kas-session-late',
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: modelAndEffortConfig({
+            modelId: 'claude-4',
+            effort: 'high',
+          }),
+        },
+      });
+      const effortCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+        (c: any) => c[0]?.configId === 'effortLevel'
+      );
+      expect(effortCalls.length).toBe(1);
+      expect(effortCalls[0][0].value).toBe('low');
+
+      // Re-emit (our own effortLevel write echoes back the SAME model) must NOT
+      // re-apply: the apply-once guard holds because the model id is unchanged.
+      await capturedSessionUpdateHandler?.({
+        sessionId: 'kas-session-late',
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: modelAndEffortConfig({
+            modelId: 'claude-4',
+            effort: 'low',
+          }),
+        },
+      });
+      expect(
+        mockKiroSetSessionConfigOption.mock.calls.filter(
+          (c: any) => c[0]?.configId === 'effortLevel'
+        ).length
+      ).toBe(1);
+    });
   });
 
   // ── /knowledge command ──

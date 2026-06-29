@@ -134,14 +134,36 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
             })
             .unwrap_or_else(|| to_legacy_model_info(m));
         ctx.rts_state.set_model_info(Some(full_model));
-        ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
-
-        // Persist as default
-        let persisted = ctx
+        // Read the authoritative settings from the session manager rather than
+        // `ctx.os`, which is a per-session clone taken at session start and does
+        // not reflect in-session writes (e.g. a per-model effort default saved
+        // earlier this session via `/effort`). Reading the stale clone here would
+        // re-apply an outdated value on switch-back. Fall back to the local clone
+        // if the query fails so model switching still works.
+        let settings = ctx
             .session_tx
-            .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(id.clone()))
+            .get_settings_snapshot()
             .await
-            .is_ok();
+            .unwrap_or_else(|_| ctx.os.database.settings.clone());
+        ctx.rts_state.apply_model_defaults(&settings);
+
+        // Persist as default unless the user opted out via
+        // `chat.disableAutoDefaultModel`. When opted out we neither write the
+        // setting nor show the "(saved as default)" suffix.
+        let persisted = if ctx
+            .os
+            .database
+            .settings
+            .get_bool(Setting::ChatDisableAutoDefaultModel)
+            .unwrap_or(false)
+        {
+            false
+        } else {
+            ctx.session_tx
+                .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(id.clone()))
+                .await
+                .is_ok()
+        };
         let suffix = if persisted { " (saved as default)" } else { "" };
 
         return CommandResult::success_with_data(

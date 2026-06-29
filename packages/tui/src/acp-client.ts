@@ -5,6 +5,7 @@ import type { Stream } from '@kiro/client';
 // TUI, KAS, and any other ACP client speak the same contract for the
 // `_kiro/spec/*` extension methods.
 import type {
+  EffortSchemaPath,
   KiroModelOptionMeta,
   SpecInvokeRequest,
   SpecInvokeResponse,
@@ -19,7 +20,17 @@ import {
 } from './utils/telemetry-identity';
 import { buildKasSettings } from './utils/kas-settings';
 import { webToolsGovernanceFromState } from './utils/governance-state';
-import { readCliSettings, updateCliSetting } from './utils/cli-settings';
+import {
+  readCliSettings,
+  updateCliSetting,
+  readBoolSetting,
+  readOptionalStringSetting,
+} from './utils/cli-settings';
+import {
+  readSavedEffortDefault,
+  persistEffortDefault,
+} from './utils/effort-defaults';
+import { Settings } from './constants/settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from './capabilities/copy-url-to-clipboard';
@@ -845,13 +856,21 @@ function extractModel(
 // covenant does not export a select-option type at this version, so we
 // model only the fields the TUI consumes.
 // KAS additionally attaches per-model rate info under `_meta.kiro`
-// (rateMultiplier/rateUnit); we surface it as the credits column.
+// (rateMultiplier/rateUnit); we surface it as the credits column. It also
+// advertises the authoritative effort schema path (`effortSchemaPath`) so the
+// sticky-effort default lands at the path the active model's family expects.
+
 interface ModelOption {
   value: string;
   name: string;
   description?: string;
   rateMultiplier?: number;
   rateUnit?: string;
+  // Authoritative parent key for the effort schema path, from KAS
+  // `_meta.kiro.effortSchemaPath`. Undefined when the server omits it (older
+  // KAS) or the model has no effort; persistEffortDefault then falls back to
+  // the family name heuristic.
+  effortSchemaPath?: EffortSchemaPath;
 }
 
 /** Find the `category: 'model'` entry in a KAS configOptions array. */
@@ -893,6 +912,14 @@ function findModelConfigOption(
           // rateMultiplier only). Retained so future UI can surface the unit.
           rateUnit:
             typeof kiro?.rateUnit === 'string' ? kiro.rateUnit : undefined,
+          // Authoritative effort schema parent key (KAS advertises it only
+          // when the model supports effort). Validated to the known union so
+          // a malformed server value falls through to the family heuristic.
+          effortSchemaPath:
+            kiro?.effortSchemaPath === 'output_config' ||
+            kiro?.effortSchemaPath === 'reasoning'
+              ? kiro.effortSchemaPath
+              : undefined,
         };
       });
     return {
@@ -2761,11 +2788,19 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialAgent?: string;
 
   /**
-   * Default model to apply on the next `newSession`, sourced from
-   * `chat.defaultModel` in cli.json.  Only used when `--model` was not
-   * passed on the CLI (so an explicit flag always takes precedence).
+   * Explicit `--model` CLI flag value to apply on `newSession`, if any.
+   * When absent, `newSession` lazily reads the saved `chat.defaultModel` from
+   * cli.json so a sticky default written mid-run is honored by later in-process
+   * sessions. An explicit flag always takes precedence over the saved default.
    */
   private readonly initialModel?: string;
+
+  /**
+   * Whether an explicit `--effort` CLI flag was passed. The flag is forwarded
+   * to the KAS subprocess (which applies it), so when set we skip auto-applying
+   * any saved per-model effort default — the explicit flag wins.
+   */
+  private readonly hasExplicitEffort: boolean = false;
 
   /**
    * Version reported in the KAS `clientInfo` handshake and the
@@ -2799,12 +2834,14 @@ export class KasAcpClient extends BaseAcpClient {
     stream?: Stream;
     initialAgent?: string;
     initialModel?: string;
+    hasExplicitEffort?: boolean;
     version?: string;
   }) {
     if (options?.stream) {
       super(createNullAgentProcess());
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
+      this.hasExplicitEffort = options.hasExplicitEffort ?? false;
       this.version = options.version ?? getCliVersion();
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
@@ -2880,6 +2917,7 @@ export class KasAcpClient extends BaseAcpClient {
     super(toAgentProcess(proc));
     this.initialAgent = options?.initialAgent;
     this.initialModel = options?.initialModel;
+    this.hasExplicitEffort = options?.hasExplicitEffort ?? false;
     this.version = version;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
@@ -3019,6 +3057,20 @@ export class KasAcpClient extends BaseAcpClient {
   private effortOptions: EffortOption[] = [];
   /** Currently selected effort level, or undefined when none is advertised. */
   private currentEffortLevel?: string;
+  /**
+   * Whether to auto-apply a saved per-model effort default for the CURRENT
+   * session. True only for `newSession` when stickiness is enabled and no
+   * explicit `--effort` flag was given; `loadSession` sets it false so loaded
+   * sessions keep their persisted effort.
+   */
+  private applyEffortDefaultForSession = false;
+  /**
+   * Apply-once-per-session guard. `setSessionConfigOption('effortLevel', ...)`
+   * may cause KAS to re-emit `config_option_update`, which would re-enter the
+   * auto-apply path; this flag breaks that loop. Reset in `wireSessionListeners`
+   * (called by both new and load) and set once we issue (or skip) the apply.
+   */
+  private effortDefaultApplied = false;
   /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
   private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
@@ -3047,6 +3099,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.standaloneSubtasks.clear();
     this.kasToolCallSnapshots.clear();
     this.kasSteerBuffer.clear();
+    // Reset the per-session effort-default apply guard. newSession/loadSession
+    // set `applyEffortDefaultForSession` appropriately right after this runs.
+    this.effortDefaultApplied = false;
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -3129,6 +3184,11 @@ export class KasAcpClient extends BaseAcpClient {
               model,
             });
           }
+          // Model/effort can resolve LATE (e.g. once auth completes after
+          // launch). Apply a saved per-model effort default here too, guarded
+          // by the apply-once flag so the re-emitted config_option_update from
+          // our own setSessionConfigOption call below can't loop.
+          await this.maybeApplySavedEffortDefault();
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
         // NOTE: `sessionId` here is the per-listener KAS session, which equals
@@ -3778,6 +3838,14 @@ export class KasAcpClient extends BaseAcpClient {
     // Register BEFORE any async work to avoid race condition
     this.wireSessionListeners(sid);
 
+    // New sessions are eligible for sticky-effort auto-apply unless an explicit
+    // --effort flag was given (forwarded to KAS, so it wins). The opt-out
+    // setting `chat.disableAutoDefaultEffort` only disables auto-WRITING the
+    // default on /effort change (see executeEffortChange); a previously-saved
+    // default STILL applies here, matching v2. Set this before any
+    // setSessionConfigOption call that could trigger a late config_option_update.
+    this.applyEffortDefaultForSession = !this.hasExplicitEffort;
+
     try {
       await this.kiroClient.setSessionConfigOption({
         sessionId: sid,
@@ -3788,12 +3856,23 @@ export class KasAcpClient extends BaseAcpClient {
       logger.debug('Failed to set autopilot config:', e);
     }
 
-    if (this.initialModel) {
+    // Resolve the model to apply: an explicit `--model` flag always wins;
+    // otherwise re-read the saved `chat.defaultModel` FRESH each session so a
+    // sticky default written mid-run is honored by later in-process sessions.
+    // The saved default is ALWAYS applied: `chat.disableAutoDefaultModel` only
+    // disables auto-WRITING the default on /model switch (see executeModelSwap),
+    // not applying a previously-saved one -- matching v2. `||` (not `??`) lets
+    // an empty initialModel fall through to the saved value.
+    const modelToApply =
+      this.initialModel ||
+      readOptionalStringSetting(Settings.CHAT_DEFAULT_MODEL);
+
+    if (modelToApply) {
       try {
         const modelResp = await this.kiroClient.setSessionConfigOption({
           sessionId: sid,
           configId: 'model',
-          value: this.initialModel,
+          value: modelToApply,
         });
         this.refreshModelCache(
           (modelResp as { configOptions?: unknown }).configOptions
@@ -3809,13 +3888,18 @@ export class KasAcpClient extends BaseAcpClient {
       }
     }
 
-    if (!this.initialModel) {
+    if (!modelToApply) {
       this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
       this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
       this.broadcastEffortFromConfigOptions(
         (r as { configOptions?: unknown }).configOptions
       );
     }
+
+    // Apply a saved per-model effort default now that the model + effort caches
+    // are populated. No-op when stickiness is off, no saved value exists, or
+    // the level is already current. Guarded by the apply-once flag.
+    await this.maybeApplySavedEffortDefault();
 
     const currentModelEntry = this.currentModelId
       ? this.modelOptions.find((m) => m.value === this.currentModelId)
@@ -3849,6 +3933,10 @@ export class KasAcpClient extends BaseAcpClient {
 
     // Register BEFORE loadSession to capture history replay events
     this.wireSessionListeners(sessionId);
+
+    // Loaded sessions keep their persisted model/effort: never auto-apply a
+    // saved default over a replayed session's own values.
+    this.applyEffortDefaultForSession = false;
 
     const r = await this.kiroClient
       .loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] })
@@ -3997,7 +4085,10 @@ export class KasAcpClient extends BaseAcpClient {
           if (!this.currentModelId) {
             return { success: false, message: 'No model is currently active' };
           }
-          await updateCliSetting('chat.defaultModel', this.currentModelId);
+          await updateCliSetting(
+            Settings.CHAT_DEFAULT_MODEL,
+            this.currentModelId
+          );
           const name =
             this.modelOptions.find((m) => m.value === this.currentModelId)
               ?.name ?? this.currentModelId;
@@ -4273,6 +4364,20 @@ export class KasAcpClient extends BaseAcpClient {
    * preserved across model switches — KAS simply updates the
    * `modelId` on its in-memory session and picks it up on the next
    * prompt turn.
+   *
+   * Saved-effort apply: after refreshing caches we call
+   * `maybeApplySavedEffortDefault` for the NEW model. This is required because
+   * KAS only *carries over* the current effort across a model change when it is
+   * valid for the new model (it never consults the TUI-side `chat.modelDefaults`
+   * saved in cli.json), and a client-initiated `set_config_option('model')`
+   * returns the updated configOptions in its RESPONSE but pushes NO separate
+   * `config_option_update` notification. So the swap itself is the only trigger
+   * that can restore the new model's saved per-model default — mirroring v2's
+   * apply-on-switch. `refreshModelCache` re-arms the apply-once guard on the
+   * genuine model-id change, and `maybeApplySavedEffortDefault` is idempotent
+   * (no-ops when no default is saved or the session is already at the saved
+   * level), so this neither forces a level on models without a saved default nor
+   * double-applies against the autonomous `config_option_update` path.
    */
   private async executeModelSwap(modelId: string): Promise<CommandResult> {
     if (!this.sessionId)
@@ -4298,9 +4403,36 @@ export class KasAcpClient extends BaseAcpClient {
           message: `Model '${modelId}' not available`,
         };
       }
+      // Apply the NEW model's saved per-model effort default immediately on the
+      // swap. KAS does not push a `config_option_update` for a client-initiated
+      // model change (it only returns the updated configOptions above), so this
+      // is the sole apply trigger on the swap path. The apply-once guard was
+      // re-armed by `refreshModelCache` on the model-id change; this call is a
+      // no-op when no default is saved or the session is already at the saved
+      // level, and it sets the guard before issuing its own effortLevel write so
+      // any echoed configOptions cannot re-enter and loop. `fromModelSwitch`
+      // bypasses ONLY the session-start eligibility gate so the saved default
+      // applies on EVERY switch (incl. resumed / `--effort`-started sessions),
+      // mirroring v2 — all other guards (apply-once, no-saved-default,
+      // already-at-level, level-validity) remain in force.
+      await this.maybeApplySavedEffortDefault({ fromModelSwitch: true });
+      // Sticky default: persist the new model as the global default unless the
+      // user opted out. This mirrors v2, which auto-persists on /model switch.
+      // The explicit `set-current-as-default` branch remains separate + ungated.
+      let savedAsDefault = false;
+      if (!readBoolSetting(Settings.CHAT_DISABLE_AUTO_DEFAULT_MODEL, false)) {
+        try {
+          await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, model.id);
+          savedAsDefault = true;
+        } catch (e) {
+          logger.debug('Failed to persist default model:', e);
+        }
+      }
       return {
         success: true,
-        message: `Switched to ${model.name}`,
+        message: savedAsDefault
+          ? `Switched to ${model.name} (saved as default)`
+          : `Switched to ${model.name}`,
         data: { model: { id: model.id, name: model.name } },
       };
     } catch (e) {
@@ -4318,14 +4450,12 @@ export class KasAcpClient extends BaseAcpClient {
    * response, which we use to refresh the local cache and validate the
    * write landed.
    *
-   * The success message is locked to `"Effort set to {Level}"` (display-
-   * cased via `formatEffort`, e.g. `xhigh → xHigh`). Unlike V2's
-   * `/effort`, we deliberately omit the `" (saved for {model})"` suffix:
-   * that suffix exists in V2 only because V2 persists a per-model default
-   * to the client-side `ChatModelDefaults` setting. KAS persists
-   * `effortLevel` to its own session metadata server-side and this feature
-   * does no client-side persistence, so there is nothing "saved" from the
-   * TUI's perspective.
+   * The success message is `"Effort set to {Level}"` (display-cased via
+   * `formatEffort`, e.g. `xhigh → xHigh`). When the level is persisted as a
+   * per-model sticky default (the default; opt out via
+   * `chat.disableAutoDefaultEffort`), a `" (saved for {model})"` suffix is
+   * appended, matching v2. Persistence is skipped when no current model is
+   * known (nothing to key the default under) or when the opt-out is set.
    */
   private async executeEffortChange(level: string): Promise<CommandResult> {
     if (!this.sessionId)
@@ -4362,9 +4492,42 @@ export class KasAcpClient extends BaseAcpClient {
           message: `Effort '${level}' not available`,
         };
       }
+      // Sticky default: persist the chosen level as a per-model default unless
+      // the user opted out. Stored in `chat.modelDefaults` with the same nested
+      // shape v2 uses, so a default set in either engine transfers. Requires a
+      // known current model to key under; skipped otherwise.
+      let savedFor: string | undefined;
+      if (
+        this.currentModelId &&
+        !readBoolSetting(Settings.CHAT_DISABLE_AUTO_DEFAULT_EFFORT, false)
+      ) {
+        try {
+          // Resolve the effort schema path authoritatively from the cached
+          // model option's KAS-advertised `_meta.kiro.effortSchemaPath`. When
+          // present, persist at `${effortSchemaPath}.effort`; otherwise leave
+          // it undefined so persistEffortDefault falls back to the family
+          // name heuristic (older KAS, or model not in cache).
+          const opt = this.modelOptions.find(
+            (m) => m.value === this.currentModelId
+          );
+          const resolvedEffortPath = opt?.effortSchemaPath
+            ? `${opt.effortSchemaPath}.effort`
+            : undefined;
+          await persistEffortDefault(
+            this.currentModelId,
+            level,
+            resolvedEffortPath
+          );
+          savedFor = opt?.name ?? this.currentModelId;
+        } catch (e) {
+          logger.debug('Failed to persist effort default:', e);
+        }
+      }
       return {
         success: true,
-        message: `Effort set to ${formatEffort(level)}`,
+        message: savedFor
+          ? `Effort set to ${formatEffort(level)} (saved for ${savedFor})`
+          : `Effort set to ${formatEffort(level)}`,
         data: { effort: level },
       };
     } catch (e) {
@@ -4752,7 +4915,19 @@ export class KasAcpClient extends BaseAcpClient {
       modelOpt.currentValue
     );
     this.modelOptions = modelOpt.options;
+    const prevModelId = this.currentModelId;
     this.currentModelId = modelOpt.currentValue;
+    // Re-arm the per-session effort-default apply guard on a REAL model switch
+    // so the newly-selected model's saved effort default applies on the
+    // resulting config_option_update (which routes back through
+    // maybeApplySavedEffortDefault). Loop-safe: applying effortLevel re-emits a
+    // config_option_update with the SAME model id, so prev === current and the
+    // guard is NOT reset — only a genuine id change re-arms. The undefined→id
+    // transition (initial/late model resolution) also does not reset, since the
+    // guard already starts false for a fresh session.
+    if (prevModelId !== undefined && prevModelId !== this.currentModelId) {
+      this.effortDefaultApplied = false;
+    }
   }
 
   /**
@@ -4774,6 +4949,65 @@ export class KasAcpClient extends BaseAcpClient {
     }
     this.effortOptions = effortOpt.options;
     this.currentEffortLevel = effortOpt.currentValue;
+  }
+
+  /**
+   * Apply the saved per-model effort default for the current model, if any, by
+   * issuing a `setSessionConfigOption('effortLevel', ...)`. Mirrors v2's
+   * settings-driven effort override so a default set in either engine carries
+   * over (read via {@link readSavedEffortDefault} from `chat.modelDefaults`).
+   *
+   * No-ops unless this session is eligible (`applyEffortDefaultForSession`),
+   * the model + effort caches are populated, a saved value exists for the
+   * current model, the level is advertised, and it differs from the current
+   * level. Sets the apply-once guard at the moment of applying so the
+   * config_option_update KAS re-emits in response cannot re-enter and loop.
+   *
+   * `opts.fromModelSwitch` flags a deliberate mid-session `/model` switch
+   * (see `executeModelSwap`). It bypasses ONLY the
+   * `applyEffortDefaultForSession` session-start eligibility check so the new
+   * model's saved per-model default applies on EVERY switch, matching v2 —
+   * even in a resumed session or one started with `--effort`, both of which
+   * leave the flag false. Every other gate is preserved: the apply-once
+   * (`effortDefaultApplied`) guard still holds (kept for loop-safety so the
+   * echoed config_option_update after our effortLevel write — same model id,
+   * no guard re-arm — early-returns via the no-`fromModelSwitch` handler path),
+   * the no-saved-default early return, the already-at-level idempotency no-op,
+   * and the level-validity check. The startup + config_option_update callers
+   * omit the flag and keep the full gate, so a resumed session's restored
+   * effort is never overridden at load and an explicit `--effort` still wins.
+   */
+  private async maybeApplySavedEffortDefault(opts?: {
+    fromModelSwitch?: boolean;
+  }): Promise<void> {
+    if (!opts?.fromModelSwitch && !this.applyEffortDefaultForSession) return;
+    if (this.effortDefaultApplied) return;
+    if (!this.sessionId || !this.currentModelId) return;
+    if (this.effortOptions.length === 0) return;
+    const saved = readSavedEffortDefault(this.currentModelId);
+    if (!saved) return;
+    if (!this.effortOptions.some((o) => o.value === saved)) return;
+    if (this.currentEffortLevel === saved) {
+      // Already at the saved level — nothing to do, but mark applied so a
+      // later config_option_update doesn't keep re-checking.
+      this.effortDefaultApplied = true;
+      return;
+    }
+    // Set the guard BEFORE the call: setSessionConfigOption may synchronously
+    // (re-entrantly) trigger a config_option_update that would otherwise loop.
+    this.effortDefaultApplied = true;
+    try {
+      const resp = await this.kiroClient.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId: 'effortLevel',
+        value: saved,
+      });
+      const configOptions = (resp as { configOptions?: unknown }).configOptions;
+      this.refreshEffortCache(configOptions);
+      this.broadcastEffortFromConfigOptions(configOptions);
+    } catch (e) {
+      logger.debug('Failed to apply saved effort default:', e);
+    }
   }
 
   /**
@@ -5465,7 +5699,11 @@ export function executePaste(): CommandResult {
 export function createAcpClient(
   agentPath: string,
   extraAcpArgs: string[] = [],
-  kasOptions?: { initialAgent?: string; initialModel?: string }
+  kasOptions?: {
+    initialAgent?: string;
+    initialModel?: string;
+    hasExplicitEffort?: boolean;
+  }
 ): SessionClient {
   if (resolveAgentEngine() === 'kas') {
     // Test-only: inject an in-process mock transport when the harness set

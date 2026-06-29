@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-03
-  commit: 28e17b5ed
+  validated: 2026-06-26
+  commit: f49c99c49
   status: validated
   testable_headless: true
   category: slash_command
   title: /model
   description: Select AI model for current conversation session
-  keywords: [model, ai, claude, select, switch, autocomplete, default]
-  related: [default-model, cmd-chat]
+  keywords: [model, ai, claude, select, switch, autocomplete, default, sticky]
+  related: [default-model, cmd-chat, disable-auto-default-model]
 ---
 
 # /model
@@ -17,7 +17,7 @@ Select AI model for current conversation session.
 
 ## Overview
 
-The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and are automatically saved as your default for future sessions.
+The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and are automatically saved as your default for future sessions (disable with `chat.disableAutoDefaultModel`).
 
 ## Usage
 
@@ -166,6 +166,7 @@ Run `/model` without arguments to see the interactive picker with all available 
 ## Related
 
 - [chat.defaultModel](../settings/default-model.md) - Set default model
+- [chat.disableAutoDefaultModel](../settings/disable-auto-default-model.md) - Disable auto-saving model
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
 - [/usage](usage.md) - Check account usage
 
@@ -194,4 +195,4 @@ Run `/model` without arguments to see the interactive picker with all available 
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
-**Persistence**: Model selection is automatically saved as your default. When resuming, the saved model is restored.
+**Persistence**: Model selection is automatically saved as your default (disable with `chat.disableAutoDefaultModel`). When resuming, the saved model is restored.
