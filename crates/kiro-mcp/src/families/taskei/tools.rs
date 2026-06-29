@@ -123,7 +123,7 @@ pub fn decorate_with_overlay(tools: Vec<Tool>) -> Vec<Tool> {
     let table = overlay_table();
     tools
         .into_iter()
-        .map(|tool| {
+        .map(|mut tool| {
             let name = tool.name.as_ref();
             match table.get(name) {
                 Some(overlay) => {
@@ -131,10 +131,8 @@ pub fn decorate_with_overlay(tools: Vec<Tool>) -> Vec<Tool> {
                         .read_only(overlay.read_only)
                         .destructive(overlay.destructive)
                         .idempotent(overlay.idempotent);
-                    Tool {
-                        annotations: Some(annotations),
-                        ..tool
-                    }
+                    tool.annotations = Some(annotations);
+                    tool
                 },
                 // Unknown tools — gateway helper or a new addition.
                 // Pass through unchanged. The schema-pin fixture
@@ -184,17 +182,11 @@ mod tests {
 
     fn raw_tool(name: &str) -> Tool {
         let schema = json!({ "type": "object" });
-        Tool {
-            name: name.to_string().into(),
-            title: None,
-            description: None,
-            input_schema: Arc::new(serde_json::from_value(schema).unwrap()),
-            output_schema: None,
-            annotations: None,
-            execution: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new_with_raw(
+            name.to_string(),
+            None,
+            Arc::new(serde_json::from_value(schema).unwrap()),
+        )
     }
 
     fn ann_of(tool: &Tool) -> &ToolAnnotations {

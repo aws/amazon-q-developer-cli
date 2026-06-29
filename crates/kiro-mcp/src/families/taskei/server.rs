@@ -158,11 +158,10 @@ impl TaskeiServer {
 
 impl ServerHandler for TaskeiServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some(INSTRUCTIONS.to_string()),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.instructions = Some(INSTRUCTIONS.to_string());
+        info
     }
 
     async fn list_tools(
@@ -289,17 +288,11 @@ mod tests {
     }
 
     fn raw_tool(name: &str) -> Tool {
-        Tool {
-            name: name.to_string().into(),
-            title: None,
-            description: None,
-            input_schema: Arc::new(serde_json::from_value(json!({ "type": "object" })).unwrap()),
-            output_schema: None,
-            annotations: None,
-            execution: None,
-            icons: None,
-            meta: None,
-        }
+        Tool::new_with_raw(
+            name.to_string(),
+            None,
+            Arc::new(serde_json::from_value(json!({ "type": "object" })).unwrap()),
+        )
     }
 
     #[tokio::test]

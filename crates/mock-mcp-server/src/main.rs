@@ -105,11 +105,10 @@ impl MockMcpServer {
 
 impl ServerHandler for MockMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some("Mock MCP server for testing".to_string()),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.instructions = Some("Mock MCP server for testing".to_string());
+        info
     }
 
     async fn list_tools(
@@ -120,16 +119,12 @@ impl ServerHandler for MockMcpServer {
         let tools = self
             .tools
             .iter()
-            .map(|t| Tool {
-                name: t.name.clone().into(),
-                description: Some(t.description.clone().into()),
-                input_schema: Arc::new(serde_json::from_value(t.input_schema.clone()).unwrap_or_default()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
+            .map(|t| {
+                Tool::new(
+                    t.name.clone(),
+                    t.description.clone(),
+                    Arc::new(serde_json::from_value(t.input_schema.clone()).unwrap_or_default()),
+                )
             })
             .collect();
 
@@ -145,7 +140,7 @@ impl ServerHandler for MockMcpServer {
 
         if let Some(response) = find_response(&self.responses, tool_name, &request.arguments) {
             let text = serde_json::to_string_pretty(&response).unwrap_or_default();
-            Ok(CallToolResult::success(vec![Content::text(text)]))
+            Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
         } else {
             Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,

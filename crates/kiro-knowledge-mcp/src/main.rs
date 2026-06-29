@@ -47,11 +47,10 @@ struct KnowledgeServer {
 
 impl ServerHandler for KnowledgeServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some("Search the kiro-cli documentation, GitHub issues, and release notes.".to_string()),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.instructions = Some("Search the kiro-cli documentation, GitHub issues, and release notes.".to_string());
+        info
     }
 
     async fn list_tools(
@@ -72,19 +71,11 @@ impl ServerHandler for KnowledgeServer {
             },
             "required": ["query"]
         });
-        let tool = Tool {
-            name: "search_kiro_knowledge".to_string().into(),
-            description: Some(
-                "Search the kiro-cli documentation, GitHub issues, and release notes for relevant context. Use this whenever the user asks about kiro-cli behavior, errors, or how-tos before answering.".to_string().into()
-            ),
-            input_schema: Arc::new(serde_json::from_value(schema).expect("static schema is valid")),
-            output_schema: None,
-            annotations: None,
-            execution: None,
-            icons: None,
-            title: None,
-            meta: None,
-        };
+        let tool = Tool::new(
+            "search_kiro_knowledge",
+            "Search the kiro-cli documentation, GitHub issues, and release notes for relevant context. Use this whenever the user asks about kiro-cli behavior, errors, or how-tos before answering.",
+            Arc::new(serde_json::from_value(schema).expect("static schema is valid")),
+        );
         Ok(ListToolsResult::with_all_items(vec![tool]))
     }
 
@@ -126,12 +117,7 @@ impl ServerHandler for KnowledgeServer {
 
         let text = format_chunks(&chunks);
 
-        Ok(CallToolResult {
-            content: vec![Content::text(text)],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        })
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 }
 

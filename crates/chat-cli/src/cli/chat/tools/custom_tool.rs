@@ -491,12 +491,8 @@ impl CustomTool {
             eyre::bail!(msg);
         }
 
-        let params = CallToolRequestParams {
-            name: Cow::from(self.name.clone()),
-            arguments: self.params.clone(),
-            meta: None,
-            task: None,
-        };
+        let mut params = CallToolRequestParams::new(Cow::from(self.name.clone()));
+        params.arguments = self.params.clone();
 
         let resp = match self.client.call_tool(params.clone()).await {
             Ok(resp) => resp,

@@ -441,11 +441,10 @@ impl McpServerActor {
                 let message_tx = self.message_tx.clone();
                 tokio::spawn(async move {
                     let result = service_handle
-                        .call_tool(CallToolRequestParams {
-                            name: name.into(),
-                            arguments: args,
-                            meta: None,
-                            task: None,
+                        .call_tool({
+                            let mut params = CallToolRequestParams::new(name);
+                            params.arguments = args;
+                            params
                         })
                         .await
                         .map_err(McpServerActorError::from);
@@ -1521,17 +1520,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_mcp_message_tools_ok() {
         let (mut actor, mut event_rx) = make_test_actor();
-        let tools = vec![RmcpTool {
-            name: "new_tool".into(),
-            description: Some("new desc".into()),
-            input_schema: Arc::new(serde_json::Map::new()),
-            output_schema: None,
-            annotations: None,
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        }];
+        let tools = vec![RmcpTool::new("new_tool", "new desc", Arc::new(serde_json::Map::new()))];
         actor.handle_mcp_message(Some(McpMessage::Tools(Ok(tools)))).await;
         assert_eq!(actor.tools.len(), 1);
         assert_eq!(actor.tools[0].name, "new_tool");
@@ -1558,14 +1547,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_mcp_message_prompts_ok() {
         let (mut actor, _event_rx) = make_test_actor();
-        let prompts = vec![RmcpPrompt {
-            name: "new_prompt".into(),
-            description: Some("new desc".into()),
-            arguments: None,
-            title: None,
-            icons: None,
-            meta: None,
-        }];
+        let prompts = vec![RmcpPrompt::new("new_prompt", Some("new desc"), None)];
         actor.handle_mcp_message(Some(McpMessage::Prompts(Ok(prompts)))).await;
         assert_eq!(actor.prompts.len(), 1);
         assert_eq!(actor.prompts[0].name, "new_prompt");
@@ -1809,17 +1791,11 @@ mod tests {
         tokio::spawn(async move {
             // Send a tools update message
             message_tx
-                .send(McpMessage::Tools(Ok(vec![RmcpTool {
-                    name: "dynamic_tool".into(),
-                    description: Some("dynamic".into()),
-                    input_schema: Arc::new(serde_json::Map::new()),
-                    output_schema: None,
-                    annotations: None,
-                    title: None,
-                    icons: None,
-                    execution: None,
-                    meta: None,
-                }])))
+                .send(McpMessage::Tools(Ok(vec![RmcpTool::new(
+                    "dynamic_tool",
+                    "dynamic",
+                    Arc::new(serde_json::Map::new()),
+                )])))
                 .await
                 .unwrap();
             // Give actor time to process the message

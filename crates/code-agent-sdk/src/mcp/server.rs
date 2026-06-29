@@ -6,7 +6,7 @@ use rmcp::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams,
     CallToolResult,
-    Content,
+    ContentBlock,
     ErrorCode,
     ErrorData,
     ListToolsResult,
@@ -73,11 +73,10 @@ impl Default for CodeIntelligenceServer {
 
 impl ServerHandler for CodeIntelligenceServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some("Code Intelligence MCP server using LSP integration".to_string()),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.instructions = Some("Code Intelligence MCP server using LSP integration".to_string());
+        info
     }
 
     async fn list_tools(
@@ -86,38 +85,26 @@ impl ServerHandler for CodeIntelligenceServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let tools = vec![
-            Tool {
-                name: "workspace_status".into(),
-                description: Some("Get workspace languages and available language servers. Example: workspace_status() returns detected languages like ['rust', 'typescript'] and available LSPs.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            Tool::new(
+                "workspace_status",
+                "Get workspace languages and available language servers. Example: workspace_status() returns detected languages like ['rust', 'typescript'] and available LSPs.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {}
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "initialize_workspace".into(),
-                description: Some("Initialize language servers for workspace (optional - auto-called when needed). Example: initialize_workspace() starts all detected language servers.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "initialize_workspace",
+                "Initialize language servers for workspace (optional - auto-called when needed). Example: initialize_workspace() starts all detected language servers.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {}
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "search_symbols".into(),
-                description: Some("Search for symbols using fuzzy matching. Examples: search_symbols({\"symbol_name\": \"calculateSum\"}) finds functions like 'calc_sum'. Use file_path to limit search to specific file.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "search_symbols",
+                "Search for symbols using fuzzy matching. Examples: search_symbols({\"symbol_name\": \"calculateSum\"}) finds functions like 'calc_sum'. Use file_path to limit search to specific file.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "symbol_name": {
@@ -145,17 +132,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["symbol_name"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "lookup_symbols".into(),
-                description: Some("Get symbols by exact names for existence checking. Example: lookup_symbols({\"symbols\": [\"main\", \"init\"]}) returns details for those specific symbols.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "lookup_symbols",
+                "Get symbols by exact names for existence checking. Example: lookup_symbols({\"symbols\": [\"main\", \"init\"]}) returns details for those specific symbols.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "symbols": {
@@ -170,17 +151,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["symbols"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "get_document_symbols".into(),
-                description: Some("Get symbols from a document/file. By default returns only top-level symbols (structs, enums, impl blocks). Set top_level_only=false to include nested methods and functions. Example: get_document_symbols({\"file_path\": \"src/main.rs\", \"top_level_only\": false})".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "get_document_symbols",
+                "Get symbols from a document/file. By default returns only top-level symbols (structs, enums, impl blocks). Set top_level_only=false to include nested methods and functions. Example: get_document_symbols({\"file_path\": \"src/main.rs\", \"top_level_only\": false})",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
@@ -195,17 +170,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["file_path"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "goto_definition".into(),
-                description: Some("Navigate to symbol definition. Example: goto_definition({\"file_path\": \"src/main.rs\", \"line\": 10, \"character\": 5}) finds where the symbol at line 10, column 5 is defined.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "goto_definition",
+                "Navigate to symbol definition. Example: goto_definition({\"file_path\": \"src/main.rs\", \"line\": 10, \"character\": 5}) finds where the symbol at line 10, column 5 is defined.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
@@ -228,17 +197,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["file_path", "row", "column"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "find_references".into(),
-                description: Some("Find all references to a symbol at a specific location. Example: find_references({\"file_path\": \"src/main.rs\", \"line\": 5, \"column\": 10}) finds all uses of the symbol at that position.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "find_references",
+                "Find all references to a symbol at a specific location. Example: find_references({\"file_path\": \"src/main.rs\", \"line\": 5, \"column\": 10}) finds all uses of the symbol at that position.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
@@ -256,17 +219,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["file_path", "row", "column"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "search_references".into(),
-                description: Some("Find all references to a symbol by name. Example: search_references({\"symbol_name\": \"myFunction\"}) finds all places where 'myFunction' is used.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "search_references",
+                "Find all references to a symbol by name. Example: search_references({\"symbol_name\": \"myFunction\"}) finds all places where 'myFunction' is used.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "symbol_name": {
@@ -276,17 +233,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["symbol_name"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "rename_symbol".into(),
-                description: Some("Rename a symbol with workspace-wide updates. Example: rename_symbol({\"file_path\": \"src/main.rs\", \"start_row\": 5, \"start_column\": 10, \"new_name\": \"newName\", \"dry_run\": true}) previews renaming the symbol.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "rename_symbol",
+                "Rename a symbol with workspace-wide updates. Example: rename_symbol({\"file_path\": \"src/main.rs\", \"start_row\": 5, \"start_column\": 10, \"new_name\": \"newName\", \"dry_run\": true}) previews renaming the symbol.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
@@ -313,17 +264,11 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["file_path", "row", "column", "new_name"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
-            Tool {
-                name: "format_code".into(),
-                description: Some("Format code in a file using the appropriate language server. Example: format_code({\"file_path\": \"src/main.rs\", \"tab_size\": 2}) formats the file with 2-space indentation.".into()),
-                input_schema: Arc::new(serde_json::from_value(json!({
+            ),
+            Tool::new(
+                "format_code",
+                "Format code in a file using the appropriate language server. Example: format_code({\"file_path\": \"src/main.rs\", \"tab_size\": 2}) formats the file with 2-space indentation.",
+                Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
@@ -343,13 +288,7 @@ impl ServerHandler for CodeIntelligenceServer {
                     },
                     "required": ["file_path"]
                 })).unwrap()),
-                output_schema: None,
-                annotations: None,
-                execution: None,
-                icons: None,
-                title: None,
-                meta: None,
-            },
+            ),
         ];
 
         Ok(ListToolsResult {
@@ -404,7 +343,7 @@ impl CodeIntelligenceServer {
             })).collect::<Vec<_>>()
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -429,7 +368,7 @@ impl CodeIntelligenceServer {
             })
         };
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -494,7 +433,7 @@ impl CodeIntelligenceServer {
             }
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -543,7 +482,7 @@ impl CodeIntelligenceServer {
             })).collect::<Vec<_>>()
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -592,7 +531,7 @@ impl CodeIntelligenceServer {
             })).collect::<Vec<_>>()
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -647,7 +586,7 @@ impl CodeIntelligenceServer {
             })
         };
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -705,7 +644,7 @@ impl CodeIntelligenceServer {
             "total_count": references.total_count
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -749,7 +688,7 @@ impl CodeIntelligenceServer {
             "total_count": references.total_count
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -819,7 +758,7 @@ impl CodeIntelligenceServer {
             })
         };
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }
@@ -862,7 +801,7 @@ impl CodeIntelligenceServer {
             "formatted": edits
         });
 
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             serde_json::to_string_pretty(&response).unwrap(),
         )]))
     }

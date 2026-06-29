@@ -1388,11 +1388,8 @@ impl ToolManager {
 
                     let arguments = Self::process_prompt_arguments(&prompt_get.arguments, &arguments);
 
-                    let params = GetPromptRequestParams {
-                        name: prompt_name.clone(),
-                        arguments,
-                        meta: None,
-                    };
+                    let mut params = GetPromptRequestParams::new(prompt_name.clone());
+                    params.arguments = arguments;
                     let running_service = client.get_running_service().await?;
                     let resp = running_service.get_prompt(params).await?;
 
@@ -2525,14 +2522,7 @@ mod tests {
     #[test]
     fn test_prompt_bundle_server_matching() {
         // Create mock prompt bundles
-        let prompt = rmcp::model::Prompt {
-            name: "test_prompt".to_string(),
-            description: Some("Test description".to_string()),
-            title: None,
-            icons: None,
-            arguments: None,
-            meta: None,
-        };
+        let prompt = rmcp::model::Prompt::new("test_prompt", Some("Test description"), None);
 
         let bundle1 = PromptBundle {
             server_name: "server1".to_string(),
@@ -2568,11 +2558,7 @@ mod tests {
         let prompt_name = prompt_name.unwrap();
 
         // This is what should be passed to MCP server
-        let params = GetPromptRequestParams {
-            name: prompt_name.clone(),
-            arguments: None,
-            meta: None,
-        };
+        let params = GetPromptRequestParams::new(prompt_name.clone());
 
         assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"
         assert_eq!(server_name, Some("example-server".to_string()));
@@ -2589,12 +2575,11 @@ mod tests {
         assert_eq!(result, None);
 
         // Test Case 2: Schema exists but no user args - should return empty map
-        let optional_schema = Some(vec![PromptArgument {
-            name: "optional_param".to_string(),
-            description: Some("An optional parameter".to_string()),
-            title: None,
-            required: Some(false),
-        }]);
+        let optional_schema = Some(vec![
+            PromptArgument::new("optional_param")
+                .with_description("An optional parameter")
+                .with_required(false),
+        ]);
         let result = ToolManager::process_prompt_arguments(&optional_schema, &no_user_args);
         assert_eq!(result, Some(serde_json::Map::new()));
 

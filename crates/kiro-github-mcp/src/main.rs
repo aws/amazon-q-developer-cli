@@ -74,15 +74,14 @@ struct GithubServer {
 
 impl ServerHandler for GithubServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some(
-                "Search GitHub issues for kiro-cli, and (when --scope=write) file new issues or post comments. \
-                 Always confirm with the user before using a write tool."
-                    .to_string(),
-            ),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.instructions = Some(
+            "Search GitHub issues for kiro-cli, and (when --scope=write) file new issues or post comments. \
+             Always confirm with the user before using a write tool."
+                .to_string(),
+        );
+        info
     }
 
     async fn list_tools(
@@ -215,19 +214,11 @@ fn tool_search_issues() -> Tool {
         },
         "required": ["query"]
     });
-    Tool {
-        name: "search_github_issues".to_string().into(),
-        description: Some(
-            "Search GitHub issues / PRs for the kiro-cli repo by keyword. Returns the top-N matches with title, state, URL, and an excerpt.".to_string().into(),
-        ),
-        input_schema: Arc::new(serde_json::from_value(schema).expect("static schema")),
-        output_schema: None,
-        annotations: None,
-        execution: None,
-        icons: None,
-        title: None,
-        meta: None,
-    }
+    Tool::new(
+        "search_github_issues",
+        "Search GitHub issues / PRs for the kiro-cli repo by keyword. Returns the top-N matches with title, state, URL, and an excerpt.",
+        Arc::new(serde_json::from_value(schema).expect("static schema")),
+    )
 }
 
 fn tool_create_issue() -> Tool {
@@ -241,19 +232,11 @@ fn tool_create_issue() -> Tool {
         },
         "required": ["title", "body"]
     });
-    Tool {
-        name: "create_github_issue".to_string().into(),
-        description: Some(
-            "File a new GitHub issue. The bot must always confirm with the user via reaction before invoking this tool.".to_string().into(),
-        ),
-        input_schema: Arc::new(serde_json::from_value(schema).expect("static schema")),
-        output_schema: None,
-        annotations: None,
-        execution: None,
-        icons: None,
-        title: None,
-        meta: None,
-    }
+    Tool::new(
+        "create_github_issue",
+        "File a new GitHub issue. The bot must always confirm with the user via reaction before invoking this tool.",
+        Arc::new(serde_json::from_value(schema).expect("static schema")),
+    )
 }
 
 fn tool_comment_on_existing() -> Tool {
@@ -266,29 +249,18 @@ fn tool_comment_on_existing() -> Tool {
         },
         "required": ["number", "body"]
     });
-    Tool {
-        name: "comment_on_existing".to_string().into(),
-        description: Some(
-            "Add a comment to an existing GitHub issue or PR. The bot must always confirm with the user via reaction before invoking this tool.".to_string().into(),
-        ),
-        input_schema: Arc::new(serde_json::from_value(schema).expect("static schema")),
-        output_schema: None,
-        annotations: None,
-        execution: None,
-        icons: None,
-        title: None,
-        meta: None,
-    }
+    Tool::new(
+        "comment_on_existing",
+        "Add a comment to an existing GitHub issue or PR. The bot must always confirm with the user via reaction before invoking this tool.",
+        Arc::new(serde_json::from_value(schema).expect("static schema")),
+    )
 }
 
 fn json_result(value: serde_json::Value) -> CallToolResult {
     let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
-    CallToolResult {
-        content: vec![Content::text(text)],
-        structured_content: Some(value),
-        is_error: Some(false),
-        meta: None,
-    }
+    let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
+    result.structured_content = Some(value);
+    result
 }
 
 #[tokio::main]

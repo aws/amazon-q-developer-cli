@@ -15,7 +15,7 @@ use crossterm::{
 use eyre::Result;
 use rmcp::model::{
     PromptMessage,
-    PromptMessageRole,
+    Role,
 };
 use serde::{
     Deserialize,
@@ -767,22 +767,23 @@ impl ConversationState {
     /// It asserts that the collection ends with a prompt that assumes the role of user.
     pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        debug_assert!(prompts.back().is_some_and(|p| p.role == PromptMessageRole::User));
+        debug_assert!(prompts.back().is_some_and(|p| p.role == Role::User));
         let last_msg = prompts.pop_back()?;
         let (mut candidate_user, mut candidate_asst) = (None::<UserMessage>, None::<AssistantMessage>);
         while let Some(prompt_msg) = prompts.pop_front() {
             let PromptMessage {
                 role,
                 content: prompt_msg_content,
+                ..
             } = prompt_msg;
             let content_str = crate::cli::chat::cli::prompts::stringify_prompt_content(&prompt_msg_content);
 
             match role {
-                PromptMessageRole::User => {
+                Role::User => {
                     let user_msg = UserMessage::new_prompt(content_str, None);
                     candidate_user.replace(user_msg);
                 },
-                PromptMessageRole::Assistant => {
+                Role::Assistant => {
                     let assistant_msg = AssistantMessage::new_response(None, content_str);
                     candidate_asst.replace(assistant_msg);
                 },

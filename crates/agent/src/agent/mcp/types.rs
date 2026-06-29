@@ -78,17 +78,7 @@ mod tests {
 
     #[test]
     fn test_tool_spec_from_rmcp_tool_full() {
-        let tool = RmcpTool {
-            name: "my_tool".into(),
-            description: Some("A useful tool".into()),
-            input_schema: Arc::new(Map::new()),
-            output_schema: None,
-            annotations: None,
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        };
+        let tool = RmcpTool::new("my_tool", "A useful tool", Arc::new(Map::new()));
         let spec: ToolSpec = tool.into();
         assert_eq!(spec.name, "my_tool");
         assert_eq!(spec.description, "A useful tool");
@@ -96,17 +86,7 @@ mod tests {
 
     #[test]
     fn test_tool_spec_from_rmcp_tool_no_description() {
-        let tool = RmcpTool {
-            name: "tool".into(),
-            description: None,
-            input_schema: Arc::new(Map::new()),
-            output_schema: None,
-            annotations: None,
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        };
+        let tool = RmcpTool::new_with_raw("tool", None, Arc::new(Map::new()));
         let spec: ToolSpec = tool.into();
         assert_eq!(spec.name, "tool");
         assert_eq!(spec.description, "");
@@ -160,12 +140,9 @@ mod tests {
 
     #[test]
     fn test_prompt_argument_from_rmcp() {
-        let arg = RmcpPromptArgument {
-            name: "topic".to_string(),
-            description: Some("Topic of summary".to_string()),
-            required: Some(true),
-            title: None,
-        };
+        let arg = RmcpPromptArgument::new("topic")
+            .with_description("Topic of summary")
+            .with_required(true);
         let result: PromptArgument = arg.into();
         assert_eq!(result.name, "topic");
         assert_eq!(result.description, Some("Topic of summary".to_string()));
@@ -174,12 +151,7 @@ mod tests {
 
     #[test]
     fn test_prompt_argument_from_rmcp_minimal() {
-        let arg = RmcpPromptArgument {
-            name: "x".to_string(),
-            description: None,
-            required: None,
-            title: None,
-        };
+        let arg = RmcpPromptArgument::new("x");
         let result: PromptArgument = arg.into();
         assert_eq!(result.name, "x");
         assert_eq!(result.description, None);
@@ -188,14 +160,7 @@ mod tests {
 
     #[test]
     fn test_prompt_from_rmcp_minimal() {
-        let prompt = RmcpPrompt {
-            name: "code_review".to_string(),
-            description: None,
-            arguments: None,
-            title: None,
-            icons: None,
-            meta: None,
-        };
+        let prompt = RmcpPrompt::new("code_review", None::<String>, None);
         let result: Prompt = prompt.into();
         assert_eq!(result.name, "code_review");
         assert_eq!(result.description, None);
@@ -204,19 +169,15 @@ mod tests {
 
     #[test]
     fn test_prompt_from_rmcp_full() {
-        let prompt = RmcpPrompt {
-            name: "explain".to_string(),
-            description: Some("Explain code".to_string()),
-            arguments: Some(vec![RmcpPromptArgument {
-                name: "code".to_string(),
-                description: Some("Code to explain".to_string()),
-                required: Some(true),
-                title: None,
-            }]),
-            title: None,
-            icons: None,
-            meta: None,
-        };
+        let prompt = RmcpPrompt::new(
+            "explain",
+            Some("Explain code"),
+            Some(vec![
+                RmcpPromptArgument::new("code")
+                    .with_description("Code to explain")
+                    .with_required(true),
+            ]),
+        );
         let result: Prompt = prompt.into();
         assert_eq!(result.name, "explain");
         assert_eq!(result.description, Some("Explain code".to_string()));

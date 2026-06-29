@@ -367,25 +367,15 @@ mod tests {
     fn tool_with(name: &str, schema: Value, read_only: Option<bool>, destructive: Option<bool>) -> Tool {
         let annotations = match (read_only, destructive) {
             (None, None) => None,
-            (r, d) => Some(ToolAnnotations {
-                title: None,
-                read_only_hint: r,
-                destructive_hint: d,
-                idempotent_hint: None,
-                open_world_hint: None,
-            }),
+            (r, d) => Some(ToolAnnotations::from_raw(None, r, d, None, None)),
         };
-        Tool {
-            name: name.to_string().into(),
-            title: None,
-            description: None,
-            input_schema: Arc::new(serde_json::from_value(schema).unwrap()),
-            output_schema: None,
-            annotations,
-            execution: None,
-            icons: None,
-            meta: None,
-        }
+        let mut tool = Tool::new_with_raw(
+            name.to_string(),
+            None,
+            Arc::new(serde_json::from_value(schema).unwrap()),
+        );
+        tool.annotations = annotations;
+        tool
     }
 
     #[test]

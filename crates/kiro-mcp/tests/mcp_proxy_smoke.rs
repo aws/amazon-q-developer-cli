@@ -241,7 +241,7 @@ async fn call_read_tool_remote_forwards_args_and_decodes_result() {
         result
             .content
             .iter()
-            .any(|c| matches!(&c.raw, rmcp::model::RawContent::Text(t) if t.text == "ok"))
+            .any(|c| matches!(c, rmcp::model::ContentBlock::Text(t) if t.text == "ok"))
     );
 
     let req = &captured.snapshot()[0];

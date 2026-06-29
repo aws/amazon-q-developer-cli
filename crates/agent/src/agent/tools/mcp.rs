@@ -116,13 +116,7 @@ mod tests {
 
     #[test]
     fn from_rmcp_copies_hints() {
-        let rmcp = RmcpToolAnnotations {
-            title: Some("ignored".into()),
-            read_only_hint: Some(true),
-            destructive_hint: Some(false),
-            idempotent_hint: Some(true),
-            open_world_hint: None,
-        };
+        let rmcp = RmcpToolAnnotations::from_raw(Some("ignored".into()), Some(true), Some(false), Some(true), None);
         let ours: McpToolAnnotations = (&rmcp).into();
         assert_eq!(ours.read_only_hint, Some(true));
         assert_eq!(ours.destructive_hint, Some(false));

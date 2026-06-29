@@ -23,9 +23,9 @@ use crossterm::{
 };
 use regex::Regex;
 use rmcp::model::{
+    ContentBlock,
     PromptMessage,
-    PromptMessageContent,
-    PromptMessageRole,
+    Role,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -227,10 +227,7 @@ pub async fn resolve_prompt_reference(
 ) -> Result<Vec<PromptMessage>, GetPromptError> {
     let file_prompts = FilePrompts::new(name, os)?;
     if let Some((content, _)) = file_prompts.load_existing()? {
-        return Ok(vec![PromptMessage {
-            role: PromptMessageRole::User,
-            content: PromptMessageContent::Text { text: content },
-        }]);
+        return Ok(vec![PromptMessage::new_text(Role::User, content)]);
     }
     let result = tool_manager.get_prompt(name.to_string(), arguments).await?;
     Ok(result.messages)
@@ -1368,10 +1365,7 @@ impl PromptsSubcommand {
             session.pending_prompts.clear();
 
             // Create a PromptMessage from the local prompt content
-            let prompt_message = PromptMessage {
-                role: PromptMessageRole::User,
-                content: PromptMessageContent::Text { text: content.clone() },
-            };
+            let prompt_message = PromptMessage::new_text(Role::User, content.clone());
             session.pending_prompts.push_back(prompt_message);
 
             return Ok(ChatState::HandleInput {
@@ -2016,11 +2010,12 @@ impl PromptsSubcommand {
 
 /// Convert a PromptMessageContent to its text representation for model input.
 /// Matches the serialization used by `conversation.rs::append_prompts`.
-pub fn stringify_prompt_content(content: &PromptMessageContent) -> String {
+pub fn stringify_prompt_content(content: &ContentBlock) -> String {
     match content {
-        PromptMessageContent::Text { text } => text.clone(),
-        PromptMessageContent::Image { image } => image.raw.data.clone(),
-        PromptMessageContent::Resource { resource } => match &resource.raw.resource {
+        ContentBlock::Text(text) => text.text.clone(),
+        ContentBlock::Image(image) => image.data.clone(),
+        ContentBlock::Audio(audio) => audio.data.clone(),
+        ContentBlock::Resource(resource) => match &resource.resource {
             rmcp::model::ResourceContents::TextResourceContents {
                 uri, mime_type, text, ..
             } => {
@@ -2033,11 +2028,12 @@ pub fn stringify_prompt_content(content: &PromptMessageContent) -> String {
                 let mime_type = mime_type.as_deref().unwrap_or("unknown");
                 format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
             },
+            _ => String::new(),
         },
-        PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
-            "Resource link with uri: {}, name: {}",
-            link.raw.uri, link.raw.name
-        )),
+        ContentBlock::ResourceLink(link) => {
+            serde_json::to_string(&link).unwrap_or(format!("Resource link with uri: {}, name: {}", link.uri, link.name))
+        },
+        _ => String::new(),
     }
 }
 
@@ -2508,27 +2504,20 @@ mod tests {
     #[test]
     fn test_prompt_bundle_filtering() {
         // Create mock prompt bundles
-        let prompt1 = rmcp::model::Prompt {
-            name: "test_prompt".to_string(),
-            description: Some("Test description".to_string()),
-            title: Some("Test Prompt".to_string()),
-            icons: None,
-            arguments: Some(vec![
-                PromptArgument {
-                    name: "arg1".to_string(),
-                    description: Some("First argument".to_string()),
-                    title: Some("Argument 1".to_string()),
-                    required: Some(true),
-                },
-                PromptArgument {
-                    name: "arg2".to_string(),
-                    title: Some("Argument 2".to_string()),
-                    description: None,
-                    required: Some(false),
-                },
+        let prompt1 = rmcp::model::Prompt::new(
+            "test_prompt",
+            Some("Test description"),
+            Some(vec![
+                PromptArgument::new("arg1")
+                    .with_description("First argument")
+                    .with_title("Argument 1")
+                    .with_required(true),
+                PromptArgument::new("arg2")
+                    .with_title("Argument 2")
+                    .with_required(false),
             ]),
-            meta: None,
-        };
+        )
+        .with_title("Test Prompt");
 
         let bundle1 = PromptBundle {
             server_name: "server1".to_string(),

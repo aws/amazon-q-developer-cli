@@ -7,6 +7,7 @@ use std::time::{
 };
 
 use rmcp::RoleClient;
+#[allow(deprecated)]
 use rmcp::model::{
     CallToolRequestParams,
     CallToolResult,
@@ -280,7 +281,7 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerRequest::ListRootsRequest(_) => {
                 Err(rmcp::ErrorData::method_not_found::<rmcp::model::ListRootsRequestMethod>())
             },
-            ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+            ServerRequest::ElicitRequest(_) => Err(rmcp::ErrorData::method_not_found::<
                 rmcp::model::ElicitationCreateRequestMethod,
             >()),
             ServerRequest::CustomRequest(req) => Err(rmcp::ErrorData::new(
@@ -291,6 +292,7 @@ impl rmcp::Service<RoleClient> for McpService {
         }
     }
 
+    #[allow(deprecated)]
     async fn handle_notification(
         &self,
         notification: <RoleClient as rmcp::service::ServiceRole>::PeerNot,
@@ -332,7 +334,8 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
-            ServerNotification::ElicitationCompletionNotification(_) => (),
+            ServerNotification::ElicitationCompleteNotification(_) => (),
+            ServerNotification::TaskStatusNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
         }
         Ok(())
@@ -340,16 +343,7 @@ impl rmcp::Service<RoleClient> for McpService {
 
     fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
         // send from client to server, so that the server knows what capabilities we support.
-        ClientInfo {
-            protocol_version: Default::default(),
-            capabilities: Default::default(),
-            client_info: Implementation {
-                name: "Q DEV CLI".to_string(),
-                version: "1.0.0".to_string(),
-                ..Default::default()
-            },
-            meta: None,
-        }
+        ClientInfo::new(Default::default(), Implementation::new("Q DEV CLI", "1.0.0"))
     }
 }
 
@@ -551,11 +545,8 @@ impl RunningMcpService {
             )
         };
 
-        let params = GetPromptRequestParams {
-            name,
-            arguments: arguments_map,
-            meta: None,
-        };
+        let mut params = GetPromptRequestParams::new(name);
+        params.arguments = arguments_map;
 
         let first_attempt = match &self.running_service {
             InnerService::Original(rs) => rs.get_prompt(params.clone()).await,
@@ -846,45 +837,17 @@ mod tests {
         use rmcp::model::ToolAnnotations as RmcpToolAnnotations;
         use serde_json::Map;
 
-        let with_hint = RmcpTool {
-            name: "read_only_tool".into(),
-            description: None,
-            input_schema: Arc::new(Map::new()),
-            output_schema: None,
-            annotations: Some(RmcpToolAnnotations {
-                read_only_hint: Some(true),
-                ..Default::default()
-            }),
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        };
-        let title_only = RmcpTool {
-            name: "no_hint_tool".into(),
-            description: None,
-            input_schema: Arc::new(Map::new()),
-            output_schema: None,
-            annotations: Some(RmcpToolAnnotations {
-                title: Some("display only".into()),
-                ..Default::default()
-            }),
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        };
-        let no_annotations = RmcpTool {
-            name: "bare_tool".into(),
-            description: None,
-            input_schema: Arc::new(Map::new()),
-            output_schema: None,
-            annotations: None,
-            title: None,
-            icons: None,
-            execution: None,
-            meta: None,
-        };
+        let mut with_hint = RmcpTool::new_with_raw("read_only_tool", None, Arc::new(Map::new()));
+        with_hint.annotations = Some(RmcpToolAnnotations::from_raw(None, Some(true), None, None, None));
+        let mut title_only = RmcpTool::new_with_raw("no_hint_tool", None, Arc::new(Map::new()));
+        title_only.annotations = Some(RmcpToolAnnotations::from_raw(
+            Some("display only".into()),
+            None,
+            None,
+            None,
+            None,
+        ));
+        let no_annotations = RmcpTool::new_with_raw("bare_tool", None, Arc::new(Map::new()));
 
         let map = extract_tool_annotations(&[with_hint, title_only, no_annotations]);
         assert_eq!(map.len(), 1);
@@ -1336,12 +1299,7 @@ mod tests {
     async fn test_running_mcp_service_call_tool_closed() {
         let svc = RunningMcpService::new_closed_for_test();
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let params = CallToolRequestParams {
-            name: "test_tool".into(),
-            arguments: None,
-            meta: None,
-            task: None,
-        };
+        let params = CallToolRequestParams::new("test_tool");
         let result = svc.call_tool(params).await;
         assert!(result.is_err());
     }

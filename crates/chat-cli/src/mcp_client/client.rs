@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::LazyLock;
 
 use regex::Regex;
+#[allow(deprecated)]
 use rmcp::model::{
     CallToolRequestParams,
     CallToolResult,
@@ -80,7 +81,7 @@ macro_rules! paginated_fetch {
             let mut content = Vec::<$content_type>::new();
 
             loop {
-                let param = Some(PaginatedRequestParams { cursor: cursor.clone(), meta: None });
+                let param = Some(PaginatedRequestParams::default().with_cursor(cursor.clone()));
                 match $service.$service_method(param).await {
                     Ok(mut result) => {
                         if let Some(s) = result.next_cursor {
@@ -556,6 +557,7 @@ impl McpClientService {
         }
     }
 
+    #[allow(deprecated)]
     async fn on_logging_message(
         &self,
         params: LoggingMessageNotificationParam,
@@ -629,7 +631,7 @@ impl Service<RoleClient> for McpClientService {
             ServerRequest::ListRootsRequest(_) => {
                 Err(rmcp::ErrorData::method_not_found::<rmcp::model::ListRootsRequestMethod>())
             },
-            ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+            ServerRequest::ElicitRequest(_) => Err(rmcp::ErrorData::method_not_found::<
                 rmcp::model::ElicitationCreateRequestMethod,
             >()),
             ServerRequest::CustomRequest(req) => Err(rmcp::ErrorData::new(
@@ -640,6 +642,7 @@ impl Service<RoleClient> for McpClientService {
         }
     }
 
+    #[allow(deprecated)]
     async fn handle_notification(
         &self,
         notification: <RoleClient as rmcp::service::ServiceRole>::PeerNot,
@@ -656,23 +659,15 @@ impl Service<RoleClient> for McpClientService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
-            ServerNotification::ElicitationCompletionNotification(_) => (),
+            ServerNotification::ElicitationCompleteNotification(_) => (),
+            ServerNotification::TaskStatusNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
         };
         Ok(())
     }
 
     fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
-        InitializeRequestParams {
-            protocol_version: Default::default(),
-            capabilities: Default::default(),
-            client_info: Implementation {
-                name: "Q DEV CLI".to_string(),
-                version: "1.0.0".to_string(),
-                ..Default::default()
-            },
-            meta: None,
-        }
+        InitializeRequestParams::new(Default::default(), Implementation::new("Q DEV CLI", "1.0.0"))
     }
 }
 

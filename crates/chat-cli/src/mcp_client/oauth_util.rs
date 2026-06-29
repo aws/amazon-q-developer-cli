@@ -424,11 +424,7 @@ impl<'a> HttpServiceBuilder<'a> {
                     info!("## mcp: attempting unauthenticated http for {server_name}");
                     let transport = StreamableHttpClientTransport::with_client(
                         reqwest_client.clone(),
-                        StreamableHttpClientTransportConfig {
-                            uri: url.as_str().into(),
-                            allow_stateless: true,
-                            ..Default::default()
-                        },
+                        StreamableHttpClientTransportConfig::with_uri(url.as_str()),
                     );
 
                     match service.clone().into_dyn().serve(transport).await {
@@ -461,12 +457,10 @@ impl<'a> HttpServiceBuilder<'a> {
                     };
 
                     info!("## mcp: attempting authenticated http for {server_name}");
-                    let transport =
-                        StreamableHttpClientTransport::with_client(ac.clone(), StreamableHttpClientTransportConfig {
-                            uri: url.as_str().into(),
-                            allow_stateless: true,
-                            ..Default::default()
-                        });
+                    let transport = StreamableHttpClientTransport::with_client(
+                        ac.clone(),
+                        StreamableHttpClientTransportConfig::with_uri(url.as_str()),
+                    );
 
                     match service.clone().into_dyn().serve(transport).await {
                         Ok(service) => {
@@ -668,15 +662,11 @@ async fn start_authorization(
     // The setting of credentials would put the oauth state into authorize.
     if let OAuthState::Authorized(auth_manager) = oauth_state {
         // set redirect uri
-        let config = OAuthClientConfig {
-            client_id: client_id.to_string(),
-            client_secret: None,
-            scopes: scopes.iter().map(|s| (*s).to_string()).collect(),
-            redirect_uri: redirect_uri.to_string(),
-        };
+        let config = OAuthClientConfig::new(client_id.to_string(), redirect_uri.to_string())
+            .with_scopes(scopes.iter().map(|s| (*s).to_string()).collect());
 
         // try to dynamic register client
-        let config = match auth_manager.register_client(client_id, redirect_uri).await {
+        let config = match auth_manager.register_client(client_id, redirect_uri, scopes).await {
             Ok(config) => config,
             Err(e) => {
                 eprintln!("Dynamic registration failed: {e}");
@@ -691,11 +681,7 @@ async fn start_authorization(
         let mut stub_auth_manager = AuthorizationManager::new("http://localhost").await?;
         std::mem::swap(auth_manager, &mut stub_auth_manager);
 
-        let session = AuthorizationSession {
-            auth_manager: stub_auth_manager,
-            auth_url,
-            redirect_uri: redirect_uri.to_string(),
-        };
+        let session = AuthorizationSession::for_scope_upgrade(stub_auth_manager, auth_url, redirect_uri);
 
         let mut new_oauth_state = OAuthState::Session(session);
         std::mem::swap(oauth_state, &mut new_oauth_state);
