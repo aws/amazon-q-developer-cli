@@ -14,6 +14,18 @@ pub async fn execute(ctx: &CommandContext<'_>, args: &McpArgs) -> CommandResult 
     if sub.is_empty() {
         return execute_status(ctx).await;
     }
+    // Single-server auth operations: "auth <name>", "cancel-auth <name>", "logout <name>".
+    // Matched by leading token so they don't collide with the "add"/"remove" prefixes below.
+    let (head, rest) = match sub.split_once(char::is_whitespace) {
+        Some((h, r)) => (h, r.trim()),
+        None => (sub, ""),
+    };
+    match head {
+        "auth" => return execute_auth(ctx, rest).await,
+        "cancel-auth" => return execute_cancel_auth(ctx, rest).await,
+        "logout" => return execute_remove_credentials(ctx, rest).await,
+        _ => {},
+    }
     // Parse "list", "add", "add <name>", "add <n1>,<n2>,...", "remove", "remove <name>"
     if let Some(rest) = sub.strip_prefix("add") {
         let name = rest.trim();
@@ -35,7 +47,7 @@ pub async fn execute(ctx: &CommandContext<'_>, args: &McpArgs) -> CommandResult 
         return execute_list(ctx).await;
     }
     CommandResult::error(format!(
-        "Unknown subcommand: {sub}. Try /mcp, /mcp list, /mcp add, or /mcp remove"
+        "Unknown subcommand: {sub}. Try /mcp, /mcp list, /mcp add, /mcp remove, /mcp auth, /mcp cancel-auth, or /mcp logout"
     ))
 }
 
@@ -66,11 +78,61 @@ async fn execute_status(ctx: &CommandContext<'_>) -> CommandResult {
                 "name": s.name,
                 "status": s.status,
                 "toolCount": s.tool_count,
+                "authenticating": s.authenticating,
             })
         })
         .collect();
 
-    CommandResult::success_with_data(&message, json!({ "servers": servers_json, "message": message }))
+    CommandResult::success_with_data(
+        &message,
+        json!({ "servers": servers_json, "message": message, "mode": "status" }),
+    )
+}
+
+/// `/mcp auth <server>` — force OAuth (re-)authentication for a remote server.
+///
+/// Marks the server's config with forced auth, shuts it down, and relaunches it so
+/// the OAuth browser flow runs. The flow itself is surfaced asynchronously via MCP
+/// server events (the panel shows `auth-required` once the OAuth URL arrives).
+async fn execute_auth(ctx: &CommandContext<'_>, name: &str) -> CommandResult {
+    let name = name.trim();
+    if name.is_empty() {
+        return CommandResult::error("Usage: /mcp auth <server>");
+    }
+    match ctx.agent.reauth_mcp_server(name.to_string()).await {
+        Ok(()) => CommandResult::success(format!("Forcing authentication for '{name}'…")),
+        Err(e) => CommandResult::error(format!("Failed to start authentication for '{name}': {e}")),
+    }
+}
+
+/// `/mcp cancel-auth <server>` — abort a pending/forced authentication.
+///
+/// Clears forced auth, cancels any in-flight OAuth flow (and its local redirect
+/// loopback), and reloads the server under the normal (non-forced) flow.
+async fn execute_cancel_auth(ctx: &CommandContext<'_>, name: &str) -> CommandResult {
+    let name = name.trim();
+    if name.is_empty() {
+        return CommandResult::error("Usage: /mcp cancel-auth <server>");
+    }
+    match ctx.agent.abort_mcp_server_auth(name.to_string()).await {
+        Ok(()) => CommandResult::success(format!("Aborted authentication for '{name}'")),
+        Err(e) => CommandResult::error(format!("Failed to abort authentication for '{name}': {e}")),
+    }
+}
+
+/// `/mcp logout <server>` — remove persisted OAuth credentials for a remote server.
+///
+/// Deletes the cached token and dynamic client registration. Does not stop or
+/// relaunch the server — the removal takes effect on the next launch.
+async fn execute_remove_credentials(ctx: &CommandContext<'_>, name: &str) -> CommandResult {
+    let name = name.trim();
+    if name.is_empty() {
+        return CommandResult::error("Usage: /mcp logout <server>");
+    }
+    match ctx.agent.remove_mcp_server_credentials(name.to_string()).await {
+        Ok(()) => CommandResult::success(format!("Removed stored credentials for '{name}'")),
+        Err(e) => CommandResult::error(format!("Failed to remove credentials for '{name}': {e}")),
+    }
 }
 
 /// `/mcp list` — show both configured servers and registry servers
@@ -83,6 +145,7 @@ async fn execute_list(ctx: &CommandContext<'_>) -> CommandResult {
                 "name": s.name,
                 "status": s.status,
                 "toolCount": s.tool_count,
+                "authenticating": s.authenticating,
             })
         })
         .collect();

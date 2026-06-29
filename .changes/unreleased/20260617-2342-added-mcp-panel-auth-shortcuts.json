@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Keyboard shortcuts in the MCP panel status view: `^A` to force auth, `^X` to abort auth, `^R` to remove stored credentials"
+}

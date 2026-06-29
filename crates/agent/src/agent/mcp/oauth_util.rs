@@ -374,6 +374,9 @@ pub struct HttpServiceBuilder<'a> {
     pub headers: &'a HashMap<String, String>,
     pub oauth_config: &'a Option<OAuthConfig>,
     pub server_actor_event_tx: &'a mpsc::Sender<McpServerActorEvent>,
+    /// When `true`, skip the unauthenticated connection attempt and go straight
+    /// to the OAuth flow.
+    pub force_auth: bool,
 }
 
 impl<'a> HttpServiceBuilder<'a> {
@@ -386,6 +389,7 @@ impl<'a> HttpServiceBuilder<'a> {
         headers: &'a HashMap<String, String>,
         oauth_config: &'a Option<OAuthConfig>,
         server_actor_event_tx: &'a mpsc::Sender<McpServerActorEvent>,
+        force_auth: bool,
     ) -> Self {
         Self {
             server_name,
@@ -395,6 +399,7 @@ impl<'a> HttpServiceBuilder<'a> {
             headers,
             oauth_config,
             server_actor_event_tx,
+            force_auth,
         }
     }
 
@@ -411,14 +416,30 @@ impl<'a> HttpServiceBuilder<'a> {
             headers,
             oauth_config,
             server_actor_event_tx,
+            force_auth,
         } = self;
 
-        let mut state = HttpServiceBuilderState::TryUnauthenticated;
         let url = Url::from_str(url)?;
         let key = compute_key(&url);
         let cred_full_path = cred_dir.join(format!("{key}.token.json"));
         let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
         let mut auth_client = None::<AuthClient<Client>>;
+
+        // Decide where to begin the connection state machine. Normally we try an
+        // unauthenticated connection first (many servers expose unauthenticated
+        // methods). We skip straight to the authenticated path when either:
+        //   - `force_auth` is set (the user explicitly requested authentication), or
+        //   - a persisted token already exists for this server (a previous auth succeeded, so assume
+        //     authentication is expected going forward).
+        let token_exists = cred_full_path.is_file();
+        let mut state = if force_auth || token_exists {
+            info!(
+                "## mcp: starting authenticated for {server_name} (force_auth={force_auth}, token_exists={token_exists})"
+            );
+            HttpServiceBuilderState::TryAuthenticated(false)
+        } else {
+            HttpServiceBuilderState::TryUnauthenticated
+        };
 
         let mut client_builder = reqwest::ClientBuilder::new().timeout(std::time::Duration::from_millis(timeout));
         if !headers.is_empty() {
@@ -665,6 +686,30 @@ pub fn compute_key(rs: &Url) -> String {
     let input = format!("{}{}", rs.origin().ascii_serialization(), rs.path());
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Remove the persisted OAuth credentials for a remote MCP server.
+///
+/// Deletes both the cached token (`{key}.token.json`) and the dynamic client
+/// registration (`{key}.registration.json`) stored under `cred_dir`, where `key`
+/// is derived from `url` via [`compute_key`]. Missing files are not an error.
+///
+/// Returns `Ok(true)` if at least one credential file was present and removed.
+pub async fn remove_persisted_credentials(cred_dir: &Path, url: &str) -> Result<bool, OauthUtilError> {
+    let url = Url::from_str(url)?;
+    let key = compute_key(&url);
+    let token_path = cred_dir.join(format!("{key}.token.json"));
+    let reg_path = cred_dir.join(format!("{key}.registration.json"));
+
+    let mut removed = false;
+    for path in [token_path, reg_path] {
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => removed = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(removed)
 }
 
 /// This is our own implementation of [OAuthState::start_authorization].
@@ -1261,10 +1306,24 @@ mod tests {
             &headers,
             &oauth_config,
             &tx,
+            false,
         );
         assert_eq!(builder.server_name, "test-server");
         assert_eq!(builder.url, "https://example.com/mcp");
         assert_eq!(builder.timeout, 5000);
+        assert!(!builder.force_auth);
+
+        let forced = HttpServiceBuilder::new(
+            "test-server",
+            "https://example.com/mcp",
+            5000,
+            &scopes,
+            &headers,
+            &oauth_config,
+            &tx,
+            true,
+        );
+        assert!(forced.force_auth);
     }
 
     // ─── ReauthContext ───────────────────────────────────────────────────
@@ -1306,6 +1365,36 @@ mod tests {
             "credential file mode is {:o}, expected 600",
             mode & 0o777
         );
+    }
+
+    #[tokio::test]
+    async fn test_remove_persisted_credentials_deletes_token_and_registration() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_dir = dir.path();
+        let url = "https://example.com/mcp";
+        let key = compute_key(&Url::from_str(url).unwrap());
+        let token_path = cred_dir.join(format!("{key}.token.json"));
+        let reg_path = cred_dir.join(format!("{key}.registration.json"));
+        tokio::fs::write(&token_path, "{}").await.unwrap();
+        tokio::fs::write(&reg_path, "{}").await.unwrap();
+
+        let removed = remove_persisted_credentials(cred_dir, url).await.unwrap();
+        assert!(removed);
+        assert!(!token_path.exists());
+        assert!(!reg_path.exists());
+
+        // Removing again is a no-op and reports nothing removed.
+        let removed_again = remove_persisted_credentials(cred_dir, url).await.unwrap();
+        assert!(!removed_again);
+    }
+
+    #[tokio::test]
+    async fn test_remove_persisted_credentials_missing_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let removed = remove_persisted_credentials(dir.path(), "https://none.example.com/mcp")
+            .await
+            .unwrap();
+        assert!(!removed);
     }
 
     #[tokio::test]
@@ -1891,7 +1980,16 @@ mod tests {
             oauth_scopes: Some(vec!["openid".into()]),
         });
         let (tx, _rx) = mpsc::channel(1);
-        let builder = HttpServiceBuilder::new("srv", "https://x.com/mcp", 10000, &scopes, &headers, &oauth_config, &tx);
+        let builder = HttpServiceBuilder::new(
+            "srv",
+            "https://x.com/mcp",
+            10000,
+            &scopes,
+            &headers,
+            &oauth_config,
+            &tx,
+            false,
+        );
         assert_eq!(builder.server_name, "srv");
         assert_eq!(builder.timeout, 10000);
         assert_eq!(builder.scopes, &["openid".to_string()]);

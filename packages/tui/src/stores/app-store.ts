@@ -101,6 +101,13 @@ export interface McpServerInfo {
   name: string;
   status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
   toolCount: number;
+  /**
+   * True while a forced (re-)authentication is in progress for this server. The
+   * original server keeps running during the flow (a hidden shadow server runs
+   * the OAuth handshake), so this is surfaced as an `auth-required` overlay on
+   * the master row rather than listing the shadow as a separate server.
+   */
+  authenticating?: boolean;
   // Registry fields (present in /mcp list response)
   version?: string;
   description?: string;
@@ -1030,6 +1037,10 @@ interface BaseAppActions {
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /** Update the cached session tool listing without toggling the panel. */
   setToolsList: (tools: ToolInfo[]) => void;
+  /** Merge live MCP server statuses into the store (updates open panel). */
+  updateMcpServerStatuses: (
+    servers: Array<{ name: string; status: string; toolCount: number }>
+  ) => void;
   setShowGoalPanel: (show: boolean) => void;
   setShowStatsPanel: (
     show: boolean,
@@ -3483,7 +3494,23 @@ export const createAppStore = (props: AppStoreProps) => {
                 status: 'failed',
                 startTime: prev?.startTime ?? Date.now(),
               });
-              set({ initErrors: updated, mcpInitStatus: mcpStatus });
+              // A forced re-auth that failed (not-loaded path) must also clear the
+              // `authenticating` overlay so the row reflects the failure, not a
+              // perpetual "auth-required".
+              const mcpServers = get().mcpServers.some(
+                (s) => s.name === event.serverName && s.authenticating
+              )
+                ? get().mcpServers.map((s) =>
+                    s.name === event.serverName
+                      ? { ...s, authenticating: false }
+                      : s
+                  )
+                : get().mcpServers;
+              set({
+                initErrors: updated,
+                mcpInitStatus: mcpStatus,
+                mcpServers,
+              });
               const message = summarizeInitErrors(updated);
               if (message) {
                 get().showTransientAlert({
@@ -3512,13 +3539,33 @@ export const createAppStore = (props: AppStoreProps) => {
                   status: 'ready',
                   startTime: prev?.startTime ?? Date.now(),
                 });
-                if (!state.pendingOAuthServers.has(event.serverName))
+
+                // A server reaching "initialized" also resolves any forced re-auth
+                // shadow targeting it (promoted, aborted, or failed-then-reloaded):
+                // drop the pending-OAuth prompt AND clear the `authenticating`
+                // overlay so the master row stops showing "auth-required".
+                const hadPending = state.pendingOAuthServers.has(
+                  event.serverName
+                );
+                const wasAuthenticating = state.mcpServers.some(
+                  (s) => s.name === event.serverName && s.authenticating
+                );
+                if (!hadPending && !wasAuthenticating) {
                   return { mcpInitStatus: mcpStatus };
-                const updated = new Map(state.pendingOAuthServers);
-                updated.delete(event.serverName);
+                }
+                const pendingOAuthServers = new Map(state.pendingOAuthServers);
+                pendingOAuthServers.delete(event.serverName);
+                const mcpServers = wasAuthenticating
+                  ? state.mcpServers.map((s) =>
+                      s.name === event.serverName
+                        ? { ...s, authenticating: false }
+                        : s
+                    )
+                  : state.mcpServers;
                 return {
-                  pendingOAuthServers: updated,
+                  pendingOAuthServers,
                   mcpInitStatus: mcpStatus,
+                  mcpServers,
                 };
               });
             }
@@ -5677,6 +5724,20 @@ export const createAppStore = (props: AppStoreProps) => {
     },
     setToolsList: (tools) => {
       set({ toolsList: tools });
+    },
+    updateMcpServerStatuses: (servers) => {
+      const { mcpServers, showMcpPanel } = get();
+      if (!showMcpPanel || mcpServers.length === 0) return;
+      const updated = mcpServers.map((existing) => {
+        const live = servers.find((s) => s.name === existing.name);
+        if (!live) return existing;
+        return {
+          ...existing,
+          status: live.status as McpServerInfo['status'],
+          toolCount: live.toolCount,
+        };
+      });
+      set({ mcpServers: updated });
     },
     setShowGoalPanel: (show) => {
       set({ showGoalPanel: show });

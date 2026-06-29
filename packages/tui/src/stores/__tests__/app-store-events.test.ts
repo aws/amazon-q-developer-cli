@@ -672,6 +672,50 @@ describe('Stream event handler — McpServerInitialized', () => {
     });
     expect(store.getState().pendingOAuthServers.has('oauth-srv')).toBe(false);
   });
+
+  it('clears the authenticating flag on the server (forced re-auth resolved)', () => {
+    const store = makeStore();
+    store.setState({
+      mcpServers: [
+        { name: 'srv', status: 'running', toolCount: 2, authenticating: true },
+        {
+          name: 'other',
+          status: 'running',
+          toolCount: 1,
+          authenticating: true,
+        },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.McpServerInitialized,
+      serverName: 'srv',
+    });
+    const servers = store.getState().mcpServers;
+    expect(servers.find((s) => s.name === 'srv')?.authenticating).toBe(false);
+    // Unrelated servers are untouched.
+    expect(servers.find((s) => s.name === 'other')?.authenticating).toBe(true);
+  });
+});
+
+describe('Stream event handler — McpServerInitFailure', () => {
+  it('clears the authenticating flag on the server when forced auth fails', () => {
+    const store = makeStore();
+    store.setState({
+      mcpServers: [
+        { name: 'srv', status: 'running', toolCount: 0, authenticating: true },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.McpServerInitFailure,
+      serverName: 'srv',
+      error: 'auth failed',
+    });
+    expect(
+      store.getState().mcpServers.find((s) => s.name === 'srv')?.authenticating
+    ).toBe(false);
+  });
 });
 
 describe('Stream event handler — RateLimitError', () => {

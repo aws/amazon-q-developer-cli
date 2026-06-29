@@ -76,12 +76,16 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
   const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
   const submitSurvey = useAppStore((s) => s.submitSurvey);
 
-  // Overlay auth-required status onto MCP servers pending OAuth — same
-  // shaping both layouts had locally.
+  // Overlay auth-required status onto MCP servers pending OAuth or with a forced
+  // (re-)authentication in progress — same shaping both layouts had locally.
   const mcpServersWithAuth = useMemo(() => {
-    if (pendingOAuthServers.size === 0) return mcpServers;
+    if (
+      pendingOAuthServers.size === 0 &&
+      !mcpServers.some((s) => s.authenticating)
+    )
+      return mcpServers;
     return mcpServers.map((s) =>
-      pendingOAuthServers.has(s.name)
+      pendingOAuthServers.has(s.name) || s.authenticating
         ? { ...s, status: 'auth-required' as const }
         : s
     );

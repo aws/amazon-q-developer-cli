@@ -432,7 +432,8 @@ async fn launch_acp_interactive(
             cmd.env("KIRO_AGENT_ENGINE", "kas");
 
             let (node, server) = crate::embedded_tui::ensure_kas_assets(os, true).await?;
-            let node = node.unwrap_or_else(|| PathBuf::from("node"));
+            // TEST-ONLY: fall back to bun instead of node to invoke the KAS server.
+            let node = node.unwrap_or_else(|| PathBuf::from("bun"));
             cmd.env(KIRO_KAS_NODE_PATH, &node);
             if let Some(server) = server.as_ref() {
                 cmd.env(KIRO_KAS_SERVER_PATH, server);

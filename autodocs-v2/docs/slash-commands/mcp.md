@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-17
-  commit: 97c6ac4c6
+  validated: 2026-06-29
+  commit: a7e36ddc4
   status: validated
   testable_headless: false
   category: slash_command
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
-  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate, clipboard]
+  keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate, clipboard, logout, cancel-auth, force-auth, reauth, credentials]
   related: [cmd-mcp, agent-config, mcp-registry]
 ---
 
@@ -52,6 +52,30 @@ Remove an enabled MCP server (only available if a registry has been configured b
 /mcp remove
 ```
 
+### auth
+
+Force OAuth (re-)authentication for a remote MCP server. Marks the server with forced auth, shuts it down, and relaunches it so the OAuth browser flow runs. Useful when a server offers both authenticated and unauthenticated methods and you want to authenticate explicitly.
+
+```
+/mcp auth <server>
+```
+
+### cancel-auth
+
+Abort a pending or forced authentication for a remote MCP server. Cancels any in-flight OAuth flow (including the local redirect loopback), clears the forced auth flag, and reloads the server under the normal (non-forced) flow so unauthenticated capabilities remain available.
+
+```
+/mcp cancel-auth <server>
+```
+
+### logout
+
+Remove persisted OAuth credentials (token and dynamic client registration) for a remote MCP server. Does not stop or restart the server — the removal takes effect on the next server launch.
+
+```
+/mcp logout <server>
+```
+
 ## Output
 
 Shows for each server:
@@ -59,6 +83,18 @@ Shows for each server:
 - Status (initialized, loading, needs auth)
 - Available tools
 - Authentication action (if OAuth required — press Enter to copy the OAuth URL to your clipboard)
+
+### Status View Keyboard Shortcuts
+
+When viewing the MCP status panel (`/mcp` with no subcommand), the following keyboard shortcuts are available:
+
+| Key | Action |
+|-----|--------|
+| `^J` / `^K` | Navigate between servers |
+| `Enter` | Authenticate (when server has pending OAuth) |
+| `^A` | Force OAuth (re-)authentication for highlighted server |
+| `^X` | Abort pending/forced authentication |
+| `^R` | Remove persisted OAuth credentials |
 
 ## Related
 
@@ -113,9 +149,45 @@ Select MCP server to remove:
   @web-scraper (disabled)
 ```
 
-### Example 4: Get Help
+### Example 4: Force Authentication
 
 ```
+/mcp auth github
+```
+
+**Output**:
+```
+Forcing authentication for 'github'…
+```
+
+The server is shut down and relaunched with forced OAuth. The OAuth URL will appear in the status panel once the flow starts.
+
+### Example 5: Abort Pending Authentication
+
+```
+/mcp cancel-auth github
+```
+
+**Output**:
+```
+Aborted authentication for 'github'
+```
+
+The in-flight OAuth flow is cancelled and the server is reloaded under the normal (non-forced) flow.
+
+### Example 6: Remove Stored Credentials
+
+```
+/mcp logout github
+```
+
+**Output**:
+```
+Removed stored credentials for 'github'
+```
+
+The persisted token and client registration are deleted. The server continues running with its current in-memory session; the removal takes effect on the next launch.
+
 ## Troubleshooting
 
 ### Issue: Server Not Initialized

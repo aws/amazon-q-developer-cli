@@ -599,6 +599,7 @@ mod tests {
                 oauth: None,
                 disabled: false,
                 disabled_tools: vec![],
+                force_auth: false,
             }),
             McpServerConfigSource::GlobalMcpJson,
         );
@@ -617,6 +618,7 @@ mod tests {
                 oauth: None,
                 disabled: true,
                 disabled_tools: vec![],
+                force_auth: false,
             }),
             McpServerConfigSource::WorkspaceMcpJson,
         );

@@ -78,6 +78,15 @@ pub struct TestCaseBuilder {
     mcp_servers: Vec<(String, McpServerConfig)>,
     mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
     is_subagent: bool,
+    /// Custom credential directory for the MCP manager (for OAuth token tests).
+    /// When `None`, the manager uses its default path.
+    mcp_cred_dir: Option<PathBuf>,
+    /// When set, spawns a background "browser" that auto-completes MCP OAuth
+    /// flows the agent emits. `Some(None)` drives every request; `Some(Some(n))`
+    /// drives only the first `n` (so a later, undriven re-auth stays pending —
+    /// useful for testing a shadow stuck mid-auth).
+    #[allow(clippy::option_option)] // 3 distinct states: off / drive-all / drive-first-n
+    oauth_autodrive: Option<Option<usize>>,
 }
 
 impl TestCaseBuilder {
@@ -152,6 +161,22 @@ impl TestCaseBuilder {
         self
     }
 
+    /// Point the MCP manager's OAuth credential cache at `dir`. Tests that
+    /// exercise real OAuth flows MUST set this to a tempdir so tokens never land
+    /// in the developer's real `~/.aws/sso/cache`.
+    pub fn with_mcp_cred_dir(mut self, dir: PathBuf) -> Self {
+        self.mcp_cred_dir = Some(dir);
+        self
+    }
+
+    /// Auto-complete MCP OAuth flows the agent emits, playing the user's browser.
+    /// `max_drives = None` drives every authorization request; `Some(n)` drives
+    /// only the first `n`.
+    pub fn with_oauth_autodrive(mut self, max_drives: Option<usize>) -> Self {
+        self.oauth_autodrive = Some(max_drives);
+        self
+    }
+
     /// Mark this agent as a subagent. Affects which built-in tools are
     /// available — most notably gates the `summary` tool on (and `agent_crew`
     /// off). Set to `true` for tests that exercise subagent-specific paths.
@@ -213,7 +238,10 @@ impl TestCaseBuilder {
             None,
             None,
             Arc::clone(&model) as Arc<dyn agent::agent_loop::model::Model>,
-            McpManager::default().spawn(),
+            match &self.mcp_cred_dir {
+                Some(dir) => McpManager::new(dir.clone()).spawn(),
+                None => McpManager::default().spawn(),
+            },
             self.is_subagent,
             None,       // code_intelligence not needed for tests
             None,       // knowledge_provider not needed for tests
@@ -234,9 +262,19 @@ impl TestCaseBuilder {
                 .collect::<String>()
         ));
 
+        // Spawn the agent, then (before yielding) optionally attach an OAuth
+        // browser driver on a cloned handle. Cloning here — synchronously, before
+        // the agent task has had a chance to run — guarantees the driver's
+        // broadcast receiver is subscribed before any `OauthRequest` is emitted,
+        // so it can't miss the initial sign-in.
+        let agent_handle = agent.spawn();
+        let oauth_driver = self
+            .oauth_autodrive
+            .map(|max_drives| spawn_agent_oauth_driver(agent_handle.clone(), max_drives));
+
         Ok(TestCase {
             test_name,
-            agent: agent.spawn(),
+            agent: agent_handle,
             model,
             test_base,
             sent_requests: Vec::new(),
@@ -244,8 +282,34 @@ impl TestCaseBuilder {
             trust_all_tools: self.trust_all_tools,
             tool_use_approvals: self.tool_use_approvals,
             curr_approval_index: 0,
+            _oauth_driver: oauth_driver,
         })
     }
+}
+
+/// Background task that plays the user's browser for MCP OAuth flows surfaced by
+/// the agent. For every `AgentEvent::Mcp(OauthRequest)` it fetches the
+/// authorization URL, which 302-redirects to the CLI's loopback listener and
+/// delivers the auth code. `max_drives` caps how many it completes.
+fn spawn_agent_oauth_driver(mut handle: AgentHandle, max_drives: Option<usize>) -> tokio::task::JoinHandle<()> {
+    use agent::mcp::McpServerEvent;
+    tokio::spawn(async move {
+        let client = reqwest::Client::new();
+        let mut driven = 0usize;
+        loop {
+            match handle.recv().await {
+                Ok(AgentEvent::Mcp(McpServerEvent::OauthRequest { oauth_url, .. })) => {
+                    if max_drives.is_none_or(|max| driven < max) {
+                        driven += 1;
+                        let _ = client.get(&oauth_url).send().await;
+                    }
+                },
+                Ok(_) => {},
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {},
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    })
 }
 
 #[derive(Debug)]
@@ -264,6 +328,9 @@ pub struct TestCase {
     /// History of all events emitted by the agent
     agent_events: Vec<AgentEvent>,
     trust_all_tools: bool,
+    /// Keeps the optional OAuth browser-driver task alive for the test's
+    /// lifetime (dropped — and thus aborted — with the `TestCase`).
+    _oauth_driver: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl TestCase {
@@ -300,6 +367,53 @@ impl TestCase {
         registry: Box<dyn agent::mcp::McpRegistry>,
     ) -> std::result::Result<(), agent::protocol::AgentError> {
         self.agent.refresh_mcp_registry(registry).await
+    }
+
+    /// Force (re-)authentication for a single remote MCP server. Returns the raw
+    /// `AgentError` so tests can assert on the concurrency guard etc.
+    pub async fn reauth_mcp_server(
+        &self,
+        name: impl Into<String>,
+    ) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.reauth_mcp_server(name.into()).await
+    }
+
+    /// Abort a pending/forced authentication for a single remote MCP server.
+    pub async fn abort_mcp_server_auth(
+        &self,
+        name: impl Into<String>,
+    ) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.abort_mcp_server_auth(name.into()).await
+    }
+
+    /// Snapshot of configured MCP servers (status, tool count, `authenticating`).
+    pub async fn get_mcp_server_info(&self) -> Vec<agent::tui_commands::McpServerInfo> {
+        self.agent
+            .get_mcp_server_info()
+            .await
+            .expect("failed to get MCP server info")
+    }
+
+    /// Poll `get_mcp_server_info` until the named server satisfies `pred`, or
+    /// panic on timeout. Returns the matching info snapshot.
+    pub async fn wait_for_mcp_server(
+        &self,
+        name: &str,
+        timeout: Duration,
+        pred: impl Fn(&agent::tui_commands::McpServerInfo) -> bool,
+    ) -> agent::tui_commands::McpServerInfo {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(info) = self.get_mcp_server_info().await.into_iter().find(|s| s.name == name)
+                && pred(&info)
+            {
+                return info;
+            }
+            if Instant::now() >= deadline {
+                panic!("timed out waiting for MCP server '{name}' to satisfy condition");
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     pub async fn compact_conversation(&self) -> Result<()> {

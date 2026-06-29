@@ -20,6 +20,12 @@ interface McpPanelProps {
   onClose: () => void;
   onAction?: (serverNames: string[]) => Promise<void>;
   onAuthenticate?: (serverName: string) => void;
+  /** Force OAuth (re-)authentication for the given remote server. */
+  onForceAuth?: (serverName: string) => void;
+  /** Abort a pending/forced authentication and reload the server normally. */
+  onAbortAuth?: (serverName: string) => void;
+  /** Remove persisted OAuth credentials for the given remote server. */
+  onRemoveCredentials?: (serverName: string) => void;
 }
 
 const GAP = 2;
@@ -33,6 +39,9 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   onClose,
   onAction,
   onAuthenticate,
+  onForceAuth,
+  onAbortAuth,
+  onRemoveCredentials,
 }) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
@@ -208,62 +217,87 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     ]
   );
 
-  useInput(
-    (input: string, key: { ctrl: boolean; return: boolean; tab: boolean }) => {
-      if (!isInteractive || pending.size > 0) return;
-      if (key.ctrl && input === 'j') {
-        setCursorIndex((prev) => {
-          const next = Math.min(prev + 1, filtered.length - 1);
-          if (next >= scrollOffset + maxVisible)
-            setScrollOffset(next - maxVisible + 1);
-          return next;
-        });
-        return;
-      }
-      if (key.ctrl && input === 'k') {
-        setCursorIndex((prev) => {
-          const next = Math.max(prev - 1, 0);
-          if (next < scrollOffset) setScrollOffset(next);
-          return next;
-        });
-        return;
-      }
-      if (key.tab) {
-        const server = filtered[cursorIndex];
-        if (server) {
-          setSelected((prev) => {
-            const next = new Set(prev);
-            if (next.has(server.name)) next.delete(server.name);
-            else next.add(server.name);
-            return next;
-          });
-        }
-        return;
-      }
-      if (key.return) {
-        // In interactive mode, Enter submits selected servers
-        if (selected.size > 0 && onAction) {
-          const names = Array.from(selected);
-          setPending(new Set(names));
-          setSelected(new Set());
-          onAction(names).finally(() => setPending(new Set()));
-        }
-        return;
-      }
+  // Row navigation (^J / ^K) works in both the interactive registry view and the
+  // non-interactive status view.
+  useInput((input: string, key: { ctrl: boolean }) => {
+    if (pending.size > 0) return;
+    if (key.ctrl && input === 'j') {
+      setCursorIndex((prev) => {
+        const next = Math.min(prev + 1, filtered.length - 1);
+        if (next >= scrollOffset + maxVisible)
+          setScrollOffset(next - maxVisible + 1);
+        return next;
+      });
+      return;
     }
-  );
+    if (key.ctrl && input === 'k') {
+      setCursorIndex((prev) => {
+        const next = Math.max(prev - 1, 0);
+        if (next < scrollOffset) setScrollOffset(next);
+        return next;
+      });
+      return;
+    }
+  });
 
-  // In status view (non-interactive), handle Enter to authenticate OAuth server
-  useInput((_input: string, key: { return: boolean }) => {
-    if (!key.return || isInteractive) return;
-    const server = filtered[cursorIndex];
-    if (server && pendingOAuthUrls.has(server.name)) {
-      if (onAuthenticate) {
-        onAuthenticate(server.name);
-      } else {
-        const url = pendingOAuthUrls.get(server.name);
-        if (url) void copyToSystemClipboard(url);
+  // Interactive registry view (/mcp add | remove): Tab selects, Enter submits.
+  useInput((_input: string, key: { tab: boolean; return: boolean }) => {
+    if (!isInteractive || pending.size > 0) return;
+    if (key.tab) {
+      const server = filtered[cursorIndex];
+      if (server) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(server.name)) next.delete(server.name);
+          else next.add(server.name);
+          return next;
+        });
       }
+      return;
+    }
+    if (key.return) {
+      // In interactive mode, Enter submits selected servers
+      if (selected.size > 0 && onAction) {
+        const names = Array.from(selected);
+        setPending(new Set(names));
+        setSelected(new Set());
+        onAction(names).finally(() => setPending(new Set()));
+      }
+      return;
+    }
+  });
+
+  // Status view (/mcp): act on the highlighted server.
+  //   Enter → authenticate a server with a pending OAuth request
+  //   ^A    → force OAuth (re-)authentication
+  //   ^X    → abort a pending/forced authentication
+  //   ^R    → remove persisted OAuth credentials
+  useInput((input: string, key: { ctrl: boolean; return: boolean }) => {
+    if (isInteractive) return;
+    const server = filtered[cursorIndex];
+    if (!server) return;
+    if (key.return) {
+      if (pendingOAuthUrls.has(server.name)) {
+        if (onAuthenticate) {
+          onAuthenticate(server.name);
+        } else {
+          const url = pendingOAuthUrls.get(server.name);
+          if (url) void copyToSystemClipboard(url);
+        }
+      }
+      return;
+    }
+    if (key.ctrl && input === 'a') {
+      onForceAuth?.(server.name);
+      return;
+    }
+    if (key.ctrl && input === 'x') {
+      onAbortAuth?.(server.name);
+      return;
+    }
+    if (key.ctrl && input === 'r') {
+      onRemoveCredentials?.(server.name);
+      return;
     }
   });
 
@@ -335,10 +369,18 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       ? 'No servers in MCP registry'
       : 'No MCP servers configured';
 
+  const isStatusView = !isRegistryView && !isListMode;
+
   const footerExtra = isInteractive ? (
     <Text>
       {primary('^J/K')} {dim('navigate')} {dim('·')} {primary('Tab')}{' '}
       {dim('select')} {dim('·')} {primary('Enter')} {dim(mode)}
+    </Text>
+  ) : isStatusView && servers.length > 0 ? (
+    <Text>
+      {primary('^J/K')} {dim('navigate')} {dim('·')} {primary('^A')}{' '}
+      {dim('auth')} {dim('·')} {primary('^X')} {dim('abort')} {dim('·')}{' '}
+      {primary('^R')} {dim('remove creds')}
     </Text>
   ) : undefined;
 
@@ -380,7 +422,9 @@ export const McpPanel: React.FC<McpPanelProps> = ({
           columns={columns}
           rows={rows}
           highlightedRow={
-            isInteractive ? cursorIndex - scrollOffset : undefined
+            isInteractive || isStatusView
+              ? cursorIndex - scrollOffset
+              : undefined
           }
         />
       )}

@@ -175,6 +175,7 @@ async fn test_deferred_tools_filtered_by_agent_tools_config() {
         oauth: None,
         disabled: false,
         disabled_tools: Vec::new(),
+        force_auth: false,
     });
 
     // Custom agent config: only tool_search + one specific MCP tool
@@ -2013,6 +2014,7 @@ async fn test_tool_search_enabled_includes_tool_search() {
         oauth: None,
         disabled: false,
         disabled_tools: Vec::new(),
+        force_auth: false,
     });
 
     let settings = agent::types::AgentSettings {
@@ -2155,6 +2157,7 @@ async fn test_custom_agent_without_tool_search_gets_full_mcp_tools() {
         oauth: None,
         disabled: false,
         disabled_tools: Vec::new(),
+        force_auth: false,
     });
 
     // Custom agent with specific tools — no ToolSearch, no wildcard "*"

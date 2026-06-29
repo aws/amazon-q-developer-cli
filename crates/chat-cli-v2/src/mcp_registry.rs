@@ -1119,6 +1119,7 @@ fn resolve_registry_servers_for_agent_config(
                     oauth,
                     disabled: false,
                     disabled_tools: Vec::new(),
+                    force_auth: false,
                 }),
             ));
         } else if !def.packages.is_empty() {

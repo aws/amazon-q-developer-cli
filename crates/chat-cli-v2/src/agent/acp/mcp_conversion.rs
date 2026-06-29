@@ -63,6 +63,7 @@ pub fn convert_http(http: McpServerHttp) -> RemoteMcpServerConfig {
         oauth: None,
         disabled: false,
         disabled_tools: Vec::new(),
+        force_auth: false,
     }
 }
 
@@ -75,6 +76,7 @@ pub fn convert_sse(sse: McpServerSse) -> RemoteMcpServerConfig {
         oauth: None,
         disabled: false,
         disabled_tools: Vec::new(),
+        force_auth: false,
     }
 }
 

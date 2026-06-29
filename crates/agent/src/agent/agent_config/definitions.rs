@@ -729,6 +729,11 @@ pub struct RemoteMcpServerConfig {
     /// List of tool names from this server to disable
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_tools: Vec<String>,
+    /// Force OAuth authentication even when the server also offers unauthenticated
+    /// methods. When set, the start routine skips the initial unauthenticated
+    /// connection attempt and goes straight to the OAuth flow. Defaults to `false`.
+    #[serde(default)]
+    pub force_auth: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -1111,6 +1116,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: Vec::new(),
+            force_auth: false,
         });
 
         let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server)]);
@@ -1130,6 +1136,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: Vec::new(),
+            force_auth: false,
         });
         config.add_mcp_servers(vec![("test-server".to_string(), server1)]);
 
@@ -1141,6 +1148,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: Vec::new(),
+            force_auth: false,
         });
         let overridden = config.add_mcp_servers(vec![("test-server".to_string(), server2)]);
 
@@ -1360,6 +1368,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: vec!["tool_b".to_string()],
+            force_auth: false,
         });
         assert_eq!(remote.disabled_tools(), &["tool_b"]);
     }
@@ -1961,6 +1970,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: vec![],
+            force_auth: false,
         });
         config.insert_mcp_servers(vec![("srv".into(), s)]);
         assert!(config.mcp_servers().contains_key("srv"));

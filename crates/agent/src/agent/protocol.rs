@@ -299,6 +299,20 @@ pub enum AgentRequest {
     ClearConversation,
     /// Get information about configured MCP servers
     GetMcpServerInfo,
+    /// Force (re-)authentication for a single remote (HTTP) MCP server.
+    ReauthMcpServer {
+        server_name: String,
+    },
+    /// Abort an in-flight forced authentication for a single remote (HTTP) MCP server.
+    AbortMcpServerAuth {
+        server_name: String,
+    },
+    /// Remove the persisted OAuth credentials (token + dynamic client
+    /// registration) for a single remote MCP server. Only valid for remote (HTTP)
+    /// servers. Does not stop or relaunch the server.
+    RemoveMcpServerCredentials {
+        server_name: String,
+    },
     /// Get information about available tools
     GetToolInfo,
     /// Add a resource path to the agent's context

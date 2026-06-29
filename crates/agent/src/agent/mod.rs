@@ -471,6 +471,58 @@ impl AgentHandle {
         }
     }
 
+    /// Force (re-)authentication for a single remote MCP server.
+    ///
+    /// Marks the server's config with `force_auth = true`, shuts it down, and
+    /// relaunches it so the OAuth flow runs. Returns [`AgentError::NotIdle`] if the
+    /// agent is not idle, or an error if the named server doesn't exist or isn't a
+    /// remote (HTTP) server. The relaunch is fire-and-forget; observe progress via
+    /// MCP server events.
+    pub async fn reauth_mcp_server(&self, server_name: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::ReauthMcpServer { server_name })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    /// Abort a pending/forced authentication for a single remote MCP server.
+    ///
+    /// Clears the server's `force_auth` flag, shuts it down (cancelling any
+    /// in-flight OAuth flow and local redirect loopback), and relaunches it under
+    /// the normal flow. Returns [`AgentError::NotIdle`] if the agent is not idle,
+    /// or an error if the named server doesn't exist or isn't a remote (HTTP) server.
+    pub async fn abort_mcp_server_auth(&self, server_name: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::AbortMcpServerAuth { server_name })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
+    /// Remove the persisted OAuth credentials (token + dynamic client registration)
+    /// for a single remote MCP server. Does not stop or relaunch the server.
+    /// Returns an error if the named server doesn't exist or isn't a remote (HTTP) server.
+    pub async fn remove_mcp_server_credentials(&self, server_name: String) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::RemoveMcpServerCredentials { server_name })
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     pub async fn get_tool_info(&self) -> Result<Vec<tui_commands::ToolInfo>, AgentError> {
         match self
             .sender
@@ -758,6 +810,12 @@ pub struct Agent {
     /// [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`] the turn is force-ended to
     /// prevent an unbounded unavailable-tool retry loop.
     consecutive_unexecutable_tool_turns: usize,
+
+    /// In-flight forced (re-)auth flows: **shadow** server name → **target** name.
+    /// A loaded server's shadow runs OAuth alongside the original and is promoted on
+    /// success; an unloaded one uses `target -> target`. Drives the `authenticating`
+    /// flag and guards against concurrent reauth.
+    reauth_shadows: HashMap<String, String>,
 }
 
 /// A single queued steering message awaiting injection.
@@ -777,6 +835,11 @@ fn steer_snapshot(steers: &[QueuedSteer]) -> String {
 }
 
 impl Agent {
+    /// Prefix for the hidden "shadow" MCP server used to run a forced
+    /// (re-)authentication flow alongside a still-running original. Shadow servers
+    /// are never surfaced to the UI as separate entries.
+    const REAUTH_SHADOW_PREFIX: &'static str = "__reauth__";
+
     /// Creates an agent using the given initial state.
     ///
     /// To actually initialize the agent and begin interacting with it, call [Agent::spawn].
@@ -872,6 +935,7 @@ impl Agent {
             tool_search_active: false,
             queued_steers: Vec::new(),
             consecutive_unexecutable_tool_turns: 0,
+            reauth_shadows: HashMap::new(),
         })
     }
 
@@ -1416,9 +1480,18 @@ impl Agent {
                         name: server_name.clone(),
                         status,
                         tool_count,
+                        // A forced (re-)auth is in flight for this server if it is a
+                        // target of any tracked shadow. The shadow itself is never
+                        // listed here (it isn't in cached_mcp_configs).
+                        authenticating: self.reauth_shadows.values().any(|t| t == server_name),
                     });
                 }
                 Ok(AgentResponse::McpServerInfo(servers))
+            },
+            AgentRequest::ReauthMcpServer { server_name } => self.handle_reauth_mcp_server(server_name).await,
+            AgentRequest::AbortMcpServerAuth { server_name } => self.handle_abort_mcp_server_auth(server_name).await,
+            AgentRequest::RemoveMcpServerCredentials { server_name } => {
+                self.handle_remove_mcp_server_credentials(server_name).await
             },
             AgentRequest::GetToolInfo => {
                 // Use cached tool specs if available, otherwise build them fresh
@@ -1686,6 +1759,8 @@ impl Agent {
         // 2. Create new MCP manager (terminate kills the old one)
         self.mcp_manager_handle = McpManager::default().spawn();
 
+        self.reauth_shadows.clear();
+
         // 3. Update agent config and clear cached tool specs
         self.agent_config = args.agent_config;
         // Enforce MCP governance on the incoming config — defense-in-depth in case the
@@ -1752,6 +1827,8 @@ impl Agent {
         // 3. Tear down existing MCP servers and spin up a fresh manager.
         self.mcp_manager_handle.terminate();
         self.mcp_manager_handle = McpManager::default().spawn();
+
+        self.reauth_shadows.clear();
 
         // 4. Invalidate cached tool specs so the next prompt picks up the new server set.
         self.cached_tool_specs = None;
@@ -1841,6 +1918,34 @@ impl Agent {
             }
         }
 
+        // Drop forced-auth shadows whose target is being stopped/restarted here (the
+        // shadow runs under a hidden name not in the plan, so stop it explicitly).
+        if !self.reauth_shadows.is_empty() {
+            let affected: std::collections::HashSet<&str> = plan
+                .stop
+                .iter()
+                .map(String::as_str)
+                .chain(plan.restart.iter().map(|(n, _)| n.as_str()))
+                .collect();
+            let stale: Vec<(String, String)> = self
+                .reauth_shadows
+                .iter()
+                .filter(|(_, target)| affected.contains(target.as_str()))
+                .map(|(s, t)| (s.clone(), t.clone()))
+                .collect();
+            for (shadow_name, target) in stale {
+                // The loaded-case shadow runs under a hidden name not in the plan,
+                // so stop it explicitly. A not-loaded shadow shares the target name
+                // and was already stopped by the plan above.
+                if shadow_name != target
+                    && let Err(e) = self.mcp_manager_handle.shutdown_server(shadow_name.clone()).await
+                {
+                    warn!(%shadow_name, target, error = %e, "failed to drop reauth shadow during reconcile");
+                }
+                self.reauth_shadows.remove(&shadow_name);
+            }
+        }
+
         // Adopt the new config. Only invalidate the tool-spec and resource
         // caches when the plan actually changed something — a no-op reconcile
         // (e.g. an unrelated mcp.json touch) must not drop resource
@@ -1855,7 +1960,236 @@ impl Agent {
         Ok(AgentResponse::Success)
     }
 
-    /// Handlers for a [AgentRequest::Cancel] request.
+    /// Compute the shadow server name for a target server undergoing forced auth.
+    fn reauth_shadow_name(target: &str) -> String {
+        format!("{}{target}", Self::REAUTH_SHADOW_PREFIX)
+    }
+
+    /// Force (re-)authentication for a single remote MCP server.
+    ///
+    /// See [`AgentHandle::reauth_mcp_server`] for caller-side docs.
+    ///
+    /// To avoid dropping the user's existing access on a misfired reauth, a
+    /// currently-loaded server is **not** torn down. Instead a hidden "shadow"
+    /// server (named via [`Self::reauth_shadow_name`]) is launched with forced auth
+    /// alongside the original; only once the shadow initializes is it promoted to
+    /// replace the original (see [`Self::handle_mcp_events`]). If the server isn't
+    /// currently loaded, no shadow is needed and it is relaunched directly with
+    /// forced auth.
+    ///
+    /// The launch is fire-and-forget: the (interactive) OAuth flow runs inside the
+    /// server actor, off the agent's main loop, so the agent stays responsive to a
+    /// subsequent abort. Progress/outcome is surfaced via MCP server events.
+    async fn handle_reauth_mcp_server(&mut self, server_name: String) -> Result<AgentResponse, AgentError> {
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+        if !self.settings.mcp_enabled {
+            return Err(AgentError::Custom("MCP is disabled".to_string()));
+        }
+
+        // Concurrency guard: only one in-flight forced auth per target server.
+        if self.reauth_shadows.values().any(|target| target == &server_name) {
+            return Err(AgentError::Custom(format!(
+                "MCP server '{server_name}' is already authenticating"
+            )));
+        }
+
+        // Validate the server exists and is remote, building a one-off config with
+        // forced auth. `force_auth` is intentionally NOT persisted on the cached
+        // config — it applies to this launch only, so a later reconcile/relaunch
+        // won't force auth again.
+        let forced_config = self.forced_auth_config(&server_name)?;
+
+        // A running server gets a shadow so its tools stay available during the
+        // (interactive) flow; a not-loaded server is relaunched under its own name.
+        let is_loaded = self
+            .mcp_manager_handle
+            .get_tool_specs(server_name.clone())
+            .await
+            .is_ok();
+
+        let launch_name = if is_loaded {
+            Self::reauth_shadow_name(&server_name)
+        } else {
+            server_name.clone()
+        };
+
+        // Clear any stale instance occupying the launch name so the launch can't
+        // collide. For the loaded case this only touches the (hidden) shadow name,
+        // never the original; for the not-loaded case it tears down a stale
+        // failed/initializing instance under the real name.
+        let _ = self.mcp_manager_handle.shutdown_server(launch_name.clone()).await;
+
+        match self
+            .mcp_manager_handle
+            .launch_server(launch_name.clone(), forced_config)
+            .await
+        {
+            Ok(_rx) => {
+                self.reauth_shadows.insert(launch_name, server_name);
+                Ok(AgentResponse::Success)
+            },
+            Err(e) => Err(AgentError::Custom(format!(
+                "failed to start authentication for MCP server '{server_name}': {e}"
+            ))),
+        }
+    }
+
+    /// Abort a pending/forced authentication for a single remote MCP server.
+    ///
+    /// See [`AgentHandle::abort_mcp_server_auth`] for caller-side docs. If the
+    /// server is being re-authenticated via a shadow (the loaded case), the only
+    /// action is to **drop the shadow** — the original keeps running untouched, so
+    /// the user retains the server's capabilities. If the forced auth was running
+    /// directly on a not-loaded server, that server is relaunched under the normal
+    /// (non-forced) flow. Aborting when nothing is in flight is a no-op success so
+    /// the UI's cancel action is idempotent.
+    async fn handle_abort_mcp_server_auth(&mut self, server_name: String) -> Result<AgentResponse, AgentError> {
+        if !matches!(self.active_state(), ActiveState::Idle) {
+            return Err(AgentError::NotIdle);
+        }
+        if !self.settings.mcp_enabled {
+            return Err(AgentError::Custom("MCP is disabled".to_string()));
+        }
+
+        let shadow = self
+            .reauth_shadows
+            .iter()
+            .find(|(_, target)| *target == &server_name)
+            .map(|(shadow, _)| shadow.clone());
+
+        match shadow {
+            // Loaded case: drop the shadow only; the original is untouched.
+            Some(shadow_name) if shadow_name != server_name => {
+                self.reauth_shadows.remove(&shadow_name);
+                if let Err(e) = self.mcp_manager_handle.shutdown_server(shadow_name.clone()).await {
+                    warn!(server_name, %shadow_name, error = %e, "failed to drop reauth shadow on abort");
+                }
+                // The original is still running — refresh it in the UI so any
+                // pending-OAuth state shown during the attempt is cleared.
+                self.refresh_mcp_server_in_ui(&server_name);
+                Ok(AgentResponse::Success)
+            },
+            // Not-loaded case (shadow == target): forced auth ran on the real
+            // server. Drop tracking and relaunch under the normal flow so the user
+            // keeps any unauthenticated capabilities.
+            Some(_) => {
+                self.reauth_shadows.remove(&server_name);
+                self.reload_mcp_server_normally(&server_name).await;
+                Ok(AgentResponse::Success)
+            },
+            None => Ok(AgentResponse::Success),
+        }
+    }
+
+    /// Build a one-off config clone for `server_name` with forced auth enabled.
+    ///
+    /// Errors if the server is unknown or not a remote (HTTP) server. Does not
+    /// mutate the cached config — forced auth is a one-shot for the next launch.
+    fn forced_auth_config(&self, server_name: &str) -> Result<agent_config::definitions::McpServerConfig, AgentError> {
+        let Some(loaded) = self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .find(|c| c.server_name == server_name)
+        else {
+            return Err(AgentError::Custom(format!("No MCP server named '{server_name}'")));
+        };
+
+        match &loaded.config {
+            agent_config::definitions::McpServerConfig::Remote(remote) => {
+                let mut remote = remote.clone();
+                remote.force_auth = true;
+                Ok(agent_config::definitions::McpServerConfig::Remote(remote))
+            },
+            _ => Err(AgentError::Custom(format!(
+                "MCP server '{server_name}' is not a remote (HTTP) server; forced auth is only supported for remote servers"
+            ))),
+        }
+    }
+
+    /// Push a synthetic MCP `Initialized` event for `server_name` so the UI
+    /// refreshes a server whose underlying state is unchanged. Used after dropping
+    /// a reauth shadow (abort or shadow failure) to clear the pending-OAuth state
+    /// that was shown on the still-running original during the attempt.
+    fn refresh_mcp_server_in_ui(&mut self, server_name: &str) {
+        self.agent_event_buf.push(AgentEvent::Mcp(McpServerEvent::Initialized {
+            server_name: server_name.to_string(),
+            serve_duration: std::time::Duration::ZERO,
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        }));
+    }
+
+    /// Relaunch a remote MCP server under the normal (non-forced) flow.
+    ///
+    /// Used when a forced authentication on a not-currently-loaded server fails or
+    /// is aborted, so the user keeps the unauthenticated capabilities the server
+    /// offers. Because forced auth is never persisted on the cached config, this
+    /// tears down the failed actor and relaunches straight from the cached config.
+    async fn reload_mcp_server_normally(&mut self, server_name: &str) {
+        let Some(config) = self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .find(|c| c.server_name == server_name)
+            .map(|c| c.config.clone())
+        else {
+            return;
+        };
+
+        if let Err(e) = self.mcp_manager_handle.shutdown_server(server_name.to_string()).await {
+            warn!(server_name, error = %e, "failed to shut down server before normal-flow reload");
+        }
+        self.cached_tool_specs = None;
+        if let Err(e) = self
+            .mcp_manager_handle
+            .launch_server(server_name.to_string(), config)
+            .await
+        {
+            error!(server_name, error = %e, "failed to relaunch server under normal flow");
+        }
+    }
+
+    /// Remove the persisted OAuth credentials for a single remote MCP server.
+    ///
+    /// See [`AgentHandle::remove_mcp_server_credentials`] for caller-side docs.
+    /// Deletes the cached token and dynamic client registration files. Does not
+    /// stop or relaunch the server — a running server keeps its in-memory session;
+    /// the removal takes effect on the next launch.
+    async fn handle_remove_mcp_server_credentials(&mut self, server_name: String) -> Result<AgentResponse, AgentError> {
+        if !self.settings.mcp_enabled {
+            return Err(AgentError::Custom("MCP is disabled".to_string()));
+        }
+
+        // Look up the server's URL — only remote (HTTP) servers have OAuth credentials.
+        let url = match self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .find(|c| c.server_name == server_name)
+            .map(|c| &c.config)
+        {
+            Some(agent_config::definitions::McpServerConfig::Remote(remote)) => remote.url.clone(),
+            Some(_) => {
+                return Err(AgentError::Custom(format!(
+                    "MCP server '{server_name}' is not a remote (HTTP) server; it has no persisted credentials"
+                )));
+            },
+            None => {
+                return Err(AgentError::Custom(format!("No MCP server named '{server_name}'")));
+            },
+        };
+
+        self.mcp_manager_handle
+            .remove_server_credentials(server_name.clone(), url)
+            .await
+            .map_err(|e| AgentError::Custom(format!("failed to remove credentials for '{server_name}': {e}")))?;
+
+        Ok(AgentResponse::Success)
+    }
+
     async fn handle_cancel_request(&mut self) -> Result<AgentResponse, AgentError> {
         match self.active_state() {
             ActiveState::Idle
@@ -3992,15 +4326,99 @@ impl Agent {
     }
 
     async fn handle_mcp_events(&mut self, evt: McpServerEvent) {
-        if matches!(evt, McpServerEvent::ToolListChanged { .. }) {
+        // Intercept events for in-flight forced-auth shadows before normal
+        // handling. Shadows are hidden from the UI: their events are suppressed or
+        // rewritten to the target server name (and drive promotion/cleanup).
+        if self.handle_reauth_shadow_event(&evt).await {
+            return;
+        }
+
+        // Invalidate cached tool specs when the tool set may have changed.
+        if matches!(
+            evt,
+            McpServerEvent::ToolListChanged { .. } | McpServerEvent::Initialized { .. }
+        ) {
             self.cached_tool_specs = None;
         }
-        // Invalidate cached tool specs when a new MCP server initializes
-        if matches!(evt, McpServerEvent::Initialized { .. }) {
-            self.cached_tool_specs = None;
-        }
+
         let converted_evt = AgentEvent::Mcp(evt.clone());
         self.agent_event_buf.push(converted_evt);
+    }
+
+    /// Handle an MCP event that belongs to an in-flight forced-auth flow.
+    ///
+    /// Returns `true` if the event was for a tracked shadow/target (and was
+    /// handled here — including any forwarding), or `false` if it's unrelated to
+    /// forced auth and should be handled normally by [`Self::handle_mcp_events`].
+    ///
+    /// Behaviour for a tracked event:
+    /// - `OauthRequest` → rewritten to the **target** so the UI shows the prompt on the master
+    ///   server (the shadow is never displayed).
+    /// - `Initialized` → promote the shadow to the target (loaded case), invalidate caches, and
+    ///   forward `Initialized(target)`.
+    /// - `InitializeError` → loaded case: drop the shadow, leave the original running, and refresh
+    ///   the target in the UI; not-loaded case: surface the error and relaunch under the normal
+    ///   flow.
+    /// - `Initializing` / `ToolListChanged` → suppressed (the shadow stays hidden).
+    async fn handle_reauth_shadow_event(&mut self, evt: &McpServerEvent) -> bool {
+        let Some(target) = self.reauth_shadows.get(evt.server_name()).cloned() else {
+            return false;
+        };
+        let shadow_name = evt.server_name().to_string();
+        // `shadow_name == target` is the not-loaded case (launched under the real
+        // name with no separate shadow).
+        let is_shadow = shadow_name != target;
+
+        match evt {
+            McpServerEvent::OauthRequest { oauth_url, .. } => {
+                self.agent_event_buf.push(AgentEvent::Mcp(McpServerEvent::OauthRequest {
+                    server_name: target,
+                    oauth_url: oauth_url.clone(),
+                }));
+            },
+            McpServerEvent::Initialized { .. } => {
+                self.reauth_shadows.remove(&shadow_name);
+                if is_shadow
+                    && let Err(e) = self
+                        .mcp_manager_handle
+                        .promote_server(shadow_name.clone(), target.clone())
+                        .await
+                {
+                    warn!(target = %target, error = %e, "failed to promote reauth shadow");
+                }
+                // Tools likely changed now that the server is authenticated.
+                self.cached_tool_specs = None;
+                self.refresh_mcp_server_in_ui(&target);
+            },
+            McpServerEvent::InitializeError { error, .. } => {
+                self.reauth_shadows.remove(&shadow_name);
+                if is_shadow {
+                    // Loaded case: the original is still running. Drop the shadow
+                    // (clearing its failed marker) and refresh the original in the
+                    // UI so its pending-OAuth state is cleared.
+                    if let Err(e) = self.mcp_manager_handle.shutdown_server(shadow_name.clone()).await {
+                        warn!(target = %target, %shadow_name, error = %e, "failed to drop failed reauth shadow");
+                    }
+                    self.refresh_mcp_server_in_ui(&target);
+                } else {
+                    // Not-loaded case: forced auth on the real server failed. Surface
+                    // the error, then relaunch under the normal (non-forced) flow so
+                    // the user keeps any unauthenticated capabilities.
+                    warn!(target = %target, error = %error, "forced MCP auth failed; reloading under normal flow");
+                    self.agent_event_buf
+                        .push(AgentEvent::Mcp(McpServerEvent::InitializeError {
+                            server_name: target.clone(),
+                            error: error.clone(),
+                        }));
+                    self.reload_mcp_server_normally(&target).await;
+                }
+            },
+            McpServerEvent::Initializing { .. } | McpServerEvent::ToolListChanged { .. } => {
+                // Suppress: the shadow must stay invisible. The `authenticating`
+                // flag (from GetMcpServerInfo) conveys progress on the target.
+            },
+        }
+        true
     }
 
     /// Rebuild the BM25 tool index from MCP tool specs

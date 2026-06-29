@@ -156,6 +156,7 @@ impl McpService {
                     oauth: oauth_config,
                     disabled: _,
                     disabled_tools: _,
+                    force_auth,
                 } = config;
 
                 // Nested oauth_scopes (more specific) wins; fall back to top-level
@@ -179,6 +180,7 @@ impl McpService {
                     &processed_headers,
                     oauth_config,
                     event_tx,
+                    *force_auth,
                 );
                 let (service, auth_client) = http_service_builder.try_build(&self, &self.cred_path).await?;
                 serve_time_taken = start_time.elapsed();
@@ -1163,6 +1165,7 @@ mod tests {
             oauth: None,
             disabled: false,
             disabled_tools: vec![],
+            force_auth: false,
         });
         let (tx, _rx) = mpsc::channel(8);
         let service = McpService::new("remote-srv".to_string(), cfg, PathBuf::from("/cred"), tx);

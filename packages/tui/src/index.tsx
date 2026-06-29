@@ -258,6 +258,10 @@ const wireUpHandlers = () => {
     appStore.getState().setToolsList(tools);
   });
 
+  kiro.onMcpServersUpdate((servers) => {
+    appStore.getState().updateMcpServerStatuses(servers);
+  });
+
   // Wire up prompts handler before initialize
   kiro.onPromptsUpdate((prompts) => {
     logger.debug('[tui] prompts update received:', prompts.length, 'prompts');

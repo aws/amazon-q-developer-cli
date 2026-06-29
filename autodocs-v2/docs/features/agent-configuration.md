@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-22
-  commit: 92b71a022
+  validated: 2026-06-29
+  commit: a7e36ddc4
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth]
   related: [agent-create, agent-edit, agent-swap, mcp-registry, settings]
 ---
 
@@ -383,6 +383,19 @@ MCP server configurations. Supports local (stdio), remote (HTTP), and registry s
 }
 ```
 
+**Remote server with forced authentication** (skip unauthenticated attempt, go straight to OAuth):
+
+```json
+{
+  "mcpServers": {
+    "enterprise-api": {
+      "url": "https://mcp.enterprise.example.com/sse",
+      "forceAuth": true
+    }
+  }
+}
+```
+
 **Registry server with overrides**:
 
 For servers from the MCP registry, use `"type": "registry"` with optional overrides. Applicable override fields depend on the underlying server type resolved from the registry — `env` for local (stdio) servers, `headers` for remote (HTTP) servers; `timeout` and `disabled` apply to both.
@@ -440,6 +453,7 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
 - `disabledTools` (optional): List of tool names from this server to disable
+- `forceAuth` (optional): When `true`, skip the initial unauthenticated connection attempt and go straight to the OAuth flow. Useful for servers that offer both unauthenticated and authenticated methods when you always want the authenticated session. Default: `false`
 
 **Registry Server Fields**:
 - `type` (required): Must be `"registry"`

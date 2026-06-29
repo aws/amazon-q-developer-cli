@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/mcp auth`, `/mcp cancel-auth`, and `/mcp logout` commands to force OAuth re-authentication, abort pending auth flows, and remove stored credentials for remote MCP servers"
+}

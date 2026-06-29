@@ -44,6 +44,7 @@ export enum AgentEventType {
   SteeringCleared = 'steering_cleared',
   HooksUpdate = 'hooks_update',
   ToolsUpdate = 'tools_update',
+  McpServersUpdate = 'mcp_servers_update',
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
 }
@@ -527,6 +528,11 @@ export interface ToolsUpdateEvent {
   }>;
 }
 
+export interface McpServersUpdateEvent {
+  type: AgentEventType.McpServersUpdate;
+  servers: Array<{ name: string; status: string; toolCount: number }>;
+}
+
 export interface GoalStatusEvent {
   type: AgentEventType.GoalStatus;
   state: string;
@@ -696,4 +702,5 @@ export type AgentStreamEvent =
   | ModelUpdateEvent
   | HooksUpdateEvent
   | ToolsUpdateEvent
+  | McpServersUpdateEvent
   | GoalStatusEvent;

@@ -1398,6 +1398,12 @@ abstract class BaseAcpClient implements SessionClient {
     });
     this.broadcastStreamEvent({ type: AgentEventType.PromptsUpdate, prompts });
     this.broadcastStreamEvent({ type: AgentEventType.SkillsUpdate, skills });
+    if (mcpServers.length > 0) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.McpServersUpdate,
+        servers: mcpServers,
+      });
+    }
     // V2 has no steering concept; consumers keep state.steering at [].
   }
 

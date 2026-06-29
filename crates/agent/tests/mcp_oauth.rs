@@ -120,6 +120,7 @@ fn registry_resolved_remote(server_name: &str, url: String) -> McpServerConfig {
         oauth: None,
         disabled: false,
         disabled_tools: vec![],
+        force_auth: false,
     };
     OAuthResolvingRegistry {
         server_name: server_name.to_string(),
@@ -479,6 +480,90 @@ async fn failed_refresh_surfaces_clear_error() {
         err.contains("MCP_AUTH"),
         "failed refresh should surface a clear auth error (MCP_AUTH_REFRESH_FAILED / \
          MCP_AUTH_REAUTH_FAILED); got: {err}"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test E — A persisted token is reused on relaunch instead of prompting again.
+///
+/// Once the initial OAuth sign-in writes a token to the shared credential cache,
+/// tearing the server down and relaunching it against the *same* cache must load
+/// the persisted token. Crucially, **no OAuth flow runs on the relaunch**: there
+/// is no browser and no redirect loopback. When the authenticated connection path
+/// (`get_auth_manager`) finds cached credentials on disk it builds the
+/// `AuthorizationManager` directly and never reaches the interactive
+/// `get_auth_manager_impl` loopback/browser flow.
+///
+/// To prove that, this test **tears the browser driver down before the relaunch**:
+/// if the relaunch were to (incorrectly) start a fresh OAuth handshake, it would
+/// block on the redirect loopback with nothing to complete it and time out. A
+/// successful relaunch therefore demonstrates the cached token was reused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cached_token_is_reused_on_relaunch() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    // A single credential cache shared across both launches.
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+
+    let oauth_requests = Arc::new(AtomicUsize::new(0));
+    let browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None);
+
+    let config = registry_resolved_remote("cached-mcp", server.url());
+
+    // First launch performs the full OAuth handshake and persists the token.
+    launch_and_wait(&mut handle, "cached-mcp", config.clone(), Duration::from_secs(30))
+        .await
+        .expect("initial launch should complete OAuth and initialize");
+    call_tool_once(&handle, "cached-mcp")
+        .await
+        .expect("tool call should succeed after initial sign-in");
+    assert_eq!(
+        oauth_requests.load(Ordering::SeqCst),
+        1,
+        "exactly one authorization request during the initial sign-in"
+    );
+
+    // Tear the browser down so nothing can complete an OAuth flow from here on.
+    // The relaunch below must therefore succeed purely by reusing the cached
+    // token — if it tried to re-authorize it would hang on the loopback and the
+    // `launch_and_wait` timeout would fail the test. Awaiting the aborted handle
+    // guarantees the driver is fully stopped before we relaunch.
+    browser.abort();
+    let _ = browser.await;
+
+    // Tear the server down (the token stays on disk), then relaunch against the
+    // same credential cache.
+    handle
+        .shutdown_server("cached-mcp".to_string())
+        .await
+        .expect("shutdown_server should succeed");
+
+    launch_and_wait(&mut handle, "cached-mcp", config, Duration::from_secs(30))
+        .await
+        .expect("relaunch should initialize by reusing the cached token (no OAuth/browser involved)");
+    call_tool_once(&handle, "cached-mcp")
+        .await
+        .expect("tool call should succeed after relaunch");
+
+    // Belt-and-suspenders: with the browser gone, no authorization could have been
+    // completed during the relaunch — the count is still the single initial sign-in.
+    assert_eq!(
+        oauth_requests.load(Ordering::SeqCst),
+        1,
+        "relaunch must reuse the cached token rather than re-authorize; saw {} request(s)",
+        oauth_requests.load(Ordering::SeqCst)
     );
 
     handle.shutdown().await;

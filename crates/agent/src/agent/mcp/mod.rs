@@ -208,6 +208,25 @@ impl McpManagerHandle {
         }
     }
 
+    /// Shut down a single server by name and remove it from the manager.
+    ///
+    /// Gracefully terminates a running server, or aborts one that is still
+    /// initializing (cancelling any in-flight OAuth flow). After this returns the
+    /// server name is free to be relaunched via [`launch_server`](Self::launch_server).
+    pub async fn shutdown_server(&mut self, name: String) -> Result<(), McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::ShutdownServer { server_name: name })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::ShutdownServerAcknowledged => Ok(()),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
     /// Terminate and remove a single server by name. Idempotent: stopping a
     /// server that isn't running succeeds (the desired absence already holds).
     pub async fn stop_server(&mut self, name: String) -> Result<(), McpManagerError> {
@@ -218,6 +237,40 @@ impl McpManagerHandle {
             .unwrap_or(Err(McpManagerError::Channel))?
         {
             McpManagerResponse::StopServerAcknowledged => Ok(()),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    /// Remove the persisted OAuth credentials (token + registration) for a remote
+    /// server identified by `url`. `server_name` is used for logging only. Returns
+    /// `Ok(true)` if at least one credential file was present and removed.
+    pub async fn remove_server_credentials(&self, server_name: String, url: String) -> Result<bool, McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::RemoveServerCredentials { server_name, url })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::RemoveServerCredentialsAcknowledged { removed } => Ok(removed),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    /// Promote a freshly-initialized shadow server (`from`) to take over the
+    /// `to` name, shutting down the existing `to` server if present. Used by the
+    /// forced-auth flow once the shadow has authenticated and initialized.
+    pub async fn promote_server(&mut self, from: String, to: String) -> Result<(), McpManagerError> {
+        match self
+            .request_tx
+            .send_recv(McpManagerRequest::PromoteServer { from, to })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::PromoteServerAcknowledged => Ok(()),
             other => Err(McpManagerError::Custom(format!(
                 "received unexpected response: {other:?}"
             ))),
@@ -490,6 +543,38 @@ impl McpManager {
                 )),
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
+            McpManagerRequest::ShutdownServer { server_name } => {
+                self.failed_servers.remove(&server_name);
+                if let Some(handle) = self.servers.remove(&server_name) {
+                    // Server is running: shut it down gracefully so the underlying
+                    // transport/process is cleaned up.
+                    if tokio::time::timeout(Duration::from_secs(4), handle.shutdown())
+                        .await
+                        .is_err()
+                    {
+                        warn!(server_name = %server_name, "MCP server did not shut down within timeout, aborting");
+                        handle.abort();
+                    }
+                } else if let Some((handle, result_tx)) = self.initializing_servers.remove(&server_name) {
+                    // Server is still initializing (e.g. blocked on an OAuth redirect).
+                    // The actor's request loop isn't running yet, so abort the task to
+                    // cancel the in-flight launch and tear down the OAuth loopback.
+                    handle.abort();
+                    let _ = result_tx.send(Err(McpManagerError::Custom(format!(
+                        "server '{server_name}' was shut down before initialization completed"
+                    ))));
+                } else {
+                    debug!(server_name = %server_name, "ShutdownServer requested for unknown server, treating as no-op");
+                }
+                Ok(McpManagerResponse::ShutdownServerAcknowledged)
+            },
+            McpManagerRequest::RemoveServerCredentials { server_name, url } => {
+                let removed = oauth_util::remove_persisted_credentials(&self.cred_path, &url)
+                    .await
+                    .map_err(|e| McpManagerError::Custom(format!("failed to remove credentials: {e}")))?;
+                info!(server_name = %server_name, removed, "removed persisted MCP credentials");
+                Ok(McpManagerResponse::RemoveServerCredentialsAcknowledged { removed })
+            },
             McpManagerRequest::Terminate => {
                 let futs: Vec<_> = self
                     .servers
@@ -507,12 +592,25 @@ impl McpManager {
                     })
                     .collect();
                 join_all(futs).await;
+
+                // Abort any servers still initializing (e.g. a forced-auth shadow
+                // blocked on an interactive OAuth flow). These live in
+                // `initializing_servers`, not `servers`, so the shutdown loop above
+                // misses them; their actor task isn't yet reading its request
+                // channel, so dropping the handle wouldn't stop it. Without an
+                // explicit abort the task — and its OAuth redirect loopback — would
+                // leak past manager teardown (e.g. on agent swap).
+                for (name, (handle, _result_tx)) in self.initializing_servers.drain() {
+                    debug!(server_name = %name, "aborting initializing MCP server on terminate");
+                    handle.abort();
+                }
+                self.failed_servers.clear();
+
                 Ok(McpManagerResponse::TerminateAcknowledged)
             },
             McpManagerRequest::StopServer { server_name } => {
-                // Targeted termination. A server may be fully running or still
-                // initializing; handle both. Removing the initializing entry
-                // drops its result sender, unblocking any pending launch receiver.
+                // Legacy alias — delegate to ShutdownServer semantics.
+                self.failed_servers.remove(&server_name);
                 if let Some(handle) = self.servers.remove(&server_name) {
                     if tokio::time::timeout(Duration::from_secs(4), handle.shutdown())
                         .await
@@ -523,9 +621,35 @@ impl McpManager {
                 } else if let Some((handle, _result_tx)) = self.initializing_servers.remove(&server_name) {
                     handle.terminate();
                 }
-                // Clear any failed marker so a subsequent relaunch isn't shadowed.
-                self.failed_servers.remove(&server_name);
                 Ok(McpManagerResponse::StopServerAcknowledged)
+            },
+            McpManagerRequest::PromoteServer { from, to } => {
+                // The shadow must be fully initialized (in `servers`) before it can
+                // be promoted. If it isn't, the promotion is a no-op — the caller
+                // only issues this after observing the shadow's `Initialized` event.
+                let Some(shadow_handle) = self.servers.remove(&from) else {
+                    warn!(from = %from, to = %to, "PromoteServer: shadow not found in running servers; ignoring");
+                    return Ok(McpManagerResponse::PromoteServerAcknowledged);
+                };
+
+                // Shut down the existing target (the original server being replaced),
+                // if present, so its transport/process is cleaned up.
+                if let Some(old) = self.servers.remove(&to)
+                    && tokio::time::timeout(Duration::from_secs(4), old.shutdown())
+                        .await
+                        .is_err()
+                {
+                    warn!(server_name = %to, "original MCP server did not shut down within timeout, aborting");
+                    old.abort();
+                }
+                // A stale failure marker for the target must not shadow the promoted server.
+                self.failed_servers.remove(&to);
+
+                // Move the shadow handle to the target name. From here on, all
+                // requests for `to` route to the (now authenticated) shadow actor.
+                self.servers.insert(to.clone(), shadow_handle);
+                info!(from = %from, to = %to, "promoted shadow MCP server to target name");
+                Ok(McpManagerResponse::PromoteServerAcknowledged)
             },
         }
     }
@@ -610,12 +734,31 @@ pub enum McpManagerRequest {
         tool_name: String,
         args: Option<serde_json::Map<String, Value>>,
     },
-    /// Terminate and remove a single server by name. Idempotent: an unknown
-    /// name is a no-op. Unlike [`Terminate`](Self::Terminate) — which tears
-    /// down every server for shutdown — this targets one server so a changed
-    /// desired set can be reconciled without churning unaffected servers.
+    /// Shut down a single server by name (graceful if running, aborted if still
+    /// initializing) and remove it from the manager so it can be relaunched.
+    ShutdownServer {
+        server_name: String,
+    },
+    /// Targeted stop of a single server (used by reconcile and reauth flows).
     StopServer {
         server_name: String,
+    },
+    /// Remove the persisted OAuth credentials (token + registration) for a remote
+    /// server. `url` identifies which credential files to delete; `server_name` is
+    /// used for logging only.
+    RemoveServerCredentials {
+        server_name: String,
+        url: String,
+    },
+    /// Promote a freshly-initialized "shadow" server to take over a target name.
+    ///
+    /// Used by the forced-auth flow: a shadow server authenticates alongside the
+    /// still-running original, and once it initializes it is promoted to replace
+    /// the original under the target name. The old `to` handle (if any) is shut
+    /// down and the shadow handle is moved from `from` to `to`.
+    PromoteServer {
+        from: String,
+        to: String,
     },
     Terminate,
 }
@@ -628,8 +771,11 @@ pub enum McpManagerResponse {
     Prompts(Vec<Prompt>),
     Prompt(Vec<serde_json::Value>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
+    ShutdownServerAcknowledged,
+    RemoveServerCredentialsAcknowledged { removed: bool },
     TerminateAcknowledged,
     StopServerAcknowledged,
+    PromoteServerAcknowledged,
 }
 
 pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;
@@ -680,6 +826,19 @@ pub enum McpServerEvent {
     OauthRequest { server_name: String, oauth_url: String },
     /// The MCP server's tool list has changed
     ToolListChanged { server_name: String },
+}
+
+impl McpServerEvent {
+    /// The name of the MCP server this event pertains to.
+    pub fn server_name(&self) -> &str {
+        match self {
+            McpServerEvent::Initializing { server_name }
+            | McpServerEvent::Initialized { server_name, .. }
+            | McpServerEvent::InitializeError { server_name, .. }
+            | McpServerEvent::OauthRequest { server_name, .. }
+            | McpServerEvent::ToolListChanged { server_name } => server_name,
+        }
+    }
 }
 
 impl From<McpServerActorEvent> for McpServerEvent {
@@ -1135,6 +1294,127 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mcp_manager_terminate_aborts_initializing_servers() {
+        // Servers still initializing (e.g. a forced-auth shadow blocked on OAuth)
+        // must be torn down on Terminate, not leaked.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let (tx, _rx) = oneshot::channel();
+        mgr.initializing_servers.insert(
+            "__reauth__srv".to_string(),
+            (McpServerActorHandle::new_dummy("__reauth__srv"), tx),
+        );
+        mgr.failed_servers.insert("old".to_string());
+
+        let result = mgr.handle_mcp_manager_request(McpManagerRequest::Terminate).await;
+        assert!(matches!(result, Ok(McpManagerResponse::TerminateAcknowledged)));
+        assert!(mgr.initializing_servers.is_empty());
+        assert!(mgr.failed_servers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_promote_server_moves_shadow_to_target_and_clears_failed() {
+        // A promoted shadow takes over the target name: the old target handle is
+        // dropped, the shadow handle moves to the target key, and any stale failure
+        // marker for the target is cleared.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers.insert(
+            "__reauth__srv".to_string(),
+            McpServerActorHandle::new_dummy("__reauth__srv"),
+        );
+        mgr.servers
+            .insert("srv".to_string(), McpServerActorHandle::new_dummy("srv"));
+        mgr.failed_servers.insert("srv".to_string());
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::PromoteServer {
+                from: "__reauth__srv".to_string(),
+                to: "srv".to_string(),
+            })
+            .await;
+
+        assert!(matches!(result, Ok(McpManagerResponse::PromoteServerAcknowledged)));
+        assert!(!mgr.servers.contains_key("__reauth__srv"));
+        assert!(mgr.servers.contains_key("srv"));
+        assert!(!mgr.failed_servers.contains("srv"));
+    }
+
+    #[tokio::test]
+    async fn test_promote_server_without_target_present() {
+        // Promotion when no original target exists (e.g. it had failed) still moves
+        // the shadow into the target slot.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers.insert(
+            "__reauth__srv".to_string(),
+            McpServerActorHandle::new_dummy("__reauth__srv"),
+        );
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::PromoteServer {
+                from: "__reauth__srv".to_string(),
+                to: "srv".to_string(),
+            })
+            .await;
+
+        assert!(matches!(result, Ok(McpManagerResponse::PromoteServerAcknowledged)));
+        assert!(!mgr.servers.contains_key("__reauth__srv"));
+        assert!(mgr.servers.contains_key("srv"));
+    }
+
+    #[tokio::test]
+    async fn test_promote_server_missing_shadow_is_noop() {
+        // If the shadow isn't running yet, promotion is a no-op and leaves the
+        // original target untouched.
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers
+            .insert("srv".to_string(), McpServerActorHandle::new_dummy("srv"));
+
+        let result = mgr
+            .handle_mcp_manager_request(McpManagerRequest::PromoteServer {
+                from: "__reauth__srv".to_string(),
+                to: "srv".to_string(),
+            })
+            .await;
+
+        assert!(matches!(result, Ok(McpManagerResponse::PromoteServerAcknowledged)));
+        assert!(mgr.servers.contains_key("srv"));
+        assert!(!mgr.servers.contains_key("__reauth__srv"));
+    }
+
+    #[test]
+    fn test_mcp_server_event_server_name_accessor() {
+        assert_eq!(
+            McpServerEvent::Initializing {
+                server_name: "a".to_string()
+            }
+            .server_name(),
+            "a"
+        );
+        assert_eq!(
+            McpServerEvent::OauthRequest {
+                server_name: "b".to_string(),
+                oauth_url: "u".to_string()
+            }
+            .server_name(),
+            "b"
+        );
+        assert_eq!(
+            McpServerEvent::InitializeError {
+                server_name: "c".to_string(),
+                error: "e".to_string()
+            }
+            .server_name(),
+            "c"
+        );
+        assert_eq!(
+            McpServerEvent::ToolListChanged {
+                server_name: "d".to_string()
+            }
+            .server_name(),
+            "d"
+        );
+    }
+
+    #[tokio::test]
     async fn test_mcp_manager_stop_server_unknown_is_noop() {
         // Stopping a server that was never launched succeeds — the desired
         // absence already holds. Keeps the reconcile path idempotent.
@@ -1375,6 +1655,58 @@ mod tests {
         assert_eq!(mgr.event_buf.len(), 1);
     }
 
+    #[tokio::test]
+    async fn test_shutdown_server_removes_running_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.servers
+            .insert("run".to_string(), McpServerActorHandle::new_dummy("run"));
+        let res = mgr
+            .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
+                server_name: "run".to_string(),
+            })
+            .await;
+        assert!(matches!(res, Ok(McpManagerResponse::ShutdownServerAcknowledged)));
+        assert!(!mgr.servers.contains_key("run"));
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_server_removes_initializing_server() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("init");
+        let (tx, mut rx) = oneshot::channel();
+        mgr.initializing_servers.insert("init".to_string(), (handle, tx));
+        let res = mgr
+            .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
+                server_name: "init".to_string(),
+            })
+            .await;
+        assert!(matches!(res, Ok(McpManagerResponse::ShutdownServerAcknowledged)));
+        assert!(!mgr.initializing_servers.contains_key("init"));
+        // The pending launch receiver is resolved with an error.
+        assert!(rx.try_recv().unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_server_clears_failed_and_unknown_is_noop() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        mgr.failed_servers.insert("f".to_string());
+        let res = mgr
+            .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
+                server_name: "f".to_string(),
+            })
+            .await;
+        assert!(matches!(res, Ok(McpManagerResponse::ShutdownServerAcknowledged)));
+        assert!(!mgr.failed_servers.contains("f"));
+
+        // Unknown server is a no-op that still acknowledges.
+        let res2 = mgr
+            .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
+                server_name: "ghost".to_string(),
+            })
+            .await;
+        assert!(matches!(res2, Ok(McpManagerResponse::ShutdownServerAcknowledged)));
+    }
+
     #[test]
     fn test_handle_actor_event_initialized_duplicate_server() {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
@@ -1592,6 +1924,7 @@ mod tests {
             oauth: None,
             disabled: true,
             disabled_tools: vec![],
+            force_auth: false,
         });
         let json = serde_json::to_string(&config).unwrap();
         let parsed: McpServerConfig = serde_json::from_str(&json).unwrap();

@@ -52,6 +52,8 @@ pub enum McpMessage {
 pub struct McpServerActorHandle {
     _server_name: String,
     sender: RequestSender<McpServerActorRequest, McpServerActorResponse, McpServerActorError>,
+    /// `None` only for test handles constructed without a spawned task.
+    abort_handle: Option<tokio::task::AbortHandle>,
 }
 
 impl McpServerActorHandle {
@@ -147,6 +149,14 @@ impl McpServerActorHandle {
         _ = self.sender.send_recv(McpServerActorRequest::Terminate).await;
     }
 
+    /// Forcibly abort the spawned actor task (cancels an in-flight launch, e.g. one
+    /// blocked on an OAuth redirect, tearing down its loopback).
+    pub fn abort(&self) {
+        if let Some(handle) = &self.abort_handle {
+            handle.abort();
+        }
+    }
+
     /// Create a dummy handle for testing without spawning a subprocess.
     #[cfg(test)]
     pub(super) fn new_dummy(name: &str) -> Self {
@@ -154,6 +164,7 @@ impl McpServerActorHandle {
         Self {
             _server_name: name.to_string(),
             sender: tx,
+            abort_handle: None,
         }
     }
 }
@@ -275,11 +286,13 @@ impl McpServerActor {
         let (req_tx, req_rx) = new_request_channel();
 
         let server_name_clone = server_name.clone();
-        tokio::spawn(async move { Self::launch(server_name_clone, config, cred_path, req_rx, event_tx).await });
+        let join_handle =
+            tokio::spawn(async move { Self::launch(server_name_clone, config, cred_path, req_rx, event_tx).await });
 
         McpServerActorHandle {
             _server_name: server_name,
             sender: req_tx,
+            abort_handle: Some(join_handle.abort_handle()),
         }
     }
 
@@ -843,6 +856,7 @@ mod tests {
         let handle = McpServerActorHandle {
             _server_name: "test-server".to_string(),
             sender: tx,
+            abort_handle: None,
         };
         (handle, rx)
     }
@@ -1420,6 +1434,7 @@ mod tests {
                 disabled_tools: vec![],
                 oauth_scopes: vec![],
                 oauth: None,
+                force_auth: false,
             }),
             tools: vec![],
             prompts: vec![],
@@ -1466,6 +1481,7 @@ mod tests {
                 disabled_tools: vec![],
                 oauth_scopes: vec![],
                 oauth: None,
+                force_auth: false,
             }),
             tools: vec![],
             prompts: vec![],

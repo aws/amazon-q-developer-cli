@@ -69,6 +69,9 @@ export class Kiro {
   ) => void;
   private kasCommandsHandler?: (commands: KasCommand[]) => void;
   private toolsHandler?: (tools: ToolInfo[]) => void;
+  private mcpServersHandler?: (
+    servers: Array<{ name: string; status: string; toolCount: number }>
+  ) => void;
   private promptsHandler?: (prompts: PromptEntry[]) => void;
   private skillsHandler?: (skills: SkillEntry[]) => void;
   private steeringHandler?: (steering: SteeringEntry[]) => void;
@@ -135,6 +138,14 @@ export class Kiro {
 
   onToolsUpdate(handler: (tools: ToolInfo[]) => void): void {
     this.toolsHandler = handler;
+  }
+
+  onMcpServersUpdate(
+    handler: (
+      servers: Array<{ name: string; status: string; toolCount: number }>
+    ) => void
+  ): void {
+    this.mcpServersHandler = handler;
   }
 
   onPromptsUpdate(handler: (prompts: PromptEntry[]) => void): void {
@@ -466,6 +477,12 @@ export class Kiro {
         }
         if (event.type === AgentEventType.ToolsUpdate && this.toolsHandler) {
           this.toolsHandler(event.tools);
+        }
+        if (
+          event.type === AgentEventType.McpServersUpdate &&
+          this.mcpServersHandler
+        ) {
+          this.mcpServersHandler(event.servers);
         }
         if (
           event.type === AgentEventType.PromptsUpdate &&

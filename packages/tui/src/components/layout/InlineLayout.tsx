@@ -606,15 +606,44 @@ export const InlineLayout: React.FC = () => {
     clearCommandInput();
   }, [setShowMcpPanel, setActiveCommand, clearCommandInput]);
 
-  // Overlay auth-required status onto MCP servers that are pending OAuth
+  // Overlay auth-required status onto MCP servers that are pending OAuth or have
+  // a forced (re-)authentication in progress (the agent reports `authenticating`
+  // on the master server while a hidden shadow runs the OAuth flow).
   const mcpServersWithAuth = useMemo(() => {
-    if (pendingOAuthServers.size === 0) return mcpServers;
+    if (
+      pendingOAuthServers.size === 0 &&
+      !mcpServers.some((s) => s.authenticating)
+    )
+      return mcpServers;
     return mcpServers.map((s) =>
-      pendingOAuthServers.has(s.name)
+      pendingOAuthServers.has(s.name) || s.authenticating
         ? { ...s, status: 'auth-required' as const }
         : s
     );
   }, [mcpServers, pendingOAuthServers]);
+
+  // Run a single-server /mcp action (e.g. "auth <name>") then refresh the panel's
+  // status snapshot. Live OAuth/init events update pendingOAuthServers separately.
+  const runMcpServerAction = useCallback(
+    async (value: string) => {
+      await kiro.executeCommand({
+        command: 'mcp',
+        args: { value },
+      } as any);
+      const result = await kiro.executeCommand({
+        command: 'mcp',
+        args: { value: '' },
+      } as any);
+      if (result?.data) {
+        const data = result.data as {
+          servers?: McpServerInfo[];
+          mode?: string;
+        };
+        setShowMcpPanel(true, data.servers ?? [], data.mode ?? 'status');
+      }
+    },
+    [kiro, setShowMcpPanel]
+  );
 
   const handleCloseToolsPanel = useCallback(() => {
     setShowToolsPanel(false);
@@ -1232,6 +1261,15 @@ export const InlineLayout: React.FC = () => {
                     showAlert: (message, status, autoHideMs) =>
                       showTransientAlert({ message, status, autoHideMs }),
                   });
+                }}
+                onForceAuth={(serverName) => {
+                  void runMcpServerAction(`auth ${serverName}`);
+                }}
+                onAbortAuth={(serverName) => {
+                  void runMcpServerAction(`cancel-auth ${serverName}`);
+                }}
+                onRemoveCredentials={(serverName) => {
+                  void runMcpServerAction(`logout ${serverName}`);
                 }}
                 onAction={async (serverNames: string[]) => {
                   const action = mcpMode === 'add' ? 'add' : 'remove';
