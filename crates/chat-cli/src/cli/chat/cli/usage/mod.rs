@@ -20,10 +20,17 @@ pub mod usage_renderer;
 pub struct BillingUsageData {
     pub status: BillingDataStatus,
     pub plan_name: String,
+    /// Retained from the legacy post-paid overages model; no longer rendered (overages retired).
+    #[allow(dead_code)]
     pub overages_enabled: bool,
     pub billing_cycle_reset: String,
     pub usage_breakdowns: Vec<UsageBreakdownInfo>,
     pub bonus_credits: Vec<BonusCredit>,
+    /// Purchased prepaid add-on credit packs (individual prepaid-overages model).
+    pub add_on_credits: Vec<AddOnCreditPack>,
+    /// Whether the user can use/purchase add-on credits (subscription_info.overage_capability ==
+    /// OVERAGE_CAPABLE). FREE users are OVERAGE_INCAPABLE and must not see the purchase prompt.
+    pub overage_capable: bool,
 }
 
 #[derive(Debug)]
@@ -42,10 +49,19 @@ pub struct UsageBreakdownInfo {
     pub used: f64,
     pub limit: f64,
     pub percentage: i32,
+    /// Legacy post-paid overage fields; retained from the API but no longer rendered.
+    #[allow(dead_code)]
     pub current_overages: f64,
+    #[allow(dead_code)]
     pub overage_rate: f64,
+    #[allow(dead_code)]
     pub overage_charges: f64,
+    #[allow(dead_code)]
     pub currency: String,
+    /// Whether this dimension has a real usage limit. False when the backend returns the
+    /// "no limit" sentinel (e.g. credit-pooling users with no per-user cap) — the progress
+    /// bar is hidden in that case.
+    pub has_limit: bool,
 }
 
 /// Individual bonus credit information
@@ -55,6 +71,21 @@ pub struct BonusCredit {
     pub used: f64,
     pub total: f64,
     pub days_until_expiry: i64,
+}
+
+/// A purchased prepaid add-on credit pack (a.k.a. "Additional credits").
+#[derive(Debug)]
+pub struct AddOnCreditPack {
+    pub used: f64,
+    pub total: f64,
+    /// Formatted expiry date, e.g. "Jun 18, 2027". `None` if the backend omitted it.
+    pub expires_at: Option<String>,
+    /// Raw expiry timestamp (epoch seconds) used for chronological FIFO ordering. Display uses
+    /// `expires_at`; sorting MUST use this (never compare the formatted string).
+    pub expires_at_secs: Option<i64>,
+    /// Derived: the single pack currently being consumed (earliest-expiry pack with remaining
+    /// credits, FIFO). Only one pack is active at a time; the rest are summed into one line.
+    pub is_active: bool,
 }
 
 /// Arguments for the usage command that displays credits and billing information.

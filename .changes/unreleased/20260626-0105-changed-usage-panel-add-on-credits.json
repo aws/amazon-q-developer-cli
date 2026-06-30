@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/usage` now shows prepaid \"Additional credits\" packs in place of the legacy post-paid overages section, and hides the progress bar for users without a usage cap"
+}

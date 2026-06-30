@@ -79,6 +79,9 @@ export interface UsageBreakdownItem {
   overageRate: number;
   overageCharges: number;
   currency: string;
+  /** Whether this dimension has a real usage limit. When false (no-limit sentinel), the
+   * progress bar is hidden and only consumption is shown. */
+  hasLimit: boolean;
 }
 
 export interface BonusCredit {
@@ -88,6 +91,16 @@ export interface BonusCredit {
   daysUntilExpiry: number;
 }
 
+/** A purchased prepaid add-on credit pack ("Additional credits"). */
+export interface AddOnCreditPack {
+  used: number;
+  total: number;
+  /** Pre-formatted expiry date (e.g. "Jun 18, 2027"), or null if omitted. */
+  expiresAt: string | null;
+  /** Derived: the single pack currently being consumed (earliest-expiry with remaining, FIFO). */
+  isActive: boolean;
+}
+
 export interface UsageData {
   planName: string;
   billingCycleReset: string;
@@ -95,6 +108,10 @@ export interface UsageData {
   isEnterprise: boolean;
   usageBreakdowns: UsageBreakdownItem[];
   bonusCredits: BonusCredit[];
+  /** Purchased prepaid add-on credit packs (individual prepaid-overages model). */
+  addOnCredits: AddOnCreditPack[];
+  /** Whether the user can use/purchase add-on credits (overage_capability == OVERAGE_CAPABLE). */
+  overageCapable: boolean;
 }
 
 export interface McpServerInfo {

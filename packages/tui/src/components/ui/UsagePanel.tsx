@@ -64,6 +64,9 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
     );
   }
 
+  // Defensive: older agents (e.g. an out-of-date KAS) may omit addOnCredits.
+  const addOnCredits = data.addOnCredits ?? [];
+
   return (
     <Panel
       title="/usage"
@@ -93,49 +96,59 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
             <Box justifyContent="space-between">
               <Text>
                 {primary(item.displayName)}{' '}
-                {secondary(
-                  `(${item.used.toFixed(2)} of ${item.limit} covered in plan)`
-                )}
+                {item.hasLimit
+                  ? secondary(
+                      `(${item.used.toFixed(2)} of ${item.limit} covered in plan)`
+                    )
+                  : secondary(`(${item.used.toFixed(2)} used)`)}
               </Text>
             </Box>
-            <Box marginTop={1}>
-              <UsageProgressBar percentage={pct} width={barWidth} />
-              <Text> {secondary(`${pct.toFixed(1)}%`)}</Text>
-            </Box>
+            {item.hasLimit && (
+              <Box marginTop={1}>
+                <UsageProgressBar percentage={pct} width={barWidth} />
+                <Text> {secondary(`${pct.toFixed(1)}%`)}</Text>
+              </Box>
+            )}
           </Box>
         );
       })}
 
-      <Box marginTop={1}>
-        <Text>
-          {primary('Overages: ')}
-          {data.overagesEnabled ? (
-            <>
-              {primary('Enabled')}{' '}
-              {secondary(
-                `billed at $${data.usageBreakdowns[0]?.overageRate.toFixed(2)} per credit`
-              )}
-            </>
-          ) : (
-            secondary('Disabled')
-          )}
-        </Text>
-      </Box>
-
-      {data.overagesEnabled && data.usageBreakdowns[0] && (
-        <Box flexDirection="column">
-          <Text>
-            {secondary(
-              `Credits used: ${data.usageBreakdowns[0].currentOverages}`
+      {!data.isEnterprise &&
+        (data.overageCapable || addOnCredits.length > 0) && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text>{primary('Additional credits')}</Text>
+            {addOnCredits.length === 0 ? (
+              <Text>{secondary('Add-on credits available for purchase')}</Text>
+            ) : (
+              <>
+                {addOnCredits
+                  .filter((p) => p.isActive)
+                  .map((p, i) => (
+                    <Text key={`active-${i}`}>
+                      {`${p.used.toFixed(2)} of ${Math.round(p.total)} used${
+                        p.expiresAt ? `, expires ${p.expiresAt}` : ''
+                      }`}
+                    </Text>
+                  ))}
+                {(() => {
+                  const inactive = addOnCredits.filter((p) => !p.isActive);
+                  if (inactive.length === 0) return null;
+                  const used = inactive.reduce((s, p) => s + p.used, 0);
+                  const total = inactive.reduce((s, p) => s + p.total, 0);
+                  return (
+                    <Text>
+                      {secondary(
+                        `${used.toFixed(2)} of ${Math.round(total)} credits across ${inactive.length} pack${
+                          inactive.length === 1 ? '' : 's'
+                        }`
+                      )}
+                    </Text>
+                  );
+                })()}
+              </>
             )}
-          </Text>
-          <Text>
-            {secondary(
-              `Est. cost: $${data.usageBreakdowns[0].overageCharges.toFixed(2)} ${data.usageBreakdowns[0].currency}`
-            )}
-          </Text>
-        </Box>
-      )}
+          </Box>
+        )}
 
       {data.bonusCredits.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
@@ -159,7 +172,9 @@ export function UsagePanel({ data, onClose, onTabSwitch }: UsagePanelProps) {
           ) : (
             <>
               {secondary(
-                'To manage your plan or configure overages navigate to '
+                data.overageCapable
+                  ? 'To manage your plan or purchase add-on credits navigate to '
+                  : 'To manage your plan navigate to '
               )}
               {brand('app.kiro.dev/account/usage')}
             </>
