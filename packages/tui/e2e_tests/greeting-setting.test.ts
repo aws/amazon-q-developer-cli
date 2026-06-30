@@ -5,10 +5,11 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-function expectedWelcomeText(agentEngine: string): string {
-  return agentEngine === 'kas'
-    ? 'Kiro CLI V3'
-    : 'Welcome to the new Kiro CLI UX!';
+function expectedWelcomeText(_agentEngine: string): string {
+  // Both engines surface the "Kiro CLI V3" wordmark on the welcome screen:
+  // the KAS (V3) build welcomes the user to V3, and the V2 build announces
+  // that V3 is now available to try via `kiro-cli --v3`.
+  return 'Kiro CLI V3';
 }
 
 describe('greeting setting', () => {
