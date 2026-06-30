@@ -67,7 +67,10 @@ import type {
   SteeringSource,
   TuiCommand,
 } from './types/commands';
-import type { ListSessionsResponse } from './types/session-client';
+import type {
+  ListSessionsResponse,
+  ExecutionTarget,
+} from './types/session-client';
 import type {
   HookInfo,
   McpServerInfo,
@@ -2802,6 +2805,21 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialModel?: string;
 
   /**
+   * Execution target for the first `newSession`, from the `--remote` CLI flag.
+   * `{ kind: 'cloud-sandbox' }` when `--remote` was passed, else undefined
+   * (treated as local). Plumbed and held here in T1; the capability-gated
+   * `_meta.kiro.executionTarget` send on `session/new` lands in T2 (once the
+   * `initialize` handshake advertises support). Not yet read in this commit.
+   */
+  private readonly executionTarget?: ExecutionTarget;
+
+  /**
+   * Repository selector(s) for a remote session, from `--repo`. Held for the
+   * repo-source flow (later task); not yet sent on `session/new`.
+   */
+  private readonly repos?: string[];
+
+  /**
    * Whether an explicit `--effort` CLI flag was passed. The flag is forwarded
    * to the KAS subprocess (which applies it), so when set we skip auto-applying
    * any saved per-model effort default — the explicit flag wins.
@@ -2842,6 +2860,8 @@ export class KasAcpClient extends BaseAcpClient {
     initialModel?: string;
     hasExplicitEffort?: boolean;
     version?: string;
+    executionTarget?: ExecutionTarget;
+    repos?: string[];
   }) {
     if (options?.stream) {
       super(createNullAgentProcess());
@@ -2849,6 +2869,8 @@ export class KasAcpClient extends BaseAcpClient {
       this.initialModel = options.initialModel;
       this.hasExplicitEffort = options.hasExplicitEffort ?? false;
       this.version = options.version ?? getCliVersion();
+      this.executionTarget = options.executionTarget;
+      this.repos = options.repos;
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
       this.kiroClient = new KiroClient({
         stream: finalStream,
@@ -2925,6 +2947,8 @@ export class KasAcpClient extends BaseAcpClient {
     this.initialModel = options?.initialModel;
     this.hasExplicitEffort = options?.hasExplicitEffort ?? false;
     this.version = version;
+    this.executionTarget = options?.executionTarget;
+    this.repos = options?.repos;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
@@ -5709,6 +5733,8 @@ export function createAcpClient(
     initialAgent?: string;
     initialModel?: string;
     hasExplicitEffort?: boolean;
+    executionTarget?: ExecutionTarget;
+    repos?: string[];
   }
 ): SessionClient {
   if (resolveAgentEngine() === 'kas') {

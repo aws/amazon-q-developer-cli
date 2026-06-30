@@ -24,6 +24,13 @@ pub enum Feature {
     Voice,
     Lite,
     Kas,
+    /// Remote/cloud sandbox sessions, exposed via the hidden `--remote` /
+    /// `--repo` flags. Dark-shipped: `treatment_percent: 0` in `rollout.json`
+    /// means it is OFF in every released build (stable and nightly). Only
+    /// `init_for_tests_enable_all` (debug builds / `KIRO_TEST_MODE` / E2E)
+    /// turns it on, so live customers cannot activate the feature even if they
+    /// guess the flag name. Ramp later by raising the percent + rebuilding.
+    RemoteSandbox,
     #[cfg(test)]
     Test,
     #[cfg(test)]
@@ -229,7 +236,7 @@ impl Rollout {
         }
 
         let mut features = HashMap::new();
-        for name in ["tui", "voice", "goal"] {
+        for name in ["tui", "voice", "goal", "remote_sandbox"] {
             features.insert(name.to_string(), FeatureRollout {
                 description: "test-enabled".to_string(),
                 treatment_percent: 100,
@@ -341,6 +348,30 @@ mod tests {
         assert!(features.contains_key(<&str>::from(Feature::Test)));
         assert!(features.contains_key(<&str>::from(Feature::TestInternalOnly)));
         assert!(features.contains_key(<&str>::from(Feature::TestNightlyOnly)));
+    }
+
+    #[test]
+    fn test_remote_sandbox_is_present_but_dark_in_all_real_builds() {
+        // The rollout entry must exist (so it can be ramped later by editing
+        // the percent + rebuilding)...
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::RemoteSandbox)),
+            "remote_sandbox must be declared in rollout.json"
+        );
+
+        // ...but at treatment_percent 0 it is OFF for every real build:
+        // external/stable, external/nightly, internal/stable, and even
+        // internal/nightly. Only `init_for_tests_enable_all` (debug /
+        // KIRO_TEST_MODE / E2E) turns it on. This is the dark-ship guarantee
+        // that keeps `--remote`/`--repo` unusable by live customers.
+        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert!(
+                !r.is_enabled(Feature::RemoteSandbox),
+                "remote_sandbox must be dark for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
     }
 
     #[test]

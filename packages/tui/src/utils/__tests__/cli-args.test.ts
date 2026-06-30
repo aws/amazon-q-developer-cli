@@ -267,3 +267,55 @@ describe('buildAcpArgs', () => {
     ).toEqual(['--agent', 'test', '--model', 'claude-3', '--trust-all-tools']);
   });
 });
+
+describe('remote sandbox flags (--remote / --repo)', () => {
+  let originalArgv: string[];
+
+  beforeEach(() => {
+    originalArgv = process.argv;
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  const setArgs = (...args: string[]) => {
+    process.argv = ['bun', 'index.ts', ...args];
+  };
+
+  it('parses --remote', () => {
+    setArgs('chat', '--remote');
+    expect(parseCliArgs().remote).toBe(true);
+  });
+
+  it('parses --repo as a comma-list', () => {
+    setArgs('chat', '--repo', 'owner/name,other');
+    expect(parseCliArgs().repo).toEqual(['owner/name', 'other']);
+  });
+
+  it('parses --repo=value syntax', () => {
+    setArgs('chat', '--repo=my-service');
+    expect(parseCliArgs().repo).toEqual(['my-service']);
+  });
+
+  it('does NOT forward --remote to the KAS subprocess (no acp mapping)', () => {
+    // executionTarget rides _meta.kiro on session/new, never a forwarded
+    // subprocess flag — so --remote must be absent from buildAcpArgs output.
+    setArgs('chat', '--remote', '--model', 'gpt-4');
+    const acpArgs = buildAcpArgs(parseCliArgs());
+    expect(acpArgs).not.toContain('--remote');
+    expect(acpArgs).toContain('--model'); // sanity: real ACP flags still forward
+  });
+
+  it('does NOT forward --repo to the KAS subprocess', () => {
+    setArgs('chat', '--repo', 'a,b');
+    expect(buildAcpArgs(parseCliArgs())).not.toContain('--repo');
+  });
+
+  it('--remote does not swallow positional input', () => {
+    setArgs('chat', '--remote', 'hello there');
+    const r = parseCliArgs();
+    expect(r.remote).toBe(true);
+    expect(r.input).toBe('hello there');
+  });
+});

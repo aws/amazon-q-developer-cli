@@ -312,6 +312,18 @@ impl RootSubcommand {
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
                 Self::Chat(mut args) => {
+                    // Dark-ship gate: reject gated-off `--remote` / `--repo` as
+                    // unknown args BEFORE any other handling or side effects, so
+                    // they stay indistinguishable from a typo on every path --
+                    // including the `command` / `--list-models` / session-flag
+                    // early-returns and `cleanup_old_data` below
+                    // (see ChatArgs::remote_sandbox_gate_error).
+                    if let Some(err) = args.remote_sandbox_gate_error(
+                        crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
+                    ) {
+                        err.exit();
+                    }
+
                     // Hidden internal subcommands (`chat _ export-session`,
                     // `chat _ import-session`). Bypass auth/login, telemetry,
                     // and TUI launch; emit a single JSON line and exit.
@@ -478,6 +490,18 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(mut args) => {
+                // Dark-ship gate: reject gated-off `--remote` / `--repo` as
+                // unknown args BEFORE any other handling or side effects, so
+                // they stay indistinguishable from a typo on every path --
+                // including the `command` / `--list-models` / session-flag
+                // early-returns and `cleanup_old_data` below
+                // (see ChatArgs::remote_sandbox_gate_error).
+                if let Some(err) = args.remote_sandbox_gate_error(
+                    crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
+                ) {
+                    err.exit();
+                }
+
                 // Hidden internal subcommands (`chat _ export-session`,
                 // `chat _ import-session`). Bypass auth/login, telemetry,
                 // and TUI launch; emit a single JSON line and exit.
@@ -1749,6 +1773,79 @@ mod test {
             };
             assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "query");
+        }
+
+        // ── Remote sandbox gating (`--remote` / `--repo`) ──────────────────
+        // In unit tests the global rollout is `init_for_tests_enable_all`,
+        // which enables `remote_sandbox`, so the feature gate passes and we
+        // exercise the V3-only conflict logic. (The build-level dark-ship gate
+        // — OFF in released builds — is proven against the real embedded
+        // config in `rollout.rs`.)
+
+        #[tokio::test]
+        async fn remote_with_v3_resolves_to_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                remote: true,
+                v3: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn remote_with_explicit_kas_resolves_to_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                remote: true,
+                agent_engine: Some(chat::AgentEngine::Kas),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn repo_with_v3_resolves_to_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                repo: Some(vec!["owner/name".to_string()]),
+                v3: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn remote_requires_v3_errors_on_v2() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                remote: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn remote_requires_v3_errors_on_v1() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                remote: true,
+                agent_engine: Some(chat::AgentEngine::V1),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn repo_requires_v3_errors_on_v2() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                repo: Some(vec!["owner/name".to_string()]),
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
         }
     }
 }

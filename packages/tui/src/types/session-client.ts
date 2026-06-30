@@ -373,6 +373,29 @@ export interface SessionClient {
 }
 
 /**
+ * Where a session's agent runs. Mirrors the KAS ACP `_meta.kiro.executionTarget`
+ * discriminated union (see the KAS "Remote Sessions: ACP Interface Changes" doc,
+ * quip raokAMbN4Ak4 §2). `remote-control` is forward-looking and its `host` shape
+ * is not committed yet. Absent / `{ kind: 'local' }` == today's behavior.
+ */
+export type ExecutionTarget =
+  | { kind: 'local' }
+  | { kind: 'cloud-sandbox' }
+  | { kind: 'remote-control'; host?: unknown };
+
+/**
+ * Which store a session record was discovered from. Distinct from the engine
+ * `SessionSource` (V1/V2/Kas) — this is the KAS ACP discovery axis.
+ */
+export type SessionDiscoverySource = 'local' | 'remote';
+
+/**
+ * Liveness/snapshot status from a `session/list` entry (KAS `SessionActivityStatus`).
+ * Live updates ride the `_kiro/sessions/changed` roster, not list polling.
+ */
+export type SessionActivityStatus = 'idle' | 'in_progress' | 'waiting_on_user';
+
+/**
  * TODO - duplicated type until we modify this flow to use a session/list compatible sacp implementation.
  */
 export interface ListSessionsResponse {
@@ -389,4 +412,13 @@ export interface SessionInfoEntry {
   title?: string;
   updatedAt?: string;
   messageCount?: number;
+  /**
+   * Where the session runs. Absent == local (today's behavior). Populated for
+   * remote sessions once KAS reports it on list entries (ACP doc §1).
+   */
+  executionTarget?: ExecutionTarget;
+  /** Which store surfaced this record (local vs remote). Absent == local. */
+  source?: SessionDiscoverySource;
+  /** Liveness snapshot at list time; live updates via `_kiro/sessions/changed`. */
+  status?: SessionActivityStatus;
 }

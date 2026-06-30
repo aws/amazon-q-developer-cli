@@ -16,6 +16,7 @@ import type {
   KasContextShowResponse,
   KasContextMutationResponse,
   ChatSlashCommandTelemetryPayload,
+  ExecutionTarget,
 } from './types/session-client';
 import type {
   ModeChangedNotification,
@@ -444,6 +445,8 @@ export class Kiro {
       initialAgent?: string;
       initialModel?: string;
       hasExplicitEffort?: boolean;
+      executionTarget?: ExecutionTarget;
+      repos?: string[];
     }
   ): Promise<void> {
     logger.debug('[kiro] initialize() called');

@@ -9,6 +9,12 @@
     "treatment_percent": 0,
     "segment": "all"
   },
+  "remote_sandbox": {
+    "description": "Remote/cloud sandbox sessions (hidden --remote/--repo flags). Dark-shipped at 0% so it is OFF in every released build; only debug/KIRO_TEST_MODE/E2E enable it. Ramp via treatment_percent (internal nightly first) once E2E-ready.",
+    "treatment_percent": 0,
+    "segment": "internal",
+    "channel": "nightly"
+  },
   "voice": {
     "description": "Voice input mode - all internal users",
     "treatment_percent": 100,

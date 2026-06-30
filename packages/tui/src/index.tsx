@@ -583,6 +583,10 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // re-read fresh inside newSession so a mid-run sticky write is honored.
       initialModel: cliArgs.model,
       hasExplicitEffort: !!cliArgs.effort,
+      // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
+      // execution target, sent as _meta.kiro.executionTarget on session/new.
+      executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,
+      repos: cliArgs.repo,
     })
     .then(async () => {
       appStore
@@ -817,6 +821,10 @@ const startApp = async () => {
       // Explicit --model only; saved default is re-read inside newSession.
       initialModel: cliArgs.model,
       hasExplicitEffort: !!cliArgs.effort,
+      // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
+      // execution target, sent as _meta.kiro.executionTarget on session/new.
+      executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,
+      repos: cliArgs.repo,
     });
     const listing = await listAllSessions();
     if (!listing.ok) {
