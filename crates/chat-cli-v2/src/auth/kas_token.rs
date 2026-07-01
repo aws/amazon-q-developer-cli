@@ -49,17 +49,22 @@ pub enum KasAuthMethod {
 /// Sign-in provider advertised to KAS in the `_kiro/auth/getAccessToken`
 /// response. KAS's `GovernanceService` uses this to decide whether the user is
 /// under enterprise governance — only `Enterprise` and `ExternalIdp` are
-/// treated as enterprise-managed; everything else (Builder ID, social) skips
-/// the GetProfile call entirely.
+/// treated as enterprise-managed; everything else (Internal, Builder ID,
+/// social) skips the GetProfile call entirely.
 ///
 /// Distinct from [`KasAuthMethod`], which only drives the `TokenType` request
 /// header. `profileArn` cannot be used for this decision because every
 /// acp-callback token carries one (Builder ID gets a hardcoded routing ARN).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum KasProvider {
-    /// IAM Identity Center — enterprise-managed.
+    /// External (customer) IAM Identity Center — enterprise-managed.
     #[serde(rename = "Enterprise")]
     Enterprise,
+    /// Internal Amazon IAM Identity Center (`https://amzn.awsapps.com/start`).
+    /// A distinct provider value so KAS can special-case internal users: KAS
+    /// keeps their telemetry enabled and skips its GetProfile path.
+    #[serde(rename = "Internal")]
+    Internal,
     /// External IdP federation — enterprise-managed.
     #[serde(rename = "ExternalIdp")]
     ExternalIdp,
@@ -133,7 +138,18 @@ pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Optio
     if let Some(token) = BuilderIdToken::coordinated_refresh(database, None).await? {
         let (profile_arn, provider) = match token.token_type() {
             TokenType::BuilderId => (BUILDER_ID_PROFILE_ARN.to_string(), KasProvider::BuilderId),
-            TokenType::IamIdentityCenter => (profile_arn_from_db(database)?, KasProvider::Enterprise),
+            // Internal Amazon IdC (`https://amzn.awsapps.com/start`) is sent as `Internal`,
+            // a distinct provider KAS special-cases (keeps telemetry on, skips its GetProfile
+            // path). External/customer IdC stays `Enterprise`. Both resolve their profile ARN
+            // from the DB.
+            TokenType::IamIdentityCenter => {
+                let provider = if token.is_amzn_user() {
+                    KasProvider::Internal
+                } else {
+                    KasProvider::Enterprise
+                };
+                (profile_arn_from_db(database)?, provider)
+            },
         };
         return Ok(Some(AcpCallbackToken {
             access_token: token.access_token.0.clone(),
@@ -282,6 +298,20 @@ mod tests {
         }
     }
 
+    fn unexpired_amzn_idc() -> BuilderIdToken {
+        // Internal Amazon SSO `start_url` -> `is_amzn_user()` true -> resolver
+        // should classify as `KasProvider::Internal`, not `Enterprise`.
+        BuilderIdToken {
+            access_token: Secret("amzn-idc-access-tok".into()),
+            expires_at: unexpired(),
+            refresh_token: Some(Secret("amzn-idc-refresh-tok".into())),
+            region: Some("us-east-1".into()),
+            start_url: Some(crate::auth::consts::AMZN_START_URL.into()),
+            oauth_flow: OAuthFlow::DeviceCode,
+            scopes: None,
+        }
+    }
+
     fn unexpired_social() -> SocialToken {
         SocialToken {
             access_token: Secret("social-access-tok".into()),
@@ -379,6 +409,7 @@ mod tests {
     /// from `database.get_auth_profile()`. Pinning eu-central-1 here exercises
     /// the path that was broken when we were echoing `BuilderIdToken.region`
     /// (an OIDC-region field that diverges from the CW endpoint region).
+    /// A custom (non-amzn) IdC start_url MUST resolve to `Enterprise`.
     #[tokio::test]
     async fn resolve_callback_token_idc_uses_db_profile() {
         let mut database = Database::new().await.unwrap();
@@ -399,6 +430,31 @@ mod tests {
         assert_eq!(token.profile_arn, idc_profile().arn);
         assert_eq!(token.auth_method, None);
         assert_eq!(token.provider, Some(KasProvider::Enterprise));
+    }
+
+    /// Internal Amazon IdC (`start_url == AMZN_START_URL`) MUST resolve to
+    /// `KasProvider::Internal`, NOT `Enterprise`, so KAS special-cases these
+    /// users. Profile ARN is still sourced from the DB, same as any IdC token.
+    #[tokio::test]
+    async fn resolve_callback_token_amzn_idc_is_internal() {
+        let mut database = Database::new().await.unwrap();
+        database.set_auth_profile(&idc_profile()).unwrap();
+        database
+            .set_secret(
+                BuilderIdToken::SECRET_KEY,
+                &serde_json::to_string(&unexpired_amzn_idc()).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let token = resolve_kas_token_for_callback(&database)
+            .await
+            .unwrap()
+            .expect("token resolved");
+        assert_eq!(token.access_token, "amzn-idc-access-tok");
+        assert_eq!(token.profile_arn, idc_profile().arn);
+        assert_eq!(token.auth_method, None);
+        assert_eq!(token.provider, Some(KasProvider::Internal));
     }
 
     #[tokio::test]

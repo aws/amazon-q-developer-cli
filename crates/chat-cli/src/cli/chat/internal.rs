@@ -80,13 +80,15 @@ impl From<KasAuthMethod> for AuthMethod {
 
 /// Sign-in provider advertised to KAS in `_kiro/auth/getAccessToken`. KAS's
 /// `GovernanceService` treats only `Enterprise` / `ExternalIdp` as
-/// enterprise-managed (others skip the GetProfile call). Mirrors
-/// `chat_cli_v2::auth::kas_token::KasProvider`; convert via `From`.
+/// enterprise-managed (others, including `Internal`, skip the GetProfile call).
+/// Mirrors `chat_cli_v2::auth::kas_token::KasProvider`; convert via `From`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare]
 pub enum Provider {
     #[serde(rename = "Enterprise")]
     Enterprise,
+    #[serde(rename = "Internal")]
+    Internal,
     #[serde(rename = "ExternalIdp")]
     ExternalIdp,
     #[serde(rename = "BuilderId")]
@@ -101,6 +103,7 @@ impl From<KasProvider> for Provider {
     fn from(v: KasProvider) -> Self {
         match v {
             KasProvider::Enterprise => Self::Enterprise,
+            KasProvider::Internal => Self::Internal,
             KasProvider::ExternalIdp => Self::ExternalIdp,
             KasProvider::BuilderId => Self::BuilderId,
             KasProvider::Google => Self::Google,

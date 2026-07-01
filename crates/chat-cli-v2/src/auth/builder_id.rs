@@ -543,10 +543,16 @@ impl BuilderIdToken {
     }
 
     /// Check if the token is for the internal amzn start URL (`https://amzn.awsapps.com/start`),
-    /// this implies the user will use midway for private specs
-    #[allow(dead_code)]
+    /// this implies the user will use midway for private specs. Used by
+    /// `kas_token` to classify internal IdC as [`KasProvider::Internal`].
+    ///
+    /// Trims before comparing to stay consistent with the internal-user
+    /// detection in `rollout.rs` (`start_url.map(str::trim) == AMZN_START_URL`),
+    /// so both sites agree even if a stored `start_url` carries stray whitespace.
+    ///
+    /// [`KasProvider::Internal`]: crate::auth::kas_token::KasProvider::Internal
     pub fn is_amzn_user(&self) -> bool {
-        matches!(&self.start_url, Some(url) if url == AMZN_START_URL)
+        self.start_url.as_deref().map(str::trim) == Some(AMZN_START_URL)
     }
 }
 
