@@ -325,12 +325,17 @@ struct ResponseParser {
     tool_uses: Vec<AssistantToolUse>,
     /// Whether or not we are currently receiving tool use delta events.
     parsing_tool_use: Option<PendingToolUse>,
-    /// Accumulated thinking text for this turn.
+    /// Visible text of the current, not-yet-sealed thinking block.
     thinking_text: String,
-    /// Signature from the last reasoning event.
+    /// Signature of the current thinking block, set when its sealing event arrives.
     thinking_signature: Option<String>,
-    /// Redacted content from the last reasoning event.
+    /// Redacted (encrypted) content of the current thinking block.
     thinking_redacted_content: Option<Vec<u8>>,
+    /// The most recently sealed thinking block this turn. A turn may emit multiple
+    /// thinking blocks, but history carries only one, so we keep the LAST sealed block —
+    /// the reasoning that led to the turn's final output. Replaced each time a block
+    /// seals; a trailing unsealed block never lands here and is dropped.
+    last_sealed_thinking: Option<ReasoningContentForHistory>,
     /// Whether the stream ever carried any content event (assistant text, tool use, or
     /// thinking).
     received_content_event: bool,
@@ -390,6 +395,7 @@ impl ResponseParser {
             thinking_text: String::new(),
             thinking_signature: None,
             thinking_redacted_content: None,
+            last_sealed_thinking: None,
             received_content_event: false,
             request_start_time,
             request_start_time_sys,
@@ -489,21 +495,32 @@ impl ResponseParser {
                         redacted_content,
                     } => {
                         self.received_content_event = true;
-                        // Only accumulate the first thinking block. Once a signature
-                        // arrives the block is sealed — ignore subsequent blocks so
-                        // the text and signature stay paired.
-                        if self.thinking_signature.is_some() || self.thinking_redacted_content.is_some() {
-                            // Already captured a complete thinking block; skip.
-                        } else if let Some(text) = text {
+                        // Keep the LAST sealed thinking block. Text and signature/redacted
+                        // content arrive in separate reasoning deltas: text accumulates into the
+                        // current block, and a signature or redacted-content event seals it. Each
+                        // newly sealed block replaces the previous one in `last_sealed_thinking`,
+                        // so the block produced just before the turn's final output wins. A
+                        // trailing unsealed block (e.g. a truncated final thinking block) is never
+                        // sealed and is dropped — Bedrock rejects unsigned thinking in history.
+                        // Text deltas are emitted as `ThinkingText` events (currently a no-op in
+                        // the classic consumer).
+                        if let Some(text) = text {
                             self.thinking_text.push_str(&text);
                             return Ok(ResponseEvent::ThinkingText);
-                        } else {
-                            if signature.is_some() {
-                                self.thinking_signature = signature;
-                            }
-                            if redacted_content.is_some() {
-                                self.thinking_redacted_content = redacted_content;
-                            }
+                        }
+                        if signature.is_some() {
+                            self.thinking_signature = signature;
+                        }
+                        if redacted_content.is_some() {
+                            self.thinking_redacted_content = redacted_content;
+                        }
+                        if self.thinking_signature.is_some() || self.thinking_redacted_content.is_some() {
+                            self.last_sealed_thinking = Some(ReasoningContentForHistory {
+                                text: std::mem::take(&mut self.thinking_text),
+                                signature: self.thinking_signature.take(),
+                                redacted_content: self.thinking_redacted_content.take().unwrap_or_default(),
+                                model_id: self.model_id.clone(),
+                            });
                         }
                     },
                     ref event if event.is_skippable_metadata() => {},
@@ -785,19 +802,11 @@ impl ResponseParser {
         }
     }
 
+    /// Returns the last sealed thinking block of the turn, or `None` if no block sealed.
+    /// See the `ReasoningEvent` handler for the keep-last-sealed accumulation; a trailing
+    /// unsealed block is intentionally dropped (Bedrock rejects unsigned thinking).
     fn take_thinking(&mut self) -> Option<ReasoningContentForHistory> {
-        if self.thinking_text.is_empty()
-            && self.thinking_signature.is_none()
-            && self.thinking_redacted_content.is_none()
-        {
-            return None;
-        }
-        Some(ReasoningContentForHistory {
-            text: std::mem::take(&mut self.thinking_text),
-            signature: self.thinking_signature.take(),
-            redacted_content: self.thinking_redacted_content.take().unwrap_or_default(),
-            model_id: self.model_id.clone(),
-        })
+        self.last_sealed_thinking.take()
     }
 
     fn make_metadata(&self, chat_conversation_type: Option<ChatConversationType>) -> RequestMetadata {
@@ -1292,6 +1301,173 @@ mod tests {
                 Ok(ResponseEvent::EndStream { .. }) => break,
                 Ok(_) => continue,
                 Err(err) => panic!("unexpected error from code-attribution-suppressed stream: {err:?}"),
+            }
+        }
+    }
+
+    /// A turn with multiple sealed thinking blocks forwards the LAST sealed block into
+    /// history (keep-last-sealed), not the first.
+    #[tokio::test]
+    async fn test_response_parser_keeps_last_sealed_thinking_block() {
+        // Wire order (Mock pops from the end, so reverse below): block one's text, its
+        // signature (seals it), block two's text, its signature (seals it), then the
+        // assistant answer.
+        let mut events = vec![
+            ChatResponseStream::ReasoningEvent {
+                text: Some("first block".to_string()),
+                signature: None,
+                redacted_content: None,
+            },
+            ChatResponseStream::ReasoningEvent {
+                text: None,
+                signature: Some("sig-1".to_string()),
+                redacted_content: None,
+            },
+            ChatResponseStream::ReasoningEvent {
+                text: Some("second block".to_string()),
+                signature: None,
+                redacted_content: None,
+            },
+            ChatResponseStream::ReasoningEvent {
+                text: None,
+                signature: Some("sig-2".to_string()),
+                redacted_content: None,
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: "answer".to_string(),
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        loop {
+            match parser.recv().await {
+                Ok(ResponseEvent::EndStream { message, .. }) => {
+                    let thinking = message
+                        .thinking()
+                        .expect("the last sealed thinking block should be forwarded");
+                    assert_eq!(
+                        thinking.text, "second block",
+                        "should keep the last sealed block, not the first"
+                    );
+                    assert_eq!(thinking.signature.as_deref(), Some("sig-2"));
+                    break;
+                },
+                Ok(_) => continue,
+                Err(err) => panic!("unexpected error from multi-block thinking stream: {err:?}"),
+            }
+        }
+    }
+
+    /// When the final thinking block never seals (e.g. a truncated stream), the previously
+    /// sealed block is forwarded and the dangling unsealed block is dropped.
+    #[tokio::test]
+    async fn test_response_parser_drops_trailing_unsealed_thinking_block() {
+        let mut events = vec![
+            ChatResponseStream::ReasoningEvent {
+                text: Some("sealed block".to_string()),
+                signature: None,
+                redacted_content: None,
+            },
+            ChatResponseStream::ReasoningEvent {
+                text: None,
+                signature: Some("sig-1".to_string()),
+                redacted_content: None,
+            },
+            // A second block streams text but never receives a signature.
+            ChatResponseStream::ReasoningEvent {
+                text: Some("dangling unsealed".to_string()),
+                signature: None,
+                redacted_content: None,
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: "answer".to_string(),
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        loop {
+            match parser.recv().await {
+                Ok(ResponseEvent::EndStream { message, .. }) => {
+                    let thinking = message
+                        .thinking()
+                        .expect("the earlier sealed block should be forwarded, not the dangling one");
+                    assert_eq!(thinking.text, "sealed block");
+                    assert_eq!(thinking.signature.as_deref(), Some("sig-1"));
+                    break;
+                },
+                Ok(_) => continue,
+                Err(err) => panic!("unexpected error from trailing-orphan thinking stream: {err:?}"),
+            }
+        }
+    }
+
+    /// A redacted-only thinking block (encrypted reasoning: no visible text, no signature,
+    /// but non-empty redacted content) is sealed and forwarded into history.
+    #[tokio::test]
+    async fn test_response_parser_forwards_redacted_only_thinking_block() {
+        let mut events = vec![
+            ChatResponseStream::ReasoningEvent {
+                text: None,
+                signature: None,
+                redacted_content: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: "answer".to_string(),
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        loop {
+            match parser.recv().await {
+                Ok(ResponseEvent::EndStream { message, .. }) => {
+                    let thinking = message
+                        .thinking()
+                        .expect("a redacted-only thinking block should be forwarded");
+                    assert_eq!(thinking.redacted_content, vec![0xde, 0xad, 0xbe, 0xef]);
+                    assert!(thinking.text.is_empty());
+                    break;
+                },
+                Ok(_) => continue,
+                Err(err) => panic!("unexpected error from redacted-only thinking stream: {err:?}"),
             }
         }
     }

@@ -267,9 +267,16 @@ impl RtsModel {
         }
     }
 
-    /// Extract reasoning content from a message's content blocks, filtering by model.
-    /// Returns `None` if the current model is "Auto", if there are no thinking blocks,
-    /// or if the thinking block's model_id doesn't match the current model.
+    /// Extract reasoning content to forward in conversation history, selecting the
+    /// **last** sealed thinking block produced this turn.
+    ///
+    /// The RTS `AssistantResponseMessage` exposes a single `reasoning_content` slot, but
+    /// a turn with interleaved thinking can emit multiple sealed thinking blocks (the
+    /// agent loop accumulates them in stream order — see `agent/agent_loop/mod.rs`).
+    /// We forward the most recent one: the reasoning that led to the turn's final output.
+    /// Hence reverse iteration below. Returns `None` if the current model is "Auto", if
+    /// there are no valid thinking blocks, or if the thinking block's model_id doesn't
+    /// match the current model.
     fn filter_reasoning_for_history(
         content: &[ContentBlock],
         current_model_id: &Option<String>,
@@ -277,7 +284,9 @@ impl RtsModel {
         if current_model_id.as_deref() == Some("Auto") {
             return None;
         }
-        content.iter().find_map(|c| {
+        // Iterate in reverse so the first match `find_map` returns is the LAST thinking
+        // block in stream order — i.e. the last sealed reasoning block.
+        content.iter().rev().find_map(|c| {
             if let ContentBlock::Thinking(tb) = c {
                 // Skip orphan thinking blocks: no signature AND no redacted content.
                 // Bedrock rejects history that contains such a block — see the parse-time
@@ -285,8 +294,8 @@ impl RtsModel {
                 // re-apply the predicate here so sessions that already have an orphan
                 // persisted on disk (from before the parse-time fix landed, or from a
                 // future code path that bypasses the parser) self-heal: the orphan is
-                // skipped at history serialization, find_map walks past it, and a later
-                // valid thinking block can still be preserved if one exists.
+                // skipped at history serialization, reverse iteration continues past it,
+                // and another valid thinking block can still be preserved if one exists.
                 if tb.signature.is_none() && tb.redacted_content.is_empty() {
                     return None;
                 }
@@ -1480,9 +1489,10 @@ mod tests {
         assert_eq!(reasoning.redacted_content, vec![0xde, 0xad, 0xbe, 0xef]);
     }
 
-    /// `find_map` continues past an orphan to find a later valid thinking
-    /// block. Defensive against multi-block messages where the corruption
-    /// is at the head but valid content exists later.
+    /// A valid block following a leading orphan is still returned. Under reverse
+    /// iteration the valid (last) block is reached first; paired with
+    /// `test_filter_reasoning_skips_trailing_orphan` this locks in that an orphan in
+    /// either position is skipped and a valid block wins.
     #[test]
     fn test_filter_reasoning_walks_past_orphan_to_valid_block() {
         use agent::agent_loop::types::ThinkingBlock;
@@ -1503,6 +1513,53 @@ mod tests {
         let current = Some("claude-opus-4.7".to_string());
         let result = RtsModel::filter_reasoning_for_history(&content, &current);
         let reasoning = result.expect("should find the valid block past the orphan");
+        assert_eq!(reasoning.text, "valid");
+    }
+
+    /// When a turn emits multiple sealed thinking blocks (interleaved thinking), the
+    /// **last** one is forwarded — the reasoning that led to the turn's final output.
+    /// This is the core keep-last-sealed behavior.
+    #[test]
+    fn test_filter_reasoning_keeps_last_of_multiple_sealed() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let mk = |text: &str, sig: &str| {
+            ContentBlock::Thinking(ThinkingBlock {
+                text: text.into(),
+                signature: Some(sig.into()),
+                redacted_content: vec![],
+                model_id: Some("claude-opus-4.7".into()),
+            })
+        };
+        let content = vec![mk("first", "sig1"), mk("second", "sig2"), mk("third", "sig3")];
+        let current = Some("claude-opus-4.7".to_string());
+        let reasoning =
+            RtsModel::filter_reasoning_for_history(&content, &current).expect("a sealed block should be returned");
+        assert_eq!(reasoning.text, "third", "should forward the last sealed block");
+        assert_eq!(reasoning.signature.as_deref(), Some("sig3"));
+    }
+
+    /// A trailing orphan (e.g. a truncated final thinking block) is skipped and the
+    /// preceding sealed block is forwarded — reverse-iteration self-heal.
+    #[test]
+    fn test_filter_reasoning_skips_trailing_orphan() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let content = vec![
+            ContentBlock::Thinking(ThinkingBlock {
+                text: "valid".into(),
+                signature: Some("sig".into()),
+                redacted_content: vec![],
+                model_id: Some("claude-opus-4.7".into()),
+            }),
+            ContentBlock::Thinking(ThinkingBlock {
+                text: "orphan".into(),
+                signature: None,
+                redacted_content: vec![],
+                model_id: Some("claude-opus-4.7".into()),
+            }),
+        ];
+        let current = Some("claude-opus-4.7".to_string());
+        let reasoning = RtsModel::filter_reasoning_for_history(&content, &current)
+            .expect("should skip the trailing orphan and return the earlier valid block");
         assert_eq!(reasoning.text, "valid");
     }
 }

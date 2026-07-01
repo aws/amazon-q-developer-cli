@@ -515,6 +515,14 @@ impl AssistantMessage {
         }
     }
 
+    pub fn thinking(&self) -> Option<&ReasoningContentForHistory> {
+        match self {
+            AssistantMessage::Response { thinking, .. } | AssistantMessage::ToolUse { thinking, .. } => {
+                thinking.as_ref()
+            },
+        }
+    }
+
     pub fn truncate_safe(&mut self, max_bytes: usize) {
         match self {
             AssistantMessage::Response { content, .. } => {
