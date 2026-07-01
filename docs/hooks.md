@@ -26,6 +26,7 @@ For tool-related hooks, additional fields are included:
 
 - **Exit code 0**: Hook succeeded. STDOUT is captured but not shown to user.
 - **Exit code 2**: (PreToolUse only) Block tool execution. STDERR is returned to the LLM.
+- **Exit code 3**: (PreToolUse only) Ask user. Falls through to native permission prompt regardless of `allowedTools`. STDERR is shown as context.
 - **Other exit codes**: Hook failed. STDERR is shown as warning to user.
 
 ## Tool Matching
@@ -102,6 +103,7 @@ Runs before tool execution. Can validate and block tool usage.
 **Exit Code Behavior:**
 - **0**: Allow tool execution.
 - **2**: Block tool execution, return STDERR to LLM.
+- **3**: Ask user — fall through to native permission prompt regardless of `allowedTools`. STDERR is shown as context in the prompt.
 - **Other**: Show STDERR warning to user, allow tool execution.
 
 ### PostToolUse

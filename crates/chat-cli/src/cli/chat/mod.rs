@@ -2308,7 +2308,7 @@ impl ChatSession {
                                 .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
                         }
                     }
-                    tool_use.accepted = true;
+                    tool_use.accepted = Some(true);
 
                     return Ok(ChatState::ExecuteTools);
                 }
@@ -2384,8 +2384,8 @@ impl ChatSession {
         for i in 0..self.tool_uses.len() {
             let tool = &mut self.tool_uses[i];
 
-            // Manually accepted by the user or otherwise verified already.
-            if tool.accepted {
+            // Approved by a preToolUse hook or previously accepted by the user.
+            if tool.accepted == Some(true) {
                 continue;
             }
 
@@ -2458,7 +2458,7 @@ impl ChatSession {
             let tool = &mut self.tool_uses[i];
 
             if allowed {
-                tool.accepted = true;
+                tool.accepted = Some(true);
                 self.tool_use_telemetry_events
                     .entry(tool.id.clone())
                     .and_modify(|ev| ev.is_trusted = true);
@@ -3298,7 +3298,7 @@ impl ChatSession {
                                 id: tool_use_id.clone(),
                                 name: tool_use_name,
                                 tool,
-                                accepted: false,
+                                accepted: None,
                                 tool_input,
                             });
                         },
@@ -3375,7 +3375,7 @@ impl ChatSession {
         // The mental model is preToolHook is like validate tools, but its behavior can be customized by
         // user Note that after preTookUse hook, user can still reject the took run
         if let Some(cm) = self.conversation.context_manager.as_mut() {
-            for tool in &queued_tools {
+            for tool in &mut queued_tools {
                 let tool_context = ToolContext {
                     tool_name: match &tool.tool {
                         Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP
@@ -3397,11 +3397,14 @@ impl ChatSession {
                     .await?;
 
                 // Here is how we handle the preToolUse hook output:
-                // Exit code is 0: nothing. stdout is not shown to user.
-                // Exit code is 2: block the tool use. return stderr to LLM. show warning to user
-                // Other error: show warning to user.
+                // Exit code 0: allow — tool execution proceeds without prompting the user.
+                // Exit code 2: block — tool is blocked, stderr is returned to the LLM.
+                // Exit code 3: ask — neutral, fall through to native permission prompt.
+                // Other exit code: warning shown to user, tool still proceeds.
 
-                // Check for exit code 2 and add to tool_results
+                let mut blocked = false;
+                let mut should_ask = false;
+
                 for (_, (exit_code, output)) in &hook_results {
                     if *exit_code == 2 {
                         tool_results.push(ToolUseResult {
@@ -3412,8 +3415,17 @@ impl ChatSession {
                             ))],
                             status: ToolResultStatus::Error,
                         });
+                        blocked = true;
+                    } else if *exit_code == 3 {
+                        should_ask = true;
                     }
                 }
+
+                // If not blocked and no hook requested ask, mark as approved (exit 0 path)
+                if !blocked && !should_ask && !hook_results.is_empty() {
+                    tool.accepted = Some(true);
+                }
+                // If should_ask, leave accepted as None so native permission prompt fires
             }
         }
 

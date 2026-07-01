@@ -331,7 +331,10 @@ fn tool_origin() -> ToolOrigin {
 pub struct QueuedTool {
     pub id: String,
     pub name: String,
-    pub accepted: bool,
+    /// Tool approval state, typically set by preToolUse hooks:
+    /// - `Some(true)`: approved (hook exit 0), skip native permission prompt
+    /// - `None`: neutral (hook exit 3 or no hook), fall through to native permission prompt
+    pub accepted: Option<bool>,
     pub tool: Tool,
     pub tool_input: serde_json::Value,
 }

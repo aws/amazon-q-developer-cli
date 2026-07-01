@@ -701,6 +701,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_hook_exit_code_3_ask_user() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Create a hook that exits with code 3 (ask user) and outputs reason to stderr
+        #[cfg(unix)]
+        let command = "echo 'Unknown command, ask user' >&2; exit 3";
+        #[cfg(windows)]
+        let command = "echo Unknown command, ask user 1>&2 & exit /b 3";
+
+        let hook = Hook {
+            command: command.to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("execute_bash".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::PreToolUse, vec![hook])]);
+
+        let tool_context = ToolContext {
+            tool_name: "execute_bash".to_string(),
+            tool_input: serde_json::json!({
+                "command": "./deploy.sh"
+            }),
+            tool_response: None,
+        };
+
+        let results = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd
+                None, // prompt
+                Some(tool_context),
+            )
+            .await
+            .unwrap();
+
+        // Should have one result
+        assert_eq!(results.len(), 1);
+
+        let ((trigger, _hook), (exit_code, hook_output)) = &results[0];
+        assert_eq!(*trigger, HookTrigger::PreToolUse);
+        assert_eq!(*exit_code, 3);
+        assert!(hook_output.contains("Unknown command, ask user"));
+    }
+
+
+    #[tokio::test]
     async fn test_stop_hook() {
         let mut executor = HookExecutor::new();
         let mut output = Vec::new();
