@@ -485,6 +485,12 @@ impl McpClientService {
                 // to run them through cmd.exe /C which handles this automatically.
                 #[cfg(windows)]
                 let command = Command::new("cmd.exe").configure(|cmd| {
+                    use std::os::windows::process::CommandExt;
+                    // CREATE_NO_WINDOW (0x08000000): prevents cmd.exe from allocating
+                    // a visible console window. Without this, each stdio MCP server
+                    // spawns a visible CMD window that stays open for the session
+                    // duration. See P460297924.
+                    cmd.creation_flags(0x08000000);
                     let mut cmd_args = vec!["/C".to_string(), expanded_cmd.to_string()];
                     cmd_args.extend(args.iter().cloned());
                     // Apply shell env first, then config env, so config takes precedence

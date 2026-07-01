@@ -768,17 +768,23 @@ function toAgentProcess(proc: ChildProcess): AgentProcess {
   // stdin/stdout/stderr are set synchronously on spawn and never change,
   // so plain property reads are sufficient (no getter indirection).
   //
-  // The agent is spawned with `detached: true` so it's the leader of its own
-  // process group. That lets us signal `-pgid` here to bring down the agent
-  // *and every grandchild it spawned* (MCP servers, subagents, etc.) in one
-  // shot — without the negative PID, agent crashes leak MCP children as
-  // ppid=1 orphans that accumulate across restarts.
+  // On Unix/macOS the agent is spawned with `detached: true` so it's the
+  // leader of its own process group. That lets us signal `-pgid` here to
+  // bring down the agent *and every grandchild it spawned* (MCP servers,
+  // subagents, etc.) in one shot — without the negative PID, agent crashes
+  // leak MCP children as ppid=1 orphans that accumulate across restarts.
+  //
+  // On Windows, `detached: true` allocates a visible console window for the
+  // child (Node.js / libuv maps it to CREATE_NEW_PROCESS_GROUP), and
+  // process.kill(-pid) is a no-op (Windows ignores the negative sign). So
+  // we skip both the detach and the group kill on Windows. See P460297924.
+  const isWindows = process.platform === 'win32';
   return {
     stdin: proc.stdin,
     stdout: proc.stdout,
     stderr: proc.stderr,
     kill: (signal) => {
-      if (proc.pid && proc.pid > 0) {
+      if (!isWindows && proc.pid && proc.pid > 0) {
         try {
           process.kill(-proc.pid, signal ?? 'SIGTERM');
           return true;
@@ -1230,16 +1236,18 @@ abstract class BaseAcpClient implements SessionClient {
     this.closed = true;
     this.resetCompactCompletionFallback();
     this.agentProcess.kill('SIGTERM');
-    // Best-effort SIGKILL escalation. Wrapped in setTimeout (not unrefed —
-    // we want it to fire before the loop drains). If the process is already
-    // gone the kill becomes a no-op via the catch in toAgentProcess.
-    setTimeout(() => {
-      try {
-        this.agentProcess.kill('SIGKILL');
-      } catch {
-        // already dead, fine
-      }
-    }, 800).unref();
+    // Best-effort SIGKILL escalation after 800ms grace period. Unix only —
+    // on Windows SIGTERM already force-kills (there's no graceful/forced
+    // distinction), so the escalation is a no-op that kills a dead process.
+    if (process.platform !== 'win32') {
+      setTimeout(() => {
+        try {
+          this.agentProcess.kill('SIGKILL');
+        } catch {
+          // already dead, fine
+        }
+      }, 800).unref();
+    }
   }
 
   private closed = false;
@@ -2300,10 +2308,15 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
-      // Run in its own process group so close() can signal -pgid and take
-      // down any MCP servers / subprocesses the agent spawned. Without this
-      // a TUI crash or SIGTERM leaks the entire MCP tree as ppid=1 orphans.
-      detached: true,
+      // Unix: run in its own process group so close() can signal -pgid and
+      // take down any MCP servers / subprocesses the agent spawned. Without
+      // this a TUI crash or SIGTERM leaks the entire MCP tree as ppid=1
+      // orphans.
+      // Windows: detached allocates a visible console window (libuv maps it
+      // to CREATE_NEW_PROCESS_GROUP). Use windowsHide instead. See P460297924.
+      ...(process.platform !== 'win32'
+        ? { detached: true }
+        : { windowsHide: true }),
     });
     super(toAgentProcess(proc));
     this.version = version;
@@ -2936,10 +2949,12 @@ export class KasAcpClient extends BaseAcpClient {
           NODE_CHANNEL_SERIALIZATION_MODE: undefined,
           KIRO_CUSTOM_USER_AGENT: `KiroCLI/${version} KAS/${getKasVersion(kasServerPath)} os/${process.platform} md/appVersion-${version} app/AmazonQ-For-CLI`,
         },
-        // See RustAcpClient — detached so close() can kill -pgid and reap
-        // MCP children together with KAS instead of leaking them as
-        // orphans.
-        detached: true,
+        // See RustAcpClient — Unix: detached so close() can kill -pgid and
+        // reap MCP children together with KAS instead of leaking them as
+        // orphans. Windows: windowsHide suppresses console window. P460297924.
+        ...(process.platform !== 'win32'
+          ? { detached: true }
+          : { windowsHide: true }),
       }
     );
     super(toAgentProcess(proc));
