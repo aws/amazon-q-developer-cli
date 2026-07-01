@@ -85,6 +85,7 @@ use sacp::schema::{
     LoadSessionRequest,
     LoadSessionResponse,
     McpCapabilities,
+    Meta,
     ModelInfo as AcpModelInfo,
     NewSessionRequest,
     NewSessionResponse,
@@ -3545,7 +3546,8 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
                 .kind(get_tool_kind(&tool_call.tool_use_block.name))
                 .status(ToolCallStatus::Pending)
                 .content(get_tool_content(&tool_call.tool))
-                .raw_input(Some(tool_call.tool_use_block.input.clone()));
+                .raw_input(Some(tool_call.tool_use_block.input.clone()))
+                .meta(kiro_tool_name_meta(&tool_call.tool_use_block.name));
 
             if let Some(locations) = locations {
                 acp_tool_call = acp_tool_call.locations(locations);
@@ -3718,6 +3720,14 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
     } else {
         ToolKind::Other
     }
+}
+
+fn kiro_tool_name_meta(tool_name: &str) -> Meta {
+    let mut kiro = serde_json::Map::new();
+    kiro.insert("toolName".into(), serde_json::Value::String(tool_name.to_string()));
+    let mut meta = Meta::new();
+    meta.insert("kiro".into(), serde_json::Value::Object(kiro));
+    meta
 }
 
 pub(crate) fn get_tool_title(tool: &Tool) -> String {
@@ -5876,6 +5886,44 @@ mod convert_update_event_tests {
             result.is_none(),
             "AgentThought with non-Text content should return None"
         );
+    }
+
+    #[test]
+    fn test_tool_call_carries_canonical_tool_name_in_meta() {
+        use agent::agent_loop::types::ToolUseBlock;
+        use agent::protocol::ToolCall as AgentToolCall;
+        use agent::tools::fs_write::{
+            FileCreate,
+            FsWrite,
+        };
+        use agent::tools::{
+            BuiltInTool,
+            Tool,
+            ToolKind as AgentToolKind,
+        };
+
+        let event = UpdateEvent::ToolCall(AgentToolCall {
+            id: "tc-1".to_string(),
+            tool: Tool {
+                tool_use_purpose: None,
+                kind: AgentToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                    path: "scraper.rs".to_string(),
+                    content: "x".to_string(),
+                    ..Default::default()
+                }))),
+            },
+            tool_use_block: ToolUseBlock {
+                tool_use_id: "tc-1".to_string(),
+                name: "fs_write".to_string(),
+                input: serde_json::json!({}),
+            },
+        });
+
+        let update = convert_update_event_to_session_update(event).expect("ToolCall should map");
+        let json = serde_json::to_value(&update).expect("SessionUpdate should serialize");
+
+        assert_eq!(json["title"], "Creating scraper.rs", "got: {json}");
+        assert_eq!(json["_meta"]["kiro"]["toolName"], "fs_write", "got: {json}");
     }
 }
 

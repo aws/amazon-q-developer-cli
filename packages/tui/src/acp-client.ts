@@ -2506,7 +2506,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       // (convertAcpUpdateToEvent), so the only origin signal left here is the
       // pipeline marker; everything else is a builtin from this vantage.
       this.v2ToolCalls.start(event.id, {
-        name: event.name ?? '',
+        name: event.meta?.kiro?.toolName ?? event.name ?? '',
         origin: event.meta?.kiro?.pipeline ? 'subagent_delegate' : 'builtin',
       });
       return;
@@ -3322,7 +3322,7 @@ export class KasAcpClient extends BaseAcpClient {
       // origin: `_meta.kiro.pipeline` marks a sub-agent delegation, else builtin.
       // event.name is already MCP-prefix-stripped, so MCP can't be told from it.
       this.v3ToolCalls.start(event.id, {
-        name: event.name ?? '',
+        name: event.meta?.kiro?.toolName ?? event.name ?? '',
         origin: event.meta?.kiro?.pipeline ? 'subagent_delegate' : 'builtin',
       });
       return;

@@ -387,6 +387,7 @@ export interface KiroMeta {
     groupId: string;
     stages: KiroPipelineStage[];
   };
+  toolName?: string;
 }
 
 export interface AgentContentEvent {
