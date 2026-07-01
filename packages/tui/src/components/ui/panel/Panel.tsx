@@ -3,6 +3,7 @@ import { Box, useInput } from './../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { Divider } from '../divider/Divider.js';
 import { Text } from '../text/Text.js';
 
@@ -53,6 +54,7 @@ export const Panel: React.FC<PanelProps> = ({
   const keybindings = useKeybindings();
   const primary = getColor('primary');
   const dim = getColor('secondary');
+  const glyphs = useGlyphs();
 
   const [search, setSearch] = useState('');
   // Mirror search into a ref so the useInput closure always sees the latest
@@ -124,25 +126,31 @@ export const Panel: React.FC<PanelProps> = ({
       )}
 
       <Box flexDirection="column" paddingX={1}>
-        {canScrollUp && <Text>{dim('  ↑ more')}</Text>}
+        {canScrollUp && <Text>{dim(`  ${glyphs.arrowUp} more`)}</Text>}
         {children}
-        {canScrollDown && <Text>{dim('  ↓ more')}</Text>}
+        {canScrollDown && <Text>{dim(`  ${glyphs.arrowDown} more`)}</Text>}
       </Box>
 
       <Divider />
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
           <Text>
-            {primary(keybindings.label('closeMenu').toUpperCase())}{' '}
+            {primary(keybindings.label('closeMenu'))}{' '}
             {dim(searchable && search ? 'to clear search' : closeHintLabel)}
-            {canScrollUp || canScrollDown ? dim(' · ↑↓ to scroll') : ''}
+            {canScrollUp || canScrollDown
+              ? dim(
+                  ` ${glyphs.smallDot} ${glyphs.arrowUp}${glyphs.arrowDown} to scroll`
+                )
+              : ''}
           </Text>
-          {footerLeft && <Text>{dim(' · ')}</Text>}
+          {footerLeft && <Text>{dim(` ${glyphs.smallDot} `)}</Text>}
           {footerLeft}
         </Box>
         <Box>
           {footerExtra}
-          {footerExtra && showTabHint && <Text>{dim(' · ')}</Text>}
+          {footerExtra && showTabHint && (
+            <Text>{dim(` ${glyphs.smallDot} `)}</Text>
+          )}
           {showTabHint && (
             <Text>
               {primary('Tab')} {dim(tabHintLabel)}

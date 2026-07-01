@@ -99,6 +99,16 @@ export const GlyphsProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useGlyphs = (): Glyphs => useContext(GlyphsContext).glyphs;
 export const useSpinners = (): Spinners => useContext(GlyphsContext).spinners;
+
+/**
+ * Non-hook glyph resolver for modules that run outside React (slash-command
+ * handlers, theme previews, feed formatting). Reads the persisted
+ * `chat.allowAsciiArt` setting live, so it reflects the user's current choice
+ * at call time. React components must use the `useGlyphs` hook instead so they
+ * re-render when the setting is toggled in-session.
+ */
+export const getActiveGlyphs = (): Glyphs =>
+  resolveAllowAsciiArt() ? UNICODE_GLYPHS : ASCII_GLYPHS;
 export const useAllowAsciiArt = () => {
   const ctx = useContext(GlyphsContext);
   return {

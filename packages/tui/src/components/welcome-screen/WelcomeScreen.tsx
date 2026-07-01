@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text as InkText } from './../../renderer.js';
 import { Wordmark /*useTheme*/ } from '../brand/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { Text } from '../ui/text/Text.js';
 import { useAppStore } from '../../stores/app-store.js';
 
@@ -17,6 +18,7 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
   animate = false,
 }: WelcomeScreenProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const brand = getColor('brand');
   const agentEngine = useAppStore((s) => s.agentEngine);
@@ -49,7 +51,9 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
     <Box flexDirection="column" width="100%" alignItems="center">
       <Wordmark animate={animate} />
       {process.env.NODE_ENV !== 'production' && (
-        <InkText dimColor>{'Development Mode · Twinki'}</InkText>
+        <InkText
+          dimColor
+        >{`Development Mode ${glyphs.smallDot} Twinki`}</InkText>
       )}
 
       <Box

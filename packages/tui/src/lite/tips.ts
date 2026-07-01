@@ -11,6 +11,7 @@
  * at mount and bakes the text into <Static> so it never re-renders.
  */
 import chalk from 'chalk';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 const TIPS: readonly string[] = [
   'Open /settings → verbosity to tune truncation, output filters, and density anytime.',
@@ -38,7 +39,20 @@ export function pickTip(now: Date = new Date()): string {
       (1000 * 60 * 60 * 24)
   );
   const idx = ((dayOfYear % TIPS.length) + TIPS.length) % TIPS.length;
-  return TIPS[idx]!;
+  return applyGlyphs(TIPS[idx]!);
+}
+
+/**
+ * Degrade the directional arrows embedded in a tip to the active glyph set so
+ * tips honor `chat.allowAsciiArt`. A no-op in Unicode mode (the glyph values
+ * are the arrows themselves); in ASCII mode `↑→←` become `^`, `->`, `<`.
+ */
+function applyGlyphs(tip: string): string {
+  const g = getActiveGlyphs();
+  return tip
+    .replace(/↑/g, g.arrowUp)
+    .replace(/←/g, g.arrowLeft)
+    .replace(/→/g, g.arrow);
 }
 
 /**

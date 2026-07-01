@@ -4,6 +4,7 @@ import { Text } from './text/Text.js';
 import { Panel } from './panel/Panel.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import type { UsageData } from '../../stores/app-store.js';
 
 interface UsagePanelProps {
@@ -20,6 +21,7 @@ function UsageProgressBar({
   width: number;
 }) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const colorKey =
     percentage >= 100 ? 'error' : percentage >= 90 ? 'warning' : 'brand';
@@ -35,8 +37,8 @@ function UsageProgressBar({
 
   return (
     <Text>
-      <InkText color={color}>{'█'.repeat(filled)}</InkText>
-      <InkText color={emptyColor}>{'█'.repeat(empty)}</InkText>
+      <InkText color={color}>{glyphs.bar.repeat(filled)}</InkText>
+      <InkText color={emptyColor}>{glyphs.bar.repeat(empty)}</InkText>
     </Text>
   );
 }

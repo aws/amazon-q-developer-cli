@@ -48,13 +48,13 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
                   </Text>
                 )}
                 <Text backgroundColor={bg} color={fg} bold>
-                  Steer · pending
+                  Steer {glyphs.smallDot} pending
                 </Text>
               </>
             )}
             {hasSteer && hasQueue && (
               <Text backgroundColor={bg} color={fg}>
-                {' · '}
+                {` ${glyphs.smallDot} `}
               </Text>
             )}
             {hasQueue && (
@@ -65,13 +65,13 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
                   </Text>
                 )}
                 <Text backgroundColor={bg} color={fg} bold>
-                  Queue · {queueCount} pending
+                  Queue {glyphs.smallDot} {queueCount} pending
                 </Text>
               </>
             )}
             <Text backgroundColor={bg} color={fg}>
               {' '}
-              · ctrl+x to view and manage
+              {glyphs.smallDot} ctrl+x to view and manage
             </Text>
           </Text>
         </Box>
@@ -90,7 +90,7 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
           {done > 0 && (
             <Text backgroundColor={bg}>
               {' '}
-              ·{' '}
+              {glyphs.smallDot}{' '}
               <Text backgroundColor={bg} color={success}>
                 {done} done
               </Text>
@@ -99,19 +99,19 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
           {remaining > 0 && (
             <Text backgroundColor={bg} color={fg}>
               {' '}
-              · {remaining} remaining
+              {glyphs.smallDot} {remaining} remaining
             </Text>
           )}
           {hasSteer && (
             <Text backgroundColor={bg} color={muted}>
               {' '}
-              · +1 steer
+              {glyphs.smallDot} +1 steer
             </Text>
           )}
           {hasQueue && (
             <Text backgroundColor={bg} color={muted}>
               {' '}
-              · +{queueCount} queued
+              {glyphs.smallDot} +{queueCount} queued
             </Text>
           )}
         </Text>

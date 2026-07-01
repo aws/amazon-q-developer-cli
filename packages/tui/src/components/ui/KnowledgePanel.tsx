@@ -6,6 +6,7 @@ import { Divider } from './divider/Divider.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useInput } from '../../renderer.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { KnowledgeEntry } from '../../stores/app-store.js';
@@ -26,6 +27,7 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const dim = getColor('secondary');
   const brand = getColor('brand');
@@ -81,7 +83,9 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     titleParts.push('indexing in progress');
   }
   const titleSuffix =
-    titleParts.length > 0 ? titleParts.join(' · ') : 'no entries';
+    titleParts.length > 0
+      ? titleParts.join(` ${glyphs.smallDot} `)
+      : 'no entries';
 
   const columns = [
     { label: 'Name', width: nameCol },
@@ -118,7 +122,7 @@ export const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
 
   return (
     <Panel
-      title={`/knowledge · ${titleSuffix}`}
+      title={`/knowledge ${glyphs.smallDot} ${titleSuffix}`}
       onClose={onClose}
       searchable={entries.length > 0}
       onSearchChange={handleSearchChange}

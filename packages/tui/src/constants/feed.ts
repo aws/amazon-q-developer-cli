@@ -7,6 +7,7 @@
 import { readFileSync } from 'fs';
 
 import { logger } from '../utils/logger.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 export enum FeedEntryType {
   Announcement = 'announcement',
@@ -121,7 +122,9 @@ export function releaseToContent(
   options?: RenderOptions
 ): string {
   const icons = options?.icons ?? UNICODE_ICONS;
-  const lines: string[] = [`**✨ What's new in ${entry.version}**`];
+  const lines: string[] = [
+    `**${getActiveGlyphs().sparkle} What's new in ${entry.version}**`,
+  ];
   const changes = entry.changes ?? [];
 
   // Group by type

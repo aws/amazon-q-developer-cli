@@ -56,7 +56,9 @@ export const PastedChip = React.memo(function PastedChip({
   if (type === 'image') {
     // Format image info
     const dimensions =
-      imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : '';
+      imageWidth && imageHeight
+        ? `${imageWidth}${glyphs.times}${imageHeight}`
+        : '';
     const size = imageSizeBytes ? formatBytes(imageSizeBytes) : '';
     const details = [dimensions, size].filter(Boolean).join(' ');
     label = `pasted image${details ? ` (${details})` : ''}`;

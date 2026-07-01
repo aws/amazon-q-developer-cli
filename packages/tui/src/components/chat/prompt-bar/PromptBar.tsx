@@ -4,6 +4,7 @@ import { ContextBar } from './ContextBar.js';
 import { PromptInput } from './PromptInput.js';
 import { Divider } from '../../ui/divider/Divider.js';
 import { SnackBar } from './SnackBar.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 
 // Detect terminals that fill edge margins for visual consistency
 const fillsEdgeMargin = process.env.TERM_PROGRAM === 'iTerm.app';
@@ -40,10 +41,13 @@ export const PromptBar = React.memo(function PromptBar({
   isProcessing,
   triggerRules,
   onTriggerDetected,
-  placeholder = 'ask a question, or describe a task ↵',
+  placeholder,
   hint,
   hideInput = false,
 }: PromptBarProps) {
+  const glyphs = useGlyphs();
+  const resolvedPlaceholder =
+    placeholder ?? `ask a question, or describe a task ${glyphs.enter}`;
   return (
     <Box flexDirection="column" gap={0}>
       <Divider />
@@ -61,7 +65,7 @@ export const PromptBar = React.memo(function PromptBar({
               isProcessing={isProcessing}
               triggerRules={triggerRules}
               onTriggerDetected={onTriggerDetected}
-              placeholder={placeholder}
+              placeholder={resolvedPlaceholder}
             />
             {hint && <Text dimColor> {hint}</Text>}
           </Box>

@@ -4,6 +4,7 @@ import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { HookInfo } from '../../stores/app-store.js';
 import { truncateToWidth } from '../../utils/text-width.js';
@@ -18,6 +19,7 @@ const GAP = 2;
 export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const dim = getColor('secondary');
   const brand = getColor('brand');
@@ -93,7 +95,7 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
 
   return (
     <Panel
-      title={`/hooks · ${hooks.length} hook${hooks.length === 1 ? '' : 's'}`}
+      title={`/hooks ${glyphs.smallDot} ${hooks.length} hook${hooks.length === 1 ? '' : 's'}`}
       onClose={onClose}
       searchable={true}
       onSearchChange={handleSearchChange}

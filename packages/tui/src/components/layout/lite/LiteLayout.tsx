@@ -73,6 +73,7 @@ import {
   useSpinners,
   useAllowAsciiArt,
 } from '../../../hooks/useGlyphs.js';
+import type { Glyphs } from '../../../utils/glyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
 import {
   getAgentColor,
@@ -498,8 +499,8 @@ export const LiteLayout: React.FC = () => {
         setShowGoalPanel(false);
         showTransientAlert({
           message: g
-            ? `goal ${g.state} [${g.iteration + 1}/${g.maxIterations}]${g.message ? ` · ${g.message}` : ''}`
-            : 'no active goal · use /goal <description> to set one',
+            ? `goal ${g.state} [${g.iteration + 1}/${g.maxIterations}]${g.message ? ` ${glyphs.smallDot} ${g.message}` : ''}`
+            : `no active goal ${glyphs.smallDot} use /goal <description> to set one`,
           status: 'info',
           autoHideMs: 6000,
         });
@@ -515,6 +516,7 @@ export const LiteLayout: React.FC = () => {
     clearCommandInput,
     setShowGoalPanel,
     showTransientAlert,
+    glyphs,
   ]);
 
   // Boot indicator: one dim row surfacing in-flight async setup (agent_connect >
@@ -570,8 +572,8 @@ export const LiteLayout: React.FC = () => {
       : brand('  KIRO');
     // One rotating tip, picked deterministically per day (no restart flicker).
     const tipLine = formatTipLine(pickTip());
-    return `${kiroArt}\n${chalk.dim(`  v${version} · lite`)}\n${tipLine}`;
-  }, [allowAsciiArt]);
+    return `${kiroArt}\n${chalk.dim(`  v${version} ${glyphs.smallDot} lite`)}\n${tipLine}`;
+  }, [allowAsciiArt, glyphs]);
   // True until real chat content lands OR the banner already emitted in a prior
   // mount. "Real chat" = any NON-standalone-greeting message; gating on User
   // rows alone is too narrow (a System announcement before typing duplicated the
@@ -1569,9 +1571,13 @@ export const LiteLayout: React.FC = () => {
             gitBranch
               ? `${secondary('(')}${getColor('primary')(gitBranch)}${secondary(')')}`
               : '',
-            formatGoalStatusSegment(goalStatus),
+            formatGoalStatusSegment(goalStatus, glyphs),
           ];
-          const lines = packStatusSegments(segments, cols, chalk.dim(' · '));
+          const lines = packStatusSegments(
+            segments,
+            cols,
+            chalk.dim(` ${glyphs.smallDot} `)
+          );
           return (
             <Box flexDirection="column">
               {lines.map((line, i) => (
@@ -1586,7 +1592,8 @@ export const LiteLayout: React.FC = () => {
         <Text>
           {formatBootIndicator(
             selectBootIndicatorPhase(bootProgress, mcpInitStatus),
-            spinners.brailleRotate[bootFrame % spinners.brailleRotate.length]!
+            spinners.brailleRotate[bootFrame % spinners.brailleRotate.length]!,
+            glyphs.ellipsis
           )}
         </Text>
       )}
@@ -1626,7 +1633,9 @@ export const LiteLayout: React.FC = () => {
                   ? `${glyphs.chevron} editing steer #${editingSteerLineIndex + 1}`
                   : `${glyphs.chevron} editing queued #${editingQueueIndex! + 1}`
               )}
-              {chalk.dim(' · enter saves · ctrl+x deletes · esc cancels')}
+              {chalk.dim(
+                ` ${glyphs.smallDot} enter saves ${glyphs.smallDot} ctrl+x deletes ${glyphs.smallDot} esc cancels`
+              )}
             </Text>
           )}
           {transientAlert && (
@@ -1653,7 +1662,7 @@ export const LiteLayout: React.FC = () => {
                   onTriggerDetected={handleTriggerDetected}
                   placeholder={
                     isShellEscape
-                      ? 'bash is waiting for input · ctrl+c to interrupt'
+                      ? `bash is waiting for input ${glyphs.smallDot} ctrl+c to interrupt`
                       : 'ask a question, or type / for commands'
                   }
                   suppressArrows={subagentOpenIndex != null}
@@ -1774,17 +1783,18 @@ function formatGoalStatusSegment(
     state: string;
     iteration: number;
     maxIterations: number;
-  } | null
+  } | null,
+  glyphs: Glyphs
 ): string {
   if (!goalStatus) return '';
   const iter = `[${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
   switch (goalStatus.state) {
     case 'completed':
-      return chalk.green('✓ goal done');
+      return chalk.green(`${glyphs.checkmark} goal done`);
     case 'exhausted':
-      return chalk.red('✗ goal exhausted');
+      return chalk.red(`${glyphs.cross} goal exhausted`);
     case 'paused':
-      return chalk.yellow(`⏸ goal paused ${iter}`);
+      return chalk.yellow(`${glyphs.pause} goal paused ${iter}`);
     default:
       return chalk.dim(`⟳ goal ${iter}`);
   }

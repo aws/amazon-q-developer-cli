@@ -10,6 +10,7 @@ import { Menu } from '../ui/menu/Menu';
 import { Text } from '../ui/text/Text.js';
 import { Divider } from '../ui/divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { useAppStore } from '../../stores/app-store';
 import { useCommandState } from '../../stores/selectors';
@@ -95,6 +96,7 @@ export const CommandMenu: React.FC = () => {
   );
   const kiro = useAppStore((state) => state.kiro);
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
 
   const [fileResults, setFileResults] = useState<string[]>([]);
@@ -710,7 +712,9 @@ export const CommandMenu: React.FC = () => {
             activeCommand.command.meta?.preserveLabelColors === true
           }
           liteOnly={activeCommand.command.meta?.liteOnly === true}
-          closeMenuActionLabel={hasReturnStash ? '← back' : 'to close'}
+          closeMenuActionLabel={
+            hasReturnStash ? `${glyphs.arrowLeft} back` : 'to close'
+          }
         />
         {verbosityPreviewKey && previewMode === 'mini' && (
           <VerbosityPreview
@@ -725,7 +729,7 @@ export const CommandMenu: React.FC = () => {
               {secondaryColor(
                 previewMode === 'hidden'
                   ? '  ctrl+p to show preview'
-                  : '  p to expand · ctrl+p to hide preview'
+                  : `  p to expand ${glyphs.smallDot} ctrl+p to hide preview`
               )}
             </Text>
           </Box>

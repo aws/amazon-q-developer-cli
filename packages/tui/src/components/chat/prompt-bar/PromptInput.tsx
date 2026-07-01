@@ -9,6 +9,8 @@ import React, {
 } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
+import { useGlyphs, useAllowAsciiArt } from '../../../hooks/useGlyphs.js';
+import { getBarRamp } from '../../../utils/glyphs.js';
 import { Text } from '../../ui/text/Text.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import chalk from 'chalk';
@@ -179,7 +181,7 @@ export const PromptInput = React.memo(function PromptInput({
   isProcessing,
   triggerRules = [],
   onTriggerDetected,
-  placeholder = 'ask a question, or describe a task ↵',
+  placeholder,
   suppressArrows = false,
 }: PromptInputProps) {
   const {
@@ -199,6 +201,10 @@ export const PromptInput = React.memo(function PromptInput({
   } = useCommandActions();
   const toggleInterruptMode = useAppStore((s) => s.toggleInterruptMode);
   const keybindings = useKeybindings();
+  const glyphs = useGlyphs();
+  const { allowAsciiArt } = useAllowAsciiArt();
+  const resolvedPlaceholder =
+    placeholder ?? `ask a question, or describe a task ${glyphs.enter}`;
   const voiceStop = useAppStore((s) => s.voiceStop);
   const voiceLevel = useAppStore((s) => s.voiceLevel);
   const voiceAutoSubmit = useAppStore((s) => s.voiceAutoSubmit);
@@ -422,17 +428,17 @@ export const PromptInput = React.memo(function PromptInput({
   );
   const placeholderColor = useMemo(() => getColor('muted'), [getColor]);
 
-  const VOICE_BLOCK_CHARS = '▁▂▃▄▅▆▇█';
+  const voiceRamp = getBarRamp(allowAsciiArt);
   const voiceCursorChar =
     voiceLevel !== null
-      ? (VOICE_BLOCK_CHARS[Math.min(voiceLevel, 7)] ?? '▁')
+      ? (voiceRamp[Math.min(voiceLevel, 7)] ?? voiceRamp[0])
       : null;
 
   const VOICE_HINTS = [
     'hold SPACE for quick push-to-talk',
-    `auto-submit is ${voiceAutoSubmit ? 'ON' : 'OFF'} · /settings voice.autoSubmit`,
-    'text appears as you pause · /settings voice.partialPause (ms)',
-    'silence auto-stops after 5s · /settings voice.silenceTimeout (s)',
+    `auto-submit is ${voiceAutoSubmit ? 'ON' : 'OFF'} ${glyphs.smallDot} /settings voice.autoSubmit`,
+    `text appears as you pause ${glyphs.smallDot} /settings voice.partialPause (ms)`,
+    `silence auto-stops after 5s ${glyphs.smallDot} /settings voice.silenceTimeout (s)`,
     '/settings voice.modelSize base|small',
     'Ctrl+C cancels recording',
   ];
@@ -1711,10 +1717,10 @@ export const PromptInput = React.memo(function PromptInput({
     const total = totalWidth(segments);
     if (total === 0) {
       const recordingPlaceholder = voiceHint
-        ? `Recording... ENTER to stop · ${voiceHint}`
+        ? `Recording... ENTER to stop ${glyphs.smallDot} ${voiceHint}`
         : 'Recording... ENTER to stop';
       const activePlaceholder =
-        voiceCursorChar != null ? recordingPlaceholder : placeholder;
+        voiceCursorChar != null ? recordingPlaceholder : resolvedPlaceholder;
       return (
         <>
           {voiceCursorChar != null && voicePartialText ? (

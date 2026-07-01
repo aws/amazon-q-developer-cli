@@ -207,6 +207,7 @@ function CodeLogsView({
 }) {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const secondary = getColor('secondary');
   const success = getColor('success');
@@ -250,7 +251,7 @@ function CodeLogsView({
 
   return (
     <Panel
-      title={`/code logs · ${data.level ?? 'ERROR'} · ${filtered.length} entries`}
+      title={`/code logs ${glyphs.smallDot} ${data.level ?? 'ERROR'} ${glyphs.smallDot} ${filtered.length} entries`}
       onClose={onClose}
       searchable={entries.length > 0}
       onSearchChange={handleSearchChange}

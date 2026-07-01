@@ -4,6 +4,7 @@ import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import {
   renderVerbosityPreview,
   buildRenderTheme,
@@ -74,6 +75,7 @@ export const VerbosityPreview: React.FC<VerbosityPreviewProps> = ({
   onHide,
 }) => {
   const expanded = mode === 'expanded';
+  const glyphs = useGlyphs();
   const { text, dim } = useVerbosityPreviewText(
     which,
     displayOverride,
@@ -125,10 +127,12 @@ export const VerbosityPreview: React.FC<VerbosityPreviewProps> = ({
   const padding = Math.max(0, PANE_VISIBLE_LINES - visible.length);
   const scrollable = totalLines > PANE_VISIBLE_LINES;
   const counter = scrollable
-    ? dim(` · ${offset + 1}-${offset + visible.length}/${totalLines}`)
+    ? dim(
+        ` ${glyphs.smallDot} ${offset + 1}-${offset + visible.length}/${totalLines}`
+      )
     : '';
   const hint = dim(
-    `${scrollable ? '↑↓ scroll · ctrl+b/f page · ctrl+a/z top/bot · ' : ''}p shrink · ctrl+p hide · esc back`
+    `${scrollable ? `${glyphs.arrowUp}${glyphs.arrowDown} scroll ${glyphs.smallDot} ctrl+b/f page ${glyphs.smallDot} ctrl+a/z top/bot ${glyphs.smallDot} ` : ''}p shrink ${glyphs.smallDot} ctrl+p hide ${glyphs.smallDot} esc back`
   );
 
   return (

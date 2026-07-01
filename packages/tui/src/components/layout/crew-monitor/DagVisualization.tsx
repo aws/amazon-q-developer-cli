@@ -155,7 +155,7 @@ export const DagVisualization = React.memo(function DagVisualization({
     const stage = stageByName.get(name);
     const loopLabel =
       stage?.hasLoop && stage.loopMaxIterations
-        ? ` ↻[${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
+        ? ` ${glyphs.loop}[${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
         : '';
 
     return (
@@ -186,7 +186,7 @@ export const DagVisualization = React.memo(function DagVisualization({
           SUBAGENTS
         </Text>
         <Text color="gray">
-          {'  [/] ←→ select · 1-'}
+          {`  [/] ${glyphs.arrowLeft}${glyphs.arrow} select ${glyphs.smallDot} 1-`}
           {Math.min(9, stages.length)}
           {' jump'}
         </Text>

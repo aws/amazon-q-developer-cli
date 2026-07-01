@@ -241,6 +241,7 @@ const FullToolContent = React.memo(function FullToolContent({
   locations,
 }: ToolContentProps) {
   const { requestRemeasure } = useStatusBar();
+  const glyphs = useGlyphs();
 
   // A tool is only visually complete if it's finished AND no longer pending approval
   const effectiveFinished = isFinished && status !== ToolUseStatus.Pending;
@@ -461,7 +462,7 @@ const FullToolContent = React.memo(function FullToolContent({
   // Goal tool — compact one-liner showing command result
   if (name === 'goal') {
     const labels: Record<string, string> = {
-      complete: '✓ Goal complete',
+      complete: `${glyphs.checkmark} Goal complete`,
       status: 'Goal status',
     };
     let label = 'Goal';

@@ -183,7 +183,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
         const hasOAuth = pendingOAuthUrls.has(server.name);
         let detail: string;
         if (hasOAuth) {
-          detail = `${server.status} · Enter to authenticate`;
+          detail = `${server.status} ${glyphs.smallDot} Enter to authenticate`;
         } else if (server.status === 'failed' && reason) {
           detail = reason;
         } else {
@@ -351,10 +351,10 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     mode === 'add' ? 'add' : mode === 'remove' ? 'remove' : 'list';
   const selCount = selected.size + pending.size;
   const title = isRegistryView
-    ? `/mcp ${modeLabel} · ${servers.length} server${servers.length === 1 ? '' : 's'}${selCount > 0 ? ` · ${selCount} selected` : ''}`
+    ? `/mcp ${modeLabel} ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}${selCount > 0 ? ` ${glyphs.smallDot} ${selCount} selected` : ''}`
     : isListMode
-      ? `/mcp list · ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
-      : `/mcp · ${servers.length} server${servers.length === 1 ? '' : 's'}`;
+      ? `/mcp list ${glyphs.smallDot} ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
+      : `/mcp ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}`;
 
   const governanceDisabled = initErrors.find(
     (e): e is Extract<InitError, { type: 'mcp_governance_disabled' }> =>
@@ -373,14 +373,15 @@ export const McpPanel: React.FC<McpPanelProps> = ({
 
   const footerExtra = isInteractive ? (
     <Text>
-      {primary('^J/K')} {dim('navigate')} {dim('·')} {primary('Tab')}{' '}
-      {dim('select')} {dim('·')} {primary('Enter')} {dim(mode)}
+      {primary('^J/K')} {dim('navigate')} {dim(glyphs.smallDot)}{' '}
+      {primary('Tab')} {dim('select')} {dim(glyphs.smallDot)} {primary('Enter')}{' '}
+      {dim(mode)}
     </Text>
   ) : isStatusView && servers.length > 0 ? (
     <Text>
-      {primary('^J/K')} {dim('navigate')} {dim('·')} {primary('^A')}{' '}
-      {dim('auth')} {dim('·')} {primary('^X')} {dim('abort')} {dim('·')}{' '}
-      {primary('^R')} {dim('remove creds')}
+      {primary('^J/K')} {dim('navigate')} {dim(glyphs.smallDot)} {primary('^A')}{' '}
+      {dim('auth')} {dim(glyphs.smallDot)} {primary('^X')} {dim('abort')}{' '}
+      {dim(glyphs.smallDot)} {primary('^R')} {dim('remove creds')}
     </Text>
   ) : undefined;
 

@@ -13,6 +13,7 @@ import {
   writeCliSettings,
 } from '../../utils/cli-settings.js';
 import {
+  useGlyphs,
   useAllowAsciiArt,
   useAllowAnimations,
   useAllowIcons,
@@ -106,6 +107,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   onDismiss,
 }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const label = useTextStyle('label');
   const selectedLabel = useTextStyle('selectedLabel');
   const dimText = getColor('secondary');
@@ -116,9 +118,17 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowIcons } = useAllowIcons();
   const { thinkingMode, setThinkingMode } = useThinkingMode();
 
+  // Route separators embedded in item descriptions through glyphs so ASCII
+  // mode renders '.' instead of '·' (uniform with the rest of the panel).
   const ITEMS = useMemo(
-    () => selectDisplayItems(process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'),
-    []
+    () =>
+      selectDisplayItems(process.env.KIRO_LITE_ROLLOUT_ENABLED === '1').map(
+        (item) => ({
+          ...item,
+          description: item.description.split('·').join(glyphs.smallDot),
+        })
+      ),
+    [glyphs]
   );
 
   const [index, setIndex] = useState(0);
@@ -217,11 +227,13 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       closeHintLabel={fromSettings ? 'to go back' : 'to close'}
       footerLeft={
         <Text>
-          {brandText('↑↓')} {dimText('to select')}
-          {dimText(' · ')}
-          {brandText('←→')} {dimText('to toggle')}
-          {dimText(' · ')}
-          {brandText('↵')} {dimText('to apply and close')}
+          {brandText(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+          {dimText('to select')}
+          {dimText(` ${glyphs.smallDot} `)}
+          {brandText(`${glyphs.arrowLeft}${glyphs.arrow}`)}{' '}
+          {dimText('to toggle')}
+          {dimText(` ${glyphs.smallDot} `)}
+          {brandText(glyphs.enter)} {dimText('to apply and close')}
         </Text>
       }
     >

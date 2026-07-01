@@ -3,10 +3,10 @@ doc_meta:
   title: /settings
   description: Open the settings menu to configure theme, keybindings, terminal, and other preferences
   category: slash_command
-  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title]
+  keywords: [settings, preferences, config, theme, keybindings, terminal, history, configure, multi-line, shift-enter, tmux, title, display, ascii, accessibility]
   related: [theme, title]
-  validated: 2026-06-03
-  commit: 28e17b5ed
+  validated: 2026-07-01
+  commit: fef722c75
   status: validated
   testable_headless: false
 ---
@@ -48,13 +48,38 @@ Opens a toggle panel for display settings. Use ↑↓ to navigate, ←→ to tog
 | Setting | Key | Default | Effect |
 |---------|-----|---------|--------|
 | Animations | `chat.allowAnimations` | on | When off, spinners, progress bars, and loading effects show static frames |
-| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces decorative text art including table lines with plain ASCII |
+| ASCII art | `chat.allowAsciiArt` | on (Unicode) | When off, replaces all Unicode symbols with plain ASCII equivalents (see below) |
 | Icons | `chat.allowIcons` | on | When off, hides symbols for status, actions, and labels |
 | Terminal title | `chat.terminalTitle` | off | When on, updates the terminal window title with session info via OSC 0 sequences |
 
 Changes take effect immediately without restart. Settings persist to `~/.kiro/settings/cli.json`.
 
 **Environment variable override**: `KIRO_ASCII_MODE=1` forces ASCII mode regardless of the setting.
+
+#### ASCII art mode coverage
+
+When ASCII art is off, the following substitutions apply throughout the entire TUI:
+
+| Unicode | ASCII | Used in |
+|---------|-------|---------|
+| `·` (middle dot) | `.` | Separators in menus, status bars, hints |
+| `…` (ellipsis) | `...` | Truncated content, clipped previews |
+| `⋯` (mid-ellipsis) | `...` | Elided line markers in Explorer |
+| `↑` `↓` `←` `→` | `^` `v` `<` `->` | Key hints, navigation prompts |
+| `↵` (return) | `enter` | Key hints for confirm/select |
+| `◀` `▶` | `<` `>` | Triangle markers |
+| `█` (full block) | `#` | Progress bars, context breakdown |
+| `✓` | `*` | Success indicators |
+| `✗` | `x` | Failure/cancellation markers |
+| `⏸` | <code>&#124;&#124;</code> | Paused status |
+| `↻` | `@` | Loop/retry indicators |
+| `×` | `x` | Close/multiply symbols |
+| `✎` | `e` | Edit/pencil indicator (activity tray) |
+| `🔧` | `T` | Tool/wrench indicator (message headers) |
+| `📧` | `M` | Mail/message indicator (multi-agent) |
+| Box-drawing (`─│┌┐└┘├┤┬┴┼`) | ASCII (`-`, `\|`, `+`) | Panels, tables, dividers |
+
+This makes Kiro usable in terminals without Unicode support, over SSH sessions with limited character encoding, and with screen readers that handle ASCII more reliably.
 
 ### theme
 

@@ -25,6 +25,7 @@ import {
   readCliSettings,
   writeCliSettings,
 } from '../utils/cli-settings.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 export interface SettingsSubcommand {
   /** Machine value passed as `/settings <value>` */
@@ -175,6 +176,7 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
         Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
         DEFAULT_INTERRUPT_MODE
       );
+      const glyphs = getActiveGlyphs();
       ctx.setSettingsReturnOnEscape(true);
       ctx.setActiveCommand({
         command: {
@@ -188,12 +190,12 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
         options: [
           {
             value: 'terminal:interrupt:steer',
-            label: `steer${current === InterruptMode.STEER ? ' ●' : ''}`,
+            label: `steer${current === InterruptMode.STEER ? ` ${glyphs.dotFilled}` : ''}`,
             description: 'Inject your message mid-turn at tool boundaries',
           },
           {
             value: 'terminal:interrupt:queue',
-            label: `queue${current === InterruptMode.QUEUE ? ' ●' : ''}`,
+            label: `queue${current === InterruptMode.QUEUE ? ` ${glyphs.dotFilled}` : ''}`,
             description: 'Buffer your message and send after turn ends',
           },
         ],
@@ -245,6 +247,7 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
     description: 'Prompt history scope (session or global)',
     handle: ({ ctx, settingsCommand }) => {
       const current = readStringSetting(Settings.CHAT_HISTORY_MODE, 'session');
+      const glyphs = getActiveGlyphs();
       ctx.setSettingsReturnOnEscape(true);
       ctx.setActiveCommand({
         command: {
@@ -258,12 +261,12 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
         options: [
           {
             value: 'history:session',
-            label: `session${current === 'session' ? ' ●' : ''}`,
+            label: `session${current === 'session' ? ` ${glyphs.dotFilled}` : ''}`,
             description: 'Each session has its own prompt history',
           },
           {
             value: 'history:global',
-            label: `global${current === 'global' ? ' ●' : ''}`,
+            label: `global${current === 'global' ? ` ${glyphs.dotFilled}` : ''}`,
             description: 'All sessions share one prompt history',
           },
         ],

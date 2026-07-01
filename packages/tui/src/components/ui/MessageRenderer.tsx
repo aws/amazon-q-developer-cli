@@ -4,6 +4,7 @@ import {
   renderContentBlock,
   type ContentBlock,
 } from '../../utils/message-parser';
+import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 
 interface MessageContent {
   type: 'user' | 'assistant' | 'tool';
@@ -33,16 +34,18 @@ const getBorderColor = (type: string): string => {
 export const MessageRenderer: React.FC<MessageRendererProps> = memo(
   ({ message, isStreaming = false }) => {
     const borderColor = getBorderColor(message.type);
+    const glyphs = useGlyphs();
+    const { allowIcons } = useAllowIcons();
 
     return (
       <Box flexDirection="column" marginBottom={1}>
         <Box>
           <Text color={borderColor} bold>
             {message.type === 'user'
-              ? '│ '
+              ? `${glyphs.lineVertical} `
               : message.type === 'assistant'
-                ? '│ '
-                : '│ 🔧 '}
+                ? `${glyphs.lineVertical} `
+                : `${glyphs.lineVertical} ${allowIcons ? `${glyphs.wrench} ` : ''}`}
           </Text>
           <Box flexDirection="column">
             {message.blocks.map((block, index) => {

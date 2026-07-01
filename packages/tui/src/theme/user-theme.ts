@@ -14,6 +14,7 @@ import type { TerminalColor } from '../types/themeTypes.js';
 import { getTerminalChalkColor } from '../utils/colorUtils.js';
 import { kiroHomePath } from '../utils/kiro-home.js';
 import { logger } from '../utils/logger.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 /**
  * Convert a TerminalColor to a chalk function, handling truecolor, color256, and named ANSI colors.
@@ -265,7 +266,10 @@ export function buildDiffPreview(
   currentId?: string,
   fallbackDiff?: DiffPreset
 ): string {
-  const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
+  const marker =
+    preset.id === (currentId ?? 'default')
+      ? `  ${getActiveGlyphs().checkmark}`
+      : '';
   // Resolve effective preset: if 'default', use fallback (base theme colors)
   const effective =
     preset.added.bar.named === 'default' && fallbackDiff
@@ -367,7 +371,10 @@ export function buildPromptPreview(
   currentId?: string,
   themeSurfaceHex?: string
 ): string {
-  const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
+  const marker =
+    preset.id === (currentId ?? 'default')
+      ? `  ${getActiveGlyphs().checkmark}`
+      : '';
   // For default preset, use the theme's actual surface color as a truecolor-only TerminalColor
   const bgColor: TerminalColor =
     preset.id === 'default' && themeSurfaceHex
@@ -383,7 +390,10 @@ export function buildResponsePreview(
   preset: ResponsePreset,
   currentId?: string
 ): string {
-  const marker = preset.id === (currentId ?? 'default') ? '  ✓' : '';
+  const marker =
+    preset.id === (currentId ?? 'default')
+      ? `  ${getActiveGlyphs().checkmark}`
+      : '';
   const fg = chalkFromTerminalColor(preset.textColor, 'fg');
   return fg(RESPONSE_PREVIEW) + marker;
 }

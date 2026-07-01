@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "All TUI glyphs and symbols now respect the ASCII mode display setting for improved terminal compatibility"
+}

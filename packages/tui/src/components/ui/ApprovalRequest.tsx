@@ -133,7 +133,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       ? [
           {
             label: `Trust ${resourceLabel}`,
-            description: `exact match · ${scopeLabels[trustScope]}`,
+            description: `exact match ${glyphs.smallDot} ${scopeLabels[trustScope]}`,
           },
         ]
       : []),
@@ -141,7 +141,7 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       ? [
           {
             label: `Trust "${baseCommand}"`,
-            description: `pattern · ${scopeLabels[trustScope]}`,
+            description: `pattern ${glyphs.smallDot} ${scopeLabels[trustScope]}`,
           },
         ]
       : []),
@@ -215,11 +215,11 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   const title = isQuestion
     ? `${prefix}Question`
     : mode === 'drill-in'
-      ? `${prefix}${toolName} requires approval · Modify request`
+      ? `${prefix}${toolName} requires approval ${glyphs.smallDot} Modify request`
       : page === 'trust'
-        ? `${prefix}${toolName} requires approval · trust options`
+        ? `${prefix}${toolName} requires approval ${glyphs.smallDot} trust options`
         : page === 'kas-scope'
-          ? `${prefix}${toolName} requires approval · trust [${scopeLabels[trustScope]}] (s to cycle)`
+          ? `${prefix}${toolName} requires approval ${glyphs.smallDot} trust [${scopeLabels[trustScope]}] (s to cycle)`
           : `${prefix}${toolName} requires approval`;
 
   const handleClose = () => {
@@ -307,9 +307,10 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
     // the single (outer) footer carries just the navigate/select hints.
     footerLeft = (
       <Text>
-        {primary('↑↓')} {secondary('to navigate')}
-        {secondary(' · ')}
-        {primary('↵')} {secondary('to select')}
+        {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+        {secondary('to navigate')}
+        {secondary(` ${glyphs.smallDot} `)}
+        {primary(glyphs.enter)} {secondary('to select')}
       </Text>
     );
   } else if (mode === 'dropdown' && focusedOnTrust) {
@@ -321,10 +322,11 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   } else if (mode === 'dropdown') {
     footerLeft = (
       <Text>
-        {primary('↑↓')} {secondary('to navigate')}
-        {secondary(' · ')}
-        {primary('↵')} {secondary('to select')}
-        {secondary(' · ')}
+        {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+        {secondary('to navigate')}
+        {secondary(` ${glyphs.smallDot} `)}
+        {primary(glyphs.enter)} {secondary('to select')}
+        {secondary(` ${glyphs.smallDot} `)}
         {primary('Tab')} {secondary('to edit')}
       </Text>
     );

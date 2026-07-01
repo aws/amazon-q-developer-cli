@@ -80,6 +80,9 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
         // The panel never hosts an approval prompt, so no diff to suppress.
         pendingApprovalToolCallId: null,
         termCols: process.stdout.columns ?? 80,
+        // Thread the active glyph set so the trace body degrades to ASCII when
+        // chat.allowAsciiArt is off (matches the main chat log).
+        glyphs,
       });
       if (!text) continue;
       // Match the chat log's section-spacing so the trace doesn't read as a
@@ -89,7 +92,7 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
       prev = msg;
     }
     return out;
-  }, [messages, name]);
+  }, [messages, name, glyphs]);
 
   const totalLines = allLines.length;
   useEffect(() => {
@@ -119,24 +122,24 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
     // panel and strip read consistently (red ✗ killed, green ✓ complete).
     const phase =
       phaseLabel === 'killed'
-        ? chalk.red(` · ${glyphs.cross} killed`)
+        ? chalk.red(` ${glyphs.smallDot} ${glyphs.cross} killed`)
         : phaseLabel === 'complete'
-          ? chalk.green(` · ${glyphs.checkmark} complete`)
+          ? chalk.green(` ${glyphs.smallDot} ${glyphs.checkmark} complete`)
           : phaseLabel
-            ? chalk.dim(` · ${phaseLabel}`)
+            ? chalk.dim(` ${glyphs.smallDot} ${phaseLabel}`)
             : '';
     const scroll =
       totalLines > visibleLines
         ? chalk.dim(
-            ` · ${offset + 1}-${offset + visible.length}/${totalLines}${
-              followBottom ? ' · live' : ''
+            ` ${glyphs.smallDot} ${offset + 1}-${offset + visible.length}/${totalLines}${
+              followBottom ? ` ${glyphs.smallDot} live` : ''
             }`
           )
         : '';
     // Armed-kill chip at the tail (yellow, attention-demanding) so the
     // existing position/phase/scroll bits stay where the eye expects them.
     const armed = armedToKill
-      ? chalk.yellow(' · armed: press ctrl+x again to KILL')
+      ? chalk.yellow(` ${glyphs.smallDot} armed: press ctrl+x again to KILL`)
       : '';
     return `${chalk.dim(`${glyphs.cornerTopLeft}${glyphs.lineHorizontal} `)}${tag}${counter}${phase}${scroll}${armed}`;
   })();
@@ -146,7 +149,7 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
     // window (Esc cancels the arm without closing the panel).
     if (armedToKill) {
       return chalk.yellow(
-        `${glyphs.cornerBottomLeft}${glyphs.lineHorizontal} ctrl+x KILL · esc cancel`
+        `${glyphs.cornerBottomLeft}${glyphs.lineHorizontal} ctrl+x KILL ${glyphs.smallDot} esc cancel`
       );
     }
     // Advertise the full shortcut set unconditionally (discoverability) — the
@@ -154,13 +157,15 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
     // gated on multi-stage (true no-op otherwise); ctrl+x kill is gated to
     // match the kill handler's bail on terminal stages (LiteLayout).
     const parts: string[] = [];
-    parts.push('↑↓ scroll · ctrl+a/z top/bot');
-    if (total > 1) parts.push('shift+←→ cycle');
+    parts.push(
+      `${glyphs.arrowUp}${glyphs.arrowDown} scroll ${glyphs.smallDot} ctrl+a/z top/bot`
+    );
+    if (total > 1) parts.push(`shift+${glyphs.arrowLeft}${glyphs.arrow} cycle`);
     if (phaseLabel && phaseLabel !== 'complete' && phaseLabel !== 'killed')
       parts.push('ctrl+x kill');
     parts.push('ctrl+o close');
     return chalk.dim(
-      `${glyphs.cornerBottomLeft}${glyphs.lineHorizontal} ${parts.join(' · ')}`
+      `${glyphs.cornerBottomLeft}${glyphs.lineHorizontal} ${parts.join(` ${glyphs.smallDot} `)}`
     );
   })();
 

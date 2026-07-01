@@ -5,6 +5,7 @@ import { Panel } from './panel/Panel.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import {
   padToWidth,
   padToWidthRight,
@@ -19,10 +20,10 @@ import chalk from 'chalk';
  * of a sequence stay visible (e.g. a rewind turn's first tools + final reply).
  * The marker inherits the indent of the first hidden line for visual alignment.
  */
-function elideLines(lines: string[], max: number): string[] {
+function elideLines(lines: string[], max: number, mid: string): string[] {
   if (max <= 0) return [];
   if (lines.length <= max) return lines;
-  if (max === 1) return [`⋯ ${lines.length} more ⋯`];
+  if (max === 1) return [`${mid} ${lines.length} more ${mid}`];
   const visible = max - 1; // one row reserved for the marker
   const head = Math.ceil(visible / 2);
   const tail = visible - head;
@@ -31,7 +32,7 @@ function elideLines(lines: string[], max: number): string[] {
   const indent = firstHidden.match(/^(\s*)/)?.[1] || '';
   return [
     ...lines.slice(0, head),
-    `${indent}⋯ ${hidden} more ⋯`,
+    `${indent}${mid} ${hidden} more ${mid}`,
     ...(tail > 0 ? lines.slice(lines.length - tail) : []),
   ];
 }
@@ -113,6 +114,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   onClose,
 }) => {
   const { getColor, colors } = useTheme();
+  const glyphs = useGlyphs();
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const secondaryHex =
     (colors as { secondary?: { truecolor?: string } }).secondary?.truecolor ??
@@ -227,7 +229,11 @@ export const Explorer: React.FC<ExplorerProps> = ({
       : 0;
 
   const previewLines = selected?.preview
-    ? elideLines(selected.preview.body.split('\n'), maxPreviewLines)
+    ? elideLines(
+        selected.preview.body.split('\n'),
+        maxPreviewLines,
+        glyphs.midEllipsis
+      )
     : [];
 
   // Responsive width: max width for the first column so rows never wrap.
@@ -261,8 +267,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
   );
 
   const defaultHints: Array<{ key: string; label: string }> = [
-    { key: '↑↓', label: 'to navigate' },
-    { key: '↵', label: 'to select' },
+    { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'to navigate' },
+    { key: glyphs.enter, label: 'to select' },
   ];
   const effectiveHints = keyHints ?? defaultHints;
 
@@ -275,7 +281,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
         <Text>
           {effectiveHints.map((h, i) => (
             <React.Fragment key={h.key}>
-              {i > 0 && chalk.hex(secondaryHex)(' · ')}
+              {i > 0 && chalk.hex(secondaryHex)(` ${glyphs.smallDot} `)}
               {renderHint(h)}
             </React.Fragment>
           ))}
@@ -330,7 +336,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
           const isSel = idx === selectedIndex;
           return (
             <Box key={row.id} flexDirection="row">
-              <Text>{isSel ? chalk.hex(accentHex).bold('❯ ') : '  '}</Text>
+              <Text>
+                {isSel ? chalk.hex(accentHex).bold(`${glyphs.chevron} `) : '  '}
+              </Text>
               {columns.map((c, ci) => {
                 const w = columnWidths[ci] ?? 0;
                 const raw = row.values[c.key] ?? '';

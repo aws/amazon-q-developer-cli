@@ -3,6 +3,7 @@ import { Box } from './../../../renderer.js';
 import { Panel } from '../panel/Panel.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { SummaryView } from './SummaryView.js';
 import { DetailView } from './DetailView.js';
 import { ErrorState } from './ErrorState.js';
@@ -73,6 +74,7 @@ const ArtifactFooterHints: React.FC<{ view: OpenArtifactView }> = ({
   view,
 }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const dim = getColor('secondary');
   const primary = getColor('primary');
   // Error mode: Esc/Q close. Panel renders the Esc hint; nothing extra
@@ -93,17 +95,18 @@ const ArtifactFooterHints: React.FC<{ view: OpenArtifactView }> = ({
   const includeRightLeft = view.summary.kind === 'tasks';
   return (
     <Text>
-      {primary('↑↓')} {dim('move · ')}
+      {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+      {dim(`move ${glyphs.smallDot} `)}
       {primary('Enter')} {dim('detail')}
       {includeRightLeft ? (
         <>
-          {dim(' · ')}
-          {primary('→ ←')} {dim('expand')}
+          {dim(` ${glyphs.smallDot} `)}
+          {primary(`${glyphs.arrow} ${glyphs.arrowLeft}`)} {dim('expand')}
         </>
       ) : null}
-      {dim(' · ')}
+      {dim(` ${glyphs.smallDot} `)}
       {primary('R/D/T')} {dim('switch')}
-      {dim(' · ')}
+      {dim(` ${glyphs.smallDot} `)}
       {primary('C')} {dim('continue')}
     </Text>
   );
@@ -111,6 +114,7 @@ const ArtifactFooterHints: React.FC<{ view: OpenArtifactView }> = ({
 
 const DetailModeFrame: React.FC<{ view: OpenArtifactView }> = ({ view }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const dim = getColor('secondary');
   const detailLabel = (() => {
     const summary = view.summary;
@@ -134,7 +138,7 @@ const DetailModeFrame: React.FC<{ view: OpenArtifactView }> = ({ view }) => {
     <Box flexDirection="column">
       {detailLabel.length > 0 && (
         <Box marginBottom={1}>
-          <Text>{dim('Detail · ')}</Text>
+          <Text>{dim(`Detail ${glyphs.smallDot} `)}</Text>
           <Text>{detailLabel}</Text>
         </Box>
       )}

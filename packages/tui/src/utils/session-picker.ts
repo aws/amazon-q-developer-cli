@@ -14,6 +14,7 @@ import {
 import type { V2SessionFsEntry } from './sessions.js';
 import type { SessionEntry } from './list-all-sessions-cli.js';
 import { sanitizeSessionTitleForDisplay } from './sanitize-title.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 /**
  * Current terminal width for the stderr-based picker. Falls back to 80
@@ -40,6 +41,7 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
   }
 
   return new Promise<string | undefined>((resolve) => {
+    const glyphs = getActiveGlyphs();
     let selectedIndex = 0;
 
     // Cap visible items to fit the terminal, leaving room for header + footer
@@ -60,7 +62,8 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
       const visibleCount = Math.min(entries.length, maxVisible);
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
-        const prefix = i === selected ? '\x1b[36m❯\x1b[0m ' : '  ';
+        const prefix =
+          i === selected ? `\x1b[36m${glyphs.chevron}\x1b[0m ` : '  ';
         const text = formatSessionEntry(entries[i]!, terminalWidth());
         const styled = i === selected ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);
@@ -183,6 +186,7 @@ export async function pickSessionFromEntries(
   }
 
   return new Promise<SessionEntry | undefined>((resolve) => {
+    const glyphs = getActiveGlyphs();
     let selectedIndex = 0;
 
     const termRows = process.stderr.rows || 24;
@@ -196,7 +200,8 @@ export async function pickSessionFromEntries(
       process.stderr.write('Select a chat session to resume:\n');
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
-        const prefix = i === selectedIndex ? '\x1b[36m❯\x1b[0m ' : '  ';
+        const prefix =
+          i === selectedIndex ? `\x1b[36m${glyphs.chevron}\x1b[0m ` : '  ';
         const text = formatMergedEntry(entries[i]!, terminalWidth());
         const styled = i === selectedIndex ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);

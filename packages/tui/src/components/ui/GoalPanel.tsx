@@ -18,7 +18,7 @@ export const GoalPanel: React.FC<GoalPanelProps> = ({ onClose }) => {
 
   if (!goalStatus) {
     return (
-      <Panel title="Goal" onClose={onClose} footerLeft={dim('ESC to close')}>
+      <Panel title="Goal" onClose={onClose} footerLeft={dim('esc to close')}>
         <Text>
           {dim('No active goal. Use /goal <description> --max N to set one.')}
         </Text>
@@ -32,7 +32,7 @@ export const GoalPanel: React.FC<GoalPanelProps> = ({ onClose }) => {
       : goalStatus.state === 'exhausted'
         ? glyphs.cross
         : goalStatus.state === 'paused'
-          ? '⏸'
+          ? glyphs.pause
           : glyphs.executing;
   const stateLabel =
     goalStatus.state === 'completed'
@@ -55,7 +55,7 @@ export const GoalPanel: React.FC<GoalPanelProps> = ({ onClose }) => {
     <Panel
       title="Goal"
       onClose={onClose}
-      footerLeft={dim('ESC to close · /goal clear to cancel')}
+      footerLeft={dim(`esc to close ${glyphs.smallDot} /goal clear to cancel`)}
     >
       <Text>
         {primary('Status: ')}

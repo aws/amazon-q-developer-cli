@@ -22,6 +22,7 @@ import {
   type Alignment,
 } from '../utils/table-layout.js';
 import { UNICODE_GLYPHS, type Glyphs } from '../utils/glyphs.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import {
   READ_TOOL_NAMES,
   GREP_TOOL_NAMES,
@@ -1084,7 +1085,9 @@ export function renderToolCall(
       statusStr = info.rejected ? chalk.red(' DENIED') : chalk.red(' FAILED');
       break;
     case 'cancelled':
-      statusStr = chalk.yellow(' ✗ cancelled');
+      // renderToolCall isn't threaded glyphs; the cancelled mark is a rare
+      // branch, so read the active set live rather than widen the signature.
+      statusStr = chalk.yellow(` ${getActiveGlyphs().cross} cancelled`);
       break;
   }
 
@@ -2426,7 +2429,7 @@ function renderPipelineStages(
       opts.showDeps &&
       Array.isArray(stage.depends_on) &&
       stage.depends_on.length > 0
-        ? chalk.dim(` ← ${stage.depends_on.join(', ')}`)
+        ? chalk.dim(` ${g.arrowLeft} ${stage.depends_on.join(', ')}`)
         : '';
     out.push(
       `    ${chalk.dim(branch)} ${opts.inputColor(name)(`[${name}]`)}${role}${deps}`
@@ -2508,6 +2511,7 @@ export function renderSubagentResponseSummaryLines(
     body: string;
     truncatedBy: number;
   };
+  const g = resolveGlyphs(colors?.glyphs);
   const outputColor = (name: string): ((text: string) => string) =>
     colors?.getStageOutputColor?.(name) ?? responseChip;
   // Plain responses chip in the input color so they match the prompt's stage
@@ -2559,7 +2563,7 @@ export function renderSubagentResponseSummaryLines(
     chipFn: (name) =>
       chalk.bold(
         (isResponseStage(name) ? inputColor(name) : outputColor(name))(
-          `▸ ${name}`
+          `${g.arrowRight} ${name}`
         )
       ),
     cols,
@@ -2661,6 +2665,7 @@ export function renderSubagentFinalBlock(
       120
   );
   const lines: string[] = [];
+  const g = resolveGlyphs(colors?.glyphs);
   const inputColor = (name: string): ((text: string) => string) =>
     colors?.getStageInputColor?.(name) ?? chalk.blue;
   const outputColor = (name: string): ((text: string) => string) =>
@@ -2687,7 +2692,7 @@ export function renderSubagentFinalBlock(
         : status === 'cancelled'
           ? // Must precede the running fallbacks: a cancelled subagent is
             // finished, else the append-only row sticks on `subagent ...`.
-            chalk.yellow(' ✗ cancelled')
+            chalk.yellow(` ${g.cross} cancelled`)
           : colors?.awaitingApproval
             ? chalk.yellow(' ...')
             : colors?.runningSpinner
@@ -2739,7 +2744,7 @@ export function renderSubagentFinalBlock(
     if (responseStages.length > 0) {
       lines.push(
         ...renderDigestSection(chalk.bold('  response:'), responseStages, {
-          chipFn: (n) => chalk.bold(inputColor(n)(`▸ ${n}`)),
+          chipFn: (n) => chalk.bold(inputColor(n)(`${g.arrowRight} ${n}`)),
           cols,
           glyphs: colors?.glyphs,
         })
@@ -2765,7 +2770,7 @@ export function renderSubagentFinalBlock(
     if (rawStages.length > 0) {
       lines.push(
         ...renderDigestSection(chalk.red.bold('  full output:'), rawStages, {
-          chipFn: (n) => chalk.red.bold(`▸ ${n}`),
+          chipFn: (n) => chalk.red.bold(`${g.arrowRight} ${n}`),
           cols,
           glyphs: colors?.glyphs,
         })
@@ -2792,7 +2797,6 @@ export function renderSubagentFinalBlock(
     const errText = result.error ?? extractSubagentOutput(result) ?? '';
     if (errText) {
       const indent = '    ';
-      const g = resolveGlyphs(colors?.glyphs);
       const avail = Math.max(
         20,
         cols - visibleWidth(`${indent}${g.lineVertical} `) - 1
@@ -2833,12 +2837,13 @@ export interface TurnSummaryInfo {
 }
 
 export function renderTurnSummary(info: TurnSummaryInfo): string {
+  const g = getActiveGlyphs();
   const parts = info.meteringUsage.map(
     (u) => `${u.value} ${u.value === 1 ? u.unit : u.unitPlural}`
   );
   const duration =
     info.durationMs != null ? ` • ${formatDuration(info.durationMs)}` : '';
-  return chalk.dim.italic(`${parts.join(' · ')}${duration}`);
+  return chalk.dim.italic(`${parts.join(` ${g.smallDot} `)}${duration}`);
 }
 
 function formatDuration(ms: number): string {
@@ -3501,6 +3506,7 @@ export function renderVerbosityPreview(
       ? widenFiltersForPreview(filters, outputFixture.name ?? 'shell')
       : filters;
 
+  const g = getActiveGlyphs();
   const ctx: RenderContext = {
     display,
     filtersOverride: previewFilters,
@@ -3508,6 +3514,8 @@ export function renderVerbosityPreview(
       [PREVIEW_FIXTURE_SUBAGENT.id, PREVIEW_SUBAGENT_SUMMARIES],
     ]),
     theme: options.theme,
+    // Honor chat.allowAsciiArt in the preview so it mirrors real scrollback.
+    glyphs: g,
   };
 
   // truncation:output reuses outputFixture (built above) so previewFilters
@@ -3548,7 +3556,7 @@ export function renderVerbosityPreview(
   ) {
     blocks.push(
       chalk.dim(
-        `(preview-only: your filters hide output for ${outputFixture.name}. Enable it in /verbosity → Show output to see this cap in real scrollback.)`
+        `(preview-only: your filters hide output for ${outputFixture.name}. Enable it in /verbosity ${g.arrow} Show output to see this cap in real scrollback.)`
       )
     );
   }
@@ -3570,7 +3578,7 @@ export function renderVerbosityPreview(
   const head = lines.slice(0, MAX_PREVIEW_ROWS);
   head.push(
     chalk.dim(
-      `… (preview clipped, +${lines.length - MAX_PREVIEW_ROWS} more rows)`
+      `${g.ellipsis} (preview clipped, +${lines.length - MAX_PREVIEW_ROWS} more rows)`
     )
   );
   return head.join('\n');

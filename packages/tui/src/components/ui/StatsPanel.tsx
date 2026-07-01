@@ -4,6 +4,7 @@ import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 
 export interface RequestStat {
@@ -42,6 +43,7 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
 }) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const dim = getColor('secondary');
   const error = getColor('error');
@@ -127,7 +129,7 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
 
   return (
     <Panel
-      title={`/stats · ${stats.length} request${stats.length === 1 ? '' : 's'}`}
+      title={`/stats ${glyphs.smallDot} ${stats.length} request${stats.length === 1 ? '' : 's'}`}
       onClose={onClose}
       searchable={true}
       onSearchChange={handleSearchChange}

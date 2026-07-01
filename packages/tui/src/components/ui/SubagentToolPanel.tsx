@@ -178,7 +178,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
               {' '}
               {getColor('secondary')(
                 rows.length > 1
-                  ? 'ctrl+d/u navigate · ctrl+g open agent monitor'
+                  ? `ctrl+d/u navigate ${glyphs.smallDot} ctrl+g open agent monitor`
                   : 'ctrl+g open agent monitor'
               )}
             </Text>

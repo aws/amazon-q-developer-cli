@@ -5,6 +5,7 @@ import type { MessageType } from '../../stores/app-store.js';
 import { SessionOutput } from '../multi-agent/SessionOutput.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { PromptBar } from '../chat/prompt-bar/PromptBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import {
@@ -24,6 +25,7 @@ export const SessionViewScreen: React.FC = () => {
   const { transientAlert, loadingMessage } = useNotificationState();
   const { dismissTransientAlert } = useNotificationActions();
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const session = activeSessionId ? sessions.get(activeSessionId) : undefined;
   const messages = activeSessionId
@@ -97,7 +99,7 @@ export const SessionViewScreen: React.FC = () => {
       <PromptBar
         onSubmit={handleSubmit}
         isProcessing={session.status === 'busy'}
-        placeholder={`message → ${session.name} ↵  q: back`}
+        placeholder={`message ${glyphs.arrow} ${session.name} ${glyphs.enter}  q: back`}
       />
     </Box>
   );

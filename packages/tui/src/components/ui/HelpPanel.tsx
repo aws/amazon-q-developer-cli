@@ -5,6 +5,7 @@ import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import { visibleWidth } from '../../utils/text-width.js';
 
@@ -25,7 +26,8 @@ const GAP = 2;
 function commandToRows(
   cmd: Command,
   primary: (s: string) => string,
-  dim: (s: string) => string
+  dim: (s: string) => string,
+  marker: string
 ): Row[] {
   const name = cmd.name.replace(/^\//, '');
   const subs = cmd.subcommands;
@@ -38,7 +40,7 @@ function commandToRows(
     mainRow,
     [
       { text: '', color: dim },
-      { text: ` ⌙ subcommands: ${subs.join(', ')}`, color: dim },
+      { text: ` ${marker} subcommands: ${subs.join(', ')}`, color: dim },
     ],
   ];
 }
@@ -46,6 +48,7 @@ function commandToRows(
 export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
   const { getColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const dim = getColor('secondary');
 
@@ -69,8 +72,11 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ commands, onClose }) => {
     : commands;
 
   const allRows = useMemo(
-    () => filtered.flatMap((cmd) => commandToRows(cmd, primary, dim)),
-    [filtered, primary, dim]
+    () =>
+      filtered.flatMap((cmd) =>
+        commandToRows(cmd, primary, dim, glyphs.arrowRight)
+      ),
+    [filtered, primary, dim, glyphs.arrowRight]
   );
 
   const visibleRows = allRows.slice(scrollOffset, scrollOffset + maxVisible);

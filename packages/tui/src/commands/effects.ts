@@ -29,6 +29,7 @@ import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import {
   describeSpecDocuments,
   findSpecFeature,
@@ -660,6 +661,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     const switchCmd = ctx.slashCommands.find((c) => c.name === '/switch');
     if (!switchCmd) return;
 
+    const glyphs = getActiveGlyphs();
+
     ctx.setActiveCommand({
       command: switchCmd,
       options: [
@@ -671,7 +674,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         ...sessions.map((s) => ({
           value: s.id,
           label: s.name,
-          description: `${s.status}${s.role ? ` · ${s.role}` : ''}${s.group ? ` · ${s.group}` : ''}`,
+          description: `${s.status}${s.role ? ` ${glyphs.smallDot} ${s.role}` : ''}${s.group ? ` ${glyphs.smallDot} ${s.group}` : ''}`,
         })),
       ],
     });

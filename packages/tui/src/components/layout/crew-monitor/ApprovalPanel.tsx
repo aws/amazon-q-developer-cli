@@ -79,7 +79,7 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
       ? [
           {
             label: `Trust ${resourceLabel}`,
-            description: `exact match · ${scopeLabels[trustScope]}`,
+            description: `exact match ${glyphs.smallDot} ${scopeLabels[trustScope]}`,
             resource: exactResource,
           },
         ]
@@ -88,7 +88,7 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
       ? [
           {
             label: `Trust "${patternResource}"`,
-            description: `pattern · ${scopeLabels[trustScope]}`,
+            description: `pattern ${glyphs.smallDot} ${scopeLabels[trustScope]}`,
             resource: patternResource,
           },
         ]
@@ -237,9 +237,9 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
 
   const title =
     page === 'trust'
-      ? `${toolName} requires approval · trust options`
+      ? `${toolName} requires approval ${glyphs.smallDot} trust options`
       : page === 'kas-scope'
-        ? `${toolName} requires approval · trust [${scopeLabels[trustScope]}] (s to cycle)`
+        ? `${toolName} requires approval ${glyphs.smallDot} trust [${scopeLabels[trustScope]}] (s to cycle)`
         : `${toolName} requires approval`;
 
   return (

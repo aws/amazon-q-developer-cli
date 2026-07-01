@@ -14,6 +14,7 @@ import { Text } from '../ui/text/Text';
 import { getAgentColor } from '../../utils/agentColors';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
+import { Icon, IconType } from '../ui/icon/index.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import type { AgentSession, InboxMessage } from '../../types/multi-session';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -38,7 +39,8 @@ const NudgeMessage = React.memo(function NudgeMessage({
     <Box paddingX={1} marginY={1}>
       <StatusBar status="info">
         <Text>
-          📧 Message from {message.from}: {message.content}
+          <Icon type={IconType.MAIL} /> Message from {message.from}:{' '}
+          {message.content}
         </Text>
       </StatusBar>
     </Box>

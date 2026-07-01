@@ -4,6 +4,7 @@ import { Text } from '../text/Text.js';
 import { Divider } from '../divider/Divider.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import type { CommandMeta } from '../../../types/commands.js';
 
 export interface PromptDetailsProps {
@@ -27,6 +28,7 @@ export const PromptDetails: React.FC<PromptDetailsProps> = ({
   const { getColor } = useTheme();
   const dimText = getColor('secondary');
   const brandText = getColor('primary');
+  const glyphs = useGlyphs();
 
   const args = meta?.arguments ?? [];
   const source = meta?.source;
@@ -34,11 +36,11 @@ export const PromptDetails: React.FC<PromptDetailsProps> = ({
   // get "Server: <name>"; everything else surfaces the kind (and path when
   // present) under "Source:".
   let originLabel: string | null = null;
-  let originPrefix: string = ' · Source: ';
+  let originPrefix: string = ` ${glyphs.smallDot} Source: `;
   if (source) {
     if (source.kind === 'mcp') {
       originLabel = source.serverName;
-      originPrefix = ' · Server: ';
+      originPrefix = ` ${glyphs.smallDot} Server: `;
     } else if (source.kind === 'agent-config') {
       originLabel = source.path ?? source.kind;
     } else {
@@ -158,11 +160,12 @@ export const PromptDetails: React.FC<PromptDetailsProps> = ({
       <Divider />
       <Box paddingX={1}>
         <Text>
-          {brandText('ESC')} {dimText('to go back')}
-          {dimText(' · ')}
-          {brandText('↑↓')} {dimText('to scroll')}
-          {dimText(' · ')}
-          {brandText('↵')} {dimText('to run')}
+          {brandText('esc')} {dimText('to go back')}
+          {dimText(` ${glyphs.smallDot} `)}
+          {brandText(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+          {dimText('to scroll')}
+          {dimText(` ${glyphs.smallDot} `)}
+          {brandText(glyphs.enter)} {dimText('to run')}
         </Text>
       </Box>
     </Box>

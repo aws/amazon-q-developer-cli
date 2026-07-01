@@ -6,6 +6,7 @@ import type {
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
+import { getActiveGlyphs } from '../../hooks/useGlyphs';
 
 /**
  * KAS-mode dispatch handler for `/context`.
@@ -123,8 +124,9 @@ async function runShow(
     );
     return;
   }
+  const glyphs = getActiveGlyphs();
   const summary = entries
-    .map((e) => `${e.matched === false ? '⚠ ' : ''}${e.path}`)
+    .map((e) => `${e.matched === false ? `${glyphs.warning} ` : ''}${e.path}`)
     .join(', ');
   ctx.showAlert(
     `Context files: ${summary}`,

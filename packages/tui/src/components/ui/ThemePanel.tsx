@@ -32,6 +32,7 @@ import { Panel } from './panel/Panel.js';
 import { Text } from './text/Text.js';
 import { Menu, type MenuItem } from './menu/Menu.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useAppStore } from '../../stores/app-store.js';
 import {
   bundledThemes,
@@ -72,6 +73,7 @@ type Screen = { type: 'top-level' } | { type: 'wizard'; step: WizardStepId };
 
 export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const { setUserColors, setBaseTheme, baseTheme, getColor } = useTheme();
+  const glyphs = useGlyphs();
   const dim = getColor('secondary');
   const primary = getColor('primary');
   const showAlert = useAppStore((state) => state.showTransientAlert);
@@ -190,7 +192,7 @@ export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
       } else {
         showAlert({
           message: result.saved
-            ? 'Theme updated. ✓'
+            ? `Theme updated. ${glyphs.checkmark}`
             : 'Theme applied but failed to save',
           status: result.saved ? 'success' : 'error',
           autoHideMs: 3000,
@@ -201,7 +203,14 @@ export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
         setShowThemePanel(false);
       }
     },
-    [prefs, pushDelta, showAlert, setSettingsReturnOnEscape, setShowThemePanel]
+    [
+      prefs,
+      pushDelta,
+      showAlert,
+      setSettingsReturnOnEscape,
+      setShowThemePanel,
+      glyphs.checkmark,
+    ]
   );
 
   // ─── Items ──────────────────────────────────────────────────────
@@ -305,9 +314,9 @@ export const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
       closeHintLabel={closeHintLabel}
       footerLeft={
         <Text>
-          {primary('↑↓')} {dim('to navigate')}
-          {dim(' · ')}
-          {primary('↵')} {dim(enterLabel)}
+          {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)} {dim('to navigate')}
+          {dim(` ${glyphs.smallDot} `)}
+          {primary(glyphs.enter)} {dim(enterLabel)}
         </Text>
       }
     >
@@ -349,9 +358,13 @@ interface PreviewBlockProps {
  * so we render it as-is — no wrapping `Text` colour override.
  */
 const PreviewBlock: React.FC<PreviewBlockProps> = ({ body, dim }) => {
+  const glyphs = useGlyphs();
   // Match the spec's `──preview────────...` divider — short ASCII run
   // with the word inline.
-  const header = dim('──preview' + '─'.repeat(54));
+  const header = dim(
+    `${glyphs.lineHorizontal}${glyphs.lineHorizontal}preview` +
+      glyphs.lineHorizontal.repeat(54)
+  );
   return (
     <Box marginTop={1} paddingX={1} flexDirection="column">
       <Text>{header}</Text>

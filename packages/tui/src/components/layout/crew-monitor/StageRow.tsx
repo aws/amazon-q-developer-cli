@@ -48,7 +48,7 @@ export const StageRow = React.memo(function StageRow({
   // loopIteration is 0-indexed, so +1 to show human-friendly "rounds completed"
   const loopLabel =
     stage.hasLoop && stage.loopMaxIterations
-      ? ` ↻ [${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
+      ? ` ${glyphs.loop} [${(stage.loopIteration ?? 0) + 1}/${stage.loopMaxIterations}]`
       : '';
 
   return (

@@ -3,6 +3,7 @@ import { Box } from './../../renderer.js';
 import { Panel } from './panel/Panel.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 
 interface TuiPanelProps {
   onClose: () => void;
@@ -37,11 +38,16 @@ Type \`/help\` for all commands · \`/feedback\` to share thoughts`;
 
 export const TuiPanel: React.FC<TuiPanelProps> = ({ onClose }) => {
   const { getUserResponseColor } = useTheme();
+  const glyphs = useGlyphs();
+  const content = CONTENT.replace(/✨/g, glyphs.sparkle).replace(
+    /·/g,
+    glyphs.smallDot
+  );
 
   return (
     <Panel title="What's new in the TUI" onClose={onClose}>
       <Box flexDirection="column">
-        <MarkdownRenderer content={CONTENT} color={getUserResponseColor()} />
+        <MarkdownRenderer content={content} color={getUserResponseColor()} />
       </Box>
     </Panel>
   );

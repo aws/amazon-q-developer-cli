@@ -5,6 +5,7 @@ import { Panel } from './panel/Panel.js';
 import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 
 interface ContextBreakdownProps {
   percent: number | null;
@@ -50,13 +51,14 @@ function ProgressBar({
   breakdown?: CategoryBreakdown;
   width: number;
 }) {
+  const glyphs = useGlyphs();
   if (!breakdown) {
     const filled = Math.round((percent / 100) * width);
     const empty = width - filled;
     return (
       <Text>
-        <InkText color={COLORS.tools}>{'█'.repeat(filled)}</InkText>
-        <InkText color={COLORS.available}>{'█'.repeat(empty)}</InkText>
+        <InkText color={COLORS.tools}>{glyphs.bar.repeat(filled)}</InkText>
+        <InkText color={COLORS.available}>{glyphs.bar.repeat(empty)}</InkText>
       </Text>
     );
   }
@@ -74,12 +76,18 @@ function ProgressBar({
   return (
     <Text>
       <InkText color={COLORS.contextFiles}>
-        {'█'.repeat(contextFilesWidth)}
+        {glyphs.bar.repeat(contextFilesWidth)}
       </InkText>
-      <InkText color={COLORS.tools}>{'█'.repeat(toolsWidth)}</InkText>
-      <InkText color={COLORS.kiroResponses}>{'█'.repeat(kiroWidth)}</InkText>
-      <InkText color={COLORS.yourPrompts}>{'█'.repeat(promptsWidth)}</InkText>
-      <InkText color={COLORS.available}>{'█'.repeat(emptyWidth)}</InkText>
+      <InkText color={COLORS.tools}>{glyphs.bar.repeat(toolsWidth)}</InkText>
+      <InkText color={COLORS.kiroResponses}>
+        {glyphs.bar.repeat(kiroWidth)}
+      </InkText>
+      <InkText color={COLORS.yourPrompts}>
+        {glyphs.bar.repeat(promptsWidth)}
+      </InkText>
+      <InkText color={COLORS.available}>
+        {glyphs.bar.repeat(emptyWidth)}
+      </InkText>
     </Text>
   );
 }
@@ -92,9 +100,10 @@ interface BreakdownItemProps {
 
 function BreakdownItem({ label, percent, hexColor }: BreakdownItemProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   return (
     <Box>
-      <InkText color={hexColor}>{'█'}</InkText>
+      <InkText color={hexColor}>{glyphs.bar}</InkText>
       <Text>
         {' '}
         {getColor('primary')(label)}{' '}

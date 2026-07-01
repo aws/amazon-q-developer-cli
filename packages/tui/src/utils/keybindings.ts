@@ -17,6 +17,7 @@
 import type { Key } from '../hooks/useKeypress.js';
 import { Settings } from '../constants/settings.js';
 import { logger } from './logger.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 /** Parsed, normalized keybinding. `key` is always lowercase. */
 export interface Keybinding {
@@ -195,6 +196,7 @@ export function formatKeybinding(binding: Keybinding): string {
 }
 
 function formatKey(key: string): string {
+  const glyphs = getActiveGlyphs();
   switch (key) {
     case 'escape':
       return 'Esc';
@@ -207,13 +209,13 @@ function formatKey(key: string): string {
     case 'delete':
       return 'Delete';
     case 'up':
-      return '↑';
+      return glyphs.arrowUp;
     case 'down':
-      return '↓';
+      return glyphs.arrowDown;
     case 'left':
-      return '←';
+      return glyphs.arrowLeft;
     case 'right':
-      return '→';
+      return glyphs.arrow;
     case 'pageup':
       return 'PageUp';
     case 'pagedown':

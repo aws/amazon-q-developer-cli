@@ -135,7 +135,9 @@ export const LiteTaskTray: React.FC = () => {
           </Text>
         );
       })}
-      {hiddenBelow > 0 && <Text>{chalk.dim(`  · ${hiddenBelow} below`)}</Text>}
+      {hiddenBelow > 0 && (
+        <Text>{chalk.dim(`  ${glyphs.smallDot} ${hiddenBelow} below`)}</Text>
+      )}
     </Box>
   );
 };

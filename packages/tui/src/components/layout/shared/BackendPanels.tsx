@@ -29,6 +29,7 @@ import {
   useKiroClient,
 } from '../../../stores/selectors.js';
 import { useAppStore, type McpServerInfo } from '../../../stores/app-store.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import type { BackendPanelHandlers } from './useBackendPanelHandlers.js';
 
 interface BackendPanelsProps {
@@ -36,6 +37,7 @@ interface BackendPanelsProps {
 }
 
 export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
+  const glyphs = useGlyphs();
   const {
     showContextBreakdown,
     contextBreakdown,
@@ -131,7 +133,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           }))}
           previewHeading="Response Snippet"
           keyHints={[
-            { key: '↑↓', label: 'navigate' },
+            { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
             { key: 'Enter', label: 'to fork' },
           ]}
           onSelect={(row) => handlers.handleRewindSelect(row.id)}

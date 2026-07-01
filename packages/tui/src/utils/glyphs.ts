@@ -34,6 +34,21 @@ export interface Glyphs {
   tableCross: string;
   treeCorner: string;
   treeBranch: string;
+  // Extended vocabulary so previously-hardcoded characters can degrade in
+  // ASCII mode. Keep UNICODE_GLYPHS and ASCII_GLYPHS key-identical.
+  ellipsis: string;
+  midEllipsis: string;
+  arrowUp: string;
+  enter: string;
+  triangleLeft: string;
+  triangleRight: string;
+  loop: string;
+  times: string;
+  pause: string;
+  bar: string;
+  pencil: string;
+  wrench: string;
+  mail: string;
 }
 
 export interface Spinners {
@@ -79,6 +94,19 @@ export const UNICODE_GLYPHS: Glyphs = {
   tableCross: '┼',
   treeCorner: '└──',
   treeBranch: '├──',
+  ellipsis: '…',
+  midEllipsis: '⋯',
+  arrowUp: '↑',
+  enter: '↵',
+  triangleLeft: '◀',
+  triangleRight: '▶',
+  loop: '↻',
+  times: '×',
+  pause: '⏸',
+  bar: '█',
+  pencil: '✎',
+  wrench: '🔧',
+  mail: '📧',
 };
 
 export const ASCII_GLYPHS: Glyphs = {
@@ -117,6 +145,19 @@ export const ASCII_GLYPHS: Glyphs = {
   tableCross: '+',
   treeCorner: '+--',
   treeBranch: '+--',
+  ellipsis: '...',
+  midEllipsis: '...',
+  arrowUp: '^',
+  enter: 'enter',
+  triangleLeft: '<',
+  triangleRight: '>',
+  loop: '@',
+  times: 'x',
+  pause: '||',
+  bar: '#',
+  pencil: 'e',
+  wrench: 'T',
+  mail: 'M',
 };
 
 export const UNICODE_SPINNERS: Spinners = {
@@ -132,3 +173,37 @@ export const ASCII_SPINNERS: Spinners = {
   pie: ['-', '\\', '|', '/'],
   brailleRotate: ['-', '\\', '|', '/'],
 };
+
+/**
+ * Partial-block ramps for meters/progress bars (8 parallel levels). Lets bar
+ * fills (ContextBreakdown, UsagePanel, voice meter) degrade in ASCII mode
+ * instead of hardcoding the Unicode block ramp.
+ */
+export const UNICODE_BAR_RAMP: readonly string[] = [
+  '▁',
+  '▂',
+  '▃',
+  '▄',
+  '▅',
+  '▆',
+  '▇',
+  '█',
+];
+export const ASCII_BAR_RAMP: readonly string[] = [
+  ' ',
+  '.',
+  ':',
+  '-',
+  '=',
+  '+',
+  '*',
+  '#',
+];
+
+/**
+ * Pick the bar ramp matching the current ASCII-art setting. `allowAsciiArt`
+ * follows the same convention as useGlyphs (true -> rich Unicode, false ->
+ * ASCII fallback).
+ */
+export const getBarRamp = (allowAsciiArt: boolean): readonly string[] =>
+  allowAsciiArt ? UNICODE_BAR_RAMP : ASCII_BAR_RAMP;

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-07-01
+  commit: fef722c75
   status: validated
   testable_headless: true
   category: command
@@ -111,7 +111,7 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.enableNotifications` | boolean | Enable desktop notifications |
 | `chat.greeting.enabled` | boolean | Show greeting message on start |
 | `chat.allowAnimations` | boolean | Enable animated spinners and progress indicators (default: true) |
-| `chat.allowAsciiArt` | boolean | Enable Unicode/braille symbols and decorative art (default: true) |
+| `chat.allowAsciiArt` | boolean | Enable Unicode symbols (arrows, dots, blocks, box-drawing) throughout the TUI; when false, all degrade to plain ASCII (default: true) |
 | `chat.allowIcons` | boolean | Show status indicator icons (default: true) |
 | `chat.disableAutoCompaction` | boolean | Disable automatic summarization |
 | `chat.disableGranularTrust` | boolean | Disable granular trust options |

@@ -102,7 +102,7 @@ export function formatSubagentRow(
   const avail = Math.max(10, termCols - prefix.length);
   const action =
     plainAction.length > avail
-      ? plainAction.slice(0, avail - 1) + '…'
+      ? plainAction.slice(0, avail - glyphs.ellipsis.length) + glyphs.ellipsis
       : plainAction;
   return `${tag} ${colorFn(action)}`;
 }

@@ -94,10 +94,11 @@ export function selectBootIndicatorPhase(
  */
 export function formatBootIndicator(
   phase: BootIndicatorPhase | null,
-  spinChar: string
+  spinChar: string,
+  ellipsis: string = '…'
 ): string {
   if (!phase) return '';
   const elapsed =
     phase.elapsed > 1000 ? ` (${(phase.elapsed / 1000).toFixed(1)}s)` : '';
-  return chalk.dim(`  ${spinChar} ${phase.label}…${elapsed}`);
+  return chalk.dim(`  ${spinChar} ${phase.label}${ellipsis}${elapsed}`);
 }

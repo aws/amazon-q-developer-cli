@@ -5,7 +5,7 @@ import { Divider } from './divider/Divider.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useAppStore } from '../../stores/app-store.js';
-import { useAllowAsciiArt } from '../../hooks/useGlyphs.js';
+import { useAllowAsciiArt, useGlyphs } from '../../hooks/useGlyphs.js';
 import {
   getAnnouncementContent,
   UNICODE_ICONS,
@@ -46,6 +46,7 @@ export const WelcomeMessageBar = React.memo(function WelcomeMessageBar({
   const expanded = useAppStore((s) => s.announcementExpanded);
   const { getColor, getUserResponseColor } = useTheme();
   const { allowAsciiArt } = useAllowAsciiArt();
+  const glyphs = useGlyphs();
 
   if (!announcement) return null;
 
@@ -56,7 +57,10 @@ export const WelcomeMessageBar = React.memo(function WelcomeMessageBar({
   const showAll = forceExpanded || expanded;
   const addedOnly = extractAddedSection(content);
   const hasMore = addedOnly.length < content.length;
-  const visibleContent = showAll ? content : addedOnly;
+  const visibleContent = (showAll ? content : addedOnly).replace(
+    /✨/g,
+    glyphs.sparkle
+  );
 
   return (
     <Box flexDirection="column" marginTop={1}>

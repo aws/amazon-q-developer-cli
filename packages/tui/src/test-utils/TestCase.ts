@@ -68,9 +68,11 @@ export class TestCase {
   private options: TestCaseOptions;
   private tuiConnection?: TuiIpcConnection;
   /**
-   * Sandbox `$KIRO_HOME` directory created when {@link TestCaseOptions.settings}
-   * is provided, so the TUI's `cli-settings` reader sees this test's settings
-   * instead of the developer's real `~/.kiro/settings/cli.json`.
+   * Sandbox `$KIRO_HOME` directory, always created so the TUI's `cli-settings`
+   * reader is fully isolated from the developer's real
+   * `~/.kiro/settings/cli.json`. This test's settings (if any) are written
+   * here; otherwise the sandbox stays empty so every setting resolves to its
+   * built-in default, keeping snapshots deterministic across machines.
    */
   private sandboxDir?: string;
 
@@ -86,20 +88,21 @@ export class TestCase {
       outputSubdir: 'integ',
     });
 
-    // If the test specified global settings, write them to a sandboxed
-    // $KIRO_HOME/settings/cli.json and point KIRO_HOME at it. Without this
-    // the TUI's readBoolSetting() falls through to the developer's real
-    // ~/.kiro/settings/cli.json — making tests silently dependent on local
-    // config (e.g. chat.showThinking).
-    const sandboxEnv: Record<string, string> = {};
+    // Always sandbox $KIRO_HOME so the TUI's cli-settings reader never falls
+    // through to the developer's real ~/.kiro/settings/cli.json. Otherwise
+    // snapshots silently depend on local config — e.g. chat.allowAsciiArt
+    // flips glyphs between Unicode and ASCII, and chat.showThinking changes
+    // rendered rows. When the test provides settings we write them; otherwise
+    // the sandbox stays empty so every setting resolves to its built-in
+    // default.
+    this.sandboxDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), `kiro-integ-${testName}-`)
+    );
+    const sandboxEnv: Record<string, string> = { KIRO_HOME: this.sandboxDir };
     if (this.options.settings) {
-      this.sandboxDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), `kiro-integ-${testName}-`)
-      );
       const settingsPath = path.join(this.sandboxDir, 'settings', 'cli.json');
       fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
       fs.writeFileSync(settingsPath, JSON.stringify(this.options.settings));
-      sandboxEnv.KIRO_HOME = this.sandboxDir;
     }
 
     this.ptyManager = new PtyManager({

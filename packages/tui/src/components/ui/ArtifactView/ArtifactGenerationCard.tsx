@@ -63,7 +63,7 @@ const SingleCard: React.FC<{ entry: ArtifactGenerationEntry }> = ({
       : accent(glyphs.dotFilled);
 
   const status = entry.complete ? 'complete' : 'writing';
-  const label = `${KIND_LABELS[entry.artifact]} · ${entry.featureName}`;
+  const label = `${KIND_LABELS[entry.artifact]} ${glyphs.smallDot} ${entry.featureName}`;
 
   return (
     <Box
@@ -77,7 +77,7 @@ const SingleCard: React.FC<{ entry: ArtifactGenerationEntry }> = ({
         <Text>{indicator}</Text>
         <Text> </Text>
         <Text>{primary(label)}</Text>
-        <Text>{dim(` · ${status}`)}</Text>
+        <Text>{dim(` ${glyphs.smallDot} ${status}`)}</Text>
         {entry.parseError && (
           <Text>{warning(`  ${glyphs.warning} parse failed`)}</Text>
         )}
@@ -97,6 +97,7 @@ const SummaryStrip: React.FC<{ summary: ArtifactSummary | null }> = ({
   summary,
 }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const dim = getColor('secondary');
   if (!summary) {
     return (
@@ -131,7 +132,7 @@ const SummaryStrip: React.FC<{ summary: ArtifactSummary | null }> = ({
         <Box>
           <Text>{dim('  ')}</Text>
           <Text>{dim(slice)}</Text>
-          <Text>{dim(` · ${sectionCount} sections`)}</Text>
+          <Text>{dim(` ${glyphs.smallDot} ${sectionCount} sections`)}</Text>
         </Box>
       );
     }
@@ -152,7 +153,7 @@ const SummaryStrip: React.FC<{ summary: ArtifactSummary | null }> = ({
     <Box>
       <Text>
         {dim(
-          `  ${taskCount} task${taskCount === 1 ? '' : 's'} · ${checked}/${taskCount} done · ${subTotal} sub-task${subTotal === 1 ? '' : 's'}`
+          `  ${taskCount} task${taskCount === 1 ? '' : 's'} ${glyphs.smallDot} ${checked}/${taskCount} done ${glyphs.smallDot} ${subTotal} sub-task${subTotal === 1 ? '' : 's'}`
         )}
       </Text>
     </Box>

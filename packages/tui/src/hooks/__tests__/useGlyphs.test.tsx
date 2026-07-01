@@ -40,6 +40,15 @@ describe('useGlyphs', () => {
     expect(ASCII_GLYPHS.checkmark).toBe('+');
   });
 
+  it('extended vocabulary degrades to ASCII', () => {
+    expect(UNICODE_GLYPHS.bar).toBe('█');
+    expect(ASCII_GLYPHS.bar).toBe('#');
+    expect(UNICODE_GLYPHS.ellipsis).toBe('…');
+    expect(ASCII_GLYPHS.ellipsis).toBe('...');
+    expect(UNICODE_GLYPHS.enter).toBe('↵');
+    expect(ASCII_GLYPHS.enter).toBe('enter');
+  });
+
   it('UNICODE_SPINNERS and ASCII_SPINNERS are distinct objects', () => {
     expect(UNICODE_SPINNERS).not.toBe(ASCII_SPINNERS);
     expect(UNICODE_SPINNERS.quarterSpinner[0]).toBe('◐');

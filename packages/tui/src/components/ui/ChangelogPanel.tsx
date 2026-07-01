@@ -5,7 +5,7 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import { useAllowAsciiArt } from '../../hooks/useGlyphs.js';
+import { useAllowAsciiArt, useGlyphs } from '../../hooks/useGlyphs.js';
 import {
   getRecentReleases,
   UNICODE_ICONS,
@@ -23,6 +23,7 @@ export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const { getColor, getUserResponseColor } = useTheme();
   const { height: termHeight } = useTerminalSize();
   const { allowAsciiArt } = useAllowAsciiArt();
+  const glyphs = useGlyphs();
 
   const icons = allowAsciiArt ? UNICODE_ICONS : ASCII_ICONS;
   const releases = useMemo(
@@ -37,11 +38,11 @@ export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
         .map((r) =>
           r.content.replace(
             /^\*\*✨ What's new in (.*)\*\*$/m,
-            `**✨ What's new in $1 (${r.date})**`
+            `**${glyphs.sparkle} What's new in $1 (${r.date})**`
           )
         )
         .join('\n\n---\n\n'),
-    [releases]
+    [releases, glyphs.sparkle]
   );
 
   // Show enough source lines to fill roughly half the terminal.

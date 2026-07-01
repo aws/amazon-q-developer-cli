@@ -32,6 +32,7 @@ import {
   writeCliSettings,
 } from '../../utils/cli-settings.js';
 import { setupTerminal } from '../../utils/terminal-setup.js';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 import {
   type Screen,
   type HistoryChoice,
@@ -69,6 +70,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const kiro = useAppStore((state) => state.kiro);
   const uiMode = useAppStore((state) => state.uiMode);
   const handleUserInput = useAppStore((state) => state.handleUserInput);
+  const glyphs = useGlyphs();
 
   const [screen, setScreen] = useState<Screen>({ type: 'top' });
   const screenKey = screen.type;
@@ -215,9 +217,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
           ),
         },
         uiMode,
-        process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
+        process.env.KIRO_LITE_ROLLOUT_ENABLED === '1',
+        glyphs.dotFilled
       ),
-    [screen, uiMode]
+    [screen, uiMode, glyphs.dotFilled]
   );
 
   // ─── Selection ──────────────────────────────────────────────────
@@ -273,8 +276,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
           ? [
               // Rows apply immediately and dismiss the overlay — surface
               // that in the footer rather than the generic "select".
-              { key: '↑↓', label: 'to navigate' },
-              { key: '↵', label: 'to apply and close' },
+              {
+                key: `${glyphs.arrowUp}${glyphs.arrowDown}`,
+                label: 'to navigate',
+              },
+              { key: glyphs.enter, label: 'to apply and close' },
             ]
           : undefined // Use Explorer's defaults: navigate · select.
       }

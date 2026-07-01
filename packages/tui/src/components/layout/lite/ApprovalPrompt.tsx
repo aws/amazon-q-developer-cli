@@ -259,7 +259,7 @@ export function ApprovalPrompt({
       ? [
           {
             label: `Trust "${truncateLine(exactResource, 50)}"`,
-            display: `exact · ${trustScope === 'global' ? 'always' : trustScope}`,
+            display: `exact ${glyphs.smallDot} ${trustScope === 'global' ? 'always' : trustScope}`,
             meta: { kasScope: scopeValue, kasResource: exactResource },
           },
         ]
@@ -268,7 +268,7 @@ export function ApprovalPrompt({
       ? [
           {
             label: `Trust "${patternResource}"`,
-            display: `pattern · ${trustScope === 'global' ? 'always' : trustScope}`,
+            display: `pattern ${glyphs.smallDot} ${trustScope === 'global' ? 'always' : trustScope}`,
             meta: { kasScope: scopeValue, kasResource: patternResource },
           },
         ]
@@ -511,7 +511,8 @@ export function ApprovalPrompt({
       <Box flexDirection="column">
         {stageHeader}
         <Text>
-          {chalk.yellow.bold(displayToolName)} {chalk.dim('· trust scope')}
+          {chalk.yellow.bold(displayToolName)}{' '}
+          {chalk.dim(`${glyphs.smallDot} trust scope`)}
         </Text>
         {rows.map((row, i) => {
           const focused = i === trustIdx;
@@ -532,7 +533,11 @@ export function ApprovalPrompt({
             </Text>
           );
         })}
-        <Text>{chalk.dim('[↑↓] select  [enter] confirm  [esc] back')}</Text>
+        <Text>
+          {chalk.dim(
+            `[${glyphs.arrowUp}${glyphs.arrowDown}] select  [enter] confirm  [esc] back`
+          )}
+        </Text>
       </Box>
     );
   }
@@ -544,7 +549,7 @@ export function ApprovalPrompt({
         {stageHeader}
         <Text>
           {chalk.yellow.bold(displayToolName)}{' '}
-          {chalk.dim(`· trust scope [${scopeLabel}]`)}
+          {chalk.dim(`${glyphs.smallDot} trust scope [${scopeLabel}]`)}
         </Text>
         {kasScopeRows.map((row, i) => {
           const focused = i === trustIdx;
@@ -564,7 +569,9 @@ export function ApprovalPrompt({
           );
         })}
         <Text>
-          {chalk.dim('[↑↓] select  [enter] confirm  [s] scope  [esc] back')}
+          {chalk.dim(
+            `[${glyphs.arrowUp}${glyphs.arrowDown}] select  [enter] confirm  [s] scope  [esc] back`
+          )}
         </Text>
       </Box>
     );
@@ -625,7 +632,9 @@ export function ApprovalPrompt({
             isProcessing={false}
             placeholder="add your feedback, then pick y/t/n..."
           />
-          <Text>{chalk.dim('[enter] save note · [esc] back')}</Text>
+          <Text>
+            {chalk.dim(`[enter] save note ${glyphs.smallDot} [esc] back`)}
+          </Text>
         </>
       ) : (
         <>
@@ -636,14 +645,15 @@ export function ApprovalPrompt({
             </Text>
           )}
           <Text>
-            {chalk.green('[y]')} allow once {chalk.dim('·')}{' '}
+            {chalk.green('[y]')} allow once {chalk.dim(glyphs.smallDot)}{' '}
             {chalk.yellow('[t]')}{' '}
             {hasTrustTiers || hasKasScopePage
               ? 'trust scope'
               : chalk.bold('TRUST whole tool')}{' '}
-            {chalk.dim('·')} {chalk.red('[n]')} deny {chalk.dim('·')}{' '}
-            {chalk.cyan('[tab]')} {stagedNote.trim() ? 'edit note' : 'add note'}{' '}
-            {chalk.dim('·')} {chalk.red('[esc]')} interrupt
+            {chalk.dim(glyphs.smallDot)} {chalk.red('[n]')} deny{' '}
+            {chalk.dim(glyphs.smallDot)} {chalk.cyan('[tab]')}{' '}
+            {stagedNote.trim() ? 'edit note' : 'add note'}{' '}
+            {chalk.dim(glyphs.smallDot)} {chalk.red('[esc]')} interrupt
           </Text>
         </>
       )}

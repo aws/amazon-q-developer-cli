@@ -1,4 +1,5 @@
 import { Settings } from '../constants/settings.js';
+import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import type { CommandContext } from './types.js';
 import type { AvailableCommand, CommandResult } from '../types/commands.js';
 import {
@@ -44,6 +45,8 @@ export function handleVerbosity(
     ctx.showAlert('/verbosity is only available in lite mode', 'error', 3000);
     return true;
   }
+
+  const glyphs = getActiveGlyphs();
 
   // Resolve the canonical /verbosity command so CommandMenu's
   // `command.name === '/verbosity'` checks fire whether reached by direct
@@ -119,13 +122,13 @@ export function handleVerbosity(
     const cur = getVerboseConfig();
     if (msg) {
       ctx.announceSystem(
-        `${msg} · filters: ${fmtFiltersForAnnounce(cur.filters)}`
+        `${msg} ${glyphs.smallDot} filters: ${fmtFiltersForAnnounce(cur.filters)}`
       );
       return;
     }
     const density = detectActivePreset() ?? 'custom';
     ctx.announceSystem(
-      `verbosity · filters: ${fmtFiltersForAnnounce(cur.filters)} · density: ${density}`
+      `verbosity ${glyphs.smallDot} filters: ${fmtFiltersForAnnounce(cur.filters)} ${glyphs.smallDot} density: ${density}`
     );
   };
 
@@ -192,7 +195,7 @@ export function handleVerbosity(
     const display = getVerboseDisplay();
     const preset = detectActivePreset();
     const presetLabel = preset ?? 'custom';
-    const toolSummary = `args: ${display.toolArgsMode} · reasoning: ${display.showToolReasoning ? 'on' : 'off'} · elapsed: ${display.showElapsed ? 'on' : 'off'}`;
+    const toolSummary = `args: ${display.toolArgsMode} ${glyphs.smallDot} reasoning: ${display.showToolReasoning ? 'on' : 'off'} ${glyphs.smallDot} elapsed: ${display.showElapsed ? 'on' : 'off'}`;
     // Surfaces only user-meaningful knobs; `roles`/`prompts`/`deps` nest
     // under the step list and move in lockstep with it.
     const subSummaryParts: string[] = [];
@@ -215,9 +218,9 @@ export function handleVerbosity(
     const subSummary =
       subSummaryParts.length === 0
         ? '(all hidden)'
-        : subSummaryParts.join(' · ');
+        : subSummaryParts.join(` ${glyphs.smallDot} `);
     const outSummary = fmtFilters(cur.filters);
-    const truncSummary = `args ${fmtCap(display.argsMaxLines)}/${fmtCap(display.argsMaxChars, 'chars')} · output ${fmtCap(display.outputMaxLines)}/${fmtCap(display.outputMaxChars, 'chars')}`;
+    const truncSummary = `args ${fmtCap(display.argsMaxLines)}/${fmtCap(display.argsMaxChars, 'chars')} ${glyphs.smallDot} output ${fmtCap(display.outputMaxLines)}/${fmtCap(display.outputMaxChars, 'chars')}`;
 
     openMenuWith(
       [
@@ -272,10 +275,10 @@ export function handleVerbosity(
   // Shared by the density menu rows and the confirm submenu so the confirm
   // title matches the selected row without drift.
   const PRESET_DESC: Record<DensityPreset, string> = {
-    minimal: 'name only · no args, no reasoning',
+    minimal: `name only ${glyphs.smallDot} no args, no reasoning`,
     lean: 'inline arg chip, no reasoning, full elapsed',
     default: 'reasoning + block args + full subagent (out-of-the-box)',
-    full: '1:1 of what the parent agent sees · all filters on · no truncation',
+    full: `1:1 of what the parent agent sees ${glyphs.smallDot} all filters on ${glyphs.smallDot} no truncation`,
   };
 
   // Density menu — smart-entry point when a preset is active. Selecting a
@@ -292,14 +295,16 @@ export function handleVerbosity(
       value: `menu:density:confirm:${p}`,
       label: p,
       description:
-        active === p ? `[active] · ${PRESET_DESC[p]}` : PRESET_DESC[p],
+        active === p
+          ? `[active] ${glyphs.smallDot} ${PRESET_DESC[p]}`
+          : PRESET_DESC[p],
     }));
     options.push({
       value: 'menu:config',
       label: 'custom',
       description:
         active == null
-          ? '[active] · tweak individual settings'
+          ? `[active] ${glyphs.smallDot} tweak individual settings`
           : 'tweak individual settings',
     });
     openMenuWith(options, initialIndex, 'density');
@@ -323,7 +328,11 @@ export function handleVerbosity(
           description: PRESET_DESC[which],
           group: `Confirm preset: ${which}`,
         },
-        { value: 'menu:density', label: '← back', description: '' },
+        {
+          value: 'menu:density',
+          label: `${glyphs.arrowLeft} back`,
+          description: '',
+        },
       ],
       0,
       // Preview pane reuses the 'density' fixture set for the confirm gate.
@@ -340,22 +349,22 @@ export function handleVerbosity(
     }
   > = {
     argsLines: {
-      heading: 'Tool args · lines',
+      heading: `Tool args ${glyphs.smallDot} lines`,
       unit: 'lines',
       get: (d) => d.argsMaxLines,
     },
     argsChars: {
-      heading: 'Tool args · chars per value',
+      heading: `Tool args ${glyphs.smallDot} chars per value`,
       unit: 'chars',
       get: (d) => d.argsMaxChars,
     },
     outputLines: {
-      heading: 'Tool output · lines',
+      heading: `Tool output ${glyphs.smallDot} lines`,
       unit: 'lines',
       get: (d) => d.outputMaxLines,
     },
     outputChars: {
-      heading: 'Tool output · chars per line',
+      heading: `Tool output ${glyphs.smallDot} chars per line`,
       unit: 'chars',
       get: (d) => d.outputMaxChars,
     },
@@ -444,10 +453,14 @@ export function handleVerbosity(
     truncation: () => {
       const display = getVerboseDisplay();
       const rows: Array<[TruncationField, string, string]> = [
-        ['argsLines', 'Args · lines', 'Tool args'],
-        ['argsChars', 'Args · chars per value', 'Tool args'],
-        ['outputLines', 'Output · lines', 'Tool output'],
-        ['outputChars', 'Output · chars per line', 'Tool output'],
+        ['argsLines', `Args ${glyphs.smallDot} lines`, 'Tool args'],
+        ['argsChars', `Args ${glyphs.smallDot} chars per value`, 'Tool args'],
+        ['outputLines', `Output ${glyphs.smallDot} lines`, 'Tool output'],
+        [
+          'outputChars',
+          `Output ${glyphs.smallDot} chars per line`,
+          'Tool output',
+        ],
       ];
       return rows.map(([field, label, group]) => {
         const { unit, get } = TRUNC_FIELDS[field];
@@ -467,7 +480,7 @@ export function handleVerbosity(
       // tool is on it says "none" (press clears), inverse when off.
       const masterLabel = isAll ? 'none' : 'all';
       const masterDesc = isAll
-        ? '[active] · every tool · press to clear'
+        ? `[active] ${glyphs.smallDot} every tool ${glyphs.smallDot} press to clear`
         : 'turn every tool on';
       return [
         {
@@ -492,7 +505,14 @@ export function handleVerbosity(
     const backRoute = `menu:top:${key}`;
     setReturn(backRoute);
     openMenuWith(
-      [...MENUS[key](), { value: backRoute, label: '← back', description: '' }],
+      [
+        ...MENUS[key](),
+        {
+          value: backRoute,
+          label: `${glyphs.arrowLeft} back`,
+          description: '',
+        },
+      ],
       0,
       key
     );
@@ -852,7 +872,7 @@ export function handleVerbosity(
     // know the input didn't match anything saved.
     const warn =
       unknown.length > 0
-        ? ` · warning: ${unknown.join(', ')} ${unknown.length === 1 ? `doesn't` : `don't`} match any known tool or category`
+        ? ` ${glyphs.smallDot} warning: ${unknown.join(', ')} ${unknown.length === 1 ? `doesn't` : `don't`} match any known tool or category`
         : '';
     showStatus(`verbosity: filters updated${tail}${warn}`);
     return true;

@@ -5,6 +5,7 @@ import { VerbosityPreview } from './VerbosityPreview.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import {
   getVerboseDisplay,
   type VerboseDisplayConfig,
@@ -68,6 +69,7 @@ export const VerbosityTruncationEditor: React.FC<{
   onCancel: () => void;
 }> = ({ which, onCommit, onCancel }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
   const dim = useMemo(() => getColor('secondary'), [getColor]);
   const meta = FIELD_META[which];
 
@@ -160,16 +162,18 @@ export const VerbosityTruncationEditor: React.FC<{
   return (
     <Box flexDirection="column">
       <Box paddingX={1} flexDirection="column">
-        <Text>{meta.heading}</Text>
+        <Text>{meta.heading.replace('·', glyphs.smallDot)}</Text>
         <Box height={1} />
         <Box>
           <Text>{dim('  ')}</Text>
-          <Text inverse={blink}>{` ◀  ${valueText}  ▶ `}</Text>
+          <Text
+            inverse={blink}
+          >{` ${glyphs.triangleLeft}  ${valueText}  ${glyphs.triangleRight} `}</Text>
         </Box>
         <Box height={1} />
         <Text>
           {dim(
-            '  ←/→ adjust · digits to set · backspace to drop · u for unlimited · ↵ commit · esc back'
+            `  ${glyphs.arrowLeft}/${glyphs.arrow} adjust ${glyphs.smallDot} digits to set ${glyphs.smallDot} backspace to drop ${glyphs.smallDot} u for unlimited ${glyphs.smallDot} ${glyphs.enter} commit ${glyphs.smallDot} esc back`
           )}
         </Text>
       </Box>

@@ -189,8 +189,8 @@ export const SurveyPanel: React.FC<SurveyPanelProps> = ({
       <Divider />
       <Box paddingX={1}>
         <Text>
-          {primary('ENTER')} {dim('to select and proceed')} {dim('|')}{' '}
-          {primary('ESC')} {dim('to cancel and close')}
+          {primary('enter')} {dim('to select and proceed')} {dim('|')}{' '}
+          {primary('esc')} {dim('to cancel and close')}
         </Text>
       </Box>
     </Box>

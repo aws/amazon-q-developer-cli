@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Box } from '../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg } from '../../../utils/tool-result.js';
 import type { ToolResult } from '../../../stores/app-store.js';
@@ -39,6 +40,7 @@ export const SessionTool = React.memo(function SessionTool({
   result,
 }: SessionToolProps) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const isCrewTool =
     name === 'subagent' ||
@@ -50,7 +52,7 @@ export const SessionTool = React.memo(function SessionTool({
     if (isCrewTool) {
       const task = parseToolArg(content, 'task');
       return task
-        ? `"${task.slice(0, 40)}${task.length > 40 ? '…' : ''}"`
+        ? `"${task.slice(0, 40)}${task.length > 40 ? glyphs.ellipsis : ''}"`
         : undefined;
     }
     // For session_management: show the target session name or task
@@ -60,10 +62,10 @@ export const SessionTool = React.memo(function SessionTool({
     return (
       sessionName ??
       (task
-        ? `"${task.slice(0, 40)}${task.length > 40 ? '…' : ''}"`
+        ? `"${task.slice(0, 40)}${task.length > 40 ? glyphs.ellipsis : ''}"`
         : undefined)
     );
-  }, [content, isCrewTool]);
+  }, [content, isCrewTool, glyphs.ellipsis]);
 
   const [inProgressLabel, doneLabel] = isCrewTool
     ? CREW_LABELS

@@ -11,6 +11,7 @@ import { useAppStore } from '../../../stores/app-store.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
+import { Icon, IconType } from '../icon/Icon.js';
 
 const MAX_VISIBLE_LINES = 6;
 
@@ -166,7 +167,9 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
   if (editingQueueIndex != null) {
     hints.push('esc to cancel');
   } else if (activeTab === 'queue' && queuedMessages.length > 1) {
-    hints.push('shift+↑↓ or ctrl+p/n to navigate');
+    hints.push(
+      `shift+${glyphs.arrowUp}${glyphs.arrowDown} or ctrl+p/n to navigate`
+    );
   }
   if (
     activeTab === 'queue' &&
@@ -186,7 +189,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
   if (hasTasks && hasMessages && editingQueueIndex == null) {
     hints.push(`tab to view ${activeTab === 'tasks' ? 'messages' : 'tasks'}`);
   }
-  const hintText = hints.join(' · ');
+  const hintText = hints.join(` ${glyphs.smallDot} `);
 
   return (
     <Box flexDirection="column" width={termWidth} backgroundColor={bg}>
@@ -214,7 +217,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
               bold={activeTab === 'queue'}
             >
               {hasSteer && `${!allowIcons ? '' : glyphs.executing} Steer`}
-              {hasSteer && hasQueue && ' · '}
+              {hasSteer && hasQueue && ` ${glyphs.smallDot} `}
               {hasQueue &&
                 `${!allowIcons ? '' : glyphs.diamond} Queue (${queueCount})`}
             </Text>
@@ -329,7 +332,7 @@ function TaskList({
           glyphs,
           allowIcons
         );
-        const connector = isLast ? '└──' : '├──';
+        const connector = isLast ? glyphs.treeCorner : glyphs.treeBranch;
 
         return (
           <Box
@@ -389,6 +392,7 @@ function QueueList({
   brandHex,
   termWidth,
 }: QueueListProps) {
+  const { getColor } = useTheme();
   const visible = messages.slice(scrollOffset, scrollOffset + maxVisible);
 
   return (
@@ -409,9 +413,10 @@ function QueueList({
               {isSelected ? '>' : ' '}{' '}
             </Text>
             {isEditing && (
-              <Text backgroundColor={bg} color={brandHex}>
-                ✎{' '}
-              </Text>
+              <>
+                <Icon type={IconType.PENCIL} color={getColor('brand')} />
+                <Text backgroundColor={bg}> </Text>
+              </>
             )}
             <Text
               backgroundColor={bg}

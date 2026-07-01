@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text as InkText } from './../../../renderer.js';
 import { Text } from '../text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 
 export interface ActionHintProps {
   text: string;
@@ -21,6 +22,7 @@ export const ActionHint: React.FC<ActionHintProps> = ({
   overlay,
 }) => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   if (!visible) return null;
 
@@ -34,7 +36,10 @@ export const ActionHint: React.FC<ActionHintProps> = ({
         <InkText backgroundColor={highlightHex} color={whiteHex}>
           {overlay.badge}
         </InkText>
-        <Text> · {getColor('primary')(overlay.hint)}</Text>
+        <Text>
+          {' '}
+          {glyphs.smallDot} {getColor('primary')(overlay.hint)}
+        </Text>
       </Box>
     );
   }

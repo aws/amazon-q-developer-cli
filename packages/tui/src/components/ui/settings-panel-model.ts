@@ -190,8 +190,12 @@ export const TERMINAL_ITEMS: readonly {
 ];
 
 /** Append the active-marker dot when `isActive`. */
-function withActiveMarker(label: string, isActive: boolean): string {
-  return isActive ? `${label} ●` : label;
+function withActiveMarker(
+  label: string,
+  isActive: boolean,
+  dot: string
+): string {
+  return isActive ? `${label} ${dot}` : label;
 }
 
 /**
@@ -203,7 +207,8 @@ export function buildRows(
   screen: Screen,
   settings: SettingsSnapshot,
   uiMode?: UiMode,
-  rolloutEnabled: boolean = true
+  rolloutEnabled: boolean = true,
+  dotFilled: string = '●'
 ): ExplorerRow[] {
   switch (screen.type) {
     case 'top': {
@@ -237,7 +242,8 @@ export function buildRows(
           values: {
             label: withActiveMarker(
               'Steer',
-              settings.interruptMode === InterruptMode.STEER
+              settings.interruptMode === InterruptMode.STEER,
+              dotFilled
             ),
             description: 'Inject your message mid-turn at tool boundaries',
           },
@@ -247,7 +253,8 @@ export function buildRows(
           values: {
             label: withActiveMarker(
               'Queue',
-              settings.interruptMode === InterruptMode.QUEUE
+              settings.interruptMode === InterruptMode.QUEUE,
+              dotFilled
             ),
             description: 'Buffer your message and send after turn ends',
           },
@@ -260,7 +267,8 @@ export function buildRows(
           values: {
             label: withActiveMarker(
               'Session',
-              settings.historyMode === 'session'
+              settings.historyMode === 'session',
+              dotFilled
             ),
             description: 'Each session has its own prompt history',
           },
@@ -270,7 +278,8 @@ export function buildRows(
           values: {
             label: withActiveMarker(
               'Global',
-              settings.historyMode === 'global'
+              settings.historyMode === 'global',
+              dotFilled
             ),
             description: 'All sessions share one prompt history',
           },

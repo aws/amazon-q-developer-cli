@@ -81,7 +81,8 @@ export const ThinkingDisplay = React.memo(function ThinkingDisplay({
   if (mode === 'collapsed' && !isStatic) {
     hintParts.push(expanded ? 'ctrl+o to collapse details' : 'ctrl+o to view');
   }
-  const hint = hintParts.length > 0 ? ` (${hintParts.join(' · ')})` : '';
+  const hint =
+    hintParts.length > 0 ? ` (${hintParts.join(` ${glyphs.smallDot} `)})` : '';
 
   return (
     <StatusBar status={done ? 'success' : 'thinking'} barColor={barColor}>

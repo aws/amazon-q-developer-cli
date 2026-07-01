@@ -168,7 +168,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   // The Rust engine lists individual tools (with status); KAS lists tags
   // (no status). Reflect that in the title noun.
   const noun = showStatus ? 'tool' : 'tag';
-  const title = `/tools · ${tools.length} ${noun}${tools.length === 1 ? '' : 's'}`;
+  const title = `/tools ${glyphs.smallDot} ${tools.length} ${noun}${tools.length === 1 ? '' : 's'}`;
 
   return (
     <Panel

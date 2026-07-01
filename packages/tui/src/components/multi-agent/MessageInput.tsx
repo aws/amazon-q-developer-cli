@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text } from '../../renderer.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { useTheme } from '../../hooks/useThemeContext';
+import { useGlyphs } from '../../hooks/useGlyphs.js';
 
 export interface MessageInputProps {
   targetSessionId: string;
@@ -18,6 +19,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const [message, setMessage] = useState('');
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   useKeypress((input, key) => {
     if (key.escape) {
@@ -38,7 +40,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       <Box marginTop={1}>
         <Text>
           {message}
-          <Text color={getColor('primary')}>█</Text>
+          <Text color={getColor('primary')}>{glyphs.bar}</Text>
         </Text>
       </Box>
       <Box marginTop={1}>

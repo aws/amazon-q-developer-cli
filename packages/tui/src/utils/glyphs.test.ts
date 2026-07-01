@@ -4,6 +4,9 @@ import {
   ASCII_GLYPHS,
   UNICODE_SPINNERS,
   ASCII_SPINNERS,
+  UNICODE_BAR_RAMP,
+  ASCII_BAR_RAMP,
+  getBarRamp,
 } from './glyphs.js';
 
 describe('Glyph registry', () => {
@@ -14,9 +17,20 @@ describe('Glyph registry', () => {
   });
 
   it('all ASCII glyphs are single-width (length 1)', () => {
+    // Some ASCII fallbacks are intentionally multi-char (arrows, tree
+    // connectors, word-y key hints) since width fidelity matters less than
+    // legibility in pure-ASCII terminals.
+    const multiCharAllowed = new Set([
+      'arrow',
+      'treeCorner',
+      'treeBranch',
+      'ellipsis',
+      'midEllipsis',
+      'enter',
+      'pause',
+    ]);
     for (const [key, value] of Object.entries(ASCII_GLYPHS)) {
-      // arrow and tree connectors are multi-char by design
-      if (['arrow', 'treeCorner', 'treeBranch'].includes(key)) continue;
+      if (multiCharAllowed.has(key)) continue;
       expect(value).toHaveLength(1);
     }
   });
@@ -27,10 +41,40 @@ describe('Glyph registry', () => {
       'sparkle', // ✨ emoji
       'treeCorner', // └──
       'treeBranch', // ├──
+      'wrench', // 🔧 astral emoji (JS length 2)
+      'mail', // 📧 astral emoji (JS length 2)
     ]);
     for (const [key, value] of Object.entries(UNICODE_GLYPHS)) {
       if (multiCharAllowed.has(key)) continue;
       expect(value).toHaveLength(1);
+    }
+  });
+
+  it('extended vocabulary exists in both maps and degrades distinctly', () => {
+    const extended = [
+      'ellipsis',
+      'midEllipsis',
+      'arrowUp',
+      'enter',
+      'triangleLeft',
+      'triangleRight',
+      'loop',
+      'times',
+      'pause',
+      'bar',
+      'pencil',
+      'wrench',
+      'mail',
+    ] as const;
+    for (const key of extended) {
+      expect(UNICODE_GLYPHS[key]).toBeTruthy();
+      expect(ASCII_GLYPHS[key]).toBeTruthy();
+      // ASCII fallback must be pure ASCII (no codepoint > 127)
+      for (const ch of ASCII_GLYPHS[key]) {
+        expect(ch.charCodeAt(0)).toBeLessThanOrEqual(127);
+      }
+      // Unicode and ASCII variants should differ
+      expect(UNICODE_GLYPHS[key]).not.toBe(ASCII_GLYPHS[key]);
     }
   });
 
@@ -55,5 +99,19 @@ describe('Glyph registry', () => {
         expect(frame).toHaveLength(1);
       }
     }
+  });
+
+  it('bar ramps are parallel and ASCII ramp is pure ASCII', () => {
+    expect(UNICODE_BAR_RAMP).toHaveLength(ASCII_BAR_RAMP.length);
+    for (const ch of ASCII_BAR_RAMP) {
+      // each ramp cell is a single ASCII char
+      expect(ch).toHaveLength(1);
+      expect(ch.charCodeAt(0)).toBeLessThanOrEqual(127);
+    }
+  });
+
+  it('getBarRamp selects Unicode when ASCII art is allowed, ASCII otherwise', () => {
+    expect(getBarRamp(true)).toBe(UNICODE_BAR_RAMP);
+    expect(getBarRamp(false)).toBe(ASCII_BAR_RAMP);
   });
 });

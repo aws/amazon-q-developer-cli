@@ -14,6 +14,7 @@ import { Icon, IconType } from '../icon/Icon.js';
 import { Divider } from '../divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import {
   visibleWidth,
   truncateToWidth,
@@ -91,6 +92,7 @@ export const Menu = React.memo(function Menu({
   const { getColor } = useTheme();
   const { width: terminalWidth } = useTerminalSize();
   const keybindings = useKeybindings();
+  const glyphs = useGlyphs();
 
   // Get chalk functions for styling and coloring
   const label = useTextStyle('label');
@@ -352,21 +354,22 @@ export const Menu = React.memo(function Menu({
           <Divider />
           <Box paddingX={1}>
             <Text>
-              {brandText(keybindings.label('closeMenu').toUpperCase())}{' '}
+              {brandText(keybindings.label('closeMenu'))}{' '}
               {dimText(closeMenuActionLabel)}
-              {dimText(' · ')}
-              {brandText('↑↓')} {dimText('to navigate')}
+              {dimText(` ${glyphs.smallDot} `)}
+              {brandText(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+              {dimText('to navigate')}
               {onRightArrow ? (
                 <>
-                  {dimText(' · ')}
-                  {brandText('→')} {dimText('to view details')}
-                  {dimText(' · ')}
-                  {brandText('↵')} {dimText('to run')}
+                  {dimText(` ${glyphs.smallDot} `)}
+                  {brandText(glyphs.arrow)} {dimText('to view details')}
+                  {dimText(` ${glyphs.smallDot} `)}
+                  {brandText(glyphs.enter)} {dimText('to run')}
                 </>
               ) : (
                 <>
-                  {dimText(' · ')}
-                  {brandText('↵')} {dimText('to select')}
+                  {dimText(` ${glyphs.smallDot} `)}
+                  {brandText(glyphs.enter)} {dimText('to select')}
                 </>
               )}
             </Text>

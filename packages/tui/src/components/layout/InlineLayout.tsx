@@ -87,6 +87,8 @@ import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useGlyphs, useAllowAnimations } from '../../hooks/useGlyphs.js';
+import type { Glyphs } from '../../utils/glyphs.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
@@ -94,6 +96,7 @@ const TRIGGER_RULES = [
 ];
 
 function getPlaceholder(opts: {
+  glyphs: Glyphs;
   editingQueueIndex: number | null;
   pendingApproval: boolean;
   isShellEscape: boolean;
@@ -112,17 +115,18 @@ function getPlaceholder(opts: {
   } | null;
   cancelLabel?: string;
 }): string {
+  const dot = opts.glyphs.smallDot;
   // Editing a queued message takes precedence over all other states.
   if (opts.editingQueueIndex != null) {
-    return `Editing queued message ${opts.editingQueueIndex + 1} · esc to cancel`;
+    return `Editing queued message ${opts.editingQueueIndex + 1} ${dot} esc to cancel`;
   }
   // While the session is still initializing, the user can type freely —
   // input is buffered locally (as `pendingSteerContent`) and replayed once init
   // completes.
   if (!opts.isInitialized) {
     return opts.pendingSteerContent != null
-      ? 'Initializing · type to queue another message'
-      : 'Initializing · type to queue a message';
+      ? `Initializing ${dot} type to queue another message`
+      : `Initializing ${dot} type to queue a message`;
   }
   if (opts.goalStatus && opts.goalStatus.state === 'active') {
     const desc =
@@ -130,21 +134,21 @@ function getPlaceholder(opts: {
         ? opts.goalStatus.message.slice(0, 47) + '...'
         : (opts.goalStatus.message ?? 'Running');
     const cancel = opts.cancelLabel ?? 'Ctrl+C';
-    return `Goal Active: ${desc} · Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} · ${cancel} to pause`;
+    return `Goal Active: ${desc} ${dot} Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} ${dot} ${cancel} to pause`;
   }
   if (opts.pendingApproval || opts.isProcessing) {
     if (opts.activeInterruptMode === InterruptMode.STEER) {
-      return `Kiro is working · Type to steer · ${opts.toggleHintLabel} to queue`;
+      return `Kiro is working ${dot} Type to steer ${dot} ${opts.toggleHintLabel} to queue`;
     }
-    return `Kiro is working · Type to queue · ${opts.toggleHintLabel} to steer`;
+    return `Kiro is working ${dot} Type to queue ${dot} ${opts.toggleHintLabel} to steer`;
   }
   if (opts.isShellEscape) {
-    return 'running shell command · ctrl+c to cancel';
+    return `running shell command ${dot} ctrl+c to cancel`;
   }
   if (opts.agentName === 'kiro_planner') {
-    return 'ask a question or describe a task ↵  ·  exit plan mode: shift+tab';
+    return `ask a question or describe a task ${opts.glyphs.enter}  ${dot}  exit plan mode: shift+tab`;
   }
-  return 'ask a question or describe a task ↵';
+  return `ask a question or describe a task ${opts.glyphs.enter}`;
 }
 
 function triggerEasterEgg() {
@@ -197,10 +201,11 @@ const RenderMetricsChip: React.FC<{
   color?: ChipColor | ((text: string) => string);
 }> = ({ color }) => {
   const metrics = useRenderMetrics();
+  const glyphs = useGlyphs();
   if (!metrics) return null;
   return (
     <Chip
-      value={`${metrics.lastRenderMs.toFixed(1)}ms · ${metrics.yogaNodeCount}n · ${metrics.heapUsedMB}MB · #${metrics.renderCount} · r${metrics.fullRedrawCount}`}
+      value={`${metrics.lastRenderMs.toFixed(1)}ms ${glyphs.smallDot} ${metrics.yogaNodeCount}n ${glyphs.smallDot} ${metrics.heapUsedMB}MB ${glyphs.smallDot} #${metrics.renderCount} ${glyphs.smallDot} r${metrics.fullRedrawCount}`}
       color={color ?? ChipColor.PRIMARY}
     />
   );
@@ -208,6 +213,8 @@ const RenderMetricsChip: React.FC<{
 
 export const InlineLayout: React.FC = () => {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
+  const { allowAnimations } = useAllowAnimations();
   // Grouped selectors using useShallow - prevents re-render cascades
   const {
     transientAlert,
@@ -786,7 +793,7 @@ export const InlineLayout: React.FC = () => {
             // Collapse to first line and truncate long values (e.g. commands)
             value = value.split('\n')[0]!;
             value = truncateToWidth(value, 60, '...');
-            detail = ` · ${value}`;
+            detail = ` ${glyphs.smallDot} ${value}`;
           }
         } catch {
           /* ignore parse errors */
@@ -823,11 +830,11 @@ export const InlineLayout: React.FC = () => {
         (() => {
           const icon =
             goalStatus.state === 'paused'
-              ? '⏸'
+              ? glyphs.pause
               : goalStatus.state === 'completed'
-                ? '✓'
+                ? glyphs.checkmark
                 : goalStatus.state === 'exhausted'
-                  ? '✗'
+                  ? glyphs.cross
                   : '⟳';
           const label =
             goalStatus.state === 'paused'
@@ -850,7 +857,7 @@ export const InlineLayout: React.FC = () => {
               : '';
           return (
             <Chip
-              value={`${icon} Goal ${label}${elapsed ? ` · ${elapsed}` : ''}`}
+              value={`${icon} Goal ${label}${elapsed ? ` ${glyphs.smallDot} ${elapsed}` : ''}`}
               color={
                 goalStatus.state === 'completed'
                   ? ChipColor.SUCCESS
@@ -893,6 +900,7 @@ export const InlineLayout: React.FC = () => {
     currentEffort,
     goalStatus,
     getColor,
+    glyphs,
   ]);
 
   // Build a dimmed version of the context bar for when tool outputs are expanded
@@ -970,7 +978,7 @@ export const InlineLayout: React.FC = () => {
         return;
       }
       if (value.trim().toLowerCase() === '/kiro') {
-        triggerEasterEgg();
+        if (allowAnimations) triggerEasterEgg();
         return;
       }
       handleUserInput(value);
@@ -982,6 +990,7 @@ export const InlineLayout: React.FC = () => {
       approvalMode,
       respondToApproval,
       handleUserInput,
+      allowAnimations,
     ]
   );
 
@@ -1125,6 +1134,7 @@ export const InlineLayout: React.FC = () => {
                   !!agentError
             }
             placeholder={getPlaceholder({
+              glyphs,
               editingQueueIndex,
               pendingApproval: !!pendingApproval,
               isShellEscape,
@@ -1220,9 +1230,12 @@ export const InlineLayout: React.FC = () => {
                     ? { body: turn.responseSnippet }
                     : undefined,
                 }))}
-                previewHeading="● Turn Activity"
+                previewHeading={`${glyphs.dotFilled} Turn Activity`}
                 keyHints={[
-                  { key: '↑↓', label: 'navigate' },
+                  {
+                    key: `${glyphs.arrowUp}${glyphs.arrowDown}`,
+                    label: 'navigate',
+                  },
                   { key: 'Enter', label: 'to fork' },
                 ]}
                 onSelect={(row) => handleRewindSelect(row.id)}
@@ -1347,7 +1360,7 @@ export const InlineLayout: React.FC = () => {
               <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
             )}
             <ActionHint
-              text="Showing detailed output · ctrl+o to toggle"
+              text={`Showing detailed output ${glyphs.smallDot} ctrl+o to toggle`}
               visible={toolOutputsExpanded}
               overlay={{
                 badge: 'Viewing detailed tool output',

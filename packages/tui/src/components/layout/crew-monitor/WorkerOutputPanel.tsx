@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from '../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { getAgentColor } from '../../../utils/agentColors.js';
 import { SessionOutput } from '../../multi-agent/SessionOutput.js';
 import { ScrollableBox } from '../../ui/ScrollableBox.js';
@@ -18,6 +19,7 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
   width: number;
 }) {
   const { getColor } = useTheme();
+  const glyphs = useGlyphs();
 
   const sessionId = selectedStage?.sessionId;
   const selectedSession = useAppStore((state) =>
@@ -41,7 +43,7 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
             [{truncate(selectedStage.name, 30)}]
           </Text>
         )}
-        <Text color="gray"> j/k scroll · ^d/^u page</Text>
+        <Text color="gray"> j/k scroll {glyphs.smallDot} ^d/^u page</Text>
       </Box>
       <ScrollableBox height={workerOutputH} autoScroll={true}>
         {selectedSession ? (
