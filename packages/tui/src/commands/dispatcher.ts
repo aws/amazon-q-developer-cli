@@ -226,12 +226,24 @@ export async function dispatch(
       args === 'edit' ||
       args.startsWith('create ') ||
       args.startsWith('edit ');
+    // Only clear the loading message the dispatcher itself set. Commands whose
+    // progress is owned by an out-of-band event stream must not be cleared
+    // here: `/compact` returns its RPC immediately (the backend spawns the
+    // summarization async) while a `compaction_status: started` event has
+    // already set `loadingMessage` to "Compacting conversation...". A blanket
+    // clear here nulls that loader a few ms after it appears, so the spinner
+    // never shows for the whole multi-second compaction (worst in lite, which
+    // never paints the flash at all). KAS dodged this because `/compact` is a
+    // kas-handler intercept that never reaches this generic path.
+    let dispatcherSetLoading = false;
     if (cmdName === 'agent' && args && !isSubcommand) {
       const displayName = args.startsWith('swap ') ? args.slice(5) : args;
       ctx.setLoadingMessage(`Agent changing to ${displayName}`);
+      dispatcherSetLoading = true;
     }
     if (cmdName === 'guide') {
       ctx.setLoadingMessage('Switching agent...');
+      dispatcherSetLoading = true;
     }
     try {
       result = await ctx.kiro.executeCommand({
@@ -240,6 +252,8 @@ export async function dispatch(
       } as TuiCommand);
     } catch (error) {
       const message = extractRpcErrorMessage(error, 'Command failed');
+      // On error the command won't proceed, so clear any loader unconditionally
+      // (a failed /compact should not leave a "Compacting..." spinner up).
       ctx.setLoadingMessage(null);
       ctx.showAlert(message, 'error');
       if (shouldEmitFrontendCommandUsage(ctx, isLocal)) {
@@ -247,7 +261,10 @@ export async function dispatch(
       }
       return;
     }
-    ctx.setLoadingMessage(null);
+    // Success: only clear a loader the dispatcher itself set. See the comment
+    // above — an out-of-band event stream (e.g. compaction_status) may own the
+    // loader for work that continues after this RPC resolves.
+    if (dispatcherSetLoading) ctx.setLoadingMessage(null);
   }
   if (shouldEmitFrontendCommandUsage(ctx, isLocal)) {
     emitFrontendCommandUsage(cmd, args, ctx, result?.success ?? true);

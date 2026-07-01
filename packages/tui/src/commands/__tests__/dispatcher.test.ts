@@ -335,4 +335,36 @@ describe('dispatch - additional coverage', () => {
       expect(ctx.kiro.executeCommand).toHaveBeenCalled();
     });
   });
+
+  // Regression: the loader for `/compact` is owned by the backend's
+  // `compaction_status` event stream (it sets loadingMessage to "Compacting
+  // conversation..."). The dispatcher must NOT clear loadingMessage for
+  // commands it didn't set one for — its post-RPC setLoadingMessage(null) used
+  // to fire the instant the (async-spawned) compact RPC returned, nulling the
+  // event-driven loader a few ms after it appeared so the spinner never showed.
+  describe('loadingMessage ownership', () => {
+    it('does not clear loadingMessage for /compact (event-owned loader)', async () => {
+      const ctx = createMockCommandContext();
+      (ctx.kiro.executeCommand as any).mockResolvedValue({
+        success: true,
+        message: 'Compacting conversation...',
+      });
+
+      await dispatch(makeCmd({ name: '/compact' }), '', ctx);
+
+      expect(ctx.kiro.executeCommand).toHaveBeenCalled();
+      expect(ctx._spies.setLoadingMessage!).not.toHaveBeenCalled();
+    });
+
+    it('still clears the loadingMessage it set itself for /agent swap', async () => {
+      const ctx = createMockCommandContext();
+
+      await dispatch(makeCmd({ name: '/agent' }), 'swap planner', ctx);
+
+      const calls = ctx._spies.setLoadingMessage!.mock.calls.map((c) => c[0]);
+      // Sets the swap label, then clears it once the RPC resolves.
+      expect(calls).toContain('Agent changing to planner');
+      expect(calls).toContain(null);
+    });
+  });
 });
