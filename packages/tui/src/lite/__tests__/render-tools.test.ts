@@ -1229,6 +1229,33 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Error block renders below the diff regardless of filter state.
     expect(out).toContain('permission denied');
   });
+
+  // v3/KAS write: friendly title (not in WRITE_TOOLS) + kind:'edit'. Used to
+  // dump raw args under the default (block) toolArgsMode; kind must route to a diff.
+  test('v3 write (kind:edit) renders a diff, not raw args', () => {
+    setDisplay({ toolArgsMode: 'block' });
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-write-v3',
+          role: 'tool_use',
+          name: 'Replace in File',
+          kind: 'edit',
+          content: JSON.stringify({
+            command: 'strReplace',
+            path: 'src/foo.ts',
+            oldStr: 'const a = 1;',
+            newStr: 'const a = 2;',
+          }),
+          isFinished: true,
+        } as any,
+        'kiro_default'
+      )
+    );
+    expect(out).toMatch(/-\s+const a = 1;/);
+    expect(out).toMatch(/\+\s+const a = 2;/);
+    expect(out).not.toMatch(/oldStr:|newStr:|command:/);
+  });
 });
 
 describe('pretty-printed tool output (json envelopes)', () => {

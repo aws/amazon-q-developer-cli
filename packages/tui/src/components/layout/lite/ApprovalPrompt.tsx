@@ -432,7 +432,9 @@ export function ApprovalPrompt({
   // dump; falls through to the generic printer when args don't parse.
   const writeDiffLines = (() => {
     if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
-    if (!WRITE_TOOL_NAMES.has(toolMsg.name)) return null;
+    // `kind === 'edit'` catches v3/KAS writes whose friendly title isn't in the set.
+    if (!WRITE_TOOL_NAMES.has(toolMsg.name) && toolMsg.kind !== 'edit')
+      return null;
     try {
       const args = JSON.parse(toolMsg.content);
       // Wire format is snake_case (Rust serde — see crates/chat-cli/src/cli/

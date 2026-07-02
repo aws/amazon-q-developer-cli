@@ -2867,6 +2867,9 @@ export interface MessageLike {
    *  without importing its enum. Distinct from result.status 'error'/
    *  'cancelled' — a rejected call may carry no `result` at all. */
   status?: string;
+  /** ACP tool kind; write/read detection falls back to this for engines (v3/KAS)
+   *  that send friendly titles absent from WRITE_TOOLS/READ_TOOL_NAMES. */
+  kind?: string;
   success?: boolean;
   standalone?: boolean;
   agentName?: string;
@@ -3011,8 +3014,10 @@ export function renderMessageToText(
             : 'running';
       const showAgent = msg.agentName && msg.agentName !== mainAgentName;
       const agentPrefix = showAgent ? `[${msg.agentName}] ` : undefined;
-      const isWrite = WRITE_TOOLS.has(msg.name || '');
-      const isRead = isReadTool(msg.name || '');
+      // `|| msg.kind` catches v3/KAS writes/reads whose friendly titles aren't
+      // in the name sets (else they fall through to a raw args dump).
+      const isWrite = WRITE_TOOLS.has(msg.name || '') || msg.kind === 'edit';
+      const isRead = isReadTool(msg.name || '') || msg.kind === 'read';
       const display = ctx.display ?? getVerboseDisplay();
 
       // Subagent tool: one canonical block per pipeline run, shown in full
