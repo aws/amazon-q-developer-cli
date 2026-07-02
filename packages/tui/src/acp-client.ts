@@ -4178,6 +4178,21 @@ export class KasAcpClient extends BaseAcpClient {
           data: response?.data,
         };
       }
+      case 'context': {
+        // /context is normally driven by the `handleContext` kas-handler, but
+        // the /usage↔/context Tab switch calls executeCommand('context')
+        // directly and expects the V2 Rust shape `{ data: { breakdown } }`.
+        // Without this case it fell through to the default "not yet supported"
+        // branch, so Tab from /usage silently did nothing in KAS mode.
+        const response = await this.contextShow();
+        const breakdown =
+          response.breakdown ?? this.getCachedContextBreakdown();
+        return {
+          success: true,
+          message: response.message ?? '',
+          data: breakdown ? { breakdown } : undefined,
+        };
+      }
       case 'prompts': {
         // Owned by the `handlePrompts` kas-handler. Reaching this branch
         // means the dispatcher's KAS intercept was skipped (e.g. caller

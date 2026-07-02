@@ -5090,6 +5090,21 @@ describe('KasAcpClient — executeCommand branches', () => {
     expect(result.success).toBe(true);
   });
 
+  it('GIVEN session WHEN /context called THEN returns breakdown for the usage↔context Tab switch', async () => {
+    // Regression: executeCommand('context') used to fall through to the
+    // default "not yet supported" branch, so pressing Tab in /usage never
+    // opened the /context panel in KAS mode.
+    await client.initialize();
+    await client.newSession();
+    const breakdown = { contextFiles: { percent: 10, tokens: 100 } };
+    mockKiroSendExtMethod.mockImplementationOnce(() =>
+      Promise.resolve({ breakdown })
+    );
+    const result = await client.executeCommand({ command: 'context' } as any);
+    expect(result.success).toBe(true);
+    expect((result.data as any)?.breakdown).toEqual(breakdown);
+  });
+
   it('GIVEN session WHEN /prompts called THEN delegates to handlePrompts (no-op here)', async () => {
     // The KAS dispatcher intercepts `/prompts` before it reaches the
     // ACP client; the handler owns the picker + send-message flow. The
