@@ -3775,7 +3775,10 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroCapabilities = parseKiroAgentCapabilities(
       initResult.agentCapabilities?._meta?.kiro
     );
-    logger.debug('[acp-client] Kiro agent capabilities:', this.kiroCapabilities);
+    logger.debug(
+      '[acp-client] Kiro agent capabilities:',
+      this.kiroCapabilities
+    );
 
     // Subscribe to hooks registry changes. The agent pushes this
     // notification whenever hooks are loaded, reloaded, or the file

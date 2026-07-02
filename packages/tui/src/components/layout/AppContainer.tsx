@@ -145,7 +145,6 @@ export const AppContainer: React.FC = () => {
 
     const state: AppKeypressState = {
       mode,
-      uiMode,
       isProcessing,
       isShellEscape,
       hasCommandInput,

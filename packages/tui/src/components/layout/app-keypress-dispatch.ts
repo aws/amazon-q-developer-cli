@@ -15,12 +15,6 @@ export type AppMode = 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
 
 export interface AppKeypressState {
   mode: AppMode;
-  /**
-   * Active top-level UI mode. The crew-monitor (Ctrl+G) is a TUI-only
-   * panel — in lite mode the same keystroke must be a no-op so a stray
-   * BEL byte from a paste can't trigger a panel that doesn't render here.
-   */
-  uiMode: 'tui' | 'lite';
   isProcessing: boolean;
   isShellEscape: boolean;
   hasCommandInput: boolean;
@@ -72,7 +66,7 @@ export interface AppKeypressBindings {
  *   - Ctrl+Y → transient alert action / OAuth URL copy
  *   - Ctrl+D → exit sequence
  *   - `q` in crew-monitor / session-view → back to inline
- *   - Ctrl+G → toggle crew-monitor (TUI mode only)
+ *   - Ctrl+G → toggle crew-monitor
  */
 export function dispatchAppKeypress(
   input: string,
@@ -184,7 +178,7 @@ export function dispatchAppKeypress(
     return true;
   }
 
-  if (key.ctrl && input === 'g' && state.uiMode === 'tui') {
+  if (key.ctrl && input === 'g') {
     if (state.mode === 'crew-monitor') {
       actions.setMode('inline');
     } else {

@@ -33,7 +33,6 @@ const baseState = (
   overrides: Partial<AppKeypressState> = {}
 ): AppKeypressState => ({
   mode: 'inline',
-  uiMode: 'tui',
   isProcessing: false,
   isShellEscape: false,
   hasCommandInput: false,
@@ -462,20 +461,6 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       DEFAULT_BINDINGS
     );
     expect(actions._args.setMode).toEqual(['inline']);
-  });
-
-  it('Ctrl+G in lite mode is a no-op (crew-monitor is TUI-only)', () => {
-    const actions = makeActions();
-    const handled = dispatchAppKeypress(
-      'g',
-      blankKey({ ctrl: true }),
-      baseState({ uiMode: 'lite' }),
-      actions,
-      DEFAULT_BINDINGS
-    );
-    expect(handled).toBe(false);
-    expect(actions._calls.enterCrewMonitor).toBeUndefined();
-    expect(actions._calls.setMode).toBeUndefined();
   });
 
   it('shell-escape Ctrl+C forwards to PTY and cancels', () => {
