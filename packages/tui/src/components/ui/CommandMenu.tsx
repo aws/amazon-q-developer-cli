@@ -136,16 +136,13 @@ export const CommandMenu: React.FC = () => {
     }
   });
 
-  // /verbosity density rows: track the highlighted preset so the inline
-  // preview can draft-render it; non-preset rows (Custom / back / Cancel)
-  // clear the draft so the preview reverts to the saved config.
+  // Draft-render the highlighted /verbosity density preset in the preview;
+  // non-preset rows clear it so the preview reverts to the saved config.
   const handleHighlight = (item: { label: string }) => {
     if (!activeCommand || activeCommand.command.name !== '/verbosity') return;
     const opt = activeCommand.options.find((o) => o.label === item.label);
     if (!opt) return;
-    const m = opt.value.match(
-      /^(?:menu:density:confirm|density:apply):([a-z]+)$/
-    );
+    const m = opt.value.match(/^density:apply:([a-z]+)$/);
     setDraftPreset(
       m && DENSITY_PRESETS.includes(m[1] as DensityPreset)
         ? (m[1] as DensityPreset)

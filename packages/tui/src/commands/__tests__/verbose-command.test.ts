@@ -499,18 +499,12 @@ describe('/verbosity density presets', () => {
     expect(calls[0]![1]).toBe('error');
   });
 
-  it('menu:density:confirm:<preset> opens a Cancel/Yes gate without mutating', () => {
+  it('density:apply:<preset> commits immediately and closes the overlay', () => {
     setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'menu:density:confirm:default');
-    const arg = lastMenu(ctx);
-    expect(arg.options[0].label).toBe('Cancel');
-    expect(arg.options[0].value).toBe('menu:density');
-    expect(
-      arg.options.find((o) => o.value === 'density:apply:default')
-    ).toBeDefined();
-    // Confirm did not commit — filters unchanged.
-    expect(getVerboseConfig().filters).toEqual(['shell']);
+    runEffect(verbosityCmd, null, ctx, 'density:apply:full');
+    expect(getVerboseConfig().filters).toEqual(['all']); // full = every filter on
+    expect(ctx._spies.setActiveCommand!).toHaveBeenLastCalledWith(null); // overlay closed
   });
 });
 
@@ -669,7 +663,7 @@ describe('/verbosity drilldown menus', () => {
     expect(f).toContain('mcp');
   });
 
-  it('menu:density routes each preset to the confirm gate, marks the active one, and lists Custom', () => {
+  it('menu:density routes each preset straight to apply, marks the active one, and lists Custom', () => {
     // 'default' = DEFAULT_DISPLAY + filters: ['shell'] (fresh-install shape),
     // so seeding ['shell'] makes `default` the active preset.
     setVerboseConfig({ display: undefined, filters: ['shell'] });
@@ -677,20 +671,17 @@ describe('/verbosity drilldown menus', () => {
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'menu:density');
     const values = menuValues(ctx);
-    // Each preset row routes to the confirmation gate (menu:density:confirm:*),
-    // NOT a direct density:<preset> commit — the `menu:` prefix is required or
-    // the route falls through to "Unknown subcommand" (a past regression).
+    // Each preset row commits immediately via density:apply:* — no confirm gate.
     for (const p of ['minimal', 'lean', 'default', 'full']) {
-      expect(values).toContain(`menu:density:confirm:${p}`);
+      expect(values).toContain(`density:apply:${p}`);
     }
     // Custom row routes to the config (per-knob) menu.
     expect(lastMenu(ctx).options.find((o) => o.label === 'custom')?.value).toBe(
       'menu:config'
     );
     expect(
-      lastMenu(ctx).options.find(
-        (o) => o.value === 'menu:density:confirm:default'
-      )?.description
+      lastMenu(ctx).options.find((o) => o.value === 'density:apply:default')
+        ?.description
     ).toContain('[active]');
   });
 });

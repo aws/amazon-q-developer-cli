@@ -272,8 +272,6 @@ export function handleVerbosity(
     );
   };
 
-  // Shared by the density menu rows and the confirm submenu so the confirm
-  // title matches the selected row without drift.
   const PRESET_DESC: Record<DensityPreset, string> = {
     minimal: `name only ${glyphs.smallDot} no args, no reasoning`,
     lean: 'inline arg chip, no reasoning, full elapsed',
@@ -281,8 +279,7 @@ export function handleVerbosity(
     full: `1:1 of what the parent agent sees ${glyphs.smallDot} all filters on ${glyphs.smallDot} no truncation`,
   };
 
-  // Density menu — smart-entry point when a preset is active. Selecting a
-  // preset routes to the `menu:density:confirm:<preset>` gate, not a commit.
+  // Density menu — selecting a preset commits immediately (density:apply:*).
   const openDensityMenu = (initialIndex = 0) => {
     // ESC fully exits — no parent above the entry point.
     setReturn(null);
@@ -292,7 +289,7 @@ export function handleVerbosity(
       label: string;
       description: string;
     }> = DENSITY_PRESETS.map((p) => ({
-      value: `menu:density:confirm:${p}`,
+      value: `density:apply:${p}`,
       label: p,
       description:
         active === p
@@ -308,36 +305,6 @@ export function handleVerbosity(
           : 'tweak individual settings',
     });
     openMenuWith(options, initialIndex, 'density');
-  };
-
-  // Cancel comes first so the default cursor lands on a safe row; Yes commits
-  // (display + filters) and re-opens the density menu.
-  const openPresetConfirmMenu = (which: DensityPreset) => {
-    setReturn('menu:density');
-    openMenuWith(
-      [
-        {
-          value: 'menu:density',
-          label: 'Cancel',
-          description: '',
-          group: `Confirm preset: ${which}`,
-        },
-        {
-          value: `density:apply:${which}`,
-          label: `Yes, switch to ${which}`,
-          description: PRESET_DESC[which],
-          group: `Confirm preset: ${which}`,
-        },
-        {
-          value: 'menu:density',
-          label: `${glyphs.arrowLeft} back`,
-          description: '',
-        },
-      ],
-      0,
-      // Preview pane reuses the 'density' fixture set for the confirm gate.
-      'density'
-    );
   };
 
   const TRUNC_FIELDS: Record<
@@ -585,18 +552,6 @@ export function handleVerbosity(
     return true;
   }
   {
-    const confirmMatch = trimmed.match(/^menu:density:confirm:([a-z]+)$/);
-    if (confirmMatch) {
-      const preset = confirmMatch[1] as DensityPreset;
-      if (!DENSITY_PRESETS.includes(preset)) {
-        ctx.showAlert(`Unknown density preset: ${preset}`, 'error', 3000);
-        return true;
-      }
-      openPresetConfirmMenu(preset);
-      return true;
-    }
-  }
-  {
     const editMatch = trimmed.match(
       /^menu:truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
     );
@@ -675,9 +630,8 @@ export function handleVerbosity(
     return true;
   }
 
-  // CLI `density <preset>` commits immediately; menu form is
-  // `density:apply:<preset>` (post-confirmation Yes); `density:<preset>` is
-  // a CLI shortcut. All apply the preset's display AND filter list.
+  // Preset commit: `density <preset>` (CLI), `density:<preset>` /
+  // `density:apply:<preset>` (menu). All apply display AND filter list.
   const densityCliMatch = trimmed.match(/^density(?:\s+(.+))?$/);
   const densityMenuMatch = trimmed.match(/^density:([a-z]+)$/);
   const densityApplyMatch = trimmed.match(/^density:apply:([a-z]+)$/);
