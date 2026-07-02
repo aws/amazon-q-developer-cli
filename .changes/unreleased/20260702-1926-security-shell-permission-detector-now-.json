@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Shell permission detector now catches unsafe flags in combined short options (e.g., `grep -iP`) that previously bypassed readonly classification"
+}

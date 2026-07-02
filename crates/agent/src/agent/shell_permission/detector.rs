@@ -222,6 +222,33 @@ fn has_prompt_expansion(cmd: &ParsedCommand) -> bool {
 // Readonly Detection
 // ============================================================================
 
+/// Check whether a command-line argument matches a dangerous option pattern.
+///
+/// Handles three cases:
+/// - Long options (`--perl-regexp`): exact match or `--opt=value` prefix
+/// - Short single-char options (`-P`): detects the flag char in combined flags like `-iP`, `-rlP`
+/// - Multi-char options without `--` (`-delete`): substring match (for find-style flags)
+fn arg_contains_option(arg: &str, opt: &str) -> bool {
+    if let Some(long) = opt.strip_prefix("--") {
+        // Long option: --perl-regexp or --perl-regexp=value
+        arg.strip_prefix("--")
+            .is_some_and(|rest| rest == long || rest.starts_with(&format!("{}=", long)))
+    } else if let Some(short) = opt.strip_prefix('-') {
+        if short.chars().count() == 1 {
+            // Single-char short option (e.g. "-P"):
+            // Match "-P" exactly, or detect 'P' in combined flags like "-iP", "-rlP"
+            let flag_char = short.chars().next().unwrap();
+            arg == opt
+                || (arg.starts_with('-') && !arg.starts_with("--") && arg.chars().skip(1).any(|c| c == flag_char))
+        } else {
+            // Multi-char short option (e.g. "-delete" for find)
+            arg.contains(opt)
+        }
+    } else {
+        arg.contains(opt)
+    }
+}
+
 fn is_readonly_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> bool {
     // Shell features that produce side effects → not readonly
     if cmd.has_redirection_to_file {
@@ -232,7 +259,10 @@ fn is_readonly_with_config(cmd: &ParsedCommand, config: &DetectorConfig) -> bool
 
     // 1. Readonly except with specific unsafe flags (find -delete, grep -P, etc.)
     if let Some(except_opts) = config.safe_except_options.get(cmd_name) {
-        return !cmd.args.iter().any(|a| except_opts.iter().any(|opt| a.contains(opt)));
+        return !cmd
+            .args
+            .iter()
+            .any(|a| except_opts.iter().any(|opt| arg_contains_option(a, opt)));
     }
 
     // 2. Readonly only with specific subcommands (git status, cargo metadata, etc.)
@@ -420,6 +450,32 @@ mod tests {
         // Safe except specific flags (safe_except_options)
         assert!(is_readonly_command(&make_cmd("grep pattern file")));
         assert!(!is_readonly_command(&make_cmd("grep -P pattern file")));
+        assert!(!is_readonly_command(&make_cmd("grep --perl-regexp pattern file")));
+        // Combined short flags containing -P must also be caught (CVE bypass via -iP, -rP, etc.)
+        assert!(
+            !is_readonly_command(&make_cmd("grep -iP pattern file")),
+            "combined flag -iP should be caught as containing -P"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("grep -rP pattern file")),
+            "combined flag -rP should be caught as containing -P"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("grep -rlP pattern file")),
+            "combined flag -rlP should be caught as containing -P"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("grep -nP pattern file")),
+            "combined flag -nP should be caught as containing -P"
+        );
+        assert!(
+            !is_readonly_command(&make_cmd("grep -vP pattern file")),
+            "combined flag -vP should be caught as containing -P"
+        );
+        // Ensure normal grep flags without P are still allowed
+        assert!(is_readonly_command(&make_cmd("grep -i pattern file")));
+        assert!(is_readonly_command(&make_cmd("grep -rn pattern file")));
+        assert!(is_readonly_command(&make_cmd("grep -rl pattern file")));
 
         // Redirection makes command not readonly
         let mut cmd = make_cmd("echo hello");
