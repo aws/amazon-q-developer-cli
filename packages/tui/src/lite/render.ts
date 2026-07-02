@@ -676,7 +676,8 @@ export function renderThinkingBlock(
   const cols = termCols && termCols > 0 ? termCols : 0;
   const indent = '';
   const brandFn = theme?.brand ?? brand;
-  const ruleWidth = cols > 0 ? Math.max(20, Math.min(cols, 80)) : 32;
+  // Full width, less 1 col so an off-by-one stdout.columns doesn't wrap to col 0.
+  const ruleWidth = cols > 0 ? Math.max(20, cols - 1) : 32;
   const g = resolveGlyphs(glyphs);
   // ASCII mode: lineHorizontal degrades to '-'; the label stays in slot.
   const h = g.lineHorizontal;
