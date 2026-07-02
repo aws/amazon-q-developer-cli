@@ -396,6 +396,26 @@ export type SessionDiscoverySource = 'local' | 'remote';
 export type SessionActivityStatus = 'idle' | 'in_progress' | 'waiting_on_user';
 
 /**
+ * Kiro-namespaced capabilities advertised by KAS on the `initialize` handshake,
+ * under `agentCapabilities._meta.kiro` (KAS ACP doc §4). Not all are remote-specific
+ * (e.g. `sessionSearch` and `sessionListScopes: ['workspace']` are local-first). All
+ * optional: an older KAS that predates these caps omits them, and the client must then
+ * degrade gracefully (never request an unadvertised placement/source/scope/method).
+ */
+export interface KiroAgentCapabilities {
+  /** Execution placements KAS accepts on `session/new` (e.g. 'local', 'cloud-sandbox'). */
+  executionTargets?: string[];
+  /** Discovery stores KAS can list from (e.g. 'local', 'remote'). */
+  sessionSources?: string[];
+  /** List scopes KAS supports (e.g. 'workspace', 'user'). */
+  sessionListScopes?: string[];
+  /** Whether `_kiro/session/search` is available. */
+  sessionSearch?: boolean;
+  /** Whether the `_kiro/sourceProviders/*` surface (repo picker) is available. */
+  sourceProviders?: boolean;
+}
+
+/**
  * TODO - duplicated type until we modify this flow to use a session/list compatible sacp implementation.
  */
 export interface ListSessionsResponse {

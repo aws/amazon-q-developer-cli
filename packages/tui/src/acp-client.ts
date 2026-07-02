@@ -70,6 +70,7 @@ import type {
 import type {
   ListSessionsResponse,
   ExecutionTarget,
+  KiroAgentCapabilities,
 } from './types/session-client';
 import type {
   HookInfo,
@@ -112,6 +113,32 @@ import { isKasShellCapability } from './utils/shell-trust-options.js';
 const KAS_CLIENT_INFO_META = {
   userAgentTags: ['app/AmazonQ-For-CLI'],
 } as const;
+
+/**
+ * Validate the opaque `agentCapabilities._meta.kiro` blob from the KAS
+ * `initialize` handshake into a typed {@link KiroAgentCapabilities}. Every
+ * field is optional and defensively checked: a malformed or absent blob yields
+ * capabilities with every field left undefined, so the client treats remote
+ * features as unadvertised and degrades to local (the dark-ship /
+ * backward-compat safety gate).
+ */
+function parseKiroAgentCapabilities(raw: unknown): KiroAgentCapabilities {
+  if (!raw || typeof raw !== 'object') return {};
+  const r = raw as Record<string, unknown>;
+  const stringArray = (v: unknown): string[] | undefined =>
+    Array.isArray(v) && v.every((x) => typeof x === 'string')
+      ? (v as string[])
+      : undefined;
+  return {
+    executionTargets: stringArray(r.executionTargets),
+    sessionSources: stringArray(r.sessionSources),
+    sessionListScopes: stringArray(r.sessionListScopes),
+    sessionSearch:
+      typeof r.sessionSearch === 'boolean' ? r.sessionSearch : undefined,
+    sourceProviders:
+      typeof r.sourceProviders === 'boolean' ? r.sourceProviders : undefined,
+  };
+}
 
 function getKasVersion(kasServerPath: string): string {
   try {
@@ -2820,9 +2847,10 @@ export class KasAcpClient extends BaseAcpClient {
   /**
    * Execution target for the first `newSession`, from the `--remote` CLI flag.
    * `{ kind: 'cloud-sandbox' }` when `--remote` was passed, else undefined
-   * (treated as local). Plumbed and held here in T1; the capability-gated
-   * `_meta.kiro.executionTarget` send on `session/new` lands in T2 (once the
-   * `initialize` handshake advertises support). Not yet read in this commit.
+   * (treated as local). Sent as `_meta.kiro.executionTarget` on `session/new`,
+   * but only when KAS advertised the kind on the `initialize` handshake (see
+   * `isExecutionTargetSupported`); otherwise the session degrades to local.
+   * Omitting `--remote` is byte-identical to today's behavior.
    */
   private readonly executionTarget?: ExecutionTarget;
 
@@ -2831,6 +2859,14 @@ export class KasAcpClient extends BaseAcpClient {
    * repo-source flow (later task); not yet sent on `session/new`.
    */
   private readonly repos?: string[];
+
+  /**
+   * Kiro-namespaced capabilities advertised by KAS on the `initialize`
+   * handshake (`agentCapabilities._meta.kiro`). Empty until `initialize()`
+   * populates it; an older KAS leaves it empty and the client degrades
+   * gracefully (never requests an unadvertised placement/source/scope/method).
+   */
+  private kiroCapabilities: KiroAgentCapabilities = {};
 
   /**
    * Whether an explicit `--effort` CLI flag was passed. The flag is forwarded
@@ -3728,7 +3764,18 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   async initialize(): Promise<void> {
-    await this.kiroClient.initialize();
+    const initResult = await this.kiroClient.initialize();
+
+    // Capture the Kiro-namespaced KAS capabilities advertised on the handshake
+    // (agentCapabilities._meta.kiro, KAS ACP doc §4). `_meta` is the ACP
+    // extensibility slot (its values are typed `unknown`), so
+    // parseKiroAgentCapabilities validates every field. Absent (older KAS) ->
+    // empty caps -> remote features degrade to local (the dark-ship /
+    // backward-compat safety gate).
+    this.kiroCapabilities = parseKiroAgentCapabilities(
+      initResult.agentCapabilities?._meta?.kiro
+    );
+    logger.debug('[acp-client] Kiro agent capabilities:', this.kiroCapabilities);
 
     // Subscribe to hooks registry changes. The agent pushes this
     // notification whenever hooks are loaded, reloaded, or the file
@@ -3863,14 +3910,50 @@ export class KasAcpClient extends BaseAcpClient {
     super.close();
   }
 
+  /**
+   * Whether KAS advertised support for the given execution-target kind on the
+   * `initialize` handshake. An absent capability (older KAS) == unsupported, so
+   * callers degrade to a local session. This is the dark-ship safety gate.
+   */
+  private isExecutionTargetSupported(kind: string): boolean {
+    return this.kiroCapabilities.executionTargets?.includes(kind) ?? false;
+  }
+
   async newSession(): Promise<SessionResult> {
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
+    // Build the `_meta.kiro` payload once, merging mode + execution target so
+    // neither overwrites the other (two separate `_meta` spreads would drop one).
+    const kiroMeta: Record<string, unknown> = {};
+    if (initialMode) kiroMeta.modeId = toKasModeId(initialMode);
+    // Effective placement; an unset target == local (the contract default).
+    const target = this.executionTarget ?? { kind: 'local' };
+    // State the placement EXPLICITLY (including `{kind:'local'}`) on the wire,
+    // but ONLY once KAS has advertised it understands this executionTarget kind
+    // on the `initialize` handshake. Rationale (T2):
+    //  - Existing users / dark-ship: every released KAS today advertises no
+    //    `executionTargets`, so `isExecutionTargetSupported` is false and we
+    //    send NOTHING -- byte-identical to pre-feature behavior. No existing
+    //    user is impacted until KAS actually ships the capability.
+    //  - Forward-compat: once KAS does parse the field, stating local
+    //    explicitly means our placement intent never rides on how a future KAS
+    //    chooses to interpret an *absent* executionTarget (KAS-owned, could
+    //    drift). Intent is pinned to what we say, not to someone else's default.
+    //  - Fail-safe: a non-local placement KAS hasn't advertised degrades to a
+    //    local session (omit) rather than sending something KAS can't honor.
+    if (this.isExecutionTargetSupported(target.kind)) {
+      kiroMeta.executionTarget = target;
+    } else if (target.kind !== 'local') {
+      logger.warn(
+        `[acp-client] KAS did not advertise executionTarget '${target.kind}' ` +
+          `(advertised: ${JSON.stringify(
+            this.kiroCapabilities.executionTargets ?? []
+          )}); starting a local session instead.`
+      );
+    }
     const r = await this.kiroClient.newSession({
       cwd: process.cwd(),
       mcpServers: [],
-      ...(initialMode && {
-        _meta: { kiro: { modeId: toKasModeId(initialMode) } },
-      }),
+      ...(Object.keys(kiroMeta).length > 0 && { _meta: { kiro: kiroMeta } }),
     });
     const sid = r.sessionId;
     this.sessionId = sid;

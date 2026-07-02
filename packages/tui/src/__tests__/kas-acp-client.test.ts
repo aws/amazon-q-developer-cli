@@ -7967,3 +7967,183 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
     await permissionPromise;
   });
 });
+
+// ── Remote sandbox: executionTarget on session/new + handshake-cap gating ──
+// Covers T1 (plumb executionTarget) + T2 (consume initialize caps, fail-safe
+// degrade to local). The mock KiroClient nests caps under
+// agentCapabilities._meta.kiro, matching the KAS ACP doc §4.
+describe('remote executionTarget', () => {
+  let origKasPath: string | undefined;
+
+  // Advertise the cloud-sandbox execution target on the next initialize().
+  function advertiseRemoteCaps() {
+    mockKiroInitialize.mockImplementationOnce(() =>
+      Promise.resolve({
+        protocolVersion: '1.0',
+        agentCapabilities: {
+          _meta: {
+            kiro: {
+              executionTargets: ['local', 'cloud-sandbox'],
+              sessionSources: ['local', 'remote'],
+            },
+          },
+        },
+      })
+    );
+  }
+
+  function lastNewSessionMeta(): any {
+    const calls = mockKiroNewSession.mock.calls;
+    return calls[calls.length - 1]?.[0]?._meta?.kiro;
+  }
+
+  // Advertise an arbitrary (possibly malformed) `agentCapabilities._meta.kiro`
+  // blob on the next initialize(), to exercise parseKiroAgentCapabilities'
+  // defensive branches through the real ingestion path.
+  function advertiseKiroCaps(kiro: unknown) {
+    mockKiroInitialize.mockImplementationOnce(() =>
+      Promise.resolve({
+        protocolVersion: '1.0',
+        agentCapabilities: { _meta: { kiro } },
+      })
+    );
+  }
+
+  beforeEach(() => {
+    origKasPath = process.env.KIRO_KAS_SERVER_PATH;
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
+    freshMocks();
+  });
+
+  afterEach(() => {
+    if (origKasPath === undefined) delete process.env.KIRO_KAS_SERVER_PATH;
+    else process.env.KIRO_KAS_SERVER_PATH = origKasPath;
+  });
+
+  // Existing-user / dark-ship safety: every released KAS today advertises NO
+  // executionTargets capability, so a local (or default) client sends NOTHING
+  // on the wire -- byte-identical to pre-feature behavior. This is the test
+  // that guarantees the explicit-local change cannot impact existing users
+  // until KAS actually ships the capability.
+  it('omits executionTarget for a local session when KAS advertises no caps (existing-user path)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('sends explicit {kind:local} once KAS advertises local support (intent no longer rides on KAS absent-default)', async () => {
+    advertiseRemoteCaps(); // advertises ['local', 'cloud-sandbox']
+    const client = new KasAcpClient(); // no target -> defaults to local
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toEqual({ kind: 'local' });
+  });
+
+  it('omits local executionTarget when KAS advertises caps but not local', async () => {
+    advertiseKiroCaps({ executionTargets: ['cloud-sandbox'] }); // no 'local'
+    const client = new KasAcpClient(); // local (default)
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('sends cloud-sandbox executionTarget when --remote and KAS advertises it', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toEqual({
+      kind: 'cloud-sandbox',
+    });
+  });
+
+  it('degrades to local when KAS does NOT advertise the cap', async () => {
+    // Default initialize() return advertises no executionTargets.
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('degrades to local when initialize() was never called (no caps captured)', async () => {
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('merges executionTarget alongside modeId in _meta.kiro', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient({
+      initialAgent: 'plan',
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.executionTarget).toEqual({ kind: 'cloud-sandbox' });
+    expect(meta?.modeId).toBeDefined();
+  });
+
+  it('still sends modeId while dropping executionTarget when KAS does not advertise the kind', async () => {
+    // Degrade-but-preserve: --remote + a mode, but KAS advertises no caps ->
+    // executionTarget is gated out yet the modeId merge is unaffected (the two
+    // fields share one _meta.kiro object; degrading one must not drop the other).
+    advertiseKiroCaps({}); // no executionTargets advertised -> unsupported
+    const client = new KasAcpClient({
+      initialAgent: 'plan',
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.executionTarget).toBeUndefined();
+    expect(meta?.modeId).toBeDefined();
+  });
+
+  it('degrades to local for remote-control when KAS advertises only cloud-sandbox', async () => {
+    advertiseRemoteCaps(); // advertises ['local', 'cloud-sandbox'] — not remote-control
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'remote-control' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('degrades to local when the advertised list excludes the requested kind', async () => {
+    advertiseKiroCaps({ executionTargets: ['local'] }); // present, but no cloud-sandbox
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('degrades to local when executionTargets is malformed (non-array)', async () => {
+    advertiseKiroCaps({ executionTargets: 'cloud-sandbox' }); // string, not array
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+
+  it('degrades to local when executionTargets is a mixed-type array (malformed)', async () => {
+    advertiseKiroCaps({ executionTargets: ['cloud-sandbox', 5] }); // not all strings
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
+  });
+});
