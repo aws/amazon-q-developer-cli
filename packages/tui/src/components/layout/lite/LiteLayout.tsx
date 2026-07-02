@@ -67,6 +67,7 @@ import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { CommandMenu } from '../../ui/CommandMenu.js';
 import { Divider } from '../../ui/divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   useGlyphs,
@@ -91,6 +92,7 @@ import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
 import chalk from 'chalk';
 import { BackendPanels } from '../shared/BackendPanels.js';
+import { getPlaceholder } from '../getPlaceholder.js';
 import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
@@ -137,6 +139,7 @@ export const LiteLayout: React.FC = () => {
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
   const pendingSteerContent = useAppStore((s) => s.pendingSteerContent);
   const editingSteerLineIndex = useAppStore((s) => s.editingSteerLineIndex);
+  const activeInterruptMode = useAppStore((s) => s.activeInterruptMode);
   const tasks = useAppStore((s) => s.tasks);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
@@ -157,6 +160,7 @@ export const LiteLayout: React.FC = () => {
   const dismissTransientAlert = useAppStore((s) => s.dismissTransientAlert);
   const loadingMessage = useAppStore((s) => s.loadingMessage);
   const { getColor, getUserPromptColor, getUserPromptBgHex } = useTheme();
+  const keybindings = useKeybindings();
   // Accessibility wiring — kept 1:1 with the modern TUI.
   const glyphs = useGlyphs();
   const spinners = useSpinners();
@@ -1660,11 +1664,20 @@ export const LiteLayout: React.FC = () => {
                   isProcessing={isProcessing}
                   triggerRules={TRIGGER_RULES}
                   onTriggerDetected={handleTriggerDetected}
-                  placeholder={
-                    isShellEscape
-                      ? `bash is waiting for input ${glyphs.smallDot} ctrl+c to interrupt`
-                      : 'ask a question, or type / for commands'
-                  }
+                  placeholder={getPlaceholder({
+                    glyphs,
+                    editingQueueIndex,
+                    pendingApproval: !!pendingApproval,
+                    isShellEscape,
+                    isProcessing,
+                    isInitialized,
+                    pendingSteerContent,
+                    activeInterruptMode,
+                    toggleHintLabel: keybindings.label('toggleInterruptMode'),
+                    agentName: currentAgent?.name,
+                    goalStatus,
+                    cancelLabel: keybindings.label('cancelStream'),
+                  })}
                   suppressArrows={subagentOpenIndex != null}
                 />
               </Box>

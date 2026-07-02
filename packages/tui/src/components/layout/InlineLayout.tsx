@@ -80,7 +80,7 @@ import {
   formatKeybinding,
 } from '../../utils/keybindings.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
-import { InterruptMode } from '../../constants/interrupt-mode.js';
+import { getPlaceholder } from './getPlaceholder.js';
 import { startMcpOAuth } from '../../utils/mcp-oauth.js';
 import { copyToSystemClipboard } from '../../commands/effects.js';
 import { getGitBranch } from '../../utils/git';
@@ -88,68 +88,11 @@ import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs, useAllowAnimations } from '../../hooks/useGlyphs.js';
-import type { Glyphs } from '../../utils/glyphs.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
   { key: '@', type: 'inline' as const },
 ];
-
-function getPlaceholder(opts: {
-  glyphs: Glyphs;
-  editingQueueIndex: number | null;
-  pendingApproval: boolean;
-  isShellEscape: boolean;
-  isProcessing: boolean;
-  isInitialized: boolean;
-  pendingSteerContent: string | null;
-  activeInterruptMode: InterruptMode;
-  queuedMessages: string[];
-  toggleHintLabel: string;
-  agentName: string | undefined;
-  goalStatus?: {
-    state: string;
-    iteration: number;
-    maxIterations: number;
-    message?: string;
-  } | null;
-  cancelLabel?: string;
-}): string {
-  const dot = opts.glyphs.smallDot;
-  // Editing a queued message takes precedence over all other states.
-  if (opts.editingQueueIndex != null) {
-    return `Editing queued message ${opts.editingQueueIndex + 1} ${dot} esc to cancel`;
-  }
-  // While the session is still initializing, the user can type freely —
-  // input is buffered locally (as `pendingSteerContent`) and replayed once init
-  // completes.
-  if (!opts.isInitialized) {
-    return opts.pendingSteerContent != null
-      ? `Initializing ${dot} type to queue another message`
-      : `Initializing ${dot} type to queue a message`;
-  }
-  if (opts.goalStatus && opts.goalStatus.state === 'active') {
-    const desc =
-      opts.goalStatus.message && opts.goalStatus.message.length > 50
-        ? opts.goalStatus.message.slice(0, 47) + '...'
-        : (opts.goalStatus.message ?? 'Running');
-    const cancel = opts.cancelLabel ?? 'Ctrl+C';
-    return `Goal Active: ${desc} ${dot} Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} ${dot} ${cancel} to pause`;
-  }
-  if (opts.pendingApproval || opts.isProcessing) {
-    if (opts.activeInterruptMode === InterruptMode.STEER) {
-      return `Kiro is working ${dot} Type to steer ${dot} ${opts.toggleHintLabel} to queue`;
-    }
-    return `Kiro is working ${dot} Type to queue ${dot} ${opts.toggleHintLabel} to steer`;
-  }
-  if (opts.isShellEscape) {
-    return `running shell command ${dot} ctrl+c to cancel`;
-  }
-  if (opts.agentName === 'kiro_planner') {
-    return `ask a question or describe a task ${opts.glyphs.enter}  ${dot}  exit plan mode: shift+tab`;
-  }
-  return `ask a question or describe a task ${opts.glyphs.enter}`;
-}
 
 function triggerEasterEgg() {
   const cols = process.stdout.columns || 60;
@@ -320,12 +263,8 @@ export const InlineLayout: React.FC = () => {
     useCommandActions();
   const { handleUserInput, clearInput } = useInputActions();
   const { messages } = useConversationState();
-  const {
-    pendingSteerContent,
-    activeInterruptMode,
-    queuedMessages,
-    editingQueueIndex,
-  } = useQueueState();
+  const { pendingSteerContent, activeInterruptMode, editingQueueIndex } =
+    useQueueState();
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
@@ -1142,7 +1081,6 @@ export const InlineLayout: React.FC = () => {
               isInitialized,
               pendingSteerContent,
               activeInterruptMode,
-              queuedMessages,
               toggleHintLabel,
               agentName: currentAgent?.name,
               goalStatus,
