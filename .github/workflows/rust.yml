@@ -53,28 +53,32 @@ jobs:
         id: toolchain
         with:
           components: clippy
-      - uses: actions/cache@v4
+      - name: Configure sccache
         if: needs.check-paths.outputs.rust-changed == 'true'
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-clippy-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+        uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Set Rust compiler wrapper
+        if: needs.check-paths.outputs.rust-changed == 'true'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Run clippy
         if: needs.check-paths.outputs.rust-changed == 'true'
         run: cargo clippy --locked --workspace --color always -- -D warnings
 
   cargo-test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.name }})
     needs: check-paths
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest-8-cores
+            name: ubuntu-latest
+          - os: macos-latest
+            name: macos-latest
       fail-fast: false
     env:
       OS: ${{ matrix.os }}
+      SCCACHE_CACHE_SIZE: 2G
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -97,14 +101,14 @@ jobs:
       - name: Install cargo-llvm-cov
         if: needs.check-paths.outputs.rust-changed == 'true'
         uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: actions/cache@v4
+      - name: Configure sccache
         if: needs.check-paths.outputs.rust-changed == 'true'
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+        uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Set Rust compiler wrapper
+        if: needs.check-paths.outputs.rust-changed == 'true'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Run tests
         if: needs.check-paths.outputs.rust-changed == 'true'
         run: cargo test --locked --workspace --lib --bins --test '*'
@@ -202,14 +206,13 @@ jobs:
         id: toolchain
         with:
           components: llvm-tools-preview
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-test-windows-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Set Rust compiler wrapper
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Run tests
         run: cargo test --locked -p chat_cli -p chat_cli_v2 -p agent --lib
 

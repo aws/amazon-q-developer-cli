@@ -129,12 +129,20 @@ jobs:
           docker-images: false
           swap-storage: false
 
-      - name: Cache Rust dependencies
-        if: inputs.branch_name != 'prod'
+      - name: Configure sccache
+        if: inputs.branch_name != 'prod' && !matrix.musl && !matrix.cross_target
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Set Rust compiler wrapper
+        if: inputs.branch_name != 'prod' && !matrix.musl && !matrix.cross_target
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+
+      - name: Cache Rust dependencies (cross builds)
+        if: inputs.branch_name != 'prod' && (matrix.musl || matrix.cross_target)
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ~/.cargo/bin: rustup-managed binaries are tied to the
-          # runner image and break when GitHub rotates images.
           cache-bin: "false"
 
       - name: Install cross (for cross-compilation)

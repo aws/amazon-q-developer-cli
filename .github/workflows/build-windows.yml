@@ -73,13 +73,16 @@ jobs:
         shell: bash
         run: rustup target add ${{ matrix.target }}
 
-      - name: Cache Rust dependencies
+      - name: Configure sccache
         if: inputs.branch_name != 'prod'
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ~/.cargo/bin: rustup-managed binaries are tied to the
-          # runner image and break when GitHub rotates images.
-          cache-bin: "false"
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Set Rust compiler wrapper
+        if: inputs.branch_name != 'prod'
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
