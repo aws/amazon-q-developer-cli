@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "MCP OAuth `redirect_uri` now accepts full URLs with custom paths and validates loopback-only hosts"
+}

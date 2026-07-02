@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Skip Dynamic Client Registration when a custom `client_id` is configured in MCP OAuth config"
+}

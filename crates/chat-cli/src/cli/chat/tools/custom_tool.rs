@@ -55,8 +55,15 @@ pub struct OAuthConfig {
     /// When set, this client_id is used instead of the default "Q DEV CLI" fallback if DCR fails.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    /// Custom redirect URI for OAuth flow (e.g., "127.0.0.1:7778")
-    /// If not specified, a random available port will be assigned by the OS
+    /// Pre-registered OAuth client secret for confidential clients (e.g. Figma).
+    /// Only meaningful alongside `client_id`: when both are set, DCR is skipped and this
+    /// secret is sent to the token endpoint for client authentication.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+    /// Custom loopback redirect URI for the OAuth flow, e.g. `127.0.0.1:7778` or
+    /// `http://localhost:7778/callback`. Only used to pin the loopback port (and
+    /// path, when matching a pre-registered app); the host must be `127.0.0.1` or
+    /// `localhost` and the scheme `http`. If omitted, the OS assigns a random port.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_uri: Option<String>,
     /// Scopes with which oauth is done (new location, preferred over root-level oauth_scopes)
@@ -678,11 +685,13 @@ mod tests {
     fn test_oauth_client_id_serialization_skipped_when_none() {
         let config = OAuthConfig {
             client_id: None,
+            client_secret: None,
             redirect_uri: Some("127.0.0.1:8080".to_string()),
             oauth_scopes: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("clientId"));
+        assert!(!json.contains("clientSecret"));
         assert!(json.contains("redirectUri"));
     }
 }

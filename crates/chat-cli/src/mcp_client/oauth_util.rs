@@ -90,6 +90,8 @@ pub enum OauthUtilError {
     MissingCredentials,
     #[error("Failed to create a running service after running through all fallbacks: {0}")]
     ServiceNotObtained(String),
+    #[error("Invalid redirect_uri in OAuth config: {0}")]
+    InvalidRedirectUri(String),
 }
 
 impl From<rmcp::transport::AuthError> for OauthUtilError {
@@ -552,9 +554,22 @@ async fn get_auth_manager(
 
             debug!("## mcp: credentials set with cache");
 
-            Ok(oauth_state
+            let mut am = oauth_state
                 .into_authorization_manager()
-                .ok_or(OauthUtilError::MissingAuthorizationManager)?)
+                .ok_or(OauthUtilError::MissingAuthorizationManager)?;
+
+            // `set_credentials` configures a public client (no secret). For confidential
+            // clients (e.g. Figma) re-apply the configured secret so an eventual token
+            // refresh can authenticate at the token endpoint.
+            if let Some(secret) = oauth_config.as_ref().and_then(|cfg| cfg.client_secret.as_deref()) {
+                am.configure_client(
+                    OAuthClientConfig::new(reg.client_id.clone(), reg.redirect_uri.clone())
+                        .with_scopes(reg.scopes.clone())
+                        .with_client_secret(secret.to_string()),
+                )?;
+            }
+
+            Ok(am)
         },
         None => {
             info!("Error reading cached credentials");
@@ -591,6 +606,94 @@ async fn get_auth_manager(
     }
 }
 
+/// The only hosts a loopback OAuth callback can be delivered to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopbackHost {
+    Ipv4,
+    Localhost,
+}
+
+impl LoopbackHost {
+    fn as_str(self) -> &'static str {
+        match self {
+            LoopbackHost::Ipv4 => "127.0.0.1",
+            LoopbackHost::Localhost => "localhost",
+        }
+    }
+
+    fn parse(host: &str) -> Result<Self, OauthUtilError> {
+        match host {
+            "127.0.0.1" => Ok(Self::Ipv4),
+            "localhost" => Ok(Self::Localhost),
+            other => Err(OauthUtilError::InvalidRedirectUri(format!(
+                "host must be 127.0.0.1 or localhost, got `{other}`"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RedirectUriConfig {
+    port: Option<u16>,
+    host: LoopbackHost,
+    path: String,
+}
+
+/// Parses the configured redirect URI, accepting a full URL, `host:port`,
+/// `:port`, or a bare host. Only loopback hosts and the `http` scheme are valid
+/// (the callback is served by a local loopback server); anything else errors.
+impl TryFrom<Option<&str>> for RedirectUriConfig {
+    type Error = OauthUtilError;
+
+    fn try_from(configured: Option<&str>) -> Result<Self, Self::Error> {
+        let Some(raw) = configured.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(RedirectUriConfig {
+                port: None,
+                host: LoopbackHost::Ipv4,
+                path: String::new(),
+            });
+        };
+
+        if raw.contains("://") {
+            let url = Url::parse(raw)?;
+            if url.scheme() != "http" {
+                return Err(OauthUtilError::InvalidRedirectUri(format!(
+                    "scheme must be http, got `{}`",
+                    url.scheme()
+                )));
+            }
+            let path = match url.path() {
+                "/" | "" => String::new(),
+                p => p.to_string(),
+            };
+            return Ok(RedirectUriConfig {
+                port: url.port(),
+                host: LoopbackHost::parse(url.host_str().unwrap_or("127.0.0.1"))?,
+                path,
+            });
+        }
+
+        if let Some((host_part, port_part)) = raw.rsplit_once(':') {
+            let host = if host_part.is_empty() {
+                LoopbackHost::Ipv4
+            } else {
+                LoopbackHost::parse(host_part)?
+            };
+            return Ok(RedirectUriConfig {
+                port: port_part.parse::<u16>().ok(),
+                host,
+                path: String::new(),
+            });
+        }
+
+        Ok(RedirectUriConfig {
+            port: None,
+            host: LoopbackHost::parse(raw)?,
+            path: String::new(),
+        })
+    }
+}
+
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     scopes: &[String],
@@ -598,28 +701,28 @@ async fn get_auth_manager_impl(
     messenger: &dyn Messenger,
     _os: &Os,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
-    // Get port from per-server oauth config, or use 0 for random port assignment
-    let port = oauth_config
-        .as_ref()
-        .and_then(|cfg| cfg.redirect_uri.as_ref())
-        .and_then(|uri| {
-            // Parse port from redirect_uri like "127.0.0.1:7778" or ":7778"
-            uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok())
-        })
-        .unwrap_or(0); // Port 0 = OS assigns random available port
+    let parsed = RedirectUriConfig::try_from(oauth_config.as_ref().and_then(|cfg| cfg.redirect_uri.as_deref()))?;
 
-    let socket_addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let socket_addr = SocketAddr::from(([127, 0, 0, 1], parsed.port.unwrap_or(0)));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<(String, String)>();
 
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
-    let redirect_uri = format!("http://{actual_addr}");
+    let redirect_uri = format!("http://{}:{}{}", parsed.host.as_str(), actual_addr.port(), parsed.path);
     let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
     let scopes_as_slice = scopes_as_str.as_slice();
     let user_client_id = oauth_config.as_ref().and_then(|cfg| cfg.client_id.as_deref());
-    start_authorization(&mut oauth_state, scopes_as_slice, &redirect_uri, user_client_id).await?;
+    let user_client_secret = oauth_config.as_ref().and_then(|cfg| cfg.client_secret.as_deref());
+    start_authorization(
+        &mut oauth_state,
+        scopes_as_slice,
+        &redirect_uri,
+        user_client_id,
+        user_client_secret,
+    )
+    .await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
@@ -649,6 +752,7 @@ async fn start_authorization(
     scopes: &[&str],
     redirect_uri: &str,
     user_client_id: Option<&str>,
+    user_client_secret: Option<&str>,
 ) -> Result<(), OauthUtilError> {
     // DO NOT CHANGE THIS
     // This string has significance as it is used for remote servers to identify us
@@ -661,18 +765,24 @@ async fn start_authorization(
 
     // The setting of credentials would put the oauth state into authorize.
     if let OAuthState::Authorized(auth_manager) = oauth_state {
-        // set redirect uri
-        let config = OAuthClientConfig::new(client_id.to_string(), redirect_uri.to_string())
+        let mut config = OAuthClientConfig::new(client_id.to_string(), redirect_uri.to_string())
             .with_scopes(scopes.iter().map(|s| (*s).to_string()).collect());
+        if let Some(secret) = user_client_secret {
+            config = config.with_client_secret(secret.to_string());
+        }
 
-        // try to dynamic register client
-        let config = match auth_manager.register_client(client_id, redirect_uri, scopes).await {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("Dynamic registration failed: {e}");
-                // fallback to default config
-                config
-            },
+        // A configured client_id means "use my app"; skip DCR, which can return an unusable public client.
+        let config = if user_client_id.is_some() {
+            config
+        } else {
+            match auth_manager.register_client(client_id, redirect_uri, scopes).await {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("Dynamic registration failed: {e}");
+                    // fallback to default config
+                    config
+                },
+            }
         };
         // reset client config
         auth_manager.configure_client(config)?;
@@ -808,4 +918,101 @@ async fn make_svc(
     });
 
     Ok((actual_addr, dg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_redirect_uri_host_port() {
+        let parsed = RedirectUriConfig::try_from(Some("127.0.0.1:7778")).unwrap();
+        assert_eq!(parsed.port, Some(7778));
+        assert_eq!(parsed.host.as_str(), "127.0.0.1");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_colon_port_only() {
+        let parsed = RedirectUriConfig::try_from(Some(":7778")).unwrap();
+        assert_eq!(parsed.port, Some(7778));
+        assert_eq!(parsed.host.as_str(), "127.0.0.1");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_full_url_with_path() {
+        let parsed = RedirectUriConfig::try_from(Some("http://localhost:7778/oauth/callback")).unwrap();
+        assert_eq!(parsed.port, Some(7778));
+        assert_eq!(parsed.host.as_str(), "localhost");
+        assert_eq!(parsed.path, "/oauth/callback");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_full_url_trailing_slash_normalized() {
+        // A trailing-slash root path must not break port parsing (the old bug)
+        // and normalizes to an empty path.
+        let parsed = RedirectUriConfig::try_from(Some("http://localhost:7778/")).unwrap();
+        assert_eq!(parsed.port, Some(7778));
+        assert_eq!(parsed.host.as_str(), "localhost");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_full_url_no_port() {
+        let parsed = RedirectUriConfig::try_from(Some("http://localhost/callback")).unwrap();
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.host.as_str(), "localhost");
+        assert_eq!(parsed.path, "/callback");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_bare_host() {
+        let parsed = RedirectUriConfig::try_from(Some("localhost")).unwrap();
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.host.as_str(), "localhost");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_none_defaults() {
+        let parsed = RedirectUriConfig::try_from(None).unwrap();
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.host.as_str(), "127.0.0.1");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_blank_defaults() {
+        let parsed = RedirectUriConfig::try_from(Some("   ")).unwrap();
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.host.as_str(), "127.0.0.1");
+        assert_eq!(parsed.path, "");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_invalid_port_ignored() {
+        // 99999 > u16::MAX, so no port is parsed and the OS assigns one.
+        let parsed = RedirectUriConfig::try_from(Some("127.0.0.1:99999")).unwrap();
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.host.as_str(), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_non_loopback_host_rejected() {
+        // Only loopback hosts can receive the OAuth callback.
+        for uri in ["example.com:7778", "http://example.com:7778/cb", "0.0.0.0:7778"] {
+            let err = RedirectUriConfig::try_from(Some(uri)).unwrap_err();
+            assert!(
+                matches!(err, OauthUtilError::InvalidRedirectUri(_)),
+                "expected reject for {uri}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_redirect_uri_non_http_scheme_rejected() {
+        let err = RedirectUriConfig::try_from(Some("https://localhost:7778/cb")).unwrap_err();
+        assert!(matches!(err, OauthUtilError::InvalidRedirectUri(_)));
+    }
 }

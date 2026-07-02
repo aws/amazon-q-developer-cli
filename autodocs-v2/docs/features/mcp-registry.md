@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-10
-  commit: 4b90cad4d
+  validated: 2026-07-02
+  commit: d597315ad
   status: validated
   testable_headless: false
   category: feature
   title: MCP Registry
   description: Enterprise MCP server security allowing administrators to control which servers users can access
-  keywords: [mcp, registry, security, enterprise, admin, pro, governance, env, headers, timeout, override]
+  keywords: [mcp, registry, security, enterprise, admin, pro, governance, env, headers, timeout, override, oauth, clientId, clientSecret, redirectUri]
   related: [cmd-mcp, slash-mcp, agent-configuration]
 ---
 
@@ -131,7 +131,7 @@ Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
 **For Remote (HTTP) Servers**:
 - `headers` - HTTP headers (authentication tokens)
 - `timeout` - Request timeout in milliseconds
-- `oauth` - OAuth configuration object (`clientId`, `redirectUri`, `oauthScopes`); useful for servers requiring custom scopes or pre-registered clients (e.g. Atlassian Rovo, Slack)
+- `oauth` - OAuth configuration object (`clientId`, `clientSecret`, `redirectUri`, `oauthScopes`); useful for servers requiring custom scopes, pre-registered clients (e.g. Atlassian Rovo, Slack), or confidential clients with a secret (e.g. Figma)
 - `oauthScopes` - Alternative top-level location for OAuth scopes (fallback; overridden by `oauth.oauthScopes` if both are set)
 
 When both `oauth.oauthScopes` and top-level `oauthScopes` are specified, the nested `oauth.oauthScopes` takes priority. When OAuth scopes are not specified in either location, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).

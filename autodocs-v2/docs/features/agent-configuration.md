@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-06-29
-  commit: a7e36ddc4
+  validated: 2026-07-02
+  commit: d597315ad
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, clientSecret, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth, redirectUri]
   related: [agent-create, agent-edit, agent-swap, mcp-registry, settings]
 ---
 
@@ -383,6 +383,26 @@ MCP server configurations. Supports local (stdio), remote (HTTP), and registry s
 }
 ```
 
+**Remote server with confidential OAuth client** (pre-registered client with secret, e.g. Figma):
+
+```json
+{
+  "mcpServers": {
+    "figma": {
+      "url": "https://mcp.figma.com/mcp",
+      "oauth": {
+        "clientId": "my-figma-client-id",
+        "clientSecret": "my-figma-client-secret",
+        "redirectUri": "http://localhost:7778/oauth/callback",
+        "oauthScopes": ["files:read"]
+      }
+    }
+  }
+}
+```
+
+When both `clientId` and `clientSecret` are provided, Dynamic Client Registration (DCR) is skipped entirely and the secret is used for client authentication at the token endpoint. This is required for confidential OAuth clients that have a pre-registered redirect URI.
+
 **Remote server with forced authentication** (skip unauthenticated attempt, go straight to OAuth):
 
 ```json
@@ -446,8 +466,9 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `url` (required): HTTP endpoint URL
 - `headers` (optional): HTTP headers for requests
 - `oauth` (optional): OAuth configuration object
-  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration (e.g., Slack, GitHub, Figma)
-  - `redirectUri` (optional): Custom redirect URI for OAuth flow
+  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration (e.g., Slack, GitHub, Figma). When set, DCR is skipped entirely.
+  - `clientSecret` (optional): Pre-registered OAuth client secret for confidential clients. Only meaningful alongside `clientId`; when both are set, the secret is sent to the token endpoint for client authentication.
+  - `redirectUri` (optional): Custom loopback redirect URI for the OAuth flow. Accepts several formats: `host:port` (e.g. `127.0.0.1:7778`), `:port` (e.g. `:7778`), or a full URL (e.g. `http://localhost:7778/oauth/callback`). Host must be `127.0.0.1` or `localhost`; scheme must be `http`. Only used to pin the loopback port and path (to match a pre-registered app). If omitted, the OS assigns a random port.
   - `oauthScopes` (optional): OAuth scopes to request from the authorization server (takes priority over top-level `oauthScopes`)
 - `oauthScopes` (optional): OAuth scopes for authentication (fallback; overridden by `oauth.oauthScopes` if both are set)
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
@@ -461,8 +482,9 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 - `headers` (optional): HTTP headers merged on top of registry defaults (agent values win, remote servers only)
 - `timeout` (optional): Request timeout in milliseconds (overrides registry default)
 - `oauth` (optional): OAuth configuration object (remote registry servers only)
-  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration
-  - `redirectUri` (optional): Custom redirect URI for OAuth flow
+  - `clientId` (optional): Pre-registered OAuth client ID for servers that don't support Dynamic Client Registration. When set, DCR is skipped entirely.
+  - `clientSecret` (optional): Pre-registered OAuth client secret for confidential clients. Only meaningful alongside `clientId`; when both are set, the secret is sent to the token endpoint for client authentication.
+  - `redirectUri` (optional): Custom loopback redirect URI for the OAuth flow. Accepts `host:port`, `:port`, or a full URL (e.g. `http://localhost:7778/oauth/callback`). Host must be `127.0.0.1` or `localhost`; scheme must be `http`. If omitted, the OS assigns a random port.
   - `oauthScopes` (optional): OAuth scopes to request from the authorization server (takes priority over top-level `oauthScopes`)
 - `oauthScopes` (optional): Top-level OAuth scopes (fallback; overridden by `oauth.oauthScopes` if both are set; for remote registry servers only)
 
