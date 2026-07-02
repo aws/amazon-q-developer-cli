@@ -558,7 +558,7 @@ impl ChatHinter {
         if line.is_empty() && self.prompt_hints_enabled {
             // Only show hint on first prompt
             if !self.first_hint_shown.swap(true, Ordering::Relaxed) {
-                use rand::Rng;
+                use rand::RngExt;
                 // Build weighted list by duplicating hints based on weight
                 let mut weighted_hints = Vec::new();
                 for (hint, weight) in INITIAL_PROMPT_HINTS {

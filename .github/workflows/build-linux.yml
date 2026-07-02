@@ -139,6 +139,18 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
 
+      - name: Cache cargo registry (native builds)
+        if: inputs.branch_name != 'prod' && !matrix.musl && !matrix.cross_target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-registry-
+
       - name: Cache Rust dependencies (cross builds)
         if: inputs.branch_name != 'prod' && (matrix.musl || matrix.cross_target)
         uses: Swatinem/rust-cache@v2

@@ -4,7 +4,7 @@ use chrono::{
     DateTime,
     Utc,
 };
-use rand::Rng as _;
+use rand::RngExt as _;
 use rand::distr::Alphanumeric;
 use serde::{
     Deserialize,

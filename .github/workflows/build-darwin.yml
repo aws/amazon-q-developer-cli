@@ -180,6 +180,18 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
 
+      - name: Cache cargo registry
+        if: inputs.branch_name != 'prod'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-registry-
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:

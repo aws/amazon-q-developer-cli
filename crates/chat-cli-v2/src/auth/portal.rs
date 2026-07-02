@@ -14,7 +14,7 @@ use hyper::{
     Response,
 };
 use hyper_util::rt::TokioIo;
-use rand::Rng;
+use rand::RngExt;
 use tokio::net::TcpListener;
 use tracing::{
     debug,

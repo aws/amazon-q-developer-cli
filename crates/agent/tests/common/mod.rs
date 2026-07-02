@@ -57,7 +57,7 @@ use agent::{
     AgentHandle,
 };
 use eyre::Result;
-use rand::Rng as _;
+use rand::RngExt as _;
 use rand::distr::Alphanumeric;
 use serde::Serialize;
 

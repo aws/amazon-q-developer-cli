@@ -221,7 +221,7 @@ struct AcpClient {
 /// TODO(acp-typed-annotations): when ACP grows a typed annotations field on
 /// `ToolCallUpdateFields` (or `ToolCall`), swap this body to read the typed
 /// field and delete the writer named above.
-fn read_only_hint_from_meta(meta: Option<&serde_json::Value>) -> Option<bool> {
+fn read_only_hint_from_meta(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<bool> {
     meta?.get("mcpAnnotations")?.get("readOnlyHint")?.as_bool()
 }
 
@@ -234,16 +234,14 @@ impl acp::Client for AcpClient {
         let first_option = args
             .options
             .first()
-            .map(|o| o.id.clone())
+            .map(|o| o.option_id.clone())
             .ok_or_else(acp::Error::method_not_found)?;
 
-        let cancelled = || acp::RequestPermissionResponse {
-            outcome: acp::RequestPermissionOutcome::Cancelled,
-            meta: None,
-        };
-        let selected = |id: acp::PermissionOptionId| acp::RequestPermissionResponse {
-            outcome: acp::RequestPermissionOutcome::Selected { option_id: id },
-            meta: None,
+        let cancelled = || acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled);
+        let selected = |id: acp::PermissionOptionId| {
+            acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Selected(
+                acp::SelectedPermissionOutcome::new(id),
+            ))
         };
 
         // Phase 2: auto-approve MCP tools whose readOnlyHint is true,
@@ -264,14 +262,14 @@ impl acp::Client for AcpClient {
                     let options: Vec<(String, String)> = args
                         .options
                         .iter()
-                        .map(|o| (o.id.to_string(), o.name.clone()))
+                        .map(|o| (o.option_id.to_string(), o.name.clone()))
                         .collect();
                     let title = args.tool_call.fields.title.clone().unwrap_or_default();
                     let (reply_tx, reply_rx) = oneshot::channel();
                     let (channel, thread_ts, slack_user_id) = self.current_conv.borrow().clone();
                     let req = ApprovalRequest {
                         tool_name: title,
-                        tool_call_id: args.tool_call.id.to_string(),
+                        tool_call_id: args.tool_call.tool_call_id.to_string(),
                         options,
                         channel,
                         thread_ts,
@@ -287,7 +285,7 @@ impl acp::Client for AcpClient {
                     // reaper kills the ACP child.
                     match tokio::time::timeout(Duration::from_secs(600), reply_rx).await {
                         Ok(Ok(ApprovalResponse::Selected(option_id))) => {
-                            Ok(selected(acp::PermissionOptionId(option_id.into())))
+                            Ok(selected(acp::PermissionOptionId::new(option_id)))
                         },
                         _ => Ok(cancelled()),
                     }
@@ -325,10 +323,7 @@ impl acp::Client for AcpClient {
         Err(acp::Error::method_not_found())
     }
 
-    async fn kill_terminal_command(
-        &self,
-        _: acp::KillTerminalCommandRequest,
-    ) -> acp::Result<acp::KillTerminalCommandResponse> {
+    async fn kill_terminal(&self, _: acp::KillTerminalRequest) -> acp::Result<acp::KillTerminalResponse> {
         Err(acp::Error::method_not_found())
     }
 
@@ -413,21 +408,11 @@ impl Worker for AcpWorker {
         *self.progress.borrow_mut() = Some(progress_tx);
         let acp_messages: Vec<acp::ContentBlock> = messages
             .into_iter()
-            .map(|s| {
-                acp::ContentBlock::Text(acp::TextContent {
-                    text: s,
-                    annotations: None,
-                    meta: None,
-                })
-            })
+            .map(|s| acp::ContentBlock::Text(acp::TextContent::new(s)))
             .collect();
         let reply = match self
             .connection
-            .prompt(acp::PromptRequest {
-                session_id: self.session.clone(),
-                prompt: acp_messages,
-                meta: None,
-            })
+            .prompt(acp::PromptRequest::new(self.session.clone(), acp_messages))
             .await
         {
             Ok(r) if r.stop_reason == acp::StopReason::Cancelled => "❌ Cancelled".into(),
@@ -441,20 +426,16 @@ impl Worker for AcpWorker {
     async fn cancel(&self) {
         let _ = self
             .connection
-            .cancel(acp::CancelNotification {
-                session_id: self.session.clone(),
-                meta: None,
-            })
+            .cancel(acp::CancelNotification::new(self.session.clone()))
             .await;
     }
 
     async fn set_mode(&self, mode: String) -> Result<String, String> {
         self.connection
-            .set_session_mode(acp::SetSessionModeRequest {
-                session_id: self.session.clone(),
-                mode_id: acp::SessionModeId(mode.clone().into()),
-                meta: None,
-            })
+            .set_session_mode(acp::SetSessionModeRequest::new(
+                self.session.clone(),
+                acp::SessionModeId::new(mode.clone()),
+            ))
             .await
             .map(|_| format!("→ agent: {mode}"))
             .map_err(|e| format!("Error: {e}"))
@@ -519,25 +500,14 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
     let connection = Rc::new(connection);
 
     connection
-        .initialize(acp::InitializeRequest {
-            protocol_version: acp::V1,
-            client_capabilities: acp::ClientCapabilities::default(),
-            client_info: Some(acp::Implementation {
-                name: "kiro-bot".to_string(),
-                title: Some("Kiro Bot".to_string()),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            }),
-            meta: None,
-        })
+        .initialize(acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
+            acp::Implementation::new("kiro-bot", env!("CARGO_PKG_VERSION")).title(Some("Kiro Bot".to_string())),
+        )))
         .await
         .map_err(|e| format!("ACP init failed: {e}"))?;
 
     let resp = connection
-        .new_session(acp::NewSessionRequest {
-            mcp_servers: Vec::new(),
-            cwd: std::env::current_dir().unwrap(),
-            meta: None,
-        })
+        .new_session(acp::NewSessionRequest::new(std::env::current_dir().unwrap()))
         .await
         .map_err(|e| format!("New session failed: {e}"))?;
 
@@ -566,11 +536,10 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
 
     if let Some(agent) = &cfg.default_mode
         && connection
-            .set_session_mode(acp::SetSessionModeRequest {
-                session_id: resp.session_id.clone(),
-                mode_id: acp::SessionModeId(agent.clone().into()),
-                meta: None,
-            })
+            .set_session_mode(acp::SetSessionModeRequest::new(
+                resp.session_id.clone(),
+                acp::SessionModeId::new(agent.clone()),
+            ))
             .await
             .is_ok()
     {
@@ -889,24 +858,20 @@ mod tests {
     /// Build a `RequestPermissionRequest` with one permission option
     /// (`allow_once`) and an optional `_meta` payload.
     fn make_permission_request(meta: Option<serde_json::Value>) -> acp::RequestPermissionRequest {
-        acp::RequestPermissionRequest {
-            session_id: acp::SessionId("test-session".into()),
-            tool_call: acp::ToolCallUpdate {
-                id: acp::ToolCallId("tc-1".into()),
-                fields: acp::ToolCallUpdateFields {
-                    title: Some("Test tool".to_string()),
-                    ..Default::default()
-                },
-                meta: None,
-            },
-            options: vec![acp::PermissionOption {
-                id: acp::PermissionOptionId("allow_once".into()),
-                name: "Allow once".into(),
-                kind: acp::PermissionOptionKind::AllowOnce,
-                meta: None,
-            }],
-            meta,
-        }
+        let meta_map = meta.and_then(|v| v.as_object().cloned());
+        acp::RequestPermissionRequest::new(
+            acp::SessionId::new("test-session"),
+            acp::ToolCallUpdate::new(
+                acp::ToolCallId::new("tc-1"),
+                acp::ToolCallUpdateFields::new().title(Some("Test tool".to_string())),
+            ),
+            vec![acp::PermissionOption::new(
+                acp::PermissionOptionId::new("allow_once"),
+                "Allow once",
+                acp::PermissionOptionKind::AllowOnce,
+            )],
+        )
+        .meta(meta_map)
     }
 
     fn run<F: std::future::Future>(fut: F) -> F::Output {
@@ -921,13 +886,13 @@ mod tests {
     #[test]
     fn read_only_hint_helper_extracts_true() {
         let meta = json!({ "mcpAnnotations": { "readOnlyHint": true } });
-        assert_eq!(read_only_hint_from_meta(Some(&meta)), Some(true));
+        assert_eq!(read_only_hint_from_meta(meta.as_object()), Some(true));
     }
 
     #[test]
     fn read_only_hint_helper_extracts_false() {
         let meta = json!({ "mcpAnnotations": { "readOnlyHint": false } });
-        assert_eq!(read_only_hint_from_meta(Some(&meta)), Some(false));
+        assert_eq!(read_only_hint_from_meta(meta.as_object()), Some(false));
     }
 
     #[test]
@@ -938,13 +903,13 @@ mod tests {
     #[test]
     fn read_only_hint_helper_returns_none_when_mcp_annotations_absent() {
         let meta = json!({ "trustOptions": [] });
-        assert_eq!(read_only_hint_from_meta(Some(&meta)), None);
+        assert_eq!(read_only_hint_from_meta(meta.as_object()), None);
     }
 
     #[test]
     fn read_only_hint_helper_returns_none_when_field_not_bool() {
         let meta = json!({ "mcpAnnotations": { "readOnlyHint": "yes" } });
-        assert_eq!(read_only_hint_from_meta(Some(&meta)), None);
+        assert_eq!(read_only_hint_from_meta(meta.as_object()), None);
     }
 
     #[test]
@@ -958,8 +923,8 @@ mod tests {
 
         let resp = run(client.request_permission(req)).expect("request_permission ok");
         match resp.outcome {
-            acp::RequestPermissionOutcome::Selected { option_id } => {
-                assert_eq!(option_id.0.as_ref(), "allow_once");
+            acp::RequestPermissionOutcome::Selected(outcome) => {
+                assert_eq!(outcome.option_id.to_string(), "allow_once");
             },
             other => panic!("expected Selected(allow_once), got {other:?}"),
         }
@@ -990,8 +955,8 @@ mod tests {
 
         let resp = run(client.request_permission(req)).expect("request_permission ok");
         match resp.outcome {
-            acp::RequestPermissionOutcome::Selected { option_id } => {
-                assert_eq!(option_id.0.as_ref(), "allow_once");
+            acp::RequestPermissionOutcome::Selected(outcome) => {
+                assert_eq!(outcome.option_id.to_string(), "allow_once");
             },
             other => panic!("expected Selected(allow_once), got {other:?}"),
         }

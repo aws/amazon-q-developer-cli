@@ -17,7 +17,7 @@
 //! KAS surfaces tolerate arbitrary id strings; the `cli_` prefix is
 //! observability sugar, not a requirement.
 
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::Alphanumeric;
 
 /// Length of the random suffix appended after the source id. Eight

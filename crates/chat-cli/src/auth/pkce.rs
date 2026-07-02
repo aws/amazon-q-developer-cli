@@ -31,7 +31,7 @@ use percent_encoding::{
     NON_ALPHANUMERIC,
     utf8_percent_encode,
 };
-use rand::Rng;
+use rand::RngExt;
 use tokio::net::TcpListener;
 use tracing::{
     debug,

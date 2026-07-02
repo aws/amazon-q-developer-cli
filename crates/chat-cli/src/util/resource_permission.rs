@@ -48,7 +48,7 @@ impl DenialInfo {
             let mut rng = rand::rng();
             let sampled: Vec<_> = unmatched
                 .as_slice()
-                .choose_multiple(&mut rng, remaining_slots)
+                .sample(&mut rng, remaining_slots)
                 .copied()
                 .collect();
             result.extend(sampled);

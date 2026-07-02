@@ -61,6 +61,17 @@ jobs:
         run: |
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+      - name: Cache cargo registry
+        if: needs.check-paths.outputs.rust-changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-clippy-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-clippy-registry-${{ runner.os }}-
       - name: Run clippy
         if: needs.check-paths.outputs.rust-changed == 'true'
         run: cargo clippy --locked --workspace --color always -- -D warnings
@@ -109,6 +120,17 @@ jobs:
         run: |
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+      - name: Cache cargo registry
+        if: needs.check-paths.outputs.rust-changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-test-registry-${{ matrix.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-test-registry-${{ matrix.name }}-
       - name: Run tests
         if: needs.check-paths.outputs.rust-changed == 'true'
         run: cargo test --locked --workspace --lib --bins --test '*'
@@ -213,6 +235,16 @@ jobs:
         run: |
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-test-registry-windows-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-test-registry-windows-
       - name: Run tests
         run: cargo test --locked -p chat_cli -p chat_cli_v2 -p agent --lib
 
