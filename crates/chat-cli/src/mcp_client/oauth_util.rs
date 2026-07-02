@@ -757,6 +757,9 @@ async fn start_authorization(
     // DO NOT CHANGE THIS
     // This string has significance as it is used for remote servers to identify us
     const DEFAULT_CLIENT_ID: &str = "Q DEV CLI";
+    // The client_name sent during Dynamic Client Registration (DCR).
+    // Some servers (e.g. Figma) use this to identify the application.
+    const DEFAULT_CLIENT_NAME: &str = "kiro";
 
     let client_id = user_client_id.unwrap_or(DEFAULT_CLIENT_ID);
 
@@ -775,7 +778,10 @@ async fn start_authorization(
         let config = if user_client_id.is_some() {
             config
         } else {
-            match auth_manager.register_client(client_id, redirect_uri, scopes).await {
+            match auth_manager
+                .register_client(DEFAULT_CLIENT_NAME, redirect_uri, scopes)
+                .await
+            {
                 Ok(config) => config,
                 Err(e) => {
                     eprintln!("Dynamic registration failed: {e}");

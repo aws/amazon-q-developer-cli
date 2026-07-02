@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP OAuth dynamic client registration now sends correct `client_name` for servers that require it (e.g. Figma)"
+}
