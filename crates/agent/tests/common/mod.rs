@@ -475,6 +475,26 @@ impl TestCase {
         Ok(())
     }
 
+    /// Drive the loop until the next `ApprovalRequest` and return its id without
+    /// answering it — lets a test observe the paused mid-batch state.
+    pub async fn wait_for_approval_request(&mut self, timeout: Duration) -> Result<String> {
+        let timeout_at = Instant::now() + timeout;
+        loop {
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event()).await?;
+            if let AgentEvent::ApprovalRequest(req) = &evt {
+                return Ok(req.id.clone());
+            }
+        }
+    }
+
+    /// Answer a single approval by tool id, without driving the loop.
+    pub async fn send_approval(&self, id: impl Into<String>, result: ApprovalResult) -> Result<()> {
+        self.agent
+            .send_tool_use_approval_result(SendApprovalResultArgs { id: id.into(), result })
+            .await?;
+        Ok(())
+    }
+
     pub async fn create_snapshot(&self) -> AgentSnapshot {
         self.agent.create_snapshot().await.expect("failed to create snapshot")
     }

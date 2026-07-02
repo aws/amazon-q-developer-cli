@@ -2291,6 +2291,12 @@ impl Agent {
         approval_state.selected = Some(args.result.option_id);
         approval_state.rejection_reason = args.result.reason.clone();
 
+        // Wait until every queued approval is answered before acting on the batch,
+        // so rejecting one prompt doesn't continue the turn while others are pending.
+        if state.needs_approval.values().any(|s| s.selected.is_none()) {
+            return Ok(AgentResponse::Success);
+        }
+
         // Check if any tool was denied - if so, return all results to the model
         let any_denied = state
             .needs_approval

@@ -1656,6 +1656,71 @@ async fn test_parse_error_preserved_when_sibling_denied() {
     );
 }
 
+/// Answering one of several queued approvals must not continue the turn while
+/// others are unanswered. Regression for the premature-continue bug in
+/// `handle_approval_result`; fails without the guard (agent goes Idle).
+#[tokio::test]
+async fn test_multi_approval_waits_for_all_answers() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("multi approval waits for all answers")
+        .with_default_agent_config()
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/two_writes_await_approval.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    let reject = || ApprovalResult {
+        option_id: PermissionOptionId::RejectOnce,
+        reason: None,
+        trust_option: None,
+    };
+
+    test.send_prompt("write a.txt and b.txt".to_string()).await;
+
+    // Both writes queue for approval. Reject the first; the turn must not
+    // continue (no follow-up request, still WaitingForApproval) while the
+    // second is unanswered.
+    let first_id = test.wait_for_approval_request(Duration::from_secs(5)).await.unwrap();
+    assert_eq!(test.requests().len(), 1);
+    test.send_approval(first_id.clone(), reject()).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        test.requests().len(),
+        1,
+        "rejecting one queued approval must not send a follow-up"
+    );
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(
+            snapshot.execution_state.active_state,
+            ActiveState::WaitingForApproval(_)
+        ),
+        "must stay in WaitingForApproval until all answered; got {:?}",
+        snapshot.execution_state.active_state
+    );
+
+    // Answer the second; now the deny follow-up fires with error results for both.
+    let second_id = test.wait_for_approval_request(Duration::from_secs(5)).await.unwrap();
+    assert_ne!(second_id, first_id);
+    test.send_approval(second_id, reject()).await.unwrap();
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let follow_up = &test.requests()[1];
+    for id in ["tooluse_write_a", "tooluse_write_b"] {
+        assert!(
+            follow_up.has_tool_result(|tr| tr.tool_use_id == id && matches!(tr.status, ToolResultStatus::Error)),
+            "follow-up must include an error tool_result for {id}"
+        );
+    }
+}
+
 /// A note steered alongside a REJECTED tool must drain into the same follow-up
 /// request that carries the denial — not wait until end-of-turn. Regression
 /// test for the lite "attach note then reject" flow: the user saw the note
