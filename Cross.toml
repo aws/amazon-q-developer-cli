@@ -1,3 +1,13 @@
+# Pin cross Docker images to SHA digests to prevent upstream glibc bumps.
+# The :main tag is mutable — cross-rs periodically rebuilds images with newer
+# Ubuntu bases. Without pinning, a rebuild can silently raise the minimum glibc
+# of our output binaries (see P464326498).
+#
+# To update: pull the new :main image, verify the cross-compiled binary shows
+# max GLIBC_2.34 with `objdump -T`, then replace the digest here.
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main@sha256:73811f43949215c88456a311970037a34f3f89f6486cfbcf61d8fe5379a9517e"
+
 [build]
 pre-build = ["apt-get update && apt-get --assume-yes install unzip zsh libclang-dev libssl-dev pkg-config"]
 
