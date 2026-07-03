@@ -47,6 +47,9 @@ fn open_command(url: impl AsRef<str>) -> std::process::Command {
     command
 }
 
+#[cfg(not(target_os = "macos"))]
+const OPEN_EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Returns bool indicating whether the URL was opened successfully
 #[allow(dead_code)]
 pub fn open_url(url: impl AsRef<str>) -> Result<(), Error> {
@@ -54,16 +57,27 @@ pub fn open_url(url: impl AsRef<str>) -> Result<(), Error> {
         if #[cfg(target_os = "macos")] {
             open_macos(url)
         } else {
-            match open_command(url).output() {
-                Ok(output) => {
-                    tracing::trace!(?output, "open_url output");
-                    if output.status.success() {
-                        Ok(())
-                    } else {
-                        Err(Error::Failed)
-                    }
-                },
-                Err(err) => Err(err.into()),
+            use std::process::Stdio;
+
+            let mut child = open_command(url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            let deadline = std::time::Instant::now() + OPEN_EXIT_TIMEOUT;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        tracing::trace!(?status, "open_url exited");
+                        return if status.success() { Ok(()) } else { Err(Error::Failed) };
+                    },
+                    Ok(None) if std::time::Instant::now() >= deadline => {
+                        tracing::trace!("open_url did not exit within timeout, assuming success");
+                        return Ok(());
+                    },
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                    Err(err) => return Err(err.into()),
+                }
             }
         }
     }
@@ -75,16 +89,23 @@ pub async fn open_url_async(url: impl AsRef<str>) -> Result<(), Error> {
         if #[cfg(target_os = "macos")] {
             open_macos(url)
         } else {
-            match tokio::process::Command::from(open_command(url)).output().await {
-                Ok(output) => {
-                    tracing::trace!(?output, "open_url_async output");
-                    if output.status.success() {
-                        Ok(())
-                    } else {
-                        Err(Error::Failed)
-                    }
+            use std::process::Stdio;
+
+            let mut child = tokio::process::Command::from(open_command(url))
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            match tokio::time::timeout(OPEN_EXIT_TIMEOUT, child.wait()).await {
+                Ok(Ok(status)) => {
+                    tracing::trace!(?status, "open_url_async exited");
+                    if status.success() { Ok(()) } else { Err(Error::Failed) }
                 },
-                Err(err) => Err(err.into()),
+                Ok(Err(err)) => Err(err.into()),
+                Err(_) => {
+                    tracing::trace!("open_url_async did not exit within timeout, assuming success");
+                    Ok(())
+                },
             }
         }
     }
