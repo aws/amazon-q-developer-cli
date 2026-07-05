@@ -2664,6 +2664,29 @@ impl AcpSession {
             } = loop_event.kind
         {
             self.record_request_stats(result, metadata);
+
+            // Push a live context-usage update mid-turn (between tool calls), so the TUI
+            // gauge tracks growth as it happens instead of jumping only at EndTurn.
+            // EndTurn's send_turn_metadata remains the authoritative push (metering + duration + effort).
+            if let Some(pct) = metadata
+                .stream
+                .as_ref()
+                .and_then(|s| s.usage.as_ref())
+                .and_then(|u| u.context_usage_percentage)
+                && self.rts_state.context_usage_percentage() != Some(pct)
+            {
+                self.rts_state.set_context_usage_percentage(Some(pct));
+                let notification = super::schema::MetadataNotification {
+                    session_id: self.session_id_str.clone(),
+                    context_usage_percentage: Some(pct),
+                    metering_usage: None,
+                    turn_duration_ms: None,
+                    effort: self.current_effort(),
+                };
+                if let Err(e) = self.connection_cx.send_notification(notification) {
+                    warn!("Failed to send mid-turn context usage: {}", e);
+                }
+            }
         }
 
         let session_db = Arc::clone(&self.session_db);
