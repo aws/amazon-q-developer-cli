@@ -33,6 +33,13 @@ ignore = [
   "RUSTSEC-2026-0189",
   # ttf-parser is unmaintained, transitive dep via pdf-extract -> lopdf
   "RUSTSEC-2026-0192",
+  # quick-xml 0.39.4 quadratic runtime on duplicate attributes (DoS);
+  # transitive via syntect -> plist; plist 1.9.0 pins ^0.39.2, no upgrade path yet.
+  # Only parses bundled .tmTheme/.sublime-syntax assets — no untrusted XML.
+  "RUSTSEC-2026-0194",
+  # quick-xml 0.39.4 unbounded namespace-declaration allocation (DoS);
+  # same transitive path and upgrade blocker as above.
+  "RUSTSEC-2026-0195",
 ]
 
 [licenses]
