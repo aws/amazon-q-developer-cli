@@ -1055,14 +1055,6 @@ const startApp = async () => {
   }
 
   const { mode: uiMode, source: uiModeSource } = resolveUiMode();
-  // Pure user-setting passed to ThemeProvider so chrome drops only when the
-  // user explicitly opted in (`chat.disableWrap` / `KIRO_DISABLE_WRAP=1`).
-  // Lite mode also drops chrome, but Message/ToolUseMessage compute that at
-  // render time from the live `uiMode` in the store, so a /tui ↔ /lite swap
-  // restores full StatusBar chrome on new rows without baking it into theme.
-  // `effectiveWrapDisabled` here only feeds twinki's `wideLines` perf hint —
-  // safe to leave true for the session even after a swap to TUI mode.
-  const effectiveWrapDisabled = wrapDisabled || uiMode === 'lite';
 
   // Set uiMode on store (store is created before mode resolution)
   appStore.setState({ uiMode });
@@ -1153,19 +1145,28 @@ const startApp = async () => {
     );
   }
 
+  const rendererWideLinesEnabled = (mode: UiMode) =>
+    wrapDisabled || mode === 'lite';
+
   // `wideLines` is a twinki-specific render option. We type the options
   // object explicitly so the compiler doesn't require a cast.
   const renderOptions: Parameters<typeof render>[1] & { wideLines?: boolean } =
     {
       exitOnCtrlC: false,
       patchConsole: false,
-      // Enable physical-row tracking when the user opts into disabled wrap
-      // (setting `chat.disableWrap` or env `KIRO_DISABLE_WRAP=1`). Required
-      // so the differential renderer places the cursor correctly for
-      // soft-wrapped lines. Small per-render cost.
-      wideLines: effectiveWrapDisabled,
+      // Lite and wrap-disabled surfaces use wrap="overflow", where a logical
+      // line can occupy multiple terminal rows. TUI -> lite switches update
+      // this below so ordinary TUI sessions keep the old fast path.
+      wideLines: rendererWideLinesEnabled(uiMode),
     };
   const instance = render(<App />, renderOptions);
+  let lastRendererWideLinesEnabled = rendererWideLinesEnabled(uiMode);
+  appStore.subscribe((state) => {
+    const enabled = rendererWideLinesEnabled(state.uiMode);
+    if (enabled === lastRendererWideLinesEnabled) return;
+    lastRendererWideLinesEnabled = enabled;
+    instance.setWideLines(enabled);
+  });
 
   // Wire useTerminalSize to Twinki's throttled resize callback —
   // single resize path, no duplicate process.stdout listener.

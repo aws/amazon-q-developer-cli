@@ -77,6 +77,8 @@ export interface Instance {
 	waitUntilExit(): Promise<void>;
 	/** Clears the display and forces a full redraw */
 	clear(): void;
+	/** Enables physical-row tracking for soft-wrapped lines. */
+	setWideLines(enabled: boolean): void;
 	/** Re-renders the application with a new React element */
 	rerender(element: React.ReactElement): void;
 	/** Adjusts the static write cursor after items are trimmed from the front of the Static array */
@@ -377,6 +379,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 			tui.resetStaticOutput();
 			bridge.resetStatic();
 			tui.requestRender(true);
+		},
+		setWideLines(enabled: boolean) {
+			tui.setWideLinesEnabled(enabled);
 		},
 		getMetrics() {
 			const countNodes = (node: TwinkiNode | RootContainer): number => {

@@ -317,6 +317,14 @@ export class TUI extends Container {
     this.clearOnShrink = enabled;
   }
 
+  setWideLinesEnabled(enabled: boolean): void {
+    if (this.wideLinesEnabled === enabled) return;
+    this.wideLinesEnabled = enabled;
+    this.staticHasWideWidth = -1;
+    this.staticPhysRowsCache = -1;
+    this.requestRender(true);
+  }
+
   // --- Focus ---
 
   /**
