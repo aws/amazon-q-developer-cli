@@ -214,12 +214,6 @@ pub enum Setting {
         message = "Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (boolean, default: false)"
     )]
     ChatDisableInheritingDefaultResources,
-    #[strum(message = "Disable automatically saving the selected model as the default (boolean, default: false)")]
-    ChatDisableAutoDefaultModel,
-    #[strum(
-        message = "Disable automatically saving the selected effort level as a per-model default (boolean, default: false)"
-    )]
-    ChatDisableAutoDefaultEffort,
 }
 
 impl Setting {
@@ -302,8 +296,6 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
             Self::ChatDisableInheritingDefaultResources => "chat.disableInheritingDefaultResources",
-            Self::ChatDisableAutoDefaultModel => "chat.disableAutoDefaultModel",
-            Self::ChatDisableAutoDefaultEffort => "chat.disableAutoDefaultEffort",
             #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
@@ -408,8 +400,6 @@ impl TryFrom<&str> for Setting {
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
             "chat.disableInheritingDefaultResources" => Ok(Self::ChatDisableInheritingDefaultResources),
-            "chat.disableAutoDefaultModel" => Ok(Self::ChatDisableAutoDefaultModel),
-            "chat.disableAutoDefaultEffort" => Ok(Self::ChatDisableAutoDefaultEffort),
             #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]

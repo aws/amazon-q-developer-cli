@@ -1118,24 +1118,6 @@ impl AcpSession {
         }
     }
 
-    /// Read the AUTHORITATIVE settings from the SessionManager actor rather than
-    /// `self.os.database.settings`, which is a per-session clone taken at session
-    /// start and never refreshed. In-session writes (e.g. a per-model effort
-    /// default saved via `/effort`, which goes through `merge_setting`) only land
-    /// in the SessionManager's copy + disk, so reading the local clone here would
-    /// re-apply an outdated value on an in-session model change. Falls back to the
-    /// local clone if the round-trip fails so model switching still works.
-    ///
-    /// Safe from the session-actor task: this handle targets the SessionManager
-    /// actor, a distinct task, so the request/response round-trip cannot deadlock
-    /// (same pattern `/model` switch_model and `/effort` already use).
-    async fn authoritative_settings(&self) -> crate::database::settings::Settings {
-        self.session_tx
-            .get_settings_snapshot()
-            .await
-            .unwrap_or_else(|_| self.os.database.settings.clone())
-    }
-
     /// Create a CommandContext from the current session state
     fn command_context(&self) -> super::commands::CommandContext<'_> {
         super::commands::CommandContext {
@@ -1655,27 +1637,20 @@ impl AcpSession {
         };
 
         // Set model ID from agent config with validation
-        if let Err(e) = update_model_info(
-            &api_client,
-            &os.database.settings,
-            &rts_state,
-            snapshot.agent_config.model(),
-        )
-        .await
-        {
+        if let Err(e) = update_model_info(&api_client, &os.database, &rts_state, snapshot.agent_config.model()).await {
             warn!("Failed to set initial model: {}", e);
         }
 
         // Restore the model the loaded session was actually using (e.g. after /model switch)
         if let Some(ref model_id) = saved_model_id
-            && let Err(e) = update_model_info(&api_client, &os.database.settings, &rts_state, Some(model_id)).await
+            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
         {
             warn!("Failed to restore saved session model: {}", e);
         }
 
         // Override with CLI --model if provided
         if let Some(model_id) = builder.model_id
-            && let Err(e) = update_model_info(&api_client, &os.database.settings, &rts_state, Some(model_id)).await
+            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
         {
             warn!("Failed to set CLI model override: {}", e);
         }
@@ -2291,11 +2266,11 @@ impl AcpSession {
 
                 // Only update model when the new agent explicitly specifies one;
                 // otherwise preserve the user's current model selection.
-                if let Some(model) = agent_config.model() {
-                    let settings = self.authoritative_settings().await;
-                    if let Err(e) = update_model_info(&self.api_client, &settings, &self.rts_state, Some(model)).await {
-                        warn!("Failed to update model during swap: {}", e);
-                    }
+                if let Some(model) = agent_config.model()
+                    && let Err(e) =
+                        update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
+                {
+                    warn!("Failed to update model during swap: {}", e);
                 }
                 // Reset stale context usage data since it's meaningless after swapping agents
                 self.rts_state.set_context_usage_percentage(None);
@@ -2353,8 +2328,8 @@ impl AcpSession {
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::SetModel { model_id, respond_to } => {
-                let settings = self.authoritative_settings().await;
-                let result = update_model_info(&self.api_client, &settings, &self.rts_state, Some(&model_id)).await;
+                let result =
+                    update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(&model_id)).await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetModelId { respond_to } => {
@@ -2412,13 +2387,11 @@ impl AcpSession {
                         .iter()
                         .find(|c| c.name() == name)
                         .and_then(|c| c.model().map(String::from));
-                    if let Some(ref model) = new_model {
-                        let settings = self.authoritative_settings().await;
-                        if let Err(e) =
-                            update_model_info(&self.api_client, &settings, &self.rts_state, Some(model)).await
-                        {
-                            warn!("Failed to update model during agent switch: {}", e);
-                        }
+                    if let Some(ref model) = new_model
+                        && let Err(e) =
+                            update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
+                    {
+                        warn!("Failed to update model during agent switch: {}", e);
                     }
 
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
@@ -3993,7 +3966,7 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
 /// accepted by the backend).
 async fn update_model_info(
     client: &ApiClient,
-    settings: &crate::database::settings::Settings,
+    database: &crate::database::Database,
     rts_state: &RtsState,
     model: Option<&str>,
 ) -> Result<(), String> {
@@ -4007,7 +3980,7 @@ async fn update_model_info(
         find_model(&models, requested_model)
             .cloned()
             .unwrap_or_else(|| synthesize_model_info(requested_model))
-    } else if let Some(saved) = settings.get_string(Setting::ChatDefaultModel) {
+    } else if let Some(saved) = database.settings.get_string(Setting::ChatDefaultModel) {
         find_model(&models, &saved)
             .cloned()
             .unwrap_or_else(|| synthesize_model_info(&saved))
@@ -4016,11 +3989,7 @@ async fn update_model_info(
     };
 
     rts_state.set_model_info(Some(model_info));
-    // Apply per-model defaults (e.g. reasoning effort) from the provided settings.
-    // Callers performing an in-session model change must pass an AUTHORITATIVE
-    // snapshot (see `AcpAgent::authoritative_settings`) rather than a per-session
-    // clone, otherwise an effort default saved earlier this session is lost.
-    rts_state.apply_model_defaults(settings);
+    rts_state.apply_model_defaults(&database.settings);
 
     Ok(())
 }

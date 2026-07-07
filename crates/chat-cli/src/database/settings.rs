@@ -113,15 +113,6 @@ pub enum Setting {
     ChatDefaultAgent,
     #[strum(message = "Disable automatic conversation summarization (boolean)")]
     ChatDisableAutoCompaction,
-    // Registered so the v1 `settings set` CLI and session tool accept these keys (and to
-    // mark them session-safe below). v1 does not auto-persist model/effort defaults, so there
-    // is no persistence to gate here; the opt-out is enforced by the v2 engine.
-    #[strum(message = "Disable automatically saving the selected model as the default (boolean, default: false)")]
-    ChatDisableAutoDefaultModel,
-    #[strum(
-        message = "Disable automatically saving the selected effort level as a per-model default (boolean, default: false)"
-    )]
-    ChatDisableAutoDefaultEffort,
     #[strum(message = "Percentage of context window to exclude from compaction ([0, 100])")]
     CompactionExcludeContextWindowPercent,
     #[strum(message = "Minimum message pairs to exclude from compaction (number)")]
@@ -291,8 +282,6 @@ impl Setting {
                 | Self::EnabledTangentMode
                 | Self::IntrospectTangentMode
                 | Self::ChatDisableAutoCompaction
-                | Self::ChatDisableAutoDefaultModel
-                | Self::ChatDisableAutoDefaultEffort
                 | Self::EnabledThinking
                 | Self::EnabledKnowledge
                 | Self::EnabledCodeIntelligence
@@ -351,8 +340,6 @@ impl AsRef<str> for Setting {
             Self::ChatDisableMarkdownRendering => "chat.disableMarkdownRendering",
             Self::ChatDefaultAgent => "chat.defaultAgent",
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
-            Self::ChatDisableAutoDefaultModel => "chat.disableAutoDefaultModel",
-            Self::ChatDisableAutoDefaultEffort => "chat.disableAutoDefaultEffort",
             Self::CompactionExcludeContextWindowPercent => "compaction.excludeContextWindowPercent",
             Self::CompactionExcludeMessages => "compaction.excludeMessages",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
@@ -457,8 +444,6 @@ impl TryFrom<&str> for Setting {
             "chat.disableMarkdownRendering" => Ok(Self::ChatDisableMarkdownRendering),
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
-            "chat.disableAutoDefaultModel" => Ok(Self::ChatDisableAutoDefaultModel),
-            "chat.disableAutoDefaultEffort" => Ok(Self::ChatDisableAutoDefaultEffort),
             "compaction.excludeContextWindowPercent" => Ok(Self::CompactionExcludeContextWindowPercent),
             "compaction.excludeMessages" => Ok(Self::CompactionExcludeMessages),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),

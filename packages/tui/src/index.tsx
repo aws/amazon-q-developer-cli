@@ -579,10 +579,8 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // CLI flag > cli.json setting > undefined (let agent pick default)
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      // Pass the explicit --model flag only; the saved `chat.defaultModel` is
-      // re-read fresh inside newSession so a mid-run sticky write is honored.
-      initialModel: cliArgs.model,
-      hasExplicitEffort: !!cliArgs.effort,
+      initialModel:
+        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
       // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,
@@ -818,9 +816,8 @@ const startApp = async () => {
     await kiro.initialize(agentPath, acpArgs, {
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      // Explicit --model only; saved default is re-read inside newSession.
-      initialModel: cliArgs.model,
-      hasExplicitEffort: !!cliArgs.effort,
+      initialModel:
+        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
       // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,

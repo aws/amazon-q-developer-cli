@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-26
-  commit: f49c99c49
+  validated: 2026-07-07
+  commit: 4869f860d
   status: validated
   testable_headless: true
   category: slash_command
   title: /effort
   description: Set reasoning effort level for the current model
-  keywords: [effort, reasoning, low, medium, high, model, performance, output_config, reasoning.effort, sticky, default]
-  related: [slash-model, default-model, disable-auto-default-effort]
+  keywords: [effort, reasoning, low, medium, high, model, performance, output_config, reasoning.effort]
+  related: [slash-model, default-model]
 ---
 
 # /effort
@@ -17,7 +17,7 @@ Set reasoning effort level for the current model.
 
 ## Overview
 
-The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and are automatically saved as your per-model default for future sessions (disable with `chat.disableAutoDefaultEffort`).
+The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and are automatically saved as your per-model default for future sessions.
 
 ## Usage
 
@@ -69,7 +69,7 @@ Available effort levels: low, medium, high, xhigh
 Effort set to low (saved for Claude Opus 4.7)
 ```
 
-The effort level is automatically persisted as a per-model default in your settings. To disable this auto-save behavior, set `chat.disableAutoDefaultEffort` to `true`.
+The effort level is automatically persisted as a per-model default in your settings.
 
 ### Example 3: Model Without Effort Support
 
@@ -150,7 +150,6 @@ Workspace-level settings (`.kiro/settings/cli.json`) override global settings, s
 
 - [/model](model.md) - Switch models in session
 - [chat.defaultModel](../settings/default-model.md) - Set default model
-- [chat.disableAutoDefaultEffort](../settings/disable-auto-default-effort.md) - Disable auto-saving effort
 - [kiro-cli chat](../commands/chat.md) - Start session with `--effort` flag
 
 ## Limitations

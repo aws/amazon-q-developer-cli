@@ -444,7 +444,6 @@ export class Kiro {
     kasOptions?: {
       initialAgent?: string;
       initialModel?: string;
-      hasExplicitEffort?: boolean;
       executionTarget?: ExecutionTarget;
       repos?: string[];
     }

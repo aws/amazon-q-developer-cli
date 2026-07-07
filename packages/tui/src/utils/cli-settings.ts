@@ -108,33 +108,6 @@ export async function updateCliSetting(
   await next;
 }
 
-/**
- * Async serialized read-MODIFY-write helper. Unlike {@link updateCliSetting}
- * (which writes a precomputed value), this reads the CURRENT value of `key`
- * FRESH inside the write queue, passes it to `fn`, and writes the result back —
- * all within the same serialized critical section. Use this whenever the new
- * value depends on the existing one (e.g. deep-merging a nested object), so a
- * concurrent in-process writer to the same key cannot cause a lost update by
- * mutating it between an out-of-band read and the write.
- *
- * Like updateCliSetting, refuses to overwrite when the file exists but is
- * corrupt/unreadable (readCliSettingsStrict throws → chain rejects, settings
- * untouched).
- */
-export async function updateCliSettingWith(
-  key: string,
-  fn: (prev: unknown) => unknown
-): Promise<void> {
-  const next = writeQueue.then(() => {
-    const settings = readCliSettingsStrict();
-    settings[key] = fn(settings[key]);
-    writeCliSettings(settings);
-  });
-  // Prevent queue poisoning: chain always resolves so future calls proceed
-  writeQueue = next.catch(() => {});
-  await next;
-}
-
 /** Read a boolean setting with a fallback when the key is missing or malformed. */
 export function readBoolSetting(key: string, fallback = false): boolean {
   const val = readCliSettings()[key];

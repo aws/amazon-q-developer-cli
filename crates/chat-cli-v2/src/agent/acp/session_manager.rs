@@ -1359,9 +1359,6 @@ impl SessionManager {
                     .map_err(|e| sacp::util::internal_error(format!("Failed to merge setting: {e}")));
                 _ = resp_sender.send(result);
             },
-            SessionManagerRequestData::GetSettingsSnapshot { resp_sender } => {
-                _ = resp_sender.send(self.os.database.settings.clone());
-            },
             SessionManagerRequestData::Initialize {
                 name,
                 version,
@@ -2842,12 +2839,6 @@ pub(crate) enum SessionManagerRequestData {
         value: serde_json::Value,
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
-    /// Read a clone of the session manager's authoritative settings (reflects
-    /// in-session writes made via UpdateSetting/MergeSetting, unlike a session's
-    /// own `os` clone taken at session start).
-    GetSettingsSnapshot {
-        resp_sender: oneshot::Sender<crate::database::settings::Settings>,
-    },
     Initialize {
         name: String,
         version: String,
@@ -3139,26 +3130,6 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send merge_setting request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive merge_setting response"))?
-    }
-
-    /// Fetch a clone of the session manager's authoritative settings.
-    ///
-    /// A session's `CommandContext::os` holds a settings clone taken at session
-    /// start; it does not see in-session writes made via [`Self::update_setting`]
-    /// / [`Self::merge_setting`] (those update the session manager's copy and
-    /// disk). Use this to read settings that may have changed earlier this
-    /// session, e.g. a per-model effort default saved via `/effort`.
-    pub async fn get_settings_snapshot(&self) -> Result<crate::database::settings::Settings, sacp::Error> {
-        let (resp_sender, rx) = oneshot::channel();
-        self.tx
-            .send(SessionManagerRequest {
-                session_id: SessionId::new(String::new()),
-                data: SessionManagerRequestData::GetSettingsSnapshot { resp_sender },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send get_settings_snapshot request"))?;
-        rx.await
-            .map_err(|_e| sacp::util::internal_error("Failed to receive get_settings_snapshot response"))
     }
 
     pub async fn initialize(&self, name: String, version: String) -> Result<(), sacp::Error> {
