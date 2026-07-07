@@ -69,6 +69,8 @@ use agent::util::providers::{
 use agent::{
     Agent,
     AgentHandle,
+    RESPONSE_INTERRUPTED_MESSAGE,
+    TOOL_USES_INTERRUPTED_MESSAGE,
 };
 use code_agent_sdk::CodeIntelligence;
 use sacp::schema::{
@@ -3652,6 +3654,11 @@ fn log_entry_to_session_updates(entry: &LogEntry) -> Vec<SessionUpdate> {
                             ContentBlock::Text(TextContent::new(thinking.text.clone())),
                         )));
                     },
+                    // Synthetic cancellation placeholders are history-only (API turn-alternation
+                    // filler); the live UI never shows them, so replay must not attribute them to
+                    // the agent either.
+                    AgentContentBlock::Text(t)
+                        if t == RESPONSE_INTERRUPTED_MESSAGE || t == TOOL_USES_INTERRUPTED_MESSAGE => {},
                     _ => {
                         if let Some(content) = agent_content_to_acp(block) {
                             updates.push(SessionUpdate::AgentMessageChunk(SacpContentChunk::new(content)));
@@ -5931,7 +5938,11 @@ mod log_entry_to_session_updates_tests {
     };
     use sacp::schema::SessionUpdate;
 
-    use super::log_entry_to_session_updates;
+    use super::{
+        RESPONSE_INTERRUPTED_MESSAGE,
+        TOOL_USES_INTERRUPTED_MESSAGE,
+        log_entry_to_session_updates,
+    };
 
     /// Regression: thinking blocks were being dropped on session resume
     /// because the replay path only converted Text content. The TUI's
@@ -5968,5 +5979,22 @@ mod log_entry_to_session_updates_tests {
             "expected second update to be AgentMessageChunk, got {:?}",
             updates[1]
         );
+    }
+
+    /// Regression: synthetic cancellation placeholders are history-only turn
+    /// filler; on resume they were replayed as agent message chunks, so the
+    /// system message rendered attributed to the agent (e.g. "kiro_default:").
+    #[test]
+    fn interrupted_placeholder_emits_no_updates_on_replay() {
+        for sentinel in [RESPONSE_INTERRUPTED_MESSAGE, TOOL_USES_INTERRUPTED_MESSAGE] {
+            let entry = LogEntry::V1(LogEntryV1::AssistantMessage {
+                message_id: "m1".to_string(),
+                content: vec![AgentContentBlock::Text(sentinel.to_string())],
+            });
+            assert!(
+                log_entry_to_session_updates(&entry).is_empty(),
+                "sentinel {sentinel:?} should not replay as an agent message"
+            );
+        }
     }
 }

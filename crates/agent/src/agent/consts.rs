@@ -36,6 +36,12 @@ pub const MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS: usize = 3;
 /// is reached and the turn is force-ended.
 pub const REPEATED_UNEXECUTABLE_TOOL_MESSAGE: &str = "Stopped after repeated attempts to call tools that aren't available. The required tools may belong to a different agent -- consider switching agents, or rephrase your request.";
 
+/// Synthetic assistant placeholders appended on cancellation to preserve the
+/// alternating user/assistant invariant the API requires. History-only — the
+/// live UI never renders them, and the resume replay path must skip them too.
+pub const RESPONSE_INTERRUPTED_MESSAGE: &str = "Response was interrupted by the user";
+pub const TOOL_USES_INTERRUPTED_MESSAGE: &str = "Tool uses were interrupted, waiting for the next user prompt";
+
 /// Safety cap to prevent loading extremely large files into memory.
 /// The actual context budget is enforced separately in create_context_messages.
 pub const MAX_RESOURCE_FILE_LENGTH: u64 = 5 * 1024 * 1024;

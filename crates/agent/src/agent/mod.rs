@@ -73,7 +73,9 @@ pub use consts::{
     CONTEXT_ENTRY_END_HEADER,
     CONTEXT_ENTRY_START_HEADER,
     DEFERRED_TOOLS_MESSAGE,
+    RESPONSE_INTERRUPTED_MESSAGE,
     SKILL_FILES_MESSAGE,
+    TOOL_USES_INTERRUPTED_MESSAGE,
 };
 use event_log::{
     LogEntry,
@@ -1334,9 +1336,7 @@ impl Agent {
                 // synthetic id; message only sent as history, not as the active prompt of a request
                 Uuid::new_v4().to_string(),
                 Role::Assistant,
-                vec![ContentBlock::Text(
-                    "Tool uses were interrupted, waiting for the next user prompt".to_string(),
-                )],
+                vec![ContentBlock::Text(consts::TOOL_USES_INTERRUPTED_MESSAGE.to_string())],
                 Some(Utc::now()),
             ));
         }
@@ -1369,7 +1369,7 @@ impl Agent {
                         // synthetic id; message only sent as history, not as the active prompt of a request
                         Uuid::new_v4().to_string(),
                         Role::Assistant,
-                        vec![ContentBlock::Text("Response was interrupted by the user".to_string())],
+                        vec![ContentBlock::Text(consts::RESPONSE_INTERRUPTED_MESSAGE.to_string())],
                         Some(Utc::now()),
                     ));
                 }
