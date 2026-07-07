@@ -216,6 +216,9 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
     else if (key.downArrow) setIndex((i) => Math.min(ITEMS.length - 1, i + 1));
     else if (key.leftArrow || key.rightArrow) toggle(ITEMS[index]!.key);
     else if (key.return) {
+      // Enter applies the highlighted row then closes; #2634 dropped the
+      // toggle so Enter silently closed without switching the value.
+      toggle(ITEMS[index]!.key);
       (onDismiss ?? onClose)();
     }
   });
