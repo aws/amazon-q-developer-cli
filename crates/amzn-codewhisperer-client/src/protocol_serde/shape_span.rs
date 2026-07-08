@@ -58,22 +58,3 @@ where
         )),
     }
 }
-
-pub fn ser_span(
-    object: &mut ::aws_smithy_json::serialize::JsonObjectWriter,
-    input: &crate::types::Span,
-) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::SerializationError> {
-    if let Some(var_1) = &input.start {
-        object.key("start").number(
-            #[allow(clippy::useless_conversion)]
-            ::aws_smithy_types::Number::NegInt((*var_1).into()),
-        );
-    }
-    if let Some(var_2) = &input.end {
-        object.key("end").number(
-            #[allow(clippy::useless_conversion)]
-            ::aws_smithy_types::Number::NegInt((*var_2).into()),
-        );
-    }
-    Ok(())
-}

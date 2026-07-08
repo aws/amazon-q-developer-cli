@@ -69,16 +69,6 @@ pub(crate) fn reflens_list_user_memory_entries_output_output_next_token(
     ::std::option::Option::Some(input)
 }
 
-pub(crate) fn reflens_list_workspace_metadata_output_output_next_token(
-    input: &crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput,
-) -> ::std::option::Option<&::std::string::String> {
-    let input = match &input.next_token {
-        ::std::option::Option::None => return ::std::option::Option::None,
-        ::std::option::Option::Some(t) => t,
-    };
-    ::std::option::Option::Some(input)
-}
-
 pub(crate) fn lens_list_available_customizations_output_output_customizations(
     input: crate::operation::list_available_customizations::ListAvailableCustomizationsOutput,
 ) -> ::std::option::Option<::std::vec::Vec<crate::types::Customization>> {
@@ -111,12 +101,5 @@ pub(crate) fn lens_list_user_memory_entries_output_output_memory_entries(
     input: crate::operation::list_user_memory_entries::ListUserMemoryEntriesOutput,
 ) -> ::std::option::Option<::std::vec::Vec<crate::types::MemoryEntry>> {
     let input = input.memory_entries;
-    ::std::option::Option::Some(input)
-}
-
-pub(crate) fn lens_list_workspace_metadata_output_output_workspaces(
-    input: crate::operation::list_workspace_metadata::ListWorkspaceMetadataOutput,
-) -> ::std::option::Option<::std::vec::Vec<crate::types::WorkspaceMetadata>> {
-    let input = input.workspaces;
     ::std::option::Option::Some(input)
 }

@@ -29,7 +29,6 @@ pub use crate::types::_conflict_exception_reason::ConflictExceptionReason;
 pub use crate::types::_console_state::ConsoleState;
 pub use crate::types::_content_checksum_type::ContentChecksumType;
 pub use crate::types::_content_type::ContentType;
-pub use crate::types::_context_truncation_scheme::ContextTruncationScheme;
 pub use crate::types::_context_usage_event::ContextUsageEvent;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_cursor_state::CursorState;
@@ -145,7 +144,6 @@ pub use crate::types::_user_intent::UserIntent;
 pub use crate::types::_user_settings::UserSettings;
 pub use crate::types::_validation_exception_reason::ValidationExceptionReason;
 pub use crate::types::_web_link::WebLink;
-pub use crate::types::_workspace_state::WorkspaceState;
 
 mod _access_denied_exception_reason;
 
@@ -206,8 +204,6 @@ mod _console_state;
 mod _content_checksum_type;
 
 mod _content_type;
-
-mod _context_truncation_scheme;
 
 mod _context_usage_event;
 
@@ -438,8 +434,6 @@ mod _user_settings;
 mod _validation_exception_reason;
 
 mod _web_link;
-
-mod _workspace_state;
 
 /// Builders
 pub mod builders;

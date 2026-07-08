@@ -32,8 +32,6 @@ pub fn parse_http_error_metadata(
 
 pub(crate) mod shape_generate_assistant_response;
 
-pub(crate) mod shape_generate_task_assist_plan;
-
 pub(crate) mod shape_invoke_mcp;
 
 pub(crate) mod shape_invoke_mcp_stream;
@@ -57,10 +55,6 @@ pub(crate) mod shape_export_result_archive_output;
 pub(crate) mod shape_generate_assistant_response_input;
 
 pub(crate) mod shape_generate_assistant_response_output;
-
-pub(crate) mod shape_generate_task_assist_plan_input;
-
-pub(crate) mod shape_generate_task_assist_plan_output;
 
 pub(crate) mod shape_internal_server_error;
 
@@ -99,8 +93,6 @@ pub(crate) mod shape_export_context;
 
 pub(crate) mod shape_json_rpc_error;
 
-pub(crate) mod shape_workspace_state;
-
 pub(crate) mod shape_assistant_response_event;
 
 pub(crate) mod shape_binary_metadata_event;
@@ -134,8 +126,6 @@ pub(crate) mod shape_message_metadata_event;
 pub(crate) mod shape_metadata_event;
 
 pub(crate) mod shape_metering_event;
-
-pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_reasoning_content_event;
 
@@ -274,6 +264,8 @@ pub(crate) mod shape_infrastructure_update;
 pub(crate) mod shape_inline_artifact;
 
 pub(crate) mod shape_position;
+
+pub(crate) mod shape_programming_language;
 
 pub(crate) mod shape_progress;
 

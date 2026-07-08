@@ -230,6 +230,8 @@ pub(crate) mod shape_imports;
 
 pub(crate) mod shape_oidc_claim_keys;
 
+pub(crate) mod shape_origin_list;
+
 pub(crate) mod shape_previous_editor_state_metadata;
 
 pub(crate) mod shape_prompt_caching;

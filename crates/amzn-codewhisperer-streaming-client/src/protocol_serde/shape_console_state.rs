@@ -66,5 +66,11 @@ pub fn ser_console_state(
     if let Some(var_20) = &input.last_tasks_cancelled {
         object.key("lastTasksCancelled").string(var_20.as_str());
     }
+    if let Some(var_21) = &input.last_visited_pages {
+        object.key("lastVisitedPages").string(var_21.as_str());
+    }
+    if let Some(var_22) = &input.last_visited_services {
+        object.key("lastVisitedServices").string(var_22.as_str());
+    }
     Ok(())
 }

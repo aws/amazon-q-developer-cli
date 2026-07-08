@@ -7,26 +7,14 @@ pub mod create_artifact_upload_url;
 /// Types for the `CreateSubscriptionToken` operation.
 pub mod create_subscription_token;
 
-/// Types for the `CreateTaskAssistConversation` operation.
-pub mod create_task_assist_conversation;
-
 /// Types for the `CreateUploadUrl` operation.
 pub mod create_upload_url;
 
 /// Types for the `CreateUserMemoryEntry` operation.
 pub mod create_user_memory_entry;
 
-/// Types for the `CreateWorkspace` operation.
-pub mod create_workspace;
-
-/// Types for the `DeleteTaskAssistConversation` operation.
-pub mod delete_task_assist_conversation;
-
 /// Types for the `DeleteUserMemoryEntry` operation.
 pub mod delete_user_memory_entry;
-
-/// Types for the `DeleteWorkspace` operation.
-pub mod delete_workspace;
 
 /// Types for the `GenerateCompletions` operation.
 pub mod generate_completions;
@@ -42,9 +30,6 @@ pub mod get_profile;
 
 /// Types for the `GetRetrievals` operation.
 pub mod get_retrievals;
-
-/// Types for the `GetTaskAssistCodeGeneration` operation.
-pub mod get_task_assist_code_generation;
 
 /// Types for the `GetTestGeneration` operation.
 pub mod get_test_generation;
@@ -82,9 +67,6 @@ pub mod list_feature_evaluations;
 /// Types for the `ListUserMemoryEntries` operation.
 pub mod list_user_memory_entries;
 
-/// Types for the `ListWorkspaceMetadata` operation.
-pub mod list_workspace_metadata;
-
 /// Types for the `PushTelemetryEvent` operation.
 pub mod push_telemetry_event;
 
@@ -102,9 +84,6 @@ pub mod start_code_analysis;
 
 /// Types for the `StartCodeFixJob` operation.
 pub mod start_code_fix_job;
-
-/// Types for the `StartTaskAssistCodeGeneration` operation.
-pub mod start_task_assist_code_generation;
 
 /// Types for the `StartTestGeneration` operation.
 pub mod start_test_generation;

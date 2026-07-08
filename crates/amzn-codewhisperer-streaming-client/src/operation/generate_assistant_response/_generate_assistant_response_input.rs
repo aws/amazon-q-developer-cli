@@ -2,7 +2,7 @@
 
 /// Structure to represent a new generate assistant response request.
 #[non_exhaustive]
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct GenerateAssistantResponseInput {
     /// Structure to represent the current state of a chat conversation.
     pub conversation_state: ::std::option::Option<crate::types::ConversationState>,
@@ -14,6 +14,8 @@ pub struct GenerateAssistantResponseInput {
     /// Validated against the model's schema before merging with server defaults; throws
     /// ValidationException if invalid.
     pub additional_model_request_fields: ::std::option::Option<::aws_smithy_types::Document>,
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub system_prompt: ::std::option::Option<::std::string::String>,
 }
 impl GenerateAssistantResponseInput {
     /// Structure to represent the current state of a chat conversation.
@@ -37,6 +39,22 @@ impl GenerateAssistantResponseInput {
     pub fn additional_model_request_fields(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
         self.additional_model_request_fields.as_ref()
     }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn system_prompt(&self) -> ::std::option::Option<&str> {
+        self.system_prompt.as_deref()
+    }
+}
+impl ::std::fmt::Debug for GenerateAssistantResponseInput {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("GenerateAssistantResponseInput");
+        formatter.field("conversation_state", &self.conversation_state);
+        formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("agent_mode", &self.agent_mode);
+        formatter.field("additional_model_request_fields", &self.additional_model_request_fields);
+        formatter.field("system_prompt", &"*** Sensitive Data Redacted ***");
+        formatter.finish()
+    }
 }
 impl GenerateAssistantResponseInput {
     /// Creates a new builder-style object to manufacture
@@ -48,13 +66,14 @@ impl GenerateAssistantResponseInput {
 
 /// A builder for
 /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct GenerateAssistantResponseInputBuilder {
     pub(crate) conversation_state: ::std::option::Option<crate::types::ConversationState>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
     pub(crate) agent_mode: ::std::option::Option<::std::string::String>,
     pub(crate) additional_model_request_fields: ::std::option::Option<::aws_smithy_types::Document>,
+    pub(crate) system_prompt: ::std::option::Option<::std::string::String>,
 }
 impl GenerateAssistantResponseInputBuilder {
     /// Structure to represent the current state of a chat conversation.
@@ -135,6 +154,23 @@ impl GenerateAssistantResponseInputBuilder {
         &self.additional_model_request_fields
     }
 
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn system_prompt(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.system_prompt = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn set_system_prompt(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.system_prompt = input;
+        self
+    }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn get_system_prompt(&self) -> &::std::option::Option<::std::string::String> {
+        &self.system_prompt
+    }
+
     /// Consumes the builder and constructs a
     /// [`GenerateAssistantResponseInput`](crate::operation::generate_assistant_response::GenerateAssistantResponseInput).
     pub fn build(
@@ -149,7 +185,19 @@ impl GenerateAssistantResponseInputBuilder {
                 profile_arn: self.profile_arn,
                 agent_mode: self.agent_mode,
                 additional_model_request_fields: self.additional_model_request_fields,
+                system_prompt: self.system_prompt,
             },
         )
+    }
+}
+impl ::std::fmt::Debug for GenerateAssistantResponseInputBuilder {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("GenerateAssistantResponseInputBuilder");
+        formatter.field("conversation_state", &self.conversation_state);
+        formatter.field("profile_arn", &self.profile_arn);
+        formatter.field("agent_mode", &self.agent_mode);
+        formatter.field("additional_model_request_fields", &self.additional_model_request_fields);
+        formatter.field("system_prompt", &"*** Sensitive Data Redacted ***");
+        formatter.finish()
     }
 }

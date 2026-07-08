@@ -159,6 +159,15 @@ where
                                     )?,
                                 );
                             },
+                            "addOnMetadata" => {
+                                builder = builder.set_add_on_metadata(
+                                    crate::protocol_serde::shape_add_on_metadata::de_add_on_metadata(
+                                        tokens,
+                                        _value,
+                                        depth + 1,
+                                    )?,
+                                );
+                            },
                             "dimensionType" => {
                                 builder = builder.set_dimension_type(
                                     ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?

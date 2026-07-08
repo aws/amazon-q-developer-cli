@@ -99,4 +99,3 @@ pub use crate::types::_user_input_message::UserInputMessageBuilder;
 pub use crate::types::_user_input_message_context::UserInputMessageContextBuilder;
 pub use crate::types::_user_settings::UserSettingsBuilder;
 pub use crate::types::_web_link::WebLinkBuilder;
-pub use crate::types::_workspace_state::WorkspaceStateBuilder;

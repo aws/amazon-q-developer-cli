@@ -9,6 +9,8 @@ pub struct OverageCredit {
     pub usage_limit: f64,
     /// When this credit pack expires
     pub expires_at: ::std::option::Option<::aws_smithy_types::DateTime>,
+    /// How this credit pack was acquired
+    pub source: ::std::option::Option<::std::string::String>,
 }
 impl OverageCredit {
     /// Credits consumed from this purchased pack
@@ -24,6 +26,11 @@ impl OverageCredit {
     /// When this credit pack expires
     pub fn expires_at(&self) -> ::std::option::Option<&::aws_smithy_types::DateTime> {
         self.expires_at.as_ref()
+    }
+
+    /// How this credit pack was acquired
+    pub fn source(&self) -> ::std::option::Option<&str> {
+        self.source.as_deref()
     }
 }
 impl OverageCredit {
@@ -41,6 +48,7 @@ pub struct OverageCreditBuilder {
     pub(crate) current_usage: ::std::option::Option<f64>,
     pub(crate) usage_limit: ::std::option::Option<f64>,
     pub(crate) expires_at: ::std::option::Option<::aws_smithy_types::DateTime>,
+    pub(crate) source: ::std::option::Option<::std::string::String>,
 }
 impl OverageCreditBuilder {
     /// Credits consumed from this purchased pack
@@ -96,6 +104,23 @@ impl OverageCreditBuilder {
         &self.expires_at
     }
 
+    /// How this credit pack was acquired
+    pub fn source(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.source = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// How this credit pack was acquired
+    pub fn set_source(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.source = input;
+        self
+    }
+
+    /// How this credit pack was acquired
+    pub fn get_source(&self) -> &::std::option::Option<::std::string::String> {
+        &self.source
+    }
+
     /// Consumes the builder and constructs a [`OverageCredit`](crate::types::OverageCredit).
     /// This method will fail if any of the following fields are not set:
     /// - [`current_usage`](crate::types::builders::OverageCreditBuilder::current_usage)
@@ -117,6 +142,7 @@ impl OverageCreditBuilder {
                 )
             })?,
             expires_at: self.expires_at,
+            source: self.source,
         })
     }
 }

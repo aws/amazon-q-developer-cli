@@ -240,4 +240,21 @@ impl GenerateAssistantResponseFluentBuilder {
     pub fn get_additional_model_request_fields(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         self.inner.get_additional_model_request_fields()
     }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn system_prompt(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.system_prompt(input.into());
+        self
+    }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn set_system_prompt(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_system_prompt(input);
+        self
+    }
+
+    /// Optional system prompt from the client. Appended to the server-side system prompt.
+    pub fn get_system_prompt(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_system_prompt()
+    }
 }

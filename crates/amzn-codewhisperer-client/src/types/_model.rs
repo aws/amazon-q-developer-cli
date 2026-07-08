@@ -19,6 +19,8 @@ pub struct Model {
     pub supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
     /// Prompt caching configuration for this model
     pub prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
+    /// Origins this model is available for. Only populated for KIRO_CONSOLE origin.
+    pub available_origins: ::std::option::Option<::std::vec::Vec<crate::types::Origin>>,
     /// JSON schema describing the supported additionalModelRequestFields for this model.
     pub additional_model_request_fields_schema: ::std::option::Option<::aws_smithy_types::Document>,
 }
@@ -67,6 +69,14 @@ impl Model {
         self.prompt_caching.as_ref()
     }
 
+    /// Origins this model is available for. Only populated for KIRO_CONSOLE origin.
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.available_origins.is_none()`.
+    pub fn available_origins(&self) -> &[crate::types::Origin] {
+        self.available_origins.as_deref().unwrap_or_default()
+    }
+
     /// JSON schema describing the supported additionalModelRequestFields for this model.
     pub fn additional_model_request_fields_schema(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
         self.additional_model_request_fields_schema.as_ref()
@@ -91,6 +101,7 @@ pub struct ModelBuilder {
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
     pub(crate) prompt_caching: ::std::option::Option<crate::types::PromptCaching>,
+    pub(crate) available_origins: ::std::option::Option<::std::vec::Vec<crate::types::Origin>>,
     pub(crate) additional_model_request_fields_schema: ::std::option::Option<::aws_smithy_types::Document>,
 }
 impl ModelBuilder {
@@ -241,6 +252,33 @@ impl ModelBuilder {
         &self.prompt_caching
     }
 
+    /// Appends an item to `available_origins`.
+    ///
+    /// To override the contents of this collection use
+    /// [`set_available_origins`](Self::set_available_origins).
+    ///
+    /// Origins this model is available for. Only populated for KIRO_CONSOLE origin.
+    pub fn available_origins(mut self, input: crate::types::Origin) -> Self {
+        let mut v = self.available_origins.unwrap_or_default();
+        v.push(input);
+        self.available_origins = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Origins this model is available for. Only populated for KIRO_CONSOLE origin.
+    pub fn set_available_origins(
+        mut self,
+        input: ::std::option::Option<::std::vec::Vec<crate::types::Origin>>,
+    ) -> Self {
+        self.available_origins = input;
+        self
+    }
+
+    /// Origins this model is available for. Only populated for KIRO_CONSOLE origin.
+    pub fn get_available_origins(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Origin>> {
+        &self.available_origins
+    }
+
     /// JSON schema describing the supported additionalModelRequestFields for this model.
     pub fn additional_model_request_fields_schema(mut self, input: ::aws_smithy_types::Document) -> Self {
         self.additional_model_request_fields_schema = ::std::option::Option::Some(input);
@@ -279,6 +317,7 @@ impl ModelBuilder {
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,
             prompt_caching: self.prompt_caching,
+            available_origins: self.available_origins,
             additional_model_request_fields_schema: self.additional_model_request_fields_schema,
         })
     }

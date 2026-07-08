@@ -180,53 +180,6 @@ impl From<crate::operation::create_subscription_token::CreateSubscriptionTokenEr
 impl<R>
     From<
         ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError,
-            R,
-        >,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError> for Error {
-    fn from(err: crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError) -> Self {
-        match err {
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            }
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::ServiceQuotaExceededError(inner) => {
-                Error::ServiceQuotaExceededError(inner)
-            }
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            }
-            crate::operation::create_task_assist_conversation::CreateTaskAssistConversationError::Unhandled(inner) => Error::Unhandled(inner),
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<
             crate::operation::create_upload_url::CreateUploadUrlError,
             R,
         >,
@@ -331,100 +284,6 @@ impl From<crate::operation::create_user_memory_entry::CreateUserMemoryEntryError
 }
 impl<R>
     From<
-        ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::create_workspace::CreateWorkspaceError, R>,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::create_workspace::CreateWorkspaceError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::create_workspace::CreateWorkspaceError> for Error {
-    fn from(err: crate::operation::create_workspace::CreateWorkspaceError) -> Self {
-        match err {
-            crate::operation::create_workspace::CreateWorkspaceError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::ConflictError(inner) => {
-                Error::ConflictError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::ServiceQuotaExceededError(inner) => {
-                Error::ServiceQuotaExceededError(inner)
-            },
-            crate::operation::create_workspace::CreateWorkspaceError::Unhandled(inner) => Error::Unhandled(inner),
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError,
-            R,
-        >,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError> for Error {
-    fn from(err: crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError) -> Self {
-        match err {
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ResourceNotFoundError(inner) => {
-                Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            }
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            }
-            crate::operation::delete_task_assist_conversation::DeleteTaskAssistConversationError::Unhandled(inner) => Error::Unhandled(inner),
-        }
-    }
-}
-impl<R>
-    From<
         ::aws_smithy_runtime_api::client::result::SdkError<
             crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryError,
             R,
@@ -469,47 +328,6 @@ impl From<crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryError
             crate::operation::delete_user_memory_entry::DeleteUserMemoryEntryError::Unhandled(inner) => {
                 Error::Unhandled(inner)
             },
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<crate::operation::delete_workspace::DeleteWorkspaceError, R>,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::delete_workspace::DeleteWorkspaceError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::delete_workspace::DeleteWorkspaceError> for Error {
-    fn from(err: crate::operation::delete_workspace::DeleteWorkspaceError) -> Self {
-        match err {
-            crate::operation::delete_workspace::DeleteWorkspaceError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
-            crate::operation::delete_workspace::DeleteWorkspaceError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            },
-            crate::operation::delete_workspace::DeleteWorkspaceError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::delete_workspace::DeleteWorkspaceError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::delete_workspace::DeleteWorkspaceError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }
@@ -722,54 +540,6 @@ impl From<crate::operation::get_retrievals::GetRetrievalsError> for Error {
                 Error::ResourceNotFoundError(inner)
             },
             crate::operation::get_retrievals::GetRetrievalsError::Unhandled(inner) => Error::Unhandled(inner),
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError,
-            R,
-        >,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError> for Error {
-    fn from(err: crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError) -> Self {
-        match err {
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ResourceNotFoundError(inner) => {
-                Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ConflictError(inner) => Error::ConflictError(inner),
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            }
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            }
-            crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }
@@ -1314,52 +1084,6 @@ impl From<crate::operation::list_user_memory_entries::ListUserMemoryEntriesError
 impl<R>
     From<
         ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError,
-            R,
-        >,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::list_workspace_metadata::ListWorkspaceMetadataError> for Error {
-    fn from(err: crate::operation::list_workspace_metadata::ListWorkspaceMetadataError) -> Self {
-        match err {
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            },
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            },
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::list_workspace_metadata::ListWorkspaceMetadataError::Unhandled(inner) => {
-                Error::Unhandled(inner)
-            },
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<
             crate::operation::push_telemetry_event::PushTelemetryEventError,
             R,
         >,
@@ -1633,59 +1357,6 @@ impl From<crate::operation::start_code_fix_job::StartCodeFixJobError> for Error 
                 Error::InternalServerError(inner)
             },
             crate::operation::start_code_fix_job::StartCodeFixJobError::Unhandled(inner) => Error::Unhandled(inner),
-        }
-    }
-}
-impl<R>
-    From<
-        ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError,
-            R,
-        >,
-    > for Error
-where
-    R: Send + Sync + std::fmt::Debug + 'static,
-{
-    fn from(
-        err: ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError,
-            R,
-        >,
-    ) -> Self {
-        match err {
-            ::aws_smithy_runtime_api::client::result::SdkError::ServiceError(context) => Self::from(context.into_err()),
-            _ => Error::Unhandled(crate::error::sealed_unhandled::Unhandled {
-                meta: ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(&err).clone(),
-                source: err.into(),
-            }),
-        }
-    }
-}
-impl From<crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError> for Error {
-    fn from(err: crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError) -> Self {
-        match err {
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::ResourceNotFoundError(inner) => {
-                Error::ResourceNotFoundError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::ConflictError(inner) => {
-                Error::ConflictError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::ServiceQuotaExceededError(inner) => {
-                Error::ServiceQuotaExceededError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            }
-            crate::operation::start_task_assist_code_generation::StartTaskAssistCodeGenerationError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
 }

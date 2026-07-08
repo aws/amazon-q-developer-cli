@@ -21,6 +21,7 @@
 ///     Origin::Ide => { /* ... */ },
 ///     Origin::InlineChat => { /* ... */ },
 ///     Origin::KiroCli => { /* ... */ },
+///     Origin::KiroConsole => { /* ... */ },
 ///     Origin::KiroWeb => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
@@ -88,6 +89,8 @@ pub enum Origin {
     InlineChat,
     /// KIRO CLI
     KiroCli,
+    /// Console admin UI - returns union of all origins
+    KiroConsole,
     /// Kiro Web application
     KiroWeb,
     /// AWS Marketing Website (https://aws.amazon.com)
@@ -135,6 +138,7 @@ impl ::std::convert::From<&str> for Origin {
             "IDE" => Origin::Ide,
             "INLINE_CHAT" => Origin::InlineChat,
             "KIRO_CLI" => Origin::KiroCli,
+            "KIRO_CONSOLE" => Origin::KiroConsole,
             "KIRO_WEB" => Origin::KiroWeb,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
@@ -174,6 +178,7 @@ impl Origin {
             Origin::Ide => "IDE",
             Origin::InlineChat => "INLINE_CHAT",
             Origin::KiroCli => "KIRO_CLI",
+            Origin::KiroConsole => "KIRO_CONSOLE",
             Origin::KiroWeb => "KIRO_WEB",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
@@ -203,6 +208,7 @@ impl Origin {
             "IDE",
             "INLINE_CHAT",
             "KIRO_CLI",
+            "KIRO_CONSOLE",
             "KIRO_WEB",
             "MARKETING",
             "MD",
@@ -248,6 +254,7 @@ impl ::std::fmt::Display for Origin {
             Origin::Ide => write!(f, "IDE"),
             Origin::InlineChat => write!(f, "INLINE_CHAT"),
             Origin::KiroCli => write!(f, "KIRO_CLI"),
+            Origin::KiroConsole => write!(f, "KIRO_CONSOLE"),
             Origin::KiroWeb => write!(f, "KIRO_WEB"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),

@@ -18,5 +18,8 @@ pub fn ser_generate_assistant_response_input_input(
     if let Some(var_5) = &input.additional_model_request_fields {
         object.key("additionalModelRequestFields").document(var_5);
     }
+    if let Some(var_6) = &input.system_prompt {
+        object.key("systemPrompt").string(var_6.as_str());
+    }
     Ok(())
 }

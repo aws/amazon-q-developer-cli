@@ -65,27 +65,18 @@ pub(crate) fn create_subscription_token_output_output_correct_errors(
     builder
 }
 
-pub(crate) fn service_quota_exceeded_exception_correct_errors(
-    mut builder: crate::types::error::builders::ServiceQuotaExceededErrorBuilder,
-) -> crate::types::error::builders::ServiceQuotaExceededErrorBuilder {
+pub(crate) fn resource_not_found_exception_correct_errors(
+    mut builder: crate::types::error::builders::ResourceNotFoundErrorBuilder,
+) -> crate::types::error::builders::ResourceNotFoundErrorBuilder {
     if builder.message.is_none() {
         builder.message = Some(Default::default())
     }
     builder
 }
 
-pub(crate) fn create_task_assist_conversation_output_output_correct_errors(
-    mut builder: crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder,
-) -> crate::operation::create_task_assist_conversation::builders::CreateTaskAssistConversationOutputBuilder {
-    if builder.conversation_id.is_none() {
-        builder.conversation_id = Some(Default::default())
-    }
-    builder
-}
-
-pub(crate) fn resource_not_found_exception_correct_errors(
-    mut builder: crate::types::error::builders::ResourceNotFoundErrorBuilder,
-) -> crate::types::error::builders::ResourceNotFoundErrorBuilder {
+pub(crate) fn service_quota_exceeded_exception_correct_errors(
+    mut builder: crate::types::error::builders::ServiceQuotaExceededErrorBuilder,
+) -> crate::types::error::builders::ServiceQuotaExceededErrorBuilder {
     if builder.message.is_none() {
         builder.message = Some(Default::default())
     }
@@ -116,29 +107,6 @@ pub(crate) fn create_user_memory_entry_output_output_correct_errors(
     builder
 }
 
-pub(crate) fn create_workspace_output_output_correct_errors(
-    mut builder: crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder,
-) -> crate::operation::create_workspace::builders::CreateWorkspaceOutputBuilder {
-    if builder.workspace.is_none() {
-        builder.workspace = {
-            let builder = crate::types::builders::WorkspaceMetadataBuilder::default();
-            crate::serde_util::workspace_metadata_correct_errors(builder)
-                .build()
-                .ok()
-        }
-    }
-    builder
-}
-
-pub(crate) fn delete_task_assist_conversation_output_output_correct_errors(
-    mut builder: crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder,
-) -> crate::operation::delete_task_assist_conversation::builders::DeleteTaskAssistConversationOutputBuilder {
-    if builder.conversation_id.is_none() {
-        builder.conversation_id = Some(Default::default())
-    }
-    builder
-}
-
 pub(crate) fn get_code_analysis_output_output_correct_errors(
     mut builder: crate::operation::get_code_analysis::builders::GetCodeAnalysisOutputBuilder,
 ) -> crate::operation::get_code_analysis::builders::GetCodeAnalysisOutputBuilder {
@@ -165,23 +133,6 @@ pub(crate) fn get_retrievals_output_output_correct_errors(
 ) -> crate::operation::get_retrievals::builders::GetRetrievalsOutputBuilder {
     if builder.retrieval_map.is_none() {
         builder.retrieval_map = Some(Default::default())
-    }
-    builder
-}
-
-pub(crate) fn get_task_assist_code_generation_output_output_correct_errors(
-    mut builder: crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder,
-) -> crate::operation::get_task_assist_code_generation::builders::GetTaskAssistCodeGenerationOutputBuilder {
-    if builder.conversation_id.is_none() {
-        builder.conversation_id = Some(Default::default())
-    }
-    if builder.code_generation_status.is_none() {
-        builder.code_generation_status = {
-            let builder = crate::types::builders::CodeGenerationStatusBuilder::default();
-            crate::serde_util::code_generation_status_correct_errors(builder)
-                .build()
-                .ok()
-        }
     }
     builder
 }
@@ -293,15 +244,6 @@ pub(crate) fn list_user_memory_entries_output_output_correct_errors(
     builder
 }
 
-pub(crate) fn list_workspace_metadata_output_output_correct_errors(
-    mut builder: crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder,
-) -> crate::operation::list_workspace_metadata::builders::ListWorkspaceMetadataOutputBuilder {
-    if builder.workspaces.is_none() {
-        builder.workspaces = Some(Default::default())
-    }
-    builder
-}
-
 pub(crate) fn resume_transformation_output_output_correct_errors(
     mut builder: crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder,
 ) -> crate::operation::resume_transformation::builders::ResumeTransformationOutputBuilder {
@@ -319,18 +261,6 @@ pub(crate) fn start_code_analysis_output_output_correct_errors(
     }
     if builder.status.is_none() {
         builder.status = "no value was set".parse::<crate::types::CodeAnalysisStatus>().ok()
-    }
-    builder
-}
-
-pub(crate) fn start_task_assist_code_generation_output_output_correct_errors(
-    mut builder: crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder,
-) -> crate::operation::start_task_assist_code_generation::builders::StartTaskAssistCodeGenerationOutputBuilder {
-    if builder.conversation_id.is_none() {
-        builder.conversation_id = Some(Default::default())
-    }
-    if builder.code_generation_id.is_none() {
-        builder.code_generation_id = Some(Default::default())
     }
     builder
 }
@@ -393,39 +323,11 @@ pub(crate) fn memory_entry_correct_errors(
     builder
 }
 
-pub(crate) fn workspace_metadata_correct_errors(
-    mut builder: crate::types::builders::WorkspaceMetadataBuilder,
-) -> crate::types::builders::WorkspaceMetadataBuilder {
-    if builder.workspace_id.is_none() {
-        builder.workspace_id = Some(Default::default())
-    }
-    if builder.workspace_status.is_none() {
-        builder.workspace_status = "no value was set".parse::<crate::types::WorkspaceStatus>().ok()
-    }
-    builder
-}
-
 pub(crate) fn profile_info_correct_errors(
     mut builder: crate::types::builders::ProfileInfoBuilder,
 ) -> crate::types::builders::ProfileInfoBuilder {
     if builder.arn.is_none() {
         builder.arn = Some(Default::default())
-    }
-    builder
-}
-
-pub(crate) fn code_generation_status_correct_errors(
-    mut builder: crate::types::builders::CodeGenerationStatusBuilder,
-) -> crate::types::builders::CodeGenerationStatusBuilder {
-    if builder.status.is_none() {
-        builder.status = "no value was set"
-            .parse::<crate::types::CodeGenerationWorkflowStatus>()
-            .ok()
-    }
-    if builder.current_stage.is_none() {
-        builder.current_stage = "no value was set"
-            .parse::<crate::types::CodeGenerationWorkflowStage>()
-            .ok()
     }
     builder
 }
@@ -849,6 +751,24 @@ pub(crate) fn workspace_context_correct_errors(
 ) -> crate::types::builders::WorkspaceContextBuilder {
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
+    }
+    builder
+}
+
+pub(crate) fn add_on_correct_errors(
+    mut builder: crate::types::builders::AddOnBuilder,
+) -> crate::types::builders::AddOnBuilder {
+    if builder.current_usage.is_none() {
+        builder.current_usage = Some(Default::default())
+    }
+    if builder.usage_limit.is_none() {
+        builder.usage_limit = Some(Default::default())
+    }
+    if builder.expires_at.is_none() {
+        builder.expires_at = Some(::aws_smithy_types::DateTime::from_fractional_secs(0, 0_f64))
+    }
+    if builder.source.is_none() {
+        builder.source = "no value was set".parse::<crate::types::AddOnSource>().ok()
     }
     builder
 }

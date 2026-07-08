@@ -7,9 +7,6 @@ pub mod export_result_archive;
 /// Types for the `GenerateAssistantResponse` operation.
 pub mod generate_assistant_response;
 
-/// Types for the `GenerateTaskAssistPlan` operation.
-pub mod generate_task_assist_plan;
-
 /// Types for the `InvokeMCP` operation.
 pub mod invoke_mcp;
 

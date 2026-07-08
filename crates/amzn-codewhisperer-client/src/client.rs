@@ -97,13 +97,9 @@ mod create_artifact_upload_url;
 
 mod create_subscription_token;
 
-mod create_task_assist_conversation;
-
 mod create_upload_url;
 
 mod create_user_memory_entry;
-
-mod create_workspace;
 
 /// Operation customization and supporting types.
 ///
@@ -132,11 +128,7 @@ mod create_workspace;
 /// ```
 pub mod customize;
 
-mod delete_task_assist_conversation;
-
 mod delete_user_memory_entry;
-
-mod delete_workspace;
 
 mod generate_completions;
 
@@ -147,8 +139,6 @@ mod get_code_fix_job;
 mod get_profile;
 
 mod get_retrievals;
-
-mod get_task_assist_code_generation;
 
 mod get_test_generation;
 
@@ -174,8 +164,6 @@ mod list_feature_evaluations;
 
 mod list_user_memory_entries;
 
-mod list_workspace_metadata;
-
 mod push_telemetry_event;
 
 mod resume_transformation;
@@ -187,8 +175,6 @@ mod set_user_preference;
 mod start_code_analysis;
 
 mod start_code_fix_job;
-
-mod start_task_assist_code_generation;
 
 mod start_test_generation;
 

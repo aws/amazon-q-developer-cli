@@ -42,6 +42,8 @@ pub struct UsageBreakdown {
     pub bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
     /// Purchased overage credit packs
     pub overage_credits: ::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>>,
+    /// Add-on metadata for credit pool add-ons
+    pub add_on_metadata: ::std::option::Option<crate::types::AddOnMetadata>,
     /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
     pub dimension_type: ::std::option::Option<crate::types::PoolingDimension>,
 }
@@ -148,6 +150,11 @@ impl UsageBreakdown {
         self.overage_credits.as_deref().unwrap_or_default()
     }
 
+    /// Add-on metadata for credit pool add-ons
+    pub fn add_on_metadata(&self) -> ::std::option::Option<&crate::types::AddOnMetadata> {
+        self.add_on_metadata.as_ref()
+    }
+
     /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
     pub fn dimension_type(&self) -> ::std::option::Option<&crate::types::PoolingDimension> {
         self.dimension_type.as_ref()
@@ -184,6 +191,7 @@ pub struct UsageBreakdownBuilder {
     pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
     pub(crate) bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
     pub(crate) overage_credits: ::std::option::Option<::std::vec::Vec<crate::types::OverageCredit>>,
+    pub(crate) add_on_metadata: ::std::option::Option<crate::types::AddOnMetadata>,
     pub(crate) dimension_type: ::std::option::Option<crate::types::PoolingDimension>,
 }
 impl UsageBreakdownBuilder {
@@ -534,6 +542,23 @@ impl UsageBreakdownBuilder {
         &self.overage_credits
     }
 
+    /// Add-on metadata for credit pool add-ons
+    pub fn add_on_metadata(mut self, input: crate::types::AddOnMetadata) -> Self {
+        self.add_on_metadata = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Add-on metadata for credit pool add-ons
+    pub fn set_add_on_metadata(mut self, input: ::std::option::Option<crate::types::AddOnMetadata>) -> Self {
+        self.add_on_metadata = input;
+        self
+    }
+
+    /// Add-on metadata for credit pool add-ons
+    pub fn get_add_on_metadata(&self) -> &::std::option::Option<crate::types::AddOnMetadata> {
+        &self.add_on_metadata
+    }
+
     /// Indicates whether dimension is pooled at account level (POOLED) or per-user (NON_POOLED)
     pub fn dimension_type(mut self, input: crate::types::PoolingDimension) -> Self {
         self.dimension_type = ::std::option::Option::Some(input);
@@ -606,6 +631,7 @@ impl UsageBreakdownBuilder {
             free_trial_info: self.free_trial_info,
             bonuses: self.bonuses,
             overage_credits: self.overage_credits,
+            add_on_metadata: self.add_on_metadata,
             dimension_type: self.dimension_type,
         })
     }

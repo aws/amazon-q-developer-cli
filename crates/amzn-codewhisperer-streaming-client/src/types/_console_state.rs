@@ -44,6 +44,10 @@ pub struct ConsoleState {
     pub last_tasks_completed: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub last_tasks_cancelled: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_visited_pages: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub last_visited_services: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleState {
     #[allow(missing_docs)] // documentation missing in model
@@ -145,6 +149,16 @@ impl ConsoleState {
     pub fn last_tasks_cancelled(&self) -> ::std::option::Option<&str> {
         self.last_tasks_cancelled.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_visited_pages(&self) -> ::std::option::Option<&str> {
+        self.last_visited_pages.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_visited_services(&self) -> ::std::option::Option<&str> {
+        self.last_visited_services.as_deref()
+    }
 }
 impl ::std::fmt::Debug for ConsoleState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -169,6 +183,8 @@ impl ::std::fmt::Debug for ConsoleState {
         formatter.field("last_ux_success_message", &"*** Sensitive Data Redacted ***");
         formatter.field("last_tasks_completed", &"*** Sensitive Data Redacted ***");
         formatter.field("last_tasks_cancelled", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_visited_pages", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_visited_services", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
@@ -204,6 +220,8 @@ pub struct ConsoleStateBuilder {
     pub(crate) last_ux_success_message: ::std::option::Option<::std::string::String>,
     pub(crate) last_tasks_completed: ::std::option::Option<::std::string::String>,
     pub(crate) last_tasks_cancelled: ::std::option::Option<::std::string::String>,
+    pub(crate) last_visited_pages: ::std::option::Option<::std::string::String>,
+    pub(crate) last_visited_services: ::std::option::Option<::std::string::String>,
 }
 impl ConsoleStateBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -546,6 +564,40 @@ impl ConsoleStateBuilder {
         &self.last_tasks_cancelled
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_visited_pages(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_visited_pages = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_visited_pages(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_visited_pages = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_visited_pages(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_visited_pages
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn last_visited_services(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.last_visited_services = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_last_visited_services(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.last_visited_services = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_last_visited_services(&self) -> &::std::option::Option<::std::string::String> {
+        &self.last_visited_services
+    }
+
     /// Consumes the builder and constructs a [`ConsoleState`](crate::types::ConsoleState).
     pub fn build(self) -> crate::types::ConsoleState {
         crate::types::ConsoleState {
@@ -569,6 +621,8 @@ impl ConsoleStateBuilder {
             last_ux_success_message: self.last_ux_success_message,
             last_tasks_completed: self.last_tasks_completed,
             last_tasks_cancelled: self.last_tasks_cancelled,
+            last_visited_pages: self.last_visited_pages,
+            last_visited_services: self.last_visited_services,
         }
     }
 }
@@ -595,6 +649,8 @@ impl ::std::fmt::Debug for ConsoleStateBuilder {
         formatter.field("last_ux_success_message", &"*** Sensitive Data Redacted ***");
         formatter.field("last_tasks_completed", &"*** Sensitive Data Redacted ***");
         formatter.field("last_tasks_cancelled", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_visited_pages", &"*** Sensitive Data Redacted ***");
+        formatter.field("last_visited_services", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
