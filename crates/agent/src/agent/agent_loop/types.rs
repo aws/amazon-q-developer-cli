@@ -713,6 +713,19 @@ pub struct MetadataEvent {
     pub service: Option<MetadataService>,
     #[serde(default)]
     pub metering_usage: Vec<MeteringUsageInfo>,
+    #[serde(default)]
+    pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub refusal: Option<Box<RefusalInfo>>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefusalInfo {
+    pub category: Option<String>,
+    pub explanation: Option<String>,
+    pub recommended_model: Option<String>,
 }
 
 #[typeshare]

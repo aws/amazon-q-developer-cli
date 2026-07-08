@@ -2702,6 +2702,9 @@ export const createAppStore = (props: AppStoreProps) => {
     createStreamEventHandler: () => {
       let isBuffering = false;
       let bufferedContent = '';
+      // Only the first model refusal in a turn is surfaced; the model can emit
+      // several (e.g. across retries), but repeating the same notice is noise.
+      let refusalShownThisTurn = false;
       // Set by `.dispose()` to make this handler inert. Guards the event
       // entry point and both batched-flush timers against late firings
       // after the owning turn was cancelled — see StreamEventHandler.
@@ -3594,6 +3597,38 @@ export const createAppStore = (props: AppStoreProps) => {
                 status: 'error',
                 autoHideMs: 5000,
               });
+            }
+            break;
+          case AgentEventType.ModelRefusal:
+            {
+              // Surface only the first refusal per turn (see refusalShownThisTurn).
+              if (refusalShownThisTurn) break;
+              refusalShownThisTurn = true;
+              const message =
+                event.explanation ??
+                'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.';
+              // Persist until dismissed — a refusal is important enough that it
+              // should not silently auto-hide.
+              get().showTransientAlert({
+                message,
+                status: 'error',
+              });
+              // Also leave a copy in scrollback so it survives the transient
+              // alert being dismissed or replaced. Mark turnOwned while a turn
+              // is in flight so ConversationView interleaves it into the turn
+              // body even when the refused response carried no model content.
+              set((s) => ({
+                messages: [
+                  ...s.messages,
+                  {
+                    id: generateMessageId(),
+                    role: MessageRole.System,
+                    content: message,
+                    success: false,
+                    ...(s.isProcessing ? { turnOwned: true } : {}),
+                  },
+                ],
+              }));
             }
             break;
           case AgentEventType.RetryWarning:

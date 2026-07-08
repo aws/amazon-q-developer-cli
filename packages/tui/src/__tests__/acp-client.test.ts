@@ -518,4 +518,73 @@ describe('AcpClient', () => {
     expect(event.type).toBe(AgentEventType.CompactionStatus);
     expect(event.status).toBe('started');
   });
+
+  it('metadata notification with a refusal broadcasts ModelRefusal', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.extNotification!('kiro.dev/metadata', {
+      stopReason: 'REFUSAL',
+      refusal: {
+        category: 'CYBER',
+        explanation: 'Declined by content policy.',
+        recommendedModel: 'kiro-safe',
+      },
+    });
+
+    const refusal = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.ModelRefusal);
+    expect(refusal).toBeDefined();
+    expect(refusal.explanation).toBe('Declined by content policy.');
+    expect(refusal.category).toBe('CYBER');
+    expect(refusal.recommendedModel).toBe('kiro-safe');
+  });
+
+  it('metadata notification with CONTENT_FILTERED stop reason broadcasts ModelRefusal', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.extNotification!('kiro.dev/metadata', {
+      stopReason: 'CONTENT_FILTERED',
+    });
+
+    const refusal = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.ModelRefusal);
+    expect(refusal).toBeDefined();
+    expect(refusal.stopReason).toBe('CONTENT_FILTERED');
+  });
+
+  it('metadata notification without effort does not broadcast EffortUpdate', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    // A refusal-only notification omits effort and must not clear the chip.
+    await client.extNotification!('kiro.dev/metadata', {
+      refusal: { explanation: 'nope' },
+    });
+
+    const effort = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.EffortUpdate);
+    expect(effort).toBeUndefined();
+  });
+
+  it('metadata notification with effort broadcasts EffortUpdate', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.extNotification!('kiro.dev/metadata', { effort: 'high' });
+
+    const effort = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.EffortUpdate);
+    expect(effort).toBeDefined();
+    expect(effort.effort).toBe('high');
+  });
 });

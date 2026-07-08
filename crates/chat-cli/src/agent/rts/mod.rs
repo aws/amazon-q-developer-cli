@@ -880,6 +880,9 @@ impl ResponseParser {
                 status_code: None,
             }),
             metering_usage: Vec::new(),
+            // V1 does not surface provider stop reason / refusal details.
+            stop_reason: None,
+            refusal: None,
         })
     }
 }

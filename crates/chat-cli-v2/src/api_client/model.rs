@@ -645,6 +645,10 @@ pub enum ChatResponseStream {
         output_tokens: Option<i32>,
         cache_read_input_tokens: Option<i32>,
         cache_write_input_tokens: Option<i32>,
+        stop_reason: Option<String>,
+        refusal_category: Option<String>,
+        refusal_explanation: Option<String>,
+        refusal_recommended_model: Option<String>,
     },
     MeteringEvent {
         usage: Option<f64>,
@@ -772,13 +776,30 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
                 context_usage_percentage: context_usage_percentage.unwrap_or(0.0),
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::MetadataEvent(
-                amzn_codewhisperer_streaming_client::types::MetadataEvent { token_usage, .. },
-            ) => ChatResponseStream::MetadataEvent {
-                total_tokens: token_usage.as_ref().map(|t| t.total_tokens),
-                uncached_input_tokens: token_usage.as_ref().map(|t| t.uncached_input_tokens),
-                output_tokens: token_usage.as_ref().map(|t| t.output_tokens),
-                cache_read_input_tokens: token_usage.as_ref().and_then(|t| t.cache_read_input_tokens),
-                cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
+                amzn_codewhisperer_streaming_client::types::MetadataEvent {
+                    token_usage,
+                    stop_reason,
+                    stop_details,
+                    ..
+                },
+            ) => {
+                let refusal = stop_details.and_then(|d| match d {
+                    amzn_codewhisperer_streaming_client::types::StopDetails::Refusal(r) => Some(r),
+                    _ => None,
+                });
+                ChatResponseStream::MetadataEvent {
+                    total_tokens: token_usage.as_ref().map(|t| t.total_tokens),
+                    uncached_input_tokens: token_usage.as_ref().map(|t| t.uncached_input_tokens),
+                    output_tokens: token_usage.as_ref().map(|t| t.output_tokens),
+                    cache_read_input_tokens: token_usage.as_ref().and_then(|t| t.cache_read_input_tokens),
+                    cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
+                    stop_reason: stop_reason.map(|s| s.as_str().to_string()),
+                    refusal_category: refusal
+                        .as_ref()
+                        .and_then(|r| r.category().map(|c| c.as_str().to_string())),
+                    refusal_explanation: refusal.as_ref().and_then(|r| r.explanation().map(str::to_string)),
+                    refusal_recommended_model: refusal.as_ref().and_then(|r| r.recommended_model().map(str::to_string)),
+                }
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::MeteringEvent(
                 amzn_codewhisperer_streaming_client::types::MeteringEvent {
@@ -869,13 +890,30 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
                 context_usage_percentage: context_usage_percentage.unwrap_or(0.0),
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::MetadataEvent(
-                amzn_qdeveloper_streaming_client::types::MetadataEvent { token_usage, .. },
-            ) => ChatResponseStream::MetadataEvent {
-                total_tokens: token_usage.as_ref().map(|t| t.total_tokens),
-                uncached_input_tokens: token_usage.as_ref().map(|t| t.uncached_input_tokens),
-                output_tokens: token_usage.as_ref().map(|t| t.output_tokens),
-                cache_read_input_tokens: token_usage.as_ref().and_then(|t| t.cache_read_input_tokens),
-                cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
+                amzn_qdeveloper_streaming_client::types::MetadataEvent {
+                    token_usage,
+                    stop_reason,
+                    stop_details,
+                    ..
+                },
+            ) => {
+                let refusal = stop_details.and_then(|d| match d {
+                    amzn_qdeveloper_streaming_client::types::StopDetails::Refusal(r) => Some(r),
+                    _ => None,
+                });
+                ChatResponseStream::MetadataEvent {
+                    total_tokens: token_usage.as_ref().map(|t| t.total_tokens),
+                    uncached_input_tokens: token_usage.as_ref().map(|t| t.uncached_input_tokens),
+                    output_tokens: token_usage.as_ref().map(|t| t.output_tokens),
+                    cache_read_input_tokens: token_usage.as_ref().and_then(|t| t.cache_read_input_tokens),
+                    cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
+                    stop_reason: stop_reason.map(|s| s.as_str().to_string()),
+                    refusal_category: refusal
+                        .as_ref()
+                        .and_then(|r| r.category().map(|c| c.as_str().to_string())),
+                    refusal_explanation: refusal.as_ref().and_then(|r| r.explanation().map(str::to_string)),
+                    refusal_recommended_model: refusal.as_ref().and_then(|r| r.recommended_model().map(str::to_string)),
+                }
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::MeteringEvent(
                 amzn_qdeveloper_streaming_client::types::MeteringEvent {
@@ -1472,6 +1510,10 @@ mod tests {
                 output_tokens: None,
                 cache_read_input_tokens: None,
                 cache_write_input_tokens: None,
+                stop_reason: None,
+                refusal_category: None,
+                refusal_explanation: None,
+                refusal_recommended_model: None,
             }
             .is_skippable_metadata()
         );

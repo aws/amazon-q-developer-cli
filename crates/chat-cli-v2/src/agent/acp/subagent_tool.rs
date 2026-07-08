@@ -311,6 +311,10 @@ mod tests {
                 output_tokens: Some(2),
                 cache_read_input_tokens: None,
                 cache_write_input_tokens: None,
+                stop_reason: None,
+                refusal_category: None,
+                refusal_explanation: None,
+                refusal_recommended_model: None,
             }),
         ]
     }

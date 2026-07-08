@@ -27,6 +27,7 @@ use agent::agent_loop::types::{
     MetadataService,
     MetadataUsage,
     MeteringUsageInfo,
+    RefusalInfo,
     Role,
     StopReason,
     StreamError,
@@ -827,6 +828,10 @@ struct ResponseParser {
     usage_tokens: Option<UsageTokens>,
     /// Metering usage from MeteringEvent(s)
     metering_usage: Vec<MeteringUsageInfo>,
+    /// Provider stop reason from MetadataEvent, when present.
+    stop_reason: Option<String>,
+    /// Refusal details from MetadataEvent, when the model refused.
+    refusal: Option<RefusalInfo>,
 }
 
 impl ResponseParser {
@@ -858,6 +863,8 @@ impl ResponseParser {
             context_usage_percentage: None,
             usage_tokens: None,
             metering_usage: Vec::new(),
+            stop_reason: None,
+            refusal: None,
         }
     }
 
@@ -1055,6 +1062,10 @@ impl ResponseParser {
                         output_tokens,
                         cache_read_input_tokens,
                         cache_write_input_tokens,
+                        stop_reason,
+                        refusal_category,
+                        refusal_explanation,
+                        refusal_recommended_model,
                     } => {
                         self.usage_tokens = Some(UsageTokens {
                             uncached_input_tokens,
@@ -1062,6 +1073,19 @@ impl ResponseParser {
                             cache_read_input_tokens,
                             cache_write_input_tokens,
                         });
+                        if let Some(reason) = stop_reason {
+                            self.stop_reason = Some(reason);
+                        }
+                        if refusal_category.is_some()
+                            || refusal_explanation.is_some()
+                            || refusal_recommended_model.is_some()
+                        {
+                            self.refusal = Some(RefusalInfo {
+                                category: refusal_category,
+                                explanation: refusal_explanation,
+                                recommended_model: refusal_recommended_model,
+                            });
+                        }
                     },
                     ChatResponseStream::MeteringEvent {
                         usage,
@@ -1203,6 +1227,8 @@ impl ResponseParser {
                 status_code: None,
             }),
             metering_usage: self.metering_usage.clone(),
+            stop_reason: self.stop_reason.clone(),
+            refusal: self.refusal.clone().map(Box::new),
         })
     }
 }

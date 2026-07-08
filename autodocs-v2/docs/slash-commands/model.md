@@ -184,6 +184,14 @@ Run `/model` without arguments to see the interactive picker with all available 
 
 **Solution**: Use `/model` to see available models and select a valid one.
 
+### Issue: Model Refusal or Content-Filtered Response
+
+**Symptom**: Error alert stating the model cannot continue the conversation, or a provider-specific content policy explanation.
+
+**Cause**: The model's content policy was triggered by the conversation context or your message.
+
+**Solution**: Switch to a different model with `/model`, use `/rewind` to remove the flagged content, or start a new conversation with `/chat new`. See [Model Refusal Alerts](../features/model-refusal-alerts.md) for details.
+
 ## Technical Details
 
 **Model Selection**: Shows models available in current region.

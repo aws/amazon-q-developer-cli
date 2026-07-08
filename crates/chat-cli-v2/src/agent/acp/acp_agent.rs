@@ -1991,6 +1991,8 @@ impl AcpSession {
             metering_usage: metering,
             turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
             effort: self.current_effort(),
+            stop_reason: None,
+            refusal: None,
         };
         self.connection_cx.send_notification(notification)
     }
@@ -2029,6 +2031,8 @@ impl AcpSession {
             metering_usage: None,
             turn_duration_ms: None,
             effort: self.current_effort(),
+            stop_reason: None,
+            refusal: None,
         };
         if let Err(e) = self.connection_cx.send_notification(notification) {
             warn!("Failed to send initial context usage: {}", e);
@@ -2460,6 +2464,8 @@ impl AcpSession {
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
+                    stop_reason: None,
+                    refusal: None,
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send metadata after command execute: {}", e);
@@ -2640,6 +2646,26 @@ impl AcpSession {
         {
             self.record_request_stats(result, metadata);
 
+            // Surface provider refusals / content-filtered stops to the TUI as soon as the
+            // stream ends, carrying the refusal explanation when the model provides one.
+            if let Some(stream) = metadata.stream.as_ref() {
+                let is_content_filtered = stream.stop_reason.as_deref() == Some("CONTENT_FILTERED");
+                if stream.refusal.is_some() || is_content_filtered {
+                    let notification = super::schema::MetadataNotification {
+                        session_id: self.session_id_str.clone(),
+                        context_usage_percentage: None,
+                        metering_usage: None,
+                        turn_duration_ms: None,
+                        effort: None,
+                        stop_reason: stream.stop_reason.clone(),
+                        refusal: stream.refusal.as_deref().cloned(),
+                    };
+                    if let Err(e) = self.connection_cx.send_notification(notification) {
+                        warn!("Failed to send refusal metadata: {}", e);
+                    }
+                }
+            }
+
             // Push a live context-usage update mid-turn (between tool calls), so the TUI
             // gauge tracks growth as it happens instead of jumping only at EndTurn.
             // EndTurn's send_turn_metadata remains the authoritative push (metering + duration + effort).
@@ -2657,6 +2683,8 @@ impl AcpSession {
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
+                    stop_reason: None,
+                    refusal: None,
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send mid-turn context usage: {}", e);
@@ -2926,6 +2954,8 @@ impl AcpSession {
                         metering_usage: None,
                         turn_duration_ms: None,
                         effort: self.current_effort(),
+                        stop_reason: None,
+                        refusal: None,
                     };
                     if let Err(e) = self.connection_cx.send_notification(notification) {
                         warn!("Failed to send metadata after compaction: {}", e);
@@ -2966,6 +2996,8 @@ impl AcpSession {
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
+                    stop_reason: None,
+                    refusal: None,
                 };
                 if let Err(e) = self.connection_cx.send_notification(notification) {
                     warn!("Failed to send metadata after clear: {}", e);

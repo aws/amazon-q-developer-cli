@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Model refusal notifications now display an error alert explaining why the model declined the request"
+}

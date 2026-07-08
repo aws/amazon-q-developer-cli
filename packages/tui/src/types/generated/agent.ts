@@ -69,6 +69,11 @@ export interface AgentSettings {
 	mcp_enabled: boolean;
 	/** When true, MCP tools are hidden until activated via search_tools. */
 	tool_search_enabled?: boolean;
+	/**
+	 * MCP server names that must always have their tools immediately available
+	 * (bypass tool_search deferral). Set via ASBX_KIRO_MANDATORY_MCPS env var.
+	 */
+	mandatory_mcp_names?: string[];
 }
 
 /** State associated with a history of messages. */
@@ -352,11 +357,19 @@ export interface MeteringUsageInfo {
 	unitPlural: string;
 }
 
+export interface RefusalInfo {
+	category?: string;
+	explanation?: string;
+	recommendedModel?: string;
+}
+
 export interface MetadataEvent {
 	metrics?: MetadataMetrics;
 	usage?: MetadataUsage;
 	service?: MetadataService;
 	meteringUsage?: MeteringUsageInfo[];
+	stopReason?: string;
+	refusal?: RefusalInfo;
 }
 
 /** Arguments for /model command */

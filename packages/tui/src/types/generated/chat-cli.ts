@@ -169,6 +169,10 @@ export type ChatResponseStream =
 	output_tokens?: number;
 	cache_read_input_tokens?: number;
 	cache_write_input_tokens?: number;
+	stop_reason?: string;
+	refusal_category?: string;
+	refusal_explanation?: string;
+	refusal_recommended_model?: string;
 }}
 	| { kind: "MeteringEvent", data: {
 	usage?: number;

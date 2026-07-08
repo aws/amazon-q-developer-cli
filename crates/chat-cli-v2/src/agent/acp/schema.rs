@@ -1,6 +1,9 @@
 //! ACP custom extension types with derive macros.
 
-use agent::agent_loop::types::MeteringUsageInfo;
+use agent::agent_loop::types::{
+    MeteringUsageInfo,
+    RefusalInfo,
+};
 use agent::tui_commands::{
     CommandOptionsResponse,
     CommandResult,
@@ -155,6 +158,10 @@ pub struct MetadataNotification {
     pub turn_duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<RefusalInfo>,
 }
 
 // ---------------------------------------------------------------------------

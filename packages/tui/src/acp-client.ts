@@ -1435,8 +1435,27 @@ abstract class BaseAcpClient implements SessionClient {
         turnDurationMs: durationMs,
       });
     }
-    const effort = (params.effort as string | undefined) ?? null;
-    this.broadcastStreamEvent({ type: AgentEventType.EffortUpdate, effort });
+    // Only emitted when the notification actually carries effort; a refusal-only
+    // notification omits it and must not clear the effort chip.
+    if ('effort' in params) {
+      const effort = (params.effort as string | undefined) ?? null;
+      this.broadcastStreamEvent({ type: AgentEventType.EffortUpdate, effort });
+    }
+
+    const refusal = params.refusal as
+      | { category?: string; explanation?: string; recommendedModel?: string }
+      | undefined;
+    const stopReason = params.stopReason as string | undefined;
+    if (refusal || stopReason === 'CONTENT_FILTERED') {
+      logger.debug('[acp] model refusal', { stopReason, refusal });
+      this.broadcastStreamEvent({
+        type: AgentEventType.ModelRefusal,
+        stopReason,
+        category: refusal?.category,
+        explanation: refusal?.explanation,
+        recommendedModel: refusal?.recommendedModel,
+      });
+    }
   }
 
   private handleClearStatus() {

@@ -733,6 +733,71 @@ describe('Stream event handler — RateLimitError', () => {
   });
 });
 
+describe('Stream event handler — ModelRefusal', () => {
+  it('shows a persistent error alert and leaves a copy in scrollback', () => {
+    const store = makeStore();
+    store.setState({ isProcessing: true });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ModelRefusal,
+      stopReason: 'REFUSAL',
+      category: 'CYBER',
+      explanation: 'This request was declined by content policy.',
+      recommendedModel: 'kiro-safe',
+    });
+    const alert = store.getState().transientAlert;
+    expect(alert?.status).toBe('error');
+    expect(alert?.message).toBe('This request was declined by content policy.');
+    // Refusals must not auto-hide.
+    expect(alert?.autoHideMs).toBeUndefined();
+
+    // A copy is left in scrollback, marked turnOwned so it renders within the
+    // in-flight turn even though the refused response carried no model content.
+    const scrollback = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.System);
+    expect(scrollback).toHaveLength(1);
+    expect(scrollback[0]!.content).toBe(
+      'This request was declined by content policy.'
+    );
+    expect((scrollback[0] as { success: boolean }).success).toBe(false);
+    expect((scrollback[0] as { turnOwned?: boolean }).turnOwned).toBe(true);
+  });
+
+  it('falls back to the default guidance when no explanation is given', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ModelRefusal,
+      stopReason: 'CONTENT_FILTERED',
+    });
+    expect(store.getState().transientAlert?.message).toBe(
+      'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.'
+    );
+  });
+
+  it('surfaces only the first refusal per turn', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ModelRefusal,
+      stopReason: 'CONTENT_FILTERED',
+      explanation: 'First refusal.',
+    });
+    handler({
+      type: AgentEventType.ModelRefusal,
+      stopReason: 'CONTENT_FILTERED',
+      explanation: 'Second refusal.',
+    });
+    const scrollback = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.System);
+    expect(scrollback).toHaveLength(1);
+    expect(scrollback[0]!.content).toBe('First refusal.');
+    expect(store.getState().transientAlert?.message).toBe('First refusal.');
+  });
+});
+
 describe('Stream event handler — ContextUsage', () => {
   it('sets contextUsagePercent', () => {
     const store = makeStore();

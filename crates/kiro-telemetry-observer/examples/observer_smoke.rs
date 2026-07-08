@@ -109,6 +109,8 @@ fn success_stream_end() -> AgentLoopEventKind {
                     status_code: Some(200),
                 }),
                 metering_usage: Vec::new(),
+                stop_reason: None,
+                refusal: None,
             }),
             request_attempts: None,
         },

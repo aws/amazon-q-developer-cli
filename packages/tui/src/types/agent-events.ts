@@ -47,6 +47,7 @@ export enum AgentEventType {
   McpServersUpdate = 'mcp_servers_update',
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
+  ModelRefusal = 'model_refusal',
 }
 
 export enum ContentType {
@@ -623,6 +624,19 @@ export interface TurnSummaryEvent {
   turnDurationMs?: number;
 }
 
+/**
+ * The model stopped due to a content-policy refusal or a content-filtered stop
+ * reason. Carries the provider-supplied explanation when available so the TUI
+ * can surface a notice to the user.
+ */
+export interface ModelRefusalEvent {
+  type: AgentEventType.ModelRefusal;
+  stopReason?: string;
+  category?: string;
+  explanation?: string;
+  recommendedModel?: string;
+}
+
 export interface McpOauthRequestEvent {
   type: AgentEventType.McpOauthRequest;
   serverName: string;
@@ -704,4 +718,5 @@ export type AgentStreamEvent =
   | HooksUpdateEvent
   | ToolsUpdateEvent
   | McpServersUpdateEvent
-  | GoalStatusEvent;
+  | GoalStatusEvent
+  | ModelRefusalEvent;
