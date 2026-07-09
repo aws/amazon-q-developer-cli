@@ -2233,6 +2233,7 @@ mod tests {
                 metric::Operation::Stream,
                 metric::ErrorKind::ServerError,
                 metric::StatusClass::Class5xx,
+                Some("ServiceUnavailable"),
             ),
         );
     }

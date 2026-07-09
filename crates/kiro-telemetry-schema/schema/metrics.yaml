@@ -221,7 +221,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, operation, error_kind, status_class]
+    attributes: [model, operation, error_kind, status_class, failure_reason_code]
   - name: kiro_cli.bedrock.empty_response.retries
     kind: counter
     unit: "1"

@@ -253,6 +253,8 @@ attributes:
     metric_allowed: false
   - name: host_id_hash
     metric_allowed: false
+  - name: failure_reason_code
+    max_distinct: 64
   - name: reason_desc
     metric_allowed: false
   - name: error_message

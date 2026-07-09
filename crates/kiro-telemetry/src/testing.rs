@@ -162,6 +162,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         Operation::Stream,
         ErrorKind::Throttling,
         StatusClass::Class5xx,
+        Some("QuotaBreachError"),
     ));
     records.push(empty_response_retry(Some("claude-sonnet-4"), Outcome::Recovered));
     records.push(retry_attempt(

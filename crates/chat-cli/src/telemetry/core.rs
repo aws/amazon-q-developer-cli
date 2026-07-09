@@ -882,6 +882,7 @@ fn request_error_metric_record(
         metric::Operation::Stream,
         metric::ErrorKind::from_reason(reason.as_deref(), status_code),
         metric::StatusClass::from_status_code(status_code),
+        reason.as_deref(),
     )
 }
 

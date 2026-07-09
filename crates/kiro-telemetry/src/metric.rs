@@ -877,7 +877,9 @@ impl ErrorKind {
             Self::Timeout
         } else if reason.contains("connection") || reason.contains("network") || reason.contains("dns") {
             Self::Connection
-        } else if reason.contains("model") {
+        } else if reason.contains("invalidmodel") || reason.contains("invalid_model") {
+            Self::Validation
+        } else if reason.contains("model") && !reason.contains("invalid") {
             Self::ModelError
         } else if matches!(status_code, Some(500..=599)) {
             Self::ServerError
@@ -2870,6 +2872,7 @@ pub struct BedrockRequestError<'a> {
     pub operation: Operation,
     pub error_kind: ErrorKind,
     pub status_class: StatusClass,
+    pub failure_reason_code: Option<&'a str>,
 }
 
 impl<'a> BedrockRequestError<'a> {
@@ -2884,16 +2887,18 @@ impl<'a> BedrockRequestError<'a> {
             operation,
             error_kind,
             status_class,
+            failure_reason_code: None,
         }
     }
 
-    pub fn from_stream_reason(model_id: Option<&'a str>, reason: Option<&str>, status_code: Option<u16>) -> Self {
-        Self::new(
-            model_id,
-            Operation::Stream,
-            ErrorKind::from_reason(reason, status_code),
-            StatusClass::from_status_code(status_code),
-        )
+    pub fn from_stream_reason(model_id: Option<&'a str>, reason: Option<&'a str>, status_code: Option<u16>) -> Self {
+        Self {
+            model: model_id,
+            operation: Operation::Stream,
+            error_kind: ErrorKind::from_reason(reason, status_code),
+            status_class: StatusClass::from_status_code(status_code),
+            failure_reason_code: reason,
+        }
     }
 }
 
@@ -3270,17 +3275,27 @@ pub fn bedrock_request_error(
     operation: Operation,
     error_kind: ErrorKind,
     status_class: StatusClass,
+    failure_reason_code: Option<&str>,
 ) -> MetricRecord {
-    counter("kiro_cli.bedrock.request.errors", 1)
+    let mut record = counter("kiro_cli.bedrock.request.errors", 1)
         .attribute("model", model_attr(model))
         .attribute("operation", operation.as_str())
         .attribute("error_kind", error_kind.as_str())
-        .attribute("status_class", status_class.as_str())
-        .expect_valid()
+        .attribute("status_class", status_class.as_str());
+    if let Some(code) = failure_reason_code {
+        record = record.attribute("failure_reason_code", code);
+    }
+    record.expect_valid()
 }
 
 pub fn bedrock_request_error_record(input: BedrockRequestError<'_>) -> MetricRecord {
-    bedrock_request_error(input.model, input.operation, input.error_kind, input.status_class)
+    bedrock_request_error(
+        input.model,
+        input.operation,
+        input.error_kind,
+        input.status_class,
+        input.failure_reason_code,
+    )
 }
 
 pub fn bedrock_stream_request_error_from_reason(
@@ -4473,6 +4488,7 @@ mod tests {
                 Operation::Stream,
                 ErrorKind::Throttling,
                 StatusClass::Class5xx,
+                Some("QuotaBreachError"),
             ),
             "kiro_cli.bedrock.request.errors",
             MetricValue::Counter(1),
@@ -4481,6 +4497,7 @@ mod tests {
                 ("operation", "stream"),
                 ("error_kind", "throttling"),
                 ("status_class", "5xx"),
+                ("failure_reason_code", "QuotaBreachError"),
             ],
         );
         assert_metric_shape(
@@ -4492,6 +4509,7 @@ mod tests {
                 ("operation", "stream"),
                 ("error_kind", "throttling"),
                 ("status_class", "5xx"),
+                ("failure_reason_code", "throttling"),
             ],
         );
 
@@ -4863,6 +4881,7 @@ mod tests {
                 ("operation", "stream"),
                 ("error_kind", "access_denied"),
                 ("status_class", "4xx"),
+                ("failure_reason_code", "AccessDeniedException"),
             ],
         );
         assert_metric_shape(
