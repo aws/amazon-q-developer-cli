@@ -29,8 +29,8 @@
       "version": "0.0.0-dev",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.19.0",
-        "@kiro/acp-type-covenant": "0.8.0",
-        "@kiro/client": "0.8.0",
+        "@kiro/acp-type-covenant": "0.15.0",
+        "@kiro/client": "0.15.0",
         "@opentelemetry/api": "1.9.1",
         "@opentelemetry/exporter-metrics-otlp-http": "0.217.0",
         "@opentelemetry/resources": "2.8.0",
@@ -52,7 +52,7 @@
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@kiro/agent": "0.8.0",
+        "@kiro/agent": "0.15.0",
         "@types/bun": "^1.3.11",
         "@types/node": "^22.19.15",
         "@types/react": "^19.2.14",
@@ -458,15 +458,15 @@
 
     "@js-sdsl/ordered-map": ["@js-sdsl/ordered-map@4.4.2", "", {}, "sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw=="],
 
-    "@kiro/acp-type-covenant": ["@kiro/acp-type-covenant@0.8.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/acp-type-covenant/-/acp-type-covenant-0.8.0.tgz", { "dependencies": { "@kiro/context-providers": "0.8.0", "zod": "^3.23.8" } }, "sha512-1D1BAgY6u+N5g8nvCknmlg3dLZOT9HkFpE6TQE4i3KIuaqiyF5K/U/w2LZhzgqSy/dlJvFaWUBupmrXUbMVw0g=="],
+    "@kiro/acp-type-covenant": ["@kiro/acp-type-covenant@0.15.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/acp-type-covenant/-/acp-type-covenant-0.15.0.tgz", { "dependencies": { "@kiro/context-providers": "0.15.0", "zod": "^3.23.8" } }, "sha512-u0io2siotKliJ4knF5zk257gNlz1f3UErp5xm9ClC2uX4da9nZDnxxA4jK0yMzCSoqdteNt/A3q/DRErLno9vA=="],
 
-    "@kiro/agent": ["@kiro/agent@0.8.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/agent/-/agent-0.8.0.tgz", { "dependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@amzn/kiro-control-plane-bearer-client": "^1.0.0", "@amzn/kiro-runtime-service-typescript-client": "^1.0.0", "@aws/codewhisperer-streaming-client": "^1.0.43", "@cedar-policy/cedar-wasm": "^4.9.1", "@huggingface/transformers": "^3.4.1", "@kiro/sandbox-proxy": "0.8.0", "@langchain/aws": "^1.3.7", "@langchain/core": "^1.1.45", "@langchain/langgraph": "^1.3.0", "@modelcontextprotocol/sdk": "^1.25.2", "@mozilla/readability": "^0.6.0", "@opentelemetry/api": "^1.9.1", "@opentelemetry/context-async-hooks": "^2.7.0", "@opentelemetry/core": "^2.7.0", "@opentelemetry/exporter-metrics-otlp-http": "^0.217.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/id-generator-aws-xray": "^2.1.0", "@opentelemetry/propagator-aws-xray": "^2.2.0", "@opentelemetry/resources": "^2.7.0", "@opentelemetry/sdk-metrics": "^2.7.0", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.0", "@opentelemetry/semantic-conventions": "^1.28.0", "@smithy/types": "^4.14.1", "@smithy/util-retry": "^4.3.1", "@unit-mesh/treesitter-artifacts": "^1.7.7", "@vscode/ripgrep": "^1.17.1", "async-sema": "^3.1.1", "axios": "^1.16.0", "axios-retry": "^4.5.0", "chokidar": "^5.0.0", "comment-json": "^5.0.0", "dedent": "^1.7.2", "gray-matter": "^4.0.3", "html-escaper": "^3.0.3", "https-proxy-agent": "^7.0.6", "ignore": "^7.0.5", "jsdom": "^25.0.1", "minimatch": "^10.2.5", "mustache": "^4.2.0", "proper-lockfile": "^4.1.2", "schema-stream": "^3.2.2", "socks-proxy-agent": "^8.0.5", "tslib": "^2.3.1", "uuid": "^14.0.0", "vscode-jsonrpc": "^8.2.1", "vscode-languageserver-types": "3.17.5", "vscode-uri": "^3.1.0", "web-tree-sitter": "0.26.8", "ws": "^8.20.0", "yaml": "^2.8.3", "zod": "^3.23.8" }, "optionalDependencies": { "z3-solver": "^4.16.0" }, "peerDependencies": { "@kiro/acp-type-covenant": "0.8.0", "@kiro/context-providers": "0.8.0" }, "bin": { "kiro-agent": "dist/server/acp-server.js" } }, "sha512-LHK3e2QZZwJ6AHbjLAOf2YOvICQP+XV0n9oALV01iJnawo/HPgsuy8PHUnzbSMDAnYziQloRNJArWAeXraOHeg=="],
+    "@kiro/agent": ["@kiro/agent@0.15.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/agent/-/agent-0.15.0.tgz", { "dependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@amzn/kiro-control-plane-bearer-client": "^1.0.0", "@amzn/kiro-runtime-service-typescript-client": "^1.0.0", "@aws/codewhisperer-streaming-client": "^1.0.43", "@cedar-policy/cedar-wasm": "^4.9.1", "@huggingface/transformers": "^3.4.1", "@kiro/sandbox-proxy": "0.15.0", "@langchain/aws": "^1.3.7", "@langchain/core": "^1.1.45", "@langchain/langgraph": "^1.3.0", "@modelcontextprotocol/sdk": "^1.25.2", "@mozilla/readability": "^0.6.0", "@opentelemetry/api": "^1.9.1", "@opentelemetry/context-async-hooks": "^2.7.0", "@opentelemetry/core": "^2.7.0", "@opentelemetry/exporter-metrics-otlp-http": "^0.217.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/id-generator-aws-xray": "^2.1.0", "@opentelemetry/propagator-aws-xray": "^2.2.0", "@opentelemetry/resources": "^2.7.0", "@opentelemetry/sdk-metrics": "^2.7.0", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.0", "@opentelemetry/semantic-conventions": "^1.28.0", "@smithy/node-http-handler": "^4.5.0", "@smithy/types": "^4.14.1", "@smithy/util-retry": "^4.3.1", "@unit-mesh/treesitter-artifacts": "^1.7.7", "@vscode/ripgrep": "^1.17.1", "async-sema": "^3.1.1", "axios": "^1.16.0", "axios-retry": "^4.5.0", "chokidar": "^5.0.0", "comment-json": "^5.0.0", "dedent": "^1.7.2", "gray-matter": "^4.0.3", "html-escaper": "^3.0.3", "https-proxy-agent": "^7.0.6", "ignore": "^7.0.5", "jsdom": "^25.0.1", "minimatch": "^10.2.5", "mustache": "^4.2.0", "proper-lockfile": "^4.1.2", "schema-stream": "^3.2.2", "socks-proxy-agent": "^8.0.5", "tree-sitter-powershell": "0.26.4", "tslib": "^2.3.1", "uuid": "^14.0.0", "vscode-jsonrpc": "^8.2.1", "vscode-languageserver-types": "3.17.5", "vscode-uri": "^3.1.0", "web-tree-sitter": "0.26.8", "ws": "^8.20.0", "yaml": "^2.8.3", "zod": "^3.23.8" }, "optionalDependencies": { "z3-solver": "^4.16.0" }, "peerDependencies": { "@kiro/acp-type-covenant": "0.15.0", "@kiro/context-providers": "0.15.0" }, "bin": { "kiro-agent": "dist/server/acp-server.js" } }, "sha512-ohOS09Ser9FwJ/2Tc0J/AFZoLZ8vr5VW202SGYqxmabs41rpAjdYtjQLCZHRA4ZPGqkhyEb+WF6D9234m9OklQ=="],
 
-    "@kiro/client": ["@kiro/client@0.8.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/client/-/client-0.8.0.tgz", { "peerDependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@kiro/acp-type-covenant": "0.8.0" } }, "sha512-psPNY1a2zjiHHcGn03jnBGh56GwythOsVxaii0eqyi0rTGDOcCdcJxVmtVEh2DX37ECGHYvBpSqoqnEOqUfyJw=="],
+    "@kiro/client": ["@kiro/client@0.15.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/client/-/client-0.15.0.tgz", { "peerDependencies": { "@agentclientprotocol/sdk": "^0.19.0", "@kiro/acp-type-covenant": "0.15.0" } }, "sha512-2Xfs/aBPwK2v9j2FA1PyFVYUUd6DUMBxTW+tymHT1HrcnFPV6TLVDpVXaqfOZH1qcfwe3rQIhIvOX3X8y8T1Sg=="],
 
-    "@kiro/context-providers": ["@kiro/context-providers@0.8.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/context-providers/-/context-providers-0.8.0.tgz", { "dependencies": { "vscode-uri": "^3.1.0" } }, "sha512-s4GMLjG65V40oygslcZmPOFp1NguvcPUeULxMSzIwkwRxffP/OzR5QufMHVWnmwEF5HsSuz5SkBIb1CVd5Jd8g=="],
+    "@kiro/context-providers": ["@kiro/context-providers@0.15.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/context-providers/-/context-providers-0.15.0.tgz", { "dependencies": { "vscode-uri": "^3.1.0" } }, "sha512-B2tDBlIwLTAD3ndaig3/RR10YaTUH5S12YX8f8R0zx6F4VMJTUfkDuCN5IOUXtQfP7Dkeh8rm7y9HRkF7rWHsQ=="],
 
-    "@kiro/sandbox-proxy": ["@kiro/sandbox-proxy@0.8.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/sandbox-proxy/-/sandbox-proxy-0.8.0.tgz", { "bin": { "kiro-proxy": "dist/cli.js" } }, "sha512-MMBCRuta5K8RmQkIcW3B/pIBl/p7QW1112gmfU19o7N9EcYOzmKE5PJI2DnMEH1lU4zUfTCFpr2sLEJA3gSn0w=="],
+    "@kiro/sandbox-proxy": ["@kiro/sandbox-proxy@0.15.0", "https://kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages/@kiro/sandbox-proxy/-/sandbox-proxy-0.15.0.tgz", { "bin": { "kiro-proxy": "dist/cli.js" } }, "sha512-u5gWuP4bOtY5yf2qQsoItGyKsSIyJdqIqKa0SoRjRHsRLW3HsxZWU0335bU/qkQlIh/qiUgi9EaFc9hoI3F0sw=="],
 
     "@kiro/tui": ["@kiro/tui@workspace:packages/tui"],
 
@@ -1268,6 +1268,8 @@
 
     "node-addon-api": ["node-addon-api@7.1.1", "", {}, "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="],
 
+    "node-gyp-build": ["node-gyp-build@4.8.4", "", { "bin": { "node-gyp-build": "bin.js", "node-gyp-build-optional": "optional.js", "node-gyp-build-test": "build-test.js" } }, "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ=="],
+
     "node-machine-id": ["node-machine-id@1.1.12", "", {}, "sha512-QNABxbrPa3qEIfrE6GOJ7BYIuignnJw7iQ2YPbc3Nla1HzRJjXzZOiikfF8m7eAMfichLt3M4VgLOetqgDmgGQ=="],
 
     "node-pty": ["node-pty@1.1.0", "", { "dependencies": { "node-addon-api": "^7.1.0" } }, "sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg=="],
@@ -1519,6 +1521,8 @@
     "tough-cookie": ["tough-cookie@5.1.2", "", { "dependencies": { "tldts": "^6.1.32" } }, "sha512-FVDYdxtnj0G6Qm/DhNPSb8Ju59ULcup3tuJxkFb5K8Bv2pUXILbf0xZWU8PX8Ov19OXljbUyveOFwRMwkXzO+A=="],
 
     "tr46": ["tr46@5.1.1", "", { "dependencies": { "punycode": "^2.3.1" } }, "sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw=="],
+
+    "tree-sitter-powershell": ["tree-sitter-powershell@0.26.4", "", { "dependencies": { "node-addon-api": "^8.5.0", "node-gyp-build": "^4.8.4" }, "peerDependencies": { "tree-sitter": "^0.25.0" }, "optionalPeers": ["tree-sitter"] }, "sha512-5RwNW/qN/cKArZY0znvTOG+OWSau7Agel5K0A8KQ5Nubw/4SyZ5KC02RKCaYcA2ur5UQ8esyxe9+6yXup2MXkw=="],
 
     "trim-lines": ["trim-lines@3.0.1", "", {}, "sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg=="],
 
@@ -1807,6 +1811,8 @@
     "terminal-harness/bun-pty": ["bun-pty@0.3.2", "", {}, "sha512-ZDNs03VX7uUzTTFgymM9m3nWvPNYkeWWHj7+aweI3O1F/5uu8yqdQ9HhGXjbcW8UDjVzNvVFg8UaPEvaQsEjLg=="],
 
     "test-exclude/minimatch": ["minimatch@10.2.5", "", { "dependencies": { "brace-expansion": "^5.0.5" } }, "sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg=="],
+
+    "tree-sitter-powershell/node-addon-api": ["node-addon-api@8.9.0", "", {}, "sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q=="],
 
     "twinki/@types/diff": ["@types/diff@7.0.2", "", {}, "sha512-JSWRMozjFKsGlEjiiKajUjIJVKuKdE3oVy2DNtK+fUo8q82nhFZ2CPQwicAIkXrofahDXrWJ7mjelvZphMS98Q=="],
 
