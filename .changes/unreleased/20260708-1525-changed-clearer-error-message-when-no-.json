@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Clearer error message when no Kiro profiles are available, directing users to contact their organization's administrator"
+}

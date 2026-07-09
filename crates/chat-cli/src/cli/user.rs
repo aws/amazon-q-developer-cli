@@ -634,7 +634,10 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool, region: Option<&s
         } else {
             error!("No profiles available for Idp user");
         }
-        bail!("No profiles available. Please contact your administrator.");
+        bail!(
+            "No profiles available. Your administrator has not granted you access to Kiro. \
+               Please contact your organization's administrator to be added to a Kiro profile."
+        );
     }
 
     let sso_region = os.database.get_idc_region()?;

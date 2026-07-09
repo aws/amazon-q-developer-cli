@@ -222,7 +222,9 @@ impl ProfileResolver {
             Ok(guard.as_ref().unwrap().arn.clone())
         } else {
             Err(ApiClientError::Other(
-                "profileArn is required but no profiles are available. Please log in and select a profile.".into(),
+                "No profiles available. Your administrator has not granted you access to Kiro. \
+                 Please contact your organization's administrator to be added to a Kiro profile."
+                    .into(),
             ))
         }
     }
