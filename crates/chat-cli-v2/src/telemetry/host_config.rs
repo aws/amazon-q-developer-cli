@@ -58,7 +58,8 @@ pub async fn build_v2_host_config(
     let client_id = legacy_sink::resolve_client_id(env, database, telemetry_enabled)?;
     let legacy_sink =
         legacy_sink::V2LegacySink::build(env, fs, database, govcloud_partition, client_id, telemetry_enabled).await?;
-    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id);
+    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id)
+        .with_user_id(database.get_telemetry_user_id().ok().flatten());
     Ok(HostConfig {
         client_id,
         telemetry_enabled,

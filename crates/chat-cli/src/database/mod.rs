@@ -60,6 +60,7 @@ macro_rules! migrations {
 const CREDENTIALS_KEY: &str = "telemetry-cognito-credentials";
 const COGNITO_IDENTITY_ID_KEY: &str = "telemetry-cognito-identity-id";
 const CLIENT_ID_KEY: &str = "telemetryClientId";
+const TELEMETRY_USER_ID_KEY: &str = "telemetryUserId";
 const CODEWHISPERER_PROFILE_KEY: &str = "api.codewhisperer.profile";
 const START_URL_KEY: &str = "auth.idc.start-url";
 const IDC_REGION_KEY: &str = "auth.idc.region";
@@ -322,6 +323,7 @@ impl Database {
     /// Unset the current user profile used to determine API endpoints.
     pub fn unset_auth_profile(&mut self) -> Result<(), DatabaseError> {
         self.delete_entry(Table::State, CODEWHISPERER_PROFILE_KEY)?;
+        self.delete_entry(Table::State, TELEMETRY_USER_ID_KEY)?;
         self.delete_entry(Table::State, CUSTOMIZATION_STATE_KEY)
     }
 
@@ -370,6 +372,16 @@ impl Database {
     /// Set the client ID used for telemetry requests.
     pub fn set_client_id(&mut self, client_id: Uuid) -> Result<usize, DatabaseError> {
         self.set_json_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
+    }
+
+    /// Get the cached user ID attached to telemetry records (from GetUsageLimits).
+    pub fn get_telemetry_user_id(&self) -> Result<Option<String>, DatabaseError> {
+        self.get_json_entry::<String>(Table::State, TELEMETRY_USER_ID_KEY)
+    }
+
+    /// Cache the user ID attached to telemetry records.
+    pub fn set_telemetry_user_id(&self, user_id: &str) -> Result<usize, DatabaseError> {
+        self.set_json_entry(Table::State, TELEMETRY_USER_ID_KEY, user_id)
     }
 
     /// Get the start URL used for IdC login.

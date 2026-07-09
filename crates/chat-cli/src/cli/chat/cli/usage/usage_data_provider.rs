@@ -19,6 +19,9 @@ const NO_LIMIT_SENTINEL: f64 = 999_999.0;
 pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsageData, ChatError> {
     match os.client.get_usage_limits().await {
         Ok(usage_limits) => {
+            if let Some(info) = usage_limits.user_info() {
+                let _ = os.database.set_telemetry_user_id(info.user_id());
+            }
             let usage_breakdown = usage_limits.usage_breakdown_list();
 
             // Get plan info

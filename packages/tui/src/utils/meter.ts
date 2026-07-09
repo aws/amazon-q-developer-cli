@@ -123,6 +123,17 @@ function attrsKey(attrs: MetricAttributes | undefined): string {
 const DEFAULT_SCOPE = 'kiro.tui';
 
 /**
+ * Stamp user identity on every datapoint. KUTS drops OTLP resource attributes
+ * on ingest, so user_id must ride per-datapoint to be queryable downstream.
+ * Injected centrally — callers never pass identity attributes themselves.
+ */
+function withUserId(attrs?: MetricAttributes): MetricAttributes | undefined {
+  const userId = getTelemetryIdentity().userId;
+  if (!userId) return attrs;
+  return { ...attrs, user_id: userId };
+}
+
+/**
  * OTLP resource attributes shared by every TUI metric: service.name=kiro-tui
  * plus identity. `kiro.machine_id` is Contract 3's resource-attribute channel.
  */
@@ -218,7 +229,7 @@ export function counter(
       inst = sc.meter.createCounter(name);
       sc.counters.set(name, inst);
     }
-    inst.add(value, attrs as Attributes | undefined);
+    inst.add(value, withUserId(attrs) as Attributes | undefined);
   } catch (err) {
     swallow(`counter:${name}`, err);
   }
@@ -248,7 +259,7 @@ export function histogram(
       );
       sc.histograms.set(name, inst);
     }
-    inst.record(value, attrs as Attributes | undefined);
+    inst.record(value, withUserId(attrs) as Attributes | undefined);
   } catch (err) {
     swallow(`histogram:${name}`, err);
   }
@@ -282,7 +293,7 @@ export function gauge(
     }
     entry.values.set(attrsKey(attrs), {
       value,
-      attrs: (attrs ?? {}) as Attributes,
+      attrs: (withUserId(attrs) ?? {}) as Attributes,
     });
   } catch (err) {
     swallow(`gauge:${name}`, err);

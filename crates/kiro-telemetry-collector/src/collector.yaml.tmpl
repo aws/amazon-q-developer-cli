@@ -28,7 +28,7 @@ processors:
     metric_statements:
       - context: datapoint
         statements:
-          - keep_keys(attributes, ["host_role", "command", "exit_status", "error_code", "model", "host_os", "kiro_version", "telemetry_schema_version"])
+          - keep_keys(attributes, ["host_role", "command", "exit_status", "error_code", "model", "host_os", "kiro_version", "telemetry_schema_version", "user_id"])
 
   # Drop datapoints whose error_code attribute looks high-cardinality
   # (anything that doesn't match the snake_case identifier pattern).

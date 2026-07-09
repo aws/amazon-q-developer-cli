@@ -159,3 +159,61 @@ describe('meter (c) gauge recording', () => {
     expect(h!.dataPointType).toBe(DataPointType.HISTOGRAM);
   });
 });
+
+describe('meter (d) user_id datapoint attribute', () => {
+  let originalUserId: string | undefined;
+
+  beforeEach(() => {
+    originalUserId = process.env['KIRO_USER_ID'];
+  });
+
+  afterEach(() => {
+    if (originalUserId === undefined) delete process.env['KIRO_USER_ID'];
+    else process.env['KIRO_USER_ID'] = originalUserId;
+  });
+
+  function attrsOf(name: string, exporter: InMemoryMetricExporter) {
+    const m = allMetrics(exporter.getMetrics()).find(
+      (x) => x.descriptor.name === name
+    );
+    return m?.dataPoints[0]?.attributes as Record<string, unknown> | undefined;
+  }
+
+  it('stamps user_id on counter, histogram, and gauge datapoints when set', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    process.env['KIRO_USER_ID'] = 'test-user-id';
+    const exporter = injectInMemory();
+
+    counter('kiro_cli_user_turns', 1, { engine: 'v2' });
+    histogram('kiro_cli_tool_execution_duration_ms', 42, { engine: 'v2' });
+    gauge('kiro_cli_context_usage_percentage', 50, { engine: 'v2' });
+    await forceFlushMetrics();
+
+    for (const name of [
+      'kiro_cli_user_turns',
+      'kiro_cli_tool_execution_duration_ms',
+      'kiro_cli_context_usage_percentage',
+    ]) {
+      const attrs = attrsOf(name, exporter);
+      expect(attrs?.['user_id']).toBe('test-user-id');
+      expect(attrs?.['engine']).toBe('v2');
+    }
+  });
+
+  it('omits user_id when KIRO_USER_ID is unset', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    delete process.env['KIRO_USER_ID'];
+    const exporter = injectInMemory();
+
+    counter('kiro_cli_user_turns', 1, { engine: 'v2' });
+    await forceFlushMetrics();
+
+    const attrs = attrsOf('kiro_cli_user_turns', exporter);
+    expect(attrs).toBeDefined();
+    expect('user_id' in attrs!).toBe(false);
+  });
+});

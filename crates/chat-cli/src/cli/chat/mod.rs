@@ -5803,6 +5803,9 @@ async fn get_limit_reached_info(os: &mut Os) -> LimitReachedInfo {
 
     match os.client.get_usage_limits().await {
         Ok(response) => {
+            if let Some(info) = response.user_info() {
+                let _ = os.database.set_telemetry_user_id(info.user_id());
+            }
             let sub_info = response.subscription_info();
 
             let can_upgrade = sub_info.is_some_and(|si| *si.upgrade_capability() == UpgradeCapability::UpgradeCapable);

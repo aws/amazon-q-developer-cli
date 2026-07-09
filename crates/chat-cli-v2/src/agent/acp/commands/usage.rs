@@ -13,6 +13,10 @@ const NO_LIMIT_SENTINEL: f64 = 999_999.0;
 pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
     match ctx.api_client.get_usage_limits().await {
         Ok(usage_limits) => {
+            if let Some(info) = usage_limits.user_info() {
+                let _ = ctx.os.database.set_telemetry_user_id(info.user_id());
+            }
+
             // Extract plan info
             let plan_name = usage_limits
                 .subscription_info()

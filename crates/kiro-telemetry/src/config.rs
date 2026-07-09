@@ -35,6 +35,7 @@ pub struct TelemetryConfig {
     pub otlp_endpoint: Option<String>,
     pub otlp_logs_enabled: bool,
     pub machine_id: String,
+    pub user_id: Option<String>,
     pub deployment_environment: String,
     pub state_dir: PathBuf,
 }
@@ -49,6 +50,7 @@ impl TelemetryConfig {
             otlp_endpoint,
             otlp_logs_enabled: false,
             machine_id: DEFAULT_MACHINE_ID.to_string(),
+            user_id: None,
             deployment_environment,
             state_dir,
         }
@@ -64,6 +66,11 @@ impl TelemetryConfig {
         if !machine_id.trim().is_empty() {
             self.machine_id = machine_id;
         }
+        self
+    }
+
+    pub fn with_user_id(mut self, user_id: impl Into<Option<String>>) -> Self {
+        self.user_id = user_id.into().filter(|value| !value.trim().is_empty());
         self
     }
 

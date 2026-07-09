@@ -104,7 +104,7 @@ impl TelemetryClient {
 
     pub fn emit_with_class(
         &self,
-        record: MetricRecord,
+        mut record: MetricRecord,
         _event_class: EventClass,
     ) -> Result<EmitOutcome, TelemetryError> {
         if !self.config.exports_enabled() {
@@ -112,6 +112,13 @@ impl TelemetryClient {
         }
 
         validate_metric_record(&record)?;
+
+        // Injected after schema validation: user_id is identity, not a metric
+        // dimension — unbounded by nature, so it must never enter the
+        // closed-enum registry or be settable by callers.
+        if let Some(user_id) = &self.config.user_id {
+            record = record.with_attribute("user_id", user_id.clone());
+        }
 
         for sink in &self.sinks {
             if let Err(err) = sink.emit(&record) {
@@ -217,6 +224,53 @@ mod tests {
 
         assert!(outcome.emitted);
         assert_eq!(sink.records().len(), 1);
+    }
+
+    #[test]
+    fn user_id_injected_on_every_metric_when_configured() {
+        let sink = Arc::new(InMemorySink::default());
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir())
+            .with_user_id("test-user-id".to_string());
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+
+        client
+            .emit(
+                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
+            )
+            .expect("emit should not fail");
+
+        let records = sink.records();
+        assert_eq!(records.len(), 1);
+        let user_id = records[0]
+            .attributes
+            .iter()
+            .find(|attribute| attribute.key == "user_id")
+            .map(|attribute| attribute.value.as_str());
+        assert_eq!(user_id, Some("test-user-id"));
+    }
+
+    #[test]
+    fn user_id_absent_when_not_configured() {
+        let sink = Arc::new(InMemorySink::default());
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir());
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+
+        client
+            .emit(
+                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
+            )
+            .expect("emit should not fail");
+
+        let records = sink.records();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].attributes.iter().any(|attribute| attribute.key == "user_id"));
+    }
+
+    #[test]
+    fn blank_user_id_is_ignored() {
+        let config =
+            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_user_id("  ".to_string());
+        assert_eq!(config.user_id, None);
     }
 
     #[test]

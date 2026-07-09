@@ -24,8 +24,8 @@ export interface TelemetryIdentity {
 }
 
 /**
- * KIRO_USER_ID is set by the Rust launcher in embedded_tui.rs from
- * get_usage_limits().user_info().user_id() — only available when authenticated.
+ * KIRO_USER_ID is set by the Rust launcher (launch.rs) for all engines from
+ * the DB-cached GetUsageLimits user_id — only available when authenticated.
  */
 export function getTelemetryIdentity(): TelemetryIdentity {
   const machineId = getMachineId();

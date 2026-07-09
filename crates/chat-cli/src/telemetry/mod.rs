@@ -867,7 +867,8 @@ impl TelemetryClient {
             None
         };
         let client_id = client_id(env, database, telemetry_enabled)?;
-        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id);
+        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id)
+            .with_user_id(database.get_telemetry_user_id().ok().flatten());
         let otel_providers = init_otel(&otel_config);
         let mut otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
             .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));

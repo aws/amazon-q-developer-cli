@@ -416,17 +416,26 @@ async fn launch_acp_interactive(
         );
     }
 
+    // User identity for telemetry (TUI env + backend DB cache). Cached from
+    // the first successful fetch; cold cache (first-ever authenticated
+    // session) falls back to a bounded network fetch and self-heals here on
+    // the next launch. Logged-out sessions emit without user_id.
+    let mut user_id = os.database.get_telemetry_user_id().ok().flatten();
+    if user_id.is_none()
+        && let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
+        && let Some(info) = output.user_info()
+    {
+        let _ = os.database.set_telemetry_user_id(info.user_id());
+        user_id = Some(info.user_id().to_string());
+    }
+    if let Some(ref user_id) = user_id {
+        cmd.env("KIRO_USER_ID", user_id);
+    }
+
     match agent_engine {
         AgentEngine::Kas => {
             if !crate::util::platform::can_run_kas() {
                 bail!("V3 is currently not supported on this system.");
-            }
-
-            // Resolve user identity for KAS telemetry (not needed for Rust engine)
-            if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
-                && let Some(info) = output.user_info()
-            {
-                cmd.env("KIRO_USER_ID", info.user_id());
             }
 
             cmd.env("KIRO_AGENT_ENGINE", "kas");
