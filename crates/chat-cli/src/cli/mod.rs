@@ -312,7 +312,7 @@ impl RootSubcommand {
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog),
                 Self::Chat(mut args) => {
-                    // Dark-ship gate: reject gated-off `--remote` / `--repo` as
+                    // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
                     // unknown args BEFORE any other handling or side effects, so
                     // they stay indistinguishable from a typo on every path --
                     // including the `command` / `--list-models` / session-flag
@@ -490,7 +490,7 @@ impl RootSubcommand {
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(mut args) => {
-                // Dark-ship gate: reject gated-off `--remote` / `--repo` as
+                // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
                 // unknown args BEFORE any other handling or side effects, so
                 // they stay indistinguishable from a typo on every path --
                 // including the `command` / `--list-models` / session-flag
@@ -1783,7 +1783,7 @@ mod test {
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "query");
         }
 
-        // ── Remote sandbox gating (`--remote` / `--repo`) ──────────────────
+        // ── Remote sandbox gating (`--cloud` / `--repo`) ──────────────────
         // In unit tests the global rollout is `init_for_tests_enable_all`,
         // which enables `remote_sandbox`, so the feature gate passes and we
         // exercise the V3-only conflict logic. (The build-level dark-ship gate
@@ -1794,7 +1794,7 @@ mod test {
         async fn remote_with_v3_resolves_to_kas() {
             let os = make_os().await;
             let args = ChatArgs {
-                remote: true,
+                cloud: true,
                 v3: true,
                 ..Default::default()
             };
@@ -1805,7 +1805,7 @@ mod test {
         async fn remote_with_explicit_kas_resolves_to_kas() {
             let os = make_os().await;
             let args = ChatArgs {
-                remote: true,
+                cloud: true,
                 agent_engine: Some(chat::AgentEngine::Kas),
                 ..Default::default()
             };
@@ -1827,7 +1827,7 @@ mod test {
         async fn remote_requires_v3_errors_on_v2() {
             let os = make_os().await;
             let args = ChatArgs {
-                remote: true,
+                cloud: true,
                 agent_engine: Some(chat::AgentEngine::V2),
                 ..Default::default()
             };
@@ -1838,7 +1838,7 @@ mod test {
         async fn remote_requires_v3_errors_on_v1() {
             let os = make_os().await;
             let args = ChatArgs {
-                remote: true,
+                cloud: true,
                 agent_engine: Some(chat::AgentEngine::V1),
                 ..Default::default()
             };

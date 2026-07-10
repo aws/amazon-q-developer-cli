@@ -581,9 +581,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
       initialModel:
         cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
-      // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
+      // Remote sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
-      executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,
+      executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
       repos: cliArgs.repo,
     })
     .then(async () => {
@@ -818,9 +818,9 @@ const startApp = async () => {
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
       initialModel:
         cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
-      // Remote sandbox (dark-shipped): --remote maps to a cloud-sandbox
+      // Remote sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
-      executionTarget: cliArgs.remote ? { kind: 'cloud-sandbox' } : undefined,
+      executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
       repos: cliArgs.repo,
     });
     const listing = await listAllSessions();

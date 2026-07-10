@@ -268,7 +268,7 @@ describe('buildAcpArgs', () => {
   });
 });
 
-describe('remote sandbox flags (--remote / --repo)', () => {
+describe('remote sandbox flags (--cloud / --repo)', () => {
   let originalArgv: string[];
 
   beforeEach(() => {
@@ -283,9 +283,9 @@ describe('remote sandbox flags (--remote / --repo)', () => {
     process.argv = ['bun', 'index.ts', ...args];
   };
 
-  it('parses --remote', () => {
-    setArgs('chat', '--remote');
-    expect(parseCliArgs().remote).toBe(true);
+  it('parses --cloud', () => {
+    setArgs('chat', '--cloud');
+    expect(parseCliArgs().cloud).toBe(true);
   });
 
   it('parses --repo as a comma-list', () => {
@@ -298,12 +298,12 @@ describe('remote sandbox flags (--remote / --repo)', () => {
     expect(parseCliArgs().repo).toEqual(['my-service']);
   });
 
-  it('does NOT forward --remote to the KAS subprocess (no acp mapping)', () => {
+  it('does NOT forward --cloud to the KAS subprocess (no acp mapping)', () => {
     // executionTarget rides _meta.kiro on session/new, never a forwarded
-    // subprocess flag — so --remote must be absent from buildAcpArgs output.
-    setArgs('chat', '--remote', '--model', 'gpt-4');
+    // subprocess flag — so --cloud must be absent from buildAcpArgs output.
+    setArgs('chat', '--cloud', '--model', 'gpt-4');
     const acpArgs = buildAcpArgs(parseCliArgs());
-    expect(acpArgs).not.toContain('--remote');
+    expect(acpArgs).not.toContain('--cloud');
     expect(acpArgs).toContain('--model'); // sanity: real ACP flags still forward
   });
 
@@ -312,10 +312,10 @@ describe('remote sandbox flags (--remote / --repo)', () => {
     expect(buildAcpArgs(parseCliArgs())).not.toContain('--repo');
   });
 
-  it('--remote does not swallow positional input', () => {
-    setArgs('chat', '--remote', 'hello there');
+  it('--cloud does not swallow positional input', () => {
+    setArgs('chat', '--cloud', 'hello there');
     const r = parseCliArgs();
-    expect(r.remote).toBe(true);
+    expect(r.cloud).toBe(true);
     expect(r.input).toBe('hello there');
   });
 });

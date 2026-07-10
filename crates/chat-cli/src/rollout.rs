@@ -24,7 +24,7 @@ pub enum Feature {
     Voice,
     Lite,
     Kas,
-    /// Remote/cloud sandbox sessions, exposed via the hidden `--remote` /
+    /// Remote/cloud sandbox sessions, exposed via the hidden `--cloud` /
     /// `--repo` flags. Dark-shipped: `treatment_percent: 0` in `rollout.json`
     /// means it is OFF in every released build (stable and nightly). Only
     /// `init_for_tests_enable_all` (debug builds / `KIRO_TEST_MODE` / E2E)
@@ -365,7 +365,7 @@ mod tests {
         // external/stable, external/nightly, internal/stable, and even
         // internal/nightly. Only `init_for_tests_enable_all` (debug /
         // KIRO_TEST_MODE / E2E) turns it on. This is the dark-ship guarantee
-        // that keeps `--remote`/`--repo` unusable by live customers.
+        // that keeps `--cloud`/`--repo` unusable by live customers.
         for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
             let r = Rollout::new_for_test(is_internal, is_nightly);
             assert!(

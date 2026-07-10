@@ -2836,12 +2836,12 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialModel?: string;
 
   /**
-   * Execution target for the first `newSession`, from the `--remote` CLI flag.
-   * `{ kind: 'cloud-sandbox' }` when `--remote` was passed, else undefined
+   * Execution target for the first `newSession`, from the `--cloud` CLI flag.
+   * `{ kind: 'cloud-sandbox' }` when `--cloud` was passed, else undefined
    * (treated as local). Sent as `_meta.kiro.executionTarget` on `session/new`,
    * but only when KAS advertised the kind on the `initialize` handshake (see
    * `isExecutionTargetSupported`); otherwise the session degrades to local.
-   * Omitting `--remote` is byte-identical to today's behavior.
+   * Omitting `--cloud` is byte-identical to today's behavior.
    */
   private readonly executionTarget?: ExecutionTarget;
 

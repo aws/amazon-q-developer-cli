@@ -7520,7 +7520,7 @@ describe('remote executionTarget', () => {
     expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
   });
 
-  it('sends cloud-sandbox executionTarget when --remote and KAS advertises it', async () => {
+  it('sends cloud-sandbox executionTarget when --cloud and KAS advertises it', async () => {
     advertiseRemoteCaps();
     const client = new KasAcpClient({
       executionTarget: { kind: 'cloud-sandbox' },
@@ -7564,7 +7564,7 @@ describe('remote executionTarget', () => {
   });
 
   it('still sends modeId while dropping executionTarget when KAS does not advertise the kind', async () => {
-    // Degrade-but-preserve: --remote + a mode, but KAS advertises no caps ->
+    // Degrade-but-preserve: --cloud + a mode, but KAS advertises no caps ->
     // executionTarget is gated out yet the modeId merge is unaffected (the two
     // fields share one _meta.kiro object; degrading one must not drop the other).
     advertiseKiroCaps({}); // no executionTargets advertised -> unsupported

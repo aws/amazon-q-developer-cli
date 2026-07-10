@@ -347,9 +347,9 @@ pub struct ChatArgs {
     /// Hidden while the remote-sandbox feature is dark-shipped; forwarded
     /// to the TUI, which sends `_meta.kiro.executionTarget` on `session/new`.
     #[arg(long, hide = true)]
-    pub remote: bool,
+    pub cloud: bool,
     /// Repository to open in a remote session, as `name` or `owner/name`
-    /// (comma-separated for multiple). Only meaningful with `--remote`. Hidden while dark-shipped.
+    /// (comma-separated for multiple). Only meaningful with `--cloud`. Hidden while dark-shipped.
     #[arg(long, value_delimiter = ',', value_name = "REPO", hide = true)]
     pub repo: Option<Vec<String>>,
     /// Internal subcommands (`_ export-session`, `_ import-session`)
@@ -359,7 +359,7 @@ pub struct ChatArgs {
 }
 
 impl ChatArgs {
-    /// Dark-ship gate for `--remote` / `--repo`. Returns clap's genuine
+    /// Dark-ship gate for `--cloud` / `--repo`. Returns clap's genuine
     /// `UnknownArgument` error (exit code 2, same wording and `Usage:` block as a
     /// real unknown flag) when a remote flag was supplied but the `RemoteSandbox`
     /// rollout feature is off (every released build) -- so the dark-shipped flags
@@ -373,20 +373,20 @@ impl ChatArgs {
     /// `handle_session_flags` early-returns and `cleanup_old_data` -- and
     /// `.exit()` on `Some`. Those all return (or print / mutate on-disk state)
     /// before `resolve_agent_engine` runs, so a gate only there would let
-    /// `kiro chat --list-models --remote` silently accept the hidden flag and
-    /// `kiro chat --remote` run cleanup first -- both observably different from
+    /// `kiro chat --list-models --cloud` silently accept the hidden flag and
+    /// `kiro chat --cloud` run cleanup first -- both observably different from
     /// clap's parse-time error, i.e. an existence leak. Returned rather than
     /// `.exit()`-ed, and taking `feature_enabled` as a parameter, so the whole
-    /// decision (flag presence, gate state, `--remote`-wins precedence, and the
+    /// decision (flag presence, gate state, `--cloud`-wins precedence, and the
     /// error shape) is unit-testable despite the rollout being force-on in tests.
     ///
     /// REMOVE once remote sandbox is E2E-ready and the rollout ramps above 0%.
     pub fn remote_sandbox_gate_error(&self, feature_enabled: bool) -> Option<clap::Error> {
-        if feature_enabled || !(self.remote || self.repo.is_some()) {
+        if feature_enabled || !(self.cloud || self.repo.is_some()) {
             return None;
         }
         use clap::CommandFactory;
-        let flag = if self.remote { "--remote" } else { "--repo" };
+        let flag = if self.cloud { "--cloud" } else { "--repo" };
         let msg = format!("unexpected argument '{flag}' found");
         let mut cmd = crate::cli::Cli::command();
         Some(match cmd.find_subcommand_mut("chat") {
@@ -438,20 +438,20 @@ impl ChatArgs {
             );
         }
 
-        // Remote sandbox (`--remote` / `--repo`) is dark-shipped and V3/KAS-only.
+        // Remote sandbox (`--cloud` / `--repo`) is dark-shipped and V3/KAS-only.
         // The gate-OFF rejection (released builds) is hoisted to the top of the
         // `Chat` arm in `cli/mod.rs` via `remote_sandbox_gate_error`, so it
         // precedes every early-return and side effect. Here we handle only the
         // gate-ON (testing build) case: the remote execution target exists solely
         // on the KAS (V3) engine, so guide the user rather than silently ignoring
         // the flag on V1/V2.
-        if (self.remote || self.repo.is_some())
+        if (self.cloud || self.repo.is_some())
             && crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox)
             && engine != AgentEngine::Kas
         {
             bail!(
-                "Conflicting options: --remote/--repo require the V3 agent. \
-                 Re-run with --v3 (for example: `kiro chat --v3 --remote`)."
+                "Conflicting options: --cloud/--repo require the V3 agent. \
+                 Re-run with --v3 (for example: `kiro chat --v3 --cloud`)."
             );
         }
 
@@ -5971,17 +5971,17 @@ mod tests {
 
     #[test]
     fn remote_sandbox_gate_error_rejects_dark_flags_and_allows_when_enabled() {
-        // Gated off (released builds): --remote / --repo each surface clap's
+        // Gated off (released builds): --cloud / --repo each surface clap's
         // genuine unknown-argument error -- same kind, wording, exit code (2),
         // and Usage block as any unrecognized flag -- so the dark-shipped
         // feature is indistinguishable from a typo and leaks nothing.
         for (args, flag) in [
             (
                 ChatArgs {
-                    remote: true,
+                    cloud: true,
                     ..Default::default()
                 },
-                "--remote",
+                "--cloud",
             ),
             (
                 ChatArgs {
@@ -6007,10 +6007,10 @@ mod tests {
             );
         }
 
-        // Both flags + gated off: the message names --remote (harmless -- both
+        // Both flags + gated off: the message names --cloud (harmless -- both
         // are gated identically; documents the precedence).
         let both = ChatArgs {
-            remote: true,
+            cloud: true,
             repo: Some(vec!["owner/name".to_string()]),
             ..Default::default()
         };
@@ -6019,13 +6019,13 @@ mod tests {
                 .unwrap()
                 .render()
                 .to_string()
-                .contains("unexpected argument '--remote' found")
+                .contains("unexpected argument '--cloud' found")
         );
 
         // Feature enabled (testing builds): flags pass through the dark-ship
         // gate (the V3-only conflict check then applies in resolve_agent_engine).
         let remote_on = ChatArgs {
-            remote: true,
+            cloud: true,
             ..Default::default()
         };
         assert!(remote_on.remote_sandbox_gate_error(true).is_none());
