@@ -3912,6 +3912,27 @@ export class KasAcpClient extends BaseAcpClient {
           )}); starting a local session instead.`
       );
     }
+    // A `cloud-sandbox` placement is a remote session, so send `sessionSource:
+    // 'remote'` alongside the cloud `executionTarget`. This block is only reachable
+    // once KAS advertised `cloud-sandbox` (the gate above set
+    // `kiroMeta.executionTarget`), so it is inert for existing users -- today's KAS
+    // advertises nothing and we send the same bytes as before. `sessionSource` is
+    // gated independently on its own advertised capability, so we never send a flag
+    // KAS didn't advertise. With no repo bound this is the "New" (empty-workspace)
+    // start; starting a session bound to a repo is handled separately.
+    if (
+      (kiroMeta.executionTarget as ExecutionTarget | undefined)?.kind ===
+      'cloud-sandbox'
+    ) {
+      if (this.kiroCapabilities.sessionSources?.includes('remote')) {
+        kiroMeta.sessionSource = 'remote';
+      }
+      if (!this.repos || this.repos.length === 0) {
+        // "New" empty sandbox: no repo bound, so tell KAS to start an empty
+        // workspace and not validate a local cwd (it owns the sandbox cwd).
+        kiroMeta.isEmptyWorkspace = true;
+      }
+    }
     const r = await this.kiroClient.newSession({
       cwd: process.cwd(),
       mcpServers: [],

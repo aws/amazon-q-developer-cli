@@ -7563,6 +7563,76 @@ describe('remote executionTarget', () => {
     expect(meta?.modeId).toBeDefined();
   });
 
+  // ---- remote "New" empty sandbox — sessionSource + isEmptyWorkspace ----
+  it('sends sessionSource:remote + cloud-sandbox executionTarget + isEmptyWorkspace for a remote New session', async () => {
+    advertiseRemoteCaps(); // executionTargets:[local,cloud-sandbox], sessionSources:[local,remote]
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    }); // no repos -> "New" empty sandbox
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.executionTarget).toEqual({ kind: 'cloud-sandbox' });
+    expect(meta?.sessionSource).toBe('remote');
+    expect(meta?.isEmptyWorkspace).toBe(true);
+  });
+
+  it('omits sessionSource when KAS advertises the cloud-sandbox placement but not a remote store (per-flag gating)', async () => {
+    advertiseKiroCaps({ executionTargets: ['local', 'cloud-sandbox'] }); // no sessionSources
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.executionTarget).toEqual({ kind: 'cloud-sandbox' });
+    expect(meta?.sessionSource).toBeUndefined();
+    expect(meta?.isEmptyWorkspace).toBe(true); // still a New (no-repo) session
+  });
+
+  it('does NOT send sessionSource/isEmptyWorkspace for a local session (existing-user path unchanged)', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient(); // local (default)
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.sessionSource).toBeUndefined();
+    expect(meta?.isEmptyWorkspace).toBeUndefined();
+  });
+
+  it('omits isEmptyWorkspace when a repo is bound, but still marks the session remote (repo-bound create handled separately)', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+      repos: ['owner/repo'],
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.isEmptyWorkspace).toBeUndefined();
+    expect(meta?.sessionSource).toBe('remote');
+  });
+
+  it('omits BOTH sessionSource and isEmptyWorkspace when the cloud-sandbox placement is NOT advertised, even if a remote store is (gating keys off the SENT executionTarget)', async () => {
+    // Locks the dark-ship guarantee to the SENT executionTarget, not the requested
+    // kind: executionTargets excludes cloud-sandbox -> executionTarget is NOT sent ->
+    // the remote block must not fire, even though a remote store IS advertised. Guards
+    // against a future refactor reading `this.executionTarget` instead of the wire meta.
+    advertiseKiroCaps({
+      executionTargets: ['local'], // cloud-sandbox NOT advertised
+      sessionSources: ['local', 'remote'], // remote store IS advertised
+    });
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' }, // requested, but unsupported
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.executionTarget).toBeUndefined();
+    expect(meta?.sessionSource).toBeUndefined();
+    expect(meta?.isEmptyWorkspace).toBeUndefined();
+  });
+
   it('still sends modeId while dropping executionTarget when KAS does not advertise the kind', async () => {
     // Degrade-but-preserve: --cloud + a mode, but KAS advertises no caps ->
     // executionTarget is gated out yet the modeId merge is unaffected (the two
