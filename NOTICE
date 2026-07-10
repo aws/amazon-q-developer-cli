@@ -1,0 +1,48 @@
+Kiro CLI
+Copyright Amazon.com, Inc. or its affiliates.
+
+This product includes software developed at Amazon.com, Inc.
+
+It also redistributes the following third-party pre-trained machine-learning
+model artifacts, which are governed by their upstream licenses. See
+docs/third-party-models.md for context, download paths, and CDN details.
+
+--------------------------------------------------------------------------
+
+sentence-transformers/all-MiniLM-L6-v2
+sentence-transformers/all-MiniLM-L12-v2
+
+  Copyright 2019-2020 Nils Reimers, Iryna Gurevych, UKP Lab, and contributors.
+  Licensed under the Apache License, Version 2.0 (the "License"); you may
+  not use these model artifacts except in compliance with the License. A
+  copy of the Apache License, Version 2.0 is available in LICENSE.APACHE
+  in this repository, or at:
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Upstream:
+      https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+      https://huggingface.co/sentence-transformers/all-MiniLM-L12-v2
+
+--------------------------------------------------------------------------
+
+OpenAI Whisper model weights, converted to GGML format by whisper.cpp
+
+  Copyright (c) 2022 OpenAI (model architecture and weights)
+  Copyright (c) 2023-present Georgi Gerganov and whisper.cpp contributors
+    (GGML conversion and inference bindings)
+
+  Licensed under the MIT License. A copy of the MIT License is available in
+  LICENSE.MIT in this repository.
+
+  Upstream:
+      https://github.com/openai/whisper
+      https://github.com/ggml-org/whisper.cpp
+      https://huggingface.co/ggerganov/whisper.cpp
+
+--------------------------------------------------------------------------
+
+Software crate and package dependencies (Rust via Cargo, TypeScript via
+Bun/npm) are enumerated by their respective package manifests and are not
+re-listed here. See Cargo.lock and each package's package.json + LICENSE
+distribution for their attribution.
