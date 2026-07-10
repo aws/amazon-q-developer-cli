@@ -5,8 +5,8 @@ doc_meta:
   category: setting
   keywords: [voice, settings, whisper, model, timeout, language, transcription, microphone]
   related: [voice-mode, voice-command]
-  validated: 2026-06-22
-  commit: 4dbb4e51f
+  validated: 2026-05-21
+  commit: 69ae7a5f5
   status: validated
   testable_headless: true
 ---

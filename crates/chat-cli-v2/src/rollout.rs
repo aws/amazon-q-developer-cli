@@ -307,11 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn insider_toolbox_hatch_is_scoped_to_lite() {
+    fn insider_toolbox_does_not_enable_voice_or_tui() {
         // Critical scope guarantee: the insider branch is gated on
-        // `matches!(Feature::Lite)`, so it does NOT leak to Tui. Voice is
-        // Some(TREATMENT) here via its own segment=all config (all users),
-        // not the insider hatch; Tui still rejects the external user below.
+        // `matches!(Feature::Lite)`, so Voice/Tui resolution is unchanged.
+        // External + stable + insider-install must NOT enable Voice or Tui.
         let r = rollout(
             // internal=
             false, // nightly=
@@ -320,8 +319,8 @@ mod tests {
         );
         assert_eq!(
             r.variation_impl(Feature::Voice),
-            Some(TREATMENT),
-            "voice is enabled for all users (segment=all), independent of the insider hatch"
+            None,
+            "insider toolbox install must not enable Voice"
         );
         // Tui's standard config (segment=internal, treatment_percent=50) should
         // still reject the external user.

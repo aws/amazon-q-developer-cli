@@ -5,7 +5,6 @@
 // It is then up to the client to compose these primitives to fulfill
 // their own needs.
 import type { AvailableCommand, CommandMeta } from './types/commands';
-import { isVoiceEnabled } from './utils/feature-gates.js';
 
 export enum KasCommandName {
   Help = '/help',
@@ -29,7 +28,6 @@ export enum KasCommandName {
   Plan = '/plan',
   Feedback = '/feedback',
   Rewind = '/rewind',
-  Voice = '/voice',
   UpgradeAgent = '/upgrade-agent',
 }
 
@@ -204,15 +202,6 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     description: 'Fork the session at an earlier turn',
     meta: { inputType: 'panel' },
   },
-  // Voice: gated by rollout (mirrors V2 backend's Rollout::is_enabled(Feature::Voice))
-  ...(isVoiceEnabled
-    ? [
-        {
-          name: KasCommandName.Voice,
-          description: 'Record voice input',
-        } as const,
-      ]
-    : []),
   {
     name: KasCommandName.UpgradeAgent,
     description: 'Upgrade V2 agent configs to universal (V2 + V3) format',

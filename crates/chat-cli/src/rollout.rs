@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn test_voice_enabled_for_all_users() {
+    fn test_voice_enabled_for_all_internal() {
         // Nightly + internal → voice enabled
         let rollout = Rollout {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
@@ -451,7 +451,7 @@ mod tests {
         };
         assert_eq!(rollout_stable.variation(Feature::Voice), Some(TREATMENT));
 
-        // Nightly + external → voice enabled (segment=all, no internal gate)
+        // Nightly + external → voice NOT enabled (segment=internal)
         let rollout_external = Rollout {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
             client_id: Some(Uuid::from_u128(1)),
@@ -459,7 +459,7 @@ mod tests {
             is_nightly: true,
             is_insider_toolbox: false,
         };
-        assert_eq!(rollout_external.variation(Feature::Voice), Some(TREATMENT));
+        assert_eq!(rollout_external.variation(Feature::Voice), None);
     }
 
     // NOTE: the config-driven `test_lite_requires_internal_and_nightly` test
@@ -537,11 +537,9 @@ mod tests {
     }
 
     #[test]
-    fn insider_toolbox_hatch_is_scoped_to_lite() {
+    fn insider_toolbox_does_not_enable_voice_or_tui() {
         // Scope guarantee: the insider branch is gated on matches!(Feature::Lite),
-        // so it does NOT leak to Tui — an external+stable insider-toolbox user
-        // still gets Tui = None. Voice is Some(TREATMENT) here via its own
-        // segment=all config, not the insider hatch.
+        // so Voice/Tui resolution is unchanged for an external+stable user.
         let r = Rollout {
             features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
             client_id: Some(Uuid::from_u128(1)),
@@ -549,7 +547,7 @@ mod tests {
             is_nightly: false,
             is_insider_toolbox: true,
         };
-        assert_eq!(r.variation(Feature::Voice), Some(TREATMENT));
+        assert_eq!(r.variation(Feature::Voice), None);
         assert_eq!(r.variation(Feature::Tui), None);
     }
 }

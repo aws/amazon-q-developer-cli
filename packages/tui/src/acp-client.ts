@@ -21,7 +21,6 @@ import { buildKasSettings } from './utils/kas-settings';
 import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
-import { isInternalUser } from './utils/feature-gates.js';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from './capabilities/copy-url-to-clipboard';
 import { createSecretStorageCapabilities } from './capabilities/secret-storage';
@@ -5598,7 +5597,9 @@ export function browserOpenCommand(
 
 function kasFeedback(args?: Record<string, string>): CommandResult {
   const kind = args?.value || 'general';
-  const url = resolveFeedbackUrl(kind, isInternalUser);
+  // KIRO_INTERNAL=1 = signed in via Amazon-internal SSO (set by the launcher).
+  const isInternal = process.env.KIRO_INTERNAL === '1';
+  const url = resolveFeedbackUrl(kind, isInternal);
   try {
     const { execFileSync } = require('child_process');
     const { file, args: openArgs } = browserOpenCommand(

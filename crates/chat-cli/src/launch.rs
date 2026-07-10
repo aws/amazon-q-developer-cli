@@ -377,24 +377,6 @@ async fn launch_acp_interactive(
         cmd.env("KIRO_INTERNAL", "1");
     }
 
-    // Pass the resolved rollout features to the TUI as a JSON array so it can
-    // gate commands (e.g. /voice) using the same rollout logic as the V2 backend.
-    {
-        use crate::rollout::{
-            Feature,
-            rollout,
-        };
-        let enabled: Vec<&'static str> = [Feature::Voice, Feature::Lite, Feature::Kas, Feature::Tui]
-            .iter()
-            .filter(|f| rollout().is_enabled(**f))
-            .map(|f| <&str>::from(*f))
-            .collect();
-        cmd.env(
-            "KIRO_ENABLED_FEATURES",
-            serde_json::to_string(&enabled).unwrap_or_default(),
-        );
-    }
-
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }

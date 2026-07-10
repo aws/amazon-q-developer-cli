@@ -7,7 +7,6 @@ import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
-import { isInternalUser } from '../utils/feature-gates.js';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -6400,7 +6399,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // Fire-and-forget ingestion.
       const metadata = {
         sessionId: get().sessionId ?? undefined,
-        isInternal: isInternalUser,
+        isInternal: !!process.env.KIRO_INTERNAL,
         agentEngine: get().agentEngine,
       };
       submitFormToAperture(survey, answers, { metadata })
