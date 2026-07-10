@@ -175,6 +175,8 @@ export const LiteLayout: React.FC = () => {
     showUsagePanel,
     showMcpPanel,
     showToolsPanel,
+    showGoalPanel,
+    showTuiPanel,
     showStatsPanel,
     showHooksPanel,
     showKnowledgePanel,
@@ -191,14 +193,25 @@ export const LiteLayout: React.FC = () => {
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
   const currentEffort = useAppStore((s) => s.currentEffort);
-  // Goal-loop state (set by `/goal`). Lite surfaces it three ways: a
-  // status-line segment, a one-time scrollback confirmation, and a transient
-  // alert on bare `/goal` (no lite panel).
+  // Goal-loop state (set by `/goal`). Lite surfaces it as a status-line segment
+  // and a one-time scrollback confirmation; the panel is shared via BackendPanels.
   const goalStatus = useAppStore((s) => s.goalStatus);
-  const setShowGoalPanel = useAppStore((s) => s.setShowGoalPanel);
-  const showTransientAlert = useAppStore((s) => s.showTransientAlert);
 
   const handlers = useBackendPanelHandlers();
+
+  // Tick every 60s while a goal is active so the elapsed time in the status
+  // line advances even when idle (mirrors InlineLayout's goal chip).
+  const [, setGoalTick] = useState(0);
+  useEffect(() => {
+    if (
+      !goalStatus ||
+      goalStatus.state === 'completed' ||
+      goalStatus.state === 'exhausted'
+    )
+      return;
+    const id = setInterval(() => setGoalTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [goalStatus]);
 
   const anyPanelOpen =
     showContextBreakdown ||
@@ -206,6 +219,8 @@ export const LiteLayout: React.FC = () => {
     showUsagePanel ||
     showMcpPanel ||
     showToolsPanel ||
+    showGoalPanel ||
+    showTuiPanel ||
     showStatsPanel ||
     showHooksPanel ||
     showKnowledgePanel ||
@@ -319,13 +334,11 @@ export const LiteLayout: React.FC = () => {
   // Refs the always-armed cancel handler consults. Twinki fires every active
   // useKeypress on one keystroke (no ordering), so each surface that owns Esc
   // (subagent/backend panel, queue-edit, /prompts detail) must no-op Esc here
-  // instead of cancelling the turn. goalStatusRef feeds the safety-net timeout.
+  // instead of cancelling the turn.
   const subagentOpenIndexRef = useRef(subagentOpenIndex);
   subagentOpenIndexRef.current = subagentOpenIndex;
   const anyPanelOpenRef = useRef(anyPanelOpen);
   anyPanelOpenRef.current = anyPanelOpen;
-  const goalStatusRef = useRef(goalStatus);
-  goalStatusRef.current = goalStatus;
   const editingQueueIndexRef = useRef(editingQueueIndex);
   editingQueueIndexRef.current = editingQueueIndex;
   const promptDetailOpen = useAppStore((s) => s.promptDetailOpen);
@@ -479,15 +492,14 @@ export const LiteLayout: React.FC = () => {
 
   // Panel safety-net. Panel-type slash commands freeze the input (activeCommand
   // set + empty options → PromptInput bails). Lite renders only a curated subset
-  // of panels; a command lite does NOT render (today `/goal`) would freeze the
-  // input dead. Detect "unrenderable panel" = activeCommand set + empty options
-  // + no panel open; the 600ms delay lets a real panel open first (which clears
-  // the timer), else release the input.
+  // of panels; a command lite does NOT render would freeze the input dead.
+  // Detect "unrenderable panel" = activeCommand set + empty options + no panel
+  // open; the 600ms delay lets a real panel open first (which clears the timer),
+  // else release the input.
   useEffect(() => {
     if (!activeCommand) return;
     if (activeCommand.options.length > 0) return; // selection picker — legit
     if (anyPanelOpen) return; // a backend panel is up — legit freeze
-    const cmdName = activeCommand.command.name;
     const t = setTimeout(() => {
       if (
         !activeCommandRef.current ||
@@ -495,33 +507,11 @@ export const LiteLayout: React.FC = () => {
         anyPanelOpenRef.current
       )
         return;
-      // `/goal` has no lite panel — surface its status as a transient alert so
-      // bare `/goal` still gives feedback. Drop the orphaned showGoalPanel flag
-      // so a later lite→tui swap doesn't auto-open the modern GoalPanel.
-      if (cmdName === '/goal') {
-        const g = goalStatusRef.current;
-        setShowGoalPanel(false);
-        showTransientAlert({
-          message: g
-            ? `goal ${g.state} [${g.iteration + 1}/${g.maxIterations}]${g.message ? ` ${glyphs.smallDot} ${g.message}` : ''}`
-            : `no active goal ${glyphs.smallDot} use /goal <description> to set one`,
-          status: 'info',
-          autoHideMs: 6000,
-        });
-      }
       setActiveCommand(null);
       clearCommandInput();
     }, 600);
     return () => clearTimeout(t);
-  }, [
-    activeCommand,
-    anyPanelOpen,
-    setActiveCommand,
-    clearCommandInput,
-    setShowGoalPanel,
-    showTransientAlert,
-    glyphs,
-  ]);
+  }, [activeCommand, anyPanelOpen, setActiveCommand, clearCommandInput]);
 
   // Boot indicator: one dim row surfacing in-flight async setup (agent_connect >
   // session_create > MCP aggregate), hidden once nothing is 'loading'. Failure
@@ -1796,20 +1786,37 @@ function formatGoalStatusSegment(
     state: string;
     iteration: number;
     maxIterations: number;
+    startedAt?: number;
+    elapsedSecs?: number;
   } | null,
   glyphs: Glyphs
 ): string {
   if (!goalStatus) return '';
   const iter = `[${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
+  // Elapsed time mirrors the TUI goal chip (InlineLayout) so the indicator
+  // reads the same in both modes; a 60s tick in LiteLayout keeps it current.
+  const secs = goalStatus.startedAt
+    ? Math.floor((Date.now() - goalStatus.startedAt) / 1000)
+    : (goalStatus.elapsedSecs ?? 0);
+  const elapsed =
+    secs > 0
+      ? secs >= 3600
+        ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`
+        : secs >= 60
+          ? `${Math.floor(secs / 60)}m`
+          : `${secs}s`
+      : '';
+  const withElapsed = (label: string) =>
+    elapsed ? `${label} ${glyphs.smallDot} ${elapsed}` : label;
   switch (goalStatus.state) {
     case 'completed':
-      return chalk.green(`${glyphs.checkmark} goal done`);
+      return chalk.green(withElapsed(`${glyphs.checkmark} goal done`));
     case 'exhausted':
-      return chalk.red(`${glyphs.cross} goal exhausted`);
+      return chalk.red(withElapsed(`${glyphs.cross} goal exhausted`));
     case 'paused':
-      return chalk.yellow(`${glyphs.pause} goal paused ${iter}`);
+      return chalk.yellow(withElapsed(`${glyphs.pause} goal paused ${iter}`));
     default:
-      return chalk.dim(`⟳ goal ${iter}`);
+      return chalk.dim(withElapsed(`⟳ goal ${iter}`));
   }
 }
 

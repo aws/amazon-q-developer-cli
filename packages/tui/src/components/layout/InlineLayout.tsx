@@ -17,19 +17,6 @@ import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
-import { HelpPanel } from '../ui/HelpPanel';
-import { TuiPanel } from '../ui/TuiPanel';
-import { ChangelogPanel } from '../ui/ChangelogPanel';
-import { McpPanel } from '../ui/McpPanel';
-import { ToolsPanel } from '../ui/ToolsPanel';
-import { GoalPanel } from '../ui/GoalPanel';
-import { StatsPanel } from '../ui/StatsPanel';
-import { HooksPanel } from '../ui/HooksPanel';
-import { KeybindingsPanel } from '../ui/KeybindingsPanel';
-import { DisplaySettingsPanel } from '../ui/DisplaySettingsPanel';
-import { ThemePanel } from '../ui/ThemePanel';
-import { SettingsPanel } from '../ui/SettingsPanel';
-import { KnowledgePanel } from '../ui/KnowledgePanel';
 import {
   PromptBar,
   type PromptBarHeader,
@@ -39,17 +26,13 @@ import { SnackBar } from '../chat/prompt-bar/SnackBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
-import { ContextBreakdown } from '../ui/ContextBreakdown';
 import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
-import { UsagePanel } from '../ui/UsagePanel';
-import { Explorer } from '../ui/Explorer';
-import { CodePanel } from '../ui/CodePanel';
-import { SurveyPanel } from '../ui/SurveyPanel';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
-import { ArtifactView } from '../ui/ArtifactView/index.js';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
+import { BackendPanels } from './shared/BackendPanels.js';
+import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
 
 import {
   useNotificationState,
@@ -69,8 +52,6 @@ import {
   useAppStore,
   summarizeInitErrors,
   severityForInitErrors,
-  type CodePanelData,
-  type McpServerInfo,
 } from '../../stores/app-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
@@ -81,8 +62,6 @@ import {
 } from '../../utils/keybindings.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
-import { startMcpOAuth } from '../../utils/mcp-oauth.js';
-import { copyToSystemClipboard } from '../../commands/effects.js';
 import { getGitBranch } from '../../utils/git';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
@@ -186,65 +165,31 @@ export const InlineLayout: React.FC = () => {
   const trustAllToolsAccepted = useAppStore(
     (state) => state.trustAllToolsConfirmed
   );
+  // Panel show-flags drive PromptBar header/hideInput gating; the panels
+  // themselves render via the shared <BackendPanels> cluster.
   const {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
     showContextBreakdown,
-    contextBreakdown,
     showTuiPanel,
     showChangelogPanel,
     showHelpPanel,
-    helpCommands,
     showUsagePanel,
-    usageData,
     showRewindExplorer,
-    rewindRows,
     showMcpPanel,
-    mcpServers,
-    mcpRegistryServers,
-    mcpMode,
     showToolsPanel,
     showGoalPanel,
-    toolsList,
     showStatsPanel,
-    statsList,
-    statsSummary,
     showHooksPanel,
-    hooksList,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
     showThemePanel,
     showSettingsPanel,
-    settingsReturnOnEscape,
     showKnowledgePanel,
-    knowledgeEntries,
-    knowledgeStatus,
     showCodePanel,
-    codeData,
     artifactViewOpen,
   } = useUIState();
-  const {
-    toggleToolOutputsExpanded,
-    setShowContextBreakdown,
-    setShowHelpPanel,
-    setShowTuiPanel,
-    setShowChangelogPanel,
-    setShowUsagePanel,
-    setShowRewindExplorer,
-    setShowMcpPanel,
-    setShowToolsPanel,
-    setShowGoalPanel,
-    setShowStatsPanel,
-    setShowHooksPanel,
-    setShowKeybindingsPanel,
-    setShowDisplaySettingsPanel,
-    setShowThemePanel,
-    setShowSettingsPanel,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-    setShowKnowledgePanel,
-    setShowCodePanel,
-  } = useUIActions();
+  const { toggleToolOutputsExpanded } = useUIActions();
   const {
     sessionId,
     contextUsagePercent,
@@ -256,7 +201,6 @@ export const InlineLayout: React.FC = () => {
     goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
-  const agentEngine = useAppStore((state) => state.agentEngine);
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -271,6 +215,7 @@ export const InlineLayout: React.FC = () => {
   const settings = useAppStore((s) => s.settings);
   const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
+  const backendPanelHandlers = useBackendPanelHandlers();
 
   const toggleHintLabel = useMemo(() => {
     const binding = resolveKeybinding(settings, 'toggleInterruptMode');
@@ -280,11 +225,9 @@ export const InlineLayout: React.FC = () => {
   const exitSequence = useAppStore((state) => state.exitSequence);
   const suspendArmed = useAppStore((state) => state.suspendArmed);
 
-  // Research-survey state — kept as a simple trio of selectors since it's
-  // only consumed here.
+  // Research-survey state. showSurveyPanel gates PromptBar chrome; the panel
+  // itself renders via <BackendPanels>. surveyPrompt drives the inline nudge.
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
-  const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
-  const submitSurvey = useAppStore((s) => s.submitSurvey);
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
 
@@ -449,264 +392,6 @@ export const InlineLayout: React.FC = () => {
     },
     { isActive: true }
   );
-
-  const handleCloseContextBreakdown = useCallback(() => {
-    setShowContextBreakdown(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowContextBreakdown, setActiveCommand, clearCommandInput]);
-
-  const handleCloseHelpPanel = useCallback(() => {
-    setShowHelpPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowHelpPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseTuiPanel = useCallback(() => {
-    setShowTuiPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowTuiPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseChangelogPanel = useCallback(() => {
-    setShowChangelogPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowChangelogPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseUsagePanel = useCallback(() => {
-    setShowUsagePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowUsagePanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseRewindExplorer = useCallback(() => {
-    setShowRewindExplorer(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowRewindExplorer, setActiveCommand, clearCommandInput]);
-
-  const handleRewindSelect = useCallback(
-    (rowId: string) => {
-      setShowRewindExplorer(false);
-      setActiveCommand(null);
-      clearCommandInput();
-      // Fire `/rewind <idx>` through the normal command pipeline so the
-      // rewindAction effect handles the clone + session load.
-      void handleUserInput(`/rewind ${rowId}`);
-    },
-    [
-      setShowRewindExplorer,
-      setActiveCommand,
-      clearCommandInput,
-      handleUserInput,
-    ]
-  );
-
-  const handleTabFromContext = useCallback(async () => {
-    try {
-      const result = await kiro.executeCommand({
-        command: 'usage',
-        args: {},
-      } as any);
-      if (result?.data) {
-        setShowUsagePanel(true, result.data);
-        setShowContextBreakdown(false);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [setShowContextBreakdown, setShowUsagePanel, kiro]);
-
-  const handleTabFromUsage = useCallback(async () => {
-    try {
-      // KAS: prefer the typed cached breakdown — no round-trip required.
-      const cached = kiro.getCachedContextBreakdown();
-      if (cached) {
-        setShowContextBreakdown(true, cached);
-        setShowUsagePanel(false);
-        return;
-      }
-      // V2 Rust: fall back to the engine-specific executeCommand path,
-      // which returns the breakdown inline.
-      const result = await kiro.executeCommand({
-        command: 'context',
-        args: {},
-      } as any);
-      if (
-        result?.data &&
-        typeof result.data === 'object' &&
-        'breakdown' in result.data
-      ) {
-        setShowContextBreakdown(true, result.data.breakdown as any);
-        setShowUsagePanel(false);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [setShowUsagePanel, setShowContextBreakdown, kiro]);
-
-  const handleCloseMcpPanel = useCallback(() => {
-    setShowMcpPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowMcpPanel, setActiveCommand, clearCommandInput]);
-
-  // Overlay auth-required status onto MCP servers that are pending OAuth or have
-  // a forced (re-)authentication in progress (the agent reports `authenticating`
-  // on the master server while a hidden shadow runs the OAuth flow).
-  const mcpServersWithAuth = useMemo(() => {
-    if (
-      pendingOAuthServers.size === 0 &&
-      !mcpServers.some((s) => s.authenticating)
-    )
-      return mcpServers;
-    return mcpServers.map((s) =>
-      pendingOAuthServers.has(s.name) || s.authenticating
-        ? { ...s, status: 'auth-required' as const }
-        : s
-    );
-  }, [mcpServers, pendingOAuthServers]);
-
-  // Run a single-server /mcp action (e.g. "auth <name>") then refresh the panel's
-  // status snapshot. Live OAuth/init events update pendingOAuthServers separately.
-  const runMcpServerAction = useCallback(
-    async (value: string) => {
-      await kiro.executeCommand({
-        command: 'mcp',
-        args: { value },
-      } as any);
-      const result = await kiro.executeCommand({
-        command: 'mcp',
-        args: { value: '' },
-      } as any);
-      if (result?.data) {
-        const data = result.data as {
-          servers?: McpServerInfo[];
-          mode?: string;
-        };
-        setShowMcpPanel(true, data.servers ?? [], data.mode ?? 'status');
-      }
-    },
-    [kiro, setShowMcpPanel]
-  );
-
-  const handleCloseToolsPanel = useCallback(() => {
-    setShowToolsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowToolsPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseStatsPanel = useCallback(() => {
-    setShowStatsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowStatsPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseHooksPanel = useCallback(() => {
-    setShowHooksPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowHooksPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseKeybindingsPanel = useCallback(() => {
-    setShowKeybindingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    // Return to /settings menu if this panel was opened from there.
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
-    setShowKeybindingsPanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
-
-  const handleCloseDisplaySettingsPanel = useCallback(() => {
-    setShowDisplaySettingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
-    setShowDisplaySettingsPanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
-
-  const handleCloseThemePanel = useCallback(() => {
-    setShowThemePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    if (settingsReturnOnEscape) {
-      setSettingsReturnOnEscape(false);
-      reopenSettingsMenu();
-    }
-  }, [
-    setShowThemePanel,
-    setActiveCommand,
-    clearCommandInput,
-    settingsReturnOnEscape,
-    setSettingsReturnOnEscape,
-    reopenSettingsMenu,
-  ]);
-
-  const handleCloseSettingsPanel = useCallback(() => {
-    // Top-level /settings close. Always clears the back-flag so the next
-    // overlay open starts fresh — avoids a stale `settingsReturnOnEscape`
-    // bouncing the user into /settings unexpectedly.
-    setShowSettingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-    setSettingsReturnOnEscape(false);
-  }, [
-    setShowSettingsPanel,
-    setActiveCommand,
-    clearCommandInput,
-    setSettingsReturnOnEscape,
-  ]);
-
-  const handleDismissDisplaySettingsPanel = useCallback(() => {
-    setShowDisplaySettingsPanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowDisplaySettingsPanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseKnowledgePanel = useCallback(() => {
-    setShowKnowledgePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowKnowledgePanel, setActiveCommand, clearCommandInput]);
-
-  const handleCloseCodePanel = useCallback(() => {
-    setShowCodePanel(false);
-    setActiveCommand(null);
-    clearCommandInput();
-  }, [setShowCodePanel, setActiveCommand, clearCommandInput]);
-
-  const handleRefreshCodePanel = useCallback(async () => {
-    try {
-      const result = await kiro.executeCommand({
-        command: 'code',
-        args: {},
-      } as any);
-      if (result?.data) {
-        setShowCodePanel(true, result.data as CodePanelData);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [kiro, setShowCodePanel]);
 
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
@@ -1132,171 +817,7 @@ export const InlineLayout: React.FC = () => {
                   onDrillInSubmit={handleSubmit}
                 />
               ))}
-            {showContextBreakdown && (
-              <ContextBreakdown
-                percent={contextUsagePercent}
-                breakdown={contextBreakdown ?? undefined}
-                model={currentModel?.name ?? null}
-                agentName={currentAgent?.name ?? null}
-                initialExpanded={contextBreakdown?.initialExpanded}
-                onClose={handleCloseContextBreakdown}
-                onTabSwitch={handleTabFromContext}
-              />
-            )}
-            {showUsagePanel && (
-              <UsagePanel
-                data={usageData}
-                onClose={handleCloseUsagePanel}
-                onTabSwitch={handleTabFromUsage}
-              />
-            )}
-            {showRewindExplorer && (
-              <Explorer
-                title="/rewind"
-                description="Fork from a previous prompt in this session"
-                columns={[
-                  { key: 'label', label: 'User Prompt' },
-                  { key: 'group', label: 'Context used', align: 'right' },
-                ]}
-                rows={rewindRows.map((turn) => ({
-                  id: String(turn.logIndex),
-                  values: {
-                    label: turn.label,
-                    group: turn.group ?? '',
-                  },
-                  preview: turn.responseSnippet
-                    ? { body: turn.responseSnippet }
-                    : undefined,
-                }))}
-                previewHeading={`${glyphs.dotFilled} Turn Activity`}
-                keyHints={[
-                  {
-                    key: `${glyphs.arrowUp}${glyphs.arrowDown}`,
-                    label: 'navigate',
-                  },
-                  { key: 'Enter', label: 'to fork' },
-                ]}
-                onSelect={(row) => handleRewindSelect(row.id)}
-                onClose={handleCloseRewindExplorer}
-              />
-            )}
-            {showHelpPanel && (
-              <HelpPanel
-                commands={helpCommands}
-                onClose={handleCloseHelpPanel}
-              />
-            )}
-            {showTuiPanel && <TuiPanel onClose={handleCloseTuiPanel} />}
-            {showChangelogPanel && (
-              <ChangelogPanel onClose={handleCloseChangelogPanel} />
-            )}
-            {showMcpPanel && (
-              <McpPanel
-                servers={mcpServersWithAuth}
-                registryServers={mcpRegistryServers}
-                initErrors={initErrors}
-                pendingOAuthUrls={pendingOAuthServers}
-                mode={mcpMode}
-                onClose={handleCloseMcpPanel}
-                onAuthenticate={(serverName) => {
-                  // Mirror the Ctrl+Y path so the panel shows the same
-                  // notification: KAS resets the server to (re)start OAuth;
-                  // V2 copies the (already valid) URL to the clipboard.
-                  startMcpOAuth({
-                    agentEngine,
-                    serverName,
-                    url: pendingOAuthServers.get(serverName) ?? null,
-                    resetMcpServer: (name, startOAuth) =>
-                      kiro.resetMcpServer(name, startOAuth),
-                    copyToClipboard: copyToSystemClipboard,
-                    showAlert: (message, status, autoHideMs) =>
-                      showTransientAlert({ message, status, autoHideMs }),
-                  });
-                }}
-                onForceAuth={(serverName) => {
-                  void runMcpServerAction(`auth ${serverName}`);
-                }}
-                onAbortAuth={(serverName) => {
-                  void runMcpServerAction(`cancel-auth ${serverName}`);
-                }}
-                onRemoveCredentials={(serverName) => {
-                  void runMcpServerAction(`logout ${serverName}`);
-                }}
-                onAction={async (serverNames: string[]) => {
-                  const action = mcpMode === 'add' ? 'add' : 'remove';
-                  await kiro.executeCommand({
-                    command: 'mcp',
-                    args: { value: `${action} ${serverNames.join(',')}` },
-                  } as any);
-                  const result = await kiro.executeCommand({
-                    command: 'mcp',
-                    args: { value: action },
-                  } as any);
-                  if (result?.data) {
-                    const data = result.data as {
-                      servers?: McpServerInfo[];
-                      mode?: string;
-                    };
-                    setShowMcpPanel(
-                      true,
-                      data.servers ?? [],
-                      data.mode ?? action
-                    );
-                  }
-                }}
-              />
-            )}
-            {showToolsPanel && (
-              <ToolsPanel
-                tools={toolsList}
-                initErrors={initErrors}
-                onClose={handleCloseToolsPanel}
-              />
-            )}
-            {showGoalPanel && (
-              <GoalPanel onClose={() => setShowGoalPanel(false)} />
-            )}
-            {showStatsPanel && (
-              <StatsPanel
-                stats={statsList}
-                summary={statsSummary}
-                onClose={handleCloseStatsPanel}
-              />
-            )}
-            {showHooksPanel && (
-              <HooksPanel hooks={hooksList} onClose={handleCloseHooksPanel} />
-            )}
-            {showKeybindingsPanel && (
-              <KeybindingsPanel onClose={handleCloseKeybindingsPanel} />
-            )}
-            {showDisplaySettingsPanel && (
-              <DisplaySettingsPanel
-                onClose={handleCloseDisplaySettingsPanel}
-                onDismiss={handleDismissDisplaySettingsPanel}
-              />
-            )}
-            {showThemePanel && <ThemePanel onClose={handleCloseThemePanel} />}
-            {showSettingsPanel && (
-              <SettingsPanel onClose={handleCloseSettingsPanel} />
-            )}
-            {showKnowledgePanel && (
-              <KnowledgePanel
-                entries={knowledgeEntries}
-                status={knowledgeStatus}
-                onClose={handleCloseKnowledgePanel}
-              />
-            )}
-            {showCodePanel && (
-              <CodePanel
-                data={codeData}
-                onClose={handleCloseCodePanel}
-                onRefresh={handleRefreshCodePanel}
-              />
-            )}
-            {artifactViewOpen && <ArtifactView />}
-            {showSurveyPanel && (
-              <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
-            )}
+            <BackendPanels handlers={backendPanelHandlers} />
             <ActionHint
               text={`Showing detailed output ${glyphs.smallDot} ctrl+o to toggle`}
               visible={toolOutputsExpanded}

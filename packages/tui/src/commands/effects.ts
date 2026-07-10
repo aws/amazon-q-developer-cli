@@ -24,6 +24,7 @@ import type {
   ToolInfo,
 } from '../stores/app-store.js';
 import type { AvailableCommand } from '../types/commands.js';
+import { isCommandVisibleInUiMode } from '../components/ui/command-menu-utils.js';
 import { openEditorSync } from '../utils/editor.js';
 import { executeShellEscapeTTY } from '../utils/shell-escape.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
@@ -309,10 +310,10 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       ): c is SlashCommand & { source: 'local' } =>
         'source' in c && c.source === 'local';
 
-      const inLite = ctx.getUiMode?.() === 'lite';
+      const uiMode = ctx.getUiMode?.() === 'lite' ? 'lite' : 'tui';
       const localHelpEntries = ctx.slashCommands
         .filter(isLocalHostCommand)
-        .filter((c) => inLite || c.meta?.liteOnly !== true)
+        .filter((c) => isCommandVisibleInUiMode(c, uiMode))
         .map((c) => ({
           name: c.name,
           description: c.description,

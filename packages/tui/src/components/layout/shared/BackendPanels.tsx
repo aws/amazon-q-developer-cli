@@ -3,11 +3,13 @@
  * show-flag + data state from the store directly (no 30+ prop-drill); each
  * layout supplies its own wrapper and the shared useBackendPanelHandlers.
  */
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { ContextBreakdown } from '../../ui/ContextBreakdown.js';
 import { HelpPanel } from '../../ui/HelpPanel.js';
+import { TuiPanel } from '../../ui/TuiPanel.js';
 import { McpPanel } from '../../ui/McpPanel.js';
 import { ToolsPanel } from '../../ui/ToolsPanel.js';
+import { GoalPanel } from '../../ui/GoalPanel.js';
 import { StatsPanel } from '../../ui/StatsPanel.js';
 import { HooksPanel } from '../../ui/HooksPanel.js';
 import { KnowledgePanel } from '../../ui/KnowledgePanel.js';
@@ -25,11 +27,14 @@ import {
   useUIState,
   useUIActions,
   useNotificationState,
+  useNotificationActions,
   useContextState,
   useKiroClient,
 } from '../../../stores/selectors.js';
 import { useAppStore, type McpServerInfo } from '../../../stores/app-store.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
+import { startMcpOAuth } from '../../../utils/mcp-oauth.js';
+import { copyToSystemClipboard } from '../../../commands/effects.js';
 import type { BackendPanelHandlers } from './useBackendPanelHandlers.js';
 
 interface BackendPanelsProps {
@@ -52,6 +57,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     mcpRegistryServers,
     mcpMode,
     showToolsPanel,
+    showGoalPanel,
+    showTuiPanel,
     toolsList,
     showStatsPanel,
     statsList,
@@ -72,8 +79,10 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
   } = useUIState();
   const { setShowMcpPanel } = useUIActions();
   const { initErrors, pendingOAuthServers } = useNotificationState();
+  const { showTransientAlert } = useNotificationActions();
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
   const { kiro } = useKiroClient();
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
   const submitSurvey = useAppStore((s) => s.submitSurvey);
@@ -92,6 +101,30 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
         : s
     );
   }, [mcpServers, pendingOAuthServers]);
+
+  // Run a single-server /mcp action (e.g. "auth <name>") then refresh the
+  // panel's status snapshot. Live OAuth/init events update pendingOAuthServers
+  // separately.
+  const runMcpServerAction = useCallback(
+    async (value: string) => {
+      await kiro.executeCommand({
+        command: 'mcp',
+        args: { value },
+      } as any);
+      const result = await kiro.executeCommand({
+        command: 'mcp',
+        args: { value: '' },
+      } as any);
+      if (result?.data) {
+        const data = result.data as {
+          servers?: McpServerInfo[];
+          mode?: string;
+        };
+        setShowMcpPanel(true, data.servers ?? [], data.mode ?? 'status');
+      }
+    },
+    [kiro, setShowMcpPanel]
+  );
 
   return (
     <>
@@ -157,6 +190,30 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           pendingOAuthUrls={pendingOAuthServers}
           mode={mcpMode}
           onClose={handlers.handleCloseMcpPanel}
+          onAuthenticate={(serverName) => {
+            // Mirror the Ctrl+Y path so the panel shows the same
+            // notification: KAS resets the server to (re)start OAuth;
+            // V2 copies the (already valid) URL to the clipboard.
+            startMcpOAuth({
+              agentEngine,
+              serverName,
+              url: pendingOAuthServers.get(serverName) ?? null,
+              resetMcpServer: (name, startOAuth) =>
+                kiro.resetMcpServer(name, startOAuth),
+              copyToClipboard: copyToSystemClipboard,
+              showAlert: (message, status, autoHideMs) =>
+                showTransientAlert({ message, status, autoHideMs }),
+            });
+          }}
+          onForceAuth={(serverName) => {
+            void runMcpServerAction(`auth ${serverName}`);
+          }}
+          onAbortAuth={(serverName) => {
+            void runMcpServerAction(`cancel-auth ${serverName}`);
+          }}
+          onRemoveCredentials={(serverName) => {
+            void runMcpServerAction(`logout ${serverName}`);
+          }}
           onAction={async (serverNames: string[]) => {
             const action = mcpMode === 'add' ? 'add' : 'remove';
             await kiro.executeCommand({
@@ -180,9 +237,12 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
       {showToolsPanel && (
         <ToolsPanel
           tools={toolsList}
+          initErrors={initErrors}
           onClose={handlers.handleCloseToolsPanel}
         />
       )}
+      {showGoalPanel && <GoalPanel onClose={handlers.handleCloseGoalPanel} />}
+      {showTuiPanel && <TuiPanel onClose={handlers.handleCloseTuiPanel} />}
       {showStatsPanel && (
         <StatsPanel
           stats={statsList}
@@ -202,6 +262,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
       {showDisplaySettingsPanel && (
         <DisplaySettingsPanel
           onClose={handlers.handleCloseDisplaySettingsPanel}
+          onDismiss={handlers.handleDismissDisplaySettingsPanel}
         />
       )}
       {showThemePanel && (

@@ -1,6 +1,7 @@
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
+import { isCommandVisibleInUiMode } from '../../components/ui/command-menu-utils';
 
 /**
  * KAS-mode handler for `/help`.
@@ -17,7 +18,7 @@ export async function handleHelp(
 ): Promise<void> {
   // liteOnly commands bind lite-only rendering hooks, so hide them outside
   // lite — matching the V2 showHelpPanel effect and the autocomplete menu.
-  const inLite = ctx.getUiMode?.() === 'lite';
+  const uiMode = ctx.getUiMode?.() === 'lite' ? 'lite' : 'tui';
   const commands = [
     ...ctx.kasCommands.map((c) => ({
       name: c.name,
@@ -27,7 +28,7 @@ export async function handleHelp(
     })),
     ...ctx.slashCommands
       .filter((c) => 'source' in c && c.source === 'local')
-      .filter((c) => inLite || c.meta?.liteOnly !== true)
+      .filter((c) => isCommandVisibleInUiMode(c, uiMode))
       .map((c) => ({
         name: c.name,
         description: c.description,

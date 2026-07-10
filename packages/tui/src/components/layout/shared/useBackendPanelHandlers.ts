@@ -17,6 +17,8 @@ export function useBackendPanelHandlers() {
   const {
     setShowContextBreakdown,
     setShowHelpPanel,
+    setShowTuiPanel,
+    setShowGoalPanel,
     setShowUsagePanel,
     setShowMcpPanel,
     setShowToolsPanel,
@@ -69,6 +71,8 @@ export function useBackendPanelHandlers() {
     handleCloseContextBreakdown: makeClose(setShowContextBreakdown),
     handleCloseUsagePanel: makeClose(setShowUsagePanel),
     handleCloseHelpPanel: makeClose(setShowHelpPanel),
+    handleCloseTuiPanel: makeClose(setShowTuiPanel),
+    handleCloseGoalPanel: makeClose(setShowGoalPanel),
     handleCloseMcpPanel: makeClose(setShowMcpPanel),
     handleCloseToolsPanel: makeClose(setShowToolsPanel),
     handleCloseStatsPanel: makeClose(setShowStatsPanel),
@@ -83,6 +87,8 @@ export function useBackendPanelHandlers() {
     handleCloseDisplaySettingsPanel: makeClose(setShowDisplaySettingsPanel, {
       returnToSettings: true,
     }),
+    // Enter-to-confirm path: plain close, never bounce back to /settings.
+    handleDismissDisplaySettingsPanel: makeClose(setShowDisplaySettingsPanel),
     handleCloseThemePanel: makeClose(setShowThemePanel, {
       returnToSettings: true,
     }),
@@ -120,6 +126,15 @@ export function useBackendPanelHandlers() {
 
   const handleTabFromUsage = useCallback(async () => {
     try {
+      // KAS: prefer the typed cached breakdown — no round-trip required.
+      const cached = kiro.getCachedContextBreakdown();
+      if (cached) {
+        setShowContextBreakdown(true, cached);
+        setShowUsagePanel(false);
+        return;
+      }
+      // V2 Rust: fall back to the engine-specific executeCommand path,
+      // which returns the breakdown inline.
       const result = await kiro.executeCommand({
         command: 'context',
         args: {},
