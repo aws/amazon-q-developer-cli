@@ -54,7 +54,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PtyManager } from '../src/test-utils/shared/pty-manager';
-import { resolveChatCliBin } from '../src/utils/chat-cli-bin';
+import { resolveChatCliBin } from '../src/test-utils/chat-cli-bin';
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);

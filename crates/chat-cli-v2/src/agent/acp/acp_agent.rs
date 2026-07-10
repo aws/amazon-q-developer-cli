@@ -1639,20 +1639,27 @@ impl AcpSession {
         };
 
         // Set model ID from agent config with validation
-        if let Err(e) = update_model_info(&api_client, &os.database, &rts_state, snapshot.agent_config.model()).await {
+        if let Err(e) = update_model_info(
+            &api_client,
+            &os.database.settings,
+            &rts_state,
+            snapshot.agent_config.model(),
+        )
+        .await
+        {
             warn!("Failed to set initial model: {}", e);
         }
 
         // Restore the model the loaded session was actually using (e.g. after /model switch)
         if let Some(ref model_id) = saved_model_id
-            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
+            && let Err(e) = update_model_info(&api_client, &os.database.settings, &rts_state, Some(model_id)).await
         {
             warn!("Failed to restore saved session model: {}", e);
         }
 
         // Override with CLI --model if provided
         if let Some(model_id) = builder.model_id
-            && let Err(e) = update_model_info(&api_client, &os.database, &rts_state, Some(model_id)).await
+            && let Err(e) = update_model_info(&api_client, &os.database.settings, &rts_state, Some(model_id)).await
         {
             warn!("Failed to set CLI model override: {}", e);
         }
@@ -1701,12 +1708,12 @@ impl AcpSession {
             s.settings.tool_search_min_pct = os
                 .database
                 .settings
-                .get(Setting::ToolSearchMinPct)
+                .get_value(Setting::ToolSearchMinPct)
                 .and_then(|v| v.as_f64());
             s.settings.tool_search_min_tokens = os
                 .database
                 .settings
-                .get(Setting::ToolSearchMinTokens)
+                .get_value(Setting::ToolSearchMinTokens)
                 .and_then(|v| v.as_u64());
             s
         };
@@ -2272,11 +2279,11 @@ impl AcpSession {
 
                 // Only update model when the new agent explicitly specifies one;
                 // otherwise preserve the user's current model selection.
-                if let Some(model) = agent_config.model()
-                    && let Err(e) =
-                        update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
-                {
-                    warn!("Failed to update model during swap: {}", e);
+                if let Some(model) = agent_config.model() {
+                    let settings = self.os.database.settings.clone();
+                    if let Err(e) = update_model_info(&self.api_client, &settings, &self.rts_state, Some(model)).await {
+                        warn!("Failed to update model during swap: {}", e);
+                    }
                 }
                 // Reset stale context usage data since it's meaningless after swapping agents
                 self.rts_state.set_context_usage_percentage(None);
@@ -2334,8 +2341,8 @@ impl AcpSession {
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::SetModel { model_id, respond_to } => {
-                let result =
-                    update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(&model_id)).await;
+                let settings = self.os.database.settings.clone();
+                let result = update_model_info(&self.api_client, &settings, &self.rts_state, Some(&model_id)).await;
                 let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetModelId { respond_to } => {
@@ -2393,11 +2400,13 @@ impl AcpSession {
                         .iter()
                         .find(|c| c.name() == name)
                         .and_then(|c| c.model().map(String::from));
-                    if let Some(ref model) = new_model
-                        && let Err(e) =
-                            update_model_info(&self.api_client, &self.os.database, &self.rts_state, Some(model)).await
-                    {
-                        warn!("Failed to update model during agent switch: {}", e);
+                    if let Some(ref model) = new_model {
+                        let settings = self.os.database.settings.clone();
+                        if let Err(e) =
+                            update_model_info(&self.api_client, &settings, &self.rts_state, Some(model)).await
+                        {
+                            warn!("Failed to update model during agent switch: {}", e);
+                        }
                     }
 
                     self.previous_agent_name = Some(std::mem::replace(&mut self.current_agent_name, name.to_string()));
@@ -4011,7 +4020,7 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
 /// accepted by the backend).
 async fn update_model_info(
     client: &ApiClient,
-    database: &crate::database::Database,
+    settings: &crate::database::settings::Settings,
     rts_state: &RtsState,
     model: Option<&str>,
 ) -> Result<(), String> {
@@ -4025,7 +4034,7 @@ async fn update_model_info(
         find_model(&models, requested_model)
             .cloned()
             .unwrap_or_else(|| synthesize_model_info(requested_model))
-    } else if let Some(saved) = database.settings.get_string(Setting::ChatDefaultModel) {
+    } else if let Some(saved) = settings.get_string(Setting::ChatDefaultModel) {
         find_model(&models, &saved)
             .cloned()
             .unwrap_or_else(|| synthesize_model_info(&saved))
@@ -4034,7 +4043,8 @@ async fn update_model_info(
     };
 
     rts_state.set_model_info(Some(model_info));
-    rts_state.apply_model_defaults(&database.settings);
+    // Apply per-model defaults (e.g. reasoning effort) from the shared settings store.
+    rts_state.apply_model_defaults(settings);
 
     Ok(())
 }
@@ -4317,14 +4327,16 @@ pub async fn execute(
         // racing with the Rust backend.
         .on_receive_request(
             {
+                let os = os.clone();
                 async move |request: super::schema::SettingsSetRequest, request_cx, _cx| {
                     use crate::database::settings::Setting;
                     let key = Setting::try_from(request.key.as_str())
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
-                    // Perform a read-modify-write directly on the global settings
-                    // file (write is atomic via temp+rename), independent of the
-                    // in-memory Settings snapshot (which is a clone and may be stale).
-                    crate::database::settings::Settings::update_global_setting(key, request.value)
+                    // Write through the shared settings store: updates the value the
+                    // backend reads in-memory and atomically persists it to disk.
+                    os.database
+                        .settings
+                        .set(key, request.value, None)
                         .await
                         .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
                     request_cx.respond(super::schema::SettingsSetResponse {})

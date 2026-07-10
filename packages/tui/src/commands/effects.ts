@@ -455,7 +455,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       if (data.currentModel) ctx.setCurrentModel(data.currentModel);
       if (previousAgent) {
         // Re-apply the previous agent to the new session
-        ctx.kiro.setMode(previousAgent.name).catch(() => {
+        ctx.kiro.setConfigOption('mode', previousAgent.name).catch(() => {
           if (data.currentAgent) ctx.setCurrentAgent(data.currentAgent);
           ctx.showAlert(
             `Failed to restore agent "${previousAgent.name}", reverted to ${KAS_DEFAULT_AGENT_NAME}`,
@@ -789,7 +789,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
       try {
-        await ctx.kiro.setMode('spec');
+        await ctx.kiro.setConfigOption('mode', 'spec');
       } catch (err) {
         ctx.showAlert(
           extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
@@ -854,7 +854,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         : undefined;
       if (exactMatch) {
         try {
-          await ctx.kiro.setMode('spec');
+          await ctx.kiro.setConfigOption('mode', 'spec');
         } catch (err) {
           ctx.showAlert(
             extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
@@ -1746,7 +1746,7 @@ export async function resumeSpecFeature(
   feature: SpecFeatureSummary
 ): Promise<void> {
   try {
-    await deps.kiro.setMode('spec');
+    await deps.kiro.setConfigOption('mode', 'spec');
   } catch (err) {
     deps.showAlert(
       extractRpcErrorMessage(err, 'Failed to switch to spec mode'),

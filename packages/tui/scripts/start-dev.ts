@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import { resolveChatCliBin } from '../src/utils/chat-cli-bin';
+import { resolveChatCliBin } from '../src/test-utils/chat-cli-bin';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const CARGO_BIN = resolveChatCliBin();

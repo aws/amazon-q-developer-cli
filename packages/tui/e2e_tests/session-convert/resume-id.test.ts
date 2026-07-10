@@ -48,7 +48,7 @@ import { computeWorkspaceHash, SessionPersistence } from '@kiro/agent';
 
 import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
 import { KAS_DEFAULT_AGENT_ID } from '../../src/constants/agents';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
 import { assertConvertedSession } from './assertions';
 import { assertBasicFsToolsConverted } from './basic-fs-tools-assertions';

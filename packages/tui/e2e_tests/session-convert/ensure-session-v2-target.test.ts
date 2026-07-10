@@ -12,7 +12,7 @@
  * session silently, matching the backend's own not-found behavior.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import type { CliInternalOutput } from '../../src/types/generated/chat-internal';
 import { ErrorCode } from '../../src/types/generated/chat-internal';
 import { spawnSync } from 'node:child_process';

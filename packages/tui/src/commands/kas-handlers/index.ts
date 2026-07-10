@@ -11,6 +11,9 @@ import { handlePrompts } from './prompts';
 import { handleRewind } from './rewind';
 import { handleTools } from './tools';
 import { handleUpgradeAgent } from './upgrade-agent';
+import { handleModel } from './model';
+import { handleAgent } from './agent';
+import { handleEffort } from './effort';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -38,4 +41,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Rewind]: handleRewind,
   [KasCommandName.Tools]: handleTools,
   [KasCommandName.UpgradeAgent]: handleUpgradeAgent,
+  [KasCommandName.Model]: handleModel,
+  [KasCommandName.Agent]: handleAgent,
+  [KasCommandName.Effort]: handleEffort,
 };

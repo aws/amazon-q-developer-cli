@@ -1755,7 +1755,7 @@ fn parse_endpoint_setting(database: &Database, setting: Setting) -> Option<Endpo
         region: String,
     }
 
-    let value = database.settings.get(setting)?;
+    let value = database.settings.get_value(setting)?;
     match serde_json::from_value::<EndpointOverride>(value.clone()) {
         Ok(o) if !o.endpoint.is_empty() && !o.region.is_empty() => Some(Endpoint {
             url: o.endpoint.into(),

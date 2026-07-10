@@ -14,7 +14,7 @@ import * as fs from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Writable, Readable } from 'node:stream';
 import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
-import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../src/test-utils/chat-cli-bin';
 import type { MockStreamItem } from './types/chat-cli';
 
 export interface AcpTestHelperOptions {

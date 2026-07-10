@@ -5,7 +5,6 @@ import type { Stream } from '@kiro/client';
 // TUI, KAS, and any other ACP client speak the same contract for the
 // `_kiro/spec/*` extension methods.
 import type {
-  KiroModelOptionMeta,
   SpecInvokeRequest,
   SpecInvokeResponse,
   SpecResolveSessionRequest,
@@ -20,6 +19,7 @@ import {
 import { buildKasSettings } from './utils/kas-settings';
 import { webToolsGovernanceFromState } from './utils/governance-state';
 import { readCliSettings, updateCliSetting } from './utils/cli-settings';
+import { Settings } from './constants/settings';
 import { maybeWrapStreamWithRecorder } from './acp-recorder';
 import { createGetAccessTokenCapability } from './auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from './capabilities/copy-url-to-clipboard';
@@ -76,10 +76,7 @@ import type {
 import { getCliVersion } from './utils/version';
 import { KAS_COMMANDS } from './kas-commands';
 import { resolveAgentEngine } from './agent-engine';
-import { KAS_DEFAULT_AGENT_ID } from './constants/agents';
 import { readClipboardImage } from './utils/clipboard-image';
-import { formatEffort } from './utils/string';
-import { getAgentDisplayName } from './utils/agentColors';
 import {
   modeFromId,
   recordTuiContextUsage,
@@ -93,6 +90,17 @@ import {
   versionMinorBucketFromEnv,
   TuiToolCallObserver,
 } from './utils/tui-telemetry-observer';
+import {
+  parseModelsFromConfigOptions,
+  parseAgentsFromConfigOptions,
+  parseEffortsFromConfigOptions,
+  deriveCurrentSelections,
+  currentModeWelcomeMessage,
+  toKasModeId,
+  fromKasModeId,
+  resolveInitialModel,
+  type KasConfigOrigin,
+} from './utils/kas-config-options';
 import { isKasShellCapability } from './utils/shell-trust-options.js';
 
 // User-agent tokens attached to the KAS ACP clientInfo._meta. KAS appends these
@@ -293,102 +301,20 @@ const EXT_METHODS = {
   GOAL_STATUS: 'kiro.dev/goal/status',
 } as const;
 
-/** Subset of ACP's SessionModeState that we cache client-side.  Used for the
- *  /agent command, which is composed from the modes advertised on
- *  session/new and session/load responses (and kept in sync via
- *  current_mode_update notifications) rather than a custom extension
- *  method. */
-type CachedModesState = {
-  availableModes: Array<{
-    id: string;
-    name: string;
-    description?: string | null;
-    _meta?: Record<string, unknown> | null;
-  }>;
-  currentModeId?: string;
-};
-
-/**
- * The only KAS *bundled* agents that may surface in the `/agent` menu or any
- * derived agent listing, keyed by their `fromKasModeId`-normalized id.
- *
- * This is an allowlist rather than a denylist: KAS ships a growing set of
- * bundled modes (e.g. semantic_reviewer, autonomous, quick-spec, bug-fix),
- * most of which are internal or non-conversational and should not be
- * user-selectable. Allowlisting means any current or future bundled mode that
- * isn't one of these three is hidden by default, so a newly added bundled
- * mode can't leak into the picker.
- *
- * Entries (normalized ids):
- *   - `KAS_DEFAULT_AGENT_ID`: the general coding agent, displayed with the
- *     server-advertised `KAS_DEFAULT_AGENT_NAME`.
- *   - `kiro_planner`: the interactive read-only planner (wire id `plan`).
- *   - `spec`: the spec-driven workflow agent (wire id `spec`).
- *
- * Ids are compared after `fromKasModeId` normalization, i.e. the same form
- * stored in `modesState.availableModes`. The allowlist is scoped to *bundled*
- * agents only (see `isAgentHidden`); user/workspace-defined agents are always
- * shown so a config the user opted into is never silently dropped.
- */
-const BUILTIN_AGENT_ALLOWLIST = new Set<string>([
-  KAS_DEFAULT_AGENT_ID,
-  'kiro_planner',
-  'spec',
-]);
-
 /**
  * Steering commands hidden from the TUI slash-command menu. KAS ships
  * built-in steering documents that register inline slash commands to trigger
  * bundled workflows (e.g. `/quick-spec`, `/architecture-selection`,
  * `/bug-fix`). Product does not surface these bundled workflows in the TUI
- * (their picker modes are hidden too — see BUILTIN_AGENT_ALLOWLIST), so the
- * inline commands are dropped from autocomplete as well. User/workspace
- * steering documents are unaffected.
+ * (their picker modes are hidden too — see the agent allowlist in
+ * `utils/kas-config-options.ts`), so the inline commands are dropped from
+ * autocomplete as well. User/workspace steering documents are unaffected.
  */
 const HIDDEN_STEERING_COMMANDS = new Set<string>([
   'quick-spec',
   'architecture-selection',
   'bug-fix',
 ]);
-
-/**
- * Whether the given mode should be hidden from agent listings.
- *
- * The allowlist targets KAS's *bundled* agents only. A user- or
- * workspace-defined agent is always shown — the user opted into defining it,
- * so we must not silently drop it, even if it shares an id with a bundled
- * mode. Modes with no source metadata are treated as non-bundled and are
- * therefore always shown too. A bundled mode is hidden unless its normalized
- * id is on `BUILTIN_AGENT_ALLOWLIST`.
- */
-function isAgentHidden(mode: {
-  id: string;
-  _meta?: Record<string, unknown> | null;
-}): boolean {
-  if (getModeSource(mode._meta) !== 'bundled') {
-    return false;
-  }
-  return !BUILTIN_AGENT_ALLOWLIST.has(mode.id);
-}
-
-function extractCurrentAgent(
-  modes?: {
-    currentModeId?: string;
-    availableModes?: Array<{
-      id: string;
-      _meta?: Record<string, unknown> | null;
-    }>;
-  } | null
-): { name: string; welcomeMessage?: string } | undefined {
-  if (!modes?.currentModeId) return undefined;
-  const currentMode = modes.availableModes?.find(
-    (m) => m.id === modes.currentModeId
-  );
-  return {
-    name: modes.currentModeId,
-    welcomeMessage: currentMode?._meta?.welcomeMessage as string | undefined,
-  };
-}
 
 type SessionResult = {
   sessionId: string;
@@ -855,6 +781,7 @@ function pipeStderr(agentProcess: AgentProcess) {
   });
 }
 
+/** Extract the current model `{id, name}` from the V2 Rust `models` field. */
 function extractModel(
   models?: {
     currentModelId?: string;
@@ -868,149 +795,27 @@ function extractModel(
   return m ? { id: m.modelId, name: m.name } : undefined;
 }
 
-// ─── KAS model config extraction (ACP Session Config Options) ────────
-//
-// KAS exposes model selection through ACP's standard Session Config
-// Options API, not through the (Rust-backend-specific) `models` field.
-// The model option appears as:
-//   { type: 'select', id: 'model', category: 'model',
-//     currentValue: <id>, options: [{value, name, description?}, ...] }
-//
-// Locally-defined shape of a flat model select option. The ACP type
-// covenant does not export a select-option type at this version, so we
-// model only the fields the TUI consumes.
-// KAS additionally attaches per-model rate info under `_meta.kiro`
-// (rateMultiplier/rateUnit); we surface it as the credits column.
-interface ModelOption {
-  value: string;
-  name: string;
-  description?: string;
-  rateMultiplier?: number;
-  rateUnit?: string;
-}
-
-/** Find the `category: 'model'` entry in a KAS configOptions array. */
-function findModelConfigOption(
-  configOptions: unknown
-): { currentValue?: string; options: ModelOption[] } | undefined {
-  if (!Array.isArray(configOptions)) return undefined;
-  for (const opt of configOptions as Array<Record<string, unknown>>) {
-    if (opt.category !== 'model' || opt.type !== 'select') continue;
-    // `options` may be flat (SessionConfigSelectOption[]) or grouped
-    // (SessionConfigSelectGroup[]). KAS currently emits flat; we only
-    // support flat here. Grouped options simply yield an empty list,
-    // which surfaces as "No options available" in the TUI.
-    const raw = Array.isArray(opt.options) ? opt.options : [];
-    const options = raw
-      .filter((o: any): o is Record<string, unknown> => {
-        return (
-          typeof o === 'object' &&
-          o !== null &&
-          typeof (o as any).value === 'string' &&
-          typeof (o as any).name === 'string'
-        );
-      })
-      .map((o: Record<string, unknown>) => {
-        // KAS attaches per-model rate info under `_meta.kiro` (mirrors the
-        // v2 Rust path). Read defensively — older servers omit `_meta`.
-        const kiro = (o._meta as { kiro?: KiroModelOptionMeta } | undefined)
-          ?.kiro;
-        return {
-          value: o.value as string,
-          name: o.name as string,
-          description:
-            typeof o.description === 'string' ? o.description : undefined,
-          rateMultiplier:
-            typeof kiro?.rateMultiplier === 'number'
-              ? kiro.rateMultiplier
-              : undefined,
-          // Captured for v2 parity; not yet rendered (credits column uses
-          // rateMultiplier only). Retained so future UI can surface the unit.
-          rateUnit:
-            typeof kiro?.rateUnit === 'string' ? kiro.rateUnit : undefined,
-        };
-      });
-    return {
-      currentValue:
-        typeof opt.currentValue === 'string' ? opt.currentValue : undefined,
-      options,
-    };
-  }
-  return undefined;
-}
-
-/** Extract the currently selected model as `{id, name}` from configOptions. */
-function extractModelFromConfigOptions(
-  configOptions: unknown
-): { id: string; name: string } | undefined {
-  const modelOpt = findModelConfigOption(configOptions);
-  if (!modelOpt?.currentValue) return undefined;
-  const match = modelOpt.options.find((o) => o.value === modelOpt.currentValue);
-  return match ? { id: match.value, name: match.name } : undefined;
-}
-
-/**
- * Extract the current effort level (e.g. "low", "medium", "high", "xhigh")
- * from a KAS configOptions array. KAS exposes this as a `select` with
- * `id: 'effortLevel'` (category: 'thought_level') only when the active
- * model declares an effortLevels schema. Returns null when the option is
- * absent or when its currentValue is not a string — both signal "no
- * effort chip" to the TUI.
- *
- * V2 surfaces the same value through `_kiro.dev/metadata.effort` per turn;
- * KAS surfaces it as session-level state attached to model config. We
- * normalize both paths into the existing `EffortUpdate` event so the
- * prompt-bar chip renders uniformly.
- */
-function extractEffortFromConfigOptions(configOptions: unknown): string | null {
-  const effortOpt = findEffortConfigOption(configOptions);
-  return effortOpt?.currentValue ?? null;
-}
-
-/** A flat effort-level option as advertised by KAS (`{ value, name }`). */
-interface EffortOption {
-  value: string;
-  name: string;
-}
-
-/**
- * Find the `id: 'effortLevel'` select entry in a KAS configOptions array,
- * returning its `currentValue` and the (flat) list of available levels.
- *
- * Mirrors `findModelConfigOption`: it keys off `id` (not `category`) since
- * the effort option is identified by `id: 'effortLevel'`. Grouped options
- * are not emitted by KAS today and yield an empty list. Returns undefined
- * when no effortLevel entry is present (e.g. the active model declares no
- * thought-level schema) so callers can clear cached state.
- */
-function findEffortConfigOption(
-  configOptions: unknown
-): { currentValue?: string; options: EffortOption[] } | undefined {
-  if (!Array.isArray(configOptions)) return undefined;
-  for (const opt of configOptions as Array<Record<string, unknown>>) {
-    if (opt.id !== 'effortLevel' || opt.type !== 'select') continue;
-    const raw = Array.isArray(opt.options) ? opt.options : [];
-    const options = raw
-      .filter((o: any): o is Record<string, unknown> => {
-        return (
-          typeof o === 'object' &&
-          o !== null &&
-          typeof (o as any).value === 'string' &&
-          typeof (o as any).name === 'string'
-        );
-      })
-      .map((o: any) => ({ value: o.value as string, name: o.name as string }));
-    return {
-      currentValue:
-        typeof opt.currentValue === 'string' ? opt.currentValue : undefined,
-      options,
-    };
-  }
-  return undefined;
+/** Extract the current agent from the V2 Rust `modes` field. */
+function extractCurrentAgent(
+  modes?: {
+    currentModeId?: string;
+    availableModes?: Array<{
+      id: string;
+      _meta?: Record<string, unknown> | null;
+    }>;
+  } | null
+): { name: string; welcomeMessage?: string } | undefined {
+  if (!modes?.currentModeId) return undefined;
+  const currentMode = modes.availableModes?.find(
+    (m) => m.id === modes.currentModeId
+  );
+  return {
+    name: modes.currentModeId,
+    welcomeMessage: currentMode?._meta?.welcomeMessage as string | undefined,
+  };
 }
 
 // ─── Prompt types ────────────────────────────────────────────────────
-
 /**
  * V2 wire shape for a prompt entry from `kiro.dev/commands/available`.
  * `serverName` is overloaded by the upstream Rust HashMap key:
@@ -1118,7 +923,10 @@ abstract class BaseAcpClient implements SessionClient {
     commandName: string,
     partial: string
   ): Promise<CommandOptionsResponse>;
-  abstract setMode(modeId: string): Promise<void>;
+  abstract setConfigOption(
+    configId: 'mode' | 'model' | 'effortLevel',
+    value: string
+  ): Promise<void>;
   abstract listSessions(cwd: string): Promise<ListSessionsResponse>;
   abstract listSettings(): Promise<Record<string, unknown>>;
   abstract setSetting(key: string, value: unknown): Promise<void>;
@@ -2310,9 +2118,9 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
   /** Dedup guard so kiro_cli_chat_session_started_total fires once per session id. */
   private readonly v2SessionStartedSessions = new Set<string>();
   /**
-   * Best-effort current model id, captured from session results + ModelUpdate
-   * events, written verbatim as the `model` attribute on V2 metrics. Undefined →
-   * emitted as the empty string.
+   * Best-effort current model id, captured from session results +
+   * KasModelConfigUpdate events, written verbatim as the `model` attribute on V2
+   * metrics. Undefined → emitted as the empty string.
    */
   private v2CurrentModelId?: string;
   /** Current TUI mode id, captured from session results + setMode. */
@@ -2508,15 +2316,15 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
    * KasAcpClient.observeV3ToolCall — origin is decided once at ToolCall time,
    * the finish emits `kiro_cli_tool_call_total` + `kiro_cli_tool_execution_duration_ms`
    * via the `engine='v2'` observer. Also opportunistically tracks the current
-   * model id from ModelUpdate so the `model` label stays current after a model
-   * swap. NOTE: V2 sub-agent delegations only emit if the parent
+   * model id from KasModelConfigUpdate so the `model` label stays current after a
+   * model swap. NOTE: V2 sub-agent delegations only emit if the parent
    * `orchestrate_subagent` ToolCall carries `_meta.kiro.pipeline`; if the V2
    * host does not stamp it, the delegation counter simply does not fire (we do
    * not fabricate it).
    */
   protected override observeTurnTelemetry(event: AgentStreamEvent): void {
-    if (event.type === AgentEventType.ModelUpdate) {
-      if (event.model?.id) this.v2CurrentModelId = event.model.id;
+    if (event.type === AgentEventType.KasModelConfigUpdate) {
+      if (event.currentModelId) this.v2CurrentModelId = event.currentModelId;
       return;
     }
     if (event.type === AgentEventType.ToolCall) {
@@ -2588,12 +2396,25 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     }
   }
 
-  async setMode(modeId: string): Promise<void> {
+  async setConfigOption(
+    configId: 'mode' | 'model' | 'effortLevel',
+    value: string
+  ): Promise<void> {
     if (!this.sessionId) return;
-    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+    // V2 routes model/effort through the executeCommand/getCommandOptions
+    // round-trip, so only the agent-mode config option flows through here.
+    if (configId !== 'mode') {
+      throw new Error(
+        `setConfigOption('${configId}') is not supported by the V2 engine`
+      );
+    }
+    await this.connection.setSessionMode({
+      sessionId: this.sessionId,
+      modeId: value,
+    });
     // Keep the V2 telemetry mode in sync so later turn/mode metrics bucket
     // against the active mode rather than the one the session opened with.
-    this.v2CurrentMode = modeId;
+    this.v2CurrentMode = value;
   }
 
   async listSessions(cwd: string): Promise<ListSessionsResponse> {
@@ -2774,23 +2595,6 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
 
 // ─── KAS ACP client ──────────────────────────────────────────────────
 
-/** Map TUI-facing mode names to KAS wire names. */
-function toKasModeId(tuiModeId: string): string {
-  // The TUI surfaces the planner under the internal name `kiro_planner`; the
-  // agent's read-only planner builtin mode is wire id `plan`.
-  if (tuiModeId === 'kiro_planner') return 'plan';
-  // KAS still emits/accepts `vibe` as the wire id for the default mode.
-  if (tuiModeId === 'default') return 'vibe';
-  return tuiModeId;
-}
-
-/** Map KAS wire mode names back to TUI-facing names. */
-function fromKasModeId(kasModeId: string): string {
-  if (kasModeId === 'plan') return 'kiro_planner';
-  if (kasModeId === 'vibe') return 'default';
-  return kasModeId;
-}
-
 /**
  * Subagent event types that should ALSO render inline in the main transcript
  * when the subtask is *standalone* (no crew panel registered). These are the
@@ -2820,6 +2624,17 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly v3ToolCalls = new TuiToolCallObserver();
 
   /**
+   * Snapshots of the current model id and agent (KAS "mode") id, kept solely
+   * to tag outgoing KAS telemetry (`kas-chat-session-started`,
+   * `kas-turn-completion`). The client emits telemetry synchronously from
+   * session notifications and cannot read the store, so it records the last
+   * derived selection here. These are telemetry tags only, not a cache of
+   * menu state — the store owns the available options and current selection.
+   */
+  private telemetryCurrentModelId?: string;
+  private telemetryCurrentModeId?: string;
+
+  /**
    * Initial agent name (KAS "mode") to apply on the next `newSession`.
    * Sourced from the TUI's `--agent` CLI flag.  Mirrors V2's
    * `set_next_agent_name` semantics: only applied to brand-new sessions;
@@ -2828,9 +2643,10 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialAgent?: string;
 
   /**
-   * Default model to apply on the next `newSession`, sourced from
-   * `chat.defaultModel` in cli.json.  Only used when `--model` was not
-   * passed on the CLI (so an explicit flag always takes precedence).
+   * Explicit `--model` CLI flag value to apply on `newSession`, if any.
+   * When absent, `newSession` lazily reads the saved `chat.defaultModel` from
+   * cli.json so a sticky default written mid-run is honored by later in-process
+   * sessions. An explicit flag always takes precedence over the saved default.
    */
   private readonly initialModel?: string;
 
@@ -3051,73 +2867,63 @@ export class KasAcpClient extends BaseAcpClient {
 
   private sessionDisposables: Array<{ dispose: () => void }> = [];
 
-  /** Cache of session modes received on session/new and session/load.  This
-   *  is the source of truth for the /agent selection menu and stays in sync
-   *  via current_mode_update session notifications. */
-  private modesState: CachedModesState = {
-    availableModes: [],
-    currentModeId: undefined,
-  };
-
-  /** Capture availableModes / currentModeId from a session/new or
-   *  session/load response.  Responses lacking a `modes` field leave the
-   *  cache untouched so we don't accidentally blank out a known-good
-   *  snapshot. */
-  private captureModes(
-    response: { modes?: CachedModesState | null | undefined } | undefined
+  /**
+   * Emit normalized model / agent / effort updates parsed from a KAS
+   * `configOptions` payload (session/new, session/load,
+   * session/set_config_option responses, and `config_option_update`
+   * notifications). The TUI store, not this client, retains the parsed
+   * lists — this method only converts the wire payload into structured
+   * stream events, mirroring how skills/prompts are handled.
+   *
+   * Model and effort are emitted together because effort is a per-model
+   * option: switching models can add or remove the effort levels, so an
+   * absent effort entry alongside a present model clears the effort chip.
+   * Agents are emitted independently (a payload may omit the mode select).
+   */
+  private emitConfigOptions(
+    configOptions: unknown,
+    origin: KasConfigOrigin,
+    opts?: { emitCurrentAgent?: boolean }
   ): void {
-    const modes = response?.modes;
-    if (!modes) return;
-    this.modesState = {
-      availableModes: (modes.availableModes ?? [])
-        .map((m) => {
-          const id = fromKasModeId(m.id);
-          return {
-            ...m,
-            id,
-            name: m.name,
-          };
-        })
-        // Hide bundled agents that aren't on the built-in allowlist (e.g.
-        // semantic_reviewer, autonomous, quick-spec, bug-fix) so they never
-        // appear in the /agent menu or any derived listing. User/workspace
-        // agents are always preserved — see BUILTIN_AGENT_ALLOWLIST and
-        // isAgentHidden for the rationale.
-        .filter((m) => !isAgentHidden(m)),
-      currentModeId: modes.currentModeId
-        ? fromKasModeId(modes.currentModeId)
-        : modes.currentModeId,
-    };
+    const models = parseModelsFromConfigOptions(configOptions);
+    if (models) {
+      this.telemetryCurrentModelId = models.currentModelId;
+      const efforts = parseEffortsFromConfigOptions(configOptions);
+      this.broadcastStreamEvent({
+        type: AgentEventType.KasModelConfigUpdate,
+        models: models.models,
+        currentModelId: models.currentModelId,
+        efforts: efforts?.efforts ?? [],
+        currentLevel: efforts?.currentLevel ?? null,
+        origin,
+      });
+    }
+    const agents = parseAgentsFromConfigOptions(configOptions);
+    if (agents) {
+      if (agents.currentAgentId) {
+        this.telemetryCurrentModeId = toKasModeId(agents.currentAgentId);
+      }
+      this.broadcastStreamEvent({
+        type: AgentEventType.KasAgentsUpdate,
+        agents: agents.agents,
+      });
+      // Mid-session mode changes (a client `/agent` swap or a KAS-initiated
+      // `config_option_update`) carry the new selection here; new/load route
+      // the current agent through the session result instead. The welcome is
+      // resolved from the raw current-mode option so a hidden current agent
+      // still surfaces one. Emitted unconditionally — the store fires the
+      // welcome banner only on an actual agent change (see `setCurrentAgent`),
+      // so re-asserting the same agent is a no-op there.
+      if (opts?.emitCurrentAgent && agents.currentAgentId) {
+        this.broadcastStreamEvent({
+          type: AgentEventType.AgentSwitched,
+          agentName: agents.currentAgentId,
+          welcomeMessage: currentModeWelcomeMessage(configOptions),
+        });
+      }
+    }
   }
 
-  /**
-   * Cached model options from the most recent session/new, session/load,
-   * or session/set_config_option response. Populated from the `model`
-   * category entry in the ACP Session Config Options list.
-   *
-   * Used by:
-   *   - getCommandOptions('/model') — powers the selection menu
-   *   - executeCommand('model') — validates the switch + resolves display name
-   *
-   * Empty when the KAS agent has no ModelConfigProvider registered.
-   */
-  private modelOptions: ModelOption[] = [];
-  /** ID of the currently selected model, or undefined if no model config. */
-  private currentModelId?: string;
-  /**
-   * Cached effort-level options from the most recent session/new,
-   * session/load, or session/set_config_option response. Populated from
-   * the `id: 'effortLevel'` entry in the ACP Session Config Options list.
-   *
-   * Used by:
-   *   - getCommandOptions('/effort') — powers the selection menu
-   *   - executeCommand('effort') — validates the level + resolves the label
-   *
-   * Empty when the active model declares no effortLevels schema.
-   */
-  private effortOptions: EffortOption[] = [];
-  /** Currently selected effort level, or undefined when none is advertised. */
-  private currentEffortLevel?: string;
   /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
   private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
@@ -3158,76 +2964,40 @@ export class KasAcpClient extends BaseAcpClient {
         // Without this broadcast, agent-initiated mode changes (e.g. a
         // spec-mode workflow handoff) silently update the cache but leave
         // the header chip and welcome banner stale.
+        // KAS re-asserts the current mode via `current_mode_update`
+        // (carrying only the id). Convert it to an `AgentSwitched` stream
+        // event so the store updates currentAgent + welcome banner. The
+        // welcome text is resolved store-side from `kasAvailableAgents`, so
+        // the event carries only the id. Emitted unconditionally; the store
+        // fires the welcome banner only on an actual agent change (see
+        // `setCurrentAgent`), so KAS re-asserting the same mode (notably at
+        // session start, where the session result already set the agent) is a
+        // no-op there.
         if (update.sessionUpdate === 'current_mode_update') {
-          const newModeId = fromKasModeId(
-            (update as { currentModeId: string }).currentModeId
-          );
-          const previousModeId = this.modesState.currentModeId;
-          this.modesState = { ...this.modesState, currentModeId: newModeId };
-          // Broadcast only on an actual change so we don't emit a
-          // spurious "switched to X" welcome message when the agent
-          // re-asserts its current mode at session start.
-          if (newModeId && newModeId !== previousModeId) {
-            const mode = this.modesState.availableModes.find(
-              (m) => m.id === newModeId
-            );
-            const welcomeMessage = mode?._meta?.welcomeMessage as
-              | string
-              | undefined;
+          const rawModeId = (update as { currentModeId: string }).currentModeId;
+          this.telemetryCurrentModeId = rawModeId;
+          const newModeId = fromKasModeId(rawModeId);
+          if (newModeId) {
             this.broadcastStreamEvent({
               type: AgentEventType.AgentSwitched,
               agentName: newModeId,
-              previousAgentName: previousModeId,
-              welcomeMessage,
             });
           }
         }
-        // Intercept config_option_update (KAS-specific) to keep the
-        // local model cache fresh without a round-trip. The agent may
-        // push these notifications when it autonomously changes a
-        // config option (e.g. fallback to a different model after
-        // rate limits), resolves the model list late (e.g. once auth
-        // completes after launch), or mirrors a client-initiated change.
-        //
-        // Model propagation to the app store uses a dedicated, model-only
-        // `ModelUpdate` event (broadcast below) rather than the
-        // `AgentSwitched` channel — so updating the model chip never
-        // clobbers `currentAgent`. User-initiated `/model` switches also
-        // propagate synchronously via the effect handler `updateModel`;
-        // the extra ModelUpdate here is an idempotent no-op for those.
+        // KAS pushes `config_option_update` when it autonomously changes a
+        // config option (model fallback after rate limits, late model
+        // enumeration once auth completes, or mirroring a client-initiated
+        // change). Re-emit the normalized model/agent/effort events so the
+        // store self-heals; the client retains no copy.
         if (
           (update as { sessionUpdate?: string }).sessionUpdate ===
           'config_option_update'
         ) {
-          const configOptions = (update as { configOptions?: unknown })
-            .configOptions;
-          this.refreshModelCache(configOptions);
-          // Keep the /effort menu cache fresh too: an autonomous model
-          // switch can change (or remove) the advertised effort levels, so
-          // the next time the user opens /effort it reflects the new model.
-          this.refreshEffortCache(configOptions);
-          // Effort, unlike model, propagates to the app store directly from
-          // here. KAS exposes `effortLevel` as a session config option, and
-          // the only path back to the UI for autonomous changes (e.g. the
-          // user switches model from a high-effort model to a low-effort one
-          // via the /model command) is through this notification. The store
-          // setter is idempotent — re-broadcasting an unchanged value is a
-          // harmless no-op.
-          this.broadcastEffortFromConfigOptions(configOptions);
-          // Propagate the current model so the model chip self-heals when KAS
-          // resolves the model list late (e.g. after auth completes post-
-          // launch) or changes it autonomously. We use a dedicated
-          // ModelUpdate event (model-only) rather than AgentSwitched so this
-          // never clobbers currentAgent. extractModelFromConfigOptions
-          // returns undefined when no model category/currentValue is present,
-          // in which case we leave the chip unchanged.
-          const model = extractModelFromConfigOptions(configOptions);
-          if (model) {
-            this.broadcastStreamEvent({
-              type: AgentEventType.ModelUpdate,
-              model,
-            });
-          }
+          this.emitConfigOptions(
+            (update as { configOptions?: unknown }).configOptions,
+            'serverPush',
+            { emitCurrentAgent: true }
+          );
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
         // NOTE: `sessionId` here is the per-listener KAS session, which equals
@@ -3277,36 +3047,6 @@ export class KasAcpClient extends BaseAcpClient {
     ];
   }
 
-  /** Override to filter out commands that match cached modes (agents).
-   *  Typed agent/mode/custom-agent entries are already dropped upstream in
-   *  the partition switch (see convertAcpUpdateToEvent in the base class).
-   *  This is the fallback for the *untyped* case: KAS may send a switchable
-   *  agent in available_commands_update without a recognized _meta.kiro.type,
-   *  so we cross-reference the modes cache by name to catch it. (Untyped
-   *  custom-agent subagents can't be caught here — they're not modes — so
-   *  the upstream type-based filter is the source of truth for those.)
-   *  The cache holds TUI-translated ids (e.g. `kiro_planner`), but KAS
-   *  emits commands using canonical ids (e.g. `plan`), so the filter set
-   *  has to include both. */
-  protected override convertAcpUpdateToEvent(
-    update: AcpSessionUpdate,
-    notifSessionId?: string
-  ): AgentStreamEvent | null {
-    const event = super.convertAcpUpdateToEvent(update, notifSessionId);
-    if (
-      event?.type === AgentEventType.CommandsUpdate &&
-      this.modesState.availableModes.length > 0
-    ) {
-      const modeIds = new Set<string>();
-      for (const m of this.modesState.availableModes) {
-        modeIds.add(m.id);
-        modeIds.add(toKasModeId(m.id));
-      }
-      event.commands = event.commands.filter((cmd) => !modeIds.has(cmd.name));
-    }
-    return event;
-  }
-
   /**
    * Translate ToolCall / ToolCallFinished events into V3 tool telemetry
    * (tool_call_total + execution-duration histogram). KAS-only; never throws.
@@ -3325,10 +3065,9 @@ export class KasAcpClient extends BaseAcpClient {
 
     this.v3ToolCalls.finish(event.id, {
       outcome: event.result?.status === 'error' ? 'error' : 'success',
-      model: this.currentModelId ?? '',
+      model: this.telemetryCurrentModelId ?? '',
     });
   }
-
   protected override handleExtSessionUpdate(
     params: Record<string, unknown>
   ): void {
@@ -3792,24 +3531,17 @@ export class KasAcpClient extends BaseAcpClient {
           ...params,
           ...(rawFallback ? { fallbackAgent: fromKasModeId(rawFallback) } : {}),
         });
-        // KAS doesn't send current_mode_update after fallback, so update the cached mode here
+        // KAS doesn't send current_mode_update after fallback, so emit the
+        // AgentSwitched here. Emitted unconditionally; the store updates
+        // currentAgent + prompt bar and fires the welcome only on an actual
+        // change (welcome resolved store-side).
         const fallback = params.fallbackAgent as string | undefined;
         if (fallback) {
-          const previousModeId = this.modesState.currentModeId;
           const newModeId = fromKasModeId(fallback);
-          this.modesState = {
-            ...this.modesState,
-            currentModeId: newModeId,
-          };
-          // Also broadcast AgentSwitched so the store's currentAgent updates
-          // and the prompt bar shows the correct fallback agent name.
-          if (newModeId !== previousModeId) {
-            this.broadcastStreamEvent({
-              type: AgentEventType.AgentSwitched,
-              agentName: newModeId,
-              previousAgentName: previousModeId,
-            });
-          }
+          this.broadcastStreamEvent({
+            type: AgentEventType.AgentSwitched,
+            agentName: newModeId,
+          });
         }
       }
     );
@@ -3941,10 +3673,6 @@ export class KasAcpClient extends BaseAcpClient {
     this.sessionId = sid;
     logger.debug('KAS session created', { sessionId: sid });
 
-    // Snapshot modes before any further async work so /agent has data even
-    // if setSessionConfigOption below fails.
-    this.captureModes(r as { modes?: CachedModesState | null | undefined });
-
     // Register BEFORE any async work to avoid race condition
     this.wireSessionListeners(sid);
 
@@ -3958,59 +3686,31 @@ export class KasAcpClient extends BaseAcpClient {
       logger.debug('Failed to set autopilot config:', e);
     }
 
-    if (this.initialModel) {
+    let configOptions = (r as { configOptions?: unknown }).configOptions;
+    const savedDefault = readCliSettings()[Settings.CHAT_DEFAULT_MODEL];
+    const modelToApply = resolveInitialModel({
+      flagModel: this.initialModel ?? null,
+      savedDefaultModel:
+        typeof savedDefault === 'string' && savedDefault ? savedDefault : null,
+    });
+    if (modelToApply) {
       try {
         const modelResp = await this.kiroClient.setSessionConfigOption({
           sessionId: sid,
           configId: 'model',
-          value: this.initialModel,
+          value: modelToApply,
         });
-        this.refreshModelCache(
-          (modelResp as { configOptions?: unknown }).configOptions
-        );
-        this.refreshEffortCache(
-          (modelResp as { configOptions?: unknown }).configOptions
-        );
-        this.broadcastEffortFromConfigOptions(
-          (modelResp as { configOptions?: unknown }).configOptions
-        );
+        configOptions =
+          (modelResp as { configOptions?: unknown }).configOptions ??
+          configOptions;
       } catch (e) {
         logger.debug('Failed to set default model:', e);
       }
     }
 
-    if (!this.initialModel) {
-      this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
-      this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
-      this.broadcastEffortFromConfigOptions(
-        (r as { configOptions?: unknown }).configOptions
-      );
-    }
-
-    const currentModelEntry = this.currentModelId
-      ? this.modelOptions.find((m) => m.value === this.currentModelId)
-      : undefined;
-    // A selected-but-unavailable model (e.g. a `chat.defaultModel` this user
-    // can't access) shows no chip — matching V2's `extractModel` — rather than
-    // a misleading "Auto" fallback. The `r` fallback only applies when no
-    // model was selected at all.
-    const currentModel = currentModelEntry
-      ? { id: currentModelEntry.value, name: currentModelEntry.name }
-      : this.currentModelId
-        ? undefined
-        : (extractModelFromConfigOptions(
-            (r as { configOptions?: unknown }).configOptions
-          ) ?? extractModel(r.models));
-    if (!this.currentModelId && currentModel) {
-      this.currentModelId = currentModel.id;
-    }
-
-    return {
-      sessionId: sid,
-      currentModel,
-      // TODO: Remove cast once @kiro/client adds `modes` to NewSessionResponse
-      currentAgent: extractCurrentAgent(this.modesState),
-    };
+    this.emitConfigOptions(configOptions, 'newSession');
+    const selections = deriveCurrentSelections(configOptions);
+    return { sessionId: sid, ...selections };
   }
 
   async loadSession(sessionId: string): Promise<SessionResult> {
@@ -4031,25 +3731,10 @@ export class KasAcpClient extends BaseAcpClient {
       sessionId
     );
 
-    this.captureModes(r as { modes?: CachedModesState | null | undefined });
-    const configModel = extractModelFromConfigOptions(
-      (r as { configOptions?: unknown }).configOptions
-    );
-    const legacyModel = extractModel(r.models);
-    this.refreshModelCache((r as { configOptions?: unknown }).configOptions);
-    if (!configModel && legacyModel) {
-      this.currentModelId = legacyModel.id;
-    }
-    this.refreshEffortCache((r as { configOptions?: unknown }).configOptions);
-    this.broadcastEffortFromConfigOptions(
-      (r as { configOptions?: unknown }).configOptions
-    );
-
-    return {
-      sessionId,
-      currentModel: configModel ?? legacyModel,
-      currentAgent: extractCurrentAgent(this.modesState),
-    };
+    const configOptions = (r as { configOptions?: unknown }).configOptions;
+    this.emitConfigOptions(configOptions, 'loadSession');
+    const selections = deriveCurrentSelections(configOptions);
+    return { sessionId, ...selections };
   }
 
   async prompt(messages: acp.ContentBlock[]): Promise<void> {
@@ -4108,96 +3793,6 @@ export class KasAcpClient extends BaseAcpClient {
       }
       case 'paste':
         return executePaste();
-      case 'agent': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const parsed = parseAgentSubcommand(args);
-        switch (parsed.kind) {
-          case 'list':
-            return this.executeAgentList();
-          case 'swap':
-            if (!parsed.name) {
-              return { success: false, message: 'Usage: /agent swap <name>' };
-            }
-            return this.executeAgentSwap(parsed.name);
-          case 'create':
-            // TODO: route through a KAS extension method so config writes
-            // stay the source of truth on the agent side.  Until then,
-            // surface a clear not-yet-implemented error.
-            return {
-              success: false,
-              message: '/agent create is not yet implemented in KAS mode',
-            };
-          case 'edit':
-            // TODO: route through a KAS extension method (see create).
-            return {
-              success: false,
-              message: '/agent edit is not yet implemented in KAS mode',
-            };
-          default: {
-            // Exhaustiveness check — also satisfies eslint no-fallthrough.
-            const _exhaustive: never = parsed;
-            throw new Error(
-              `Unhandled /agent subcommand: ${JSON.stringify(_exhaustive)}`
-            );
-          }
-        }
-      }
-      case 'model': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const modelId = args?.value ?? '';
-        if (!modelId) {
-          // Bare `/model` invocation. The dispatcher normally fetches
-          // options via getCommandOptions for selection-type commands,
-          // so this branch fires only when the user typed `/model`
-          // directly as a command with no arg (unlikely) — surface a
-          // helpful hint rather than a generic failure.
-          return {
-            success: false,
-            message:
-              this.modelOptions.length === 0
-                ? 'No models available'
-                : 'Usage: /model <model-id>',
-          };
-        }
-        if (modelId === 'set-current-as-default') {
-          if (!this.currentModelId) {
-            return { success: false, message: 'No model is currently active' };
-          }
-          await updateCliSetting('chat.defaultModel', this.currentModelId);
-          const name =
-            this.modelOptions.find((m) => m.value === this.currentModelId)
-              ?.name ?? this.currentModelId;
-          return {
-            success: true,
-            message: `Saved ${name} as default model`,
-          };
-        }
-        return this.executeModelSwap(modelId);
-      }
-      case 'effort': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const level = args?.value ?? '';
-        if (!level) {
-          // Bare `/effort` reaches here only when getCommandOptions
-          // returned no options (model has no effortLevels schema) and the
-          // dispatcher fell through to execute. Surface the V2-style
-          // descriptive guidance rather than a generic failure.
-          return {
-            success: false,
-            message:
-              this.effortOptions.length === 0
-                ? 'Effort is not available on the current model. Select a model that supports effort levels.'
-                : 'Usage: /effort <level>',
-          };
-        }
-        return this.executeEffortChange(level);
-      }
       case 'reply':
         return { success: true, message: '' };
       case 'usage': {
@@ -4396,168 +3991,6 @@ export class KasAcpClient extends BaseAcpClient {
         })),
       },
     };
-  }
-
-  /** /agent (no args) — fallback reached only when getCommandOptions returns
-   *  no options.  We derive from cached ACP modes (see getCommandOptions for
-   *  the primary code path). */
-  private async executeAgentList(): Promise<CommandResult> {
-    if (!this.sessionId)
-      return { success: false, message: 'No active session' };
-    const modes = this.modesState.availableModes;
-    const current = this.modesState.currentModeId ?? '';
-    const agents = modes.map((m) => ({
-      name: m.id,
-      description: m.description ?? '',
-    }));
-    return {
-      success: true,
-      message: `${agents.length} agents available`,
-      data: { agents, current },
-    };
-  }
-
-  /** /agent swap — uses session/setMode (standard ACP) since KAS doesn't have _kiro/agent/swap */
-  private async executeAgentSwap(agentName: string): Promise<CommandResult> {
-    if (!this.sessionId)
-      return { success: false, message: 'No active session' };
-    try {
-      await this.kiroClient.setSessionConfigOption({
-        sessionId: this.sessionId,
-        configId: 'mode',
-        value: toKasModeId(agentName),
-      });
-      // Keep the cached current mode in sync. Mode switches via
-      // setSessionConfigOption return the new state in the response (not via a
-      // current_mode_update push), so this cache would otherwise stay stale.
-      // A stale cache makes the current_mode_update dedup in
-      // wireSessionListeners incorrectly skip the AgentSwitched broadcast for a
-      // later agent-initiated switch back to this mode, leaving the header chip
-      // out of sync (e.g. after switch_to_execution hands off plan → execution).
-      this.modesState = { ...this.modesState, currentModeId: agentName };
-      return {
-        success: true,
-        message: `Switched to ${agentName}`,
-        data: { agent: { name: agentName } },
-      };
-    } catch (e) {
-      return {
-        success: false,
-        message: e instanceof Error ? e.message : 'Failed to switch agent',
-      };
-    }
-  }
-
-  /**
-   * /model switch — uses the ACP-standard `session/set_config_option`
-   * with `configId: 'model'`. KAS returns the full configOptions state
-   * in the response, which we use to refresh the local model cache and
-   * resolve the new model's display name.
-   *
-   * Session state (history, tools, MCP servers, agent profile) is
-   * preserved across model switches — KAS simply updates the
-   * `modelId` on its in-memory session and picks it up on the next
-   * prompt turn.
-   */
-  private async executeModelSwap(modelId: string): Promise<CommandResult> {
-    if (!this.sessionId)
-      return { success: false, message: 'No active session' };
-    try {
-      const response = await this.kiroClient.setSessionConfigOption({
-        sessionId: this.sessionId,
-        configId: 'model',
-        value: modelId,
-      });
-      const configOptions = (response as { configOptions?: unknown })
-        .configOptions;
-      this.refreshModelCache(configOptions);
-      this.refreshEffortCache(configOptions);
-      this.broadcastEffortFromConfigOptions(configOptions);
-      const model = extractModelFromConfigOptions(configOptions);
-      // Validate the switch landed on the requested id. If KAS rejected
-      // the value but still returned a configOptions state, surface a
-      // clear error rather than silently reporting success.
-      if (!model || model.id !== modelId) {
-        return {
-          success: false,
-          message: `Model '${modelId}' not available`,
-        };
-      }
-      return {
-        success: true,
-        message: `Switched to ${model.name}`,
-        data: { model: { id: model.id, name: model.name } },
-      };
-    } catch (e) {
-      return {
-        success: false,
-        message: e instanceof Error ? e.message : 'Failed to switch model',
-      };
-    }
-  }
-
-  /**
-   * /effort — set the reasoning effort level via the ACP-standard
-   * `session/set_config_option` with `configId: 'effortLevel'`. Mirrors
-   * `executeModelSwap`: KAS returns the full configOptions state in the
-   * response, which we use to refresh the local cache and validate the
-   * write landed.
-   *
-   * The success message is locked to `"Effort set to {Level}"` (display-
-   * cased via `formatEffort`, e.g. `xhigh → xHigh`). Unlike V2's
-   * `/effort`, we deliberately omit the `" (saved for {model})"` suffix:
-   * that suffix exists in V2 only because V2 persists a per-model default
-   * to the client-side `ChatModelDefaults` setting. KAS persists
-   * `effortLevel` to its own session metadata server-side and this feature
-   * does no client-side persistence, so there is nothing "saved" from the
-   * TUI's perspective.
-   */
-  private async executeEffortChange(level: string): Promise<CommandResult> {
-    if (!this.sessionId)
-      return { success: false, message: 'No active session' };
-    if (this.effortOptions.length === 0) {
-      return {
-        success: false,
-        message:
-          'Effort is not available on the current model. Select a model that supports effort levels.',
-      };
-    }
-    try {
-      const response = await this.kiroClient.setSessionConfigOption({
-        sessionId: this.sessionId,
-        configId: 'effortLevel',
-        value: level,
-      });
-      const configOptions = (response as { configOptions?: unknown })
-        .configOptions;
-      this.refreshEffortCache(configOptions);
-      // Note: unlike the autonomous `config_option_update` path, we do NOT
-      // call `broadcastEffortFromConfigOptions` here. Propagation of a
-      // user-initiated `/effort` to the store happens through the
-      // `updateEffort` effect handler (reads `data.effort` from this
-      // result) — matching how `/model` propagates via `updateModel`. A
-      // broadcast here would double-fire `setCurrentEffort` for the same
-      // action; keeping a single path makes the data flow unambiguous.
-      // Validate the write landed on the requested level. KAS silently
-      // ignores invalid values, leaving currentValue unchanged — surface a
-      // clear error rather than reporting a false success.
-      if (this.currentEffortLevel !== level) {
-        return {
-          success: false,
-          message: `Effort '${level}' not available`,
-        };
-      }
-      return {
-        success: true,
-        message: `Effort set to ${formatEffort(level)}`,
-        data: { effort: level },
-      };
-    } catch (e) {
-      return {
-        success: false,
-        message: e instanceof Error ? e.message : 'Failed to set effort',
-      };
-    }
   }
 
   /**
@@ -4900,68 +4333,6 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /**
-   * Refresh the cached model options + current model id from a KAS
-   * configOptions array (returned by session/new, session/load, and
-   * session/set_config_option).
-   *
-   * If the array contains no `category: 'model'` entry (e.g. KAS has
-   * no ModelConfigProvider registered), the cache is cleared so that
-   * `/model` surfaces "No options available" rather than stale data.
-   */
-  private refreshModelCache(configOptions: unknown): void {
-    const modelOpt = findModelConfigOption(configOptions);
-    if (!modelOpt) {
-      // Visibility into the "why is /model empty?" case — logs the
-      // ids/categories present so developers can see that KAS returned
-      // e.g. only [mode, autopilot, contentCollection] with no model
-      // entry (typical for a standalone KAS without a
-      // ModelConfigProvider registered by the host IDE).
-      const present = Array.isArray(configOptions)
-        ? (configOptions as Array<Record<string, unknown>>).map((o) => ({
-            id: o.id,
-            category: o.category,
-          }))
-        : configOptions;
-      logger.debug(
-        '[kas] refreshModelCache: no `category: "model"` entry. configOptions:',
-        present
-      );
-      this.modelOptions = [];
-      this.currentModelId = undefined;
-      return;
-    }
-    logger.debug(
-      '[kas] refreshModelCache: cached',
-      modelOpt.options.length,
-      'models, current:',
-      modelOpt.currentValue
-    );
-    this.modelOptions = modelOpt.options;
-    this.currentModelId = modelOpt.currentValue;
-  }
-
-  /**
-   * Refresh the cached effort-level options + current level from a KAS
-   * configOptions array (returned by session/new, session/load,
-   * session/set_config_option, or pushed via `config_option_update`).
-   *
-   * Mirrors `refreshModelCache`. When the array contains no
-   * `id: 'effortLevel'` entry (e.g. the active model declares no
-   * thought-level schema), the cache is cleared so `/effort` surfaces a
-   * descriptive "not available" error rather than stale levels.
-   */
-  private refreshEffortCache(configOptions: unknown): void {
-    const effortOpt = findEffortConfigOption(configOptions);
-    if (!effortOpt) {
-      this.effortOptions = [];
-      this.currentEffortLevel = undefined;
-      return;
-    }
-    this.effortOptions = effortOpt.options;
-    this.currentEffortLevel = effortOpt.currentValue;
-  }
-
-  /**
    * Normalize backend-initiated agent switches (e.g. a spec-workflow handoff)
    * so the chip / welcome banner never surface a raw KAS wire id like `vibe`.
    * The base implementation is identity (V2 ids need no translation).
@@ -4977,23 +4348,6 @@ export class KasAcpClient extends BaseAcpClient {
         ? { previousAgentName: fromKasModeId(p.previousAgentName) }
         : {}),
     });
-  }
-
-  /**
-   * Broadcast the current effort level extracted from a KAS configOptions
-   * array (returned by session/new, session/load, set_config_option, or
-   * pushed via a `config_option_update` session notification) as an
-   * `EffortUpdate` stream event.
-   *
-   * The KAS path's effort signal is per-session config, not per-turn
-   * metadata as on V2 — but the TUI's `currentEffort` store slot is the
-   * same in both cases, so we funnel into the same event channel.
-   * Broadcasting `null` when no effortLevel option is present clears
-   * the chip cleanly when the active model has no thought-level schema.
-   */
-  private broadcastEffortFromConfigOptions(configOptions: unknown): void {
-    const effort = extractEffortFromConfigOptions(configOptions);
-    this.broadcastStreamEvent({ type: AgentEventType.EffortUpdate, effort });
   }
 
   /**
@@ -5133,11 +4487,18 @@ export class KasAcpClient extends BaseAcpClient {
 
   /** /plan — switch to plan mode, optionally send trailing prompt */
   private async executePlan(prompt?: string): Promise<CommandResult> {
-    const result = await this.executeAgentSwap('kiro_planner');
-    if (!result.success) return result;
+    try {
+      await this.setConfigOption('mode', 'kiro_planner');
+    } catch (e) {
+      return {
+        success: false,
+        message:
+          e instanceof Error ? e.message : 'Failed to switch to plan mode',
+      };
+    }
     return {
       success: true,
-      message: result.message,
+      message: 'Switched to kiro_planner',
       data: { agent: { name: 'kiro_planner' }, ...(prompt && { prompt }) },
     };
   }
@@ -5200,97 +4561,39 @@ export class KasAcpClient extends BaseAcpClient {
     switch (name) {
       case 'feedback':
         return KAS_FEEDBACK_OPTIONS;
-      case 'agent': {
-        // Derive options from cached session modes (ACP primitive) rather
-        // than a custom ext method.  Modes are grouped by `_meta.kiro.source`
-        // (e.g. "bundled", "user", "workspace") so the menu reflects where
-        // each agent came from.  See the review discussion at
-        // https://github.com/kiro-team/kiro-agent/pull/568#discussion_r3192594213
-        const { availableModes, currentModeId } = this.modesState;
-        return {
-          options: availableModes.map((m) => {
-            const source = getModeSource(m._meta);
-            const isActive = m.id === currentModeId;
-            const descBase = m.description ?? '';
-            return {
-              value: m.id,
-              label: getAgentDisplayName(m.id, m.name),
-              description: isActive
-                ? `[active]${descBase ? ` ${descBase}` : ''}`
-                : descBase,
-              ...(source ? { group: capitalize(source) } : {}),
-            };
-          }),
-        };
-      }
-      case 'model': {
-        // Served from the local cache populated by session/new,
-        // session/load, and session/set_config_option responses.
-        // KAS returns the full configOptions state on every
-        // mutation, so the cache stays in sync without extra
-        // round-trips.
-        if (this.modelOptions.length === 0) return { options: [] };
-        return {
-          options: this.modelOptions.map((m) => {
-            const isActive = m.value === this.currentModelId;
-            const desc = m.description ?? '';
-            // Right-aligned credits column (mirrors v2's `to_command_option`):
-            // a rate multiplier renders as e.g. "0.25x credits"; absent rate
-            // data renders the "----- credits" placeholder so the column stays
-            // aligned. Menu shows the column when any option sets `group`.
-            const credits =
-              m.rateMultiplier !== undefined
-                ? `${m.rateMultiplier.toFixed(2)}x credits`
-                : '----- credits';
-            return {
-              value: m.value,
-              label: m.name,
-              description: isActive
-                ? desc
-                  ? `[active] ${desc}`
-                  : '[active]'
-                : desc,
-              group: credits,
-            };
-          }),
-        };
-      }
-      case 'effort': {
-        // Served from the local cache populated by session/new,
-        // session/load, session/set_config_option, and config_option_update
-        // responses — same flow as `model` above. Empty when the active
-        // model declares no effortLevels schema.
-        if (this.effortOptions.length === 0) return { options: [] };
-        return {
-          options: this.effortOptions.map((o) => {
-            const isActive = o.value === this.currentEffortLevel;
-            return {
-              value: o.value,
-              label: o.name,
-              description: isActive ? '[active]' : '',
-            };
-          }),
-        };
-      }
-      // /prompts options are owned by the `handlePrompts` kas-handler,
-      // which reads directly from the typed AppState slices (prompts /
-      // skills / steering) and never round-trips through here.
+      // /model, /agent, /effort, and /prompts options are owned by their
+      // respective kas-handlers, which read the typed AppState slices
+      // (kasAvailableModels / kasAvailableAgents / kasAvailableEfforts /
+      // prompts) and never round-trip through here.
       default:
         return { options: [] };
     }
   }
 
-  async setMode(modeId: string): Promise<void> {
+  /**
+   * Set a session config option (model / agent-mode / effort). Thin
+   * passthrough to KAS's `session/set_config_option`: it performs the write
+   * and re-emits the normalized config-option events from the response so the
+   * store self-heals. Agent ids are mapped to KAS wire ids. Validation and
+   * user messaging live in the kas-handlers, which read the resulting store
+   * state.
+   */
+  async setConfigOption(
+    configId: 'mode' | 'model' | 'effortLevel',
+    value: string
+  ): Promise<void> {
     if (!this.sessionId) return;
-    try {
-      await this.kiroClient.setSessionConfigOption({
-        sessionId: this.sessionId,
-        configId: 'mode',
-        value: toKasModeId(modeId),
-      });
-    } catch (e) {
-      logger.debug('Failed to set mode:', e);
-    }
+    const wireValue = configId === 'mode' ? toKasModeId(value) : value;
+    const response = await this.kiroClient.setSessionConfigOption({
+      sessionId: this.sessionId,
+      configId,
+      value: wireValue,
+    });
+    this.emitConfigOptions(
+      (response as { configOptions?: unknown }).configOptions,
+      'clientInitiated',
+      { emitCurrentAgent: true }
+    );
   }
 
   async listSessions(_cwd: string): Promise<ListSessionsResponse> {
@@ -5378,7 +4681,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.chatSessionStartedSessions.add(sessionId);
     // version_minor_bucket comes from the launcher (KIRO_VERSION_MINOR_BUCKET);
     // the TUI's own-version vantage can't compute the bucket.
-    const mode = modeFromId(this.modesState.currentModeId);
+    const mode = modeFromId(this.telemetryCurrentModeId);
     recordTuiSessionStarted({
       mode,
       versionMinorBucket: versionMinorBucketFromEnv(),
@@ -5396,13 +4699,13 @@ export class KasAcpClient extends BaseAcpClient {
     const payload = normalizeKasTurnCompletion(
       meta,
       sessionId,
-      this.currentModelId
+      this.telemetryCurrentModelId
     );
     if (!payload) return;
 
     // Missing duration stays undefined (not 0) so it doesn't pollute the
     // histogram. is_subagent is false: main session only.
-    const mode = modeFromId(this.modesState.currentModeId);
+    const mode = modeFromId(this.telemetryCurrentModeId);
     const model = payload.modelId ?? '';
     const isSubagent = false;
     recordTuiUserTurn({
@@ -5452,24 +4755,8 @@ export class KasAcpClient extends BaseAcpClient {
   }
 }
 
-/** Extract the Kiro agent source (bundled / user / workspace) from a
- *  SessionMode's `_meta` field.  Returns undefined when the agent hasn't
- *  attached any source metadata, which is fine — those modes fall into the
- *  default (ungrouped) bucket in the /agent menu. */
-function getModeSource(
-  meta?: Record<string, unknown> | null
-): string | undefined {
-  const kiroMeta = meta?.kiro as Record<string, unknown> | undefined;
-  const source = kiroMeta?.source;
-  return typeof source === 'string' ? source : undefined;
-}
-
-function capitalize(s: string): string {
-  return s.length > 0 ? s[0]!.toUpperCase() + s.slice(1) : s;
-}
-
 /** Tagged union describing what `/agent …` should do.  Produced by
- *  parseAgentSubcommand and consumed by KasAcpClient.executeCommand. */
+ *  parseAgentSubcommand and consumed by the `/agent` kas-handler. */
 export type ParsedAgentCommand =
   | { kind: 'list' }
   | { kind: 'swap'; name: string }

@@ -139,16 +139,16 @@ describe('dispatcher KAS intercept', () => {
   });
 
   it("agentEngine='kas' + non-handler command: falls through to existing dispatch", async () => {
-    const MODEL_CMD: KasCommand = {
-      name: KasCommandName.Model,
+    const USAGE_CMD: KasCommand = {
+      name: KasCommandName.Usage,
       description: 'x',
-      meta: { inputType: 'selection' },
+      meta: { inputType: 'panel' },
     };
     const ctx = createMockCommandContext({
-      kasCommands: [MODEL_CMD],
+      kasCommands: [USAGE_CMD],
     });
     ctx.agentEngine = 'kas';
-    await dispatch(MODEL_CMD, 'some-model', ctx);
+    await dispatch(USAGE_CMD, '', ctx);
     expect(ctx.kiro.executeCommand).toHaveBeenCalled();
   });
 

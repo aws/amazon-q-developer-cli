@@ -22,7 +22,7 @@
  *     KAS session id - cross-engine import is non-idempotent.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import {
   existsSync,
   mkdtempSync,

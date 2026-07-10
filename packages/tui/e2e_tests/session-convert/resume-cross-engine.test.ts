@@ -19,7 +19,7 @@
  *   - `session/load` was called exactly once with that id.
  */
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

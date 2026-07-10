@@ -22,6 +22,10 @@ export interface CreateMockCtxOptions {
   skills?: CommandContext['skills'];
   /** Steering slice. Default: [] */
   steering?: CommandContext['steering'];
+  /** KAS available-option slices. Default: [] */
+  kasAvailableModels?: CommandContext['kasAvailableModels'];
+  kasAvailableAgents?: CommandContext['kasAvailableAgents'];
+  kasAvailableEfforts?: CommandContext['kasAvailableEfforts'];
   /** Override the kiro client mock. Default: bare {} */
   kiro?: Partial<CommandContext['kiro']>;
   /**
@@ -32,6 +36,10 @@ export interface CreateMockCtxOptions {
   settingsReturnOnEscape?: boolean;
   /** Current-agent snapshot used by some effects. Default: null */
   currentAgent?: CommandContext['currentAgent'];
+  /** Current model returned by getCurrentModel(). Default: null */
+  currentModel?: { id: string; name: string } | null;
+  /** Current effort returned by getCurrentEffort(). Default: null */
+  currentEffort?: string | null;
   /** Cached session tool listing snapshot. Default: [] */
   toolsList?: CommandContext['toolsList'];
 }
@@ -56,6 +64,7 @@ export function createMockCommandContext(
       Promise.resolve({ success: true, message: '', data: undefined })
     ),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
+    setConfigOption: mock(() => Promise.resolve()),
     sendModeChanged: mock(() => undefined),
     sendChatSlashCommandTelemetry: mock(() => undefined),
     sendUiModeSessionStart: mock(() => undefined),
@@ -71,13 +80,20 @@ export function createMockCommandContext(
     prompts: opts.prompts ?? [],
     skills: opts.skills ?? [],
     steering: opts.steering ?? [],
+    kasAvailableModels: opts.kasAvailableModels ?? [],
+    kasAvailableAgents: opts.kasAvailableAgents ?? [],
+    kasAvailableEfforts: opts.kasAvailableEfforts ?? [],
     showAlert: spy('showAlert') as any,
     announceSystem: spy('announceSystem') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
+    beginKasSession: mock(() => () => {}) as any,
+    getCurrentModel: (() => opts.currentModel ?? null) as any,
     setCurrentEffort: spy('setCurrentEffort') as any,
+    getCurrentEffort: (() => opts.currentEffort ?? null) as any,
     setCurrentAgent: spy('setCurrentAgent') as any,
+    getCurrentAgent: (() => opts.currentAgent ?? null) as any,
     currentAgent: opts.currentAgent ?? null,
     setContextUsage: spy('setContextUsage') as any,
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,

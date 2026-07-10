@@ -8,7 +8,7 @@ import type {
   NewSessionRequest,
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
-import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../src/test-utils/chat-cli-bin';
 import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 

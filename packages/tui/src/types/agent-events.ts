@@ -6,6 +6,12 @@ import type {
   SkillEntry,
   SteeringEntry,
 } from './commands.js';
+import type {
+  AgentEntry,
+  EffortEntry,
+  ModelEntry,
+  KasConfigOrigin,
+} from '../utils/kas-config-options.js';
 import type { KasCommand } from '../kas-commands.js';
 
 export enum AgentEventType {
@@ -38,7 +44,8 @@ export enum AgentEventType {
   WebToolsGovernanceDisabled = 'web_tools_governance_disabled',
   KasCommandsDiscovered = 'kas_commands_discovered',
   EffortUpdate = 'effort_update',
-  ModelUpdate = 'model_update',
+  KasAgentsUpdate = 'agents_update',
+  KasModelConfigUpdate = 'model_config_update',
   SteeringQueued = 'steering_queued',
   SteeringConsumed = 'steering_consumed',
   SteeringCleared = 'steering_cleared',
@@ -494,14 +501,31 @@ export interface EffortUpdateEvent {
 }
 
 /**
- * Model changed server-side (e.g. KAS pushed a config_option_update after a
- * late, post-auth model enumeration, or an autonomous model fallback). Carries
- * only the model so it can update the model chip without touching currentAgent
- * (unlike AgentSwitched, which carries both).
+ * Available KAS agent list, parsed from the `mode` configOption. The current
+ * selection is delivered separately via `AgentSwitched` (mid-session) and the
+ * session result (new/load), so this event carries only the list.
  */
-export interface ModelUpdateEvent {
-  type: AgentEventType.ModelUpdate;
-  model: { id: string; name: string };
+export interface KasAgentsUpdateEvent {
+  type: AgentEventType.KasAgentsUpdate;
+  agents: AgentEntry[];
+}
+
+/**
+ * The models (and model-specific efforts) parsed from a single KAS
+ * `configOptions` payload (session/new, session/load, set_config_option
+ * response, or config_option_update notification).
+ *
+ * `origin` identifies the emitting call site so the store can decide whether to
+ * apply a per-model effort default. Required in the case where KAS autonomously
+ * changes the model mid-session.
+ */
+export interface KasModelConfigUpdateEvent {
+  type: AgentEventType.KasModelConfigUpdate;
+  models: ModelEntry[];
+  currentModelId?: string;
+  efforts: EffortEntry[];
+  currentLevel: string | null;
+  origin: KasConfigOrigin;
 }
 
 export interface HooksUpdateEvent {
@@ -714,7 +738,8 @@ export type AgentStreamEvent =
   | SteeringClearedEvent
   | KasCommandsDiscoveredEvent
   | EffortUpdateEvent
-  | ModelUpdateEvent
+  | KasAgentsUpdateEvent
+  | KasModelConfigUpdateEvent
   | HooksUpdateEvent
   | ToolsUpdateEvent
   | McpServersUpdateEvent

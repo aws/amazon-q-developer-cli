@@ -145,6 +145,7 @@ async function loadRewoundSession(
   ctx.setLoadingMessage('Loading rewound session...');
 
   const buffered: AgentStreamEvent[] = [];
+  const restoreKasSession = ctx.beginKasSession('resumed');
   try {
     const session = await ctx.kiro.loadSession(sessionId, (e) =>
       buffered.push(e)
@@ -169,6 +170,7 @@ async function loadRewoundSession(
     if (session.currentAgent)
       ctx.setCurrentAgent(session.currentAgent, { suppressWelcome: true });
   } catch (err) {
+    restoreKasSession();
     logger.error('[rewind] loadSession failed', { sessionId, err });
     ctx.setLoadingMessage(null);
     ctx.showAlert(

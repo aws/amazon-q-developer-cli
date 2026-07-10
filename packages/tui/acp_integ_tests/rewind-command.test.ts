@@ -105,12 +105,25 @@ describe('/rewind command (session/fork)', () => {
     setupHandshake(tc);
 
     tc.mock.on('session/fork', () => ({ sessionId: 'forked-session-1' }));
+    // KAS returns the full config-option set on load; the TUI derives the
+    // current agent from the `mode` option (wire id `vibe` normalizes to
+    // `default`), not from the V2-style `modes` field.
     tc.mock.on('session/load', () => ({
       sessionId: 'forked-session-1',
       modes: {
         currentModeId: 'vibe',
         availableModes: [{ id: 'vibe', name: 'Vibe' }],
       },
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          name: 'Mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Default' }],
+        },
+      ],
     }));
 
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {

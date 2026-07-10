@@ -167,11 +167,14 @@ describe('/effort command (KAS)', () => {
       modes: defaultKasModes(),
       configOptions: baselineConfigOptions('high'),
     }));
-    // Echo the requested level back for effortLevel writes; empty for autopilot.
+    // KAS returns the full config-option set (model + effort + …) on every
+    // set_config_option response, not just the changed option. The effort chip
+    // only moves when an effort update arrives alongside the model, so the
+    // response must carry the model.
     tc.mock.on('session/set_config_option', (params) => {
       const p = params as SetConfigOptionParams;
       if (p.configId === 'effortLevel') {
-        return { configOptions: [effortConfigOption(String(p.value))] };
+        return { configOptions: baselineConfigOptions(String(p.value)) };
       }
       return {};
     });
@@ -234,12 +237,13 @@ describe('/effort command (KAS)', () => {
     });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
-    // KAS autonomously changes effort (e.g. after a model fallback).
+    // KAS autonomously changes effort (e.g. after a model fallback). The
+    // notification carries the full config-option set, including the model.
     tc.mock.notify('session/update', {
       sessionId: 'test-1',
       update: {
         sessionUpdate: 'config_option_update',
-        configOptions: [effortConfigOption('medium')],
+        configOptions: baselineConfigOptions('medium'),
       },
     });
 

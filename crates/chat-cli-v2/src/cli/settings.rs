@@ -123,7 +123,7 @@ fn collect_settings(os: &Os) -> Vec<SettingInfo> {
         .map(|setting| {
             let key = setting.as_ref().to_string();
             let description = setting.get_message().unwrap_or("No description").to_string();
-            let current_value = os.database.settings.get(setting).cloned();
+            let current_value = os.database.settings.get_value(setting);
 
             SettingInfo {
                 key,
@@ -235,7 +235,7 @@ impl SettingsArgs {
                         "'[VALUE]'".yellow(),
                         "--delete".yellow()
                     )),
-                    (None, false) => match os.database.settings.get(key) {
+                    (None, false) => match os.database.settings.get_value(key) {
                         Some(value) => {
                             match self.format {
                                 OutputFormat::Plain => match value.as_str() {

@@ -16,10 +16,10 @@ const clearCmd: SlashCommand = {
 
 describe('/clear effect — clearMessages', () => {
   it('preserves current agent when KAS returns a new session', () => {
-    const setModeMock = mock(() => Promise.resolve());
+    const setConfigOptionMock = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({
       currentAgent: { name: 'kiro-dev-v2' },
-      kiro: { setMode: setModeMock } as any,
+      kiro: { setConfigOption: setConfigOptionMock } as any,
     });
 
     const result = {
@@ -37,7 +37,7 @@ describe('/clear effect — clearMessages', () => {
     expect(ctx._spies.resetMessages!).toHaveBeenCalled();
     expect(ctx._spies.setSessionId!).toHaveBeenCalledWith('new-session-123');
     // Should re-apply previous agent, not the backend default
-    expect(setModeMock).toHaveBeenCalledWith('kiro-dev-v2');
+    expect(setConfigOptionMock).toHaveBeenCalledWith('mode', 'kiro-dev-v2');
     expect(ctx._spies.setCurrentAgent!).toHaveBeenCalledWith({
       name: 'kiro-dev-v2',
     });
@@ -46,7 +46,7 @@ describe('/clear effect — clearMessages', () => {
   it('uses backend agent when no previous agent is set', () => {
     const ctx = createMockCommandContext({
       currentAgent: null,
-      kiro: { setMode: mock(() => Promise.resolve()) } as any,
+      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
     });
 
     const result = {
@@ -66,11 +66,13 @@ describe('/clear effect — clearMessages', () => {
     });
   });
 
-  it('falls back to backend agent with alert when setMode fails', async () => {
-    const setModeMock = mock(() => Promise.reject(new Error('network error')));
+  it('falls back to backend agent with alert when setConfigOption fails', async () => {
+    const setConfigOptionMock = mock(() =>
+      Promise.reject(new Error('network error'))
+    );
     const ctx = createMockCommandContext({
       currentAgent: { name: 'kiro-dev-v2' },
-      kiro: { setMode: setModeMock } as any,
+      kiro: { setConfigOption: setConfigOptionMock } as any,
     });
 
     const result = {

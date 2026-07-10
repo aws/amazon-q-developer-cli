@@ -1,4 +1,8 @@
 use std::fmt::Display;
+use std::sync::{
+    Arc,
+    RwLock,
+};
 
 use serde_json::{
     Map,
@@ -214,6 +218,12 @@ pub enum Setting {
         message = "Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (boolean, default: false)"
     )]
     ChatDisableInheritingDefaultResources,
+    #[strum(message = "Disable automatically saving the selected model as the default (boolean, default: false)")]
+    ChatDisableAutoDefaultModel,
+    #[strum(
+        message = "Disable automatically saving the selected effort level as a per-model default (boolean, default: false)"
+    )]
+    ChatDisableAutoDefaultEffort,
 }
 
 impl Setting {
@@ -296,6 +306,8 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
             Self::ChatDisableInheritingDefaultResources => "chat.disableInheritingDefaultResources",
+            Self::ChatDisableAutoDefaultModel => "chat.disableAutoDefaultModel",
+            Self::ChatDisableAutoDefaultEffort => "chat.disableAutoDefaultEffort",
             #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
@@ -400,6 +412,8 @@ impl TryFrom<&str> for Setting {
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
             "chat.disableInheritingDefaultResources" => Ok(Self::ChatDisableInheritingDefaultResources),
+            "chat.disableAutoDefaultModel" => Ok(Self::ChatDisableAutoDefaultModel),
+            "chat.disableAutoDefaultEffort" => Ok(Self::ChatDisableAutoDefaultEffort),
             #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]
@@ -423,19 +437,86 @@ impl TryFrom<&str> for Setting {
 pub enum SettingScope {
     Global,
     Workspace,
+    /// In-memory-only override for the current process, never persisted. Dead in
+    /// V2 today (no V2 caller writes session scope); retained to keep this module
+    /// aligned with V1's `settings.rs` ahead of the planned v1/v2 single-crate merge.
     Session,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Process-wide settings store.
+///
+/// `Settings` is a cheap cloneable handle around a single shared lock. Cloning an
+/// `Os` (hence its `Database`) shares the same underlying store, so a write
+/// through any handle is immediately visible to every other holder in-process.
+#[derive(Clone, Debug, Default)]
 pub struct Settings {
+    inner: Arc<RwLock<SettingsData>>,
+}
+
+#[derive(Debug, Default)]
+struct SettingsData {
     global: Map<String, Value>,
     workspace: Option<Map<String, Value>>,
     workspace_settings_path: Option<std::path::PathBuf>,
-    /// Session-level overrides (not persisted, cleared when chat exits)
+    /// In-memory-only session overrides, never persisted. Dead in V2 (no V2
+    /// caller sets session scope); kept for parity with V1 ahead of the v1/v2
+    /// single-crate merge.
     session: Map<String, Value>,
 }
 
+impl SettingsData {
+    fn get(&self, key: Setting) -> Option<&Value> {
+        if let Some(value) = self.session.get(key.as_ref()) {
+            return Some(value);
+        }
+        if key.is_workspace_overridable()
+            && let Some(workspace) = &self.workspace
+            && let Some(value) = workspace.get(key.as_ref())
+        {
+            return Some(value);
+        }
+        self.global.get(key.as_ref())
+    }
+
+    fn get_scope(&self, key: Setting) -> Option<SettingScope> {
+        if self.session.contains_key(key.as_ref()) {
+            return Some(SettingScope::Session);
+        }
+        if key.is_workspace_overridable()
+            && let Some(workspace) = &self.workspace
+            && workspace.contains_key(key.as_ref())
+        {
+            return Some(SettingScope::Workspace);
+        }
+        if self.global.contains_key(key.as_ref()) {
+            Some(SettingScope::Global)
+        } else {
+            None
+        }
+    }
+
+    fn map(&self) -> Map<String, Value> {
+        let mut merged = self.global.clone();
+        if let Some(workspace) = &self.workspace {
+            for (key, value) in workspace {
+                if let Ok(setting) = Setting::try_from(key.as_str())
+                    && setting.is_workspace_overridable()
+                {
+                    merged.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        merged
+    }
+}
+
 impl Settings {
+    fn from_data(data: SettingsData) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(data)),
+        }
+    }
+
     /// Load global settings only (used by Database::new and other callers without Os)
     pub async fn new() -> Result<Self, DatabaseError> {
         if cfg!(test) {
@@ -445,12 +526,12 @@ impl Settings {
         let path = GlobalPaths::settings_path()?;
         let global = Self::load_settings_file(&path).await?;
 
-        Ok(Self {
+        Ok(Self::from_data(SettingsData {
             global,
             workspace: None,
             workspace_settings_path: None,
             session: Map::new(),
-        })
+        }))
     }
 
     /// Load global + workspace settings
@@ -472,12 +553,12 @@ impl Settings {
             None
         };
 
-        Ok(Self {
+        Ok(Self::from_data(SettingsData {
             global,
             workspace,
             workspace_settings_path,
             session: Map::new(),
-        })
+        }))
     }
 
     async fn load_settings_file(path: &std::path::PathBuf) -> Result<Map<String, Value>, DatabaseError> {
@@ -506,159 +587,94 @@ impl Settings {
         })
     }
 
-    pub fn map(&self) -> Map<String, Value> {
-        let mut merged = self.global.clone();
-        if let Some(workspace) = &self.workspace {
-            for (key, value) in workspace {
-                if let Ok(setting) = Setting::try_from(key.as_str())
-                    && setting.is_workspace_overridable()
-                {
-                    merged.insert(key.clone(), value.clone());
-                }
-            }
-        }
-        merged
+    fn with_read<R>(&self, f: impl FnOnce(&SettingsData) -> R) -> R {
+        f(&self.inner.read().expect("settings lock poisoned"))
     }
 
-    pub fn get(&self, key: Setting) -> Option<&Value> {
-        if let Some(value) = self.session.get(key.as_ref()) {
-            return Some(value);
-        }
-        if key.is_workspace_overridable()
-            && let Some(workspace) = &self.workspace
-            && let Some(value) = workspace.get(key.as_ref())
-        {
-            return Some(value);
-        }
-        self.global.get(key.as_ref())
+    /// Merged view of global + applicable workspace overrides.
+    pub fn map(&self) -> Map<String, Value> {
+        self.with_read(SettingsData::map)
+    }
+
+    /// Look up a setting (honoring session/workspace precedence) as an owned clone.
+    pub fn get_value(&self, key: Setting) -> Option<Value> {
+        self.with_read(|d| d.get(key).cloned())
     }
 
     pub fn get_scope(&self, key: Setting) -> Option<SettingScope> {
-        if self.session.contains_key(key.as_ref()) {
-            return Some(SettingScope::Session);
-        }
-        if key.is_workspace_overridable()
-            && let Some(workspace) = &self.workspace
-            && workspace.contains_key(key.as_ref())
-        {
-            return Some(SettingScope::Workspace);
-        }
-        if self.global.contains_key(key.as_ref()) {
-            Some(SettingScope::Global)
-        } else {
-            None
-        }
+        self.with_read(|d| d.get_scope(key))
     }
 
     pub async fn set(
-        &mut self,
+        &self,
         key: Setting,
         value: impl Into<serde_json::Value>,
         scope: Option<SettingScope>,
     ) -> Result<(), DatabaseError> {
         let scope = scope.unwrap_or(SettingScope::Global);
-        match scope {
-            SettingScope::Global => {
-                self.global.insert(key.to_string(), value.into());
-                self.save_global().await
-            },
-            SettingScope::Workspace => {
-                if !key.is_workspace_overridable() {
-                    return Err(DatabaseError::WorkspaceOverrideNotAllowed(key.to_string()));
-                }
-                match self.workspace.as_mut() {
-                    Some(ws) => {
-                        ws.insert(key.to_string(), value.into());
-                    },
-                    None => {
+        let value = value.into();
+
+        // Mutate the shared map under the lock, capture the target path + a
+        // snapshot to persist, then release the lock before the async disk write
+        // (a std lock guard cannot be held across an await). Session scope is
+        // in-memory only and returns without touching disk.
+        let (path, snapshot) = {
+            let mut data = self.inner.write().expect("settings lock poisoned");
+            match scope {
+                SettingScope::Global => {
+                    data.global.insert(key.to_string(), value);
+                    (GlobalPaths::settings_path()?, data.global.clone())
+                },
+                SettingScope::Workspace => {
+                    if !key.is_workspace_overridable() {
+                        return Err(DatabaseError::WorkspaceOverrideNotAllowed(key.to_string()));
+                    }
+                    let Some(ws) = data.workspace.as_mut() else {
                         return Err(DatabaseError::WorkspaceOverrideNotAllowed(
                             "no workspace settings loaded".to_string(),
                         ));
-                    },
-                }
-                self.save_workspace().await
-            },
-            SettingScope::Session => {
-                self.session.insert(key.to_string(), value.into());
-                Ok(())
-            },
-        }
+                    };
+                    ws.insert(key.to_string(), value);
+                    match data.workspace_settings_path.clone() {
+                        Some(path) => (path, data.workspace.clone().unwrap_or_default()),
+                        None => return Ok(()),
+                    }
+                },
+                SettingScope::Session => {
+                    data.session.insert(key.to_string(), value);
+                    return Ok(());
+                },
+            }
+        };
+        Self::save_settings_file(&path, &snapshot).await
     }
 
-    pub async fn remove(&mut self, key: Setting, scope: Option<SettingScope>) -> Result<Option<Value>, DatabaseError> {
+    pub async fn remove(&self, key: Setting, scope: Option<SettingScope>) -> Result<Option<Value>, DatabaseError> {
         let scope = scope.unwrap_or(SettingScope::Global);
-        let removed = match scope {
-            SettingScope::Global => self.global.remove(key.as_ref()),
-            SettingScope::Workspace => self.workspace.as_mut().and_then(|ws| ws.remove(key.as_ref())),
-            SettingScope::Session => self.session.remove(key.as_ref()),
+
+        let (removed, path, snapshot) = {
+            let mut data = self.inner.write().expect("settings lock poisoned");
+            match scope {
+                SettingScope::Global => {
+                    let removed = data.global.remove(key.as_ref());
+                    (removed, GlobalPaths::settings_path()?, data.global.clone())
+                },
+                SettingScope::Workspace => {
+                    let removed = data.workspace.as_mut().and_then(|ws| ws.remove(key.as_ref()));
+                    match data.workspace_settings_path.clone() {
+                        Some(path) => (removed, path, data.workspace.clone().unwrap_or_default()),
+                        None => return Ok(removed),
+                    }
+                },
+                SettingScope::Session => return Ok(data.session.remove(key.as_ref())),
+            }
         };
-        match scope {
-            SettingScope::Global => self.save_global().await?,
-            SettingScope::Workspace => self.save_workspace().await?,
-            SettingScope::Session => {},
-        }
+        Self::save_settings_file(&path, &snapshot).await?;
         Ok(removed)
     }
 
-    pub fn clear_session(&mut self) {
-        self.session.clear();
-    }
-
-    /// Update a single key in the global settings file.
-    ///
-    /// This performs a read → merge → atomic-write cycle directly on disk,
-    /// independent of any in-memory `Settings` snapshot. It is designed to
-    /// be called from the ACP handler where the `Os` (and therefore the
-    /// `Settings` struct) is a clone and mutations to the in-memory map
-    /// would not propagate back to the original.
-    ///
-    /// Concurrency: the write itself is atomic (temp file + rename), so
-    /// readers always observe a complete file. The read-modify-write is
-    /// not atomic across writers — if another writer (another process, or
-    /// another path in this process) renames between this function's read
-    /// and rename, that update is lost. Last writer wins.
-    pub async fn update_global_setting(key: Setting, value: Value) -> Result<(), DatabaseError> {
-        let path = GlobalPaths::settings_path()?;
-
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        // Read current contents.
-        let mut map: Map<String, Value> = if path.exists() {
-            let buf = tokio::fs::read(&path).await?;
-            if buf.is_empty() {
-                Map::new()
-            } else {
-                serde_json::from_slice(&buf).unwrap_or_default()
-            }
-        } else {
-            Map::new()
-        };
-
-        // Merge the new value.
-        map.insert(key.to_string(), value);
-
-        // Atomic write via temp file + rename.
-        Self::save_settings_file(&path, &map).await?;
-
-        Ok(())
-    }
-
-    async fn save_global(&self) -> Result<(), DatabaseError> {
-        let path = GlobalPaths::settings_path()?;
-        Self::save_settings_file(&path, &self.global).await
-    }
-
-    async fn save_workspace(&self) -> Result<(), DatabaseError> {
-        if let Some(path) = &self.workspace_settings_path
-            && let Some(workspace) = &self.workspace
-        {
-            Self::save_settings_file(path, workspace).await?;
-        }
-        Ok(())
+    pub fn clear_session(&self) {
+        self.inner.write().expect("settings lock poisoned").session.clear();
     }
 
     async fn save_settings_file(path: &std::path::PathBuf, map: &Map<String, Value>) -> Result<(), DatabaseError> {
@@ -706,15 +722,15 @@ impl Settings {
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {
-        self.get(key).and_then(|value| value.as_bool())
+        self.with_read(|d| d.get(key).and_then(|value| value.as_bool()))
     }
 
     pub fn get_string(&self, key: Setting) -> Option<String> {
-        self.get(key).and_then(|value| value.as_str().map(|s| s.into()))
+        self.with_read(|d| d.get(key).and_then(|value| value.as_str().map(|s| s.into())))
     }
 
     pub fn get_int(&self, key: Setting) -> Option<i64> {
-        self.get(key).and_then(|value| value.as_i64())
+        self.with_read(|d| d.get(key).and_then(|value| value.as_i64()))
     }
 
     pub fn get_int_or(&self, key: Setting, default: usize) -> usize {
@@ -759,18 +775,38 @@ mod test {
         assert!(entries.is_empty(), "temp file should be cleaned up after rename");
     }
 
+    /// A cloned handle must observe writes made through the original: cloning
+    /// shares one underlying store rather than deep-copying. Guards against the
+    /// per-session settings drift this shared-handle design exists to prevent.
+    #[tokio::test]
+    async fn test_clone_shares_store() {
+        let original = Settings::new().await.unwrap();
+        let clone = original.clone();
+
+        original
+            .set(Setting::ChatDefaultModel, "shared-model", None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            clone.get_string(Setting::ChatDefaultModel).as_deref(),
+            Some("shared-model"),
+            "a write through one handle must be visible through a clone"
+        );
+    }
+
     /// General read/write settings test
     #[tokio::test]
     async fn test_settings() {
-        let mut settings = Settings::new().await.unwrap();
+        let settings = Settings::new().await.unwrap();
 
-        assert_eq!(settings.get(Setting::TelemetryEnabled), None);
-        assert_eq!(settings.get(Setting::OldClientId), None);
-        assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
-        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
-        assert_eq!(settings.get(Setting::ChatDefaultModel), None);
-        assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
+        assert_eq!(settings.get_value(Setting::TelemetryEnabled), None);
+        assert_eq!(settings.get_value(Setting::OldClientId), None);
+        assert_eq!(settings.get_value(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get_value(Setting::KnowledgeIndexType), None);
+        assert_eq!(settings.get_value(Setting::McpLoadedBefore), None);
+        assert_eq!(settings.get_value(Setting::ChatDefaultModel), None);
+        assert_eq!(settings.get_value(Setting::ChatDisableMarkdownRendering), None);
 
         settings.set(Setting::TelemetryEnabled, true, None).await.unwrap();
         settings.set(Setting::OldClientId, "test", None).await.unwrap();
@@ -788,33 +824,33 @@ mod test {
             .unwrap();
         settings.set(Setting::EnabledCheckpoint, true, None).await.unwrap();
 
-        assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
+        assert_eq!(settings.get_value(Setting::TelemetryEnabled), Some(Value::Bool(true)));
         assert_eq!(
-            settings.get(Setting::OldClientId),
-            Some(&Value::String("test".to_string()))
+            settings.get_value(Setting::OldClientId),
+            Some(Value::String("test".to_string()))
         );
         assert_eq!(
-            settings.get(Setting::ShareCodeWhispererContent),
-            Some(&Value::Bool(false))
+            settings.get_value(Setting::ShareCodeWhispererContent),
+            Some(Value::Bool(false))
         );
         assert_eq!(
-            settings.get(Setting::KnowledgeIndexType),
-            Some(&Value::String("fast".to_string()))
+            settings.get_value(Setting::KnowledgeIndexType),
+            Some(Value::String("fast".to_string()))
         );
-        assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
+        assert_eq!(settings.get_value(Setting::McpLoadedBefore), Some(Value::Bool(true)));
         assert_eq!(
-            settings.get(Setting::ChatDefaultModel),
-            Some(&Value::String("model 1".to_string()))
-        );
-        assert_eq!(
-            settings.get(Setting::ChatDiffTool),
-            Some(&Value::String("diff tool".to_string()))
+            settings.get_value(Setting::ChatDefaultModel),
+            Some(Value::String("model 1".to_string()))
         );
         assert_eq!(
-            settings.get(Setting::ChatDisableMarkdownRendering),
-            Some(&Value::Bool(false))
+            settings.get_value(Setting::ChatDiffTool),
+            Some(Value::String("diff tool".to_string()))
         );
-        assert_eq!(settings.get(Setting::EnabledCheckpoint), Some(&Value::Bool(true)));
+        assert_eq!(
+            settings.get_value(Setting::ChatDisableMarkdownRendering),
+            Some(Value::Bool(false))
+        );
+        assert_eq!(settings.get_value(Setting::EnabledCheckpoint), Some(Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled, None).await.unwrap();
         settings.remove(Setting::OldClientId, None).await.unwrap();
@@ -827,13 +863,13 @@ mod test {
             .unwrap();
         settings.remove(Setting::EnabledCheckpoint, None).await.unwrap();
 
-        assert_eq!(settings.get(Setting::TelemetryEnabled), None);
-        assert_eq!(settings.get(Setting::OldClientId), None);
-        assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
-        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
-        assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
-        assert_eq!(settings.get(Setting::EnabledCheckpoint), None);
+        assert_eq!(settings.get_value(Setting::TelemetryEnabled), None);
+        assert_eq!(settings.get_value(Setting::OldClientId), None);
+        assert_eq!(settings.get_value(Setting::ShareCodeWhispererContent), None);
+        assert_eq!(settings.get_value(Setting::KnowledgeIndexType), None);
+        assert_eq!(settings.get_value(Setting::McpLoadedBefore), None);
+        assert_eq!(settings.get_value(Setting::ChatDisableMarkdownRendering), None);
+        assert_eq!(settings.get_value(Setting::EnabledCheckpoint), None);
     }
 
     #[test]
@@ -895,10 +931,10 @@ mod test {
 
     #[tokio::test]
     async fn test_auto_expand_tool_output_read_write() {
-        let mut settings = Settings::new().await.unwrap();
+        let settings = Settings::new().await.unwrap();
 
         // Default: not set
-        assert_eq!(settings.get(Setting::ChatAutoExpandToolOutput), None);
+        assert_eq!(settings.get_value(Setting::ChatAutoExpandToolOutput), None);
 
         // Set to true
         settings
@@ -906,8 +942,8 @@ mod test {
             .await
             .unwrap();
         assert_eq!(
-            settings.get(Setting::ChatAutoExpandToolOutput),
-            Some(&Value::Bool(true))
+            settings.get_value(Setting::ChatAutoExpandToolOutput),
+            Some(Value::Bool(true))
         );
 
         // Set to false
@@ -916,13 +952,13 @@ mod test {
             .await
             .unwrap();
         assert_eq!(
-            settings.get(Setting::ChatAutoExpandToolOutput),
-            Some(&Value::Bool(false))
+            settings.get_value(Setting::ChatAutoExpandToolOutput),
+            Some(Value::Bool(false))
         );
 
         // Remove
         settings.remove(Setting::ChatAutoExpandToolOutput, None).await.unwrap();
-        assert_eq!(settings.get(Setting::ChatAutoExpandToolOutput), None);
+        assert_eq!(settings.get_value(Setting::ChatAutoExpandToolOutput), None);
     }
 
     #[test]

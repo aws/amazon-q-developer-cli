@@ -74,6 +74,7 @@ export class AcpTestCase {
     const { mockKasSessionListResult, extraEnv, ...rest } = options;
     this.inner = new TestCase({
       ...rest,
+      settings: rest.settings ?? {},
       extraEnv: {
         ...extraEnv,
         // Turn off MockSessionClient (base TestCase's default mock path)

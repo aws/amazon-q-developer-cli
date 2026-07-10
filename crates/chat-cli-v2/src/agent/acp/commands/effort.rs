@@ -78,10 +78,20 @@ pub async fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResu
 
     match ctx.rts_state.set_effort(level) {
         Ok(()) => {
-            // Persist as per-model default via merge (avoids stale-read clobber).
-            // Build the delta at the schema-resolved effort path (e.g.
+            // Persist as per-model default via merge (avoids stale-read clobber)
+            // unless the user opted out via `chat.disableAutoDefaultEffort`. When
+            // opted out we neither write the setting nor show the "(saved for ...)"
+            // suffix. Build the delta at the schema-resolved effort path (e.g.
             // `output_config.effort` for Claude, `reasoning.effort` for GPT).
-            let persisted = if let (Some(model_id), Some(path)) = (
+            let persisted = if ctx
+                .os
+                .database
+                .settings
+                .get_bool(Setting::ChatDisableAutoDefaultEffort)
+                .unwrap_or(false)
+            {
+                false
+            } else if let (Some(model_id), Some(path)) = (
                 ctx.rts_state.model_id(),
                 ctx.rts_state.additional_fields().and_then(|af| af.effort_path()),
             ) {

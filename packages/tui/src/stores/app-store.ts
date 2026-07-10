@@ -28,7 +28,13 @@ import {
   type ApprovalRequestInfo,
   type ToolDiff,
   type ToolKind,
+  type KasModelConfigUpdateEvent,
 } from '../types/agent-events';
+import {
+  resolveEffortToApply,
+  shouldApplyEffortDefault,
+} from '../utils/kas-config-options';
+import { readSavedEffortDefault } from '../utils/effort-defaults';
 import type {
   InputBufferState,
   InputBufferActions,
@@ -41,6 +47,11 @@ import type {
   SkillEntry,
   SteeringEntry,
 } from '../types/commands';
+import type {
+  AgentEntry,
+  EffortEntry,
+  ModelEntry,
+} from '../utils/kas-config-options';
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
@@ -893,6 +904,19 @@ interface BaseAppActions {
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
   setCurrentEffort: (effort: string | null) => void;
+  /**
+   * Begin tracking a KAS session: record whether it is new or resumed and reset
+   * the model-change baseline. Called by the session-start paths (boot, `/chat`
+   * new/resume, rewind) before the session RPC runs. Returns a restore function
+   * that reverts the prior tracking state if that RPC fails.
+   */
+  beginKasSession: (origin: NonNullable<SessionOrigin>) => () => void;
+  /**
+   * Handle an incoming `KasModelConfigUpdate` from KAS: refresh the model/effort
+   * slices, track the active model, and push the model's saved per-model effort
+   * default when the update warrants it.
+   */
+  handleKasModelConfigEvent: (event: KasModelConfigUpdateEvent) => void;
   setGoalStatus: (
     status: {
       state: string;
@@ -975,6 +999,7 @@ interface BaseAppActions {
   setPrompts: (prompts: PromptEntry[]) => void;
   setSkills: (skills: SkillEntry[]) => void;
   setSteering: (steering: SteeringEntry[]) => void;
+  setKasAvailableAgents: (agents: AgentEntry[]) => void;
 
   // Command UI actions
   setActiveCommand: (command: ActiveCommand | null) => void;
@@ -1258,6 +1283,52 @@ export const AppStoreContext = createContext<AppStoreApi | null>(null);
 
 export type AppStoreApi = ReturnType<typeof createAppStore>;
 
+/** A KAS session's lifecycle origin; null until it has been established. */
+export type SessionOrigin = 'new' | 'resumed' | null;
+
+/**
+ * KAS-engine-specific store state, grouped so it is clear at a glance which
+ * fields belong to the KAS agent path (the Rust V2 engine populates none of
+ * these). Two concerns (so far):
+ *
+ * 1. Config-option caches (`available*`): the model / agent / effort options
+ *    parsed from the ACP `configOptions` payload on session/new, session/load,
+ *    set_config_option responses, and `config_option_update` notifications.
+ *    Unlike V2 (which authoritatively round-trips the Rust backend on every
+ *    `/model` and `/agent` invocation), KAS embeds these in session responses,
+ *    so the TUI retains them here for the `/model`, `/agent`, and `/effort`
+ *    menus.
+ * 2. Per-model effort-default tracking (`sessionOrigin`, `previousModelId`,
+ *    `effortExplicit`): drives when a model's saved effort default is
+ *    auto-applied. Intended behavior — apply the saved default when the active
+ *    model changes and either (a) the session is new, so a fresh launch adopts
+ *    each model's saved default (unless the user passed an explicit `--effort`,
+ *    which then wins), or (b) the user explicitly switched models mid-session.
+ *    Never apply on a resumed session or on an autonomous backend change, so a
+ *    resumed session and any hand-set effort are left as-is. See the individual
+ *    fields below for how each contributes.
+ */
+export interface KasState {
+  availableModels: ModelEntry[];
+  availableAgents: AgentEntry[];
+  availableEfforts: EffortEntry[];
+  /**
+   * Whether the active session is new or resumed.
+   */
+  sessionOrigin: SessionOrigin;
+  /**
+   * The active model id from the previous `KasModelConfigUpdate`. Used only to
+   * detect when the model changes between updates, which gates re-applying the
+   * model's saved effort default.
+   */
+  previousModelId: string | null;
+  /**
+   * Whether the process was launched with an explicit `--effort` flag. Used to
+   * suppress the new-session auto-apply so the explicit flag wins.
+   */
+  effortExplicit: boolean;
+}
+
 export interface AppState {
   // Chat state
   messages: MessageType[];
@@ -1351,6 +1422,8 @@ export interface AppState {
    * steering concept).
    */
   steering: SteeringEntry[];
+  /** KAS-engine-specific state; see {@link KasState}. Empty/null in V2 mode. */
+  kas: KasState;
 
   // Kiro/Agent state
   kiro: Kiro;
@@ -2031,6 +2104,9 @@ function buildCommandContext(
     prompts: state.prompts,
     skills: state.skills,
     steering: state.steering,
+    kasAvailableModels: state.kas.availableModels,
+    kasAvailableAgents: state.kas.availableAgents,
+    kasAvailableEfforts: state.kas.availableEfforts,
     showAlert: (message, status, autoHideMs = 3000) =>
       state.showTransientAlert({ message, status, autoHideMs }),
     announceSystem: (message: string, success: boolean = true) => {
@@ -2047,9 +2123,12 @@ function buildCommandContext(
     setLoadingMessage: state.setLoadingMessage,
     setActiveCommand: state.setActiveCommand,
     setCurrentModel: state.setCurrentModel,
+    beginKasSession: state.beginKasSession,
     getCurrentModel: () => get().currentModel,
     setCurrentEffort: state.setCurrentEffort,
+    getCurrentEffort: () => get().currentEffort,
     setCurrentAgent: state.setCurrentAgent,
+    getCurrentAgent: () => get().currentAgent,
     currentAgent: state.currentAgent,
     setContextUsage: state.setContextUsage,
     setShowContextBreakdown: state.setShowContextBreakdown,
@@ -2310,6 +2389,14 @@ export const createAppStore = (props: AppStoreProps) => {
     prompts: [],
     skills: [],
     steering: [],
+    kas: {
+      availableModels: [],
+      availableAgents: [],
+      availableEfforts: [],
+      sessionOrigin: null,
+      previousModelId: null,
+      effortExplicit: false,
+    },
     kiro: props.kiro,
     sessionId: null,
     isProcessing: false,
@@ -4137,7 +4224,68 @@ export const createAppStore = (props: AppStoreProps) => {
     setAgentError: (agentError, guidance) =>
       set({ agentError, agentErrorGuidance: guidance ?? null }),
     setCurrentModel: (currentModel) => set({ currentModel }),
+
+    beginKasSession: (origin) => {
+      const { sessionOrigin, previousModelId } = get().kas;
+      set((s) => ({
+        kas: { ...s.kas, sessionOrigin: origin, previousModelId: null },
+      }));
+      // Restore the prior tracking state, for callers to invoke if the
+      // session RPC fails and the previous session is still active.
+      return () =>
+        set((s) => ({ kas: { ...s.kas, sessionOrigin, previousModelId } }));
+    },
     setCurrentEffort: (currentEffort) => set({ currentEffort }),
+
+    handleKasModelConfigEvent: (event) => {
+      const currModel = event.currentModelId
+        ? event.models.find((m) => m.id === event.currentModelId)
+        : undefined;
+      // Update the models/efforts cache along with the current model.
+      set((s) => ({
+        kas: {
+          ...s.kas,
+          availableModels: event.models,
+          availableEfforts: event.efforts,
+        },
+        currentEffort: event.currentLevel,
+        ...(currModel
+          ? { currentModel: { id: currModel.id, name: currModel.name } }
+          : {}),
+      }));
+
+      // Track the active model so the next update can tell whether it changed.
+      // Session origin and baseline reset are owned by the session-start callers
+      // (see beginKasSession); this handler only reacts to model updates.
+      const currentModelId = event.currentModelId ?? null;
+      const modelChanged = currentModelId !== get().kas.previousModelId;
+      set((s) => ({ kas: { ...s.kas, previousModelId: currentModelId } }));
+
+      // Decide whether to auto-apply this model's saved effort default, then
+      // resolve the concrete level (validity/idempotency checks) and push it.
+      const effortToApply = resolveEffortToApply({
+        currentModelId,
+        availableEfforts: event.efforts.map((e) => e.value),
+        currentEffort: event.currentLevel,
+        savedEffortForModel: event.currentModelId
+          ? (readSavedEffortDefault(event.currentModelId) ?? null)
+          : null,
+        shouldApply: shouldApplyEffortDefault({
+          origin: event.origin,
+          sessionOrigin: get().kas.sessionOrigin,
+          modelChanged,
+          hasExplicitEffort: get().kas.effortExplicit,
+        }),
+      });
+      if (effortToApply) {
+        void get()
+          .kiro.setConfigOption('effortLevel', effortToApply)
+          .catch((err) => {
+            logger.error('[store] auto-apply effort default failed', err);
+          });
+      }
+    },
+
     setGoalStatus: (goalStatus) => {
       const prev = get().goalStatus;
       if (goalStatus && goalStatus.state === 'active' && !prev) {
@@ -4188,15 +4336,25 @@ export const createAppStore = (props: AppStoreProps) => {
         queueMicrotask(() => get().triggerPlanSurvey());
       }
 
-      if (agent?.welcomeMessage && !options?.suppressWelcome) {
+      // Welcome banner rides on the agent-switch payload from its single owner:
+      // V2's backend pushes it on `kiro.dev/agent/switched`; KAS resolves it
+      // from the current mode option (new/load via the session result, switches
+      // via `emitConfigOptions`). No store lookup — the text is always inline.
+      // Gated on an actual agent change so a re-assertion of the same agent
+      // (e.g. KAS echoing `current_mode_update` at session start, or an
+      // autonomous `config_option_update` that didn't change the mode) never
+      // re-fires the banner. This is the single idempotency point: emitters can
+      // broadcast the current agent unconditionally and rely on this guard.
+      const welcomeMessage = agent?.welcomeMessage;
+      if (welcomeMessage && isAgentChanging && !options?.suppressWelcome) {
         set((state) => ({
           messages: [
             ...state.messages,
             {
               id: generateMessageId(),
               role: MessageRole.Model,
-              content: agent.welcomeMessage!,
-              agentName: agent.name,
+              content: welcomeMessage,
+              agentName: agent!.name,
               standalone: true,
             },
           ],
@@ -4691,6 +4849,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setSteering: (steering) => {
       set({ steering });
+    },
+
+    setKasAvailableAgents: (agents) => {
+      set((s) => ({ kas: { ...s.kas, availableAgents: agents } }));
     },
 
     setActiveCommand: (command: ActiveCommand | null) => {

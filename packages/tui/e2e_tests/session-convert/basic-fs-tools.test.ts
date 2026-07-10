@@ -9,7 +9,7 @@
  * real conversion via the real `target/debug/chat_cli`.
  */
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

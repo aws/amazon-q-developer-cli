@@ -177,7 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_endpoints_uses_cps_override_when_set() {
-        let mut database = Database::new().await.unwrap();
+        let database = Database::new().await.unwrap();
         database
             .settings
             .set(

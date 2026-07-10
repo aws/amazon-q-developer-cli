@@ -3,6 +3,7 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { AgentEventType, ContentType } from '../../types/agent-events';
+import { CommandHistory } from '../../utils/command-history';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
@@ -1659,6 +1660,31 @@ describe('setCurrentAgent', () => {
     expect(store.getState().messages).toHaveLength(0);
   });
 
+  it('does not re-add the welcome when the same agent is re-asserted', () => {
+    const store = makeStore();
+    store
+      .getState()
+      .setCurrentAgent({ name: 'planner', welcomeMessage: 'Hello!' });
+    store
+      .getState()
+      .setCurrentAgent({ name: 'planner', welcomeMessage: 'Hello!' });
+    const banners = store
+      .getState()
+      .messages.filter((m: any) => m.content === 'Hello!' && m.standalone);
+    expect(banners).toHaveLength(1);
+  });
+
+  it('adds the welcome again when switching to a different agent', () => {
+    const store = makeStore();
+    store.getState().setCurrentAgent({ name: 'planner', welcomeMessage: 'P!' });
+    store.getState().setCurrentAgent({ name: 'coder', welcomeMessage: 'C!' });
+    const banners = store
+      .getState()
+      .messages.filter((m: any) => m.standalone)
+      .map((m: any) => m.content);
+    expect(banners).toEqual(['P!', 'C!']);
+  });
+
   it('sets null agent', () => {
     const store = makeStore();
     store.getState().setCurrentAgent(null);
@@ -1865,11 +1891,15 @@ describe('Session management', () => {
 });
 
 describe('navigateHistory', () => {
-  it('returns a value from history', () => {
+  it('returns the most recent command from history', () => {
+    // Seed the shared CommandHistory singleton so this test does not depend on
+    // ambient state (the on-disk history file, or whatever HOME a previously
+    // run test file pointed at in the same process).
+    const history = CommandHistory.getInstance();
+    history.clear();
+    history.add('/help');
     const store = makeStore();
-    const result = store.getState().navigateHistory('up');
-    // Just verify it doesn't throw — history state depends on other tests
-    expect(typeof result === 'string' || result === undefined).toBe(true);
+    expect(store.getState().navigateHistory('up')).toBe('/help');
   });
 });
 

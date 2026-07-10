@@ -134,14 +134,27 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
             })
             .unwrap_or_else(|| to_legacy_model_info(m));
         ctx.rts_state.set_model_info(Some(full_model));
+        // Settings are a process-wide shared store, so the session handle is
+        // authoritative for both the per-model defaults and the opt-out check.
         ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
 
-        // Persist as default
-        let persisted = ctx
-            .session_tx
-            .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(id.clone()))
-            .await
-            .is_ok();
+        // Persist as default unless the user opted out via
+        // `chat.disableAutoDefaultModel`. When opted out we neither write the
+        // setting nor show the "(saved as default)" suffix.
+        let persisted = if ctx
+            .os
+            .database
+            .settings
+            .get_bool(Setting::ChatDisableAutoDefaultModel)
+            .unwrap_or(false)
+        {
+            false
+        } else {
+            ctx.session_tx
+                .update_setting(Setting::ChatDefaultModel, serde_json::Value::String(id.clone()))
+                .await
+                .is_ok()
+        };
         let suffix = if persisted { " (saved as default)" } else { "" };
 
         return CommandResult::success_with_data(

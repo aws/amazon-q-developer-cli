@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`chat.disableAutoDefaultModel` and `chat.disableAutoDefaultEffort` settings to disable automatically saving the selected model and effort level as defaults"
+}

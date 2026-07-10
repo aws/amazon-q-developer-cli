@@ -282,12 +282,18 @@ const wireUpHandlers = () => {
     appStore.getState().setSteering(steering);
   });
 
-  // Wire up model handler before initialize
   kiro.onModelUpdate((model) => {
     appStore.getState().setCurrentModel(model);
   });
 
-  // Wire up agent handler before initialize
+  kiro.onKasAgentsUpdate((agents) => {
+    appStore.getState().setKasAvailableAgents(agents);
+  });
+
+  kiro.onKasModelConfigUpdate((event) => {
+    appStore.getState().handleKasModelConfigEvent(event);
+  });
+
   kiro.onAgentUpdate((agent) => {
     const state = appStore.getState();
     // On first agent update, initialize previousAgentName so Shift+Tab always has a fallback
@@ -297,12 +303,10 @@ const wireUpHandlers = () => {
     state.setCurrentAgent(agent);
   });
 
-  // Wire up compaction status handler
   kiro.onCompactionStatus((event) => {
     appStore.getState().handleCompactionEvent(event);
   });
 
-  // Wire up turn summary handler (credits + time)
   kiro.onTurnSummary((event) => {
     appStore.getState().handleTurnSummaryEvent(event);
     // Refresh terminal title once after the first turn completes per session —
@@ -579,8 +583,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // CLI flag > cli.json setting > undefined (let agent pick default)
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      initialModel:
-        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+      // Pass the explicit --model flag only; the saved `chat.defaultModel` is
+      // re-read fresh inside newSession so a mid-run sticky write is honored.
+      initialModel: cliArgs.model,
       // Remote sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
@@ -680,6 +685,15 @@ const startInitialization = (resumePickerSessionId?: string) => {
         }
       }
 
+      // Begin session tracking before the session RPC: origin (new vs resumed)
+      // and a fresh model-change baseline. The explicit `--effort` launch flag
+      // is boot-only state, so it is set here rather than in beginKasSession.
+      appStore
+        .getState()
+        .beginKasSession(resolvedSessionId ? 'resumed' : 'new');
+      appStore.setState((s) => ({
+        kas: { ...s.kas, effortExplicit: !!cliArgs.effort },
+      }));
       await kiro.createSession(resolvedSessionId);
       appStore
         .getState()
@@ -816,8 +830,8 @@ const startApp = async () => {
     await kiro.initialize(agentPath, acpArgs, {
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
-      initialModel:
-        cliArgs.model || readOptionalStringSetting('chat.defaultModel'),
+      // Explicit --model only; saved default is re-read inside newSession.
+      initialModel: cliArgs.model,
       // Remote sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,

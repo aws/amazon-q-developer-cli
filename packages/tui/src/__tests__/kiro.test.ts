@@ -2,7 +2,6 @@ import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
-import { createAppStore } from '../stores/app-store';
 
 // --- Mock logger ---
 mock.module('../utils/logger', () => ({
@@ -46,7 +45,7 @@ const mockSessionClient = {
   }),
   executeCommand: mock(() => Promise.resolve({ success: true, message: 'ok' })),
   getCommandOptions: mock(() => Promise.resolve({ options: [] })),
-  setMode: mock(() => Promise.resolve()),
+  setConfigOption: mock(() => Promise.resolve()),
   listSettings: mock(() => Promise.resolve({ 'chat.theme': 'dark' })),
   setSetting: mock(() => Promise.resolve()),
   terminateSession: mock(() => Promise.resolve()),
@@ -76,7 +75,7 @@ const MockAcpClientClass = class MockAcpClient {
   onUpdate = mockSessionClient.onUpdate;
   executeCommand = mockSessionClient.executeCommand;
   getCommandOptions = mockSessionClient.getCommandOptions;
-  setMode = mockSessionClient.setMode;
+  setConfigOption = mockSessionClient.setConfigOption;
   listSettings = mockSessionClient.listSettings;
   setSetting = mockSessionClient.setSetting;
   terminateSession = mockSessionClient.terminateSession;
@@ -86,7 +85,16 @@ const MockAcpClientClass = class MockAcpClient {
   constructor() {}
 };
 
+// Load the real module via a query-string specifier (bypasses bun's mock
+// registry) so we can spread its exports below. Overriding ONLY AcpClient /
+// createAcpClient keeps the mock a complete superset of the real module —
+// otherwise this global mock.module would strip exports like
+// `parseAgentSubcommand` and break OTHER test files that share this process.
+// @ts-expect-error — query-string specifier bypasses bun's mock registry
+const realAcpClient = await import('../acp-client?real');
+
 mock.module('../acp-client', () => ({
+  ...realAcpClient,
   AcpClient: MockAcpClientClass,
   createAcpClient: () => new MockAcpClientClass(),
 }));
@@ -113,7 +121,7 @@ describe('Kiro', () => {
     mockSessionClient.onUpdate.mockClear();
     mockSessionClient.executeCommand.mockClear();
     mockSessionClient.getCommandOptions.mockClear();
-    mockSessionClient.setMode.mockClear();
+    mockSessionClient.setConfigOption.mockClear();
     mockSessionClient.listSettings.mockClear();
     mockSessionClient.setSetting.mockClear();
     mockSessionClient.terminateSession.mockClear();
@@ -199,51 +207,27 @@ describe('Kiro', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('ModelUpdate event notifies modelHandler only, not agentHandler', async () => {
+  it('KasModelConfigUpdate event notifies kasModelConfigHandler only, not agentHandler', async () => {
     const kiro = new Kiro();
-    const modelHandler = mock(() => {});
+    const kasModelConfigHandler = mock(() => {});
     const agentHandler = mock(() => {});
-    kiro.onModelUpdate(modelHandler);
+    kiro.onKasModelConfigUpdate(kasModelConfigHandler);
     kiro.onAgentUpdate(agentHandler);
     await kiro.initialize('/path/to/agent');
 
     expect(mockOnUpdateHandler).not.toBeNull();
     mockOnUpdateHandler!({
-      type: AgentEventType.ModelUpdate,
-      model: { id: 'gpt-5', name: 'GPT-5' },
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [{ id: 'gpt-5', name: 'GPT-5' }],
+      currentModelId: 'gpt-5',
+      efforts: [],
+      currentLevel: null,
+      origin: 'serverPush',
     } as AgentStreamEvent);
 
-    expect(modelHandler).toHaveBeenCalledWith({ id: 'gpt-5', name: 'GPT-5' });
-    // Model-only update must not clobber the current agent.
+    expect(kasModelConfigHandler).toHaveBeenCalledTimes(1);
+    // A model/effort config update must not clobber the current agent.
     expect(agentHandler).not.toHaveBeenCalled();
-  });
-
-  it('e2e: empty model chip self-heals when a ModelUpdate arrives (wired to store)', async () => {
-    // Reproduces the original bug end-to-end: the model chip is empty on
-    // launch (store.currentModel === null), and a later KAS-pushed model
-    // (surfaced as a ModelUpdate event) must populate it. Wires the Kiro
-    // model handler to the real store exactly as index.tsx does.
-    const store = createAppStore({ kiro: {} as never });
-    const kiro = new Kiro();
-    kiro.onModelUpdate((model: { id: string; name: string }) =>
-      store.getState().setCurrentModel(model)
-    );
-    await kiro.initialize('/path/to/agent');
-
-    // Precondition: chip empty (the symptom).
-    expect(store.getState().currentModel).toBeNull();
-
-    expect(mockOnUpdateHandler).not.toBeNull();
-    mockOnUpdateHandler!({
-      type: AgentEventType.ModelUpdate,
-      model: { id: 'claude-sonnet', name: 'Claude Sonnet' },
-    } as AgentStreamEvent);
-
-    // The chip is now populated — no /model open or agent switch needed.
-    expect(store.getState().currentModel).toEqual({
-      id: 'claude-sonnet',
-      name: 'Claude Sonnet',
-    });
   });
 
   it('executeCommand throws when not initialized', async () => {
@@ -738,11 +722,14 @@ describe('Kiro — session methods', () => {
     expect(mockSessionClient.terminateSession).not.toHaveBeenCalled();
   });
 
-  it('setMode forwards to sessionClient', async () => {
+  it('setConfigOption forwards to sessionClient', async () => {
     const kiro = new Kiro();
     await kiro.initialize('/path/to/agent');
-    await kiro.setMode('fast');
-    expect(mockSessionClient.setMode).toHaveBeenCalledWith('fast');
+    await kiro.setConfigOption('mode', 'fast');
+    expect(mockSessionClient.setConfigOption).toHaveBeenCalledWith(
+      'mode',
+      'fast'
+    );
   });
 
   it('getCommandOptions returns empty when not initialized', async () => {

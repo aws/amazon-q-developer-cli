@@ -182,11 +182,17 @@ export interface SessionClient {
   terminateSession(sessionId: string): Promise<void>;
 
   /**
-   * Sets the agent mode/persona.
+   * Set a session config option (agent mode / model / effort level).
    *
-   * @param modeId - The mode ID to switch to
+   * The V2 engine routes only `'mode'` here (model/effort go through the
+   * executeCommand round-trip) and throws for the others; KAS handles all
+   * three via `session/set_config_option` and re-emits the normalized
+   * config-option events.
    */
-  setMode(modeId: string): Promise<void>;
+  setConfigOption(
+    configId: 'mode' | 'model' | 'effortLevel',
+    value: string
+  ): Promise<void>;
 
   /**
    * Fetches the global user settings from the backend.

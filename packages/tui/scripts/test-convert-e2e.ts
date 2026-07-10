@@ -34,7 +34,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../src/test-utils/chat-cli-bin';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const TUI_DIR = resolve(import.meta.dir, '..');

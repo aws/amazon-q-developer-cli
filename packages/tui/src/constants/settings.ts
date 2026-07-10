@@ -47,6 +47,18 @@ export const Settings = {
   CHAT_DEFAULT_INTERRUPT_BEHAVIOR: 'chat.defaultInterruptBehavior',
   CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
     'chat.keybindings.toggleInterruptBehavior',
+  // Opt-out gates for "sticky defaults": by default (key absent => false) the
+  // TUI persists the user's current model/effort selection as a global default
+  // and re-applies it to new sessions, mirroring v2's auto-persist behavior.
+  // Setting either to `true` disables that stickiness for the corresponding
+  // dimension (both the auto-write on change and the auto-apply on new session).
+  CHAT_DISABLE_AUTO_DEFAULT_MODEL: 'chat.disableAutoDefaultModel',
+  CHAT_DISABLE_AUTO_DEFAULT_EFFORT: 'chat.disableAutoDefaultEffort',
+  // Sticky-default storage keys (shared with v2). `chat.defaultModel` holds the
+  // single global default model id; `chat.modelDefaults` holds the per-model
+  // nested defaults object (effort lives under each model's family schema path).
+  CHAT_DEFAULT_MODEL: 'chat.defaultModel',
+  CHAT_MODEL_DEFAULTS: 'chat.modelDefaults',
 } as const;
 
 /**

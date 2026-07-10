@@ -1394,8 +1394,7 @@ impl SessionManager {
                     .os
                     .database
                     .settings
-                    .get(key)
-                    .cloned()
+                    .get_value(key)
                     .unwrap_or_else(|| serde_json::json!({}));
                 deep_merge(&mut current, value);
                 let result = self

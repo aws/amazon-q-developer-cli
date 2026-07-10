@@ -15,6 +15,11 @@ import type {
   SteeringEntry,
 } from '../types/commands.js';
 import type {
+  AgentEntry,
+  EffortEntry,
+  ModelEntry,
+} from '../utils/kas-config-options.js';
+import type {
   ActiveCommand,
   HookInfo,
   KnowledgeEntry,
@@ -51,6 +56,12 @@ export interface CommandContext {
   skills: readonly SkillEntry[];
   /** Steering documents available for invocation (KAS only). */
   steering: readonly SteeringEntry[];
+  /** KAS available models cache. Empty in V2. */
+  kasAvailableModels: readonly ModelEntry[];
+  /** KAS available efforts cache. Empty in V2. */
+  kasAvailableEfforts: readonly EffortEntry[];
+  /** KAS available agents cache. Empty in V2. */
+  kasAvailableAgents: readonly AgentEntry[];
   /** Show transient alert */
   showAlert: (
     message: string,
@@ -70,10 +81,20 @@ export interface CommandContext {
   setActiveCommand: (cmd: ActiveCommand | null) => void;
   /** Update current model in store */
   setCurrentModel: (model: { id: string; name: string }) => void;
+  /**
+   * Begin tracking a KAS session (new vs resumed) and reset the model-change
+   * baseline. Called before a session-start RPC; returns a restore function to
+   * revert the prior tracking state if that RPC fails.
+   */
+  beginKasSession: (origin: 'new' | 'resumed') => () => void;
   /** Read current model from store (used by /effort to detect model=auto). */
   getCurrentModel?: () => { id: string; name: string } | null;
   /** Update current reasoning effort level in store (KAS /effort). */
   setCurrentEffort: (effort: string | null) => void;
+  /** Read current effort from store (used by /effort to validate a switch). */
+  getCurrentEffort?: () => string | null;
+  /** Read current agent from store (used by /agent to validate a switch). */
+  getCurrentAgent?: () => { name: string } | null;
   /** Update current agent in store */
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string },

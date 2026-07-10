@@ -112,31 +112,33 @@ impl AddOptions {
         let default_include = os
             .database
             .settings
-            .get(crate::database::settings::Setting::KnowledgeDefaultIncludePatterns)
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<_>>()
+            .get_value(crate::database::settings::Setting::KnowledgeDefaultIncludePatterns)
+            .and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
             })
             .unwrap_or_default();
 
         let default_exclude = os
             .database
             .settings
-            .get(crate::database::settings::Setting::KnowledgeDefaultExcludePatterns)
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<_>>()
+            .get_value(crate::database::settings::Setting::KnowledgeDefaultExcludePatterns)
+            .and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
             })
             .unwrap_or_default();
 
         let default_embedding_type = os
             .database
             .settings
-            .get(crate::database::settings::Setting::KnowledgeIndexType)
+            .get_value(crate::database::settings::Setting::KnowledgeIndexType)
             .and_then(|v| v.as_str().map(|s| s.to_string()));
 
         Self {
@@ -1098,7 +1100,7 @@ mod tests {
     #[tokio::test]
     async fn test_add_options_with_db_defaults_picks_up_global_patterns() {
         let temp_dir = TempDir::new().unwrap();
-        let mut os = create_test_os(&temp_dir).await;
+        let os = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1128,7 +1130,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_agent_config_overrides_global_defaults() {
         let temp_dir = TempDir::new().unwrap();
-        let mut os = create_test_os(&temp_dir).await;
+        let os = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1156,7 +1158,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_uses_global_defaults_when_agent_has_none() {
         let temp_dir = TempDir::new().unwrap();
-        let mut os = create_test_os(&temp_dir).await;
+        let os = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1177,7 +1179,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_also_applies_global_embedding_type() {
         let temp_dir = TempDir::new().unwrap();
-        let mut os = create_test_os(&temp_dir).await;
+        let os = create_test_os(&temp_dir).await;
 
         os.database
             .settings

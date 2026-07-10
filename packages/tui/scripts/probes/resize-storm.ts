@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { PtyManager } from '../../src/test-utils/shared/pty-manager';
-import { resolveChatCliBin } from '../../src/utils/chat-cli-bin';
+import { resolveChatCliBin } from '../../src/test-utils/chat-cli-bin';
 
 const PROBE_NAME = 'resize-storm';
 const PLATFORM = process.env.KIRO_PROBE_PLATFORM ?? (process.platform === 'darwin' ? 'macos' : process.platform);

@@ -90,6 +90,7 @@ async function startNewSession(
   ctx.clearUIState();
   ctx.resetMessages();
   ctx.setLoadingMessage('Starting new conversation...');
+  const restoreKasSession = ctx.beginKasSession('new');
   try {
     const session = await ctx.kiro.newSession();
     ctx.setLoadingMessage(null);
@@ -103,6 +104,7 @@ async function startNewSession(
     );
     if (prompt) ctx.sendMessage(prompt);
   } catch (err) {
+    restoreKasSession();
     logger.error('[chat] newSession failed', {
       err: JSON.stringify(err),
       stack: err instanceof Error ? err.stack : undefined,
@@ -142,6 +144,7 @@ async function loadExistingSession(
   // Buffer history events during load via direct onUpdate subscriber, then
   // replay them after the load resolves so the conversation renders in order.
   const buffered: AgentStreamEvent[] = [];
+  const restoreKasSession = ctx.beginKasSession('resumed');
   try {
     const session = await ctx.kiro.loadSession(sessionId, (e) =>
       buffered.push(e)
@@ -180,6 +183,7 @@ async function loadExistingSession(
       ctx.setCurrentAgent(session.currentAgent, { suppressWelcome: true });
     ctx.showAlert('Session loaded', 'success', 3000);
   } catch (err) {
+    restoreKasSession();
     logger.error('[chat] loadSession failed', {
       sessionId,
       err: JSON.stringify(err),

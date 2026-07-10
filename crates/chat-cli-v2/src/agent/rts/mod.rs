@@ -695,13 +695,12 @@ impl RtsState {
         }
 
         // User-level DB overrides (take precedence over hardcoded defaults)
-        if let Some(ref defaults) = settings
-            .get(Setting::ChatModelDefaults)
-            .and_then(|v| v.get(&model_id))
+        if let Some(defaults) = settings
+            .get_value(Setting::ChatModelDefaults)
+            .and_then(|v| v.get(&model_id).cloned())
             .filter(|v| v.is_object())
-            .cloned()
         {
-            let errors = fields.apply_overrides(defaults);
+            let errors = fields.apply_overrides(&defaults);
             for e in errors {
                 tracing::warn!("Model default override ignored: {}", e);
             }

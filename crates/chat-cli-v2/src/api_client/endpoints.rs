@@ -157,29 +157,29 @@ impl Endpoint {
     }
 
     pub fn configured_value(database: &Database) -> Self {
-        let (endpoint, region) = if let Some(Value::Object(o)) = database.settings.get(Setting::ApiCodeWhispererService)
-        {
-            // The following branch is evaluated in case the user has set their own endpoint.
-            (
-                o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-                o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
-            )
-        } else if let Ok(Some(profile)) = database.get_auth_profile() {
-            // The following branch is evaluated in the case of user profile being set.
-            let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
-            match Self::get_endpoints_from_region(&region)
-                .iter()
-                .find(|e| e.region().as_ref() == region)
-            {
-                Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
-                None => {
-                    error!("Failed to find endpoint for region: {region}");
-                    (None, None)
-                },
-            }
-        } else {
-            (None, None)
-        };
+        let (endpoint, region) =
+            if let Some(Value::Object(o)) = database.settings.get_value(Setting::ApiCodeWhispererService) {
+                // The following branch is evaluated in case the user has set their own endpoint.
+                (
+                    o.get("endpoint").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                    o.get("region").and_then(|v| v.as_str()).map(|v| v.to_owned()),
+                )
+            } else if let Ok(Some(profile)) = database.get_auth_profile() {
+                // The following branch is evaluated in the case of user profile being set.
+                let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
+                match Self::get_endpoints_from_region(&region)
+                    .iter()
+                    .find(|e| e.region().as_ref() == region)
+                {
+                    Some(endpoint) => (Some(endpoint.url().to_owned()), Some(region)),
+                    None => {
+                        error!("Failed to find endpoint for region: {region}");
+                        (None, None)
+                    },
+                }
+            } else {
+                (None, None)
+            };
 
         match (endpoint, region) {
             (Some(endpoint), Some(region)) => Self {

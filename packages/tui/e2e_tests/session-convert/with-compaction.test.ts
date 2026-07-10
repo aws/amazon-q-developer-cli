@@ -11,7 +11,7 @@
  *   - The turn that ran AFTER the compaction is preserved.
  */
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test';
-import { requireChatCliBin } from '../../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

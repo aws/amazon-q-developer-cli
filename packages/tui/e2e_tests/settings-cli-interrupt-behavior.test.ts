@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { requireChatCliBin } from '../src/utils/chat-cli-bin';
+import { requireChatCliBin } from '../src/test-utils/chat-cli-bin';
 
 const DEFAULT_KEY = 'chat.defaultInterruptBehavior';
 const TOGGLE_KEY = 'chat.keybindings.toggleInterruptBehavior';

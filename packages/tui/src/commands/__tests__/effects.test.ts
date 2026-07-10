@@ -1618,13 +1618,13 @@ describe('/spec analyze_requirements effect', () => {
 
   it('switches to spec mode and sends analysis prompt on exact match', async () => {
     makeSpec('my-feature', ['requirements.md']);
-    const setModeMock = mock(() => Promise.resolve());
+    const setConfigOptionMock = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({
       slashCommands: [specCmd],
-      kiro: { setMode: setModeMock },
+      kiro: { setConfigOption: setConfigOptionMock },
     });
     await runEffect(specCmd, null, ctx, 'analyze_requirements my-feature');
-    expect(setModeMock).toHaveBeenCalledWith('spec');
+    expect(setConfigOptionMock).toHaveBeenCalledWith('mode', 'spec');
     expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
     const sendCall = (
       ctx._spies.sendMessage!.mock.calls as any

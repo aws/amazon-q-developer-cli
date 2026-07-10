@@ -8,7 +8,7 @@ import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
 import type { CellAttributes } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
-import { resolveChatCliBin } from '../utils/chat-cli-bin';
+import { resolveChatCliBin } from './chat-cli-bin';
 
 export interface TestCaseOptions {
   args?: string[];

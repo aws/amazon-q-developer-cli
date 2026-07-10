@@ -1,7 +1,11 @@
 import { createAcpClient } from './acp-client';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
-import { AgentEventType, type AgentStreamEvent } from './types/agent-events';
+import {
+  AgentEventType,
+  type AgentStreamEvent,
+  type KasModelConfigUpdateEvent,
+} from './types/agent-events';
 import {
   isFileWriteToolName,
   isWriteOperation,
@@ -25,6 +29,7 @@ import type {
   UiModeSessionStartNotification,
 } from './types/generated/chat-cli';
 import type { ContextBreakdownData, ToolInfo } from './stores/app-store';
+import type { AgentEntry } from './utils/kas-config-options';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -77,6 +82,8 @@ export class Kiro {
   private skillsHandler?: (skills: SkillEntry[]) => void;
   private steeringHandler?: (steering: SteeringEntry[]) => void;
   private modelHandler?: (model: { id: string; name: string }) => void;
+  private kasAgentsHandler?: (agents: AgentEntry[]) => void;
+  private kasModelConfigHandler?: (event: KasModelConfigUpdateEvent) => void;
   private agentHandler?: (agent: {
     name: string;
     welcomeMessage?: string;
@@ -163,6 +170,16 @@ export class Kiro {
 
   onModelUpdate(handler: (model: { id: string; name: string }) => void): void {
     this.modelHandler = handler;
+  }
+
+  onKasAgentsUpdate(handler: (agents: AgentEntry[]) => void): void {
+    this.kasAgentsHandler = handler;
+  }
+
+  onKasModelConfigUpdate(
+    handler: (event: KasModelConfigUpdateEvent) => void
+  ): void {
+    this.kasModelConfigHandler = handler;
   }
 
   onAgentUpdate(
@@ -539,12 +556,21 @@ export class Kiro {
             this.modelHandler({ id: event.model, name: event.model });
           }
         }
-        // Model-only update (e.g. KAS resolved the model list late after auth,
-        // or changed it autonomously). Unlike AgentSwitched, this does not
-        // touch currentAgent.
-        if (event.type === AgentEventType.ModelUpdate && this.modelHandler) {
-          this.modelHandler(event.model);
+
+        if (
+          event.type === AgentEventType.KasAgentsUpdate &&
+          this.kasAgentsHandler
+        ) {
+          this.kasAgentsHandler(event.agents);
         }
+
+        if (
+          event.type === AgentEventType.KasModelConfigUpdate &&
+          this.kasModelConfigHandler
+        ) {
+          this.kasModelConfigHandler(event);
+        }
+
         // Forward init-time notifications (MCP failures, agent errors, OAuth) to the store
         if (
           (event.type === AgentEventType.McpServerInitFailure ||
@@ -900,9 +926,12 @@ export class Kiro {
     return this.sessionClient.executeCommand(command);
   }
 
-  async setMode(modeId: string): Promise<void> {
+  async setConfigOption(
+    configId: 'mode' | 'model' | 'effortLevel',
+    value: string
+  ): Promise<void> {
     if (!this.sessionClient) return;
-    await this.sessionClient.setMode(modeId);
+    await this.sessionClient.setConfigOption(configId, value);
   }
 
   async resetMcpServer(serverName: string, startOAuth: boolean): Promise<void> {

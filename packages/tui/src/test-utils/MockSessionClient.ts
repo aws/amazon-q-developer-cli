@@ -176,7 +176,10 @@ export class MockSessionClient implements SessionClient {
     // No-op for mock.
   }
 
-  async setMode(_modeId: string): Promise<void> {
+  async setConfigOption(
+    _configId: 'mode' | 'model' | 'effortLevel',
+    _value: string
+  ): Promise<void> {
     // No-op for mock
   }
 

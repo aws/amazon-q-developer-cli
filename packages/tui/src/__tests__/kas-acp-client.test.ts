@@ -104,18 +104,48 @@ const mockKiroInitialize = mock(() =>
 const mockKiroNewSession = mock((_req: any) =>
   Promise.resolve({
     sessionId: 'kas-session-1',
-    models: {
-      currentModelId: 'm1',
-      availableModels: [{ modelId: 'm1', name: 'Test Model' }],
-    },
-    modes: null,
+    configOptions: [
+      {
+        id: 'model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [{ value: 'm1', name: 'Test Model' }],
+      },
+      {
+        id: 'mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'vibe',
+        options: [
+          {
+            value: 'vibe',
+            name: 'Default',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    ],
   })
 );
 const mockKiroLoadSession = mock((_req: any) =>
   Promise.resolve({
     sessionId: 'kas-loaded',
-    models: null,
-    modes: null,
+    configOptions: [
+      {
+        id: 'mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'vibe',
+        options: [
+          {
+            value: 'vibe',
+            name: 'Default',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    ],
   })
 );
 const mockKiroPrompt = mock((_req: any) => Promise.resolve());
@@ -260,22 +290,6 @@ afterAll(() => {
 // @ts-expect-error — bun-specific query-string import
 const { KasAcpClient, resolveFeedbackUrl, browserOpenCommand } =
   await import('../acp-client?kas-test');
-
-function defaultMode(overrides: Record<string, unknown> = {}) {
-  return {
-    id: KAS_DEFAULT_AGENT_ID,
-    name: KAS_DEFAULT_AGENT_NAME,
-    ...overrides,
-  };
-}
-
-function defaultModeOption(overrides: Record<string, unknown> = {}) {
-  return {
-    value: KAS_DEFAULT_AGENT_ID,
-    name: KAS_DEFAULT_AGENT_NAME,
-    ...overrides,
-  };
-}
 
 function freshMocks() {
   mockSpawn.mockClear();
@@ -584,11 +598,15 @@ describe('KasAcpClient', () => {
   it('loadSession() returns the normalized agent id for wire vibe (not the raw wire id)', async () => {
     mockKiroLoadSession.mockResolvedValueOnce({
       sessionId: 'kas-loaded',
-      models: null,
-      modes: {
-        currentModeId: 'vibe',
-        availableModes: [{ id: 'vibe', name: 'Vibe' }],
-      },
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Vibe' }],
+        },
+      ],
     } as any);
 
     const client = new KasAcpClient();
@@ -785,184 +803,17 @@ describe('KasAcpClient', () => {
     );
   });
 
-  it('executeCommand("agent") (no args) derives agent list from cached modes, not _kiro/agent/list', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'research',
-            name: 'Research',
-            description: 'Deep investigation',
-            _meta: { kiro: { source: 'user' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSendExtMethod.mockClear();
-
-    const result = await client.executeCommand({ command: 'agent' } as any);
-
-    // Must NOT call the removed extension method.
-    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
-      '_kiro/agent/list',
-      expect.anything()
-    );
-    expect(result.success).toBe(true);
-    const data = result.data as {
-      agents: Array<{ name: string; description: string }>;
-      current: string;
-    };
-    expect(data.current).toBe(KAS_DEFAULT_AGENT_ID);
-    expect(data.agents.map((a) => a.name)).toEqual([
-      KAS_DEFAULT_AGENT_ID,
-      'research',
-    ]);
-  });
-
-  it('captureModes keeps the advertised Default display name', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding',
-          },
-          { id: 'spec', name: 'Spec', description: 'Spec mode' },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-    const state = (client as any).modesState;
-    expect(state.currentModeId).toBe(KAS_DEFAULT_AGENT_ID);
-    expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
-      KAS_DEFAULT_AGENT_ID,
-      'spec',
-    ]);
-    const def = state.availableModes.find(
-      (m: { id: string }) => m.id === KAS_DEFAULT_AGENT_ID
-    );
-    expect(def.name).toBe(KAS_DEFAULT_AGENT_NAME);
-    // Spec is unaffected — its display name passes through.
-    const spec = state.availableModes.find(
-      (m: { id: string }) => m.id === 'spec'
-    );
-    expect(spec.name).toBe('Spec');
-  });
-
-  it('captureModes allows only the built-in agents (default/plan/spec) and keeps user agents', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'plan',
-            name: 'Plan',
-            description: 'Interactive planner',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'spec',
-            name: 'Spec',
-            description: 'Spec mode',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'bug-fix',
-            name: 'Bug Fix',
-            description: 'Bug fixing workflow',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'autonomous',
-            name: 'Autonomous',
-            description: 'Self-directed execution',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'quick-spec',
-            name: 'Quick Spec',
-            description: 'Fast spec-generation workflow',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'my-agent',
-            name: 'My Agent',
-            description: 'Custom workspace agent',
-            _meta: { kiro: { source: 'workspace' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-    const state = (client as any).modesState;
-    // Only the three allowlisted built-ins survive (default, plan →
-    // kiro_planner, spec), plus the user/workspace agent. Any other bundled
-    // mode (bug-fix, autonomous, quick-spec) is hidden.
-    expect(state.availableModes.map((m: { id: string }) => m.id)).toEqual([
-      KAS_DEFAULT_AGENT_ID,
-      'kiro_planner',
-      'spec',
-      'my-agent',
-    ]);
-  });
-
-  it('agent swap of default sends the KAS wire id "vibe"', async () => {
+  it('setConfigOption("mode", "default") translates to the KAS wire id "vibe"', async () => {
     // KAS still expects `vibe` on the wire for the default mode; the TUI-side
-    // canonical id is `default` but `toKasModeId` translates on the way out.
-    // Remove this translation (and update this test) once KAS accepts `default`.
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding',
-          },
-          { id: 'spec', name: 'Spec', description: 'Spec mode' },
-        ],
-      },
-    } as any);
-
+    // canonical id is `default` and `toKasModeId` translates on the way out.
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
     mockKiroSetSessionConfigOption.mockClear();
-    await client.executeCommand({
-      command: 'agent',
-      args: { agentName: KAS_DEFAULT_AGENT_ID },
-    } as any);
+    // setConfigOption is a thin passthrough that re-emits the config options
+    // from KAS's response, so the mock must resolve a response object.
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({ configOptions: [] });
+    await client.setConfigOption('mode', 'default');
     const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
       ([req]: any[]) => req?.configId === 'mode'
     );
@@ -980,11 +831,15 @@ describe('KasAcpClient', () => {
     // Second newSession returns a different sessionId so we can tell clear worked
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-2',
-      models: {
-        currentModelId: 'm1',
-        availableModels: [{ modelId: 'm1', name: 'Test Model' }],
-      },
-      modes: null,
+      configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          category: 'model',
+          currentValue: 'm1',
+          options: [{ value: 'm1', name: 'Test Model' }],
+        },
+      ],
     } as any);
 
     const result = await client.executeCommand({ command: 'clear' } as any);
@@ -1431,94 +1286,6 @@ describe('KasAcpClient', () => {
     }
   );
 
-  it('executeCommand("agent") with agentName swaps via setSessionConfigOption', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockClear();
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { agentName: 'research' },
-    } as any);
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
-      sessionId: 'kas-session-1',
-      configId: 'mode',
-      value: 'research',
-    });
-    expect(result.success).toBe(true);
-    expect(result.data).toEqual({ agent: { name: 'research' } });
-  });
-
-  it('executeCommand("agent") with value arg strips swap prefix', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockClear();
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'swap docs' },
-    } as any);
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
-      sessionId: 'kas-session-1',
-      configId: 'mode',
-      value: 'docs',
-    });
-    expect(result.success).toBe(true);
-    expect(result.data).toEqual({ agent: { name: 'docs' } });
-  });
-
-  it('executeCommand("agent create") never calls setSessionConfigOption (does not interpret "create" as a mode name)', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockClear();
-
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'create' },
-    } as any);
-
-    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalledWith(
-      expect.objectContaining({ configId: 'mode', value: 'create' })
-    );
-    expect(result.success).toBe(false);
-    expect(result.message).toMatch(/\/agent create.*not yet implemented/);
-  });
-
-  it('executeCommand("agent edit foo") never calls setSessionConfigOption (does not interpret "edit foo" as a mode name)', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockClear();
-
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'edit foo' },
-    } as any);
-
-    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalledWith(
-      expect.objectContaining({ configId: 'mode', value: 'edit foo' })
-    );
-    expect(result.success).toBe(false);
-    expect(result.message).toMatch(/\/agent edit.*not yet implemented/);
-  });
-
-  it('executeCommand("agent swap") (no name) surfaces a usage error instead of swapping', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockClear();
-
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'swap' },
-    } as any);
-
-    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalled();
-    expect(result.success).toBe(false);
-    expect(result.message).toMatch(/\/agent swap <name>/);
-  });
-
   it('executeCommand("reply") returns success without forwarding', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -1583,291 +1350,16 @@ describe('KasAcpClient', () => {
     expect(result.options).toEqual([]);
   });
 
-  it('getCommandOptions("/agent") derives options from cached session modes, grouped by _meta.kiro.source', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'spec',
-            name: 'Spec',
-            description: 'Structured feature development',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'reviewer',
-            name: 'Reviewer',
-            description: 'Reviews code changes',
-            _meta: { kiro: { source: 'user' } },
-          },
-          {
-            id: 'legacy',
-            name: 'Legacy',
-            description: 'No source metadata',
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-    mockKiroSendExtMethod.mockClear();
-
-    const result = await client.getCommandOptions('/agent', '');
-
-    // Must NOT fall back to the removed extension method.
-    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
-      '_kiro/agent/list',
-      expect.anything()
-    );
-    expect(result.options).toEqual([
-      {
-        value: KAS_DEFAULT_AGENT_ID,
-        label: KAS_DEFAULT_AGENT_NAME,
-        description: '[active] General coding assistance',
-        group: 'Bundled',
-      },
-      {
-        value: 'spec',
-        label: 'Spec',
-        description: 'Structured feature development',
-        group: 'Bundled',
-      },
-      {
-        value: 'reviewer',
-        label: 'Reviewer',
-        description: 'Reviews code changes',
-        group: 'User',
-      },
-      {
-        value: 'legacy',
-        label: 'Legacy',
-        description: 'No source metadata',
-      },
-    ]);
-  });
-
-  it('getCommandOptions("/agent") returns empty options when the agent advertised no modes', async () => {
-    // Default mockKiroNewSession returns `modes: null`.
+  it('getCommandOptions("/agent") returns empty options (option building owns the typed store slice)', async () => {
     const client = new KasAcpClient();
     await client.newSession();
     const result = await client.getCommandOptions('/agent', '');
     expect(result.options).toEqual([]);
   });
 
-  it('getCommandOptions("/agent") filters out denylisted agents (e.g. semantic-reviewer)', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'semantic_reviewer',
-            name: 'Semantic Reviewer',
-            description: 'Reviews PRs',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/agent', '');
-    const values = result.options.map((o: any) => o.value);
-    expect(values).toEqual([KAS_DEFAULT_AGENT_ID]);
-    expect(values).not.toContain('semantic_reviewer');
-  });
-
-  it('getCommandOptions("/agent") filters out the bundled autonomous agent', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'autonomous',
-            name: 'Autonomous',
-            description: 'Self-directed execution',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/agent', '');
-    const values = result.options.map((o: any) => o.value);
-    expect(values).toEqual([KAS_DEFAULT_AGENT_ID]);
-    expect(values).not.toContain('autonomous');
-  });
-
-  it('getCommandOptions("/agent") hides the quick-spec builtin mode but shows plan', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'plan',
-            name: 'Plan',
-            description: 'Read-only interactive planner',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'quick-spec',
-            name: 'Quick Spec',
-            description: 'Fast spec-generation workflow',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/agent', '');
-    const values = result.options.map((o: any) => o.value);
-    // `plan` is surfaced under the TUI-facing name kiro_planner
-    expect(values).toContain('kiro_planner');
-    expect(values).not.toContain('quick-spec');
-    expect(values).not.toContain('plan');
-  });
-
-  it('getCommandOptions("/agent") preserves a user/workspace agent that shares a denylisted id', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding assistance',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            // Same id as the bundled denylist entry, but user-defined: the
-            // user opted into this, so it must NOT be filtered out.
-            id: 'semantic_reviewer',
-            name: 'My Semantic Reviewer',
-            description: 'Custom reviewer',
-            _meta: { kiro: { source: 'workspace' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/agent', '');
-    const values = result.options.map((o: any) => o.value);
-    expect(values).toContain('semantic_reviewer');
-  });
-
-  it('current_mode_update notification updates the cached currentModeId used by /agent', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: '',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'spec',
-            name: 'Spec',
-            description: '',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // Simulate the agent switching modes mid-session.
-    await capturedSessionUpdateHandler({
-      sessionId: 'kas-session-1',
-      update: {
-        sessionUpdate: 'current_mode_update',
-        currentModeId: 'spec',
-      },
-    });
-
-    const result = await client.getCommandOptions('/agent', '');
-    const active = result.options.find((o: { description?: string }) =>
-      (o.description ?? '').startsWith('[active]')
-    );
-    expect(active?.value).toBe('spec');
-  });
-
-  it('current_mode_update broadcasts AgentSwitched with previousAgentName and welcomeMessage', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: '',
-            _meta: { kiro: { source: 'bundled' } },
-          },
-          {
-            id: 'spec',
-            name: 'Spec',
-            description: '',
-            _meta: {
-              kiro: { source: 'bundled' },
-              welcomeMessage: 'Spec mode: ready to plan',
-            },
-          },
-        ],
-      },
-    } as any);
-
+  it('current_mode_update broadcasts AgentSwitched with the new (normalized) agent id', async () => {
+    // The transport client broadcasts AgentSwitched carrying only the new id;
+    // the store resolves the banner + previous agent from kasAvailableAgents.
     const client = new KasAcpClient();
     const handler = mock((_event: any) => {});
     client.onUpdate(handler);
@@ -1886,11 +1378,9 @@ describe('KasAcpClient', () => {
       .find((e: any) => e.type === AgentEventType.AgentSwitched);
     expect(switched).toBeDefined();
     expect(switched.agentName).toBe('spec');
-    expect(switched.previousAgentName).toBe(KAS_DEFAULT_AGENT_ID);
-    expect(switched.welcomeMessage).toBe('Spec mode: ready to plan');
   });
 
-  it('current_mode_update does not broadcast AgentSwitched when the mode is unchanged', async () => {
+  it('current_mode_update broadcasts AgentSwitched even when the mode is unchanged (store dedups the welcome banner)', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
       models: null,
@@ -1921,10 +1411,14 @@ describe('KasAcpClient', () => {
       },
     });
 
+    // The client broadcasts every current_mode_update and the store gates the
+    // welcome banner on an actual agent change, so the event is still emitted
+    // here.
     const switched = handler.mock.calls
       .map((c) => c[0])
       .find((e: any) => e.type === AgentEventType.AgentSwitched);
-    expect(switched).toBeUndefined();
+    expect(switched).toBeDefined();
+    expect(switched.agentName).toBe(KAS_DEFAULT_AGENT_ID);
   });
 
   // ── Session update broadcasting ──
@@ -2090,230 +1584,14 @@ describe('KasAcpClient', () => {
     expect(result.currentModel).toEqual({ id: 'claude-4', name: 'Claude 4' });
   });
 
-  it('getCommandOptions("/model") returns cached options from configOptions', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [
-        { value: 'claude-4', name: 'Claude 4', description: 'Best overall' },
-        { value: 'gpt-5', name: 'GPT-5' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/model', '');
-    expect(result.options.length).toBe(2);
-    // No `_meta.kiro` rate info on these models → the credits column shows the
-    // "----- credits" placeholder (mirrors v2's `to_command_option`).
-    expect(result.options[0]).toEqual({
-      value: 'claude-4',
-      label: 'Claude 4',
-      description: '[active] Best overall',
-      group: '----- credits',
-    });
-    expect(result.options[1]).toEqual({
-      value: 'gpt-5',
-      label: 'GPT-5',
-      description: '',
-      group: '----- credits',
-    });
-  });
-
-  it('getCommandOptions("/model") surfaces the credits column from _meta.kiro.rateMultiplier', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [
-        {
-          value: 'claude-4',
-          name: 'Claude 4',
-          _meta: { kiro: { rateMultiplier: 0.25 } },
-        },
-        {
-          value: 'gpt-5',
-          name: 'GPT-5',
-          // Integer-ish rate locks toFixed(2) formatting → "1.00x credits".
-          _meta: { kiro: { rateMultiplier: 1 } },
-        },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/model', '');
-    expect(result.options[0].group).toBe('0.25x credits');
-    expect(result.options[1].group).toBe('1.00x credits');
-    // The credits column renders whenever at least one option sets `group`.
-    expect(result.options.every((o: any) => !!o.group)).toBe(true);
-  });
-
-  it('getCommandOptions("/model") uses the "----- credits" placeholder when rate meta is absent', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [{ value: 'claude-4', name: 'Claude 4' }],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/model', '');
-    expect(result.options[0].group).toBe('----- credits');
-  });
-
-  it('getCommandOptions("/model") returns empty when no models configured', async () => {
-    // Default mock returns no configOptions → no model cache
+  it('getCommandOptions("/model") returns empty (option building reads the typed store slice)', async () => {
     const client = new KasAcpClient();
     await client.newSession();
     const result = await client.getCommandOptions('/model', '');
     expect(result.options).toEqual([]);
   });
 
-  it('executeCommand("model") switches via setSessionConfigOption and refreshes cache', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [
-        { value: 'claude-4', name: 'Claude 4' },
-        { value: 'gpt-5', name: 'GPT-5' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // KAS returns the full configOptions state reflecting the switch
-    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
-      configOptions: [
-        {
-          type: 'select',
-          id: 'model',
-          name: 'Model',
-          category: 'model',
-          currentValue: 'gpt-5',
-          options: [
-            { value: 'claude-4', name: 'Claude 4' },
-            { value: 'gpt-5', name: 'GPT-5' },
-          ],
-        },
-      ],
-    } as any);
-
-    mockKiroSetSessionConfigOption.mockClear();
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'gpt-5' },
-    } as any);
-
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
-      sessionId: 'kas-session-models',
-      configId: 'model',
-      value: 'gpt-5',
-    });
-    expect(result.success).toBe(true);
-    expect(result.message).toBe('Switched to GPT-5');
-    expect(result.data).toEqual({ model: { id: 'gpt-5', name: 'GPT-5' } });
-
-    // Cache should now mark gpt-5 as active
-    const options = await client.getCommandOptions('/model', '');
-    const activeEntry = options.options.find((o: any) =>
-      o.description?.startsWith('[active]')
-    );
-    expect(activeEntry?.value).toBe('gpt-5');
-  });
-
-  it('executeCommand("model") without a value returns usage error', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [{ value: 'claude-4', name: 'Claude 4' }],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.executeCommand({ command: 'model' } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Usage');
-  });
-
-  it('executeCommand("model") without a value and no models returns "No models available"', async () => {
-    const client = new KasAcpClient();
-    await client.newSession();
-    const result = await client.executeCommand({ command: 'model' } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toBe('No models available');
-  });
-
-  it('executeCommand("model") returns error when KAS rejects to a different value', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [
-        { value: 'claude-4', name: 'Claude 4' },
-        { value: 'gpt-5', name: 'GPT-5' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // Simulate KAS ignoring an unknown id and leaving the selection unchanged
-    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
-      configOptions: [
-        {
-          type: 'select',
-          id: 'model',
-          name: 'Model',
-          category: 'model',
-          currentValue: 'claude-4',
-          options: [
-            { value: 'claude-4', name: 'Claude 4' },
-            { value: 'gpt-5', name: 'GPT-5' },
-          ],
-        },
-      ],
-    } as any);
-
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'nonexistent' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("'nonexistent' not available");
-  });
-
-  it('config_option_update session notification refreshes the model cache', async () => {
-    seedSessionWithModels({
-      currentValue: 'claude-4',
-      models: [
-        { value: 'claude-4', name: 'Claude 4' },
-        { value: 'gpt-5', name: 'GPT-5' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // KAS autonomously switches models (e.g. rate-limit fallback)
-    await capturedSessionUpdateHandler({
-      sessionId: 'kas-session-models',
-      update: {
-        sessionUpdate: 'config_option_update',
-        configOptions: [
-          {
-            type: 'select',
-            id: 'model',
-            name: 'Model',
-            category: 'model',
-            currentValue: 'gpt-5',
-            options: [
-              { value: 'claude-4', name: 'Claude 4' },
-              { value: 'gpt-5', name: 'GPT-5' },
-            ],
-          },
-        ],
-      },
-    });
-
-    const options = await client.getCommandOptions('/model', '');
-    const activeEntry = options.options.find((o: any) =>
-      o.description?.startsWith('[active]')
-    );
-    expect(activeEntry?.value).toBe('gpt-5');
-  });
-
-  it('config_option_update broadcasts a ModelUpdate event so the chip self-heals', async () => {
+  it('config_option_update broadcasts a single KasModelConfigUpdate (origin serverPush) carrying models, current model, efforts, and current level', async () => {
     seedSessionWithModels({
       currentValue: 'claude-4',
       models: [
@@ -2343,13 +1621,70 @@ describe('KasAcpClient', () => {
               { value: 'gpt-5', name: 'GPT-5' },
             ],
           },
+          {
+            type: 'select',
+            id: 'effortLevel',
+            name: 'Effort',
+            category: 'thought_level',
+            currentValue: 'high',
+            options: [
+              { value: 'low', name: 'Low' },
+              { value: 'high', name: 'High' },
+            ],
+          },
         ],
       },
     });
 
-    const modelEvent = events.find((e) => e.type === 'model_update');
-    expect(modelEvent).toBeDefined();
-    expect(modelEvent.model).toEqual({ id: 'gpt-5', name: 'GPT-5' });
+    const cfg = events.filter(
+      (e) => e.type === AgentEventType.KasModelConfigUpdate
+    );
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].origin).toBe('serverPush');
+    expect(cfg[0].currentModelId).toBe('gpt-5');
+    expect(cfg[0].models.map((m: any) => m.id)).toEqual(['claude-4', 'gpt-5']);
+    expect(cfg[0].currentLevel).toBe('high');
+    expect(cfg[0].efforts.map((e: any) => e.value)).toEqual(['low', 'high']);
+  });
+
+  it('setConfigOption broadcasts a KasModelConfigUpdate (origin clientInitiated) from the response', async () => {
+    seedSessionWithModels({
+      currentValue: 'claude-4',
+      models: [
+        { value: 'claude-4', name: 'Claude 4' },
+        { value: 'gpt-5', name: 'GPT-5' },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          currentValue: 'gpt-5',
+          options: [
+            { value: 'claude-4', name: 'Claude 4' },
+            { value: 'gpt-5', name: 'GPT-5' },
+          ],
+        },
+      ],
+    } as any);
+
+    await client.setConfigOption('model', 'gpt-5');
+
+    const cfg = events.filter(
+      (e) => e.type === AgentEventType.KasModelConfigUpdate
+    );
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].origin).toBe('clientInitiated');
+    expect(cfg[0].currentModelId).toBe('gpt-5');
   });
 
   it('config_option_update does NOT broadcast ModelUpdate when no model category is present', async () => {
@@ -2430,247 +1765,11 @@ describe('KasAcpClient', () => {
 
   // ── /effort command ──
 
-  /**
-   * Seed a newSession response that mirrors what KAS returns for a model
-   * with an effortLevels schema: a SessionConfigOption list containing an
-   * `id: 'effortLevel'` entry with currentValue + options.
-   */
-  function seedSessionWithEffort(opts: {
-    currentValue: string;
-    levels: Array<{ value: string; name: string }>;
-  }): void {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-effort',
-      models: null,
-      modes: null,
-      configOptions: [
-        {
-          type: 'select',
-          id: 'effortLevel',
-          name: 'Effort',
-          category: 'thought_level',
-          currentValue: opts.currentValue,
-          options: opts.levels,
-        },
-      ],
-    } as any);
-  }
-
-  it('getCommandOptions("/effort") returns cached levels with [active] marking', async () => {
-    seedSessionWithEffort({
-      currentValue: 'high',
-      levels: [
-        { value: 'low', name: 'Low' },
-        { value: 'medium', name: 'Medium' },
-        { value: 'high', name: 'High' },
-        { value: 'xhigh', name: 'xHigh' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.getCommandOptions('/effort', '');
-    expect(result.options.length).toBe(4);
-    expect(result.options[0]).toEqual({
-      value: 'low',
-      label: 'Low',
-      description: '',
-    });
-    expect(result.options[2]).toEqual({
-      value: 'high',
-      label: 'High',
-      description: '[active]',
-    });
-  });
-
-  it('getCommandOptions("/effort") returns empty when model has no effort schema', async () => {
-    // Default mock returns no configOptions → no effort cache
+  it('getCommandOptions("/effort") returns empty (option building reads the typed store slice)', async () => {
     const client = new KasAcpClient();
     await client.newSession();
     const result = await client.getCommandOptions('/effort', '');
     expect(result.options).toEqual([]);
-  });
-
-  it('loadSession populates the effort cache from configOptions', async () => {
-    mockKiroLoadSession.mockResolvedValueOnce({
-      sessionId: 'kas-loaded-effort',
-      models: null,
-      modes: null,
-      configOptions: [
-        {
-          type: 'select',
-          id: 'effortLevel',
-          name: 'Effort',
-          category: 'thought_level',
-          currentValue: 'medium',
-          options: [
-            { value: 'low', name: 'Low' },
-            { value: 'medium', name: 'Medium' },
-            { value: 'high', name: 'High' },
-          ],
-        },
-      ],
-    } as any);
-    const client = new KasAcpClient();
-    await client.loadSession('kas-loaded-effort');
-
-    const result = await client.getCommandOptions('/effort', '');
-    expect(result.options.length).toBe(3);
-    const activeEntry = result.options.find((o: any) =>
-      o.description?.startsWith('[active]')
-    );
-    expect(activeEntry?.value).toBe('medium');
-  });
-
-  it('executeCommand("effort") sets the level via setSessionConfigOption and refreshes cache', async () => {
-    seedSessionWithEffort({
-      currentValue: 'high',
-      levels: [
-        { value: 'high', name: 'High' },
-        { value: 'xhigh', name: 'xHigh' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // KAS returns the full configOptions state reflecting the new level
-    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
-      configOptions: [
-        {
-          type: 'select',
-          id: 'effortLevel',
-          name: 'Effort',
-          category: 'thought_level',
-          currentValue: 'xhigh',
-          options: [
-            { value: 'high', name: 'High' },
-            { value: 'xhigh', name: 'xHigh' },
-          ],
-        },
-      ],
-    } as any);
-
-    mockKiroSetSessionConfigOption.mockClear();
-    const result = await client.executeCommand({
-      command: 'effort',
-      args: { value: 'xhigh' },
-    } as any);
-
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
-      sessionId: 'kas-session-effort',
-      configId: 'effortLevel',
-      value: 'xhigh',
-    });
-    expect(result.success).toBe(true);
-    // Message locked to "Effort set to {Level}" (display-cased), no suffix.
-    expect(result.message).toBe('Effort set to xHigh');
-    expect(result.data).toEqual({ effort: 'xhigh' });
-
-    // Cache should now mark xhigh as active
-    const options = await client.getCommandOptions('/effort', '');
-    const activeEntry = options.options.find((o: any) =>
-      o.description?.startsWith('[active]')
-    );
-    expect(activeEntry?.value).toBe('xhigh');
-  });
-
-  it('executeCommand("effort") without a value and no effort schema returns descriptive error', async () => {
-    const client = new KasAcpClient();
-    await client.newSession();
-    const result = await client.executeCommand({ command: 'effort' } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('not available');
-  });
-
-  it('executeCommand("effort") without a value but with a schema returns usage error', async () => {
-    seedSessionWithEffort({
-      currentValue: 'high',
-      levels: [
-        { value: 'high', name: 'High' },
-        { value: 'xhigh', name: 'xHigh' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    const result = await client.executeCommand({ command: 'effort' } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Usage');
-  });
-
-  it('executeCommand("effort") returns error when KAS rejects (currentValue unchanged)', async () => {
-    seedSessionWithEffort({
-      currentValue: 'high',
-      levels: [
-        { value: 'high', name: 'High' },
-        { value: 'xhigh', name: 'xHigh' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // KAS ignores an unknown level, leaving the selection unchanged.
-    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
-      configOptions: [
-        {
-          type: 'select',
-          id: 'effortLevel',
-          name: 'Effort',
-          category: 'thought_level',
-          currentValue: 'high',
-          options: [
-            { value: 'high', name: 'High' },
-            { value: 'xhigh', name: 'xHigh' },
-          ],
-        },
-      ],
-    } as any);
-
-    const result = await client.executeCommand({
-      command: 'effort',
-      args: { value: 'nonexistent' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("'nonexistent' not available");
-  });
-
-  it('config_option_update session notification refreshes the effort cache', async () => {
-    seedSessionWithEffort({
-      currentValue: 'high',
-      levels: [
-        { value: 'high', name: 'High' },
-        { value: 'xhigh', name: 'xHigh' },
-      ],
-    });
-    const client = new KasAcpClient();
-    await client.newSession();
-
-    // KAS autonomously changes effort (e.g. after a model switch)
-    await capturedSessionUpdateHandler({
-      sessionId: 'kas-session-effort',
-      update: {
-        sessionUpdate: 'config_option_update',
-        configOptions: [
-          {
-            type: 'select',
-            id: 'effortLevel',
-            name: 'Effort',
-            category: 'thought_level',
-            currentValue: 'xhigh',
-            options: [
-              { value: 'high', name: 'High' },
-              { value: 'xhigh', name: 'xHigh' },
-            ],
-          },
-        ],
-      },
-    });
-
-    const options = await client.getCommandOptions('/effort', '');
-    const activeEntry = options.options.find((o: any) =>
-      o.description?.startsWith('[active]')
-    );
-    expect(activeEntry?.value).toBe('xhigh');
   });
 
   // ── /knowledge command ──
@@ -2852,10 +1951,9 @@ describe('KasAcpClient', () => {
   });
 
   // ── /context typed methods ──
-  // These tests assert the wire shape sent to `_kiro/session/context`.
-  // All slash-command parsing (subcommand normalize, rm alias, --force,
-  // unquote) lives in the kas-handler — see kas-handlers/__tests__/context.test.ts
-  // for that coverage.
+  // These tests assert the wire shape sent to `_kiro/session/context`;
+  // slash-command parsing (subcommand normalize, rm alias, --force, unquote)
+  // lives in the kas-handler.
 
   describe('context typed methods', () => {
     it('contextShow(): calls _kiro/session/context with subcommand=show and returns entries', async () => {
@@ -3269,51 +2367,6 @@ describe('KasAcpClient', () => {
     const promptsEvent = events.find((e) => e.type === 'prompts_update');
     expect(promptsEvent.prompts).toHaveLength(1);
     expect(promptsEvent.prompts[0].name).toBe('summarize');
-  });
-
-  it('available_commands_update filters out commands matching cached modes even without kiro type', async () => {
-    mockKiroNewSession.mockResolvedValueOnce({
-      sessionId: 'kas-session-1',
-      models: null,
-      modes: {
-        currentModeId: KAS_DEFAULT_AGENT_ID,
-        availableModes: [
-          {
-            id: KAS_DEFAULT_AGENT_ID,
-            name: KAS_DEFAULT_AGENT_NAME,
-            description: 'General coding',
-          },
-          { id: 'research', name: 'Research', description: 'Deep research' },
-        ],
-      },
-    } as any);
-
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    const events: any[] = [];
-    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
-
-    (client as any).handleSessionUpdate({
-      sessionId: client.sessionId,
-      update: {
-        sessionUpdate: 'available_commands_update',
-        availableCommands: [
-          { name: 'help', description: 'Show help', _meta: {} },
-          {
-            name: KAS_DEFAULT_AGENT_ID,
-            description: 'General coding',
-            _meta: {},
-          },
-          { name: 'research', description: 'Deep research', _meta: {} },
-        ],
-      },
-    });
-
-    const commandsEvent = events.find((e) => e.type === 'commands_update');
-    expect(commandsEvent.commands).toHaveLength(1);
-    expect(commandsEvent.commands[0].name).toBe('help');
   });
 
   it('available_commands_update with no prompt-type commands broadcasts an empty PromptsUpdate', async () => {
@@ -4283,14 +3336,28 @@ describe('KasAcpClient', () => {
     ]);
   });
 
-  // ── effortLevel config option → EffortUpdate ──
+  // ── config payloads → KasModelConfigUpdate (efforts + currentLevel) ──
+  //
+  // A config payload emits a single KasModelConfigUpdate carrying { models,
+  // currentModelId, efforts, currentLevel, origin }. EffortUpdate (singular)
+  // comes ONLY from a metadata_update notification, never from a config
+  // payload. These tests pin the four origins (newSession / loadSession /
+  // serverPush / clientInitiated) and the effort fields they carry; serverPush
+  // + clientInitiated are covered in the /model section above.
 
-  it('newSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {
+  it('newSession() emits KasModelConfigUpdate (origin newSession) carrying the current effort level', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
       models: null,
       modes: null,
       configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          category: 'model',
+          currentValue: 'm1',
+          options: [{ value: 'm1', name: 'Test Model' }],
+        },
         {
           type: 'select',
           id: 'effortLevel',
@@ -4311,14 +3378,20 @@ describe('KasAcpClient', () => {
     client.onUpdate(handler);
     await client.newSession();
 
-    const effortEvents = handler.mock.calls
+    const cfg = handler.mock.calls
       .map((c) => c[0])
-      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
-    expect(effortEvents).toHaveLength(1);
-    expect(effortEvents[0].effort).toBe('high');
+      .filter((e: any) => e.type === AgentEventType.KasModelConfigUpdate);
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].origin).toBe('newSession');
+    expect(cfg[0].currentLevel).toBe('high');
+    expect(cfg[0].efforts.map((e: any) => e.value)).toEqual([
+      'low',
+      'medium',
+      'high',
+    ]);
   });
 
-  it('newSession() broadcasts EffortUpdate with null when configOptions has no effortLevel entry', async () => {
+  it('newSession() emits KasModelConfigUpdate with currentLevel null when the model has no effort schema', async () => {
     mockKiroNewSession.mockResolvedValueOnce({
       sessionId: 'kas-session-1',
       models: null,
@@ -4326,13 +3399,10 @@ describe('KasAcpClient', () => {
       configOptions: [
         {
           type: 'select',
-          id: 'mode',
-          name: 'Mode',
-          category: 'mode',
-          currentValue: 'default',
-          options: [
-            { value: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
-          ],
+          id: 'model',
+          category: 'model',
+          currentValue: 'm1',
+          options: [{ value: 'm1', name: 'Test Model' }],
         },
       ],
     } as any);
@@ -4342,19 +3412,27 @@ describe('KasAcpClient', () => {
     client.onUpdate(handler);
     await client.newSession();
 
-    const effortEvents = handler.mock.calls
+    const cfg = handler.mock.calls
       .map((c) => c[0])
-      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
-    expect(effortEvents).toHaveLength(1);
-    expect(effortEvents[0].effort).toBeNull();
+      .filter((e: any) => e.type === AgentEventType.KasModelConfigUpdate);
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].currentLevel).toBeNull();
+    expect(cfg[0].efforts).toEqual([]);
   });
 
-  it('loadSession() broadcasts EffortUpdate with current effortLevel from configOptions', async () => {
+  it('loadSession() emits KasModelConfigUpdate (origin loadSession) carrying the current effort level', async () => {
     mockKiroLoadSession.mockResolvedValueOnce({
       sessionId: 'kas-loaded',
       models: null,
       modes: null,
       configOptions: [
+        {
+          type: 'select',
+          id: 'model',
+          category: 'model',
+          currentValue: 'm1',
+          options: [{ value: 'm1', name: 'Test Model' }],
+        },
         {
           type: 'select',
           id: 'effortLevel',
@@ -4371,60 +3449,25 @@ describe('KasAcpClient', () => {
     client.onUpdate(handler);
     await client.loadSession('kas-loaded');
 
-    const effortEvents = handler.mock.calls
+    const cfg = handler.mock.calls
       .map((c) => c[0])
-      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
-    expect(effortEvents).toHaveLength(1);
-    expect(effortEvents[0].effort).toBe('xhigh');
+      .filter((e: any) => e.type === AgentEventType.KasModelConfigUpdate);
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].origin).toBe('loadSession');
+    expect(cfg[0].currentLevel).toBe('xhigh');
   });
 
-  it('config_option_update broadcasts EffortUpdate with the new effortLevel', async () => {
-    const client = new KasAcpClient();
-    const handler = mock((_event: any) => {});
-    client.onUpdate(handler);
-    await client.newSession();
-
-    // Drop any EffortUpdate events fired during newSession().
-    handler.mockClear();
-
-    await capturedSessionUpdateHandler({
-      sessionId: 'kas-session-1',
-      update: {
-        sessionUpdate: 'config_option_update',
-        configOptions: [
-          {
-            type: 'select',
-            id: 'effortLevel',
-            name: 'Effort',
-            category: 'thought_level',
-            currentValue: 'medium',
-            options: [
-              { value: 'low', name: 'Low' },
-              { value: 'medium', name: 'Medium' },
-              { value: 'high', name: 'High' },
-            ],
-          },
-        ],
-      },
-    });
-
-    const effortEvents = handler.mock.calls
-      .map((c) => c[0])
-      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
-    expect(effortEvents).toHaveLength(1);
-    expect(effortEvents[0].effort).toBe('medium');
-  });
-
-  it('config_option_update with no effortLevel broadcasts EffortUpdate(null) to clear the chip', async () => {
-    const client = new KasAcpClient();
-    const handler = mock((_event: any) => {});
-    client.onUpdate(handler);
-    await client.newSession();
-    handler.mockClear();
-
+  it('config_option_update emits KasModelConfigUpdate with currentLevel null when the effort option is dropped', async () => {
     // The active model just changed to one that does not declare an
-    // effortLevels schema — KAS drops the option from configOptions and
-    // we should mirror that as `null` in the store so the chip disappears.
+    // effortLevels schema — KAS drops the option from configOptions and we
+    // mirror that as `currentLevel: null` so the chip disappears. A model entry
+    // must be present for the (single) KasModelConfigUpdate to fire.
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+    handler.mockClear();
+
     await capturedSessionUpdateHandler({
       sessionId: 'kas-session-1',
       update: {
@@ -4432,23 +3475,21 @@ describe('KasAcpClient', () => {
         configOptions: [
           {
             type: 'select',
-            id: 'mode',
-            name: 'Mode',
-            category: 'mode',
-            currentValue: 'default',
-            options: [
-              { value: KAS_DEFAULT_AGENT_ID, name: KAS_DEFAULT_AGENT_NAME },
-            ],
+            id: 'model',
+            category: 'model',
+            currentValue: 'm1',
+            options: [{ value: 'm1', name: 'Test Model' }],
           },
         ],
       },
     });
 
-    const effortEvents = handler.mock.calls
+    const cfg = handler.mock.calls
       .map((c) => c[0])
-      .filter((e: any) => e.type === AgentEventType.EffortUpdate);
-    expect(effortEvents).toHaveLength(1);
-    expect(effortEvents[0].effort).toBeNull();
+      .filter((e: any) => e.type === AgentEventType.KasModelConfigUpdate);
+    expect(cfg).toHaveLength(1);
+    expect(cfg[0].origin).toBe('serverPush');
+    expect(cfg[0].currentLevel).toBeNull();
   });
 });
 
@@ -4463,93 +3504,6 @@ describe('KasAcpClient — executeCommand branches', () => {
 
   afterEach(() => {
     delete process.env.KIRO_KAS_SERVER_PATH;
-  });
-
-  it('GIVEN no session WHEN /model called THEN returns error', async () => {
-    await client.initialize();
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'claude' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('No active session');
-  });
-
-  it('GIVEN session WHEN /model with no arg THEN returns usage hint', async () => {
-    await client.initialize();
-    await client.newSession();
-    const result = await client.executeCommand({ command: 'model' } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('No models available');
-  });
-
-  it('GIVEN session with models WHEN /model with valid id THEN calls setSessionConfigOption', async () => {
-    await client.initialize();
-    await client.newSession();
-    (client as any).modelOptions = [
-      { value: 'm1', name: 'Model 1' },
-      { value: 'm2', name: 'Model 2' },
-    ];
-    (client as any).currentModelId = 'm1';
-    mockKiroSetSessionConfigOption.mockImplementationOnce(() =>
-      Promise.resolve({ configOptions: [] })
-    );
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'm2' },
-    } as any);
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalled();
-    // Model not found in response → returns not available
-    expect(result.message).toContain('not available');
-  });
-
-  it('GIVEN session WHEN /model swap fails THEN returns error', async () => {
-    await client.initialize();
-    await client.newSession();
-    mockKiroSetSessionConfigOption.mockImplementationOnce(() =>
-      Promise.reject(new Error('rate limited'))
-    );
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'bad' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toBe('rate limited');
-  });
-
-  it('GIVEN session with active model WHEN /model set-current-as-default THEN persists to cli.json', async () => {
-    await client.initialize();
-    await client.newSession();
-    (client as any).modelOptions = [
-      { value: 'm1', name: 'Model 1' },
-      { value: 'm2', name: 'Model 2' },
-    ];
-    (client as any).currentModelId = 'm1';
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'set-current-as-default' },
-    } as any);
-    expect(result.success).toBe(true);
-    expect(result.message).toContain('Model 1');
-    const saved = JSON.parse(
-      readFileSync(
-        join(testSettingsDir, '.kiro', 'settings', 'cli.json'),
-        'utf-8'
-      )
-    );
-    expect(saved['chat.defaultModel']).toBe('m1');
-  });
-
-  it('GIVEN no active model WHEN /model set-current-as-default THEN returns error', async () => {
-    await client.initialize();
-    await client.newSession();
-    (client as any).currentModelId = undefined;
-    const result = await client.executeCommand({
-      command: 'model',
-      args: { value: 'set-current-as-default' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('No model is currently active');
   });
 
   it('GIVEN session WHEN /usage called THEN forwards to ext method', async () => {
@@ -4601,28 +3555,6 @@ describe('KasAcpClient — executeCommand branches', () => {
     expect(result.success).toBe(false);
     expect(result.message).toContain('not yet supported');
   });
-
-  it('GIVEN session WHEN /agent create THEN returns not implemented', async () => {
-    await client.initialize();
-    await client.newSession();
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'create myagent' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('not yet implemented');
-  });
-
-  it('GIVEN session WHEN /agent edit THEN returns not implemented', async () => {
-    await client.initialize();
-    await client.newSession();
-    const result = await client.executeCommand({
-      command: 'agent',
-      args: { value: 'edit myagent' },
-    } as any);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('not yet implemented');
-  });
 });
 
 describe('KasAcpClient — getCommandOptions', () => {
@@ -4669,27 +3601,6 @@ describe('KasAcpClient — getCommandOptions', () => {
     delete process.env.KIRO_KAS_SERVER_PATH;
   });
 
-  it('GIVEN modes cached WHEN /agent options requested THEN returns modes with [active] marker', async () => {
-    const result = await client.getCommandOptions('/agent', '');
-    expect(result.options).toHaveLength(2);
-    expect(result.options[0].value).toBe('coder');
-    expect(result.options[0].description).toContain('[active]');
-    expect(result.options[1].value).toBe('planner');
-  });
-
-  it('GIVEN models cached WHEN /model options requested THEN returns models with [active]', async () => {
-    // Manually set model cache
-    (client as any).modelOptions = [
-      { value: 'm1', name: 'Claude Sonnet', description: 'Fast' },
-      { value: 'm2', name: 'Claude Opus' },
-    ];
-    (client as any).currentModelId = 'm1';
-    const result = await client.getCommandOptions('/model', '');
-    expect(result.options).toHaveLength(2);
-    expect(result.options[0].description).toContain('[active]');
-    expect(result.options[1].value).toBe('m2');
-  });
-
   it('GIVEN no session WHEN options requested THEN returns empty', async () => {
     const fresh = new KasAcpClient();
     const result = await fresh.getCommandOptions('/agent', '');
@@ -4702,7 +3613,7 @@ describe('KasAcpClient — getCommandOptions', () => {
   });
 });
 
-describe('KasAcpClient — setMode and listSessions', () => {
+describe('KasAcpClient — listSessions', () => {
   let client: InstanceType<typeof KasAcpClient>;
 
   beforeEach(async () => {
@@ -4715,24 +3626,6 @@ describe('KasAcpClient — setMode and listSessions', () => {
 
   afterEach(() => {
     delete process.env.KIRO_KAS_SERVER_PATH;
-  });
-
-  it('GIVEN session WHEN setMode called THEN calls setSessionConfigOption', async () => {
-    await client.setMode('planner');
-    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
-      sessionId: 'kas-session-1',
-      configId: 'mode',
-      value: 'planner',
-    });
-  });
-
-  it('GIVEN no session WHEN setMode called THEN does nothing', async () => {
-    mockKiroSetSessionConfigOption.mockClear();
-    // Client has no session (never called newSession)
-    const fresh = new KasAcpClient();
-    await fresh.initialize();
-    await fresh.setMode('x');
-    expect(mockKiroSetSessionConfigOption).not.toHaveBeenCalled();
   });
 
   it('GIVEN session WHEN listSessions called THEN returns sessions', async () => {
@@ -4752,56 +3645,6 @@ describe('KasAcpClient — setMode and listSessions', () => {
     );
     const result = await client.listSessions('/tmp');
     expect(result.sessions).toEqual([]);
-  });
-});
-
-describe('KasAcpClient — session event handling', () => {
-  let client: InstanceType<typeof KasAcpClient>;
-
-  beforeEach(async () => {
-    freshMocks();
-    process.env.KIRO_KAS_SERVER_PATH = '/fake/server.js';
-    client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-  });
-
-  afterEach(() => {
-    delete process.env.KIRO_KAS_SERVER_PATH;
-  });
-
-  it('GIVEN session WHEN current_mode_update received THEN updates cached mode', async () => {
-    expect(capturedSessionUpdateHandler).not.toBeNull();
-    await capturedSessionUpdateHandler({
-      update: {
-        sessionUpdate: 'current_mode_update',
-        currentModeId: 'planner',
-      },
-    });
-    // Verify via getCommandOptions
-    const _opts = await client.getCommandOptions('/agent', '');
-    // The mode should now show planner as active (if modes were cached)
-    expect((client as any).modesState.currentModeId).toBe('planner');
-  });
-
-  it('GIVEN session WHEN config_option_update received THEN refreshes model cache', async () => {
-    await capturedSessionUpdateHandler({
-      update: {
-        sessionUpdate: 'config_option_update',
-        configOptions: [
-          {
-            id: 'model',
-            category: 'model',
-            currentValue: 'm3',
-            options: [{ value: 'm3', name: 'New Model' }],
-          },
-        ],
-      },
-    });
-    // refreshModelCache was called — verify it processed the update
-    // (even if findModelConfigOption doesn't match the exact shape,
-    // the code path is exercised)
-    expect((client as any).modelOptions.length).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -5144,19 +3987,24 @@ describe('MCP OAuth flow', () => {
       expect(gov.apiFailure).toBe(false);
     });
 
-    it('agent not_found handler updates cached mode to fallback', async () => {
+    it('agent not_found handler broadcasts AgentNotFound with the fallback id', async () => {
+      // A not_found notification is observed through the broadcast
+      // AgentNotFound event carrying the fallback id.
       const client = new KasAcpClient();
       await client.initialize();
       await client.newSession();
       const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
       kc._extNotifHandlers['_kiro/customAgent/not_found']({
         sessionId: 'test',
         requestedAgent: 'missing-agent',
         fallbackAgent: KAS_DEFAULT_AGENT_ID,
       });
-      expect((client as any).modesState.currentModeId).toBe(
-        KAS_DEFAULT_AGENT_ID
-      );
+      const notFound = events.find((e) => e.type === 'agent_not_found');
+      expect(notFound).toBeDefined();
+      expect(notFound.fallbackAgent).toBe(KAS_DEFAULT_AGENT_ID);
+      expect(notFound.requestedAgent).toBe('missing-agent');
     });
 
     it('agent not_found event normalizes the wire fallback id (vibe -> default) but keeps requestedAgent raw', async () => {
@@ -5177,8 +4025,6 @@ describe('MCP OAuth flow', () => {
       expect(notFound.fallbackAgent).toBe('default');
       // The requested id echoes back the user's literal chat.defaultAgent value.
       expect(notFound.requestedAgent).toBe('amzn-builder');
-      // The cached mode is normalized too.
-      expect((client as any).modesState.currentModeId).toBe('default');
     });
 
     it('backend-initiated agent switch normalizes the wire id (vibe -> default)', async () => {
@@ -6009,8 +4855,8 @@ describe('MCP OAuth flow', () => {
     });
 
     it('standalone subtask full lifecycle (call + update + finished) all forward to main', async () => {
-      // NIT coverage: ToolCallFinished is in STANDALONE_MAIN_FORWARD_TYPES, so a
-      // hidden subagent's tool card must COMPLETE inline in main, not just start.
+      // ToolCallFinished is in STANDALONE_MAIN_FORWARD_TYPES, so a hidden
+      // subagent's tool card must COMPLETE inline in main, not just start.
       const client = new KasAcpClient();
       const mainHandler = mock((_event: any) => {});
       client.onUpdate(mainHandler);
