@@ -465,6 +465,52 @@ async fn default_agent_setting_used_as_initial_mode() {
     );
 }
 
+/// Regression test: a startup `--agent` flag must bind every `session/new`, not
+/// just the first. See the `resolve_agent_name` unit tests in `session_manager.rs`
+/// for the detailed rationale.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn cli_agent_flag_applies_to_every_new_session() {
+    use agent::agent_config::definitions::AgentConfigV2025_08_22;
+
+    let pinned = AgentConfigV2025_08_22 {
+        name: "docs-v2".to_string(),
+        description: Some("Pinned via --agent".to_string()),
+        ..Default::default()
+    };
+    let default_agent = AgentConfigV2025_08_22 {
+        name: "kiro-dev".to_string(),
+        description: Some("Configured default".to_string()),
+        ..Default::default()
+    };
+
+    let (harness, client) = AcpTestHarnessBuilder::new("cli_agent_flag_applies_to_every_new_session")
+        .with_agent_config("docs-v2", &pinned)
+        .with_agent_config("kiro-dev", &default_agent)
+        // Default differs from the pinned agent so a dropped flag would be visible
+        // (the session would fall back to kiro-dev).
+        .with_setting("chat.defaultAgent", "kiro-dev")
+        // Startup --agent flag; must apply to every session/new for the subprocess.
+        .with_acp_args(["--agent", "docs-v2"])
+        .build()
+        .await;
+
+    let cwd = harness.paths.cwd.clone();
+
+    // Fire several sequential session/new calls; each must bind to docs-v2,
+    // never falling back to chat.defaultAgent (kiro-dev).
+    for i in 1..=3 {
+        let resp = client.new_session(cwd.clone()).await.expect("new_session failed");
+        let modes = resp.modes.expect("modes should be present in response");
+        assert_eq!(
+            modes.current_mode_id.0.as_ref(),
+            "docs-v2",
+            "session/new #{i} should bind to the --agent flag, not fall back to chat.defaultAgent",
+        );
+    }
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "ACP `--agent` flag is now applied to every new session instead of only the first, preventing fallback to the default agent and its MCP servers on subsequent sessions"
+}

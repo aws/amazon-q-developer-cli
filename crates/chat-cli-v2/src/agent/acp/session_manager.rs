@@ -977,6 +977,23 @@ impl SessionManager {
         }
     }
 
+    /// Resolve the agent name by precedence: explicit per-session agent >
+    /// persisted (`session/load`) > `--agent` flag > `chat.defaultAgent` >
+    /// built-in default. `cli_agent` sits below `persisted_agent` so loading a
+    /// session restores its own agent rather than the startup flag.
+    fn resolve_agent_name(
+        initial_agent_name: Option<String>,
+        persisted_agent: Option<String>,
+        cli_agent: Option<String>,
+        default_setting: Option<String>,
+    ) -> String {
+        initial_agent_name
+            .or(persisted_agent)
+            .or(cli_agent)
+            .or(default_setting)
+            .unwrap_or_else(|| agent::consts::DEFAULT_AGENT_NAME.to_string())
+    }
+
     async fn handle_request(&mut self, request: SessionManagerRequest) {
         debug!(?request, "session manager received new request");
         let SessionManagerRequest { session_id, data } = request;
@@ -1008,21 +1025,26 @@ impl SessionManager {
                     warn!(session_id = %config.session_id, error = %e, "Failed to export V1 session");
                 }
 
-                // Resolve agent name: explicit config > CLI --agent flag > persisted session agent > setting >
-                // default
+                // Resolve agent name. Precedence (highest first): explicit
+                // config > persisted session agent (session/load) > CLI
+                // --agent flag > chat.defaultAgent > built-in default.
+                //
+                // The --agent value is cloned, not taken, so it applies to
+                // every new session for the subprocess lifetime. It sits below
+                // the persisted agent so loading a session restores its own
+                // saved agent rather than the startup flag.
                 let persisted_agent = if config.load {
                     let sessions_dir = crate::util::paths::sessions_dir().ok();
                     sessions_dir.and_then(|d| crate::agent::session::peek_agent_name(&d, &config.session_id))
                 } else {
                     None
                 };
-                let agent_name = config
-                    .initial_agent_name
-                    .clone()
-                    .or_else(|| self.next_agent_name.take())
-                    .or(persisted_agent)
-                    .or_else(|| self.os.database.settings.get_string(Setting::ChatDefaultAgent))
-                    .unwrap_or_else(|| agent::consts::DEFAULT_AGENT_NAME.to_string());
+                let agent_name = Self::resolve_agent_name(
+                    config.initial_agent_name.clone(),
+                    persisted_agent,
+                    self.next_agent_name.clone(),
+                    self.os.database.settings.get_string(Setting::ChatDefaultAgent),
+                );
 
                 let default_agent = self
                     .agent_configs
@@ -3693,6 +3715,69 @@ fn stamp_acp_client_name(env: &crate::os::Env, name: &str) {
 #[cfg(test)]
 mod tests {
     use agent::util::truncate_safe;
+
+    use super::SessionManager;
+
+    // resolve_agent_name tests.
+    //
+    // Regression coverage for the ACP `--agent` drop: the CLI flag must apply
+    // to every `session/new` (not be consumed after the first), while a loaded
+    // session's persisted agent still wins over the startup flag.
+
+    const DEFAULT: &str = agent::consts::DEFAULT_AGENT_NAME;
+
+    #[test]
+    fn resolve_agent_prefers_initial_over_everything() {
+        let got = SessionManager::resolve_agent_name(
+            Some("initial".to_string()),
+            Some("persisted".to_string()),
+            Some("cli".to_string()),
+            Some("setting".to_string()),
+        );
+        assert_eq!(got, "initial");
+    }
+
+    #[test]
+    fn resolve_agent_persisted_wins_over_cli_flag_on_load() {
+        // session/load: persisted agent must override the startup --agent flag.
+        let got = SessionManager::resolve_agent_name(
+            None,
+            Some("persisted".to_string()),
+            Some("cli".to_string()),
+            Some("setting".to_string()),
+        );
+        assert_eq!(got, "persisted");
+    }
+
+    #[test]
+    fn resolve_agent_cli_flag_used_for_new_session() {
+        // session/new: no persisted agent, so the --agent flag applies.
+        let got = SessionManager::resolve_agent_name(None, None, Some("cli".to_string()), Some("setting".to_string()));
+        assert_eq!(got, "cli");
+    }
+
+    #[test]
+    fn resolve_agent_cli_flag_applies_repeatedly() {
+        // The fix: the same cli value resolves on every call because the caller
+        // clones (does not `take`) it. Simulate N sequential new-session calls.
+        let cli = Some("cost-ai-agent".to_string());
+        for _ in 0..5 {
+            let got = SessionManager::resolve_agent_name(None, None, cli.clone(), Some("setting".to_string()));
+            assert_eq!(got, "cost-ai-agent");
+        }
+    }
+
+    #[test]
+    fn resolve_agent_falls_back_to_setting() {
+        let got = SessionManager::resolve_agent_name(None, None, None, Some("setting".to_string()));
+        assert_eq!(got, "setting");
+    }
+
+    #[test]
+    fn resolve_agent_falls_back_to_default() {
+        let got = SessionManager::resolve_agent_name(None, None, None, None);
+        assert_eq!(got, DEFAULT);
+    }
 
     #[test]
     fn test_is_relevant_config_path() {
