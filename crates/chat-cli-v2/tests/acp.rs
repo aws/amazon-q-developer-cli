@@ -231,6 +231,57 @@ async fn load_session_emits_failed_for_orphaned_tool_calls() {
     );
 }
 
+/// Regression: reloading an already-active session must not destroy its on-disk
+/// files. The manager shuts the previous live instance down during reload; its
+/// `Drop` must not delete the `{id}.json` / `{id}.jsonl` / `{id}.lock` files that
+/// the freshly-loaded instance now owns. We reload twice (a second `session/load`
+/// would fail with NotFound if the metadata had been deleted) and confirm the
+/// session is still usable afterward.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn reload_active_session_preserves_files_and_stays_usable() {
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("reload_active_session_preserves_files")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    let meta = harness.paths.sessions_dir.join(format!("{}.json", session_id.0));
+    let log = harness.paths.sessions_dir.join(format!("{}.jsonl", session_id.0));
+    let lock = harness.paths.sessions_dir.join(format!("{}.lock", session_id.0));
+
+    assert!(meta.exists(), "metadata should exist after new_session");
+    assert!(log.exists(), "log should exist after new_session");
+
+    // Reload the still-active session twice. Each reload shuts the previous live
+    // instance down before building the new one; the old Drop must leave the
+    // shared files intact for the new owner.
+    for i in 1..=2 {
+        client
+            .load_session(session_id.clone(), cwd.clone())
+            .await
+            .unwrap_or_else(|e| panic!("reload #{i} failed: {e:?}"));
+
+        assert!(meta.exists(), "metadata must survive reload #{i} of an active session");
+        assert!(log.exists(), "log must survive reload #{i} of an active session");
+        assert!(lock.exists(), "the new owner should hold the lock after reload #{i}");
+    }
+
+    // The reloaded session must still accept prompts.
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(session_id.clone(), "hello after reload")
+        .await
+        .expect("prompt after reload should succeed");
+
+    assert!(
+        meta.exists(),
+        "metadata must still exist after prompting the reloaded session"
+    );
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]

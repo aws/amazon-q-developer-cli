@@ -2591,6 +2591,12 @@ impl AcpSession {
             },
             AcpSessionRequest::Shutdown { respond_to } => {
                 self.agent.shutdown().await;
+                // Release the session's advisory lock deterministically before replying,
+                // so a reload of this id can acquire it cleanly and there is never a
+                // window with two live lock holders. (Drop would otherwise do this only
+                // once the actor task ends and the last Arc<SessionDb> is released, which
+                // can lag behind this reply.)
+                self.session_db.close();
                 let _ = respond_to.send(());
             },
             AcpSessionRequest::AdvertiseCommands => {

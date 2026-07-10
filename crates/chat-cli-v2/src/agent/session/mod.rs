@@ -432,15 +432,45 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), SessionError> {
 ///
 /// Uses interior mutability for ergonomic `&self` API across async task boundaries.
 pub struct SessionDb {
-    _lock_guard: SessionLockGuard,
+    /// Advisory lock for this session id. Wrapped in `Option` behind a `Mutex` so
+    /// it can be released deterministically via [`SessionDb::close`] before `Drop`.
+    lock_guard: Mutex<Option<SessionLockGuard>>,
     session: Mutex<SessionData>,
     sessions_dir: PathBuf,
+    /// On `Drop`, reclaim (delete) this session's files if its log is still empty.
+    /// `true` only for freshly-created sessions; `false` for loaded sessions and
+    /// after [`SessionDb::close`] hands the id to a new owner. In those `false`
+    /// cases a concurrently-live owner of the same id may hold the files, so the
+    /// instance must never delete them.
+    reclaim_if_empty: std::sync::atomic::AtomicBool,
 }
 
 static_assertions::assert_impl_all!(SessionDb: Send, Sync);
 
+impl SessionDb {
+    /// Release this session's advisory lock immediately (without waiting for `Drop`)
+    /// and hand the id off: `Drop` will not delete any files afterward. Idempotent.
+    /// Call this when a new owner takes over the id (e.g. a reload) so it can acquire
+    /// the lock cleanly and the old instance leaves the shared files intact.
+    pub fn close(&self) {
+        self.reclaim_if_empty.store(false, std::sync::atomic::Ordering::SeqCst);
+        // Recover from a poisoned mutex (`into_inner`) instead of bailing: the guarded
+        // value is just an `Option` we `take()`, so it can't be left inconsistent, and
+        // we must still drop the `SessionLockGuard` to remove the on-disk `.lock` file —
+        // skipping it would orphan the lock.
+        let mut guard = self.lock_guard.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = guard.take();
+    }
+}
+
 impl Drop for SessionDb {
     fn drop(&mut self) {
+        // Only a freshly-created, still-owned session reclaims its files. Loaded or
+        // handed-off (closed) instances leave them: a concurrently-live owner of the
+        // same id may still be using them.
+        if !self.reclaim_if_empty.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let Some(session) = self.session.lock().ok() else {
             return;
         };
@@ -451,6 +481,8 @@ impl Drop for SessionDb {
             let _ = fs::remove_file(metadata_path(&self.sessions_dir, &session.session_id));
             let _ = fs::remove_file(&log);
         }
+        // The `lock_guard` field drops after this body — if still `Some` (not
+        // closed), its `SessionLockGuard::Drop` removes the `.lock` file.
     }
 }
 
@@ -522,9 +554,11 @@ impl SessionDb {
             .map_err(|e| SessionError::io(e, format!("failed to create log file for session {:?}", session_id)))?;
 
         Ok(Self {
-            _lock_guard: lock_guard,
+            lock_guard: Mutex::new(Some(lock_guard)),
             session: Mutex::new(session),
             sessions_dir: sessions_dir.to_path_buf(),
+            // Freshly created: reclaim the files on drop if never written to.
+            reclaim_if_empty: std::sync::atomic::AtomicBool::new(true),
         })
     }
 
@@ -602,9 +636,11 @@ impl SessionDb {
         }
 
         Ok(Self {
-            _lock_guard: lock_guard,
+            lock_guard: Mutex::new(Some(lock_guard)),
             session: Mutex::new(session),
             sessions_dir: sessions_dir.to_path_buf(),
+            // Loaded: never delete the files on drop — another owner may hold them.
+            reclaim_if_empty: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -1082,6 +1118,121 @@ mod tests {
         let guard = acquire_lock_impl(&lock_file, pid_always_dead, 12345).unwrap();
         assert!(lock_file.exists());
         drop(guard);
+    }
+
+    #[test]
+    fn test_close_releases_lock_for_handoff() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+        let session_id = "handoff".to_string();
+
+        let old = SessionDb::new_impl(
+            sessions_dir,
+            session_id.clone(),
+            cwd,
+            test_state(),
+            None,
+            SessionCreatedReason::Subagent,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&old);
+        assert!(lock_path(sessions_dir, &session_id).exists());
+
+        // Hand the id over: close() releases the lock without dropping `old`.
+        old.close();
+        assert!(
+            !lock_path(sessions_dir, &session_id).exists(),
+            "close() should release the lock file"
+        );
+
+        // A new owner can acquire cleanly even though `old` is still alive — and
+        // even with a *live* different pid, proving we don't rely on same-pid
+        // re-acquire or stale-lock recovery.
+        let new = SessionDb::load_impl(sessions_dir, &session_id, None, pid_always_alive, 2000).unwrap();
+        assert!(lock_path(sessions_dir, &session_id).exists());
+
+        // Dropping the handed-off `old` must NOT remove the new owner's lock or files.
+        drop(old);
+        assert!(
+            lock_path(sessions_dir, &session_id).exists(),
+            "handed-off drop must not remove the new owner's lock"
+        );
+        assert!(metadata_path(sessions_dir, &session_id).exists());
+        assert!(log_path(sessions_dir, &session_id).exists());
+
+        drop(new);
+    }
+
+    #[test]
+    fn test_loaded_session_drop_does_not_delete_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let cwd = Path::new("/test/project");
+        let session_id = "reload-preserve".to_string();
+
+        // Create + write a log entry so the session persists, then drop.
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            session_id.clone(),
+            cwd,
+            test_state(),
+            None,
+            SessionCreatedReason::Subagent,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        write_dummy_log(&db);
+        drop(db);
+        assert!(metadata_path(sessions_dir, &session_id).exists());
+
+        // Load (created_new = false). Even if the log is emptied underneath it,
+        // dropping a loaded instance must NOT delete the on-disk files.
+        let loaded = SessionDb::load_impl(sessions_dir, &session_id, None, pid_always_dead, 1000).unwrap();
+        fs::write(log_path(sessions_dir, &session_id), "").unwrap();
+        drop(loaded);
+
+        assert!(
+            metadata_path(sessions_dir, &session_id).exists(),
+            "loaded-session drop must not delete metadata"
+        );
+        assert!(
+            log_path(sessions_dir, &session_id).exists(),
+            "loaded-session drop must not delete log"
+        );
+    }
+
+    #[test]
+    fn test_new_empty_session_drop_still_cleans_up() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let session_id = "empty-new".to_string();
+
+        let db = SessionDb::new_impl(
+            sessions_dir,
+            session_id.clone(),
+            Path::new("/x"),
+            test_state(),
+            None,
+            SessionCreatedReason::Subagent,
+            pid_always_dead,
+            1000,
+        )
+        .unwrap();
+        // No log written → empty → still eligible for cleanup on drop.
+        drop(db);
+
+        assert!(
+            !metadata_path(sessions_dir, &session_id).exists(),
+            "empty new session metadata should be cleaned up"
+        );
+        assert!(
+            !log_path(sessions_dir, &session_id).exists(),
+            "empty new session log should be cleaned up"
+        );
     }
 
     #[test]

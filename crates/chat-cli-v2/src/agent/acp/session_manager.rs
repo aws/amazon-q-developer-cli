@@ -685,6 +685,11 @@ pub struct AgentConfigLoadError {
 }
 
 impl SessionManager {
+    /// Max time to wait for a session's graceful `shutdown()` (which tears down its
+    /// MCP child processes) before giving up, so a wedged server can't block the
+    /// single-threaded SessionManager loop.
+    const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+
     pub fn builder() -> SessionManagerBuilder {
         Default::default()
     }
@@ -830,6 +835,21 @@ impl SessionManager {
                 );
                 None
             },
+        }
+    }
+
+    /// Gracefully shut down a session handle, bounded by [`Self::SHUTDOWN_TIMEOUT`].
+    /// Returns `true` if shutdown completed in time, `false` if it timed out (logs a
+    /// warning, with `context` describing the call site).
+    async fn shutdown_session(session_id: &SessionId, handle: &AcpSessionHandle, context: &str) -> bool {
+        if tokio::time::timeout(Self::SHUTDOWN_TIMEOUT, handle.shutdown())
+            .await
+            .is_err()
+        {
+            warn!(?session_id, context, "Session did not shut down within timeout");
+            false
+        } else {
+            true
         }
     }
 
@@ -1190,6 +1210,26 @@ impl SessionManager {
                     }
                 };
 
+                // If this id is already active it can only be a `session/load` re-load
+                // (`session/new` always uses a fresh UUID). Shut the old instance down
+                // BEFORE building the new one: both map to the same on-disk session files,
+                // and the old SessionDb releases its `.lock` on shutdown, so the new owner
+                // can acquire cleanly. If the old session doesn't shut down in time, fail
+                // the reload rather than risk two live owners of the same files — the
+                // client can retry once the previous instance has drained.
+                if let Some(old_handle) = self.sessions.remove(&session_id) {
+                    warn!(
+                        ?session_id,
+                        "Reloading active session — shutting down previous instance"
+                    );
+                    if !Self::shutdown_session(&session_id, &old_handle, "reload").await {
+                        _ = resp_sender.send(Err(sacp::util::internal_error(
+                            "Previous session is still shutting down; please retry the load",
+                        )));
+                        return;
+                    }
+                }
+
                 match builder
                     .start_session()
                     .await
@@ -1198,6 +1238,7 @@ impl SessionManager {
                     Ok((handle, ready_rx, initial_model_id)) => {
                         let current_model_id = initial_model_id.unwrap_or_default();
                         let handle_to_give = handle.clone();
+
                         self.sessions.insert(session_id.clone(), handle);
                         _ = resp_sender.send(Ok(StartSessionResult {
                             handle: handle_to_give,
@@ -1236,12 +1277,7 @@ impl SessionManager {
             },
             SessionManagerRequestData::TerminateSession => {
                 if let Some(handle) = self.sessions.remove(&session_id) {
-                    if tokio::time::timeout(std::time::Duration::from_secs(4), handle.shutdown())
-                        .await
-                        .is_err()
-                    {
-                        warn!(?session_id, "Session did not shut down within timeout during terminate");
-                    }
+                    Self::shutdown_session(&session_id, &handle, "terminate").await;
                 } else {
                     warn!(?session_id, "Attempted to terminate non-existent session");
                 }
@@ -1283,17 +1319,7 @@ impl SessionManager {
                 let sessions: Vec<_> = self.sessions.drain().collect();
                 let futs: Vec<_> = sessions
                     .iter()
-                    .map(|(id, h)| {
-                        let id = id.clone();
-                        async move {
-                            if tokio::time::timeout(std::time::Duration::from_secs(4), h.shutdown())
-                                .await
-                                .is_err()
-                            {
-                                warn!(?id, "Session did not shut down within timeout");
-                            }
-                        }
-                    })
+                    .map(|(id, h)| Self::shutdown_session(id, h, "process-shutdown"))
                     .collect();
                 futures::future::join_all(futs).await;
                 _ = resp_sender.send(());

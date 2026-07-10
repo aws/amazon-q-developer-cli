@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Re-loading an already-active session now shuts down the previous instance, preventing leaked MCP server processes"
+}
