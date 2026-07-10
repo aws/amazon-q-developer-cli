@@ -1,0 +1,23 @@
+:root {
+  --bg: #2d2a2e;
+  --fg: #fcfcfa;
+  --accent: #ffd866;
+  --danger: #ff6188;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.button {
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 16px;
+}
+
+.button:hover {
+  color: var(--accent);
+}

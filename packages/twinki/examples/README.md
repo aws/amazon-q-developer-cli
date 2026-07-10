@@ -307,6 +307,20 @@ What it shows: `EditorInput` with `syntaxHighlight` and `syntaxTheme` props, lin
 
 ---
 
+### 28-file-editor/ — File Tree + Text Editor
+
+A two-pane editor inspired by Neovim/NvChad: an nvim-tree-style file explorer, a breadcrumb winbar over a syntax-highlighted viewer/editor, and an NvChad-style statusline. Unlike the single-file examples, this is a small structured mini-project (subfolder with `components/`, `hooks/`, `lib/`).
+
+```bash
+npx tsx examples/28-file-editor/index.tsx
+```
+
+Controls: `↑/↓` navigate, `Enter` open/fold, click files/folders, `e` edit, `Ctrl+S` save, `Tab`/`Shift+Tab` cycle theme, `q` quit.
+
+What it shows: two-pane layout with mouse hit-testing, a full-height read-only `FileView`, `EditorInput` for editing, shiki syntax highlighting with live theme rotation (default Monokai Pro palette), and path-guarded filesystem IO scoped to a bundled sample workspace. See `28-file-editor/README.md` for the full breakdown.
+
+---
+
 ## Writing Your Own
 
 ```tsx

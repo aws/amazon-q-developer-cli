@@ -1,0 +1,13 @@
+{
+  "name": "sample-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "react": "^19.0.0"
+  }
+}
