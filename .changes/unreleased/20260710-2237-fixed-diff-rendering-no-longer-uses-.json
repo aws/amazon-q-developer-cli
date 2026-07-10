@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Diff rendering no longer uses unreadable dark background tints on light or unknown terminals — falls back to foreground-only coloring"
+}

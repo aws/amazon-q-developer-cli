@@ -458,10 +458,21 @@ export interface RenderTheme {
   inlineCode: (s: string) => string;
   link: (s: string) => string;
   secondary: (s: string) => string;
-  diffAddedBg: (s: string) => string;
-  diffRemovedBg: (s: string) => string;
+  /**
+   * Diff row bg tints. `null` means the theme explicitly opts out of bg
+   * tints (kiroSafe's `background: 'default'`) — diff rows then render
+   * git-style: no tint, whole line painted with diffAddedFg/diffRemovedFg.
+   * This keeps rows readable when the terminal background is unknown
+   * (SSH / failed detection), where a hardcoded dark tint under the
+   * terminal's default fg is unreadable on light backgrounds.
+   */
+  diffAddedBg: ((s: string) => string) | null;
+  diffRemovedBg: ((s: string) => string) | null;
   diffAddedBar: (s: string) => string;
   diffRemovedBar: (s: string) => string;
+  /** Whole-line fg colors used only when the bg slots are null. */
+  diffAddedFg?: (s: string) => string;
+  diffRemovedFg?: (s: string) => string;
 }
 
 // The diff bgHex values must match diff.ts's ADDED_BG_OPEN / REMOVED_BG_OPEN
@@ -508,14 +519,19 @@ export function buildRenderTheme(
   // resolved hex and rebuild as bg-mode chalk. The ansi256(N) sentinel (256-
   // color terminals) routes through bgAnsi256 to preserve the color-table
   // index — bgHex would double-convert through hex and lose precision.
+  // 'inherit' (kiroSafe's `background: 'default'`) means the theme explicitly
+  // wants NO bg tint — return null so diff rows render fg-only; only genuine
+  // resolution failures (missing slot, throwing resolver) keep the legacy
+  // dark fallback.
   const safeBgChalk = (
     path: string,
     fallback: (s: string) => string
-  ): ((s: string) => string) => {
+  ): ((s: string) => string) | null => {
     try {
       const fn = getColor(path);
       const hex = fn?.hex;
-      if (typeof hex !== 'string' || hex === 'inherit') return fallback;
+      if (hex === 'inherit') return null;
+      if (typeof hex !== 'string') return fallback;
       const ansi256Match = /^ansi256\((\d+)\)$/.exec(hex);
       if (ansi256Match) {
         const idx = parseInt(ansi256Match[1]!, 10);
@@ -563,7 +579,9 @@ export function buildRenderTheme(
     link: safeChalk('link', chalk.cyan),
     secondary: safeChalk('secondary', chalk.dim),
     // Bg slots use safeBgChalk (cli-highlight resets need real bg SGRs to
-    // re-assert); bar slots are fg glyph colors.
+    // re-assert); bar slots are fg glyph colors. Null bg = fg-only diff rows,
+    // painted with the fg slots below (kiroSafe defines these as named
+    // green/red, which the terminal palette keeps readable on any bg).
     diffAddedBg: safeBgChalk('diff.added.background', chalk.bgHex('#1F2D22')),
     diffRemovedBg: safeBgChalk(
       'diff.removed.background',
@@ -571,6 +589,8 @@ export function buildRenderTheme(
     ),
     diffAddedBar: safeChalk('diff.added.bar', chalk.hex('#80ffb5')),
     diffRemovedBar: safeChalk('diff.removed.bar', chalk.hex('#ff8080')),
+    diffAddedFg: safeChalk('diff.added.foreground', chalk.green),
+    diffRemovedFg: safeChalk('diff.removed.foreground', chalk.red),
   };
 }
 /**
@@ -3654,10 +3674,14 @@ export interface RenderUnifiedDiffOpts {
 }
 
 interface DiffStyling {
-  addedBgOpen: string;
-  removedBgOpen: string;
+  /** Null = theme opted out of bg tints; rows render fg-only (git-style). */
+  addedBgOpen: string | null;
+  removedBgOpen: string | null;
   addedBarFn: (s: string) => string;
   removedBarFn: (s: string) => string;
+  /** Whole-line fg colors for the fg-only mode. */
+  addedFgFn: (s: string) => string;
+  removedFgFn: (s: string) => string;
 }
 
 /**
@@ -3689,13 +3713,24 @@ function resolveDiffStyling(theme?: RenderTheme): DiffStyling {
       removedBgOpen: REMOVED_BG_OPEN,
       addedBarFn: chalk.hex(ADDED_BAR),
       removedBarFn: chalk.hex(REMOVED_BAR),
+      addedFgFn: chalk.green,
+      removedFgFn: chalk.red,
     };
   }
   return {
-    addedBgOpen: extractBgOpen(theme.diffAddedBg, ADDED_BG_OPEN),
-    removedBgOpen: extractBgOpen(theme.diffRemovedBg, REMOVED_BG_OPEN),
+    // A null bg slot is the theme explicitly opting out of tints (kiroSafe);
+    // propagate it so renderDiffLine paints fg-only rows instead of falling
+    // back to the dark constants (unreadable on light terminals).
+    addedBgOpen: theme.diffAddedBg
+      ? extractBgOpen(theme.diffAddedBg, ADDED_BG_OPEN)
+      : null,
+    removedBgOpen: theme.diffRemovedBg
+      ? extractBgOpen(theme.diffRemovedBg, REMOVED_BG_OPEN)
+      : null,
     addedBarFn: theme.diffAddedBar,
     removedBarFn: theme.diffRemovedBar,
+    addedFgFn: theme.diffAddedFg ?? chalk.green,
+    removedFgFn: theme.diffRemovedFg ?? chalk.red,
   };
 }
 
@@ -3886,9 +3921,17 @@ function renderDiffLine(
   const BODY_INSET = '  ';
   const innerCols = Math.max(8, termCols - headWidth - BODY_INSET.length);
 
+  // Null bg = theme opted out of tints (kiroSafe / unknown terminal bg):
+  // render git-style, whole line painted with the diff fg color. Syntax
+  // highlight is skipped in that mode — cli-highlight's palette assumes a
+  // controlled dark bg and is the other unreadable-color source there.
+  const bgOpen =
+    dl.type === 'added' ? styling.addedBgOpen : styling.removedBgOpen;
+  const fgOnly = dl.type !== 'context' && bgOpen === null;
+
   // Highlight the FULL source line in one shot so cli-highlight's line-at-a-
   // time tokenizer colors tokens correctly even when they later wrap.
-  const styled = highlightLineSafe(dl.text, language);
+  const styled = fgOnly ? dl.text : highlightLineSafe(dl.text, language);
 
   // wrapAnsiLine splits into visual rows while carrying SGR state across
   // boundaries; each row then gets its own bg block + hanging indent so the
@@ -3907,11 +3950,21 @@ function renderDiffLine(
       .join('\n');
   }
 
+  if (bgOpen === null) {
+    const fgFn = dl.type === 'added' ? styling.addedFgFn : styling.removedFgFn;
+    const hangingIndent = ' '.repeat(headWidth + BODY_INSET.length);
+    return rows
+      .map((row, i) =>
+        i === 0
+          ? chalk.dim(linePrefix) + gutter + BODY_INSET + fgFn(row)
+          : hangingIndent + fgFn(row)
+      )
+      .join('\n');
+  }
+
   // added / removed: each row gets its own bg-tinted block padded to innerCols
   // (bg reaches the right edge). Continuation rows skip the +/- glyph —
   // repeating it would read as a new diff line.
-  const bgOpen =
-    dl.type === 'added' ? styling.addedBgOpen : styling.removedBgOpen;
   const hangingIndent = ' '.repeat(headWidth);
   return rows
     .map((row, i) => {

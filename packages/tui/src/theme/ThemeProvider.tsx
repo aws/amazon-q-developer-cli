@@ -12,6 +12,7 @@ import type { Theme } from './types';
 import type { TerminalColor } from '../types/themeTypes';
 import { getTerminalChalkColor } from '../utils/colorUtils';
 import { detectTerminalThemeWithDetails } from '../utils/terminal-theme';
+import { logger } from '../utils/logger.js';
 import {
   loadUserThemePrefs,
   getPromptPreset,
@@ -156,6 +157,11 @@ export const createThemeContext = (
 /** @internal Exported for testing */
 export const getAutoTheme = (): Theme => {
   const result = detectTerminalThemeWithDetails();
+  // Debugging theme issues (e.g. unreadable diff colors) needs to know which
+  // detection path fired — it's invisible from the UI otherwise.
+  logger.info(
+    `[theme] detected=${result.theme} method=${result.method} confidence=${result.confidence}`
+  );
 
   // High/medium confidence: we know the actual background, pick accordingly
   if (result.confidence === 'high' || result.confidence === 'medium') {

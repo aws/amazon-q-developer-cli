@@ -1,7 +1,11 @@
 import './setup-chalk-level.js';
 
 import { describe, test, expect } from 'vitest';
-import { renderUnifiedDiff, type RenderTheme } from '../render.js';
+import {
+  renderUnifiedDiff,
+  buildRenderTheme,
+  type RenderTheme,
+} from '../render.js';
 import { visibleWidth } from '../../utils/text-width.js';
 import stripAnsi from 'strip-ansi';
 
@@ -163,10 +167,12 @@ describe('renderUnifiedDiff — wrapping', () => {
  * (not chalk.bgHex) so they're deterministic regardless of chalk.level.
  */
 function makeThemeWith(diffSlots: {
-  diffAddedBg: (s: string) => string;
-  diffRemovedBg: (s: string) => string;
+  diffAddedBg: ((s: string) => string) | null;
+  diffRemovedBg: ((s: string) => string) | null;
   diffAddedBar: (s: string) => string;
   diffRemovedBar: (s: string) => string;
+  diffAddedFg?: (s: string) => string;
+  diffRemovedFg?: (s: string) => string;
 }): RenderTheme {
   const noop = (s: string) => s;
   return {
@@ -311,4 +317,120 @@ describe('renderUnifiedDiff — theme support', () => {
       expect(addedShort(themeFor({ diffAddedBg }))).toMatch(LEGACY_ADDED);
     }
   );
+});
+
+/**
+ * kiroSafe contract (P468472407): a theme with null bg slots explicitly opts
+ * out of bg tints — the terminal background is unknown (SSH / failed
+ * detection), so diff rows must render git-style: no bg SGR at all, whole
+ * line painted with diffAddedFg/diffRemovedFg. Regression: this used to fall
+ * back to hardcoded DARK tints, unreadable on light terminals.
+ */
+describe('renderUnifiedDiff — fg-only mode (theme opts out of bg tints)', () => {
+  // eslint-disable-next-line no-control-regex
+  const ANY_BG = /\x1b\[48[;m]/;
+  const ADDED_FG_SGR = '\x1b[38;2;1;170;1m';
+  const REMOVED_FG_SGR = '\x1b[38;2;170;1;1m';
+  const safeTheme = makeThemeWith({
+    diffAddedBg: null,
+    diffRemovedBg: null,
+    diffAddedBar: (s) => '\x1b[38;2;2;255;2m' + s + '\x1b[39m',
+    diffRemovedBar: (s) => '\x1b[38;2;255;2;2m' + s + '\x1b[39m',
+    diffAddedFg: (s) => ADDED_FG_SGR + s + '\x1b[39m',
+    diffRemovedFg: (s) => REMOVED_FG_SGR + s + '\x1b[39m',
+  });
+  const diffOpts = { path: 'src/foo.ts', termCols: 40, theme: safeTheme };
+
+  test('added rows: no bg SGR, body painted with diffAddedFg', () => {
+    const entry = entryContaining(
+      renderUnifiedDiff('', 'short', diffOpts),
+      'short'
+    );
+    expect(entry).not.toMatch(ANY_BG);
+    expect(entry).toContain(ADDED_FG_SGR);
+  });
+
+  test('removed rows: no bg SGR, body painted with diffRemovedFg', () => {
+    const entry = entryContaining(
+      renderUnifiedDiff('vanish', '', diffOpts),
+      'vanish'
+    );
+    expect(entry).not.toMatch(ANY_BG);
+    expect(entry).toContain(REMOVED_FG_SGR);
+  });
+
+  test('long lines wrap with fg re-applied per row and no right padding', () => {
+    const longCode =
+      'const reallyLongVariableNameHere = someFunctionCall(argument1, argument2);';
+    const entry = entryContaining(
+      renderUnifiedDiff('', longCode, diffOpts),
+      'reallyLong'
+    );
+    const visualRows = entry.split('\n');
+    expect(visualRows.length).toBeGreaterThan(1);
+    for (const vr of visualRows) {
+      expect(vr).toContain(ADDED_FG_SGR);
+      expect(vr).not.toMatch(ANY_BG);
+      // fg-only rows are not padded to the terminal edge (no bg to extend).
+      expect(stripAnsi(vr)).not.toMatch(/ $/);
+    }
+  });
+
+  test('missing fg slots fall back without reintroducing a bg tint', () => {
+    const theme = makeThemeWith({
+      diffAddedBg: null,
+      diffRemovedBg: null,
+      diffAddedBar: (s) => s,
+      diffRemovedBar: (s) => s,
+    });
+    const entry = entryContaining(
+      renderUnifiedDiff('', 'short', { ...diffOpts, theme }),
+      'short'
+    );
+    expect(entry).not.toMatch(ANY_BG);
+  });
+});
+
+/**
+ * buildRenderTheme end-to-end: a getColor whose diff backgrounds resolve to
+ * 'inherit' (kiroSafe's `background: 'default'`) must produce null bg slots
+ * and pick up the theme's diff foregrounds — this is the exact wiring the
+ * light-terminal bug broke (inherit used to hit the dark hardcoded fallback).
+ */
+describe('buildRenderTheme — inherit diff backgrounds (kiroSafe)', () => {
+  const FG_ADDED = '\x1b[38;2;3;160;3m';
+  const FG_REMOVED = '\x1b[38;2;160;3;3m';
+  const mockGetColor = (path: string) => {
+    if (
+      path === 'diff.added.background' ||
+      path === 'diff.removed.background'
+    ) {
+      const fn = (s: string) => s;
+      (fn as any).hex = 'inherit';
+      return fn;
+    }
+    if (path === 'diff.added.foreground')
+      return (s: string) => FG_ADDED + s + '\x1b[39m';
+    if (path === 'diff.removed.foreground')
+      return (s: string) => FG_REMOVED + s + '\x1b[39m';
+    return (s: string) => s;
+  };
+
+  test('maps inherit bg to null and renders fg-only diff rows', () => {
+    const theme = buildRenderTheme(mockGetColor as any);
+    expect(theme.diffAddedBg).toBeNull();
+    expect(theme.diffRemovedBg).toBeNull();
+
+    const entry = entryContaining(
+      renderUnifiedDiff('', 'short', {
+        path: 'src/foo.ts',
+        termCols: 40,
+        theme,
+      }),
+      'short'
+    );
+    // eslint-disable-next-line no-control-regex
+    expect(entry).not.toMatch(/\x1b\[48[;m]/);
+    expect(entry).toContain(FG_ADDED);
+  });
 });
