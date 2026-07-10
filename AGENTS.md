@@ -408,3 +408,14 @@ MCP logs: Same directory, `mcp.log`
 - **Claims need evidence.** "Done / works / safe" must cite a check you ran (typecheck, test, diff, build). Keep PR comments and status consistent with reality; delete stale claims instead of leaving them.
 - **Root-cause before attributing.** When CI or a build breaks, prove the cause from what actually changed (diff, inputs) before claiming or denying responsibility.
 
+## Comment Discipline
+
+Comments drift out of sync with the code as it changes, and a wrong comment is worse than none — it actively misleads the next reader (human or agent). Write few, and make each one earn its place.
+
+- **Prefer no comment.** Reach for a clearer name or a small refactor before adding a comment. Never narrate what the code plainly says (`// increment i`) and don't restate a signature in prose.
+- **Never point at other code.** A comment must not reference another file, function, module, commit, PR, task, or doc section (e.g. "see `foo.rs`", "mirrors the handler in X", "resolved at the call site in Y"). Those surfaces change independently, so the pointer silently rots and misleads. Say what THIS code does or assumes, on its own terms.
+- **Explain _why_, not _what_.** A good comment captures a non-obvious reason, invariant, or gotcha the code cannot express itself. If the _what_ is unclear, fix the code, not the comment.
+- **Keep it short and local.** One or two lines per block — no multi-line essays or design rationale inline (that belongs in a design doc). A comment must make sense to someone reading only the lines it annotates, with zero outside context.
+- **No ephemeral references.** No task/ticket IDs, Quip/doc section numbers, dates, or personal names in code comments or test names — they date the code and mean nothing to a future reader.
+- **`remove-when-ready` / `TODO` notes** live on the definition they concern and describe only the local condition for removal; they must not point at where a companion change lives.
+- **When editing, prune.** If you touch a block whose comment is now stale, redundant, or misleading, delete or correct it rather than leaving it.
