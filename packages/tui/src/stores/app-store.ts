@@ -8,6 +8,10 @@ import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
+import type {
+  AgentScope,
+  MigrationWarning,
+} from '../utils/agent-migration/index.js';
 import { selectVisibleSlashCommands } from './visible-slash-commands';
 import { synthesizeToolUseContent } from './tool-use-synthesis';
 import {
@@ -49,6 +53,13 @@ export interface RewindTurn {
   label: string;
   group: string;
   responseSnippet: string;
+}
+
+/** One agent row in the /upgrade-agent diagnostics list + drill-in detail. */
+export interface UpgradeAnalysisRow {
+  name: string;
+  scope: AgentScope;
+  warnings: MigrationWarning[];
 }
 
 export interface ContextBreakdownData {
@@ -1045,6 +1056,12 @@ interface BaseAppActions {
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowRewindExplorer: (show: boolean, rows?: RewindTurn[]) => void;
+  setUpgradeDiagnostics: (
+    rows: UpgradeAnalysisRow[],
+    description: string
+  ) => void;
+  /** Map of picker bucket value → agent names, for the /upgrade-agent run preview. */
+  setUpgradeRunPreview: (preview: Record<string, string[]>) => void;
   setShowMcpPanel: (
     show: boolean,
     servers?: McpServerInfo[],
@@ -1458,6 +1475,12 @@ export interface AppState {
   // Rewind explorer state
   showRewindExplorer: boolean;
   rewindRows: RewindTurn[];
+
+  // /upgrade-agent diagnostics data (rendered by UpgradeDiagnosticsMenu)
+  upgradeAnalysisRows: UpgradeAnalysisRow[];
+  upgradeAnalysisDescription: string;
+  // /upgrade-agent run picker: bucket value → agent names (preview panel)
+  upgradeRunPreview: Record<string, string[]>;
 
   // File attachments
   attachedFiles: string[];
@@ -2035,6 +2058,8 @@ function buildCommandContext(
     setShowChangelogPanel: state.setShowChangelogPanel,
     setShowUsagePanel: state.setShowUsagePanel,
     setShowRewindExplorer: state.setShowRewindExplorer,
+    setUpgradeDiagnostics: state.setUpgradeDiagnostics,
+    setUpgradeRunPreview: state.setUpgradeRunPreview,
     setShowMcpPanel: state.setShowMcpPanel,
     setShowToolsPanel: state.setShowToolsPanel,
     toolsList: state.toolsList,
@@ -2361,6 +2386,9 @@ export const createAppStore = (props: AppStoreProps) => {
     usageData: null,
     showRewindExplorer: false,
     rewindRows: [],
+    upgradeAnalysisRows: [],
+    upgradeAnalysisDescription: '',
+    upgradeRunPreview: {},
     showMcpPanel: false,
     mcpServers: [],
     mcpRegistryServers: [],
@@ -5746,6 +5774,17 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowRewindExplorer: (show, rows) => {
       set({ showRewindExplorer: show, rewindRows: rows ?? [] });
+    },
+
+    setUpgradeDiagnostics: (rows, description) => {
+      set({
+        upgradeAnalysisRows: rows,
+        upgradeAnalysisDescription: description,
+      });
+    },
+
+    setUpgradeRunPreview: (preview) => {
+      set({ upgradeRunPreview: preview });
     },
 
     setShowMcpPanel: (

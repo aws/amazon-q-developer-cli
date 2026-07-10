@@ -23,6 +23,7 @@ import type {
   CodePanelData,
   RequestStat,
   StatsSummary,
+  UpgradeAnalysisRow,
 } from '../stores/app-store.js';
 
 /** Context passed to command handlers */
@@ -102,6 +103,12 @@ export interface CommandContext {
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowRewindExplorer: (show: boolean, rows?: any[]) => void;
+  setUpgradeDiagnostics: (
+    rows: UpgradeAnalysisRow[],
+    description: string
+  ) => void;
+  /** Stash bucket value → agent names for the /upgrade-agent run preview panel. */
+  setUpgradeRunPreview: (preview: Record<string, string[]>) => void;
   /** Show/hide MCP servers panel */
   setShowMcpPanel: (
     show: boolean,

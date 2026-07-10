@@ -28,6 +28,7 @@ export enum KasCommandName {
   Plan = '/plan',
   Feedback = '/feedback',
   Rewind = '/rewind',
+  UpgradeAgent = '/upgrade-agent',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -200,5 +201,18 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Rewind,
     description: 'Fork the session at an earlier turn',
     meta: { inputType: 'panel' },
+  },
+  {
+    name: KasCommandName.UpgradeAgent,
+    description: 'Upgrade V2 agent configs to universal (V2 + V3) format',
+    meta: {
+      inputType: 'selection',
+      hint: '',
+      subcommands: ['run', 'diagnostics'],
+      subcommandHints: {
+        run: '(upgrade agents by group)',
+        diagnostics: '(review upgraded agents)',
+      },
+    },
   },
 ];

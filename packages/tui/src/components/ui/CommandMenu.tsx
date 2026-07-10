@@ -22,6 +22,8 @@ import {
   isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
+import { UpgradeDiagnosticsMenu } from './menu/UpgradeDiagnosticsMenu.js';
+import { UpgradeRunMenu } from './menu/UpgradeRunMenu.js';
 import { VerbosityPreview } from './menu/VerbosityPreview.js';
 import {
   VerbosityTruncationEditor,
@@ -565,6 +567,30 @@ export const CommandMenu: React.FC = () => {
       return (
         <PromptsMenu
           activeCommand={activeCommand}
+          onDismiss={() => {
+            setActiveCommand(null);
+            clearCommandInput();
+            setPromptHint(null);
+          }}
+        />
+      );
+    }
+
+    if (activeCommand.previewKey === 'upgrade-diagnostics') {
+      return (
+        <UpgradeDiagnosticsMenu
+          onDismiss={() => {
+            setActiveCommand(null);
+            clearCommandInput();
+            setPromptHint(null);
+          }}
+        />
+      );
+    }
+
+    if (activeCommand.previewKey === 'upgrade-run') {
+      return (
+        <UpgradeRunMenu
           onDismiss={() => {
             setActiveCommand(null);
             clearCommandInput();

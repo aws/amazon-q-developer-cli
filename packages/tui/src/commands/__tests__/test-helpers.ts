@@ -86,6 +86,8 @@ export function createMockCommandContext(
     setShowChangelogPanel: spy('setShowChangelogPanel') as any,
     setShowUsagePanel: spy('setShowUsagePanel') as any,
     setShowRewindExplorer: spy('setShowRewindExplorer') as any,
+    setUpgradeDiagnostics: spy('setUpgradeDiagnostics') as any,
+    setUpgradeRunPreview: spy('setUpgradeRunPreview') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
     setShowToolsPanel: spy('setShowToolsPanel') as any,
     toolsList: opts.toolsList ?? [],
