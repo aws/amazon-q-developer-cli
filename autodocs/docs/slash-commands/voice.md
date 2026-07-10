@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [voice, speech, microphone, recording, transcription, whisper, dictation]
   related: [voice-mode, voice-settings]
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-06-22
+  commit: 4dbb4e51f
   status: validated
   testable_headless: false
 ---
@@ -162,6 +162,14 @@ kiro-cli settings set voice.language en
 See [Voice Settings](../settings/voice-settings.md) for all options.
 
 ## Troubleshooting
+
+### Command not available
+
+If you don't see `/voice` in the command list, ensure you're running the latest version:
+
+```bash
+kiro-cli --version
+```
 
 ### "No microphone detected"
 

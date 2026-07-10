@@ -16,9 +16,9 @@
     "channel": "nightly"
   },
   "voice": {
-    "description": "Voice input mode - all internal users",
+    "description": "Voice input mode - all users",
     "treatment_percent": 100,
-    "segment": "internal"
+    "segment": "all"
   },
   "lite": {
     "description": "Lite TUI mode - internal nightly only initially",
