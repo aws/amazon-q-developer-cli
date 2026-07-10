@@ -134,6 +134,7 @@ jobs:
           fi
       - name: Read pinned Bun version
         id: bun-ver
+        shell: bash
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
       - uses: oven-sh/setup-bun@v2
         with:
@@ -144,6 +145,7 @@ jobs:
           role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
           aws-region: us-west-2
       - name: Login to CodeArtifact
+        shell: bash
         run: |
           REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
           TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
@@ -206,6 +208,7 @@ jobs:
           fi
       - name: Read pinned Bun version
         id: bun-ver
+        shell: bash
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
       - uses: oven-sh/setup-bun@v2
         with:
@@ -216,6 +219,7 @@ jobs:
           role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
           aws-region: us-west-2
       - name: Login to CodeArtifact
+        shell: bash
         run: |
           REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
           TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2)
