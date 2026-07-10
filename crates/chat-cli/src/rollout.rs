@@ -31,6 +31,7 @@ pub enum Feature {
     /// turns it on, so live customers cannot activate the feature even if they
     /// guess the flag name. Ramp later by raising the percent + rebuilding.
     RemoteSandbox,
+    V2NonInteractive,
     #[cfg(test)]
     Test,
     #[cfg(test)]
@@ -236,7 +237,7 @@ impl Rollout {
         }
 
         let mut features = HashMap::new();
-        for name in ["tui", "voice", "goal", "remote_sandbox"] {
+        for name in ["tui", "voice", "goal", "remote_sandbox", "v2_non_interactive"] {
             features.insert(name.to_string(), FeatureRollout {
                 description: "test-enabled".to_string(),
                 treatment_percent: 100,

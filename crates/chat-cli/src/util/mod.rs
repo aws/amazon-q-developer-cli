@@ -63,6 +63,14 @@ impl std::fmt::Display for UnknownDesktopErrContext {
     }
 }
 
+/// Whether stdin should be treated as interactive: a TTY, or forced via
+/// `KIRO_FORCE_INTERACTIVE` (e.g. AgentSpaces piping a human's input through a
+/// custom UI). Single source of truth, also used by `InputSource::is_interactive`.
+pub fn stdin_is_interactive() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() || std::env::var("KIRO_FORCE_INTERACTIVE").is_ok()
+}
+
 pub fn choose(prompt: impl Display, options: &[impl ToString]) -> Result<Option<usize>> {
     if options.is_empty() {
         bail!("no options passed to choose")

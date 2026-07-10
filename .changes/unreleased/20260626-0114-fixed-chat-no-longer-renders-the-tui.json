@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`chat` no longer renders the TUI when stdin is piped or non-interactive"
+}

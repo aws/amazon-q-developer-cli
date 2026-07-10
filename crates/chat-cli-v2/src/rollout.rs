@@ -24,6 +24,7 @@ pub enum Feature {
     Tui,
     Voice,
     Lite,
+    V2NonInteractive,
 }
 
 /// Which user segment the experiment targets.

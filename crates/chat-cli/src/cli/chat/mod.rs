@@ -398,8 +398,7 @@ impl ChatArgs {
     /// Resolve the agent engine.
     ///
     /// Precedence: `--v3` / `--agent-engine` CLI flags > `chat.agentEngine` setting > default.
-    /// `--v3` is a shorthand for `--agent-engine=kas`. Default depends on
-    /// interactivity: non-interactive defaults to V1, interactive defaults to V2.
+    /// `--v3` is a shorthand for `--agent-engine=kas`.
     ///
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
@@ -462,7 +461,7 @@ impl ChatArgs {
     /// Default engine based on interactivity mode and TUI preferences.
     ///
     /// When `--agent-engine` is not explicitly set, the default is determined by:
-    /// - Non-interactive: V1
+    /// - Non-interactive: new-TUI engine
     /// - Interactive: check `--tui`/`--legacy-ui` flags, `KIRO_CHAT_UI` env var, `chat.ui` setting,
     ///   then default to the new-TUI engine.
     ///
@@ -471,16 +470,16 @@ impl ChatArgs {
     /// `--agent-engine`, `chat.agentEngine`) is resolved earlier and is
     /// unaffected.
     fn default_engine(&self, os: &Os) -> AgentEngine {
-        if self.no_interactive {
-            return AgentEngine::V1;
-        }
-
-        // Piped/heredoc stdin — TUI requires an interactive terminal
-        if !std::io::stdin().is_terminal() {
-            return AgentEngine::V1;
-        }
-
         let tui_engine = default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas));
+
+        let v2_non_interactive_rollout =
+            crate::rollout::rollout().is_enabled(crate::rollout::Feature::V2NonInteractive);
+        if self.no_interactive || !crate::util::stdin_is_interactive() {
+            if v2_non_interactive_rollout {
+                return tui_engine;
+            }
+            return AgentEngine::V1;
+        }
 
         if self.tui {
             return tui_engine;

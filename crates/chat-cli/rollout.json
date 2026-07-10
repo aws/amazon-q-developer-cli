@@ -40,5 +40,10 @@
     "treatment_percent": 100,
     "segment": "internal",
     "channel": "nightly"
+  },
+  "v2_non_interactive": {
+    "description": "Default non-interactive and piped-stdin to V2 engine instead of V1",
+    "treatment_percent": 100,
+    "channel": "nightly"
   }
 }

@@ -666,7 +666,10 @@ impl RootSubcommand {
 /// interactive TUI.
 async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::AgentEngine) -> Result<ExitCode> {
     let mode = args.mode;
-    let options = if args.no_interactive {
+    // Render headless when the session is non-interactive: explicit `--no-interactive`,
+    // or stdin that isn't interactive. Avoids rendering the TUI on a pipe.
+    let non_interactive = args.no_interactive || !crate::util::stdin_is_interactive();
+    let options = if non_interactive {
         let input = args.resolve_non_interactive_input()?;
         crate::launch::LaunchOptions::non_interactive(
             agent_engine,
@@ -1599,21 +1602,24 @@ mod test {
         }
 
         #[tokio::test]
-        async fn defaults_to_v1_when_stdin_not_terminal() {
-            // In test environments stdin is piped, so default is V1
+        async fn defaults_to_new_tui_engine() {
+            // In test environments stdin is piped; the default should still match
+            // an interactive session (the new-TUI engine).
             let os = make_os().await;
             let args = ChatArgs::default();
-            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
         }
 
         #[tokio::test]
-        async fn defaults_to_v1_non_interactive() {
+        async fn non_interactive_defaults_to_tui() {
             let os = make_os().await;
-            let args = ChatArgs {
+            let non_interactive = ChatArgs {
                 no_interactive: true,
                 ..Default::default()
-            };
-            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+            }
+            .resolve_agent_engine(&os)
+            .unwrap();
+            assert_eq!(non_interactive, chat::AgentEngine::V2);
         }
 
         #[tokio::test]
@@ -1661,13 +1667,15 @@ mod test {
         }
 
         #[tokio::test]
-        async fn legacy_ui_flag_defaults_to_v1() {
+        async fn legacy_ui_flag_conflicts_with_non_interactive_v2_default() {
+            // Tests run with piped stdin and rollout enabled, so default_engine
+            // returns V2. --legacy-ui then conflicts with V2 (it requires V1).
             let os = make_os().await;
             let args = ChatArgs {
                 legacy_ui: true,
                 ..Default::default()
             };
-            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+            assert!(args.resolve_agent_engine(&os).is_err());
         }
 
         #[tokio::test]
@@ -1733,7 +1741,7 @@ mod test {
                 input: Some("hello".to_string()),
                 ..Default::default()
             };
-            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V1);
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
         }
 
