@@ -7589,6 +7589,32 @@ describe('remote executionTarget', () => {
     expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
   });
 
+  it('ingests the finalized caps shape (extensionMethods present, legacy sessionSearch ignored) and still gates executionTarget (T0)', async () => {
+    // T0 contract refresh (finalized guide nX6lAK2UudYy §0): KAS now advertises
+    // `extensionMethods` and no longer advertises `sessionSearch` (session search is
+    // out of this milestone). The refreshed parser must ingest the new shape, tolerate
+    // the dropped key, and leave executionTarget gating intact.
+    advertiseKiroCaps({
+      executionTargets: ['local', 'cloud-sandbox'],
+      sessionSources: ['local', 'remote'],
+      sessionListScopes: ['workspace', 'user'],
+      extensionMethods: [
+        '_kiro/sourceProviders/list',
+        '_kiro/sourceProviders/listResources',
+      ],
+      sourceProviders: true,
+      sessionSearch: true, // legacy key dropped from the milestone — must be ignored, not crash
+    });
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(lastNewSessionMeta()?.executionTarget).toEqual({
+      kind: 'cloud-sandbox',
+    });
+  });
+
   it('degrades to local when the advertised list excludes the requested kind', async () => {
     advertiseKiroCaps({ executionTargets: ['local'] }); // present, but no cloud-sandbox
     const client = new KasAcpClient({

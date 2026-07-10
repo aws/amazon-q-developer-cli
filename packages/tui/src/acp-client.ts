@@ -123,8 +123,7 @@ function parseKiroAgentCapabilities(raw: unknown): KiroAgentCapabilities {
     executionTargets: stringArray(r.executionTargets),
     sessionSources: stringArray(r.sessionSources),
     sessionListScopes: stringArray(r.sessionListScopes),
-    sessionSearch:
-      typeof r.sessionSearch === 'boolean' ? r.sessionSearch : undefined,
+    extensionMethods: stringArray(r.extensionMethods),
     sourceProviders:
       typeof r.sourceProviders === 'boolean' ? r.sourceProviders : undefined,
   };

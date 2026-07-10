@@ -374,9 +374,10 @@ export interface SessionClient {
 
 /**
  * Where a session's agent runs. Mirrors the KAS ACP `_meta.kiro.executionTarget`
- * discriminated union (see the KAS "Remote Sessions: ACP Interface Changes" doc,
- * quip raokAMbN4Ak4 §2). `remote-control` is forward-looking and its `host` shape
- * is not committed yet. Absent / `{ kind: 'local' }` == today's behavior.
+ * discriminated union (finalized KAS Remote Sessions ACP Integration Guide, quip
+ * nX6lAK2UudYy §0/§1). The wire union serves `{ kind: 'local' }` and
+ * `{ kind: 'cloud-sandbox' }` ONLY; `remote-control` is forward-looking scaffolding
+ * that is NOT on the wire yet (never send it). Absent / `{ kind: 'local' }` == today's behavior.
  */
 export type ExecutionTarget =
   | { kind: 'local' }
@@ -390,17 +391,27 @@ export type ExecutionTarget =
 export type SessionDiscoverySource = 'local' | 'remote';
 
 /**
- * Liveness/snapshot status from a `session/list` entry (KAS `SessionActivityStatus`).
- * Live updates ride the `_kiro/sessions/changed` roster, not list polling.
+ * Liveness/snapshot status from a `session/list` entry (KAS `SessionActivityStatus`,
+ * finalized guide nX6lAK2UudYy §6). Live updates ride the `_kiro/sessions/changed`
+ * roster, not list polling. `provisioning` = a cloud sandbox is standing up and no
+ * live agent is reachable yet; `completed`/`failed`/`provisioning` are set by the
+ * runtime, not chosen by the model.
  */
-export type SessionActivityStatus = 'idle' | 'in_progress' | 'waiting_on_user';
+export type SessionActivityStatus =
+  | 'idle'
+  | 'in_progress'
+  | 'waiting_on_user'
+  | 'completed'
+  | 'failed'
+  | 'provisioning';
 
 /**
  * Kiro-namespaced capabilities advertised by KAS on the `initialize` handshake,
- * under `agentCapabilities._meta.kiro` (KAS ACP doc §4). Not all are remote-specific
- * (e.g. `sessionSearch` and `sessionListScopes: ['workspace']` are local-first). All
+ * under `agentCapabilities._meta.kiro` (finalized guide nX6lAK2UudYy §0). Not all are
+ * remote-specific (e.g. `sessionListScopes: ['workspace']` is local-first). All
  * optional: an older KAS that predates these caps omits them, and the client must then
  * degrade gracefully (never request an unadvertised placement/source/scope/method).
+ * Gate each flow on its own flag — never one global "remote is on" switch.
  */
 export interface KiroAgentCapabilities {
   /** Execution placements KAS accepts on `session/new` (e.g. 'local', 'cloud-sandbox'). */
@@ -409,8 +420,12 @@ export interface KiroAgentCapabilities {
   sessionSources?: string[];
   /** List scopes KAS supports (e.g. 'workspace', 'user'). */
   sessionListScopes?: string[];
-  /** Whether `_kiro/session/search` is available. */
-  sessionSearch?: boolean;
+  /**
+   * The `_kiro/*` extension methods this KAS serves. The two `_kiro/sourceProviders/*`
+   * methods appear here only when {@link sourceProviders} is true; gate a `_kiro/*`
+   * call on this list before issuing it.
+   */
+  extensionMethods?: string[];
   /** Whether the `_kiro/sourceProviders/*` surface (repo picker) is available. */
   sourceProviders?: boolean;
 }
