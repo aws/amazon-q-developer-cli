@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP OAuth discovery now sends a User-Agent header, fixing 403 errors on servers behind CloudFront WAFs"
+}

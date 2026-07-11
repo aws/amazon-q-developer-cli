@@ -57,6 +57,15 @@ use url::Url;
 
 use super::actor::McpServerActorEvent;
 
+/// Builds a reqwest Client with a User-Agent header set.
+/// Some MCP servers sit behind CloudFront WAFs that reject requests without a
+/// User-Agent, returning 403 instead of the expected 401 with WWW-Authenticate.
+fn oauth_discovery_client() -> Result<Client, OauthUtilError> {
+    Ok(reqwest::ClientBuilder::new()
+        .user_agent(concat!("kiro-cli/", env!("CARGO_PKG_VERSION")))
+        .build()?)
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthConfig {
@@ -258,10 +267,12 @@ impl AuthClientWrapper {
         tokio::spawn(async move {
             let ctx = &auth_client_wrapper_clone.reauth_ctx;
 
-            let oauth_state = OAuthState::new(ctx.url.clone(), None).await.map_err(|e| {
-                error!("## mcp: reauthorize failed to create OAuthState for {}: {e}", ctx.url);
-                e
-            })?;
+            let oauth_state = OAuthState::new(ctx.url.clone(), Some(oauth_discovery_client()?))
+                .await
+                .map_err(|e| {
+                    error!("## mcp: reauthorize failed to create OAuthState for {}: {e}", ctx.url);
+                    e
+                })?;
             let (new_am, redirect_uri) = get_auth_manager_impl(
                 &ctx.server_name,
                 oauth_state,
@@ -560,7 +571,7 @@ async fn get_auth_manager(
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
-    let mut oauth_state = OAuthState::new(url, None).await?;
+    let mut oauth_state = OAuthState::new(url, Some(oauth_discovery_client()?)).await?;
 
     // If cached credentials exist and parse, use them. Otherwise fall through
     // to a fresh OAuth flow (and remove the bad files so we don't loop on them).
