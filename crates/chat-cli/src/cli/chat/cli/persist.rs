@@ -387,6 +387,10 @@ pub(crate) struct SessionEntry {
     msg_count: Option<usize>,
     updated_at_ms: i64,
     source: SessionSource,
+    /// WHERE the session runs (`"local"`|`"cloud-sandbox"`), from a V3 row's
+    /// `_meta.kiro.executionTarget.kind`. `None` for V1/V2 (always local) and for
+    /// V3 rows without the field. Surfaced by the merged picker as a cloud tag.
+    execution_target: Option<String>,
 }
 
 impl From<chat_cli_v2::agent::acp::schema::SessionInfoEntry> for SessionEntry {
@@ -402,6 +406,7 @@ impl From<chat_cli_v2::agent::acp::schema::SessionInfoEntry> for SessionEntry {
             msg_count: k.message_count,
             updated_at_ms,
             source: SessionSource::Kas,
+            execution_target: k.execution_target,
         }
     }
 }
@@ -457,6 +462,10 @@ pub(crate) struct SessionEntryJson<'a> {
     /// Omitted when the source did not report a count (KAS).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_count: Option<usize>,
+    /// WHERE the session runs (`"local"`|`"cloud-sandbox"`). Omitted for V1/V2 and
+    /// for V3 rows lacking it, so a TUI consumer reads it as local.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_target: Option<&'a str>,
 }
 
 impl<'a> SessionListingJson<'a> {
@@ -484,6 +493,7 @@ impl<'a> SessionEntryJson<'a> {
             title: &e.summary,
             updated_at,
             message_count: e.msg_count,
+            execution_target: e.execution_target.as_deref(),
         }
     }
 }
@@ -510,6 +520,7 @@ fn collect_all_sessions_impl(
                 msg_count: Some(conv_state.history().len() * 2),
                 updated_at_ms: updated_at,
                 source: SessionSource::V1,
+                execution_target: None, // V1 sessions are always local
             });
         }
     }
@@ -525,6 +536,7 @@ fn collect_all_sessions_impl(
                 msg_count: Some(s.message_count),
                 updated_at_ms: s.updated_at.timestamp_millis(),
                 source: SessionSource::V2,
+                execution_target: None, // V2 sessions are always local
             });
         }
     }
@@ -791,6 +803,12 @@ fn render_session_entries(
             Some(n) => format!("{} | ", format!("{n} msgs").dim()),
             None => String::new(),
         };
+        // WHERE the session runs. Only a cloud-sandbox session gets a tag; local
+        // rows (V1/V2, and V3 without the field) render exactly as before.
+        let where_segment = match entry.execution_target.as_deref() {
+            Some("cloud-sandbox") => format!(" | {}", "cloud".to_string().dim()),
+            _ => String::new(),
+        };
         execute!(
             writer,
             style::Print("Chat SessionId: "),
@@ -798,11 +816,12 @@ fn render_session_entries(
             style::Print(format!("{}\n", entry.session_id)),
             StyledText::reset_attributes(),
             style::Print(format!(
-                "  {} | {} | {}{}\n\n",
+                "  {} | {} | {}{}{}\n\n",
                 timestamp.dim(),
                 entry.summary,
                 msg_count_segment,
                 format!("{}", entry.source).dim(),
+                where_segment,
             )),
         )?;
     }
@@ -1443,6 +1462,7 @@ mod kas_tests {
             updated_at: updated_at.map(str::to_string),
             // KAS does not emit messageCount today.
             message_count: None,
+            execution_target: None,
         }
     }
 
@@ -1466,6 +1486,7 @@ mod kas_tests {
                 msg_count: Some(4),
                 updated_at_ms: 1_735_689_600_000, // 2025-01-01
                 source: SessionSource::V1,
+                execution_target: None,
             },
             SessionEntry {
                 session_id: "sess_v2".into(),
@@ -1473,6 +1494,7 @@ mod kas_tests {
                 msg_count: Some(12),
                 updated_at_ms: 1_735_776_000_000, // 2025-01-02
                 source: SessionSource::V2,
+                execution_target: None,
             },
             SessionEntry {
                 session_id: "sess_kas".into(),
@@ -1480,6 +1502,7 @@ mod kas_tests {
                 msg_count: None,
                 updated_at_ms: 1_735_862_400_000, // 2025-01-03
                 source: SessionSource::Kas,
+                execution_target: Some("cloud-sandbox".into()),
             },
         ];
         let mut buf = Vec::new();
@@ -1495,6 +1518,11 @@ mod kas_tests {
         for src in &["classic", "v2", "v3"] {
             assert!(output.contains(src), "source column should show {src}");
         }
+        // The cloud-sandbox V3 row shows a WHERE tag; local rows do not.
+        assert!(
+            output.contains("cloud"),
+            "cloud-sandbox row should show a 'cloud' WHERE tag"
+        );
         // Delete-hint footer.
         assert!(output.contains("To delete a session, use: kiro-cli chat --delete-session"));
     }
@@ -1519,6 +1547,22 @@ mod kas_tests {
         assert_eq!(entries[1].updated_at_ms, 0);
     }
 
+    #[test]
+    fn kas_session_entry_carries_execution_target() {
+        // A remote row's `_meta.kiro.executionTarget.kind` (already parsed into the
+        // schema entry) must survive the KAS -> unified SessionEntry conversion so the
+        // merged listing can tag WHERE it runs.
+        let mut cloud = kas_entry("sess_cloud", Some("Remote task"), Some("2026-01-04T00:00:00Z"));
+        cloud.execution_target = Some("cloud-sandbox".to_string());
+        let entry: SessionEntry = cloud.into();
+        assert_eq!(entry.execution_target.as_deref(), Some("cloud-sandbox"));
+        assert_eq!(entry.source, SessionSource::Kas);
+
+        // A row without the field maps to None (treated as local).
+        let local: SessionEntry = kas_entry("sess_local", None, None).into();
+        assert_eq!(local.execution_target, None);
+    }
+
     #[tokio::test]
     async fn collect_kas_sessions_propagates_error() {
         let client = KasMockSessionClient::new().with_list_err("rpc timeout");
@@ -1540,6 +1584,7 @@ mod kas_tests {
                 msg_count: Some(7),
                 updated_at_ms: 1_700_000_000_000,
                 source: SessionSource::V2,
+                execution_target: None,
             },
             SessionEntry {
                 session_id: "kas-session-2".to_string(),
@@ -1547,6 +1592,7 @@ mod kas_tests {
                 msg_count: None,
                 updated_at_ms: 1_700_000_001_000,
                 source: SessionSource::Kas,
+                execution_target: Some("cloud-sandbox".to_string()),
             },
         ];
         let json = SessionListingJson::from_entries(&cwd, &entries);
@@ -1565,6 +1611,12 @@ mod kas_tests {
             v2.get("updatedAt").and_then(|v| v.as_str()),
             Some("2023-11-14T22:13:20.000Z")
         );
+        // Local (V2) rows omit executionTarget entirely (not null) — a consumer
+        // reads its absence as local. Pins the WHERE field's dark-safe shape.
+        assert!(
+            v2.get("executionTarget").is_none(),
+            "executionTarget must be omitted for local rows"
+        );
 
         // KAS entry: source serializes as "v3" (matching Display) and
         // messageCount is omitted entirely (not null) when absent.
@@ -1573,6 +1625,11 @@ mod kas_tests {
         assert!(
             kas.get("messageCount").is_none(),
             "messageCount must be omitted when None"
+        );
+        // A cloud-sandbox V3 row carries the WHERE tag as camelCase `executionTarget`.
+        assert_eq!(
+            kas.get("executionTarget").and_then(|v| v.as_str()),
+            Some("cloud-sandbox")
         );
     }
 
@@ -1592,5 +1649,63 @@ mod kas_tests {
         assert_eq!(serde_json::to_string(&SessionSource::V1).unwrap(), "\"classic\"");
         assert_eq!(serde_json::to_string(&SessionSource::V2).unwrap(), "\"v2\"");
         assert_eq!(serde_json::to_string(&SessionSource::Kas).unwrap(), "\"v3\"");
+    }
+
+    // The Rust `--list-sessions` caps parse (parity with the TS handshake).
+    // `advertises_remote_session_source` decides whether the list
+    // request asks for remote rows (`sessionSource: "all"`). Lives here because
+    // `chat_cli_v2` is `#![cfg(not(test))]` (its own unit tests don't run).
+    fn caps(v: serde_json::Value) -> Option<serde_json::Map<String, serde_json::Value>> {
+        v.as_object().cloned()
+    }
+
+    #[test]
+    fn advertises_remote_when_sessionsources_has_remote() {
+        assert!(chat_cli_v2::agent::session::kas::advertises_remote_session_source(
+            &caps(serde_json::json!({ "kiro": { "sessionSources": ["local", "remote"] } }))
+        ));
+    }
+
+    #[test]
+    fn does_not_advertise_remote_when_only_local_or_malformed() {
+        use chat_cli_v2::agent::session::kas::advertises_remote_session_source as adv;
+        assert!(!adv(&caps(
+            serde_json::json!({ "kiro": { "sessionSources": ["local"] } })
+        )));
+        // Dark-safe defaults: absent/empty/malformed `_meta` -> local-only list.
+        assert!(!adv(&None));
+        assert!(!adv(&caps(serde_json::json!({}))));
+        assert!(!adv(&caps(serde_json::json!({ "kiro": {} }))));
+        assert!(!adv(&caps(
+            serde_json::json!({ "kiro": { "sessionSources": "remote" } })
+        )));
+    }
+
+    #[test]
+    fn kiro_meta_string_reads_description_and_created_at() {
+        use chat_cli_v2::agent::session::kas::kiro_meta_string as k;
+        // Remote row: name = description, age = createdAt (under `_meta.kiro`).
+        let meta = caps(serde_json::json!({
+            "kiro": { "description": "Fix login retry", "createdAt": "2026-07-06T12:00:00Z" }
+        }));
+        assert_eq!(k(&meta, "description").as_deref(), Some("Fix login retry"));
+        assert_eq!(k(&meta, "createdAt").as_deref(), Some("2026-07-06T12:00:00Z"));
+    }
+
+    #[test]
+    fn kiro_meta_string_is_none_for_local_or_malformed_rows() {
+        use chat_cli_v2::agent::session::kas::kiro_meta_string as k;
+        // Local row (no `_meta.kiro`) / missing key / non-string -> None, so the merged
+        // list keeps the standard ACP title/updatedAt (dark-safe, byte-identical local).
+        assert_eq!(k(&None, "description"), None);
+        assert_eq!(k(&caps(serde_json::json!({})), "description"), None);
+        assert_eq!(k(&caps(serde_json::json!({ "kiro": {} })), "createdAt"), None);
+        assert_eq!(
+            k(
+                &caps(serde_json::json!({ "kiro": { "description": 42 } })),
+                "description"
+            ),
+            None
+        );
     }
 }

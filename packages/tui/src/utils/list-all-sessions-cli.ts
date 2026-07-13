@@ -34,6 +34,14 @@ export interface SessionEntry {
   updatedAt: string;
   /** Omitted by the binary when the source did not report a count (KAS). */
   messageCount?: number;
+  /**
+   * WHERE the session's agent runs (`'local'` | `'cloud-sandbox'`), from the V3
+   * row's `_meta.kiro.executionTarget.kind`. Omitted by the binary for local
+   * rows (V1/V2, and V3 without the field), so absence == local. Drives the
+   * picker's cloud WHERE tag. Remove this field once every row carries
+   * `executionTarget`; until then it is harmless (absence == local).
+   */
+  executionTarget?: string;
 }
 
 /** Result envelope: `ok: true` with entries, or `ok: false` with a message. */
@@ -201,6 +209,9 @@ function parseListing(stdout: string): ListAllSessionsResult {
       updatedAt: entry.updatedAt,
       ...(typeof entry.messageCount === 'number'
         ? { messageCount: entry.messageCount }
+        : {}),
+      ...(typeof entry.executionTarget === 'string'
+        ? { executionTarget: entry.executionTarget }
         : {}),
     });
   }

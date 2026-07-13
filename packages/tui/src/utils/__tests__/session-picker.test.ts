@@ -53,4 +53,20 @@ describe('formatMergedEntry', () => {
     expect(result.length).toBeLessThanOrEqual(36);
     expect(result).toEndWith('...');
   });
+
+  it('tags a cloud-sandbox session with a WHERE indicator', () => {
+    const result = formatMergedEntry(
+      baseEntry({ title: 'remote task', executionTarget: 'cloud-sandbox' }),
+      200
+    );
+    expect(result).toContain('cloud');
+  });
+
+  it('shows no WHERE tag for a local session (executionTarget absent — dark-safe)', () => {
+    const result = formatMergedEntry(
+      baseEntry({ title: 'local task', executionTarget: undefined }),
+      200
+    );
+    expect(result).not.toContain('cloud');
+  });
 });

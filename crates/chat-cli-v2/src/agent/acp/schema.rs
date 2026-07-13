@@ -211,6 +211,13 @@ pub struct SessionInfoEntry {
     /// it in `session/list` responses. V2 always populates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_count: Option<usize>,
+    /// WHERE the session's agent runs, from the row's `_meta.kiro.executionTarget.kind`
+    /// (`"local"` | `"cloud-sandbox"`). `None` for rows without the field (every
+    /// session today, since KAS advertises no remote store) — treated as local.
+    /// Threaded through so the merged `--list-sessions` picker can show a cloud tag.
+    /// Remove this field once every row carries `executionTarget`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_target: Option<String>,
 }
 
 /// Request to list user settings.

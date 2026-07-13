@@ -615,6 +615,30 @@ describe('KasAcpClient', () => {
     expect(result.currentAgent?.name).toBe('default');
   });
 
+  it('routes session/load across both stores (sessionSource:all) when the remote store is advertised', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.loadSession('maybe-remote-session');
+    const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
+    expect(req?.sessionId).toBe('maybe-remote-session');
+    expect(req?.cwd).toBeDefined();
+    expect(req?._meta?.kiro).toEqual({ sessionSource: 'all' });
+  });
+
+  it('omits _meta.kiro on session/load when KAS advertises no remote store (existing-user path is byte-identical)', async () => {
+    const client = new KasAcpClient(); // no initialize -> no caps captured
+    await client.loadSession('local-session');
+    const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
+    expect(req?.sessionId).toBe('local-session');
+    expect(req?._meta).toBeUndefined();
+  });
+
   it('prompt() throws when no session is active', async () => {
     const client = new KasAcpClient();
     expect(
@@ -1536,6 +1560,101 @@ describe('KasAcpClient', () => {
     const result = await client.listSessions('/tmp');
     expect(result.sessions.length).toBe(1);
     expect(result.sessions[0]!.sessionId).toBe('s1');
+  });
+
+  it('sends gated sessionSource/listScope and maps per-row remote dimensions + surfaces warnings', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local', 'remote'],
+            sessionListScopes: ['workspace', 'user'],
+          },
+        },
+      },
+    });
+    mockKiroListSessions.mockResolvedValueOnce({
+      sessions: [
+        {
+          sessionId: 'loc1',
+          cwd: '/tmp',
+          title: 'Local',
+          updatedAt: '2026-01-01',
+        },
+        {
+          sessionId: 'spc-9f2',
+          cwd: '/sandbox',
+          title: 'Cloud',
+          updatedAt: '2026-01-02',
+          _meta: {
+            kiro: {
+              source: 'remote',
+              executionTarget: { kind: 'cloud-sandbox' },
+              status: 'provisioning',
+            },
+          },
+        },
+      ],
+      _meta: { kiro: { warnings: ['remote store degraded'] } },
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+    const result = await client.listSessions('/tmp');
+
+    const req = mockKiroListSessions.mock.calls.at(-1)?.[0] as any;
+    expect(req?.cwd).toBe('/tmp');
+    expect(req?._meta?.kiro).toEqual({
+      sessionSource: 'all',
+      listScope: 'both',
+    });
+
+    const cloud = result.sessions.find((s) => s.sessionId === 'spc-9f2')!;
+    expect(cloud.executionTarget).toEqual({ kind: 'cloud-sandbox' });
+    expect(cloud.source).toBe('remote');
+    expect(cloud.status).toBe('provisioning');
+    const local = result.sessions.find((s) => s.sessionId === 'loc1')!;
+    expect(local.executionTarget).toBeUndefined();
+    expect(local.source).toBeUndefined();
+  });
+
+  it('omits _meta.kiro on session/list when KAS advertises no remote caps (existing-user path)', async () => {
+    mockKiroListSessions.mockResolvedValueOnce({ sessions: [] });
+    const client = new KasAcpClient(); // no initialize -> no caps captured
+    await client.listSessions('/tmp');
+    const req = mockKiroListSessions.mock.calls.at(-1)?.[0] as any;
+    expect(req?.cwd).toBe('/tmp');
+    expect(req?._meta).toBeUndefined();
+  });
+
+  it('requests sessionSource:all but omits listScope when user scope is not advertised (per-flag gating)', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    mockKiroListSessions.mockResolvedValueOnce({ sessions: [] });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.listSessions('/tmp');
+    const req = mockKiroListSessions.mock.calls.at(-1)?.[0] as any;
+    expect(req?._meta?.kiro).toEqual({ sessionSource: 'all' });
+  });
+
+  it('requests listScope:both but omits sessionSource when only user scope is advertised (per-flag gating)', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionListScopes: ['workspace', 'user'] } },
+      },
+    });
+    mockKiroListSessions.mockResolvedValueOnce({ sessions: [] });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.listSessions('/tmp');
+    const req = mockKiroListSessions.mock.calls.at(-1)?.[0] as any;
+    expect(req?._meta?.kiro).toEqual({ listScope: 'both' });
   });
 
   // ── /model command ──

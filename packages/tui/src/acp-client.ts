@@ -3720,12 +3720,24 @@ export class KasAcpClient extends BaseAcpClient {
     // Register BEFORE loadSession to capture history replay events
     this.wireSessionListeners(sessionId);
 
-    const r = await this.kiroClient
-      .loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] })
-      .catch((err) => {
-        this.sessionId = previousSessionId;
-        throw err;
-      });
+    // A resume may target a session in the remote store, so route the load across
+    // both stores via `_meta.kiro.sessionSource:'all'` — 'all' resolves the id in
+    // whichever store holds it, and the agent tags the origin on `_meta.kiro.source`.
+    // Gated on the remote-store capability, so a KAS that advertises no remote store
+    // gets a byte-identical `session/load` with `_meta` omitted. Remove the gate
+    // check when the remote store is always advertised.
+    const loadParams: acp.LoadSessionRequest = {
+      sessionId,
+      cwd: process.cwd(),
+      mcpServers: [],
+    };
+    if (this.kiroCapabilities.sessionSources?.includes('remote')) {
+      loadParams._meta = { kiro: { sessionSource: 'all' } };
+    }
+    const r = await this.kiroClient.loadSession(loadParams).catch((err) => {
+      this.sessionId = previousSessionId;
+      throw err;
+    });
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
       sessionId
@@ -4596,17 +4608,54 @@ export class KasAcpClient extends BaseAcpClient {
     );
   }
 
-  async listSessions(_cwd: string): Promise<ListSessionsResponse> {
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
     try {
-      const r = await this.kiroClient.listSessions();
+      // Request the remote dimensions under `_meta.kiro`, each gated on its OWN
+      // advertised capability. When neither is advertised, `_meta.kiro` is omitted
+      // and the wire is byte-identical to a plain listing.
+      const caps = this.kiroCapabilities;
+      const kiroMeta: Record<string, unknown> = {};
+      // Which store: span BOTH local + remote when a remote store is advertised;
+      // else local-only (the default). Requesting 'remote'/'all' unadvertised is a
+      // typed error server-side, so gate on the cap.
+      if (caps.sessionSources?.includes('remote'))
+        kiroMeta.sessionSource = 'all';
+      // Breadth: the user slice comes from the (user-scoped) remote store; request
+      // 'both' only when 'user' scope is advertised, else 'workspace' (the default).
+      if (caps.sessionListScopes?.includes('user')) kiroMeta.listScope = 'both';
+
+      const params: acp.ListSessionsRequest = { cwd };
+      if (Object.keys(kiroMeta).length > 0) {
+        params._meta = { kiro: kiroMeta };
+      }
+      const r = await this.kiroClient.listSessions(params);
       logger.debug('[kas] listSessions raw:', JSON.stringify(r));
+
+      // Graceful degradation (e.g. the remote store is down on a both+all query):
+      // KAS returns the local rows plus a `_meta.kiro.warnings` entry. Surface it;
+      // don't fail the listing (local is authoritative).
+      const warnings = (r as { _meta?: { kiro?: { warnings?: unknown } } })
+        ._meta?.kiro?.warnings;
+      if (Array.isArray(warnings) && warnings.length > 0) {
+        logger.warn('[kas] session/list warnings:', JSON.stringify(warnings));
+      }
+
       return {
-        sessions: r.sessions.map((s: any) => ({
-          sessionId: s.sessionId,
-          cwd: s.cwd,
-          title: s.title,
-          updatedAt: s.updatedAt ?? s._meta?.createdAt,
-        })),
+        sessions: r.sessions.map((s: any) => {
+          const k = s._meta?.kiro ?? {};
+          return {
+            sessionId: s.sessionId,
+            cwd: s.cwd,
+            title: s.title,
+            updatedAt: s.updatedAt ?? s._meta?.createdAt ?? k.createdAt,
+            // Per-row remote dimensions. Absent == local; `executionTarget` is the
+            // WHERE the picker surfaces, `source` is the store to route a later
+            // load/delete to, `status` a cold snapshot.
+            executionTarget: k.executionTarget,
+            source: k.source,
+            status: k.status,
+          };
+        }),
       };
     } catch (e) {
       logger.debug('[kas] listSessions failed:', e);

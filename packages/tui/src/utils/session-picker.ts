@@ -158,10 +158,13 @@ export function formatMergedEntry(
     : 'unknown';
   const sanitizedTitle = sanitizeSessionTitleForDisplay(entry.title);
   const title = sanitizedTitle || '(no title)';
+  // WHERE the session runs. Only a cloud-sandbox session gets a tag; local
+  // rows (V1/V2, and V3 without the field) render exactly as before.
+  const whereTag = entry.executionTarget === 'cloud-sandbox' ? ' | cloud' : '';
   const line =
     entry.messageCount && entry.messageCount > 0
-      ? `${timestamp} | ${title} | ${entry.messageCount} msgs`
-      : `${timestamp} | ${title}`;
+      ? `${timestamp} | ${title} | ${entry.messageCount} msgs${whereTag}`
+      : `${timestamp} | ${title}${whereTag}`;
   const maxLen = maxWidth - 4;
   if (line.length > maxLen) {
     return line.slice(0, maxLen - 3) + '...';

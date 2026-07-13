@@ -48,6 +48,12 @@ pub trait KasSessionClient {
 pub struct KasAcpSessionClient {
     conn: acp::ClientSideConnection,
     _child: Child,
+    /// Whether the KAS handshake advertised a `remote` session source
+    /// (`agentCapabilities._meta.kiro.sessionSources ∋ "remote"`). Gates the
+    /// `sessionSource: "all"` list request below. Dark-safe: `false` on every
+    /// released build (no
+    /// remote store advertised), so the list request stays byte-identical.
+    remote_sessions_advertised: bool,
 }
 
 impl KasAcpSessionClient {
@@ -80,38 +86,108 @@ impl KasAcpSessionClient {
             acp::InitializeRequest::new(acp::ProtocolVersion::V1)
                 .client_info(Some(acp::Implementation::new("kiro-cli", env!("CARGO_PKG_VERSION")))),
         );
-        match tokio::time::timeout(std::time::Duration::from_secs(15), init_fut).await {
-            Ok(Ok(_)) => {},
+        let init = match tokio::time::timeout(std::time::Duration::from_secs(15), init_fut).await {
+            Ok(Ok(resp)) => resp,
             Ok(Err(e)) => return Err(e).wrap_err("ACP initialize handshake failed"),
             Err(_) => {
                 return Err(eyre::eyre!("ACP initialize timed out after 15s"));
             },
-        }
+        };
 
-        debug!("KAS session client connected");
+        // Gate remote-row listing on the handshake advertising a `remote`
+        // session source. Dark-safe —
+        // `false` unless KAS advertises it (never on released builds today).
+        let remote_sessions_advertised = advertises_remote_session_source(&init.agent_capabilities.meta);
 
-        Ok(Self { conn, _child: child })
+        debug!(remote_sessions_advertised, "KAS session client connected");
+
+        Ok(Self {
+            conn,
+            _child: child,
+            remote_sessions_advertised,
+        })
     }
+}
+
+/// True when the KAS initialize handshake advertised a `remote` session source
+/// (`agentCapabilities._meta.kiro.sessionSources ∋ "remote"`). Defensive against
+/// a missing/malformed `_meta` (returns
+/// `false`), so absent the capability the list request stays local-only.
+///
+/// `pub` so it can be unit-tested from a crate whose in-crate `#[cfg(test)]`
+/// actually runs (`chat_cli_v2` itself is `#![cfg(not(test))]`).
+pub fn advertises_remote_session_source(caps_meta: &Option<serde_json::Map<String, serde_json::Value>>) -> bool {
+    caps_meta
+        .as_ref()
+        .and_then(|m| m.get("kiro"))
+        .and_then(|k| k.get("sessionSources"))
+        .and_then(|s| s.as_array())
+        .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some("remote")))
+}
+
+/// Reads a string field from a `session/list` row's `_meta.kiro` bag — e.g.
+/// `description` (the KAS session name / first prompt) or `createdAt`. Returns
+/// `None`
+/// when `_meta`, `kiro`, the key, or its string form is absent — so a local row
+/// (no `_meta.kiro`) yields `None` and the merged list keeps the standard ACP
+/// field. `pub` so it can be unit-tested from a crate whose `#[cfg(test)]` runs.
+pub fn kiro_meta_string(meta: &Option<serde_json::Map<String, serde_json::Value>>, key: &str) -> Option<String> {
+    meta.as_ref()
+        .and_then(|m| m.get("kiro"))
+        .and_then(|k| k.get(key))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
 }
 
 #[async_trait::async_trait(?Send)]
 impl KasSessionClient for KasAcpSessionClient {
     async fn list_sessions(&self, cwd: &Path) -> Result<Vec<SessionInfoEntry>> {
         debug!(cwd = %cwd.display(), "listing KAS sessions via native session/list");
+        let mut request = acp::ListSessionsRequest::new().cwd(Some(cwd.to_path_buf()));
+        if self.remote_sessions_advertised {
+            // Ask for both stores so remote rows appear alongside local ones.
+            // Gated on the handshake cap; absent it, no `_meta` is sent and the
+            // request is byte-identical to a local-only list (dark-safe).
+            request.meta = serde_json::json!({ "kiro": { "sessionSource": "all" } })
+                .as_object()
+                .cloned();
+        }
         let resp = self
             .conn
-            .list_sessions(acp::ListSessionsRequest::new().cwd(Some(cwd.to_path_buf())))
+            .list_sessions(request)
             .await
             .wrap_err("failed to list KAS sessions")?;
         let entries: Vec<SessionInfoEntry> = resp
             .sessions
             .into_iter()
-            .map(|info| SessionInfoEntry {
-                session_id: info.session_id.0.to_string(),
-                cwd: info.cwd,
-                title: info.title,
-                updated_at: info.updated_at,
-                message_count: None,
+            .map(|info| {
+                // Name + age for remote rows: KAS carries the session name as
+                // `description` and the timestamp as `createdAt` under `_meta.kiro`.
+                // Use them as fallbacks
+                // when the standard ACP `title`/`updatedAt` are absent on a remote
+                // row; a local row has no `_meta.kiro` -> None -> standard fields win
+                // (dark-safe, byte-identical local listing).
+                let meta_description = kiro_meta_string(&info.meta, "description");
+                let meta_created_at = kiro_meta_string(&info.meta, "createdAt");
+                SessionInfoEntry {
+                    session_id: info.session_id.0.to_string(),
+                    // Read WHERE the session runs from `_meta.kiro.executionTarget.kind`.
+                    // `None` today (KAS advertises no remote store, so
+                    // no row carries it) -> the merged picker treats it as local. Remove the
+                    // read once remote rows are always present; the field itself is harmless.
+                    execution_target: info
+                        .meta
+                        .as_ref()
+                        .and_then(|m| m.get("kiro"))
+                        .and_then(|k| k.get("executionTarget"))
+                        .and_then(|et| et.get("kind"))
+                        .and_then(|kind| kind.as_str())
+                        .map(str::to_string),
+                    cwd: info.cwd,
+                    title: info.title.or(meta_description),
+                    updated_at: info.updated_at.or(meta_created_at),
+                    message_count: None,
+                }
             })
             .collect();
         debug!(count = entries.len(), "received KAS sessions");
