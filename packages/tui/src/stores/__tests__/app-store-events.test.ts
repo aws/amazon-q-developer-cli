@@ -735,7 +735,7 @@ describe('Stream event handler — RateLimitError', () => {
 });
 
 describe('Stream event handler — ModelRefusal', () => {
-  it('shows a persistent error alert and leaves a copy in scrollback', () => {
+  it('shows an error alert that fades and leaves a copy in scrollback', () => {
     const store = makeStore();
     store.setState({ isProcessing: true });
     const handler = store.getState().createStreamEventHandler();
@@ -749,8 +749,8 @@ describe('Stream event handler — ModelRefusal', () => {
     const alert = store.getState().transientAlert;
     expect(alert?.status).toBe('error');
     expect(alert?.message).toBe('This request was declined by content policy.');
-    // Refusals must not auto-hide.
-    expect(alert?.autoHideMs).toBeUndefined();
+    // The toast fades after 8s; the scrollback copy below is the durable record.
+    expect(alert?.autoHideMs).toBe(8000);
 
     // A copy is left in scrollback, marked turnOwned so it renders within the
     // in-flight turn even though the refused response carried no model content.

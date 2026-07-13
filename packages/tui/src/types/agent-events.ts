@@ -396,6 +396,12 @@ export interface KiroMeta {
     stages: KiroPipelineStage[];
   };
   toolName?: string;
+  /** Content-policy refusal marker on a KAS message chunk; all fields optional. */
+  refusal?: {
+    category?: string;
+    explanation?: string;
+    recommendedModel?: string;
+  };
 }
 
 export interface AgentContentEvent {

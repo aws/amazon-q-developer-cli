@@ -6680,3 +6680,70 @@ describe('remote executionTarget', () => {
     expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
   });
 });
+
+describe('KasAcpClient — content-policy refusal', () => {
+  it('broadcasts ModelRefusal and suppresses the inline text for a refusal chunk', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: 'The selected model cannot continue this conversation.',
+        },
+        _meta: {
+          kiro: {
+            refusal: {
+              category: 'CYBER',
+              explanation: 'Declined by content policy.',
+              recommendedModel: 'kiro-safe',
+            },
+          },
+        },
+      },
+    });
+
+    const events = handler.mock.calls.map((c) => c[0]);
+    const refusal = events.find(
+      (e: any) => e.type === AgentEventType.ModelRefusal
+    );
+    expect(refusal).toBeDefined();
+    expect(refusal.category).toBe('CYBER');
+    expect(refusal.explanation).toBe('Declined by content policy.');
+    expect(refusal.recommendedModel).toBe('kiro-safe');
+    // The inline chunk is suppressed so the refusal renders once (parity with V2).
+    expect(
+      events.filter((e: any) => e.type === AgentEventType.Content)
+    ).toHaveLength(0);
+  });
+
+  it('leaves a normal agent_message_chunk (no refusal) as a Content event', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.initialize();
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'hello' },
+      },
+    });
+
+    const events = handler.mock.calls.map((c) => c[0]);
+    expect(events.some((e: any) => e.type === AgentEventType.Content)).toBe(
+      true
+    );
+    expect(
+      events.some((e: any) => e.type === AgentEventType.ModelRefusal)
+    ).toBe(false);
+  });
+});

@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [refusal, content filter, content policy, model error, blocked, alert, stop reason]
   related: [model, classic-vs-tui]
-  validated: 2026-07-08
-  commit: eca10b9a3
+  validated: 2026-07-12
+  commit: 85d11e4fc
   status: validated
   testable_headless: false
 ---
@@ -15,7 +15,7 @@ doc_meta:
 
 When a model refuses to continue a conversation due to content-policy restrictions or the response is content-filtered by the provider, Kiro CLI displays an error alert explaining what happened and how to recover.
 
-Previously, content-filtered responses could cause the agent to stop silently mid-turn with no feedback. Now, the TUI detects these events and surfaces a persistent error notification so you always know why the conversation stopped.
+Previously, content-filtered responses could cause the agent to stop silently mid-turn with no feedback. Now, the TUI detects these events and surfaces a temporary error notification so you always know why the conversation stopped. A permanent copy is also written to the conversation scrollback for reference.
 
 ## How It Works
 
@@ -29,7 +29,7 @@ When this occurs, Kiro CLI receives a `CONTENT_FILTERED` stop reason or refusal 
 
 ## What You See
 
-When a refusal occurs, a persistent error alert appears above your input area. The alert shows either:
+When a refusal occurs, an error alert appears above your input area. The alert shows either:
 
 1. **Provider explanation** — The specific reason given by the model provider, when available
 2. **Default guidance** — If no explanation is provided:
@@ -40,7 +40,7 @@ model, or start a new conversation, or rewind the current conversation to an
 earlier point and try a different approach.
 ```
 
-The alert persists until you dismiss it, ensuring you don't miss why the agent stopped responding.
+The alert automatically hides after 8 seconds. A permanent copy of the refusal message is also written to the conversation scrollback, so you can scroll back to review it at any time.
 
 ## Recovery Options
 

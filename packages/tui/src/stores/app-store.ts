@@ -3722,11 +3722,11 @@ export const createAppStore = (props: AppStoreProps) => {
               const message =
                 event.explanation ??
                 'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.';
-              // Persist until dismissed — a refusal is important enough that it
-              // should not silently auto-hide.
+              // Fade the toast; the scrollback copy below is the durable record.
               get().showTransientAlert({
                 message,
                 status: 'error',
+                autoHideMs: 8000,
               });
               // Also leave a copy in scrollback so it survives the transient
               // alert being dismissed or replaced. Mark turnOwned while a turn

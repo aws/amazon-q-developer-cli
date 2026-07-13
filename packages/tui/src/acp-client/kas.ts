@@ -649,6 +649,19 @@ export class KasAcpClient extends BaseAcpClient {
         const meta = event ? extractKiroMetaFromEvent(event) : undefined;
 
         if (!event) return;
+
+        // A content-policy refusal arrives as a message chunk tagged with
+        // _meta.kiro.refusal; surface it as ModelRefusal and drop the inline text.
+        if (meta?.refusal) {
+          this.broadcastStreamEvent({
+            type: AgentEventType.ModelRefusal,
+            stopReason: 'CONTENT_FILTERED',
+            category: meta.refusal.category,
+            explanation: meta.refusal.explanation,
+            recommendedModel: meta.refusal.recommendedModel,
+          });
+          return;
+        }
         this.rememberKasToolCall(event);
 
         // Intercept pipeline metadata → emit subagent list update
