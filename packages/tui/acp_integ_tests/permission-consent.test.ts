@@ -270,6 +270,54 @@ describe('KAS permission consent flow', () => {
     });
   }, 30000);
 
+  it('fs_write: entire-tool trust uses KAS wildcard resource', async () => {
+    // Regression for the shell-only wildcard gate: "trust entire tool" on a
+    // write must persist resource:'*' just like shell, else KAS scopes the
+    // trust to the one path and re-asks every other write.
+    tc = new AcpTestCase({ testName: 'consent-fs-write-entire' });
+    setupHandshake(tc);
+    tc.mock.on('session/prompt', () => ({ stopReason: 'end_turn' }));
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10000);
+    await tc.sleepMs(300);
+
+    sendToolCall(tc, 'tc-fs-write-entire');
+    await tc.sleepMs(200);
+
+    const responsePromise = tc.mock.request(
+      'session/request_permission',
+      makePermissionRequest('tc-fs-write-entire', {
+        capability: 'fs_write',
+        resource: '/workspace/src/a.ts',
+        workspaceRoot: '/workspace',
+      })
+    );
+
+    await tc.waitForStore((s) => s.pendingApproval !== null, 5000);
+    await tc.sleepMs(200);
+
+    // Down to "Trust, always…", Enter opens the kas-scope sub-page.
+    await tc.sendKeys(DOWN_ARROW);
+    await tc.sleepMs(100);
+    await tc.pressEnter();
+    await tc.sleepMs(200);
+    // Rows: [exact "/workspace/src/a.ts", entire tool]. Down once → entire-tool.
+    await tc.sendKeys(DOWN_ARROW);
+    await tc.sleepMs(100);
+    await tc.pressEnter();
+
+    const response = (await responsePromise) as any;
+
+    expect(response.outcome.outcome).toBe('selected');
+    expect(response.outcome.optionId).toBe('always-accept');
+    expect(response._meta?.kiro?.consent?.capability).toBe('fs_write');
+    expect(response._meta?.kiro?.consent?.scope).toBe('session');
+    expect(response._meta?.kiro?.consent?.resource).toBe('*');
+    expect(response._meta?.kiro?.consent?.workspaceRoot).toBe('/workspace');
+  }, 30000);
+
   it('consent context populates the approval store correctly', async () => {
     tc = new AcpTestCase({ testName: 'consent-context-populated' });
     setupHandshake(tc);

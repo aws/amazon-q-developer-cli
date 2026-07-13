@@ -282,6 +282,30 @@ describe('respondToApproval — KAS consent _meta', () => {
     });
   });
 
+  it('fs_write entire tool trust sends the KAS wildcard resource', () => {
+    // Regression: the wildcard was gated to shell capabilities, so pressing
+    // "trust whole tool" on a write approval sent scope but no resource — KAS
+    // then persisted only the narrow path, re-asking every OTHER path. A
+    // non-shell capability must send resource:'*' just like shell does.
+    const store = createTestStore();
+    const { resolve } = setupPendingApproval(store, {
+      consentContext: {
+        capability: 'fs_write',
+        resource: '/workspace/src/a.ts',
+        workspaceRoot: '/workspace',
+      },
+    });
+
+    store.getState().respondToApproval('always-accept', undefined, {
+      kasWholeCapability: true,
+    });
+
+    const call = resolve.mock.calls[0]![0];
+    expect(call._meta?.kiro?.consent?.capability).toBe('fs_write');
+    expect(call._meta?.kiro?.consent?.resource).toBe('*');
+    expect(call._meta?.kiro?.consent?.workspaceRoot).toBe('/workspace');
+  });
+
   it('bare shell allow_always does not imply whole-capability wildcard trust', () => {
     const store = createTestStore();
     const { resolve } = setupPendingApproval(store, {

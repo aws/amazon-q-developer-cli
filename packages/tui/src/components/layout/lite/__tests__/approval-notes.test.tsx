@@ -477,6 +477,112 @@ describe('ApprovalPrompt — KAS shell trust (empty trustOptions)', () => {
   });
 });
 
+// KAS write approvals also ship consentContext with EMPTY trustOptions, but a
+// non-shell capability (fs_write). The scope page must still appear (deriving a
+// single entire-tool row), and whole-tool trust must send
+// {kasWholeCapability:true} so resource:'*' persists — else KAS re-asks every
+// OTHER path after the first "trust whole tool".
+function makeKasWriteApproval() {
+  return {
+    toolId: 'fs_write',
+    toolCall: { toolCallId: 'call-1', title: 'fs_write', rawInput: '' },
+    permissionOptions: [
+      { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+      { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+      { kind: ApprovalOptionId.AllowAlways, optionId: 'always-accept' },
+    ],
+    trustOptions: [],
+    consentContext: { capability: 'fs_write', resource: '/workspace/a.ts' },
+  };
+}
+
+function mountKasWriteApproval(): Harness {
+  const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+  const terminal = new MockTerminal();
+  const respondToApproval = vi.fn();
+  const onNotesSubmit = vi.fn();
+  const writeMsg: MessageType = {
+    id: 'call-1',
+    role: MessageRole.ToolUse,
+    name: 'fs_write',
+    content: JSON.stringify({ command: 'create', path: '/workspace/a.ts' }),
+    isFinished: false,
+  };
+  const instance = render(
+    <AppStoreContext.Provider value={store}>
+      <ApprovalPrompt
+        messages={[writeMsg]}
+        approval={makeKasWriteApproval()}
+        respondToApproval={respondToApproval}
+        getStageInputColor={() => (t: string) => t}
+        mainAgentName="main"
+        onNotesSubmit={onNotesSubmit}
+      />
+    </AppStoreContext.Provider>,
+    { terminal, exitOnCtrlC: false }
+  );
+  activeInstance = instance;
+  return { terminal, respondToApproval, onNotesSubmit };
+}
+
+describe('ApprovalPrompt — KAS write trust (non-shell, empty trustOptions)', () => {
+  test('[t] opens a granular scope page (not immediate whole-tool trust)', async () => {
+    const h = mountKasWriteApproval();
+    await flush();
+    // Default page advertises trust scope, matching the full TUI — NOT the
+    // bare "TRUST whole tool" the shell-only gate used to force for writes.
+    expect(h.terminal.output).toContain('trust scope');
+    expect(h.terminal.output).not.toContain('TRUST whole tool');
+    h.terminal.output = '';
+    h.terminal.sendInput('t');
+    await flush();
+    // [t] opened the sub-page (offering the exact path + entire tool) rather
+    // than resolving the approval.
+    expect(h.terminal.output).toContain('[s] scope');
+    expect(h.terminal.output).toContain('/workspace/a.ts');
+    expect(h.terminal.output).toContain('Trust entire tool');
+    expect(h.respondToApproval).not.toHaveBeenCalled();
+  });
+
+  test('selecting the exact-path row sends kasResource (granular trust)', async () => {
+    const h = mountKasWriteApproval();
+    await flush();
+    h.terminal.sendInput('t'); // open scope page
+    await flush();
+    // First row is the exact path; Enter trusts just that path.
+    h.terminal.sendInput(ENTER);
+    await flush();
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      undefined,
+      {
+        kasScope: 'session',
+        kasResource: '/workspace/a.ts',
+      }
+    );
+  });
+
+  test('selecting the entire-tool row sends {kasWholeCapability:true}', async () => {
+    const h = mountKasWriteApproval();
+    await flush();
+    h.terminal.sendInput('t'); // open scope page
+    await flush();
+    // Rows: [exact "/workspace/a.ts", entire tool]. Down once → entire-tool.
+    h.terminal.sendInput('\x1b[B');
+    await flush();
+    h.terminal.sendInput(ENTER);
+    await flush();
+    expect(h.respondToApproval).toHaveBeenCalledWith(
+      'always-accept',
+      undefined,
+      {
+        kasScope: 'session',
+        kasWholeCapability: true,
+      }
+    );
+  });
+});
+
 describe('handleNotesSubmit wiring (LiteLayout closure)', () => {
   // Faithful replica of the new LiteLayout.handleNotesSubmit. ApprovalPrompt
   // calls this only AFTER it has already sent the y/t/n disposition via

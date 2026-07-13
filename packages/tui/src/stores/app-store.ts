@@ -567,13 +567,14 @@ function hasKasToolConsentTarget(approval: ApprovalRequestInfo): boolean {
 }
 
 function usesKasWholeCapabilityResource(
-  capability: string | undefined,
   resolvedKind: ApprovalOptionId | undefined,
   meta: Record<string, unknown> | undefined
 ): boolean {
+  // Any capability, not just shell: pressing "trust whole tool" on a write (or
+  // any non-shell) approval must also persist the '*' wildcard, else KAS scopes
+  // the trust to the one path and re-asks every other path.
   return (
     resolvedKind === ApprovalOptionId.AllowAlways &&
-    isKasShellCapability(capability) &&
     meta?.kasWholeCapability === true
   );
 }
@@ -597,7 +598,7 @@ function buildKasConsentMeta(
   const kasResource =
     explicitKasResource !== undefined
       ? explicitKasResource
-      : usesKasWholeCapabilityResource(capability, resolvedKind, meta)
+      : usesKasWholeCapabilityResource(resolvedKind, meta)
         ? KAS_WHOLE_CAPABILITY_RESOURCE
         : undefined;
 
@@ -4541,11 +4542,7 @@ export const createAppStore = (props: AppStoreProps) => {
           !_meta?.trustOption &&
           !hasKasResourceTrustMeta(_meta) &&
           (!isKasApproval ||
-            usesKasWholeCapabilityResource(
-              nonEmptyString(approval.consentContext?.capability),
-              resolvedKind,
-              _meta
-            ));
+            usesKasWholeCapabilityResource(resolvedKind, _meta));
 
         // When trusting a tool, cascade to all pending approvals of the same tool
         let cascadeApprovals: ApprovalRequestInfo[] = [];

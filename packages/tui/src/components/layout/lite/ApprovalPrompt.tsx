@@ -12,10 +12,7 @@ import {
   type TrustOption,
   type ConsentContext,
 } from '../../../types/agent-events.js';
-import {
-  deriveShellTrustOptions,
-  isKasShellCapability,
-} from '../../../utils/shell-trust-options.js';
+import { deriveShellTrustOptions } from '../../../utils/shell-trust-options.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
@@ -143,9 +140,12 @@ export function ApprovalPrompt({
   // keystroke can't surprise anyone. No intermediate confirm page.
   const trustOptions: TrustOption[] = approval.trustOptions ?? [];
   const hasTrustTiers = trustOptions.length > 0;
-  // KAS ships shell trust scope in consentContext (not trustOptions), so derive
-  // a granular scope page when v2-style tiers are absent — mirrors the TUI's
-  // hasKasScopePage (ApprovalRequest.tsx).
+  // KAS ships trust scope in consentContext (not trustOptions), so derive a
+  // granular scope page when v2-style tiers are absent — mirrors the TUI's
+  // hasKasScopePage (ApprovalRequest.tsx). Gated only on consentContext, NOT on
+  // the capability being shell: writes (fs_write) and every other non-shell KAS
+  // tool must also get the scope page. Non-shell capabilities simply yield no
+  // exact/pattern rows (deriveShellTrustOptions), leaving the entire-tool row.
   const agentEngine = useAppStore((s) => s.agentEngine);
   const consentContext: ConsentContext | undefined = approval.consentContext;
   const { gatedResource, exactResource, patternResource } =
@@ -155,9 +155,7 @@ export function ApprovalPrompt({
       triggeringResource: consentContext?.triggeringResource,
     });
   const hasKasScopePage =
-    !hasTrustTiers &&
-    agentEngine === 'kas' &&
-    isKasShellCapability(consentContext?.capability);
+    !hasTrustTiers && agentEngine === 'kas' && !!consentContext;
   const [page, setPage] = useState<'default' | 'trust' | 'kas-scope' | 'notes'>(
     'default'
   );
