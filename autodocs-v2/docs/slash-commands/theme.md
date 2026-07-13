@@ -3,10 +3,10 @@ doc_meta:
   title: /theme
   description: Select and customize the terminal color theme
   category: slash_command
-  keywords: [theme, colors, dark, light, auto, custom, appearance, prompt, diff, NO_COLOR]
+  keywords: [theme, colors, dark, light, safe, auto, custom, appearance, prompt, diff, NO_COLOR, KIRO_TERMINAL_THEME]
   related: [settings]
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-07-13
+  commit: d7e570fd4
   status: validated
   testable_headless: false
 ---
@@ -76,6 +76,29 @@ Select "Custom" to configure:
 
 ## Environment Variables
 
+### KIRO_TERMINAL_THEME
+
+Forces the base theme, bypassing auto-detection entirely (including the OSC-11 terminal query). Useful when your terminal defeats background-color detection.
+
+Accepted values: `dark`, `light`, `safe` (case-insensitive).
+
+```bash
+# Force dark theme
+KIRO_TERMINAL_THEME=dark kiro-cli chat
+
+# Force light theme
+KIRO_TERMINAL_THEME=light kiro-cli chat
+
+# Use safe theme (ANSI named colors that adapt to any background)
+KIRO_TERMINAL_THEME=safe kiro-cli chat
+```
+
+The `safe` theme uses only ANSI named colors mapped by your terminal emulator, so it adapts naturally to both light and dark backgrounds. It is the best choice for SSH sessions or terminals where neither `dark` nor `light` renders correctly.
+
+This variable takes precedence over the persisted theme preference in `~/.kiro/settings/kiro_cli_theme.json`.
+
+### NO_COLOR
+
 The TUI respects the `NO_COLOR` environment variable. When set, color output is disabled regardless of theme settings.
 
 ```bash
@@ -90,9 +113,13 @@ Try `/theme bundled:default` to reset to auto-detected theme.
 
 If colors render as black or are unreadable on terminals with remapped ANSI palettes, select a bundled theme (Dark or Light) explicitly rather than relying on auto-detection.
 
+If your terminal defeats auto-detection entirely (e.g., multiplexers, SSH, or non-standard emulators), set `KIRO_TERMINAL_THEME=dark` or `KIRO_TERMINAL_THEME=light` in your shell profile to force the correct base theme on every launch.
+
 ### Theme not persisting
 
 Check file permissions on `~/.kiro/settings/kiro_cli_theme.json`.
+
+Note: `KIRO_TERMINAL_THEME` overrides the persisted setting. If the env var is set, the saved preference is ignored.
 
 ## Related
 

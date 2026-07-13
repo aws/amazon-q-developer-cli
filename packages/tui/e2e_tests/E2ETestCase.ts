@@ -503,6 +503,14 @@ export class E2ETestCase {
   }
 
   /**
+   * Returns the raw PTY output stream including ANSI escape sequences.
+   * Use for asserting on the exact SGR codes the TUI emitted (colors, bg).
+   */
+  getOutput(): string {
+    return this.ptyManager.getOutput();
+  }
+
+  /**
    * Returns the snapshot with a terminal border for display.
    */
   getSnapshotFormatted(): string {

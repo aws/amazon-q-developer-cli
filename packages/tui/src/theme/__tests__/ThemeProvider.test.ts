@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { describe, it, expect, mock, afterAll, afterEach } from 'bun:test';
 import { kiroDark } from '../kiroDark';
 import { kiroLight } from '../kiroLight';
 import { kiroSafe } from '../kiroSafe';
@@ -246,5 +246,39 @@ describe('getAutoTheme', () => {
     });
     const result = getAutoTheme();
     expect(result).toBe(kiroSafe);
+  });
+
+  describe('KIRO_TERMINAL_THEME override', () => {
+    const prev = process.env.KIRO_TERMINAL_THEME;
+    afterEach(() => {
+      if (prev === undefined) delete process.env.KIRO_TERMINAL_THEME;
+      else process.env.KIRO_TERMINAL_THEME = prev;
+    });
+
+    it.each([
+      ['dark', kiroDark],
+      ['light', kiroLight],
+      ['safe', kiroSafe],
+      ['SAFE', kiroSafe],
+    ] as const)('forces %s regardless of detection', (value, expected) => {
+      process.env.KIRO_TERMINAL_THEME = value;
+      // Detection says the opposite of the override to prove precedence.
+      mockDetect.mockReturnValue({
+        theme: 'light',
+        method: 'test',
+        confidence: 'high',
+      });
+      expect(getAutoTheme()).toBe(expected);
+    });
+
+    it('ignores unrecognized values and falls through to detection', () => {
+      process.env.KIRO_TERMINAL_THEME = 'sparkly';
+      mockDetect.mockReturnValue({
+        theme: 'light',
+        method: 'test',
+        confidence: 'high',
+      });
+      expect(getAutoTheme()).toBe(kiroLight);
+    });
   });
 });

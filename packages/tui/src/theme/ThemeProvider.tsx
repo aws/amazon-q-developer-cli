@@ -156,6 +156,19 @@ export const createThemeContext = (
  */
 /** @internal Exported for testing */
 export const getAutoTheme = (): Theme => {
+  // Deterministic override: forces the base theme and skips detection
+  // entirely (including the OSC-11 tty query). Used by E2E tests to pin a
+  // theme path, and an escape hatch for terminals that defeat detection.
+  const forced = process.env.KIRO_TERMINAL_THEME?.toLowerCase();
+  if (forced === 'dark' || forced === 'light' || forced === 'safe') {
+    logger.info(`[theme] forced=${forced} via KIRO_TERMINAL_THEME`);
+    return forced === 'dark'
+      ? kiroDark
+      : forced === 'light'
+        ? kiroLight
+        : kiroSafe;
+  }
+
   const result = detectTerminalThemeWithDetails();
   // Debugging theme issues (e.g. unreadable diff colors) needs to know which
   // detection path fired — it's invisible from the UI otherwise.
