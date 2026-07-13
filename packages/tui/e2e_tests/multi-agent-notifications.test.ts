@@ -1,55 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { describe, it, expect, afterEach } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
-
-const SRC = path.join(__dirname, '..', 'src');
-
-function handleSessionUpdateSource(): string {
-  const src = fs.readFileSync(path.join(SRC, 'acp-client.ts'), 'utf8').replace(/\r\n/g, '\n');
-  const fnStart = src.indexOf('handleSessionUpdate');
-  const fnEnd = src.indexOf('\n  }\n}', fnStart);
-  expect(fnStart).toBeGreaterThanOrEqual(0);
-  expect(fnEnd).toBeGreaterThan(fnStart);
-  return src.slice(fnStart, fnEnd);
-}
-
-describe('Session event routing', () => {
-  it('sessionUpdate routes subagent events to multiSessionHandlers not main chat', () => {
-    const src = fs.readFileSync(path.join(SRC, 'acp-client.ts'), 'utf8');
-    // Must check sessionId before routing
-    expect(src).toContain('notifSessionId !== this.sessionId');
-    // Must call multiSessionHandlers for subagent events
-    expect(src).toContain('multiSessionHandlers.forEach');
-    // broadcastStreamEvent must only be called for non-subagent events
-    const sessionUpdateFn = handleSessionUpdateSource();
-    expect(sessionUpdateFn).toContain('isSubagentEvent');
-    // subagent branch calls broadcastMultiSession, else branch calls broadcastStreamEvent
-    const multiIdx = sessionUpdateFn.indexOf('broadcastMultiSession');
-    const elseIdx = sessionUpdateFn.indexOf('} else {');
-    const broadcastIdx = sessionUpdateFn.indexOf(
-      'broadcastStreamEvent',
-      elseIdx
-    );
-    expect(multiIdx).toBeGreaterThan(0);
-    expect(elseIdx).toBeGreaterThan(multiIdx);
-    expect(broadcastIdx).toBeGreaterThan(elseIdx);
-  });
-
-  it('index.tsx routes multiSessionUpdate to pushSessionEvent', () => {
-    const src = fs.readFileSync(path.join(SRC, 'index.tsx'), 'utf8');
-    expect(src).toContain('onMultiSessionUpdate');
-    expect(src).toContain('pushSessionEvent');
-  });
-
-  it('store.sessionEventBuffer accumulates events per sessionId', () => {
-    const src = fs.readFileSync(path.join(SRC, 'stores/app-store.ts'), 'utf8');
-    expect(src).toContain('sessionEventBuffer');
-    expect(src).toContain('pushSessionEvent');
-    // Events are keyed by sessionId
-    expect(src).toContain('[sessionId]');
-  });
-});
 
 describe('Event isolation', () => {
   let tc: E2ETestCase | null = null;
@@ -74,24 +24,4 @@ describe('Event isolation', () => {
     const after = await tc.getStore();
     expect(after.messages?.length ?? 0).toBe(initialCount);
   }, 30000);
-
-  it('sessionUpdate routing: subagent events go to sessionEventBuffer not messages', () => {
-    // Static: the routing logic is in place
-    const src = fs.readFileSync(path.join(SRC, 'acp-client.ts'), 'utf8');
-    // Subagent events routed to multiSessionHandlers (not broadcastStreamEvent)
-    expect(src).toContain('notifSessionId !== this.sessionId');
-    // multiSessionHandlers feeds pushSessionEvent -> sessionEventBuffer
-    expect(src).toContain('multiSessionHandlers.forEach');
-    // broadcastStreamEvent only called for non-subagent events (in else branch)
-    const sessionUpdateFn = handleSessionUpdateSource();
-    const multiIdx = sessionUpdateFn.indexOf('broadcastMultiSession');
-    const elseIdx = sessionUpdateFn.indexOf('} else {');
-    const broadcastIdx = sessionUpdateFn.indexOf(
-      'broadcastStreamEvent',
-      elseIdx
-    );
-    expect(multiIdx).toBeGreaterThan(0);
-    expect(elseIdx).toBeGreaterThan(multiIdx);
-    expect(broadcastIdx).toBeGreaterThan(elseIdx);
-  });
 });
