@@ -229,6 +229,40 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(call.out).toBe('/tmp/x.zip');
     });
 
+    it('accepts a double-quoted path containing spaces', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/out.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess' } as any,
+      });
+      await handleChat(CHAT_CMD, 'save "/Users/me/test space/test.json"', ctx);
+      expect(mockExportSession).toHaveBeenCalledTimes(1);
+      const call = mockExportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.out).toBe('/Users/me/test space/test.json');
+    });
+
+    it('accepts a single-quoted path with spaces alongside --force', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/out.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess' } as any,
+      });
+      await handleChat(
+        CHAT_CMD,
+        "save --force '/Users/me/test space/test.json'",
+        ctx
+      );
+      const call = mockExportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.force).toBe(true);
+      expect(call.out).toBe('/Users/me/test space/test.json');
+    });
+
     it('shows a success alert with the returned path', async () => {
       mockExportSession.mockReturnValue({ ok: true, path: '/abs/x.zip' });
       const ctx = createMockCommandContext({
@@ -325,6 +359,31 @@ describe('handleChat (KAS-mode dispatch)', () => {
       >;
       expect(call.archivePath).toBe(archivePath);
       expect(call.cwd).toBe(process.cwd());
+    });
+
+    it('accepts a quoted archive path containing spaces', async () => {
+      const spacedDir = join(tmpDir, 'test space');
+      mkdirSync(spacedDir);
+      const spacedArchive = join(spacedDir, 'test.zip');
+      writeFileSync(spacedArchive, 'not a real zip');
+      mockImportSession.mockReturnValue({
+        ok: true,
+        path: '/sessions/abc/sess_imported-1',
+      });
+      const loadSession = mock(() =>
+        Promise.resolve({ sessionId: 'sess_imported-1' })
+      );
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, `load "${spacedArchive}"`, ctx);
+      expect(mockImportSession).toHaveBeenCalledTimes(1);
+      const call = mockImportSession.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      expect(call.archivePath).toBe(spacedArchive);
     });
 
     it('calls kiro.loadSession with the basename of the imported path', async () => {

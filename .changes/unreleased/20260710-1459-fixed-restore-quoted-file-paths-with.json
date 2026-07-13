@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Restore quoted file paths with spaces for `/chat save` and `/chat load` in V3"
+}

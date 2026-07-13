@@ -13,6 +13,7 @@ import {
 } from '../../utils/cross-engine-session-id';
 import { formatRelativeTime } from '../../utils/sessions';
 import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title';
+import { unquote } from '../../utils/string';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -213,19 +214,14 @@ async function handleChatSave(
     if (t === '--force') force = true;
     else positionals.push(t);
   }
-  if (positionals.length === 0) {
+  // Re-join then strip surrounding quotes: whitespace-splitting above breaks
+  // a quoted path with spaces into several tokens; joining and unquoting
+  // reconstructs the single intended path.
+  const out = unquote(positionals.join(' ').trim());
+  if (out.length === 0) {
     ctx.showAlert('Usage: /chat save [--force] <path>', 'error', 5000);
     return;
   }
-  if (positionals.length > 1) {
-    ctx.showAlert(
-      'Usage: /chat save [--force] <path> (only one path argument)',
-      'error',
-      5000
-    );
-    return;
-  }
-  const out = positionals[0]!;
   const sessionId = ctx.kiro.sessionId;
   if (!sessionId) {
     ctx.showAlert('No active session to save', 'error', 5000);
@@ -254,7 +250,7 @@ async function handleChatLoad(
   ctx: CommandContext,
   rest: string
 ): Promise<void> {
-  const archivePath = rest.trim();
+  const archivePath = unquote(rest.trim());
   if (!archivePath) {
     ctx.showAlert('Usage: /chat load <path>', 'error', 5000);
     return;

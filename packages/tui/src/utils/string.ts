@@ -154,6 +154,26 @@ export function unescapeShellPath(text: string): string {
 }
 
 /**
+ * Strip a single layer of matching surrounding ASCII single/double quotes.
+ * Lets users pass paths with spaces to slash commands:
+ *   /chat save "my session.json"  ->  my session.json
+ *
+ * Narrow on purpose: no escape-sequence handling, no shell parsing. Quoting
+ * is the mechanism callers rely on to preserve embedded spaces after they
+ * split on whitespace.
+ */
+export function unquote(s: string): string {
+  if (s.length >= 2) {
+    const first = s[0];
+    const last = s[s.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return s.slice(1, -1);
+    }
+  }
+  return s;
+}
+
+/**
  * Shorten a file path by replacing the home directory with ~
  * @param path - The full path to shorten
  * @returns The shortened path with ~ for home directory

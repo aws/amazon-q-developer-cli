@@ -3,6 +3,7 @@ import {
   expandTabs,
   normalizeLineEndings,
   unescapeShellPath,
+  unquote,
   isPrintable,
   shortenPath,
   stripNonPrintable,
@@ -117,6 +118,39 @@ describe('unescapeShellPath', () => {
     // Multiple paths separated by unescaped space
     const multi = '/path/to/file\\ one.txt /path/to/file\\ two.txt';
     expect(unescapeShellPath(multi)).toBe(multi);
+  });
+});
+
+describe('unquote', () => {
+  it('strips a single layer of surrounding double quotes', () => {
+    expect(unquote('"/Users/me/test space/test.json"')).toBe(
+      '/Users/me/test space/test.json'
+    );
+  });
+
+  it('strips a single layer of surrounding single quotes', () => {
+    expect(unquote("'/Users/me/test space/test.json'")).toBe(
+      '/Users/me/test space/test.json'
+    );
+  });
+
+  it('leaves unquoted strings unchanged', () => {
+    expect(unquote('/Users/me/plain.json')).toBe('/Users/me/plain.json');
+  });
+
+  it('leaves mismatched quotes unchanged', () => {
+    expect(unquote('"/Users/me/plain.json')).toBe('"/Users/me/plain.json');
+    expect(unquote('/Users/me/plain.json"')).toBe('/Users/me/plain.json"');
+    expect(unquote('\'mixed"')).toBe('\'mixed"');
+  });
+
+  it('only strips one layer', () => {
+    expect(unquote('""double""')).toBe('"double"');
+  });
+
+  it('leaves a lone quote character unchanged', () => {
+    expect(unquote('"')).toBe('"');
+    expect(unquote('')).toBe('');
   });
 });
 

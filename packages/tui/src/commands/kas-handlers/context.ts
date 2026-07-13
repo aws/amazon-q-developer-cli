@@ -7,6 +7,7 @@ import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
 import { getActiveGlyphs } from '../../hooks/useGlyphs';
+import { unquote } from '../../utils/string';
 
 /**
  * KAS-mode dispatch handler for `/context`.
@@ -165,25 +166,4 @@ async function runMutation(
     return;
   }
   ctx.showAlert(response.message || 'Done', 'success', 3000);
-}
-
-/**
- * Strip a single layer of surrounding ASCII single/double quotes if
- * both ends match. Lets users pass paths with spaces:
- *   /context add "my notes.md"   →   path = `my notes.md`
- *
- * Kept narrow on purpose: no escape-sequence handling, no shell
- * parsing. The caller already split on whitespace and re-joined, so
- * quoting is the only thing the user can rely on to preserve
- * embedded spaces.
- */
-function unquote(s: string): string {
-  if (s.length >= 2) {
-    const first = s[0];
-    const last = s[s.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return s.slice(1, -1);
-    }
-  }
-  return s;
 }
