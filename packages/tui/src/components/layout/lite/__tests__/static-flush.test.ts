@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   computeActiveToolBatchIds,
+  firstUnfinishedToolIndex,
   formatTurnSummaryRow,
   isInnerSubagentTool,
   needsLeadingBlank,
@@ -78,10 +79,50 @@ describe('computeActiveToolBatchIds', () => {
       ],
       expectedIds: ['current_a', 'current_b'],
     },
+    {
+      // Reject one tool of a parallel batch WITH a note: it finishes (rejected)
+      // while its approved sibling is still unfinished, and the note lands as a
+      // trailing User bubble. A walk-from-end would break at that user row and
+      // miss the unfinished sibling → empty batch → the sibling shows in
+      // neither the live region nor static and vanishes/reorders. Front-scan
+      // keeps both tools in the batch, in creation order.
+      name: 'includes an unfinished tool before a finished sibling and a steer note',
+      msgs: [
+        user('u1'),
+        tool('unfinished_sibling', false),
+        tool('rejected', true),
+        user('steer'),
+      ],
+      expectedIds: ['unfinished_sibling', 'rejected'],
+    },
   ];
   test.each(batchCases)('$name', ({ msgs, expectedIds }) => {
     const ids = computeActiveToolBatchIds(msgs);
     expect([...ids].sort()).toEqual([...expectedIds].sort());
+  });
+});
+
+describe('firstUnfinishedToolIndex', () => {
+  // Shared boundary used by computeActiveToolBatchIds and selectStaticEligible.
+  test('front-scan finds the first unfinished tool', () => {
+    expect(
+      firstUnfinishedToolIndex([user('u1'), tool('a', true), tool('b', false)])
+    ).toBe(2);
+  });
+  test('-1 when every tool is finished', () => {
+    expect(
+      firstUnfinishedToolIndex([user('u1'), tool('a', true), tool('b', true)])
+    ).toBe(-1);
+  });
+  test('a trailing steer bubble after the unfinished tool does not move it', () => {
+    expect(
+      firstUnfinishedToolIndex([
+        user('u1'),
+        tool('a', false),
+        tool('b', true),
+        user('steer'),
+      ])
+    ).toBe(1);
   });
 });
 

@@ -30,9 +30,10 @@ function buildSocketDir(testName: string): string {
   }
 
   // Too long — derive a shortened, collision-resistant directory name.
-  // 8 hex chars of sha1 is plenty for test isolation.
+  // 8 hex chars of sha256 is plenty for test isolation (sha256 over sha1 to
+  // keep CodeQL's weak-crypto scan clean; this is a dirname, not a security use).
   const hash = crypto
-    .createHash('sha1')
+    .createHash('sha256')
     .update(testName)
     .digest('hex')
     .slice(0, 8);

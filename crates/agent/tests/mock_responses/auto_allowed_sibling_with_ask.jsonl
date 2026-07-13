@@ -1,0 +1,16 @@
+// Response 1: one auto-allowed fs_read + one fs_write that requires approval, in one turn.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_read","name":"read"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"test.txt\"}]}"}},"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":0}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_write","name":"write"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"command\": \"create\", \"path\": \"out.txt\", \"content\": \"OUT\"}"}},"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":1}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"auto-allowed-sibling","statusCode":null}}}}
+
+// Response 2: end turn after receiving the merged tool_results.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Done."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-29T17:26:20.610411Z","requestEndTime":"2025-10-29T17:26:23.069210Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":5},"usage":null,"service":{"requestId":"auto-allowed-sibling-end","statusCode":null}}}}

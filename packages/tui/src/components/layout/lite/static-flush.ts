@@ -28,8 +28,31 @@ export function isInnerSubagentTool(
 }
 
 /**
- * Ids of the in-flight tool batch: the trailing run of ToolUse messages from
- * the FIRST still-unfinished tool onward. Empty when the whole run is done.
+ * Index of the first still-unfinished (non-inner) tool, or -1 if none — the
+ * settled/in-flight boundary shared by computeActiveToolBatchIds and
+ * selectStaticEligible so they agree on what's withheld from <Static>.
+ *
+ * Front-scan, never walk-from-end: rejecting one tool of a parallel batch with
+ * a note finishes it while its approved sibling stays unfinished, with the note
+ * as a trailing User bubble. A walk-from-end breaks at that bubble and misses
+ * the unfinished sibling, so it reorders/vanishes until turn end.
+ */
+export function firstUnfinishedToolIndex(
+  messages: MessageType[],
+  mainAgentName?: string | null
+): number {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (m.role !== MessageRole.ToolUse) continue;
+    if (isInnerSubagentTool(m, mainAgentName)) continue;
+    if (!m.isFinished) return i;
+  }
+  return -1;
+}
+
+/**
+ * Ids of the in-flight tool batch: every ToolUse from the first still-unfinished
+ * tool onward. Empty when the whole run is done.
  *
  * Prefix-flush, not per-tool: <Static> is a monotonic by-index cursor, but
  * tools can finish out of creation order. Holding everything from the first
@@ -42,34 +65,13 @@ export function computeActiveToolBatchIds(
   messages: MessageType[],
   mainAgentName?: string | null
 ): Set<string> {
-  const skip = (m: MessageType): boolean =>
-    isInnerSubagentTool(m, mainAgentName);
-  // Walk from the end to find the trailing run of (non-inner) tool messages.
-  let runStart = messages.length;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]!;
-    if (m.role !== MessageRole.ToolUse) break;
-    if (skip(m)) continue;
-    runStart = i;
-  }
-  // Find the first unfinished tool inside that run. Tools before it are the
-  // "done prefix" — they belong in static, not the live region.
-  let firstUnfinished = -1;
-  for (let i = runStart; i < messages.length; i++) {
-    const m = messages[i]!;
-    if (m.role !== MessageRole.ToolUse) continue;
-    if (skip(m)) continue;
-    if (!m.isFinished) {
-      firstUnfinished = i;
-      break;
-    }
-  }
+  const firstUnfinished = firstUnfinishedToolIndex(messages, mainAgentName);
   if (firstUnfinished === -1) return new Set<string>();
   const ids = new Set<string>();
   for (let i = firstUnfinished; i < messages.length; i++) {
     const m = messages[i]!;
     if (m.role !== MessageRole.ToolUse) continue;
-    if (skip(m)) continue;
+    if (isInnerSubagentTool(m, mainAgentName)) continue;
     ids.add(m.id);
   }
   return ids;
@@ -95,35 +97,15 @@ export function selectStaticEligible(
   const batch =
     activeBatch ?? computeActiveToolBatchIds(messages, mainAgentName);
 
-  // Index of the first still-unfinished (non-inner) tool. Everything at or
-  // after it is "unsettled" and must be withheld from static — not just the
-  // tools, but ANY row that landed after it.
-  //
-  // Why this matters: a SteeringConsumed User bubble (the drill-in approval
-  // note) is appended to the END of `messages` (app-store SteeringConsumed
-  // handler) at the moment the backend drains the steer. On a trust/allow
-  // disposition the tool keeps isFinished=false (background exec), so when the
-  // steer drains BEFORE ToolCallFinished arrives (the KAS event ordering — V2
-  // happens to finish the tool first) the note's User row sits AFTER a tool
-  // that is still unfinished. Without this guard that User row would be
-  // admitted to `eligible` (it's not a tool, so the unfinished/batch checks
-  // below don't catch it), advancing LiteLayout's forward-only high-water
-  // cursor past the slot the tool will occupy once it finishes in place at its
-  // lower index. The cursor never walks backward, and the shrink-only clamp
-  // can't catch a grow-then-reinsert-below, so the tool row is stranded out of
-  // <Static> forever — the "tool vanishes from scrollback" bug. Holding the
-  // whole trailing region until the tool settles makes the tool and the note
-  // flush together, in creation order, regardless of which event lands first.
-  let firstUnfinishedToolIdx = -1;
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i]!;
-    if (m.role !== MessageRole.ToolUse) continue;
-    if (isInnerSubagentTool(m, mainAgentName)) continue;
-    if (!m.isFinished) {
-      firstUnfinishedToolIdx = i;
-      break;
-    }
-  }
+  // Withhold EVERYTHING at/after the first unfinished tool — not just tools but
+  // any trailing row (e.g. a SteeringConsumed note). Admitting such a row would
+  // advance LiteLayout's forward-only cursor past the slot the tool reclaims on
+  // settle, stranding it out of <Static>. Hold the whole tail so it flushes in
+  // creation order regardless of event order.
+  const firstUnfinishedToolIdx = firstUnfinishedToolIndex(
+    messages,
+    mainAgentName
+  );
 
   const eligible: MessageType[] = [];
   const seenToolIds = new Set<string>();

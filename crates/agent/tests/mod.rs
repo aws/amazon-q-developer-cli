@@ -6,8 +6,10 @@ use agent::agent_config::definitions::{
     AgentConfig,
     AgentConfigV2025_08_22,
     CommandHook,
+    FsReadSettings,
     HookConfig,
     HookTrigger,
+    ToolsSettings,
 };
 use agent::agent_config::types::ResourcePath;
 use agent::agent_loop::types::{
@@ -1786,6 +1788,133 @@ async fn test_steered_note_drains_on_reject() {
         "the steered note must drain into the SAME follow-up request as the denial \
          (it rides as a [LIVE STEERING ...] user text block); if this fails the note \
          was deferred to end-of-turn — the bug this guards against"
+    );
+}
+
+/// Each tool's approval is self-contained: rejecting one tool in a parallel
+/// batch must NOT cancel its approved siblings. Approve write_a, reject write_b
+/// — write_a must execute (success result) while write_b is denied (error
+/// result). Both results ride the same follow-up request so the model still
+/// sees a tool_result for every tool_use it emitted.
+#[tokio::test]
+async fn test_reject_one_still_executes_approved_sibling() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("reject one still executes approved sibling")
+        .with_default_agent_config()
+        .with_cwd_subdir("work")
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/two_writes_await_approval.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("write a.txt and b.txt".to_string()).await;
+
+    // Both writes queue. Approve the first, reject the second.
+    let first_id = test.wait_for_approval_request(Duration::from_secs(5)).await.unwrap();
+    test.send_approval(first_id.clone(), ApprovalResult {
+        option_id: PermissionOptionId::AllowOnce,
+        reason: None,
+        trust_option: None,
+    })
+    .await
+    .unwrap();
+
+    let second_id = test.wait_for_approval_request(Duration::from_secs(5)).await.unwrap();
+    assert_ne!(second_id, first_id);
+    test.send_approval(second_id.clone(), ApprovalResult {
+        option_id: PermissionOptionId::RejectOnce,
+        reason: None,
+        trust_option: None,
+    })
+    .await
+    .unwrap();
+
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    // The follow-up request carries a success result for the approved write and
+    // an error result for the rejected one — the approved sibling executed
+    // despite its batch-mate being denied.
+    let follow_up = &test.requests()[1];
+    assert!(
+        follow_up.has_tool_result(|tr| tr.tool_use_id == first_id && matches!(tr.status, ToolResultStatus::Success)),
+        "approved sibling must have a success tool_result"
+    );
+    assert!(
+        follow_up.has_tool_result(|tr| tr.tool_use_id == second_id && matches!(tr.status, ToolResultStatus::Error)),
+        "rejected tool must have an error tool_result"
+    );
+}
+
+/// A batch mixing an auto-allowed tool (a trusted fs_read) with an Ask tool
+/// (fs_write). Auto-allowed tools live in `state.tools` but never in
+/// `needs_approval`. Approving the write must still execute the auto-allowed
+/// read — the partition must not drop siblings that were never queued for
+/// approval (regression: they got a false "cancelled by the user" back-fill).
+#[tokio::test]
+async fn test_auto_allowed_sibling_executes_alongside_approved_ask() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // fs_read auto-allows (allow_read_only); fs_write still asks.
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        tools: vec!["*".to_string()],
+        tools_settings: Some(ToolsSettings {
+            fs_read: FsReadSettings {
+                allow_read_only: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("auto allowed sibling executes alongside approved ask")
+        .with_agent_config(agent_config)
+        .with_cwd_subdir("work")
+        .with_file(("test.txt", "hello"))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/auto_allowed_sibling_with_ask.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("read test.txt and create out.txt".to_string()).await;
+
+    // Only the write queues for approval; approve it.
+    let write_id = test.wait_for_approval_request(Duration::from_secs(5)).await.unwrap();
+    assert_eq!(write_id, "tooluse_write", "only the fs_write should require approval");
+    test.send_approval(write_id, ApprovalResult {
+        option_id: PermissionOptionId::AllowOnce,
+        reason: None,
+        trust_option: None,
+    })
+    .await
+    .unwrap();
+
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    // Both tools ran: the auto-allowed read and the approved write each carry a
+    // success tool_result. Before the fix the read was dropped and back-filled
+    // as an error "cancelled by the user".
+    let follow_up = &test.requests()[1];
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_read" && matches!(tr.status, ToolResultStatus::Success)),
+        "auto-allowed sibling read must execute (success tool_result), not be back-filled as cancelled"
+    );
+    assert!(
+        follow_up
+            .has_tool_result(|tr| tr.tool_use_id == "tooluse_write" && matches!(tr.status, ToolResultStatus::Success)),
+        "approved write must execute (success tool_result)"
     );
 }
 

@@ -2297,50 +2297,58 @@ impl Agent {
             return Ok(AgentResponse::Success);
         }
 
-        // Check if any tool was denied - if so, return all results to the model
-        let any_denied = state
-            .needs_approval
-            .values()
-            .any(|s| s.selected.as_ref().is_some_and(|id| id.is_reject()));
-
-        if any_denied {
-            // Carry forward parse-error results synthesized before approval (siblings
-            // of the tools awaiting approval) so the model sees a tool_result for every
-            // tool_use it emitted; otherwise enforce_conversation_invariants back-fills
-            // a false "cancelled by the user" result for the parse-error sibling.
-            let mut content = state.pre_built_content.clone();
-            let mut results = state.pre_built_results.clone();
-            for (tool_use_id, approval_state) in &state.needs_approval {
-                let reason = match &approval_state.selected {
-                    Some(id) if id.is_allow() => "Tool use was approved, but did not execute".to_string(),
-                    Some(id) if id.is_reject() => approval_state
-                        .rejection_reason
-                        .clone()
-                        .unwrap_or_else(|| "Tool use was denied by the user.".to_string()),
-                    _ => "Tool use was not executed".to_string(),
-                };
-                content.push(ContentBlock::ToolResult(ToolResultBlock {
-                    tool_use_id: tool_use_id.clone(),
-                    content: vec![ToolResultContentBlock::Text(reason.clone())],
-                    status: ToolResultStatus::Error,
-                }));
-                let tool = state
-                    .tools
-                    .iter()
-                    .find(|(b, _)| &b.tool_use_id == tool_use_id)
-                    .map(|(_, t)| t);
-                results.insert(tool_use_id.clone(), LogToolResult {
-                    tool: tool.map(|t| Box::new(t.clone())),
-                    result: ToolCallResult::Error(ToolExecutionError::Custom(reason)),
-                });
+        // Each tool's disposition is self-contained: reject one, still execute
+        // the approved siblings. `pre_built_*` starts with parse-error results
+        // synthesized before approval so the model gets a tool_result for every
+        // tool_use it emitted (else enforce_conversation_invariants back-fills a
+        // false "cancelled by the user" result).
+        let mut pre_built_content = state.pre_built_content.clone();
+        let mut pre_built_results = state.pre_built_results.clone();
+        let mut approved_tools: Vec<(ToolUseBlock, Tool)> = Vec::new();
+        for (block, tool) in &state.tools {
+            let tool_use_id = &block.tool_use_id;
+            // Tools absent from `needs_approval` were auto-allowed (e.g. a
+            // trusted fs_read riding alongside an Ask tool); execute them.
+            let Some(approval_state) = state.needs_approval.get(tool_use_id) else {
+                approved_tools.push((block.clone(), tool.clone()));
+                continue;
+            };
+            if approval_state.selected.as_ref().is_some_and(|id| id.is_allow()) {
+                approved_tools.push((block.clone(), tool.clone()));
+                continue;
             }
-            // The reject path sends tool_results directly, so mirror
-            // send_tool_results and drain queued steering into the same
-            // follow-up request.
+            // Denial result for the model + a ToolCallFailed UI event so the
+            // client renders it denied now, not still-executing until turn end.
+            let reason = approval_state
+                .rejection_reason
+                .clone()
+                .unwrap_or_else(|| "Tool use was denied by the user.".to_string());
+            pre_built_content.push(ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: tool_use_id.clone(),
+                content: vec![ToolResultContentBlock::Text(reason.clone())],
+                status: ToolResultStatus::Error,
+            }));
+            pre_built_results.insert(tool_use_id.clone(), LogToolResult {
+                tool: Some(Box::new(tool.clone())),
+                result: ToolCallResult::Error(ToolExecutionError::Custom(reason.clone())),
+            });
+            self.agent_event_buf
+                .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                    tool_use_id: tool_use_id.clone(),
+                    tool_name: block.name.clone(),
+                    raw_input: block.input.clone(),
+                    reason: ToolCallFailureReason::PermissionDenied,
+                    error: reason,
+                }));
+        }
+
+        if approved_tools.is_empty() {
+            // Nothing to execute — send the denials (draining queued steering)
+            // directly as the follow-up request.
             if !self.queued_steers.is_empty() {
                 let steers = std::mem::take(&mut self.queued_steers);
                 let snapshot = steer_snapshot(&steers);
-                content.push(ContentBlock::Text(format_steering_message(&snapshot)));
+                pre_built_content.push(ContentBlock::Text(format_steering_message(&snapshot)));
                 for steer in steers {
                     self.agent_event_buf.push(AgentEvent::SteeringConsumed {
                         message_id: steer.id,
@@ -2348,7 +2356,7 @@ impl Agent {
                     });
                 }
             }
-            let pending = PendingUserMessage::new_tool_results(content.clone(), results);
+            let pending = PendingUserMessage::new_tool_results(pre_built_content, pre_built_results);
             let args = self.format_request(&pending).await;
             self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest {
@@ -2360,18 +2368,10 @@ impl Agent {
             return Ok(AgentResponse::Success);
         }
 
-        // Check if all tools are approved - if so, execute them
-        let all_approved = state
-            .needs_approval
-            .values()
-            .all(|s| s.selected.as_ref().is_some_and(|id| id.is_allow()));
-
-        if all_approved {
-            let tools = state.tools.clone();
-            let pre_built_content = state.pre_built_content.clone();
-            let pre_built_results = state.pre_built_results.clone();
-            self.execute_tools(tools, pre_built_content, pre_built_results).await?;
-        }
+        // Execute the approved tools; send_tool_results merges the denial
+        // results (pre_built_*) with the executed ones and drains steering.
+        self.execute_tools(approved_tools, pre_built_content, pre_built_results)
+            .await?;
 
         Ok(AgentResponse::Success)
     }
