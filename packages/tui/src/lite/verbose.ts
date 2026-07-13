@@ -171,6 +171,12 @@ export const VERBOSE_CATEGORIES = [
 ] as const;
 export type VerboseCategory = (typeof VERBOSE_CATEGORIES)[number];
 
+// Expand the implicit `['all']` sentinel into the explicit category list so
+// filter arithmetic (add/remove/toggle) changes one token instead of wiping
+// the rest. Non-`all` lists pass through as a fresh copy.
+export const expandFilterBaseline = (filters: readonly string[]): string[] =>
+  filters.includes('all') ? Array.from(VERBOSE_CATEGORIES) : [...filters];
+
 const DEFAULT_CONFIG: VerboseConfig = {
   filters: ['shell'], // matches DENSITY_FILTERS.default
   display: DEFAULT_DISPLAY,

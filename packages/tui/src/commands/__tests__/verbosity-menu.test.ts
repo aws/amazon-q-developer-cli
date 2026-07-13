@@ -44,6 +44,7 @@ import {
   DENSITY_PRESETS,
   DENSITY_DISPLAY,
   DENSITY_FILTERS,
+  VERBOSE_CATEGORIES,
   getVerboseConfig,
   resetVerboseCache,
   setVerboseConfig,
@@ -90,6 +91,26 @@ describe('handleVerbosity', () => {
     expect(getVerboseConfig().filters).toEqual([]);
     handleVerbosity(null, ctx, cmd, 'on');
     expect(getVerboseConfig().filters).toEqual(['all']);
+  });
+
+  // add/remove from an `all` baseline must expand `['all']` into every explicit
+  // category first, so the arithmetic touches ONE token — not wipe the rest.
+  it('remove from an all baseline drops one category, keeps the rest', () => {
+    const ctx = liteCtx();
+    setVerboseConfig({ filters: ['all'] });
+    handleVerbosity(null, ctx, cmd, 'remove read');
+    expect(new Set(getVerboseConfig().filters)).toEqual(
+      new Set(VERBOSE_CATEGORIES.filter((c) => c !== 'read'))
+    );
+  });
+
+  it('add from an all baseline keeps every other category on', () => {
+    const ctx = liteCtx();
+    setVerboseConfig({ filters: ['all'] });
+    handleVerbosity(null, ctx, cmd, 'add shell');
+    expect(new Set(getVerboseConfig().filters)).toEqual(
+      new Set(VERBOSE_CATEGORIES)
+    );
   });
 
   // detectActivePreset must round-trip every preset — minimal/lean share an

@@ -8,6 +8,7 @@ import {
   setVerboseConfig,
   validateTokens,
   VERBOSE_CATEGORIES,
+  expandFilterBaseline,
   applyDensityPreset,
   sameDisplay,
   DENSITY_PRESETS,
@@ -506,16 +507,10 @@ export function handleVerbosity(
     );
   };
 
-  // Toggle a single filter token, expanding the implicit `['all']` set into
-  // the explicit category list first so dropping one token doesn't leave the
-  // user with everything still on. Shared by the per-category rows and the
+  // Toggle a single filter token. Shared by the per-category rows and the
   // subagent full-output toggle (which piggybacks on the `subagent` token).
   const toggleFilterToken = (token: string) => {
-    const curFilters = getVerboseConfig().filters;
-    const baseline = curFilters.includes('all')
-      ? Array.from(VERBOSE_CATEGORIES)
-      : [...curFilters];
-    const filterSet = new Set(baseline);
+    const filterSet = new Set(expandFilterBaseline(getVerboseConfig().filters));
     if (filterSet.has(token)) filterSet.delete(token);
     else filterSet.add(token);
     setVerboseConfig({ filters: Array.from(filterSet) });
@@ -806,7 +801,7 @@ export function handleVerbosity(
       );
       return true;
     }
-    const current = cfg.filters.includes('all') ? [] : [...cfg.filters];
+    const current = expandFilterBaseline(cfg.filters);
     let nextFilters: string[];
     if (verb === 'only') {
       nextFilters = accepted;
