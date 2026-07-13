@@ -5,6 +5,7 @@
 // It is then up to the client to compose these primitives to fulfill
 // their own needs.
 import type { AvailableCommand, CommandMeta } from './types/commands';
+import { Feature, features } from './features';
 
 export enum KasCommandName {
   Help = '/help',
@@ -52,6 +53,7 @@ export function isKasCommand(cmd: AvailableCommand): cmd is KasCommand {
 export interface KasCommand extends AvailableCommand {
   name: KasCommandName;
   meta?: CommandMeta;
+  feature?: Feature;
 }
 
 /** TUI-owned slash commands for KAS mode. */
@@ -216,3 +218,14 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     },
   },
 ];
+
+export function filterByEnabledFeatures(
+  commands: readonly KasCommand[]
+): readonly KasCommand[] {
+  return commands.filter((c) => !c.feature || features.isEnabled(c.feature));
+}
+
+/** The KAS command set for this launch, with rollout-gated commands resolved. */
+export function getKasCommands(): readonly KasCommand[] {
+  return filterByEnabledFeatures(KAS_COMMANDS);
+}

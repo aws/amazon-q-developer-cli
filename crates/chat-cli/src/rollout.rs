@@ -4,11 +4,15 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use sha2::{
     Digest,
     Sha256,
 };
+use typeshare::typeshare;
 use uuid::Uuid;
 
 const AMZN_START_URL: &str = "https://amzn.awsapps.com/start";
@@ -16,27 +20,27 @@ const AMZN_START_URL: &str = "https://amzn.awsapps.com/start";
 pub const TREATMENT: &str = "TREATMENT";
 pub const CONTROL: &str = "CONTROL";
 
-/// Known rollout features. Add new variants here when adding entries to `rollout.json`.
-#[derive(Debug, Clone, Copy, strum::IntoStaticStr)]
+#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, strum::IntoStaticStr, strum::EnumIter)]
+#[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum Feature {
     Tui,
     Voice,
     Lite,
     Kas,
-    /// Remote/cloud sandbox sessions, exposed via the hidden `--cloud` /
-    /// `--repo` flags. Dark-shipped: `treatment_percent: 0` in `rollout.json`
-    /// means it is OFF in every released build (stable and nightly). Only
-    /// `init_for_tests_enable_all` (debug builds / `KIRO_TEST_MODE` / E2E)
-    /// turns it on, so live customers cannot activate the feature even if they
-    /// guess the flag name. Ramp later by raising the percent + rebuilding.
+    /// Remote/cloud sandbox sessions (`--cloud` / `--repo` flags).
     RemoteSandbox,
     V2NonInteractive,
+    Memory,
     #[cfg(test)]
+    #[typeshare(skip)]
     Test,
     #[cfg(test)]
+    #[typeshare(skip)]
     TestInternalOnly,
     #[cfg(test)]
+    #[typeshare(skip)]
     TestNightlyOnly,
 }
 
@@ -227,6 +231,11 @@ impl Rollout {
         self.variation(feature) == Some(TREATMENT)
     }
 
+    pub fn enabled_features(&self) -> Vec<Feature> {
+        use strum::IntoEnumIterator;
+        Feature::iter().filter(|f| self.is_enabled(*f)).collect()
+    }
+
     /// Test helper: force the global rollout to allow gated features
     /// regardless of segment/channel/percent. Idempotent — safe to call
     /// multiple times. Has no effect if a real `init()` already ran.
@@ -237,8 +246,10 @@ impl Rollout {
         }
 
         let mut features = HashMap::new();
-        for name in ["tui", "voice", "goal", "remote_sandbox", "v2_non_interactive"] {
-            features.insert(name.to_string(), FeatureRollout {
+        // Kas excluded: it flips the default engine.
+        use strum::IntoEnumIterator;
+        for feature in Feature::iter().filter(|f| !matches!(f, Feature::Kas)) {
+            features.insert(<&str>::from(feature).to_string(), FeatureRollout {
                 description: "test-enabled".to_string(),
                 treatment_percent: 100,
                 segment: Segment::All,
@@ -352,6 +363,42 @@ mod tests {
     }
 
     #[test]
+    fn enabled_features_serializes_to_snake_case_json_array() {
+        // Internal nightly user with everything at 100% except the dark
+        // features; asserts the exact wire format the TUI parses from
+        // KIRO_ENABLED_FEATURES.
+        let r = Rollout {
+            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: true,
+            is_insider_toolbox: false,
+        };
+        let json = serde_json::to_string(&r.enabled_features()).unwrap();
+        assert!(json.contains("\"voice\""), "voice should be enabled: {json}");
+        assert!(json.contains("\"lite\""), "lite should be enabled: {json}");
+        assert!(
+            !json.contains("\"remote_sandbox\""),
+            "remote_sandbox must stay dark: {json}"
+        );
+        assert!(!json.contains("\"memory\""), "memory must stay dark: {json}");
+    }
+
+    #[test]
+    fn feature_names_agree_across_strum_serde_and_typeshare() {
+        use strum::IntoEnumIterator;
+        for f in Feature::iter() {
+            let strum_name: &str = f.into();
+            let serde_name = serde_json::to_string(&f).unwrap();
+            assert_eq!(
+                serde_name,
+                format!("\"{strum_name}\""),
+                "strum and serde renames drifted for {f:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_remote_sandbox_is_present_but_dark_in_all_real_builds() {
         // The rollout entry must exist (so it can be ramped later by editing
         // the percent + rebuilding)...
@@ -371,6 +418,23 @@ mod tests {
             assert!(
                 !r.is_enabled(Feature::RemoteSandbox),
                 "remote_sandbox must be dark for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_memory_is_present_but_dark_in_all_real_builds() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::Memory)),
+            "memory must be declared in rollout.json"
+        );
+
+        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert!(
+                !r.is_enabled(Feature::Memory),
+                "memory must be dark for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

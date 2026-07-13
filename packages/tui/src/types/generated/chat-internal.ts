@@ -55,6 +55,17 @@ export enum ErrorCode {
 	SessionNotFound = "SESSION_NOT_FOUND",
 }
 
+export enum Feature {
+	Tui = "tui",
+	Voice = "voice",
+	Lite = "lite",
+	Kas = "kas",
+	/** Remote/cloud sandbox sessions (`--cloud` / `--repo` flags). */
+	RemoteSandbox = "remote_sandbox",
+	V2NonInteractive = "v2_non_interactive",
+	Memory = "memory",
+}
+
 /**
  * Sign-in provider advertised to KAS in `_kiro/auth/getAccessToken`. KAS's
  * `GovernanceService` treats only `Enterprise` / `ExternalIdp` as

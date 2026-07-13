@@ -6,7 +6,8 @@ import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
-import { KAS_COMMANDS, type KasCommand } from '../kas-commands';
+import { getKasCommands, type KasCommand } from '../kas-commands';
+import { features } from '../features';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -2384,7 +2385,7 @@ export const createAppStore = (props: AppStoreProps) => {
         (cmd) =>
           cmd.name !== '/lite' || process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
       ),
-    kasCommands: agentEngine === 'kas' ? [...KAS_COMMANDS] : [],
+    kasCommands: agentEngine === 'kas' ? [...getKasCommands()] : [],
     agentEngine,
     prompts: [],
     skills: [],
@@ -6561,7 +6562,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // Fire-and-forget ingestion.
       const metadata = {
         sessionId: get().sessionId ?? undefined,
-        isInternal: !!process.env.KIRO_INTERNAL,
+        isInternal: features.isInternalUser,
         agentEngine: get().agentEngine,
       };
       submitFormToAperture(survey, answers, { metadata })

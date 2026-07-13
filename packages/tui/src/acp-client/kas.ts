@@ -53,7 +53,8 @@ import type {
 } from '../stores/app-store';
 import { parseToolsDidChange } from '../utils/kas-tools';
 import { getCliVersion } from '../utils/version';
-import { KAS_COMMANDS } from '../kas-commands';
+import { getKasCommands } from '../kas-commands';
+import { features } from '../features';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
   modeFromId,
@@ -1217,7 +1218,7 @@ export class KasAcpClient extends BaseAcpClient {
       }
     });
 
-    const commands = KAS_COMMANDS.map((cmd) => ({
+    const commands = getKasCommands().map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
       meta: cmd.meta,
@@ -2581,9 +2582,7 @@ export function browserOpenCommand(
 
 function kasFeedback(args?: Record<string, string>): CommandResult {
   const kind = args?.value || 'general';
-  // KIRO_INTERNAL=1 = signed in via Amazon-internal SSO (set by the launcher).
-  const isInternal = process.env.KIRO_INTERNAL === '1';
-  const url = resolveFeedbackUrl(kind, isInternal);
+  const url = resolveFeedbackUrl(kind, features.isInternalUser);
   try {
     const { execFileSync } = require('child_process');
     const { file, args: openArgs } = browserOpenCommand(

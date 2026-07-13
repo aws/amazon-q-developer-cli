@@ -45,5 +45,10 @@
     "description": "Default non-interactive and piped-stdin to V2 engine instead of V1",
     "treatment_percent": 100,
     "channel": "nightly"
+  },
+  "memory": {
+    "description": "Persistent agent memory. Dark-shipped at 0% while under development; ramp via treatment_percent.",
+    "treatment_percent": 0,
+    "segment": "internal"
   }
 }

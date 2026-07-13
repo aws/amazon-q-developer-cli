@@ -377,6 +377,11 @@ async fn launch_acp_interactive(
         cmd.env("KIRO_INTERNAL", "1");
     }
 
+    cmd.env(
+        "KIRO_ENABLED_FEATURES",
+        serde_json::to_string(&crate::rollout::rollout().enabled_features()).unwrap_or_default(),
+    );
+
     if let Some(ref force_color) = force_color {
         cmd.env("FORCE_COLOR", force_color);
     }

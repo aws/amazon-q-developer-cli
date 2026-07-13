@@ -1,8 +1,36 @@
 import { describe, it, expect } from 'bun:test';
 import type { Kiro } from '../kiro';
 import type { KasCommand } from '../kas-commands';
+import { Feature } from '../features';
 
 describe('kas-commands', () => {
+  describe('filterByEnabledFeatures', () => {
+    const gated = (name: string, feature: Feature): KasCommand =>
+      ({ name, description: 'gated', feature }) as unknown as KasCommand;
+
+    it('passes ungated commands through and resolves gates from the env', async () => {
+      const { KAS_COMMANDS, filterByEnabledFeatures } =
+        await import('../kas-commands');
+      const { features } = await import('../features');
+      const withGated = [...KAS_COMMANDS, gated('/mem', Feature.Memory)];
+
+      const originalEnv = process.env.KIRO_ENABLED_FEATURES;
+      try {
+        process.env.KIRO_ENABLED_FEATURES = '[]';
+        features._resetForTests();
+        expect(filterByEnabledFeatures(withGated)).toEqual(KAS_COMMANDS);
+
+        process.env.KIRO_ENABLED_FEATURES = '["memory"]';
+        features._resetForTests();
+        expect(filterByEnabledFeatures(withGated)).toEqual(withGated);
+      } finally {
+        if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+        else process.env.KIRO_ENABLED_FEATURES = originalEnv;
+        features._resetForTests();
+      }
+    });
+  });
+
   describe('KAS_COMMANDS array', () => {
     it('contains /spec command definition', async () => {
       const { KAS_COMMANDS } = await import('../kas-commands');
