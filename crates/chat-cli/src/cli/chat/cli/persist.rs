@@ -586,6 +586,7 @@ pub async fn handle_list_delete_session_flags(
     list_sessions: bool,
     delete_session: Option<&str>,
     delete_source: Option<SessionSource>,
+    cloud_delete_enabled: bool,
     format: crate::cli::OutputFormat,
     os: &Os,
 ) -> Option<ExitCode> {
@@ -628,7 +629,7 @@ pub async fn handle_list_delete_session_flags(
     }
 
     if let Some(session_id) = delete_session {
-        return Some(handle_delete_session(os, session_id, delete_source).await);
+        return Some(handle_delete_session(os, session_id, delete_source, cloud_delete_enabled).await);
     }
 
     None
@@ -688,7 +689,12 @@ async fn collect_kas_sessions<C: KasSessionClient>(client: &C, cwd: &std::path::
 /// filter. With no filter: tries V1+V2 unconditionally and KAS best-effort
 /// (KAS launch failure is logged via `tracing::warn` and does not surface).
 /// Prints exactly one user-facing line and returns the exit code.
-async fn handle_delete_session(os: &Os, session_id: &str, source: Option<SessionSource>) -> ExitCode {
+async fn handle_delete_session(
+    os: &Os,
+    session_id: &str,
+    source: Option<SessionSource>,
+    cloud_delete_enabled: bool,
+) -> ExitCode {
     let target_rust = matches!(source, None | Some(SessionSource::V1 | SessionSource::V2));
     let target_kas = matches!(source, None | Some(SessionSource::Kas));
     let kas_required = matches!(source, Some(SessionSource::Kas));
@@ -698,13 +704,30 @@ async fn handle_delete_session(os: &Os, session_id: &str, source: Option<Session
 
     if target_rust {
         match delete_any_session(&os.database, session_id, source) {
-            Ok(_) => deleted = true,
+            // Only a real removal counts; a local no-op must not mask a
+            // cloud-store delete failure below.
+            Ok((v1, v2)) => {
+                if v1 || v2 {
+                    deleted = true;
+                }
+            },
             Err(e) => errors.push(e),
         }
     }
 
     if target_kas {
-        match with_kas_session_client(os, |client| async move { client.delete_session(session_id).await }).await {
+        match with_kas_session_client(os, |client| async move {
+            // Default (local) store, plus the cloud store when enabled, so a bare
+            // delete removes a cloud session too. KAS has no combined-store delete
+            // and rejects "all", so this is two calls.
+            client.delete_session(session_id, None).await?;
+            if cloud_delete_enabled {
+                client.delete_session(session_id, Some("remote")).await?;
+            }
+            Ok(())
+        })
+        .await
+        {
             Ok(()) => deleted = true,
             Err(e) if kas_required => errors.push(format!("{e:#}")),
             Err(e) => tracing::warn!("KAS session delete unavailable: {e:#}"),

@@ -32,9 +32,14 @@ pub trait KasSessionClient {
 
     /// Delete a KAS session by id.
     ///
+    /// `session_source` selects the store the delete routes to: `Some("remote")`
+    /// for a cloud session, `None` (or `Some("local")`) for the on-disk store.
+    /// Sent as the top-level `sessionSource` param on `_kiro/session/delete`,
+    /// omitted when `None`.
+    ///
     /// KAS does not currently report whether the session actually existed,
     /// so the success case is `Result<()>` rather than `Result<bool>`.
-    async fn delete_session(&self, session_id: &str) -> Result<()>;
+    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<()>;
 }
 
 /// ACP-backed [`KasSessionClient`]. Owns a connected KAS child and issues
@@ -113,9 +118,12 @@ impl KasSessionClient for KasAcpSessionClient {
         Ok(entries)
     }
 
-    async fn delete_session(&self, session_id: &str) -> Result<()> {
-        debug!(%session_id, "deleting KAS session via _kiro/session/delete ext_method");
-        let request = DeleteSessionRequest { session_id };
+    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<()> {
+        debug!(%session_id, ?session_source, "deleting KAS session via _kiro/session/delete ext_method");
+        let request = DeleteSessionRequest {
+            session_id,
+            session_source,
+        };
         let raw = acp::RawValue::from_string(serde_json::to_string(&request)?)?;
         let resp = self
             .conn
@@ -134,6 +142,11 @@ impl KasSessionClient for KasAcpSessionClient {
 #[serde(rename_all = "camelCase")]
 struct DeleteSessionRequest<'a> {
     session_id: &'a str,
+    /// Top-level store selector: `"remote"` routes to the cloud store; omitted
+    /// (`None`) means the default on-disk store. `"all"` is never sent
+    /// (KAS rejects it at the boundary).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_source: Option<&'a str>,
 }
 
 /// Wire-format response for `_kiro/session/delete`. KAS returns `{ success: bool }`.
@@ -260,12 +273,36 @@ pub mod test {
             }
         }
 
-        async fn delete_session(&self, _id: &str) -> Result<()> {
+        async fn delete_session(&self, _id: &str, _session_source: Option<&str>) -> Result<()> {
             match self.delete_result.borrow_mut().take() {
                 Some(Ok(())) => Ok(()),
                 Some(Err(e)) => Err(eyre::eyre!("{e:#}")),
                 None => panic!("KasMockSessionClient: delete_session called but not stubbed"),
             }
         }
+    }
+
+    /// The top-level `sessionSource` param is sent only when routing a remote
+    /// delete; a local/default delete omits it (byte-identical to the prior wire).
+    #[test]
+    fn delete_request_serializes_session_source_only_when_present() {
+        use super::DeleteSessionRequest;
+        let remote = DeleteSessionRequest {
+            session_id: "spc-9f2",
+            session_source: Some("remote"),
+        };
+        assert_eq!(
+            serde_json::to_value(&remote).unwrap(),
+            serde_json::json!({ "sessionId": "spc-9f2", "sessionSource": "remote" })
+        );
+
+        let local = DeleteSessionRequest {
+            session_id: "abc123",
+            session_source: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&local).unwrap(),
+            serde_json::json!({ "sessionId": "abc123" })
+        );
     }
 }

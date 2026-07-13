@@ -871,6 +871,10 @@ async fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCod
             SessionSourceArg::V2 => SessionSource::V2,
             SessionSourceArg::V3 => SessionSource::Kas,
         }),
+        // Whether to also delete from the cloud store, so a bare
+        // `--delete-session <id>` removes a cloud session just like a local one.
+        // Off (rollout 0%) on released builds → local stores only.
+        crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
         args.format,
         os,
     )
