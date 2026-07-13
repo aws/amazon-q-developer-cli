@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Shell escape (`!`) no longer shows a stuck \"Running...\" label when the command redirects all output to a file"
+}

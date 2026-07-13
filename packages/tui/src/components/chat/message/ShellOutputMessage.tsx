@@ -13,6 +13,7 @@ const MAX_EXPANDED_LINES = 1000;
 interface ShellOutputMessageProps {
   content: string;
   isStatic?: boolean;
+  isRunning?: boolean;
   status?: StatusType;
   barColor?: string;
 }
@@ -20,10 +21,12 @@ interface ShellOutputMessageProps {
 export const ShellOutputMessage = React.memo(function ShellOutputMessage({
   content,
   isStatic = false,
+  isRunning = false,
   status,
   barColor,
 }: ShellOutputMessageProps) {
   if (!content) {
+    if (isStatic || !isRunning) return null;
     return (
       <StatusBar status="thinking" barColor={barColor}>
         <RunningLabel />

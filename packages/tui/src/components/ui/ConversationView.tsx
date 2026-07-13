@@ -312,6 +312,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
             <ShellOutputMessage
               content={liveContent}
               isStatic={false}
+              isRunning={isProcessing}
               barColor={agentBarColor}
             />
           );
