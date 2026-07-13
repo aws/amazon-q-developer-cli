@@ -6403,6 +6403,24 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
     approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
     await permissionPromise;
   });
+
+  // The KAS session that owns the backend permission request is enriched onto
+  // the request as `originSessionId` (handleKasPermissionRequest) and read as
+  // the trust-cascade's session discriminator in the store. It must survive the
+  // shared `handlePermissionRequest` broadcast, else two approvals from distinct
+  // origin sessions collapse to the same trust identity and cross-cascade.
+  it('ingestion: originSessionId (owning KAS session) reaches the broadcast approval value', async () => {
+    const client = new KasAcpClient();
+    const { getApproval, permissionPromise } =
+      await driveCompoundPermission(client);
+
+    const approval = getApproval();
+    expect(approval).not.toBeNull();
+    expect(approval.originSessionId).toBe('kas-session-1');
+
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+  });
 });
 
 // ── Remote sandbox: executionTarget on session/new + handshake-cap gating ──

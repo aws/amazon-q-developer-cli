@@ -1709,6 +1709,9 @@ export abstract class BaseAcpClient implements SessionClient {
         type: AgentEventType.ApprovalRequest,
         value: {
           sessionId: (params as any).sessionId as string | undefined,
+          originSessionId: (params as any).originSessionId as
+            | string
+            | undefined,
           toolCall: {
             toolCallId: params.toolCall?.toolCallId || '',
             title: params.toolCall?.title ?? undefined,

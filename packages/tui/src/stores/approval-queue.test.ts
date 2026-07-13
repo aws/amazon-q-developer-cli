@@ -540,6 +540,83 @@ describe('Trust cascade — allow_always auto-resolves same-tool approvals', () 
   });
 });
 
+describe('KAS trust cascade — originSessionId discriminates cross-agent approvals', () => {
+  function makeKasApproval(
+    toolCallId: string,
+    originSessionId: string | undefined,
+    resolve: (r: any) => void
+  ) {
+    return {
+      toolCall: { toolCallId },
+      originSessionId,
+      permissionOptions: [
+        {
+          kind: ApprovalOptionId.AllowOnce,
+          name: 'Allow Once',
+          optionId: 'accept',
+        },
+        {
+          kind: ApprovalOptionId.AllowAlways,
+          name: 'Always',
+          optionId: 'always-accept',
+        },
+      ],
+      consentContext: {
+        capability: 'shell',
+        resource: 'echo hi',
+        workspaceRoot: '/ws',
+      },
+      resolve,
+    };
+  }
+
+  function setupTwoApprovals(originA: string | undefined, originB: string) {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const resolveA = mock((_r: any) => {});
+    const resolveB = mock((_r: any) => {});
+    const a = makeKasApproval('parent-shell', originA, resolveA);
+    const b = makeKasApproval('subagent-shell', originB, resolveB);
+    store.setState({
+      pendingApproval: a as any,
+      approvalQueue: [a as any, b as any],
+    });
+    return { store, resolveA, resolveB, b };
+  }
+
+  it('does NOT cascade a whole-capability trust to a sibling from a different origin session', () => {
+    const { store, resolveB } = setupTwoApprovals(
+      'parent-session',
+      'subagent-session'
+    );
+
+    store.getState().respondToApproval('always-accept', undefined, {
+      kasWholeCapability: true,
+    });
+
+    // The visible parent approval is trusted; the hidden-subagent sibling — same
+    // capability + workspaceRoot but a distinct origin session — must survive.
+    expect(resolveB).not.toHaveBeenCalled();
+    expect(store.getState().approvalQueue).toHaveLength(1);
+    expect(store.getState().pendingApproval?.toolCall.toolCallId).toBe(
+      'subagent-shell'
+    );
+  });
+
+  it('still cascades to a sibling that shares the same origin session', () => {
+    const { store, resolveB } = setupTwoApprovals(
+      'same-session',
+      'same-session'
+    );
+
+    store.getState().respondToApproval('always-accept', undefined, {
+      kasWholeCapability: true,
+    });
+
+    expect(resolveB).toHaveBeenCalledTimes(1);
+    expect(store.getState().approvalQueue).toHaveLength(0);
+  });
+});
+
 describe('--trust-all-tools auto-approval', () => {
   function createTrustAllStore() {
     const mockKiro = new Kiro();
