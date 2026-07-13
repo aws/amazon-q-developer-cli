@@ -26,12 +26,12 @@ useTempKiroHome();
 
 describe('renderToolCall', () => {
   // STATUS-SLOT CONTRACT: the trailing status glyph reflects the truthful
-  // in-flight state. A threaded runningSpinner replaces ' ...' on non-trivial
-  // tools (so the row shows motion while args/diff/reasoning already match the
-  // settled appearance), but trivial tools (read/grep/glob) ignore it — too
-  // short-lived for a spinner to inform. awaitingApproval always wins over the
-  // spinner with a yellow ' ...' (`\x1b[33m`, matching the approval prompt's
-  // [t] hotkey) since the agent isn't progressing while approval is pending.
+  // in-flight state. A threaded runningSpinner replaces ' ...' for any running
+  // tool, trivial or not (a running trivial tool is pre-approved and genuinely
+  // in motion, so it animates like the rest — only the name stays dimmed).
+  // awaitingApproval always wins over the spinner with a yellow ' ...'
+  // (`\x1b[33m`, matching the approval prompt's [t] hotkey) since the agent
+  // isn't progressing while approval is pending — the only path to ' ...'.
   test.each([
     [
       'running shows ellipsis',
@@ -48,16 +48,16 @@ describe('renderToolCall', () => {
       [],
     ],
     [
-      'running trivial + spinner: keeps ellipsis, ignores glyph',
+      'running trivial + spinner: glyph animates, name stays dimmed',
       {
         name: 'fs_read',
         status: 'running' as const,
         runningSpinner: '⠋',
         isTrivial: true,
       },
-      ['fs_read', '...'],
-      ['⠋'],
-      [],
+      ['fs_read', '⠋'],
+      ['...'],
+      ['\x1b[2m'],
     ],
     [
       'awaitingApproval non-trivial: yellow ellipsis beats spinner',
@@ -205,6 +205,80 @@ describe('renderToolCall', () => {
       for (const c of contains) expect(lines[i]).toContain(c);
       for (const a of absent ?? []) expect(lines[i]).not.toContain(a);
     });
+  });
+});
+
+// Triviality must survive the REAL render path. The generic tool-use branch
+// passes the CANONICAL label (toolDisplayName: fs_read→"Read", grep→"Grep") as
+// info.name, but TRIVIAL_TOOLS holds WIRE names — so renderToolCall's
+// `TRIVIAL_TOOLS.has(info.name)` fallback missed and read-style tools rendered
+// non-trivial (bold-not-dim). The unit renderToolCall cases above pass
+// isTrivial explicitly, masking this; these drive renderMessageToText with NO
+// explicit isTrivial, the real gap. (A running trivial tool still animates its
+// spinner — only the name dims — see the running case below.)
+describe('trivial-tool dimming through the real render path', () => {
+  beforeEach(() => {
+    resetVerboseCache();
+    setVerboseConfig({ filters: [] });
+  });
+  afterAll(() => {
+    setVerboseConfig({ filters: [] });
+    resetVerboseCache();
+  });
+
+  const DIM = '\x1b[2m'; // chalk.dim open SGR — present only when dimmed
+
+  it.each<{ name: string; wire: string; label: string }>([
+    { name: 'fs_read', wire: 'fs_read', label: 'Read' },
+    { name: 'grep', wire: 'grep', label: 'Grep' },
+    { name: 'glob', wire: 'glob', label: 'Glob' },
+    { name: 'code', wire: 'code', label: 'Code' },
+  ])('finished $name dims its canonical label', ({ wire, label }) => {
+    const raw = renderMessageToText(
+      {
+        id: `t-trivial-${wire}`,
+        role: 'tool_use',
+        name: wire,
+        content: '{}',
+        isFinished: true,
+        result: { status: 'success', output: '' },
+      },
+      'kiro_default'
+    );
+    expect(stripAnsi(raw)).toContain(label);
+    expect(raw).toContain(DIM);
+  });
+
+  test('running trivial tool animates the spinner glyph, name stays dimmed', () => {
+    const raw = renderMessageToText(
+      {
+        id: 't-trivial-grep-run',
+        role: 'tool_use',
+        name: 'grep',
+        content: '{}',
+      },
+      'kiro_default',
+      { runningSpinner: '⠋' }
+    );
+    const stripped = stripAnsi(raw);
+    expect(stripped).toContain('Grep');
+    expect(stripped).toContain('⠋');
+    expect(stripped).not.toContain('...');
+    expect(raw).toContain(DIM);
+  });
+
+  test('non-trivial tool is unaffected — undimmed name, spinner still animates', () => {
+    const raw = renderMessageToText(
+      {
+        id: 't-nontrivial-run',
+        role: 'tool_use',
+        name: 'execute_bash',
+        content: '{}',
+      },
+      'kiro_default',
+      { runningSpinner: '⠋' }
+    );
+    expect(stripAnsi(raw)).toContain('⠋');
   });
 });
 

@@ -1054,10 +1054,11 @@ export interface ToolCallRenderInfo {
   isTrivial?: boolean;
   rejected?: boolean;
   /** STATUS-SLOT CONTRACT (running status only): awaitingApproval wins and
-   *  paints a yellow ' ...' (the agent isn't progressing while approval is
-   *  pending, so a spinner would lie; matches the prompt's hotkey color).
-   *  Else a non-trivial tool with runningSpinner shows the spinner glyph for
-   *  motion; trivial tools (read/grep/glob) and the static path keep ' ...'. */
+   *  paints a yellow ' ...' — the only path to ' ...' — because the agent
+   *  isn't progressing while approval is pending, so a spinner would lie
+   *  (matches the prompt's hotkey color). Otherwise runningSpinner shows the
+   *  spinner glyph for motion regardless of triviality (a running trivial tool
+   *  is pre-approved and genuinely in motion); the static path keeps ' ...'. */
   runningSpinner?: string;
   /** See STATUS-SLOT CONTRACT — takes precedence over runningSpinner. */
   awaitingApproval?: boolean;
@@ -1090,7 +1091,7 @@ export function renderToolCall(
       // See STATUS-SLOT CONTRACT on ToolCallRenderInfo.
       if (info.awaitingApproval) {
         statusStr = chalk.yellow(' ...');
-      } else if (info.runningSpinner && !isTrivial) {
+      } else if (info.runningSpinner) {
         statusStr = ` ${info.runningSpinner}`;
       } else {
         statusStr = chalk.dim(' ...');
@@ -3136,6 +3137,9 @@ export function renderMessageToText(
 
       const info: ToolCallRenderInfo = {
         name: toolDisplayName(msg.name || 'unknown'),
+        // Triviality is a wire-name fact; compute it here since `name` is the
+        // canonical label, which TRIVIAL_TOOLS (wire names) wouldn't match.
+        isTrivial: TRIVIAL_TOOLS.has(msg.name || ''),
         status,
         description: reasoning,
         inlineArg,
