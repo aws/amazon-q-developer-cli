@@ -9,8 +9,6 @@
 * Resolved Tickets: {resolved}
 * Large Scale Significant Events: {lse_count}
 
-DeeOps dashboard https://deeops.aka.amazon.com/ops_readiness/sto_health/
-
 ## 2. Graphs
 ### Ticket Resolved Count By Root Cause (Previous week)
 
@@ -42,9 +40,9 @@ During the meeting, go over open action items here https://tiny.amazon.com/1auvb
 
 ## 7. Open Sev2s
 
-| # | Ticket | Description | ETA To Resolve |
-|---|---|---|---|
-| 1 | [{id}](https://t.corp.amazon.com/{id}) | {description} | {eta or TBD} |
+| # | Ticket | Description | Next Step | ETA To Resolve |
+|---|---|---|---|---|
+| 1 | [{id}](https://t.corp.amazon.com/{id}) | {description} | {next_step} | {eta or TBD} |
 
 ## 8. Security Risks
 

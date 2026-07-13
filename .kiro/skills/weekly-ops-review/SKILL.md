@@ -26,7 +26,6 @@ opened (Step 9); reviewers leave comments during the meeting, and
 - **Primary paging alias:** `page-amazon-q-cli-primary@amazon.com`
 - **Ticket Queue saved query** (Section 1 link):
   `https://t.corp.amazon.com/issues/?q=extensions.tt.status%3A%28Assigned%20OR%20Researching%20OR%20%22Work%20In%20Progress%22%20OR%20Pending%29%20AND%20extensions.tt.assignedGroup%3A%22Amazon%20Q%20for%20CLI%22`
-- **DeeOps dashboard:** `https://deeops.aka.amazon.com/ops_readiness/sto_health/`
 - **Previous Week's Action Items (Section 5):** `https://tiny.amazon.com/1auvbeoty/taskamazdevroom7c22task`
 - **Dashboard Review notes (Section 10):** `https://quip-amazon.com/umwaAzDXcFo1`
 - **Reports directory:** `.ops/weekly-reviews/` in the repository root. Every weekly report
@@ -164,17 +163,40 @@ Run with `@builder-mcp/TicketingReadActions action=search-tickets` (read `totalC
 3. Only if no previous report can be found, estimate `x = y − incoming_raw + resolved` and
    prefix it with `~`.
 
-**Pages — real page events (NOT distinct tickets):**
-1. First call `@builder-mcp/OncallReadActions action=get-report-instructions` with
-   `resolverGroup: "Amazon Q for CLI"`, `startDate`, `endDate`. It is purpose-built for
-   oncall reports and may return the page list/count or the canonical paging source — use
-   it if it yields page data.
-2. Otherwise count page **events**: for every Sev2 ticket from Step 3, inspect its
-   worklog/communications for paging notifications to `page-amazon-q-cli-primary` and count
-   EACH one — a ticket that was New, then Escalated, then Reassigned = **3** pages (this is
-   why counting distinct tickets under-counted). Recognized page triggers: `New`,
-   `Reopened`, `Reactivated`, `Escalated`, `Reassigned`, `Upgraded` to Sev2. Each event
-   becomes one Page Log row in Step 5; `pages` = total events.
+**Pages — count every page DELIVERED to the primary during the week (NOT distinct tickets, NOT still-open pages):**
+
+The report's `Pages` metric must equal the total number of times the oncall was paged in
+`[start_iso, end_iso]`. A single ticket that paged 3× (initial + re-page + escalation)
+contributes **3** to the count. A ticket that paged before the week and stayed open the
+whole week but did NOT re-page contributes **0**. `get-report-instructions` does not
+return page data (it returns generic report guidance), so do not rely on it here.
+
+Reconstruct pages from ticket history:
+
+1. Union of Sev2 tickets touched during the week = the Step 3 result set (search by
+   `createDate` **and** by `lastUpdatedDate`) plus any ticket found via the Section 6
+   scan below whose update did not land in Step 3. Fetch each with `get-ticket` including
+   `threads: ["CORRESPONDENCE","WORKLOG","ANNOUNCEMENTS"]`.
+2. For each ticket, walk every correspondence/worklog/announcement entry and emit ONE
+   page event when the entry represents a page delivered to
+   `page-amazon-q-cli-primary@amazon.com`. Recognizable signals (case-insensitive):
+   - Subject / body starts with `New Sev2`, `New Sev1`, `Re-page`, `Repage`,
+     `Reactivated`, `Reopened`, `Escalated`, `Reassigned to`, `Upgraded to Sev2`,
+     `Paged` — any of these indicates a paging notification.
+   - Recipient / to-line contains `page-amazon-q-cli-primary` (definitive signal).
+   - An entry linking to `https://paging.corp.a2z.com/#/pages/<id>` — this is a
+     paging-page URL and each unique `<id>` on this ticket is one page event.
+3. Filter to events whose entry timestamp is inside `[start_iso, end_iso]`. Discard
+   pages that fired before or after the reporting window even if the ticket is still
+   open — "currently open" ≠ "paged this week".
+4. Do NOT dedupe by ticket. Do NOT collapse alarm-storm re-pages (unlike Incoming). Each
+   distinct paging entry is a page event and gets its own row in Section 6.
+
+`pages` = total number of page events after filtering. This value MUST equal the row
+count in Section 6 (Step 5 writes them all to `/tmp/kcli_oncall_pages.jsonl`). If the
+count is unexpectedly low (e.g. equal to the number of new Sev2s), re-fetch the
+worklog/correspondence for open Sev2s that pre-date the week — those are the ones most
+likely to have re-paged and been missed.
 
 Write `/tmp/kcli_oncall_metrics.json`:
 `{"pages":N,"queue_start":N,"queue_end":N,"incoming":N,"incoming_raw":N,"resolved":N,"lse_count":N,"queue_start_source":"prev-report|estimate"}`
@@ -226,7 +248,11 @@ responseFields: ["id","aliases","title","status","createDate"]
 ```
 → `/tmp/kcli_oncall_open_sev2.jsonl`. Reuse description/comments from
 `/tmp/kcli_oncall_sev2.jsonl` where the ID already exists. Record `display_id` (V/P/D) for
-each, not the UUID.
+each, not the UUID. Also derive a **`next_step`** for each open Sev2 — the concrete action
+the oncall or an owning team is pursuing right now (e.g. "Waiting on backend fix in
+CR-XXX", "Awaiting customer repro", "Retest after MCM lands", "Confirm alarm can be
+downgraded"). Pull it from the ticket's most recent human worklog/correspondence (skip
+the automated authors listed in Step 3); if nothing actionable is stated, use `TBD`.
 
 **Tickets cut to other teams (Section 9):**
 - Scan `/tmp/kcli_oncall_sev2.jsonl` comments for `https://t.corp.amazon.com/(issues/)?(P|V|D)\d+`
@@ -243,34 +269,54 @@ each, not the UUID.
 
 ## Step 5 — Page Log (Section 6)
 
-The Page Log has **one row per page event** — the same ticket appears multiple times if it
-paged multiple times (the manual 06/15 report had 29 page rows for ~18 distinct tickets:
-`V2249300247`, `V2245890305`, `P432259107`, etc. each appear 2–3×). Build it to match:
+The Page Log has **one row per page event** delivered to `page-amazon-q-cli-primary` in
+the reporting window — the same ticket appears multiple times if it paged multiple times.
+Do NOT dedupe by ticket. Do NOT count still-open pages that fired before the window.
 
-1. If `get-report-instructions` (Step 2) returned page data, use it directly — each page is
-   a row `{display_id, page_title, page_url, paged_at}`. Page URLs look like
-   `https://paging.corp.a2z.com/#/pages/<id>`.
-2. Otherwise reconstruct from ticket history: for each Sev2 ticket, emit one row per paging
-   notification (`New` / `Reopened` / `Reactivated` / `Escalated` / `Reassigned` /
-   `Upgraded` to Sev2) found in its worklog/communications. Synopsis = the notification
-   subject (e.g. `New Sev2 - [ALARM] [us-east-1] QCLI-SuccessRateDown`); link to the ticket
-   `https://t.corp.amazon.com/<display_id>` when no paging-page URL is available.
+Reconstruct from ticket correspondence/worklog using the rules in Step 2's "Pages" block:
 
-Append every event to `/tmp/kcli_oncall_pages.jsonl`, ordered chronologically. Set
-`metrics.pages` = the number of rows (this MUST equal the `pages` count from Step 2).
+1. Walk every Sev2 touched during the week (Step 3 set, plus any additional ticket
+   surfaced while scanning open Sev2s for missed re-pages).
+2. For each paging entry (see the recognizable signals in Step 2), emit one row:
+   `{display_id, page_title, page_url, paged_at}`. `page_url` is the
+   `https://paging.corp.a2z.com/#/pages/<id>` URL when present in the entry; otherwise
+   the ticket URL `https://t.corp.amazon.com/<display_id>`. `page_title` is the
+   notification subject (e.g. `New Sev2 - [ALARM] [us-east-1] QCLI-SuccessRateDown`,
+   `Re-page - [ALARM] CacheHitRate opus-4.8 FRA`, `Escalated - <ticket title>`).
+3. Filter to entries with `paged_at ∈ [start_iso, end_iso]` and sort chronologically.
+
+Append every event to `/tmp/kcli_oncall_pages.jsonl`. `metrics.pages` MUST equal the
+number of rows written (this is the invariant that ties Section 1 `Pages` to Section 6).
 
 ## Step 6 — Root-cause breakdown, LSEs, grouping
 
 - **Section 2 (Resolved by Root Cause):** read `/tmp/kcli_oncall_resolved.jsonl` and group
   by `extensions.tt.rootCause`. Each row: `Root Cause | Count | Topic | Tickets` (list ALL
-  ticket links by `display_id`). The `Total` count MUST equal the Section 1 Resolved
-  number. A genuinely ticketless item the oncall resolved (e.g. a backend-capacity issue
-  with "no explicit ticket") may be added as a row with an empty Tickets cell, matching how
-  the team authors this table. When `rootCause` is empty, derive it per the **Root cause &
-  descriptions** rule below — do NOT write "Unknown" unless truly nothing is found.
-- **Section 4 (LSEs):** identify customer-impacting / cross-team incidents (broad blast
-  radius, cascading tickets, PII exposure, prod outages) → one bullet each. Update
-  `metrics.lse_count`.
+  ticket links by `display_id`). **Every resolved ticket ID in
+  `/tmp/kcli_oncall_resolved.jsonl` MUST appear in exactly one row of Section 2** — do
+  not silently drop tickets whose `rootCause` is empty or ambiguous; derive their bucket
+  per the "Root cause & descriptions" rule below and add them. The `Total` count MUST
+  equal both (a) the Section 1 Resolved number and (b) the count of distinct ticket links
+  in the table. Step 8 validates both invariants; if either fails, add the missing tickets
+  (never remove rows to make the count match). A genuinely ticketless item the oncall
+  resolved (e.g. a backend-capacity issue with "no explicit ticket") may be added as an
+  extra row with an empty Tickets cell — but only in addition to, never in place of, a
+  resolved ticket. When `rootCause` is empty, derive it per the rule below — do NOT
+  write "Unknown" unless truly nothing is found.
+- **Section 4 (LSEs):** an LSE is a **formally declared Large Scale Significant Event** —
+  not an internal alarm, not a transient backend hiccup, not a single-customer support
+  ticket. Include an event ONLY if at least one of these is true:
+  1. The ticket / linked ticket carries an explicit LSE designation
+     (`extensions.tt.tags` contains `LSE`, has an LSE ticket ID linked in its worklog,
+     is referenced from an LSE COE, or the correspondence explicitly says an LSE was
+     declared / an LSE ticket was cut).
+  2. A prod MCM/COE labeled as an LSE points at the incident.
+  3. The team leadership explicitly declared it an LSE in worklog/announcements.
+
+  If none of these apply, Section 4 is `* None` and `lse_count = 0`. Broad customer
+  impact, cross-team coordination, or "big incident this week" ALONE do NOT qualify —
+  those go in Section 2 / Section 9 as normal tickets. When in doubt, leave it out.
+  Update `metrics.lse_count` to the number of qualifying events.
 - **Grouping** (for Sections 2/4/6/7): group by same `extensions.tt.dedupeString` prefix, same
   alarm across regions, explicitly linked tickets, or same root cause. Never group
   unrelated tickets; every ticket ID stays individually traceable.
@@ -326,10 +372,29 @@ for s in "## 1. Summary" "## 2. Graphs" "## 3. Operational Pain Level" \
 done
 while read id; do [ -z "$id" ] && continue; grep -q "$id" "$REPORT" || echo "MISSING ID: $id"; done < /tmp/kcli_oncall_sev2_ids.txt
 grep -q "^# \[Kiro-CLI\] Weekly Ops Review - " "$REPORT" || echo "MISSING TITLE"
+
+# Every resolved ticket must appear in Section 2 (Resolved by Root Cause).
+section2=$(awk '/^## 2\. Graphs/{p=1;next} /^## 3\./{p=0} p' "$REPORT")
+python3 -c "
+import json, sys
+sec = '''$section2'''
+missing = []
+for line in open('/tmp/kcli_oncall_resolved.jsonl'):
+    t = json.loads(line)
+    did = t.get('display_id') or t.get('id')
+    if did and did not in sec:
+        missing.append(did)
+sys.exit(0 if not missing else print('MISSING FROM SECTION 2:', *missing) or 1)
+"
+
+# Section 7 must include the Next Step column.
+grep -q "^| # | Ticket | Description | Next Step | ETA To Resolve |" "$REPORT" \
+  || echo "SECTION 7 MISSING 'Next Step' COLUMN"
 ```
 
-Fix anything reported. Confirm Section 2 `Total` == Section 1 Resolved, and Section 6 row
-count == `metrics.pages` (or note the discrepancy).
+Fix anything reported. Confirm Section 2 `Total` == Section 1 Resolved == count of
+distinct ticket links in Section 2, and Section 6 row count == `metrics.pages` (or note
+the discrepancy).
 
 ## Step 9 — Write the report and open a review PR
 
