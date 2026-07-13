@@ -55,6 +55,7 @@ import {
   type SubagentRow,
 } from './SubagentFooter.js';
 import { shouldCancelApprovalForKilledStage } from './subagent-kill.js';
+import { engineSupportsSubagentKill } from '../../../agent-engine.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
 import { renderPendingAgent } from './ConnectingPanel.js';
 import {
@@ -300,6 +301,10 @@ export const LiteLayout: React.FC = () => {
     (s) => s.cleanupTerminatedSession
   );
   const cancelApproval = useAppStore((s) => s.cancelApproval);
+  // Kill is V2-only; KAS (V3) session/terminate is a no-op, so don't offer it.
+  const killSupported = engineSupportsSubagentKill(
+    useAppStore((s) => s.agentEngine)
+  );
   const [armedKillSessionId, setArmedKillSessionId] = useState<string | null>(
     null
   );
@@ -1245,6 +1250,7 @@ export const LiteLayout: React.FC = () => {
     // unconditionally, so every branch gates on subagentOpenIndex itself.
     if (key.ctrl && (input === 'x' || input === 'X')) {
       if (subagentOpenIndex == null) return;
+      if (!killSupported) return;
       const focused = activeSubagents[subagentOpenIndex];
       // Bail on terminal phases — re-firing terminate on a dead session would
       // race the prior kill's local cleanup.
@@ -1716,6 +1722,7 @@ export const LiteLayout: React.FC = () => {
                       onLinesChange={setSubagentTotalLines}
                       phaseLabel={focused.phase}
                       armedToKill={focusedSessionId === armedKillSessionId}
+                      canKill={killSupported}
                     />
                   );
                 }

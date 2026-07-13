@@ -3,6 +3,7 @@ import { Box, Text } from '../../../renderer.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { ProgressChip } from '../../ui/chip/ProgressChip.js';
 import { MessageRole, useAppStore } from '../../../stores/app-store.js';
+import { engineSupportsSubagentKill } from '../../../agent-engine.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
 import { useShallow } from 'zustand/react/shallow';
 import type { Stage } from './types.js';
@@ -56,6 +57,10 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
   const cleanupTerminatedSession = useAppStore(
     (state) => state.cleanupTerminatedSession
   );
+  // Kill is V2-only; KAS (V3) session/terminate is a no-op, so don't offer it.
+  const killSupported = engineSupportsSubagentKill(
+    useAppStore((state) => state.agentEngine)
+  );
 
   const sessionsWithApproval = useMemo(
     () =>
@@ -86,6 +91,7 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
   useKeypress((input, key) => {
     if (key.ctrl && input === 'x') {
       if (!selectedStage || selectedStage.state !== 'Executing') return;
+      if (!killSupported) return;
       if (killTarget === selectedStage.sessionId) {
         if (killTimerRef.current) clearTimeout(killTimerRef.current);
         setKillTarget(null);
@@ -187,7 +193,10 @@ export const CrewMonitorLayout = React.memo(function CrewMonitorLayout({
 
       <Box flexGrow={1} />
 
-      <CrewFooter hasExecutingSelected={selectedStage?.state === 'Executing'} />
+      <CrewFooter
+        hasExecutingSelected={selectedStage?.state === 'Executing'}
+        canKill={killSupported}
+      />
     </Box>
   );
 });

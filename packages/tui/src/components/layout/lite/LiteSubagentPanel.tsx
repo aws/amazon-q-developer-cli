@@ -47,6 +47,8 @@ interface LiteSubagentPanelProps {
    * detection, and kill (terminateSession + cleanup) live in LiteLayout.
    */
   armedToKill?: boolean;
+  /** False under KAS (V3), whose session/terminate is a no-op — hides the kill hint. */
+  canKill?: boolean;
 }
 
 const EMPTY: any[] = [];
@@ -62,6 +64,7 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
   onLinesChange,
   phaseLabel,
   armedToKill,
+  canKill = true,
 }) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -161,7 +164,12 @@ export const LiteSubagentPanel: React.FC<LiteSubagentPanelProps> = ({
       `${glyphs.arrowUp}${glyphs.arrowDown} scroll ${glyphs.smallDot} ctrl+a/z top/bot`
     );
     if (total > 1) parts.push(`shift+${glyphs.arrowLeft}${glyphs.arrow} cycle`);
-    if (phaseLabel && phaseLabel !== 'complete' && phaseLabel !== 'killed')
+    if (
+      canKill &&
+      phaseLabel &&
+      phaseLabel !== 'complete' &&
+      phaseLabel !== 'killed'
+    )
       parts.push('ctrl+x kill');
     parts.push('ctrl+o close');
     return chalk.dim(

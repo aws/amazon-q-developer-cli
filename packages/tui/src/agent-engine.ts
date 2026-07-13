@@ -9,3 +9,8 @@ export type AgentEngine = 'v2' | 'kas';
 export function resolveAgentEngine(): AgentEngine {
   return process.env.KIRO_AGENT_ENGINE === 'kas' ? 'kas' : 'v2';
 }
+
+/** Subagent kill is V2-only; KAS (V3) has no working session/terminate. */
+export function engineSupportsSubagentKill(engine: AgentEngine): boolean {
+  return engine !== 'kas';
+}
