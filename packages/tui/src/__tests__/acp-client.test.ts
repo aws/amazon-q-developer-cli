@@ -372,6 +372,92 @@ describe('AcpClient', () => {
     expect(synth.sessionId).toBeUndefined();
   });
 
+  it('title-less Failed update on the main session does NOT synthesize a leaking ToolCall', async () => {
+    // KAS's orchestrate-subagent re-reads files a finished subagent referenced,
+    // emitting those reads at the PARENT (main) executionId with no title and
+    // no subagent stamp. A missing file yields a title-less Failed
+    // tool_call_update on the main session. Synthesizing a ToolCall for it
+    // attributes it to the main agent and leaks it into the main transcript
+    // (the subagent-tool "bleed"). Only failures leaked, since the success
+    // branch synthesizes solely on rawInput.response — matching the observed
+    // failures-only asymmetry. We now suppress synthesis for this case, so no
+    // ToolCall is broadcast and the (unmatched) ToolCallFinished is a store
+    // no-op → nothing renders in main.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession(); // this.sessionId = 'test-session-123'
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    // Real wire: KAS's toolCallUpdate passthrough carries neither title nor
+    // kind for an instant-fail read (only the Running-path emit adds them).
+    await client.sessionUpdate({
+      sessionId: 'test-session-123', // MAIN session — no subagent stamp
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-orphan-read',
+        status: 'failed',
+        rawInput: { path: 'README.md' },
+      },
+    } as unknown as SessionNotification);
+
+    const events = handler.mock.calls.map((c) => c[0] as any);
+    expect(events.some((e) => e.type === AgentEventType.ToolCall)).toBe(false);
+  });
+
+  it('title-less Failed update for a SUBAGENT session still synthesizes (routed to its surface)', async () => {
+    // Suppression is scoped to the main session. A title-less failed read that
+    // carries a differing (subagent) sessionId is stamped and routed to the
+    // subagent surface, so it must still synthesize.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.sessionUpdate({
+      sessionId: 'stage-session',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-read',
+        status: 'failed',
+        rawInput: { path: 'README.md' },
+      },
+    } as unknown as SessionNotification);
+
+    const synth = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.ToolCall);
+    expect(synth).toBeDefined();
+    expect(synth.sessionId).toBe('stage-session'); // routed to subagent surface
+  });
+
+  it('titled Failed update still synthesizes (genuine rejected-before-exec tool)', async () => {
+    // Regression guard: the synthesis exists for parse-error /
+    // permission-denied / hook-rejected tools, which ALWAYS carry a title.
+    // Suppression must not touch them.
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.sessionUpdate({
+      sessionId: 'test-session-123',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-rejected',
+        status: 'failed',
+        title: 'grep',
+        kind: 'search',
+        rawInput: { pattern: 'x' },
+      },
+    } as unknown as SessionNotification);
+
+    const synth = handler.mock.calls
+      .map((c) => c[0] as any)
+      .find((e) => e.type === AgentEventType.ToolCall);
+    expect(synth).toBeDefined();
+    expect(synth.name).toBe('grep');
+  });
+
   it('sessionUpdate for unrecognized type does not broadcast any event', async () => {
     const client = new AcpClient('/path/to/agent', []);
     await client.newSession();

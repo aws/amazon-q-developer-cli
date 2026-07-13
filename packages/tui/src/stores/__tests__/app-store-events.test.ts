@@ -75,6 +75,29 @@ describe('Stream event handler — ToolCall subagent stamping (Bug 1)', () => {
     expect(msg).toBeDefined();
     expect(msg!.agentName).toBe('main-agent');
   });
+
+  it('a lone ToolCallFinished (converter-suppressed orphan read) adds no tool row', async () => {
+    // End-to-end guard for the subagent-read bleed: the converter now
+    // suppresses the synthesized ToolCall for a title-less failed read on the
+    // main session, so the store only ever sees the ToolCallFinished. With no
+    // matching ToolUse message, that is a no-op — nothing renders in main.
+    const store = makeStore();
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'main-agent' },
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'read-orphan',
+      result: { status: 'error', error: 'ENOENT: README.md' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const toolRows = store
+      .getState()
+      .messages.filter((m: any) => m.role === MessageRole.ToolUse);
+    expect(toolRows.length).toBe(0);
+  });
 });
 
 describe('Stream event handler — ToolCall', () => {

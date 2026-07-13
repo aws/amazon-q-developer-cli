@@ -1322,7 +1322,21 @@ export abstract class BaseAcpClient implements SessionClient {
           // If the backend rejected the tool before execution, no `tool_call`
           // notification was sent. Synthesize one from rawInput so the TUI
           // can render the tool name and attempted arguments.
-          if (update.rawInput !== undefined) {
+          //
+          // A genuine rejected-before-exec tool always carries a `title`
+          // (V2 acp_agent get_tool_title; KAS model tools emit PendingAction
+          // first). A title-LESS failed update on the MAIN session is KAS's
+          // orchestrate-subagent re-reading a finished subagent's referenced
+          // files at the parent executionId — synthesizing it here attributes
+          // it to the main agent and leaks it into the main transcript (the
+          // subagent tool "bleed"). Only failures leak, since the success
+          // branch synthesizes solely on rawInput.response. Skip synthesis for
+          // that case; a subagent-stamped update (notifSessionId differs) still
+          // synthesizes so it routes to the subagent surface.
+          const isUnattributableOrphanRead =
+            !update.title &&
+            (!notifSessionId || notifSessionId === this.sessionId);
+          if (update.rawInput !== undefined && !isUnattributableOrphanRead) {
             const synthesized: AgentStreamEvent = {
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
