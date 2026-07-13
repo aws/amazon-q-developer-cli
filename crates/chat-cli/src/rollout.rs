@@ -32,6 +32,12 @@ pub enum Feature {
     /// Remote/cloud sandbox sessions (`--cloud` / `--repo` flags).
     RemoteSandbox,
     V2NonInteractive,
+    /// ICECAP infrastructure-safety gate. Internal-only via `rollout.json`
+    /// (`segment: internal`). The launcher exports the decision as
+    /// `KIRO_INFRA_SAFETY_ROLLOUT_ENABLED` so the TUI advertises the
+    /// `infrastructureSafety` capability and honors the `infraSafetyMonitor` /
+    /// `infraSafetyEnforce` settings only for users in the cohort.
+    InfraSafety,
     Memory,
     #[cfg(test)]
     #[typeshare(skip)]

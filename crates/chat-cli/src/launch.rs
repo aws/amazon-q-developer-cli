@@ -333,6 +333,20 @@ async fn launch_acp_interactive(
                 "0"
             },
         )
+        // ICECAP infra-safety gate. The TUI advertises the `infrastructureSafety`
+        // capability and honors the `infraSafetyMonitor` / `infraSafetyEnforce`
+        // settings only when this is "1". Set server-authoritatively from the
+        // Feature::InfraSafety rollout decision (internal-only via rollout.json)
+        // and write "0" otherwise — overwriting any inherited value so a user
+        // can't force it on by exporting the var in their shell.
+        .env(
+            "KIRO_INFRA_SAFETY_ROLLOUT_ENABLED",
+            if crate::rollout::rollout().is_enabled(crate::rollout::Feature::InfraSafety) {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .kill_on_drop(true);
 
     // Forward the unconditional env vars (binary paths, version) to the TUI.

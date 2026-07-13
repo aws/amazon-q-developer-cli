@@ -48,6 +48,19 @@ export function buildKasSettings(): KasSettings | undefined {
     ['chat.enableDelegate', '_delegate'],
   ];
 
+  // ICECAP infra-safety gate. Both modes are opt-in, default off — the user
+  // enables them in cli.json (monitor evaluates + warns; enforce also blocks).
+  // Gated to the internal cohort: the Rust launcher exports
+  // KIRO_INFRA_SAFETY_ROLLOUT_ENABLED from the Feature::InfraSafety rollout
+  // decision, so we only honor these settings for users in the cohort. Outside
+  // it, the settings are ignored (and acp-client.ts withholds the capability).
+  if (process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1') {
+    boolMappings.push(
+      ['chat.enableInfraSafetyMonitor', 'infraSafetyMonitor'],
+      ['chat.enableInfraSafetyEnforce', 'infraSafetyEnforce'],
+    );
+  }
+
   for (const [cliKey, agentKey] of boolMappings) {
     const val = raw[cliKey];
     if (typeof val === 'boolean') {

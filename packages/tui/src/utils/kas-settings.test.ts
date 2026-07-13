@@ -14,11 +14,16 @@ const CLI_DEFAULTS = {
 describe('buildKasSettings', () => {
   let tmpDir: string;
   let originalKiroHome: string | undefined;
+  let originalInfraSafetyRollout: string | undefined;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'kas-settings-test-'));
     originalKiroHome = process.env.KIRO_HOME;
     process.env.KIRO_HOME = tmpDir;
+    // Default: infra-safety rollout OFF, so the base-mapping tests are unaffected.
+    // Infra-safety tests opt in by setting this to '1'.
+    originalInfraSafetyRollout = process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
+    delete process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
   });
 
   afterEach(() => {
@@ -26,6 +31,11 @@ describe('buildKasSettings', () => {
       delete process.env.KIRO_HOME;
     } else {
       process.env.KIRO_HOME = originalKiroHome;
+    }
+    if (originalInfraSafetyRollout === undefined) {
+      delete process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
+    } else {
+      process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = originalInfraSafetyRollout;
     }
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -166,5 +176,73 @@ describe('buildKasSettings', () => {
       ...CLI_DEFAULTS,
       thinking: { enabled: true },
     });
+  });
+
+  // ── ICECAP infra-safety: internal-gated (KIRO_INFRA_SAFETY_ROLLOUT_ENABLED),
+  //    both modes opt-in via cli.json, default off ──
+
+  test('infra-safety settings are ignored when rollout is OFF (not internal)', async () => {
+    // Rollout env unset (default). Even with the settings explicitly on, the
+    // gated boolMappings are not registered, so nothing is advertised.
+    writeSettings({
+      'chat.enableInfraSafetyMonitor': true,
+      'chat.enableInfraSafetyEnforce': true,
+    });
+    const buildKasSettings = await getBuildKasSettings();
+    const result = buildKasSettings();
+    expect(result?.infraSafetyMonitor).toBeUndefined();
+    expect(result?.infraSafetyEnforce).toBeUndefined();
+  });
+
+  test('infraSafetyMonitor absent by default even when rollout ON (opt-in)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyMonitor).toBeUndefined();
+  });
+
+  test('infraSafetyEnforce absent by default even when rollout ON (opt-in)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyEnforce).toBeUndefined();
+  });
+
+  test('infraSafetyMonitor enabled via cli.json setting (rollout ON)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    writeSettings({ 'chat.enableInfraSafetyMonitor': true });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyMonitor).toEqual({ enabled: true });
+  });
+
+  test('infraSafetyMonitor explicit false via cli.json setting (rollout ON)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    writeSettings({ 'chat.enableInfraSafetyMonitor': false });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyMonitor).toEqual({ enabled: false });
+  });
+
+  test('infraSafetyEnforce enabled via cli.json setting (rollout ON)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    writeSettings({ 'chat.enableInfraSafetyEnforce': true });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyEnforce).toEqual({ enabled: true });
+  });
+
+  test('infraSafetyEnforce explicit false via cli.json setting (rollout ON)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    writeSettings({ 'chat.enableInfraSafetyEnforce': false });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.infraSafetyEnforce).toEqual({ enabled: false });
+  });
+
+  test('both infra-safety modes enabled together (rollout ON)', async () => {
+    process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
+    writeSettings({
+      'chat.enableInfraSafetyMonitor': true,
+      'chat.enableInfraSafetyEnforce': true,
+    });
+    const buildKasSettings = await getBuildKasSettings();
+    const result = buildKasSettings();
+    expect(result?.infraSafetyMonitor).toEqual({ enabled: true });
+    expect(result?.infraSafetyEnforce).toEqual({ enabled: true });
   });
 });

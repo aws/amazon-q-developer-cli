@@ -20,6 +20,11 @@
     "treatment_percent": 100,
     "segment": "internal"
   },
+  "infra_safety": {
+    "description": "ICECAP infrastructure-safety gate (monitor/enforce). Internal-only initially; launcher exports KIRO_INFRA_SAFETY_ROLLOUT_ENABLED and the TUI advertises the capability + honors the infraSafety settings only when enabled. Ramp via treatment_percent.",
+    "treatment_percent": 100,
+    "segment": "internal"
+  },
   "lite": {
     "description": "Lite TUI mode - internal nightly only initially",
     "treatment_percent": 100,

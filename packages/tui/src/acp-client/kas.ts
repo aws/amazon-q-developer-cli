@@ -453,6 +453,13 @@ export class KasAcpClient extends BaseAcpClient {
         knowledge: true,
         hooks: { enabled: true, v2: true },
         requirementsAnalysis: true,
+        // ICECAP infra-safety capability. Gated to the internal cohort by the
+        // Rust launcher, which exports KIRO_INFRA_SAFETY_ROLLOUT_ENABLED from the
+        // Feature::InfraSafety rollout decision. Advertised only when enabled, in
+        // lockstep with the infraSafety* settings in buildKasSettings().
+        ...(process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1' && {
+          infrastructureSafety: true,
+        }),
         ...(kasSettings && { settings: kasSettings }),
       },
     });

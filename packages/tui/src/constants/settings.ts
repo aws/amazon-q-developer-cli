@@ -59,6 +59,10 @@ export const Settings = {
   // nested defaults object (effort lives under each model's family schema path).
   CHAT_DEFAULT_MODEL: 'chat.defaultModel',
   CHAT_MODEL_DEFAULTS: 'chat.modelDefaults',
+  // ICECAP infra-safety gate opt-ins (both default off). Consumed by
+  // buildKasSettings() via boolMappings. Monitor evaluates + warns; enforce blocks.
+  CHAT_ENABLE_INFRA_SAFETY_MONITOR: 'chat.enableInfraSafetyMonitor',
+  CHAT_ENABLE_INFRA_SAFETY_ENFORCE: 'chat.enableInfraSafetyEnforce',
 } as const;
 
 /**
