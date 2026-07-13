@@ -125,10 +125,10 @@ Run with `@builder-mcp/TicketingReadActions action=search-tickets` (read `totalC
    createDate: "[{start_iso} TO {end_iso}]"
    rows: 100
    sort: "createDate asc"
-   responseFields: ["id","extensions.tt.id","aliases","title","deduplicatorString","createDate"]
+   responseFields: ["id","aliases","title","extensions","createDate"]
    ```
    Write raw rows to `/tmp/kcli_oncall_incoming.jsonl`, then compute **distinct issues**:
-   group rows by `deduplicatorString` prefix (strip trailing region/timestamp), and by
+   group rows by `extensions.tt.dedupeString` prefix (strip trailing region/timestamp), and by
    normalized alarm name in the title — all `QCLI-SuccessRateDown`, all `…CacheHitRate…`,
    all `ConsolasRTS-…Availability…` each collapse to ONE issue. `incoming = number of
    distinct issues` (this is how the team reports "Incoming" — an alarm storm of 5 pages is
@@ -143,7 +143,7 @@ Run with `@builder-mcp/TicketingReadActions action=search-tickets` (read `totalC
      status: ["Resolved","Closed"]
      lastResolvedDate: "[{start_iso} TO {end_date}T23:59:59Z]"
      rows: 100
-     responseFields: ["id","extensions.tt.id","aliases","title","extensions.tt.rootCause","lastResolvedDate"]
+     responseFields: ["id","aliases","title","extensions.tt.rootCause","lastResolvedDate"]
      ```
    - **(b) CLI-CTI resolved across ALL groups** — catches CLI tickets the oncall drove to
      closure that live in adjacent groups:
@@ -151,7 +151,7 @@ Run with `@builder-mcp/TicketingReadActions action=search-tickets` (read `totalC
      query: 'extensions.tt.category:"Kiro" AND extensions.tt.type:"CLI" AND status:(Resolved OR Closed)'
      lastResolvedDate: "[{start_iso} TO {end_date}T23:59:59Z]"
      rows: 100
-     responseFields: ["id","extensions.tt.id","aliases","title","extensions.tt.assignedGroup","extensions.tt.rootCause","lastResolvedDate"]
+     responseFields: ["id","aliases","title","extensions.tt.assignedGroup","extensions.tt.rootCause","lastResolvedDate"]
      ```
    Union (a)+(b), dedupe by `display_id`, write to `/tmp/kcli_oncall_resolved.jsonl`.
    `resolved = distinct count`. This list also feeds the Section 2 root-cause table.
@@ -183,7 +183,7 @@ Write `/tmp/kcli_oncall_metrics.json`:
 ## Step 3 — Fetch high-severity (Sev2) tickets
 
 `search-tickets` keyed on `createDate`, and again on `lastUpdatedDate` (to catch reopened/
-escalated tickets), then union the **display IDs** (`extensions.tt.id` / `aliases`, i.e.
+escalated tickets), then union the **display IDs** (from `aliases`, i.e.
 `V…`/`P…`/`D…`) into `/tmp/kcli_oncall_sev2_ids.txt` (`sort -u`). These display IDs are
 what appears in the report and what Step 8 validates against; `get-ticket` accepts the
 display ID as its `ticketId`:
@@ -195,20 +195,20 @@ status: ["Assigned","Researching","Work In Progress","Pending","Resolved","Close
 createDate: "[{start_iso} TO {end_iso}]"
 rows: 100
 sort: "createDate asc"
-responseFields: ["id","extensions.tt.id","aliases","title","status","extensions.tt.impact","createDate"]
+responseFields: ["id","aliases","title","status","extensions","createDate"]
 ```
 
 **Ticket ID rule (IMPORTANT):** the top-level `id` field is an internal UUID
 (e.g. `63dddddb-bd71-40e6-...`) — do NOT use it in the report. Use the human-readable
-**display ID** (`V…` / `P…` / `D…`), which is in `extensions.tt.id` (or the `aliases`
-array — pick the alias whose realm is `TT`/`SIM`, e.g. `V2239674541`, `P449035647`,
-`D468841287`). If you are unsure which field holds it, call `get-search-instructions`
-once. Record this as `display_id` for every ticket and use it for all link text and URLs.
+**display ID** (`V…` / `P…` / `D…`), which is in the `aliases` array (pick the alias
+that looks like `V2239674541`, `P449035647`, `D468841287`). If you are unsure which field
+holds it, call `get-search-instructions` once. Record this as `display_id` for every ticket
+and use it for all link text and URLs.
 
 Fetch each ID with `get-ticket` in batches of 8. For each, append a JSON line to
 `/tmp/kcli_oncall_sev2.jsonl` with: `id (UUID, internal use only), display_id (V/P/D — the
 one shown in the report), title, status, sev (extensions.tt.impact), closureCode,
-rootCause, rootCauseDetails, resolution, deduplicatorString, createDate,
+rootCause, rootCauseDetails, resolution, dedupeString (from extensions.tt), createDate,
 lastResolvedDate`, **human comments only** (author + first 300 chars; skip automated
 authors: Medic, SmartTTBots, SnowEngine, asbx-medic-prod, AutoSIM, OSSA, ossa-genai-agent,
 TRI BOT, SIMCrux, flx-cloudwatch, PitMinerArsenic, ShoehornProofNotifier,
@@ -222,7 +222,7 @@ assignedGroup: ["Amazon Q for CLI"]
 currentSeverity: ["1","2","2.5"]
 status: ["Assigned","Researching","Work In Progress","Pending"]
 rows: 100
-responseFields: ["id","extensions.tt.id","aliases","title","status","createDate"]
+responseFields: ["id","aliases","title","status","createDate"]
 ```
 → `/tmp/kcli_oncall_open_sev2.jsonl`. Reuse description/comments from
 `/tmp/kcli_oncall_sev2.jsonl` where the ID already exists. Record `display_id` (V/P/D) for
@@ -237,7 +237,7 @@ each, not the UUID.
   createDate: "[{start_iso} TO {end_iso}]"
   query: 'extensions.tt.tags:"Amazon Q for CLI" AND NOT extensions.tt.assignedGroup:"Amazon Q for CLI"'
   rows: 50
-  responseFields: ["id","extensions.tt.id","aliases","title","status","extensions.tt.assignedGroup"]
+  responseFields: ["id","aliases","title","status","extensions.tt.assignedGroup"]
   ```
   → `/tmp/kcli_oncall_partner.jsonl`. If empty, Section 9 says `None`.
 
@@ -271,7 +271,7 @@ Append every event to `/tmp/kcli_oncall_pages.jsonl`, ordered chronologically. S
 - **Section 4 (LSEs):** identify customer-impacting / cross-team incidents (broad blast
   radius, cascading tickets, PII exposure, prod outages) → one bullet each. Update
   `metrics.lse_count`.
-- **Grouping** (for Sections 2/4/6/7): group by same `deduplicatorString` prefix, same
+- **Grouping** (for Sections 2/4/6/7): group by same `extensions.tt.dedupeString` prefix, same
   alarm across regions, explicitly linked tickets, or same root cause. Never group
   unrelated tickets; every ticket ID stays individually traceable.
 
