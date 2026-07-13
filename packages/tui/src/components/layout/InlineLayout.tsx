@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
-import { ModeChangeSource } from '../../types/generated/chat-cli.js';
+import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
 
 // Region is twinki-only — lazy import for dev mode metrics
 const Region = isDevMode()
@@ -46,7 +46,6 @@ import {
   useConversationState,
   useApprovalState,
   useQueueState,
-  useKiroClient,
 } from '../../stores/selectors.js';
 import {
   useAppStore,
@@ -54,7 +53,6 @@ import {
   severityForInitErrors,
 } from '../../stores/app-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
-import { useShallow } from 'zustand/react/shallow';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
   resolveKeybinding,
@@ -146,12 +144,7 @@ export const InlineLayout: React.FC = () => {
     initErrors,
     pendingOAuthServers,
   } = useNotificationState();
-  const {
-    dismissTransientAlert,
-    setAgentError,
-    setLoadingMessage,
-    showTransientAlert,
-  } = useNotificationActions();
+  const { dismissTransientAlert, setAgentError } = useNotificationActions();
   const {
     isProcessing,
     isCompacting,
@@ -196,7 +189,6 @@ export const InlineLayout: React.FC = () => {
     currentModel,
     currentEffort,
     currentAgent,
-    previousAgentName,
     codeIntelligenceActive,
     goalStatus,
   } = useContextState();
@@ -213,7 +205,6 @@ export const InlineLayout: React.FC = () => {
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
   const settings = useAppStore((s) => s.settings);
-  const { kiro } = useKiroClient();
   const mode = useAppStore((state) => state.mode);
   const backendPanelHandlers = useBackendPanelHandlers();
 
@@ -263,13 +254,6 @@ export const InlineLayout: React.FC = () => {
   // Esc during approval is handled by Panel's useInput → handleClose in
   // ApprovalRequest (drill-in → dropdown, trust → default, dropdown → cancel).
 
-  const { setCurrentAgent, setPreviousAgentName } = useAppStore(
-    useShallow((s) => ({
-      setCurrentAgent: s.setCurrentAgent,
-      setPreviousAgentName: s.setPreviousAgentName,
-    }))
-  );
-
   const [gitBranch, _setGitBranch] = useState(() => getGitBranch());
 
   // Handle Ctrl+O to toggle tool output expansion
@@ -314,84 +298,8 @@ export const InlineLayout: React.FC = () => {
     { isActive: editingQueueIndex != null }
   );
 
-  // Handle Shift+Tab for agent switching
-  useKeypress(
-    (_input, key) => {
-      if (key.tab && key.shift) {
-        const currentName = currentAgent?.name;
-
-        // Emit a Shift+Tab mode-change telemetry event when the agent
-        // actually changed. Centralized so both branches stay in sync if
-        // the payload shape grows or a new entry point is added.
-        const emitModeChange = (
-          from: string | undefined,
-          to: string | undefined
-        ) => {
-          if (from && to && from !== to) {
-            kiro.sendModeChanged({
-              fromMode: from,
-              toMode: to,
-              source: ModeChangeSource.ShiftTab,
-              sessionId: kiro.sessionId,
-            });
-          }
-        };
-
-        // Replace any in-flight toast (e.g. stale "Switched to spec" from a
-        // prior /agent command) with a fresh one for this swap so rapid
-        // Shift+Tab presses don't keep showing the previous target's label.
-        // Uses the raw id (not the display name) to match the /agent toast.
-        const announceSwitch = (name: string) => {
-          showTransientAlert({
-            message: `Switched to ${name}`,
-            status: 'success',
-            autoHideMs: 2000,
-          });
-        };
-
-        if (currentName === 'kiro_planner') {
-          const target = previousAgentName;
-          if (!target) return;
-          setLoadingMessage(`Agent changing to ${target}`);
-          kiro
-            .executeCommand({ command: 'agent', args: { agentName: target } })
-            .then((result) => {
-              setLoadingMessage(null);
-              if (result?.success) {
-                const name = (result.data as any)?.agent?.name;
-                emitModeChange(currentName, name);
-                if (name) {
-                  setCurrentAgent({ name });
-                  announceSwitch(name);
-                }
-              }
-            })
-            .catch(() => setLoadingMessage(null));
-        } else {
-          if (currentName) setPreviousAgentName(currentName);
-          setLoadingMessage('Agent changing to kiro_planner');
-          kiro
-            .executeCommand({
-              command: 'agent',
-              args: { agentName: 'kiro_planner' },
-            })
-            .then((result) => {
-              setLoadingMessage(null);
-              if (result?.success) {
-                const name = (result.data as any)?.agent?.name;
-                emitModeChange(currentName, name);
-                if (name) {
-                  setCurrentAgent({ name });
-                  announceSwitch(name);
-                }
-              }
-            })
-            .catch(() => setLoadingMessage(null));
-        }
-      }
-    },
-    { isActive: true }
-  );
+  // Shift+Tab toggles plan mode (shared with LiteLayout).
+  usePlanModeToggle();
 
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {

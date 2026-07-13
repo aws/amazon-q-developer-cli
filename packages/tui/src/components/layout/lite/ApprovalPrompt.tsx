@@ -299,8 +299,10 @@ export function ApprovalPrompt({
       // matches the muscle memory TUI users already have. The notes-page
       // PromptInput owns Tab once mounted (it uses Tab for completion/expand),
       // and because this handler branches on `page` the default-page Tab
-      // handler can't fire again while page === 'notes'.
-      if (key.tab) {
+      // handler can't fire again while page === 'notes'. Exclude Shift+Tab so
+      // it falls through to usePlanModeToggle (parity with classic, where the
+      // approval handler never consumes Tab).
+      if (key.tab && !key.shift) {
         openNotesPage();
         return;
       }

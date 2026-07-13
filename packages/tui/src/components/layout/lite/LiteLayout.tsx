@@ -68,6 +68,7 @@ import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { CommandMenu } from '../../ui/CommandMenu.js';
 import { Divider } from '../../ui/divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { usePlanModeToggle } from '../../../hooks/usePlanModeToggle.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
@@ -134,6 +135,8 @@ export const LiteLayout: React.FC = () => {
   const respondToApproval = useAppStore((s) => s.respondToApproval);
   const currentModel = useAppStore((s) => s.currentModel);
   const currentAgent = useAppStore((s) => s.currentAgent);
+  // Shift+Tab toggles plan mode (shared with InlineLayout).
+  usePlanModeToggle();
   const contextUsagePercent = useAppStore((s) => s.contextUsagePercent);
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
