@@ -1,6 +1,6 @@
 /**
  * LiteLiveRegion: active tool calls + streaming content + thinking. All running
- * tools shown at once; thinking timer resets per batch; streaming content is
+ * tools shown at once; thinking timer resets per round; streaming content is
  * not height-bounded (terminal scrolls naturally).
  */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -110,7 +110,6 @@ export const LiteLiveRegion: React.FC = () => {
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const thinkingStartRef = useRef(Date.now());
-  const prevHadContentRef = useRef(false);
   // The elapsed counter and spinner only show in certain branches. These refs
   // (read in the interval callback, updated each render) gate setElapsed /
   // setFrame so we don't re-render every 150ms for a value nothing displays.
@@ -120,16 +119,9 @@ export const LiteLiveRegion: React.FC = () => {
   // restarts the elapsed counter so it reads per-round, not whole-turn.
   const prevIdleVisibleRef = useRef(false);
 
-  // Reset the thinking timer when a new thinking batch starts (empty →
-  // non-empty) so the elapsed counter reads per-batch.
-  useEffect(() => {
-    const hasContent = !!thinkingContent;
-    if (!prevHadContentRef.current && hasContent) {
-      thinkingStartRef.current = Date.now();
-      setElapsed(0);
-    }
-    prevHadContentRef.current = hasContent;
-  }, [thinkingContent]);
+  // Timer resets per ROUND (idle re-entry, below), NOT per thinkingContent
+  // toggle — the store churns that empty↔non-empty within one round, so
+  // resetting on it restarted the counter mid-round.
 
   useEffect(() => {
     if (!isProcessing) {
