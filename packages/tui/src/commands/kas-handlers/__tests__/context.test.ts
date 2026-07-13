@@ -233,6 +233,16 @@ describe('handleContext (KAS-mode dispatch)', () => {
       expect((ctx.kiro.contextAdd as any).mock.calls[0][0]).toBe('my notes.md');
     });
 
+    // shellSplit already resolved quoting — the handler must NOT re-strip, or a
+    // quote char that is genuinely part of the filename (via escape) gets eaten.
+    it('keeps quote chars that are part of the literal filename (no double-strip)', async () => {
+      const ctx = ctxWith();
+      // \" \" escape a leading + trailing double-quote → filename is  "weird"
+      await handleContext(CONTEXT_CMD, 'add \\"weird\\"', ctx);
+
+      expect((ctx.kiro.contextAdd as any).mock.calls[0][0]).toBe('"weird"');
+    });
+
     it('shows a Usage error when no path is given (no agent call)', async () => {
       const ctx = ctxWith();
       await handleContext(CONTEXT_CMD, 'add', ctx);
@@ -259,14 +269,100 @@ describe('handleContext (KAS-mode dispatch)', () => {
       expect(String(showAlert.mock.calls[0][0])).toContain('Path not found');
     });
 
-    it('falls back to "Done" when agent omits a message', async () => {
+    it('summarizes with a V2-style message even when agent omits one', async () => {
       const ctx = ctxWith({
         contextAdd: mock(() => Promise.resolve({ success: true, message: '' })),
       });
       await handleContext(CONTEXT_CMD, 'add foo.ts', ctx);
 
       const showAlert = ctx._spies.showAlert as any;
-      expect(showAlert.mock.calls[0][0]).toBe('Done');
+      expect(showAlert.mock.calls[0][0]).toBe("Added 'foo.ts' to context");
+      expect(showAlert.mock.calls[0][1]).toBe('success');
+    });
+
+    it('adds EACH path once for multi-path input (no collapse)', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add src/a.ts src/b.ts', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls.length).toBe(2);
+      expect(add.mock.calls[0]).toEqual(['src/a.ts', { force: false }]);
+      expect(add.mock.calls[1]).toEqual(['src/b.ts', { force: false }]);
+      expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+        'Added 2 path(s) to context',
+        'success',
+        3000
+      );
+    });
+
+    it('keeps quoted paths with spaces intact across multiple paths', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add "my a.md" "my b.md"', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls.length).toBe(2);
+      expect(add.mock.calls[0][0]).toBe('my a.md');
+      expect(add.mock.calls[1][0]).toBe('my b.md');
+    });
+
+    it('applies --force to every path', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add --force a.ts b.ts', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls[0]).toEqual(['a.ts', { force: true }]);
+      expect(add.mock.calls[1]).toEqual(['b.ts', { force: true }]);
+    });
+
+    // V2 shell_split parity (crates/chat-cli-v2/.../commands/mod.rs): globs
+    // stay literal for the agent to expand; backslash escapes a space.
+    it('passes globs through literally as a single path', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add src/*.ts', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls.length).toBe(1);
+      expect(add.mock.calls[0][0]).toBe('src/*.ts');
+    });
+
+    it('honors a backslash-escaped space as one path', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add my\\ notes.md', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls.length).toBe(1);
+      expect(add.mock.calls[0][0]).toBe('my notes.md');
+    });
+
+    // V2 shell_split parity: an unclosed quote still yields the accumulated
+    // token (quote char stripped), not a dropped/empty path.
+    it('treats an unclosed quote as one path (quote stripped)', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add "unclosed path', ctx);
+
+      const add = ctx.kiro.contextAdd as any;
+      expect(add.mock.calls.length).toBe(1);
+      expect(add.mock.calls[0][0]).toBe('unclosed path');
+    });
+
+    it('surfaces per-path failures AND reports the paths that did apply', async () => {
+      const ctx = ctxWith({
+        contextAdd: mock((p: string) =>
+          Promise.resolve(
+            p === 'ghost.ts'
+              ? { success: false, message: 'Path not found: ghost.ts' }
+              : { success: true, message: '' }
+          )
+        ),
+      });
+      await handleContext(CONTEXT_CMD, 'add ok.ts ghost.ts', ctx);
+
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls[0][1]).toBe('error');
+      const msg = String(showAlert.mock.calls[0][0]);
+      // partial success must be visible: 1 path applied, ghost failed
+      expect(msg).toContain('Added 1 path(s) to context');
+      expect(msg).toContain('ghost.ts');
     });
 
     it('surfaces RPC errors from contextAdd as an error alert', async () => {
@@ -305,6 +401,21 @@ describe('handleContext (KAS-mode dispatch)', () => {
       // contextRemove is invoked directly.
       expect((ctx.kiro.contextRemove as any).mock.calls[0]).toEqual(['foo.ts']);
       expect((ctx.kiro.contextAdd as any).mock.calls.length).toBe(0);
+    });
+
+    it('removes EACH path once for multi-path input (no collapse)', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'remove a.ts b.ts', ctx);
+
+      const rm = ctx.kiro.contextRemove as any;
+      expect(rm.mock.calls.length).toBe(2);
+      expect(rm.mock.calls[0]).toEqual(['a.ts']);
+      expect(rm.mock.calls[1]).toEqual(['b.ts']);
+      expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+        'Removed 2 path(s) from context',
+        'success',
+        3000
+      );
     });
 
     it('drops --force on remove (the flag is consumed but ignored)', async () => {

@@ -7,7 +7,6 @@ import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
 import { getActiveGlyphs } from '../../hooks/useGlyphs';
-import { unquote } from '../../utils/string';
 
 /**
  * KAS-mode dispatch handler for `/context`.
@@ -25,8 +24,7 @@ export async function handleContext(
   ctx: CommandContext,
   _options?: DispatchOptions
 ): Promise<void> {
-  const trimmed = args.trim();
-  const tokens = trimmed.length === 0 ? [] : trimmed.split(/\s+/);
+  const tokens = shellSplit(args);
   const rawSub = (tokens[0] ?? '').toLowerCase();
   const explicitShow = rawSub === 'show';
 
@@ -58,30 +56,38 @@ export async function handleContext(
     return runMutation(ctx, () => ctx.kiro.contextClear(), 'clear');
   }
 
-  // add / remove — both take a path; --force/-f is honoured for add.
+  // add / remove — each take one or more paths; --force/-f is honoured for add.
   let force = false;
-  const positional: string[] = [];
+  const paths: string[] = [];
   for (const tok of tokens.slice(1)) {
     if (tok === '--force' || tok === '-f') {
       force = true;
     } else {
-      positional.push(tok);
+      // shellSplit already resolved quotes/escapes — use the token as-is,
+      // matching Rust (shell_split → add_resource, no re-strip). Re-stripping
+      // would eat quote chars that are part of the literal filename.
+      paths.push(tok);
     }
   }
-  const pathArg = unquote(positional.join(' ').trim());
-  if (pathArg.length === 0) {
-    ctx.showAlert(`Usage: /context ${subcommand} <path>`, 'error', 5000);
+  if (paths.length === 0) {
+    ctx.showAlert(`Usage: /context ${subcommand} <path>...`, 'error', 5000);
     return;
   }
 
   if (subcommand === 'add') {
-    return runMutation(
+    return runMultiMutation(
       ctx,
-      () => ctx.kiro.contextAdd(pathArg, { force }),
-      'add'
+      paths,
+      (p) => ctx.kiro.contextAdd(p, { force }),
+      'Added'
     );
   }
-  return runMutation(ctx, () => ctx.kiro.contextRemove(pathArg), 'remove');
+  return runMultiMutation(
+    ctx,
+    paths,
+    (p) => ctx.kiro.contextRemove(p),
+    'Removed'
+  );
 }
 
 /**
@@ -166,4 +172,81 @@ async function runMutation(
     return;
   }
   ctx.showAlert(response.message || 'Done', 'success', 3000);
+}
+
+/**
+ * add/remove flow: run the mutation once per path (the RPC takes a
+ * single path) and aggregate. Mirrors the V2 Rust UX — one path names
+ * itself, many collapse to a count — and surfaces any per-path failures.
+ */
+async function runMultiMutation(
+  ctx: CommandContext,
+  paths: string[],
+  call: (path: string) => Promise<{ success?: boolean; message?: string }>,
+  verb: 'Added' | 'Removed'
+): Promise<void> {
+  let ok = 0;
+  const failures: string[] = [];
+  for (const path of paths) {
+    try {
+      const res = await call(path);
+      if (res.success === false) {
+        failures.push(res.message || `'${path}'`);
+      } else {
+        ok += 1;
+      }
+    } catch (err) {
+      failures.push(extractRpcErrorMessage(err, `'${path}'`));
+    }
+  }
+
+  const preposition = verb === 'Added' ? 'to' : 'from';
+  if (failures.length > 0) {
+    // Partial success: name the paths that DID mutate so the user isn't left
+    // thinking the whole command failed when earlier paths already applied.
+    const prefix =
+      ok > 0 ? `${verb} ${ok} path(s) ${preposition} context. ` : '';
+    ctx.showAlert(`${prefix}Failed: ${failures.join('; ')}`, 'error', 5000);
+    return;
+  }
+  const summary =
+    paths.length === 1
+      ? `${verb} '${paths[0]}' ${preposition} context`
+      : `${verb} ${ok} path(s) ${preposition} context`;
+  ctx.showAlert(summary, 'success', 3000);
+}
+
+/**
+ * Split a slash-command argument string into tokens, respecting quotes
+ * and backslash escapes so paths with spaces survive as one token.
+ * Mirrors V2's Rust `shell_split` — globs (`*`, `?`, `[`) pass through
+ * literally for the agent to expand.
+ */
+function shellSplit(input: string): string[] {
+  const tokens: string[] = [];
+  let cur = '';
+  let quote: '"' | "'" | null = null;
+  let has = false;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charAt(i);
+    if (quote) {
+      if (c === quote) quote = null;
+      else cur += c;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+      has = true;
+    } else if (c === '\\' && i + 1 < input.length) {
+      cur += input.charAt(++i);
+      has = true;
+    } else if (/\s/.test(c)) {
+      if (has) tokens.push(cur);
+      cur = '';
+      has = false;
+    } else {
+      cur += c;
+      has = true;
+    }
+  }
+  if (has) tokens.push(cur);
+  return tokens;
 }
