@@ -39,6 +39,7 @@ const baseState = (
   reverseSearchActive: false,
   pendingApproval: false,
   editingQueueIndex: null,
+  editingSteerLineIndex: null,
   transientAlertHasAction: false,
   pendingOAuthUrl: null,
   subagentPanelOpen: false,
@@ -132,6 +133,18 @@ describe('dispatchAppKeypress: cancelStream binding', () => {
       '',
       blankKey({ escape: true }),
       baseState({ isProcessing: true, editingQueueIndex: 0 }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBeUndefined();
+  });
+
+  it('esc while editing a staged steer line does NOT cancel streaming (steer edit owns esc)', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({ isProcessing: true, editingSteerLineIndex: 0 }),
       actions,
       DEFAULT_BINDINGS
     );

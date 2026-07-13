@@ -21,6 +21,7 @@ export interface AppKeypressState {
   reverseSearchActive: boolean;
   pendingApproval: boolean;
   editingQueueIndex: number | null;
+  editingSteerLineIndex: number | null;
   transientAlertHasAction: boolean;
   pendingOAuthUrl: string | null;
   /**
@@ -161,7 +162,8 @@ export function dispatchAppKeypress(
     if (
       state.isProcessing &&
       !state.pendingApproval &&
-      state.editingQueueIndex == null
+      state.editingQueueIndex == null &&
+      state.editingSteerLineIndex == null
     ) {
       actions.cancelMessage();
     }

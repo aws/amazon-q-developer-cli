@@ -83,6 +83,9 @@ export const AppContainer: React.FC = () => {
   const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
   const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
+  const editingSteerLineIndex = useAppStore(
+    (state) => state.editingSteerLineIndex
+  );
 
   const transientAlert = useAppStore((state) => state.transientAlert);
   const dismissTransientAlert = useAppStore(
@@ -151,6 +154,7 @@ export const AppContainer: React.FC = () => {
       reverseSearchActive,
       pendingApproval: !!pendingApproval,
       editingQueueIndex: editingQueueIndex ?? null,
+      editingSteerLineIndex: editingSteerLineIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
       subagentPanelOpen,

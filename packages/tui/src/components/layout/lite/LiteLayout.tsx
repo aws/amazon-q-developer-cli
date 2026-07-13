@@ -344,8 +344,6 @@ export const LiteLayout: React.FC = () => {
   subagentOpenIndexRef.current = subagentOpenIndex;
   const anyPanelOpenRef = useRef(anyPanelOpen);
   anyPanelOpenRef.current = anyPanelOpen;
-  const editingQueueIndexRef = useRef(editingQueueIndex);
-  editingQueueIndexRef.current = editingQueueIndex;
   const promptDetailOpen = useAppStore((s) => s.promptDetailOpen);
   const promptDetailOpenRef = useRef(promptDetailOpen);
   promptDetailOpenRef.current = promptDetailOpen;
@@ -357,12 +355,12 @@ export const LiteLayout: React.FC = () => {
       if (key.escape) return;
       if (key.ctrl && (input === 'o' || input === 'O')) return;
     }
-    // Backend panel / queue-edit own Esc — bail before the cancel branch so
-    // Esc doesn't also abort the in-flight turn.
+    // Backend panel / queue- or steer-edit own Esc — bail before the cancel
+    // branch so Esc doesn't also abort the in-flight turn.
     if (anyPanelOpenRef.current && key.escape) {
       return;
     }
-    if (editingQueueIndexRef.current != null && key.escape) {
+    if (isEditingEntry() && key.escape) {
       return;
     }
     if ((key.ctrl && input === 'c') || key.escape) {
