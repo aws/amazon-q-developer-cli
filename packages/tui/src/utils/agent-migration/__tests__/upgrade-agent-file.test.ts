@@ -155,4 +155,40 @@ describe('upgradeAgentFile', () => {
       toolsSettings: { execute_bash: { allowedCommands: ['git status'] } },
     });
   });
+
+  test('object-form hooks agent is recognized and upgraded to KAS array form in place', () => {
+    const status = run({
+      'h.json': { hooks: { agentSpawn: [{ command: 'git status' }] } },
+    });
+    expect(status.get('h.json')).toBe('upgraded');
+    expect(readJson('h.json')).toEqual({
+      hooks: [
+        {
+          name: 'agentSpawn-0',
+          trigger: 'agentSpawn',
+          action: { type: 'command', command: 'git status' },
+          timeout: 10,
+        },
+      ],
+    });
+    expect(readJson('h.json.bak')).toEqual({
+      hooks: { agentSpawn: [{ command: 'git status' }] },
+    });
+  });
+
+  test('array-form hooks agent is already universal; nothing is written', () => {
+    const alreadyUniversal = {
+      hooks: [
+        {
+          name: 'agentSpawn-0',
+          trigger: 'agentSpawn',
+          action: { type: 'command', command: 'git status' },
+          timeout: 10,
+        },
+      ],
+    };
+    const status = run({ 'h.json': alreadyUniversal });
+    expect(status.get('h.json')).toBe('skipped-in-sync');
+    expect(exists('h.json.bak')).toBe(false);
+  });
 });

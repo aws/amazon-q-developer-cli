@@ -54,6 +54,13 @@ const NONREGEX_COPY: Record<string, WarningCopy> = {
     mitigation:
       'Remove denyByDefault, or add read-only commands to allowedCommands',
   },
+  'unconvertible-hook': {
+    title: 'Unconvertible hook',
+    attribute: 'hooks',
+    change:
+      'No V3 equivalent (unknown trigger or a non-command hook) — dropped',
+    mitigation: 'Use a command hook under a supported trigger',
+  },
 };
 
 function truncate(s: string, n = 120): string {

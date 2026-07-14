@@ -20,7 +20,13 @@
       "resources": [
         "file://AGENTS.md",
         { "type": "knowledgeBase", "name": "my-docs", "auto_update": true }
-      ]
+      ],
+      "hooks": {
+        "agentSpawn": [{ "command": "echo hi" }],
+        "preToolUse": [
+          { "command": "lint", "matcher": "fs_write", "timeout_ms": 5000 }
+        ]
+      }
     },
     "expectedConfig": {
       "prompt": "file://resources/prompt.md",
@@ -42,6 +48,21 @@
       "resources": [
         "file://AGENTS.md",
         { "type": "knowledgeBase", "name": "my-docs", "auto_update": true }
+      ],
+      "hooks": [
+        {
+          "name": "agentSpawn-0",
+          "trigger": "agentSpawn",
+          "action": { "type": "command", "command": "echo hi" },
+          "timeout": 10
+        },
+        {
+          "name": "preToolUse-0",
+          "trigger": "preToolUse",
+          "matcher": "fs_write",
+          "action": { "type": "command", "command": "lint" },
+          "timeout": 5
+        }
       ],
       "permissions": {
         "rules": [
@@ -69,6 +90,9 @@
           "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
           "blocked": [".*pastebin\\.com.*"]
         }
+      },
+      "hooks": {
+        "postToolUse": [{ "command": "notify", "cache_ttl_seconds": 30 }]
       }
     },
     "expectedConfig": {
@@ -86,6 +110,15 @@
           "blocked": [".*pastebin\\.com.*"]
         }
       },
+      "hooks": [
+        {
+          "name": "postToolUse-0",
+          "trigger": "postToolUse",
+          "action": { "type": "command", "command": "notify" },
+          "timeout": 10,
+          "cacheTtlSeconds": 30
+        }
+      ],
       "permissions": {
         "rules": [
           {
@@ -271,14 +304,30 @@
       "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } },
       "permissions": {
         "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
-      }
+      },
+      "hooks": [
+        {
+          "name": "agentSpawn-0",
+          "trigger": "agentSpawn",
+          "action": { "type": "command", "command": "echo hi" },
+          "timeout": 10
+        }
+      ]
     },
     "expectedConfig": {
       "tools": ["*"],
       "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } },
       "permissions": {
         "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
-      }
+      },
+      "hooks": [
+        {
+          "name": "agentSpawn-0",
+          "trigger": "agentSpawn",
+          "action": { "type": "command", "command": "echo hi" },
+          "timeout": 10
+        }
+      ]
     },
     "classification": "universal-in-sync"
   },
@@ -289,14 +338,30 @@
       "tools": ["*"],
       "permissions": {
         "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
-      }
+      },
+      "hooks": [
+        {
+          "name": "stop-0",
+          "trigger": "stop",
+          "action": { "type": "command", "command": "cleanup" },
+          "timeout": 10
+        }
+      ]
     },
     "expectedConfig": {
       "name": "k",
       "tools": ["*"],
       "permissions": {
         "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
-      }
+      },
+      "hooks": [
+        {
+          "name": "stop-0",
+          "trigger": "stop",
+          "action": { "type": "command", "command": "cleanup" },
+          "timeout": 10
+        }
+      ]
     },
     "classification": "v3-only"
   },
@@ -349,5 +414,92 @@
       }
     },
     "classification": "universal-out-of-sync"
+  },
+  {
+    "description": "object-form hooks → KAS array form (only V2 signal is object-form hooks)",
+    "input": {
+      "hooks": { "agentSpawn": [{ "command": "git status" }] }
+    },
+    "expectedConfig": {
+      "hooks": [
+        {
+          "name": "agentSpawn-0",
+          "trigger": "agentSpawn",
+          "action": { "type": "command", "command": "git status" },
+          "timeout": 10
+        }
+      ]
+    },
+    "classification": "v2-only"
+  },
+  {
+    "description": "array-form hooks re-derive to themselves → universal-in-sync (idempotent)",
+    "input": {
+      "hooks": [
+        {
+          "name": "preToolUse-0",
+          "trigger": "preToolUse",
+          "matcher": "fs_write",
+          "action": { "type": "command", "command": "fmt" },
+          "timeout": 5
+        }
+      ]
+    },
+    "expectedConfig": {
+      "hooks": [
+        {
+          "name": "preToolUse-0",
+          "trigger": "preToolUse",
+          "matcher": "fs_write",
+          "action": { "type": "command", "command": "fmt" },
+          "timeout": 5
+        }
+      ]
+    },
+    "classification": "universal-in-sync"
+  },
+  {
+    "description": "V3 config (permissions) still carrying object-form hooks is rewritten, not skipped in-sync",
+    "input": {
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      },
+      "hooks": { "stop": [{ "command": "cleanup" }] }
+    },
+    "expectedConfig": {
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      },
+      "hooks": [
+        {
+          "name": "stop-0",
+          "trigger": "stop",
+          "action": { "type": "command", "command": "cleanup" },
+          "timeout": 10
+        }
+      ]
+    },
+    "classification": "universal-out-of-sync"
+  },
+  {
+    "description": "object-form hooks: an unconvertible tool hook is dropped with a warning; the command hook converts",
+    "input": {
+      "hooks": {
+        "postToolUse": [{ "tool_name": "t", "args": {} }],
+        "preToolUse": [{ "command": "fmt", "timeout_ms": 5000 }]
+      }
+    },
+    "expectedConfig": {
+      "hooks": [
+        {
+          "name": "preToolUse-0",
+          "trigger": "preToolUse",
+          "action": { "type": "command", "command": "fmt" },
+          "timeout": 5
+        }
+      ]
+    },
+    "classification": "v2-only",
+    "warnings": ["unconvertible-hook"]
   }
 ]

@@ -117,7 +117,8 @@ export function looksLikeAgent(config: Record<string, unknown>): boolean {
     'tools' in config ||
     'allowedTools' in config ||
     'permissions' in config ||
-    'toolsSettings' in config
+    'toolsSettings' in config ||
+    'hooks' in config
   );
 }
 

@@ -5,6 +5,7 @@
  * deterministic: same input → same output and warnings.
  */
 
+import { convertHooks } from './hooks.js';
 import {
   convertAllowedTools,
   convertToolsSettings,
@@ -68,6 +69,12 @@ export function hasV2Signal(config: Record<string, unknown>): boolean {
   if ('toolsSettings' in config || 'allowedTools' in config) {
     return true;
   }
+  // Object-form `hooks` is CLI-only: KAS validates `hooks` as an array and
+  // drops the whole agent when it's an object, so any object here (even empty)
+  // needs converting to array form.
+  if (isPlainObject(config.hooks)) {
+    return true;
+  }
   const tools = config.tools;
   if (Array.isArray(tools)) {
     for (const t of tools) {
@@ -86,8 +93,9 @@ const PASSTHROUGH_FIELDS = [
   'model',
   'prompt',
   'resources',
-  'hooks',
   'mcpServers',
+  // Note: `hooks` is NOT here — object-form hooks need shape conversion to the
+  // KAS array form (see `convertHooks`); it's handled explicitly below.
   // V3-schema fields, so a hybrid config with V2 markers keeps trust the user
   // already set when migrated.
   'permissions',
@@ -97,12 +105,21 @@ const PASSTHROUGH_FIELDS = [
   'excludedTools',
 ];
 
+/** True for a non-null, non-array object value. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Detect V3 (KAS) format: no CLI-only fields and no CLI tool names. */
 export function isAlreadyV3(config: Record<string, unknown>): boolean {
   for (const field of CLI_ONLY_FIELDS) {
     if (field in config) {
       return false;
     }
+  }
+  // Object-form `hooks` is CLI-only; array form is already universal.
+  if (isPlainObject(config.hooks)) {
+    return false;
   }
   const tools = config.tools;
   if (Array.isArray(tools)) {
@@ -220,6 +237,15 @@ export function migrateAgentConfig(
       ];
       result.tools = Array.from(new Set(replaced)).sort();
       toolsSummary = { from: cliTools, to: result.tools };
+    }
+  }
+
+  // Object-form `hooks` is rewritten to KAS array form (array form passes
+  // through); other shapes carry nothing (dropped from the passthrough set).
+  if ('hooks' in config) {
+    const convertedHooks = convertHooks(config.hooks, warnings);
+    if (convertedHooks !== undefined) {
+      result.hooks = convertedHooks;
     }
   }
 
@@ -390,6 +416,12 @@ export function upgradeAgentConfig(
       derived.config.tools
     );
   }
+  // Object-form hooks became array form during derivation; overlay so the
+  // universal config drops the CLI-only object shape KAS rejects. Array-form
+  // input derives back to itself (no-op).
+  if ('hooks' in derived.config) {
+    enriched.hooks = derived.config.hooks;
+  }
   if ('permissions' in derived.config) {
     enriched.permissions = derived.config.permissions;
   } else if ('toolsSettings' in enriched || 'allowedTools' in enriched) {
@@ -419,10 +451,13 @@ export function upgradeAgentConfig(
     };
   }
 
-  // Both present: in-sync iff the derived tools/permissions equal the input's.
+  // Both present: in-sync iff the derived tools/permissions/hooks equal the
+  // input's. Hooks are included so a V3 config still carrying object-form hooks
+  // is rewritten (not skipped in-sync).
   const inSync =
     deepEqualJson(config.permissions, enriched.permissions) &&
-    deepEqualJson(config.tools, enriched.tools);
+    deepEqualJson(config.tools, enriched.tools) &&
+    deepEqualJson(config.hooks, enriched.hooks);
   return {
     config: enriched,
     classification: inSync ? 'universal-in-sync' : 'universal-out-of-sync',

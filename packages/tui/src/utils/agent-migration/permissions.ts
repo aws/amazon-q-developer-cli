@@ -33,7 +33,10 @@ export interface MigrationWarning {
     // `denyByDefault` + `autoAllowReadonly` can't coexist in V3 — read-only
     // auto-approval was dropped.
     | 'deny-by-default-readonly'
-    | 'file-prompt';
+    | 'file-prompt'
+    // An object-form hook KAS can't represent: a CLI tool hook (no `command`)
+    // or an unknown trigger. Dropped rather than emitted as an invalid doc.
+    | 'unconvertible-hook';
   detail?: string;
   /** Source config field, e.g. `toolsSettings.shell.allowedCommands`. */
   attribute?: string;
