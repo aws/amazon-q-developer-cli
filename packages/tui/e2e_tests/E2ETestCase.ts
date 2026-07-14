@@ -78,8 +78,9 @@ export class E2ETestCase {
       fs.writeFileSync(path.join(agentsDir, `${agent.name}.json`), JSON.stringify(agent.config));
     }
 
-    // Default to TUI mode so the first-launch UI-mode picker never blocks E2E
-    // flows. Individual tests can still override this with withGlobalSettings().
+    // Force TUI mode so E2E flows render deterministically and never surface
+    // the in-cohort "try Lite" welcome nudge. Individual tests can still
+    // override this with withGlobalSettings().
     const settings = { 'chat.ui.mode': 'tui', ...(this.options.settings ?? {}) };
     const settingsPath = path.join(homeDir, '.kiro', 'settings', 'cli.json');
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

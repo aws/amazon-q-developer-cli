@@ -35,7 +35,8 @@ describe('buildKasSettings', () => {
     if (originalInfraSafetyRollout === undefined) {
       delete process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
     } else {
-      process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = originalInfraSafetyRollout;
+      process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED =
+        originalInfraSafetyRollout;
     }
     rmSync(tmpDir, { recursive: true, force: true });
   });

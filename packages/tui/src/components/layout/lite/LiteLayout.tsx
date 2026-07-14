@@ -46,7 +46,7 @@ import {
   type SubagentStageSummary,
 } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
-import { pickTip, formatTipLine } from '../../../lite/tips.js';
+import { pickTip, formatTipLine } from '../../../tips/tips.js';
 import { ApprovalPrompt } from './ApprovalPrompt.js';
 import {
   formatSubagentRow,
@@ -549,6 +549,11 @@ export const LiteLayout: React.FC = () => {
   // lite→tui→lite swap doesn't re-flash the banner; resetMessages clears it.
   const liteWelcomeEmitted = useAppStore((s) => s.liteWelcomeEmitted);
   const setLiteWelcomeEmitted = useAppStore((s) => s.setLiteWelcomeEmitted);
+  // Tip-eligibility signal for the shared startup-tip engine (tips/tips.ts).
+  // The "Try Lite" tip is TUI-only and never appears here regardless of
+  // recommendLiteUi.
+  const tipRecommendLiteUi = useAppStore((s) => s.recommendLiteUi);
+  const tipEngine = useAppStore((s) => s.agentEngine);
   // Flip on UNMOUNT, not first paint: flipping mid-mount would re-run the
   // showWelcomeBanner memo and unmount the live banner immediately. On unmount,
   // only the NEXT remount sees the new value and skips the banner.
@@ -570,10 +575,16 @@ export const LiteLayout: React.FC = () => {
  |_|\\_\\___|_| \\_\\\\___/`
         )
       : brand('  KIRO');
-    // One rotating tip, picked deterministically per day (no restart flicker).
-    const tipLine = formatTipLine(pickTip());
-    return `${kiroArt}\n${chalk.dim(`  v${version} ${glyphs.smallDot} lite`)}\n${tipLine}`;
-  }, [allowAsciiArt, glyphs]);
+    // One rotating tip (weighted chance per launch) — see tips/tips.ts.
+    const tip = pickTip({
+      surface: 'lite',
+      engine: tipEngine,
+      recommendLiteUi: tipRecommendLiteUi,
+    });
+    let out = `${kiroArt}\n${chalk.dim(`  v${version} ${glyphs.smallDot} lite`)}`;
+    if (tip) out += `\n${formatTipLine(tip)}`;
+    return out;
+  }, [allowAsciiArt, glyphs, tipRecommendLiteUi, tipEngine]);
   // True until real chat content lands OR the banner already emitted in a prior
   // mount. "Real chat" = any NON-standalone-greeting message; gating on User
   // rows alone is too narrow (a System announcement before typing duplicated the

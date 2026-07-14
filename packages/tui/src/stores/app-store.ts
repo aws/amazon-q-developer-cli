@@ -327,12 +327,7 @@ import {
   DEFAULT_INTERRUPT_MODE,
   parseInterruptMode,
 } from '../constants/interrupt-mode.js';
-import {
-  readBoolSetting,
-  readStringSetting,
-  readCliSettings,
-  writeCliSettings,
-} from '../utils/cli-settings.js';
+import { readBoolSetting, readStringSetting } from '../utils/cli-settings.js';
 import {
   resolveNotificationMethod,
   playNotification,
@@ -1257,13 +1252,6 @@ interface BaseAppActions {
   // Trust all tools acceptance
   confirmTrustAllTools: () => void;
 
-  /**
-   * Persist the user's first-launch UI mode choice (writes cli.json + ACP),
-   * apply it to the running session, and clear `firstLaunchUiModeRequested`
-   * so the gate goes away. Only invoked once per fresh-install launch.
-   */
-  confirmFirstLaunchUiMode: (mode: 'tui' | 'lite') => void;
-
   // Research survey actions
   /** Increment the counter we use to decide when to first show the prompt. */
   recordCompletedTurn: () => void;
@@ -1806,13 +1794,12 @@ export interface AppState {
   trustAllToolsConfirmed: boolean;
 
   /**
-   * First-launch UI mode picker. Set to true at startup when the user has
-   * no persisted `chat.ui.mode` and no env-var/CLI override forced a mode,
-   * so AppContainer renders the gate before any chat UI. Cleared by
-   * confirmFirstLaunchUiMode after the user picks (the picker also persists
-   * the choice to cli.json + ACP and updates `uiMode`).
+   * "Try Lite" nudge. Set to true at startup when the user is in the lite
+   * rollout cohort on an interactive TTY. Gates the "Try Lite" startup tip
+   * (see tips/tips.ts); nothing clears it since the tip is picked once per
+   * launch.
    */
-  firstLaunchUiModeRequested: boolean;
+  recommendLiteUi: boolean;
 
   // Research-survey state
   /** Lazily-loaded snapshot of persisted survey state (eligibility, cooldown). */
@@ -2583,10 +2570,9 @@ export const createAppStore = (props: AppStoreProps) => {
     trustAllToolsRequested: props.trustAllTools ?? false,
     trustAllToolsConfirmed: false,
 
-    // Resolved at startup in index.tsx after UI mode resolution; defaults
-    // to false so existing installs (with a persisted setting) and tests
-    // never see the gate.
-    firstLaunchUiModeRequested: false,
+    // Resolved at startup in index.tsx; defaults to false so out-of-cohort
+    // users never see the nudge.
+    recommendLiteUi: false,
 
     // Research survey — eligibility is resolved lazily on first boot.
     surveyState: (() => {
@@ -6431,26 +6417,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     confirmTrustAllTools: () => {
       set({ trustAllToolsConfirmed: true });
-    },
-
-    confirmFirstLaunchUiMode: (mode: 'tui' | 'lite') => {
-      // Same dual-write the /settings → display selector does — persist to
-      // cli.json synchronously (so the next session can read it before ACP
-      // is up) and fire-and-forget through ACP for the cross-process locked
-      // write. Don't fail the gate if either write throws; the user has
-      // told us their preference and the gate must clear regardless.
-      try {
-        const settings = readCliSettings();
-        settings[Settings.CHAT_UI_MODE] = mode;
-        writeCliSettings(settings);
-      } catch {
-        /* keep going — UI mode for this session still works in-memory */
-      }
-      const kiro = get().kiro;
-      if (kiro) {
-        kiro.setSetting(Settings.CHAT_UI_MODE, mode).catch(() => {});
-      }
-      set({ uiMode: mode, firstLaunchUiModeRequested: false });
     },
 
     recordCompletedTurn: () => {

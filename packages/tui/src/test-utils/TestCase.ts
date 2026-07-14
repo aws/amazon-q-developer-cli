@@ -114,11 +114,12 @@ export class TestCase {
         KIRO_MOCK_ACP: 'true',
         KIRO_TEST_TUI_IPC_SOCKET_PATH: this.paths.tuiIpcSocket,
         KIRO_TUI_LOG_FILE: this.paths.tuiLogFile,
-        // Default to TUI mode so the first-launch UI-mode picker never blocks
-        // boot. KIRO_LITE_ROLLOUT_ENABLED can leak in from the ambient env
-        // (node-pty inherits process.env); with no UI mode resolved that gate
-        // intercepts boot and tests time out waiting for the prompt. withLite()
-        // overrides this to 'lite' via extraEnv (spread last).
+        // Force TUI mode so tests render deterministically.
+        // KIRO_LITE_ROLLOUT_ENABLED can leak in from the ambient env (node-pty
+        // inherits process.env); without an explicit UI mode that would put
+        // in-cohort runs into the "try Lite" welcome nudge path and make boot
+        // output nondeterministic. withLite() overrides this to 'lite' via
+        // extraEnv (spread last).
         KIRO_UI_MODE: 'tui',
         // Default to the locally-resolved chat_cli (env -> CARGO_TARGET_DIR
         // -> repo target/debug). Tests that explicitly set

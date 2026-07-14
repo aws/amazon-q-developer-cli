@@ -57,7 +57,7 @@ export function buildKasSettings(): KasSettings | undefined {
   if (process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1') {
     boolMappings.push(
       ['chat.enableInfraSafetyMonitor', 'infraSafetyMonitor'],
-      ['chat.enableInfraSafetyEnforce', 'infraSafetyEnforce'],
+      ['chat.enableInfraSafetyEnforce', 'infraSafetyEnforce']
     );
   }
 

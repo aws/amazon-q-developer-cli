@@ -1073,22 +1073,15 @@ const startApp = async () => {
   // Set uiMode on store (store is created before mode resolution)
   appStore.setState({ uiMode });
 
-  // First-launch UI mode picker: when nothing told us which mode to use
-  // (no env var, no CLI flag, no persisted setting), block the chat UI on
-  // a one-time picker so the user gets to choose their default. Skipped
-  // for non-interactive launches (they don't have a human to ask) and for
-  // users outside the lite rollout (they can only run TUI anyway, so the
-  // picker has no real choice to offer). The resolution above already
-  // returns 'tui' as the pre-pick fallback, so the TUI keeps booting in
-  // the background while the gate is shown — the picker writes the same
-  // chat.ui.mode setting the gate then closes on top of.
-  const shouldShowFirstLaunchPicker =
-    uiModeSource === 'default' &&
-    !cliArgs.noInteractive &&
-    process.stdout.isTTY &&
-    liteRolloutEnabled;
-  if (shouldShowFirstLaunchPicker) {
-    appStore.setState({ firstLaunchUiModeRequested: true });
+  // "Try Lite" nudge: recommend Lite to everyone in the rollout cohort — Lite
+  // is worth suggesting even to users who've already set a default UI (they can
+  // still switch or make it their default). Gated only to interactive TTYs (no
+  // human to nudge otherwise) and to the lite rollout cohort (outside it /lite
+  // is a no-op, so the recommendation would point at a dead command).
+  const recommendLiteUi =
+    !cliArgs.noInteractive && process.stdout.isTTY && liteRolloutEnabled;
+  if (recommendLiteUi) {
+    appStore.setState({ recommendLiteUi: true });
   }
 
   // Emit `uiModeSessionStart` exactly once per launch. `uiModeDefault` is the

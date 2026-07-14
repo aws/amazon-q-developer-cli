@@ -1,0 +1,4 @@
+{
+  "type": "removed",
+  "description": "First-launch UI mode picker — Lite is now suggested via a non-blocking startup tip instead"
+}

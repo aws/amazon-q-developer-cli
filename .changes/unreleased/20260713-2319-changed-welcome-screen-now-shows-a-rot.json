@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Welcome screen now shows a rotating startup tip instead of a static greeting"
+}

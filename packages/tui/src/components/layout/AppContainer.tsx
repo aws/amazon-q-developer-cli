@@ -5,7 +5,6 @@ import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
 import { LiteLayout } from './lite/index.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
-import { FirstLaunchUiModeGate } from '../ui/FirstLaunchUiModeGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
@@ -59,12 +58,6 @@ export const AppContainer: React.FC = () => {
   );
   const confirmTrustAllTools = useAppStore(
     (state) => state.confirmTrustAllTools
-  );
-  const firstLaunchUiModeRequested = useAppStore(
-    (state) => state.firstLaunchUiModeRequested
-  );
-  const confirmFirstLaunchUiMode = useAppStore(
-    (state) => state.confirmFirstLaunchUiMode
   );
   const onExit = useAppStore((state) => state.onExit);
   const kiro = useAppStore((state) => state.kiro);
@@ -222,14 +215,6 @@ export const AppContainer: React.FC = () => {
         }}
       />
     );
-  }
-
-  // First-launch UI mode picker. Shown only on a fresh install (no
-  // chat.ui.mode persisted, no env var, no --lite/--tui CLI flag); index.tsx
-  // sets the request flag after resolving the mode. Trust gate above wins
-  // when both are set so users only see one block at a time.
-  if (firstLaunchUiModeRequested) {
-    return <FirstLaunchUiModeGate onPick={confirmFirstLaunchUiMode} />;
   }
 
   return (

@@ -244,8 +244,10 @@ describe('Display settings panel', () => {
     await testCase.sleepMs(500);
 
     const snap = testCase.getSnapshot().join('\n');
-    // Panel should be gone — no settings items visible
-    expect(snap).not.toContain('/settings');
+    // Panel should be gone — its settings items are no longer visible.
+    // (Assert on a panel-only item rather than "/settings": the welcome area
+    // shows a rotating startup tip that can itself mention "/settings".)
+    expect(snap).not.toContain('Animations');
     expect(snap).toContain('ask a question');
   }, 30000);
 });

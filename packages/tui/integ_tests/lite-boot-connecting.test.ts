@@ -37,8 +37,8 @@ describe('lite boot connecting panel [bug-mine 7.1, 7.2, 7.3]', () => {
       // `bun test ./integ_tests/`, now uncapped) has no such token, so the
       // flag is unset and /lite silently no-ops. Set it per-test (as
       // withLite() does) — safe here because chat.ui.mode='tui' is an explicit
-      // mode, so the first-launch UI-mode picker (gated on an unresolved mode
-      // + rollout) never triggers.
+      // mode, so boot stays in tui and the "try Lite" welcome nudge (gated on
+      // an unresolved mode + rollout) never shows.
       .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
       .withTimeout(15000)
       .launch();

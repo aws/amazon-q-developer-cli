@@ -5,11 +5,20 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { E2ETestCase } from './E2ETestCase';
 
-function expectedWelcomeText(_agentEngine: string): string {
-  // Both engines surface the "Kiro CLI V3" wordmark on the welcome screen:
-  // the KAS (V3) build welcomes the user to V3, and the V2 build announces
-  // that V3 is now available to try via `kiro-cli --v3`.
-  return 'Kiro CLI V3';
+/**
+ * Substrings that prove the welcome screen rendered. Both engines render the
+ * shared what's-new body, so its lead line is a stable marker regardless of
+ * engine, rollout state, or the rotating tip picked. The KAS welcome also
+ * keeps its "Kiro CLI V3" heading.
+ */
+function welcomeMarkers(agentEngine: string): string[] {
+  const shared = ["What's new: Specs", 'kiro.dev/docs/cli/v3'];
+  return agentEngine === 'kas' ? ['Kiro CLI V3', ...shared] : shared;
+}
+
+function snapshotHasWelcome(snapshot: string[], agentEngine: string): boolean {
+  const markers = welcomeMarkers(agentEngine);
+  return snapshot.some((line) => markers.some((m) => line.includes(m)));
 }
 
 describe('greeting setting', () => {
@@ -32,7 +41,11 @@ describe('greeting setting', () => {
       5000
     );
 
-    await testCase.waitForText(expectedWelcomeText(store.agentEngine), 15000);
+    // Welcome shows by default: once the TUI is ready, the welcome area has
+    // rendered (a rotating tip for v2, the V3 block for kas).
+    await testCase.waitForText('ask a question', 15000);
+    const snapshot = testCase.getSnapshot();
+    expect(snapshotHasWelcome(snapshot, store.agentEngine)).toBe(true);
 
     await testCase.pressCtrlCTwice();
     const exitCode = await testCase.expectExit();
@@ -40,31 +53,33 @@ describe('greeting setting', () => {
   }, 30000);
 
   // Windows: CLI settings file path resolution differs (USERPROFILE vs HOME)
-  it.skipIf(process.platform === 'win32')('hides welcome screen when chat.greeting.enabled is false', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('greeting-disabled')
-      .withGlobalSettings({ 'chat.greeting.enabled': false })
-      .launch();
+  it.skipIf(process.platform === 'win32')(
+    'hides welcome screen when chat.greeting.enabled is false',
+    async () => {
+      testCase = await E2ETestCase.builder()
+        .withTestName('greeting-disabled')
+        .withGlobalSettings({ 'chat.greeting.enabled': false })
+        .launch();
 
-    // Wait for the prompt to appear (TUI is ready)
-    await testCase.waitForText('ask a question', 15000);
+      // Wait for the prompt to appear (TUI is ready)
+      await testCase.waitForText('ask a question', 15000);
 
-    const store = await testCase.waitForStoreCondition(
-      (s) => s.settings !== null,
-      5000
-    );
-    const welcomeText = expectedWelcomeText(store.agentEngine);
+      const store = await testCase.waitForStoreCondition(
+        (s) => s.settings !== null,
+        5000
+      );
 
-    // Verify the welcome screen is NOT rendered
-    const snapshot = testCase.getSnapshot();
-    const hasWelcome = snapshot.some((line) => line.includes(welcomeText));
-    expect(hasWelcome).toBe(false);
+      // Verify the welcome screen is NOT rendered
+      const snapshot = testCase.getSnapshot();
+      expect(snapshotHasWelcome(snapshot, store.agentEngine)).toBe(false);
 
-    // Verify the setting made it into the store
-    expect(store.settings!['chat.greeting.enabled']).toBe(false);
+      // Verify the setting made it into the store
+      expect(store.settings!['chat.greeting.enabled']).toBe(false);
 
-    await testCase.pressCtrlCTwice();
-    const exitCode = await testCase.expectExit();
-    expect(exitCode).toBe(0);
-  }, 30000);
+      await testCase.pressCtrlCTwice();
+      const exitCode = await testCase.expectExit();
+      expect(exitCode).toBe(0);
+    },
+    30000
+  );
 });

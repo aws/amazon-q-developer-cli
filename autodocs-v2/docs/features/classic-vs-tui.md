@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-13
-  commit: ed1d467b6
+  validated: 2026-07-13
+  commit: ac7cc5a34
   status: validated
   testable_headless: false
   category: feature
@@ -124,7 +124,6 @@ Classic mode supported `chat.diffTool` with delta, difft, meld, VS Code, and icd
 - Vi edit mode (`chat.editMode`) not available in TUI
 - Backslash continuation (`\` at end of line) not supported
 - Triple backtick code block auto-detection not supported
-- Inline hints and rotating tips not available
 
 ## Switching Between Modes
 

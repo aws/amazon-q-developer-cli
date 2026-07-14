@@ -65,8 +65,8 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
               // uncapped) has no such token, so the flag is unset and /lite
               // silently no-ops. Set it per-test — the lite→tui leg gets it
               // from launchLiteInteg's withLite(). Safe here: chat.ui.mode='tui'
-              // is an explicit mode, so the first-launch UI-mode picker (gated
-              // on an unresolved mode + rollout) never triggers.
+              // is an explicit mode, so boot stays in tui and the "try Lite"
+              // welcome nudge (gated on an unresolved mode + rollout) never shows.
               .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
               .withTimeout(15000)
               .launch()

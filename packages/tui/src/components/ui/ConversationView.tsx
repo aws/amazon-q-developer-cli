@@ -21,6 +21,7 @@ import { StatusBar } from '../chat/status-bar/StatusBar';
 import { Text } from '../ui/text/Text';
 import { WelcomeScreen } from '../welcome-screen/index.js';
 import { WelcomeMessageBar } from './WelcomeMessageBar.js';
+import { pickTip } from '../../tips/tips.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { Settings } from '../../constants/settings.js';
 import { computeFlushSet } from '../../utils/turn-flush-machine.js';
@@ -625,6 +626,22 @@ export const ConversationView = React.memo(function ConversationView() {
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
+  // Rotating startup tip (surface-aware — see tips/tips.ts). Picked once per
+  // mount via useMemo so it doesn't reshuffle on re-render. Passed to the
+  // <Static> welcome render too, so it persists into scrollback past the first
+  // message.
+  const tipRecommendLiteUi = useAppStore((s) => s.recommendLiteUi);
+  const tipEngine = useAppStore((s) => s.agentEngine);
+  const welcomeTip = useMemo(
+    () =>
+      pickTip({
+        surface: 'tui',
+        engine: tipEngine,
+        recommendLiteUi: tipRecommendLiteUi,
+      }),
+    [tipRecommendLiteUi, tipEngine]
+  );
+
   // Track if we've ever had messages (to know if this is initial load or post-clear)
   const hadMessagesRef = React.useRef(_hadMessages);
   // Track if welcome was already added to Static
@@ -1037,7 +1054,12 @@ export const ConversationView = React.memo(function ConversationView() {
     <Box flexDirection="column">
       {isInitialLoad && greetingEnabled && (
         <Box marginBottom={1}>
-          <WelcomeScreen agent="kiro" mcpServers={[]} animate={shouldAnimate} />
+          <WelcomeScreen
+            agent="kiro"
+            mcpServers={[]}
+            animate={shouldAnimate}
+            tip={welcomeTip}
+          />
         </Box>
       )}
       {/* Terminal banner: display-only env var message at session start */}
@@ -1062,6 +1084,7 @@ export const ConversationView = React.memo(function ConversationView() {
                       agent="kiro"
                       mcpServers={[]}
                       animate={false}
+                      tip={welcomeTip}
                     />
                   </Box>
                   {process.env.ASBX_KIRO_TERMINAL_BANNER && (
