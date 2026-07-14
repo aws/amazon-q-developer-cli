@@ -201,6 +201,46 @@ describe('session-origin seeding + effort auto-apply', () => {
     expect(setConfigOption).toHaveBeenCalledWith('effortLevel', 'high');
   });
 
+  it('does NOT apply the saved default on a mid-session autonomous fallback to another model', () => {
+    seedSavedEffort('sonnet', 'high');
+    const { store, setConfigOption } = makeSpiedStore();
+    beginSession(store, 'new');
+    // First resolution of the session lands on opus (no saved default).
+    store.getState().handleKasModelConfigEvent({
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [
+        { id: 'opus', name: 'Opus' },
+        { id: 'sonnet', name: 'Sonnet' },
+      ],
+      currentModelId: 'opus',
+      efforts: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+      ],
+      currentLevel: 'low',
+      origin: 'serverPush',
+    });
+    expect(setConfigOption).not.toHaveBeenCalled();
+
+    // A later autonomous fallback switches to sonnet, which HAS a saved
+    // default — it must not stomp the session's current effort.
+    store.getState().handleKasModelConfigEvent({
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [
+        { id: 'opus', name: 'Opus' },
+        { id: 'sonnet', name: 'Sonnet' },
+      ],
+      currentModelId: 'sonnet',
+      efforts: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+      ],
+      currentLevel: 'low',
+      origin: 'serverPush',
+    });
+    expect(setConfigOption).not.toHaveBeenCalled();
+  });
+
   it('does NOT apply the saved effort default when launched with --effort', () => {
     seedSavedEffort('opus', 'high');
     const { store, setConfigOption } = makeSpiedStore();

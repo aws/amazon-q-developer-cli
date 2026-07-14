@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
     RwLock,
 };
+use std::time::Duration;
 
 use serde_json::{
     Map,
@@ -12,7 +13,25 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 use super::DatabaseError;
+use crate::util::file_lock::with_file_lock_at;
 use crate::util::paths::GlobalPaths;
+
+/// Bound on waiting for the settings file lock; generous because holders only
+/// perform one small mutate + write cycle.
+const SETTINGS_FILE_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Recursively merge `patch` into `base`. Objects are merged key-by-key; all
+/// other types are replaced.
+fn deep_merge(base: &mut Value, patch: Value) {
+    match (base, patch) {
+        (Value::Object(base_map), Value::Object(patch_map)) => {
+            for (k, v) in patch_map {
+                deep_merge(base_map.entry(k).or_insert(Value::Null), v);
+            }
+        },
+        (base, patch) => *base = patch,
+    }
+}
 
 #[derive(Clone, Copy, Debug, strum::EnumIter, strum::EnumMessage, strum::EnumProperty)]
 pub enum Setting {
@@ -443,6 +462,14 @@ pub enum SettingScope {
     Session,
 }
 
+/// Which settings file a locked write persists to. Session scope never touches
+/// disk, so it has no target here.
+#[derive(Debug, Clone, Copy)]
+enum PersistTarget {
+    Global,
+    Workspace,
+}
+
 /// Process-wide settings store.
 ///
 /// `Settings` is a cheap cloneable handle around a single shared lock. Cloning an
@@ -456,6 +483,9 @@ pub struct Settings {
 #[derive(Debug, Default)]
 struct SettingsData {
     global: Map<String, Value>,
+    /// Disk target for global settings, resolved once at construction. `None`
+    /// (test default) makes global writes in-memory only.
+    global_settings_path: Option<std::path::PathBuf>,
     workspace: Option<Map<String, Value>>,
     workspace_settings_path: Option<std::path::PathBuf>,
     /// In-memory-only session overrides, never persisted. Dead in V2 (no V2
@@ -528,10 +558,31 @@ impl Settings {
 
         Ok(Self::from_data(SettingsData {
             global,
+            global_settings_path: Some(path),
             workspace: None,
             workspace_settings_path: None,
             session: Map::new(),
         }))
+    }
+
+    /// Construct a store persisting global settings to an explicit path.
+    #[cfg(test)]
+    fn test_with_global_path(path: std::path::PathBuf) -> Self {
+        Self::from_data(SettingsData {
+            global_settings_path: Some(path),
+            ..Default::default()
+        })
+    }
+
+    /// Construct a store with a loaded (empty) workspace persisting to an
+    /// explicit path.
+    #[cfg(test)]
+    fn test_with_workspace_path(path: std::path::PathBuf) -> Self {
+        Self::from_data(SettingsData {
+            workspace: Some(Map::new()),
+            workspace_settings_path: Some(path),
+            ..Default::default()
+        })
     }
 
     /// Load global + workspace settings
@@ -555,6 +606,7 @@ impl Settings {
 
         Ok(Self::from_data(SettingsData {
             global,
+            global_settings_path: Some(global_path),
             workspace,
             workspace_settings_path,
             session: Map::new(),
@@ -614,63 +666,128 @@ impl Settings {
         let scope = scope.unwrap_or(SettingScope::Global);
         let value = value.into();
 
-        // Mutate the shared map under the lock, capture the target path + a
-        // snapshot to persist, then release the lock before the async disk write
-        // (a std lock guard cannot be held across an await). Session scope is
-        // in-memory only and returns without touching disk.
-        let (path, snapshot) = {
-            let mut data = self.inner.write().expect("settings lock poisoned");
-            match scope {
-                SettingScope::Global => {
-                    data.global.insert(key.to_string(), value);
-                    (GlobalPaths::settings_path()?, data.global.clone())
-                },
-                SettingScope::Workspace => {
-                    if !key.is_workspace_overridable() {
-                        return Err(DatabaseError::WorkspaceOverrideNotAllowed(key.to_string()));
-                    }
-                    let Some(ws) = data.workspace.as_mut() else {
-                        return Err(DatabaseError::WorkspaceOverrideNotAllowed(
-                            "no workspace settings loaded".to_string(),
-                        ));
-                    };
-                    ws.insert(key.to_string(), value);
-                    match data.workspace_settings_path.clone() {
-                        Some(path) => (path, data.workspace.clone().unwrap_or_default()),
-                        None => return Ok(()),
-                    }
-                },
-                SettingScope::Session => {
-                    data.session.insert(key.to_string(), value);
-                    return Ok(());
-                },
-            }
-        };
-        Self::save_settings_file(&path, &snapshot).await
+        match scope {
+            SettingScope::Global => {
+                self.locked_write(PersistTarget::Global, |map| {
+                    map.insert(key.to_string(), value);
+                })
+                .await
+            },
+            SettingScope::Workspace => {
+                if !key.is_workspace_overridable() {
+                    return Err(DatabaseError::WorkspaceOverrideNotAllowed(key.to_string()));
+                }
+                if self.with_read(|d| d.workspace.is_none()) {
+                    return Err(DatabaseError::WorkspaceOverrideNotAllowed(
+                        "no workspace settings loaded".to_string(),
+                    ));
+                }
+                self.locked_write(PersistTarget::Workspace, |map| {
+                    map.insert(key.to_string(), value);
+                })
+                .await
+            },
+            SettingScope::Session => {
+                self.inner
+                    .write()
+                    .expect("settings lock poisoned")
+                    .session
+                    .insert(key.to_string(), value);
+                Ok(())
+            },
+        }
+    }
+
+    /// Deep-merge `patch` into the global value of `key` and persist, as one
+    /// atomic RMW under the settings file lock.
+    pub async fn merge(&self, key: Setting, patch: serde_json::Value) -> Result<(), DatabaseError> {
+        self.locked_write(PersistTarget::Global, |map| {
+            let mut current = map.get(key.as_ref()).cloned().unwrap_or_else(|| serde_json::json!({}));
+            deep_merge(&mut current, patch);
+            map.insert(key.to_string(), current);
+        })
+        .await
     }
 
     pub async fn remove(&self, key: Setting, scope: Option<SettingScope>) -> Result<Option<Value>, DatabaseError> {
         let scope = scope.unwrap_or(SettingScope::Global);
 
-        let (removed, path, snapshot) = {
+        match scope {
+            SettingScope::Global => {
+                self.locked_write(PersistTarget::Global, |map| map.remove(key.as_ref()))
+                    .await
+            },
+            SettingScope::Workspace => {
+                if self.with_read(|d| d.workspace.is_none()) {
+                    return Err(DatabaseError::WorkspaceOverrideNotAllowed(
+                        "no workspace settings loaded".to_string(),
+                    ));
+                }
+                self.locked_write(PersistTarget::Workspace, |map| map.remove(key.as_ref()))
+                    .await
+            },
+            SettingScope::Session => Ok(self
+                .inner
+                .write()
+                .expect("settings lock poisoned")
+                .session
+                .remove(key.as_ref())),
+        }
+    }
+
+    /// Read-modify-write of one settings file under an exclusive advisory file lock.
+    ///
+    /// Semantics:
+    /// - Re-reads the file under the lock, so a write folds in other processes' changes instead of
+    ///   clobbering them
+    /// - Converges in-memory state to the written result
+    /// - Corrupt/unreadable file: falls back to the in-memory copy (self-heals)
+    /// - Disk before memory: a failed write applies nowhere and returns `Err`
+    /// - No disk target (test default): in-memory only
+    async fn locked_write<R>(
+        &self,
+        target: PersistTarget,
+        mutate: impl FnOnce(&mut Map<String, Value>) -> R,
+    ) -> Result<R, DatabaseError> {
+        let path = self.with_read(|d| match target {
+            PersistTarget::Global => d.global_settings_path.clone(),
+            PersistTarget::Workspace => d.workspace_settings_path.clone(),
+        });
+        let Some(path) = path else {
             let mut data = self.inner.write().expect("settings lock poisoned");
-            match scope {
-                SettingScope::Global => {
-                    let removed = data.global.remove(key.as_ref());
-                    (removed, GlobalPaths::settings_path()?, data.global.clone())
-                },
-                SettingScope::Workspace => {
-                    let removed = data.workspace.as_mut().and_then(|ws| ws.remove(key.as_ref()));
-                    match data.workspace_settings_path.clone() {
-                        Some(path) => (removed, path, data.workspace.clone().unwrap_or_default()),
-                        None => return Ok(removed),
-                    }
-                },
-                SettingScope::Session => return Ok(data.session.remove(key.as_ref())),
-            }
+            let map = match target {
+                PersistTarget::Global => &mut data.global,
+                PersistTarget::Workspace => data.workspace.get_or_insert_with(Map::new),
+            };
+            return Ok(mutate(map));
         };
-        Self::save_settings_file(&path, &snapshot).await?;
-        Ok(removed)
+
+        // Sibling lock file: append ".lock" to the full file name (cli.json ->
+        // cli.json.lock). `with_extension` would replace ".json" instead.
+        let mut lock_path = path.clone().into_os_string();
+        lock_path.push(".lock");
+        let lock_path = std::path::PathBuf::from(lock_path);
+
+        with_file_lock_at(&lock_path, SETTINGS_FILE_LOCK_TIMEOUT, || async {
+            let mut fresh = match Self::load_settings_file(&path).await {
+                Ok(map) => map,
+                Err(_) => self.with_read(|d| match target {
+                    PersistTarget::Global => d.global.clone(),
+                    PersistTarget::Workspace => d.workspace.clone().unwrap_or_default(),
+                }),
+            };
+            let result = mutate(&mut fresh);
+            Self::save_settings_file(&path, &fresh).await?;
+            {
+                let mut data = self.inner.write().expect("settings lock poisoned");
+                match target {
+                    PersistTarget::Global => data.global = fresh,
+                    PersistTarget::Workspace => data.workspace = Some(fresh),
+                }
+            }
+            Ok(result)
+        })
+        .await?
     }
 
     pub fn clear_session(&self) {
@@ -678,12 +795,6 @@ impl Settings {
     }
 
     async fn save_settings_file(path: &std::path::PathBuf, map: &Map<String, Value>) -> Result<(), DatabaseError> {
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
         let json = serde_json::to_string_pretty(map).unwrap_or_else(|_| "{}".to_string());
 
         // Write to a temp file then atomically rename to avoid truncating the
@@ -793,6 +904,283 @@ mod test {
             Some("shared-model"),
             "a write through one handle must be visible through a clone"
         );
+    }
+
+    #[test]
+    fn test_deep_merge_objects_merge_other_types_replace() {
+        let mut base = serde_json::json!({
+            "a": { "x": 1, "keep": true },
+            "s": "old",
+            "arr": [1, 2, 3],
+        });
+        deep_merge(
+            &mut base,
+            serde_json::json!({
+                "a": { "x": 2, "new": 3 },
+                "s": "new",
+                "arr": [9],
+                "added": null,
+            }),
+        );
+        assert_eq!(
+            base,
+            serde_json::json!({
+                "a": { "x": 2, "keep": true, "new": 3 },
+                "s": "new",
+                "arr": [9],
+                "added": null,
+            })
+        );
+    }
+
+    /// `merge` must deep-merge the patch into the existing value and persist
+    /// the result: disk contents equal the in-memory view after the call.
+    #[tokio::test]
+    async fn test_merge_deep_merges_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path.clone());
+
+        settings
+            .set(
+                Setting::ChatModelDefaults,
+                serde_json::json!({ "model-a": { "effort": "low" } }),
+                None,
+            )
+            .await
+            .unwrap();
+        settings
+            .merge(
+                Setting::ChatModelDefaults,
+                serde_json::json!({ "model-a": { "extra": true }, "model-b": { "effort": "high" } }),
+            )
+            .await
+            .unwrap();
+
+        let expected = serde_json::json!({
+            "model-a": { "effort": "low", "extra": true },
+            "model-b": { "effort": "high" },
+        });
+        assert_eq!(settings.get_value(Setting::ChatModelDefaults), Some(expected));
+
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(disk, settings.map(), "disk must match in-memory state after merge");
+    }
+
+    /// `merge` on a key with no existing value starts from an empty object.
+    #[tokio::test]
+    async fn test_merge_into_absent_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path);
+
+        settings
+            .merge(
+                Setting::ChatModelDefaults,
+                serde_json::json!({ "m": { "effort": "low" } }),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            settings.get_value(Setting::ChatModelDefaults),
+            Some(serde_json::json!({ "m": { "effort": "low" } }))
+        );
+    }
+
+    /// Workspace-scope `set`/`remove` persist through the same locked write
+    /// path as global, creating the settings file (and parent dirs) on first
+    /// write. A store with no workspace loaded rejects workspace-scope sets.
+    #[tokio::test]
+    async fn test_workspace_scope_set_and_remove_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        // Parent dirs do not exist yet; the first locked write must create them.
+        let path = dir.path().join(".kiro").join("settings").join("cli.json");
+        let settings = Settings::test_with_workspace_path(path.clone());
+
+        settings
+            .set(Setting::ChatAutoExpandToolOutput, true, Some(SettingScope::Workspace))
+            .await
+            .unwrap();
+        assert_eq!(
+            settings.get_scope(Setting::ChatAutoExpandToolOutput),
+            Some(SettingScope::Workspace)
+        );
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(disk.get("chat.autoExpandToolOutput"), Some(&Value::Bool(true)));
+
+        let removed = settings
+            .remove(Setting::ChatAutoExpandToolOutput, Some(SettingScope::Workspace))
+            .await
+            .unwrap();
+        assert_eq!(removed, Some(Value::Bool(true)));
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert!(!disk.contains_key("chat.autoExpandToolOutput"));
+
+        // No workspace loaded: workspace-scope set is rejected.
+        let no_workspace = Settings::test_with_global_path(dir.path().join("global.json"));
+        let err = no_workspace
+            .set(Setting::ChatAutoExpandToolOutput, true, Some(SettingScope::Workspace))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DatabaseError::WorkspaceOverrideNotAllowed(_)));
+    }
+
+    /// Global `remove` runs the same locked snapshot-and-write cycle as `set`:
+    /// the removed value is returned and the file reflects the removal.
+    #[tokio::test]
+    async fn test_remove_persists_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path.clone());
+
+        settings.set(Setting::ChatDefaultModel, "opus", None).await.unwrap();
+        let removed = settings.remove(Setting::ChatDefaultModel, None).await.unwrap();
+        assert_eq!(removed, Some(Value::String("opus".to_string())));
+
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert!(!disk.contains_key("chat.defaultModel"));
+        assert_eq!(settings.get_value(Setting::ChatDefaultModel), None);
+    }
+
+    /// Two stores on one path simulate two processes: a write folds in the
+    /// other's on-disk changes instead of clobbering them.
+    #[tokio::test]
+    async fn test_writes_fold_in_foreign_process_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let a = Settings::test_with_global_path(path.clone());
+        let b = Settings::test_with_global_path(path.clone());
+
+        a.set(Setting::ChatDefaultModel, "opus", None).await.unwrap();
+        b.set(Setting::TelemetryEnabled, true, None).await.unwrap();
+
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(
+            disk.get("chat.defaultModel"),
+            Some(&Value::String("opus".to_string())),
+            "b's write must not clobber a's earlier write"
+        );
+        assert_eq!(disk.get("telemetry.enabled"), Some(&Value::Bool(true)));
+
+        // b's in-memory view folded in a's foreign write.
+        assert_eq!(b.get_string(Setting::ChatDefaultModel).as_deref(), Some("opus"));
+
+        // A foreign removal is adopted the same way: a removes its key, then
+        // b's next write must not resurrect it.
+        a.remove(Setting::ChatDefaultModel, None).await.unwrap();
+        b.set(Setting::McpLoadedBefore, true, None).await.unwrap();
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert!(
+            !disk.contains_key("chat.defaultModel"),
+            "b's write must not resurrect a key removed by a"
+        );
+        assert_eq!(b.get_value(Setting::ChatDefaultModel), None);
+    }
+
+    /// A corrupt settings file must not brick writes: the writer falls back to
+    /// its in-memory state, so the write succeeds and the file is restored to
+    /// valid JSON containing both prior and new state.
+    #[tokio::test]
+    async fn test_write_self_heals_corrupt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path.clone());
+
+        settings.set(Setting::ChatDefaultModel, "opus", None).await.unwrap();
+        tokio::fs::write(&path, "not json").await.unwrap();
+
+        settings.set(Setting::TelemetryEnabled, true, None).await.unwrap();
+
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(disk.get("chat.defaultModel"), Some(&Value::String("opus".to_string())));
+        assert_eq!(disk.get("telemetry.enabled"), Some(&Value::Bool(true)));
+    }
+
+    /// Workspace-scope ops on a store with no workspace loaded are rejected;
+    /// a `remove` must not materialize a workspace scope that persists nowhere.
+    #[tokio::test]
+    async fn test_workspace_ops_rejected_without_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path);
+
+        let err = settings
+            .remove(Setting::ChatAutoExpandToolOutput, Some(SettingScope::Workspace))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DatabaseError::WorkspaceOverrideNotAllowed(_)));
+
+        // The rejected remove must not have flipped the store into a fake
+        // workspace mode that lets set pass its guard.
+        let err = settings
+            .set(Setting::ChatAutoExpandToolOutput, true, Some(SettingScope::Workspace))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DatabaseError::WorkspaceOverrideNotAllowed(_)));
+        assert_eq!(settings.get_scope(Setting::ChatAutoExpandToolOutput), None);
+    }
+
+    /// A failed disk write applies nowhere: the error propagates and the
+    /// in-memory value is untouched.
+    #[tokio::test]
+    async fn test_failed_save_leaves_memory_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path.clone());
+        settings.set(Setting::ChatDefaultModel, "opus", None).await.unwrap();
+
+        // Replace the settings file with a directory: the re-read fails over
+        // to memory and the atomic rename onto a directory fails the save.
+        tokio::fs::remove_file(&path).await.unwrap();
+        tokio::fs::create_dir(&path).await.unwrap();
+
+        let result = settings.set(Setting::ChatDefaultModel, "haiku", None).await;
+        assert!(result.is_err());
+        assert_eq!(settings.get_string(Setting::ChatDefaultModel).as_deref(), Some("opus"));
+    }
+
+    /// Concurrent `merge`s and `set`s through cloned handles must not lose
+    /// updates in memory, and the last disk write must reflect the final
+    /// in-memory state (one total order across memory mutation and disk write).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_writers_converge_disk_and_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cli.json");
+        let settings = Settings::test_with_global_path(path.clone());
+
+        let mut handles = Vec::new();
+        for i in 0..16 {
+            let s = settings.clone();
+            handles.push(tokio::spawn(async move {
+                let mut patch = Map::new();
+                patch.insert(format!("model-{i}"), serde_json::json!({ "effort": i }));
+                s.merge(Setting::ChatModelDefaults, Value::Object(patch)).await.unwrap();
+            }));
+        }
+        for i in 0..8 {
+            let s = settings.clone();
+            handles.push(tokio::spawn(async move {
+                s.set(Setting::ChatDefaultModel, format!("m{i}"), None).await.unwrap();
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // No merge may be lost to a read-modify-write race.
+        let merged = settings.get_value(Setting::ChatModelDefaults).unwrap();
+        for i in 0..16 {
+            assert_eq!(
+                merged.get(format!("model-{i}")).and_then(|m| m.get("effort")),
+                Some(&serde_json::json!(i)),
+                "merge {i} was lost"
+            );
+        }
+
+        // Disk must equal final memory: no stale snapshot may land last.
+        let disk: Map<String, Value> = serde_json::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(disk, settings.map(), "a stale snapshot won the last disk write");
     }
 
     /// General read/write settings test

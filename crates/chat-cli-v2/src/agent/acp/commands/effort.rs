@@ -99,8 +99,10 @@ pub async fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResu
                 for seg in path.rsplit('.') {
                     node = serde_json::json!({ seg: node });
                 }
-                ctx.session_tx
-                    .merge_setting(Setting::ChatModelDefaults, serde_json::json!({ model_id: node }))
+                ctx.os
+                    .database
+                    .settings
+                    .merge(Setting::ChatModelDefaults, serde_json::json!({ model_id: node }))
                     .await
                     .is_ok()
             } else {

@@ -68,11 +68,10 @@ async function switchEffort(ctx: CommandContext, level: string): Promise<void> {
     ctx.showAlert(`Effort '${level}' not available`, 'error', 5000);
     return;
   }
-  // Persist as the current model's per-model default unless the user opted out
-  // or no model is known. We write at the model's KAS-advertised effort schema
-  // path; if the model doesn't advertise one we skip persistence rather than
-  // guess (a wrong path silently breaks cross-engine parity). The suffix is
-  // shown only when a write actually happened.
+  // Best-effort persist of the per-model default at the model's advertised
+  // effort schema path; no path advertised -> skip rather than guess. The
+  // switch already took effect, so a failed write never fails the command;
+  // the suffix is shown only when a write actually happened.
   const model = ctx.getCurrentModel?.();
   const optedOut =
     readCliSettings()[Settings.CHAT_DISABLE_AUTO_DEFAULT_EFFORT] === true;
@@ -80,12 +79,16 @@ async function switchEffort(ctx: CommandContext, level: string): Promise<void> {
   if (model && !optedOut) {
     const entry = ctx.kasAvailableModels.find((m) => m.id === model.id);
     if (entry?.effortSchemaPath) {
-      await persistEffortDefault(
-        model.id,
-        level,
-        `${entry.effortSchemaPath}.effort`
-      );
-      savedForModel = true;
+      try {
+        await persistEffortDefault(
+          model.id,
+          level,
+          `${entry.effortSchemaPath}.effort`
+        );
+        savedForModel = true;
+      } catch (err) {
+        logger.warn('[effort] failed to persist effort default:', err);
+      }
     } else {
       logger.debug(
         `[effort] no effortSchemaPath advertised for ${model.id}; skipping persist`

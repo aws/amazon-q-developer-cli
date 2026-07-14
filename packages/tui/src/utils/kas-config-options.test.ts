@@ -369,19 +369,33 @@ describe('shouldApplyEffortDefault', () => {
         sessionOrigin: 'new',
         modelChanged: true,
         hasExplicitEffort: false,
+        hadPriorModel: false,
       })
     ).toBe(true);
   });
 
-  it('applies on a late model resolution in a new session (serverPush, model changed)', () => {
+  it('applies on the first model resolution in a new session (serverPush, no prior model)', () => {
     expect(
       shouldApplyEffortDefault({
         origin: 'serverPush',
         sessionOrigin: 'new',
         modelChanged: true,
         hasExplicitEffort: false,
+        hadPriorModel: false,
       })
     ).toBe(true);
+  });
+
+  it('does NOT apply on a later autonomous push in a new session (fallback never stomps effort)', () => {
+    expect(
+      shouldApplyEffortDefault({
+        origin: 'serverPush',
+        sessionOrigin: 'new',
+        modelChanged: true,
+        hasExplicitEffort: false,
+        hadPriorModel: true,
+      })
+    ).toBe(false);
   });
 
   it('does NOT apply in a new session launched with --effort (explicit flag wins)', () => {
@@ -391,6 +405,7 @@ describe('shouldApplyEffortDefault', () => {
         sessionOrigin: 'new',
         modelChanged: true,
         hasExplicitEffort: true,
+        hadPriorModel: false,
       })
     ).toBe(false);
   });
@@ -402,6 +417,7 @@ describe('shouldApplyEffortDefault', () => {
         sessionOrigin: 'resumed',
         modelChanged: true,
         hasExplicitEffort: false,
+        hadPriorModel: false,
       })
     ).toBe(false);
   });
@@ -413,17 +429,19 @@ describe('shouldApplyEffortDefault', () => {
         sessionOrigin: 'resumed',
         modelChanged: true,
         hasExplicitEffort: false,
+        hadPriorModel: true,
       })
     ).toBe(true);
   });
 
-  it('applies on an explicit client switch even when --effort was passed (flag only wins at launch)', () => {
+  it('applies on an explicit client switch even with a prior model and --effort (flag only wins at launch)', () => {
     expect(
       shouldApplyEffortDefault({
         origin: 'clientInitiated',
         sessionOrigin: 'new',
         modelChanged: true,
         hasExplicitEffort: true,
+        hadPriorModel: true,
       })
     ).toBe(true);
   });
@@ -435,6 +453,7 @@ describe('shouldApplyEffortDefault', () => {
         sessionOrigin: 'resumed',
         modelChanged: true,
         hasExplicitEffort: false,
+        hadPriorModel: true,
       })
     ).toBe(false);
   });
@@ -451,6 +470,7 @@ describe('shouldApplyEffortDefault', () => {
           sessionOrigin: 'new',
           modelChanged: false,
           hasExplicitEffort: false,
+          hadPriorModel: false,
         })
       ).toBe(false);
     }

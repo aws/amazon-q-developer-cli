@@ -240,23 +240,26 @@ export function resolveEffortToApply(params: {
 
 /**
  * Whether a `KasModelConfigUpdate` should auto-apply the active model's saved
- * effort default. Pure policy, no state: apply only when the model changed AND
- * either the session is new (and the user did not launch with an explicit
- * `--effort`) or the update came from an explicit client-initiated `/model`
- * switch. A resumed session keeps its own effort and autonomous `serverPush`
- * changes never stomp it (v2 parity), and an explicit launch effort is not
- * overridden.
+ * effort default. Pure policy, no state.
+ *
+ * Applies only when the model changed AND either the user explicitly switched
+ * (`clientInitiated`) or this is the first model resolution of a new session
+ * without an explicit launch `--effort`. Resumed sessions and later autonomous
+ * `serverPush` changes never stomp the session's effort (v2 parity).
  */
 export function shouldApplyEffortDefault(args: {
   origin: KasConfigOrigin;
   sessionOrigin: SessionOrigin;
   modelChanged: boolean;
   hasExplicitEffort: boolean;
+  hadPriorModel: boolean;
 }): boolean {
   return (
     args.modelChanged &&
-    ((args.sessionOrigin === 'new' && !args.hasExplicitEffort) ||
-      args.origin === 'clientInitiated')
+    (args.origin === 'clientInitiated' ||
+      (args.sessionOrigin === 'new' &&
+        !args.hadPriorModel &&
+        !args.hasExplicitEffort))
   );
 }
 

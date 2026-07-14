@@ -4245,7 +4245,9 @@ export const createAppStore = (props: AppStoreProps) => {
       // Track the active model so the next update can tell whether it changed.
       // Session origin and baseline reset are owned by the session-start callers
       // (see beginKasSession); this handler only reacts to model updates.
+      // hadPriorModel must be captured before the set() below overwrites it.
       const currentModelId = event.currentModelId ?? null;
+      const hadPriorModel = get().kas.previousModelId != null;
       const modelChanged = currentModelId !== get().kas.previousModelId;
       set((s) => ({ kas: { ...s.kas, previousModelId: currentModelId } }));
 
@@ -4263,6 +4265,7 @@ export const createAppStore = (props: AppStoreProps) => {
           sessionOrigin: get().kas.sessionOrigin,
           modelChanged,
           hasExplicitEffort: get().kas.effortExplicit,
+          hadPriorModel,
         }),
       });
       if (effortToApply) {

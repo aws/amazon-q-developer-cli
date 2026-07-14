@@ -246,6 +246,21 @@ describe('sticky-default persistence', () => {
     );
   });
 
+  it('set-current-as-default reports an error when persistence fails', async () => {
+    // Persisting IS the command here, so unlike a model switch a failed write
+    // must surface as an error - but gracefully, not as an unhandled throw.
+    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
+    const ctx = createMockCommandContext({
+      currentModel: { id: 'opus', name: 'Opus' },
+    });
+    await handleModel(MODEL_CMD, 'set-current-as-default', ctx);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Failed to save Opus as default model',
+      'error',
+      5000
+    );
+  });
+
   it('persists the per-model effort default at the advertised schema path', async () => {
     const ctx = createMockCommandContext({
       kasAvailableEfforts: [{ value: 'high', name: 'High' }],
@@ -298,6 +313,43 @@ describe('sticky-default persistence', () => {
     });
     await handleEffort(EFFORT_CMD, 'high', ctx);
     expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Effort set to High',
+      'success',
+      3000
+    );
+  });
+
+  it('reports a successful model switch without the suffix when persistence fails', async () => {
+    // A corrupt settings file makes the write path reject (it refuses to
+    // overwrite unreadable settings). The switch already took effect, so the
+    // handler must still report success - just without the "saved" suffix.
+    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
+    const ctx = createMockCommandContext({
+      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
+      currentModel: { id: 'opus', name: 'Opus' },
+      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
+    });
+    await handleModel(MODEL_CMD, 'opus', ctx);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Switched to Opus',
+      'success',
+      3000
+    );
+  });
+
+  it('reports a successful effort switch without the suffix when persistence fails', async () => {
+    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
+    const ctx = createMockCommandContext({
+      kasAvailableEfforts: [{ value: 'high', name: 'High' }],
+      kasAvailableModels: [
+        { id: 'opus', name: 'Opus', effortSchemaPath: 'output_config' },
+      ],
+      currentModel: { id: 'opus', name: 'Opus' },
+      currentEffort: 'high',
+      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
+    });
+    await handleEffort(EFFORT_CMD, 'high', ctx);
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
       'Effort set to High',
       'success',

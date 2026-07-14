@@ -3,6 +3,7 @@ import type { KasCommand } from '../../kas-commands';
 import { readCliSettings, updateCliSetting } from '../../utils/cli-settings';
 import { Settings } from '../../constants/settings';
 import { extractRpcErrorMessage } from '../../utils/error-handling';
+import { logger } from '../../utils/logger';
 
 /**
  * `/model` selection menu + switch for KAS. Options come from the
@@ -73,17 +74,23 @@ async function switchModel(
     ctx.showAlert(`Model '${modelId}' not available`, 'error', 5000);
     return;
   }
-  // Persist as the sticky default unless the user opted out; the suffix is
-  // shown only when a write actually happened.
+  // Best-effort persist: the switch already took effect, so a failed write
+  // never fails the command; the suffix is shown only on an actual write.
   const optedOut =
     readCliSettings()[Settings.CHAT_DISABLE_AUTO_DEFAULT_MODEL] === true;
+  let saved = false;
   if (!optedOut) {
-    await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, current.id);
+    try {
+      await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, current.id);
+      saved = true;
+    } catch (err) {
+      logger.warn('[model] failed to persist default model:', err);
+    }
   }
   ctx.showAlert(
-    optedOut
-      ? `Switched to ${current.name}`
-      : `Switched to ${current.name} (saved as default)`,
+    saved
+      ? `Switched to ${current.name} (saved as default)`
+      : `Switched to ${current.name}`,
     'success',
     3000
   );
@@ -95,6 +102,18 @@ async function saveCurrentAsDefault(ctx: CommandContext): Promise<void> {
     ctx.showAlert('No model is currently active', 'error', 3000);
     return;
   }
-  await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, current.id);
+  // Persisting is the whole command, so a failed write is reported as an
+  // error - but gracefully, never as an unhandled throw.
+  try {
+    await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, current.id);
+  } catch (err) {
+    logger.warn('[model] failed to save default model:', err);
+    ctx.showAlert(
+      `Failed to save ${current.name} as default model`,
+      'error',
+      5000
+    );
+    return;
+  }
   ctx.showAlert(`Saved ${current.name} as default model`, 'success', 3000);
 }

@@ -152,6 +152,8 @@ pub enum DatabaseError {
     InvalidSetting(String),
     #[error("`{}` cannot be overridden at workspace scope", .0)]
     WorkspaceOverrideNotAllowed(String),
+    #[error(transparent)]
+    FileLock(#[from] crate::util::file_lock::FileLockError),
 }
 
 impl<T> From<PoisonError<T>> for DatabaseError {
