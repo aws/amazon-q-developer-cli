@@ -387,7 +387,10 @@ mod tests {
             !json.contains("\"remote_sandbox\""),
             "remote_sandbox must stay dark: {json}"
         );
-        assert!(!json.contains("\"memory\""), "memory must stay dark: {json}");
+        assert!(
+            json.contains("\"memory\""),
+            "memory should be enabled for internal nightly: {json}"
+        );
     }
 
     #[test]
@@ -429,18 +432,24 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_is_present_but_dark_in_all_real_builds() {
+    fn test_memory_is_present_and_enabled_only_for_internal_nightly() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::Memory)),
             "memory must be declared in rollout.json"
         );
 
-        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
             let r = Rollout::new_for_test(is_internal, is_nightly);
-            assert!(
-                !r.is_enabled(Feature::Memory),
-                "memory must be dark for internal={is_internal}, nightly={is_nightly}"
+            assert_eq!(
+                r.is_enabled(Feature::Memory),
+                expected,
+                "memory enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

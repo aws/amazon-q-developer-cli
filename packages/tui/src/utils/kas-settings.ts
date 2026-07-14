@@ -10,10 +10,32 @@
  */
 
 import { readCliSettings } from './cli-settings';
+import { features, Feature } from '../features';
 import { logger } from './logger';
 
 /** The shape sent as clientCapabilities._meta.kiro.settings on initialize. */
 export type KasSettings = Record<string, unknown>;
+
+/**
+ * Features gated by FeatureManager rollout. When the feature flag is active,
+ * the setting is unconditionally sent as `{ enabled: true }` to KAS.
+ *
+ * To add a new feature-gated setting: append [Feature.Xxx, 'settingKey'].
+ * When the feature graduates to GA, move it to `boolMappings` with a
+ * user-facing `chat.enableXxx` toggle instead.
+ */
+const GATED_FEATURES: ReadonlyArray<[Feature, string]> = [
+  [Feature.Memory, 'memoryEnable'],
+];
+
+/** Apply feature-gated settings to the settings object. */
+function applyGatedFeatures(settings: KasSettings): void {
+  for (const [feature, settingKey] of GATED_FEATURES) {
+    if (features.isEnabled(feature)) {
+      settings[settingKey] = { enabled: true };
+    }
+  }
+}
 
 /**
  * Read CLI settings from disk and transform to AgentSettingsSchema format.
@@ -74,6 +96,9 @@ export function buildKasSettings(): KasSettings | undefined {
       settings[key] = { enabled: defaultEnabled };
     }
   }
+
+  // ─── Feature-gated settings (FeatureManager rollout) ───────────────
+  applyGatedFeatures(settings);
 
   // ─── Tool Search (structured) ──────────────────────────────────────
   const tsEnabled = raw['toolSearch.enabled'];

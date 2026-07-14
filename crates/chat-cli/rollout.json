@@ -53,7 +53,8 @@
   },
   "memory": {
     "description": "Persistent agent memory. Dark-shipped at 0% while under development; ramp via treatment_percent.",
-    "treatment_percent": 0,
-    "segment": "internal"
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
   }
 }
